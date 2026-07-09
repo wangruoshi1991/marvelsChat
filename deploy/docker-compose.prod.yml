@@ -1,0 +1,18 @@
+version: "2"
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./miaoxun-prod.env
+    ports:
+      - "127.0.0.1:4390:4390"
+    networks:
+      - miaoxun
+
+networks:
+  miaoxun:
+    driver: bridge

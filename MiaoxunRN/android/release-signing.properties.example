@@ -1,0 +1,6 @@
+# Copy these keys to android/gradle.properties, ~/.gradle/gradle.properties,
+# or provide them as environment variables in CI.
+MIAOXUN_RELEASE_STORE_FILE=/absolute/path/to/miaoxun-release.keystore
+MIAOXUN_RELEASE_STORE_PASSWORD=change-me
+MIAOXUN_RELEASE_KEY_ALIAS=miaoxun
+MIAOXUN_RELEASE_KEY_PASSWORD=change-me

@@ -1,0 +1,25 @@
+{
+  "name": "@miaoxun/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Miaoxun Node.js API, PostgreSQL data layer, admin APIs, and Agent orchestration runtime.",
+  "scripts": {
+    "check": "node --check src/*.js src/routes/*.js scripts/*.js",
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "db:migrate": "node scripts/db-migrate.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "pg": "^8.13.1",
+    "ws": "^8.21.0",
+    "zod": "^3.24.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

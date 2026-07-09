@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>妙讯后台管理</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23101211'/%3E%3Ctext x='32' y='42' text-anchor='middle' font-size='34' font-family='Arial, sans-serif' fill='%2336d4a4'%3E%E5%A6%99%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="admin.css" />
+  </head>
+  <body>
+    <main class="admin-shell">
+      <header class="admin-hero">
+        <div>
+          <span>MarvelsChat Ops</span>
+          <h1>妙讯管理平台</h1>
+          <p>管理真实账号、会话、资料、登录态、管理员权限和 Agent 授权。</p>
+        </div>
+        <nav>
+          <button class="primary" id="admin-create-user" type="button" disabled>新建账号</button>
+          <button id="admin-refresh" type="button">刷新</button>
+          <button class="ghost" id="admin-logout" type="button">退出后台</button>
+        </nav>
+      </header>
+
+      <section class="admin-login" id="admin-login">
+        <div>
+          <strong>管理员登录</strong>
+          <p>使用管理员账号登录。默认管理员账号为 admin。</p>
+          <small id="admin-api-status">当前连接：正在检测</small>
+        </div>
+        <form id="admin-login-form">
+          <input id="admin-identifier" type="text" placeholder="管理员账号 / 手机号 / 邮箱" autocomplete="username" required />
+          <input id="admin-password" type="password" placeholder="密码" autocomplete="current-password" required />
+          <button type="submit">登录后台</button>
+        </form>
+      </section>
+
+      <p class="admin-status" id="admin-status">正在检查登录状态...</p>
+
+      <section class="admin-content hidden" id="admin-content">
+        <section class="metric-grid" id="metric-grid"></section>
+
+        <section class="admin-grid">
+          <article class="panel wide">
+            <header>
+              <div>
+                <strong>账号管理</strong>
+                <span id="users-count">0</span>
+              </div>
+              <div class="panel-tools">
+                <input id="user-search" type="search" placeholder="搜索账号、手机号、邮箱、昵称" />
+                <select id="user-status-filter">
+                  <option value="">全部状态</option>
+                  <option value="active">启用</option>
+                  <option value="disabled">停用</option>
+                </select>
+                <select id="user-role-filter">
+                  <option value="">全部角色</option>
+                  <option value="admin">管理员</option>
+                  <option value="user">普通用户</option>
+                </select>
+              </div>
+            </header>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>账号</th>
+                    <th>手机号</th>
+                    <th>邮箱</th>
+                    <th>角色</th>
+                    <th>权限</th>
+                    <th>状态</th>
+                    <th>会话</th>
+                    <th>Agent</th>
+                    <th>最近登录</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="users-table"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <header>
+              <strong>Agent 注册</strong>
+              <span id="agents-count">0</span>
+            </header>
+            <div class="agent-list" id="agents-list"></div>
+          </article>
+
+          <article class="panel wide">
+            <header>
+              <strong>Agent 能力配置</strong>
+              <span id="agent-readiness-count">0</span>
+            </header>
+            <div class="readiness-list" id="agent-readiness-list">
+              <article><strong>未检测</strong><p>登录后会显示每个 Agent 对应的 App 模块和上游配置状态。</p></article>
+            </div>
+          </article>
+
+          <article class="panel">
+            <header>
+              <div>
+                <strong>模型服务</strong>
+                <span id="model-status-label">未检测</span>
+              </div>
+              <button id="model-test" type="button">连通测试</button>
+            </header>
+            <div class="model-panel" id="model-panel">
+              <p>登录后会显示当前后端模型配置。</p>
+            </div>
+          </article>
+
+          <article class="panel">
+            <header>
+              <strong>事件流</strong>
+              <span id="events-count">0</span>
+            </header>
+            <div class="event-list" id="events-list"></div>
+          </article>
+
+          <article class="panel wide">
+            <header>
+              <strong>Agent 调用记录</strong>
+              <span id="runs-count">0</span>
+            </header>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Agent</th>
+                    <th>状态</th>
+                    <th>Provider</th>
+                    <th>耗时</th>
+                    <th>Token</th>
+                    <th>用户</th>
+                    <th>时间</th>
+                  </tr>
+                </thead>
+                <tbody id="runs-table"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <aside class="drawer" id="user-drawer" aria-hidden="true">
+      <div class="drawer-panel">
+        <header>
+          <div>
+            <span>账号详情</span>
+            <h2 id="drawer-title">未选择账号</h2>
+          </div>
+          <button id="drawer-close" type="button">关闭</button>
+        </header>
+        <section class="drawer-body" id="drawer-body"></section>
+      </div>
+    </aside>
+
+    <dialog class="admin-dialog" id="create-user-dialog">
+      <form id="create-user-form">
+        <header>
+          <div>
+            <span>Account</span>
+            <strong>新建账号</strong>
+          </div>
+          <button value="cancel" type="button" id="create-user-cancel">取消</button>
+        </header>
+        <label>邮箱<input id="create-email" type="email" required placeholder="user@example.com" /></label>
+        <label>昵称<input id="create-display-name" type="text" required placeholder="妙讯用户" /></label>
+        <label>初始密码<input id="create-password" type="password" minlength="8" required placeholder="至少 8 位" /></label>
+        <label>角色
+          <select id="create-role">
+            <option value="user">普通用户</option>
+            <option value="admin">管理员</option>
+          </select>
+        </label>
+        <button type="submit">创建账号</button>
+      </form>
+    </dialog>
+
+    <script type="module" src="admin.js"></script>
+  </body>
+</html>
