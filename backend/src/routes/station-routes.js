@@ -1,4 +1,5 @@
 import { resolveLocation } from "../location-service.js";
+import { HttpError } from "../http-error.js";
 import {
   getOssRuntimeStatus,
   persistProviderModelAssets,
@@ -27,6 +28,9 @@ import {
   createStationOutfit,
   createStationSiteDraft,
   createStationVideoDraft,
+  deleteStationAlbum,
+  deleteStationDiaryEntry,
+  deleteStationMediaAsset,
   getFileAssetForUser,
   getGenerationJobForUser,
   getProfileForUser,
@@ -44,6 +48,9 @@ import {
   listStationVideoDraftsForUser,
   moveMediaAssetsToAlbum,
   updateFileAssetPreprocessing,
+  updateStationAlbum,
+  updateStationDiaryEntry,
+  updateStationMediaAsset,
   updateStationMediaAssetTags,
   updateProfileVisibility,
   updateGenerationJob,
@@ -69,15 +76,21 @@ import {
   locationResolveSchema,
   profileSelfSchema,
   profileVisibilitySchema,
+  stationAlbumParamsSchema,
   stationAlbumSchema,
   stationAlbumSuggestionApplySchema,
+  stationAlbumUpdateSchema,
   stationConfigSchema,
   stationComicDiaryRequestSchema,
   stationComicDiaryParamsSchema,
+  stationDiaryParamsSchema,
   stationDiarySchema,
+  stationDiaryUpdateSchema,
   stationFileAssetSchema,
   stationMediaAssetSchema,
   stationMediaAssetParamsSchema,
+  stationMediaAssetRouteParamsSchema,
+  stationMediaAssetUpdateSchema,
   stationMediaSearchSchema,
   stationMediaTagsSchema,
   stationModelJobRequestSchema,
@@ -735,6 +748,58 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
     }),
   );
 
+  app.patch(
+    "/api/station/diary/:entryId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { entryId } = stationDiaryParamsSchema.parse(req.params);
+      const body = stationDiaryUpdateSchema.parse(req.body);
+      const entry = await updateStationDiaryEntry({
+        userId: req.user.id,
+        entryId,
+        ...body,
+      });
+      if (!entry) {
+        throw new HttpError(404, "Diary entry not found");
+      }
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.diary.update",
+        targetType: "station_diary_entry",
+        targetId: entry.id,
+        payload: { visibility: entry.visibility },
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.json({ data: entry });
+    }),
+  );
+
+  app.delete(
+    "/api/station/diary/:entryId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { entryId } = stationDiaryParamsSchema.parse(req.params);
+      const deleted = await deleteStationDiaryEntry({
+        userId: req.user.id,
+        entryId,
+      });
+      if (!deleted) {
+        throw new HttpError(404, "Diary entry not found");
+      }
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.diary.delete",
+        targetType: "station_diary_entry",
+        targetId: entryId,
+        payload: {},
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.status(204).send();
+    }),
+  );
+
   app.post(
     "/api/station/albums",
     authenticate,
@@ -757,6 +822,58 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
     }),
   );
 
+  app.patch(
+    "/api/station/albums/:albumId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { albumId } = stationAlbumParamsSchema.parse(req.params);
+      const body = stationAlbumUpdateSchema.parse(req.body);
+      const album = await updateStationAlbum({
+        userId: req.user.id,
+        albumId,
+        ...body,
+      });
+      if (!album) {
+        throw new HttpError(404, "Album not found");
+      }
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.album.update",
+        targetType: "station_album",
+        targetId: album.id,
+        payload: { visibility: album.visibility },
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.json({ data: album });
+    }),
+  );
+
+  app.delete(
+    "/api/station/albums/:albumId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { albumId } = stationAlbumParamsSchema.parse(req.params);
+      const deleted = await deleteStationAlbum({
+        userId: req.user.id,
+        albumId,
+      });
+      if (!deleted) {
+        throw new HttpError(404, "Album not found");
+      }
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.album.delete",
+        targetType: "station_album",
+        targetId: albumId,
+        payload: {},
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.status(204).send();
+    }),
+  );
+
   app.post(
     "/api/station/media-assets",
     authenticate,
@@ -776,6 +893,63 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
         userAgent: req.get("user-agent") || "",
       });
       res.status(201).json({ data: asset });
+    }),
+  );
+
+  app.patch(
+    "/api/station/media-assets/:mediaAssetId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+        req.params,
+      );
+      const body = stationMediaAssetUpdateSchema.parse(req.body);
+      const asset = await updateStationMediaAsset({
+        userId: req.user.id,
+        mediaAssetId,
+        ...body,
+        hasAlbumId: Object.prototype.hasOwnProperty.call(body, "albumId"),
+      });
+      if (!asset) {
+        throw new HttpError(404, "Media asset not found");
+      }
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.media.update",
+        targetType: "station_media_asset",
+        targetId: asset.id,
+        payload: { albumId: asset.albumId },
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.json({ data: asset });
+    }),
+  );
+
+  app.delete(
+    "/api/station/media-assets/:mediaAssetId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+        req.params,
+      );
+      const asset = await deleteStationMediaAsset({
+        userId: req.user.id,
+        mediaAssetId,
+      });
+      if (!asset) {
+        throw new HttpError(404, "Media asset not found");
+      }
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.media.delete",
+        targetType: "station_media_asset",
+        targetId: asset.id,
+        payload: { albumId: asset.albumId },
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.status(204).send();
     }),
   );
 

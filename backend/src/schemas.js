@@ -113,10 +113,30 @@ export const stationDiarySchema = z.object({
   visibility: stationVisibilitySchema.optional().default("private"),
 });
 
+export const stationDiaryUpdateSchema = stationDiarySchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one diary field is required.",
+  });
+
+export const stationDiaryParamsSchema = z.object({
+  entryId: z.string().uuid(),
+});
+
 export const stationAlbumSchema = z.object({
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(1000).optional().default(""),
   visibility: stationVisibilitySchema.optional().default("private"),
+});
+
+export const stationAlbumUpdateSchema = stationAlbumSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one album field is required.",
+  });
+
+export const stationAlbumParamsSchema = z.object({
+  albumId: z.string().uuid(),
 });
 
 export const stationMediaAssetSchema = z.object({
@@ -132,6 +152,15 @@ export const stationMediaAssetSchema = z.object({
   metadata: z.record(z.any()).optional().default({}),
 });
 
+export const stationMediaAssetUpdateSchema = z
+  .object({
+    albumId: z.string().uuid().optional().nullable(),
+    caption: z.string().trim().max(1000).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one media field is required.",
+  });
+
 export const stationMediaTagsSchema = z.object({
   caption: z.string().trim().max(1000).optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(12),
@@ -146,6 +175,8 @@ export const stationMediaSearchSchema = z.object({
 export const stationMediaAssetParamsSchema = z.object({
   mediaAssetId: z.string().uuid(),
 });
+
+export const stationMediaAssetRouteParamsSchema = stationMediaAssetParamsSchema;
 
 export const stationAlbumSuggestionApplySchema = z.object({
   title: z.string().trim().min(1).max(120),
