@@ -27,7 +27,6 @@ type RealtimeChannelOptions = {
   token: string;
   userId?: string;
   activeThreadIdRef: MutableRefObject<string | null>;
-  refreshBootstrap: (nextToken?: string, showError?: boolean) => Promise<void>;
   refreshNotifications: () => Promise<void>;
   incrementalSync: (showError?: boolean) => Promise<void>;
   setThreads: Dispatch<SetStateAction<ChatThread[]>>;
@@ -42,7 +41,6 @@ export function useRealtimeChannel({
   token,
   userId,
   activeThreadIdRef,
-  refreshBootstrap,
   refreshNotifications,
   incrementalSync,
   setThreads,
@@ -116,7 +114,7 @@ export function useRealtimeChannel({
         }
 
         if (payload.type === 'connection.ready') {
-          refreshBootstrap(undefined, false).catch(reportBackgroundFailure);
+          incrementalSync(false).catch(reportBackgroundFailure);
           return;
         }
 
@@ -252,7 +250,6 @@ export function useRealtimeChannel({
   }, [
     activeThreadIdRef,
     incrementalSync,
-    refreshBootstrap,
     refreshNotifications,
     setRelationships,
     setThreads,

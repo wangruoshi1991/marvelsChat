@@ -1,0 +1,134 @@
+import React from 'react';
+import ReactTestRenderer from 'react-test-renderer';
+import type { BootstrapDTO } from '../src/models/api';
+import { apiClient } from '../src/services/apiClient';
+import { tokenStore } from '../src/services/tokenStore';
+import { useMiaoxunSession } from '../src/features/session/useMiaoxunSession';
+
+jest.mock('../src/services/apiClient', () => ({
+  apiClient: {
+    bootstrap: jest.fn(),
+    sync: jest.fn(),
+    notifications: jest.fn(),
+    markThreadRead: jest.fn(),
+  },
+  buildRealtimeUrl: (path: string) => `ws://127.0.0.1:4390${path}`,
+  isAuthSessionError: () => false,
+}));
+
+jest.mock('../src/services/tokenStore', () => ({
+  tokenStore: {
+    read: jest.fn(),
+    save: jest.fn(),
+    clear: jest.fn(),
+  },
+}));
+
+const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>;
+const mockedTokenStore = tokenStore as jest.Mocked<typeof tokenStore>;
+
+class MockWebSocket {
+  static instances: MockWebSocket[] = [];
+
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onclose: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  close = jest.fn();
+
+  constructor(readonly url: string) {
+    MockWebSocket.instances.push(this);
+  }
+
+  emitReady() {
+    this.onopen?.();
+    this.onmessage?.({ data: JSON.stringify({ type: 'connection.ready' }) });
+  }
+}
+
+const bootstrap: BootstrapDTO = {
+  serverTime: '2026-07-10T06:00:00.000Z',
+  user: {
+    id: 'user-1',
+    email: 'tester@example.com',
+    displayName: 'Tester',
+    aiId: '900000000000001',
+    role: 'user',
+  },
+  profile: {
+    userId: 'user-1',
+    nickname: 'Tester',
+    avatarText: 'T',
+    avatarConfig: {},
+    bio: '',
+    community: '',
+    activityArea: '',
+    miaoPoints: 0,
+    followingCount: 0,
+    followersCount: 0,
+    collectionsCount: 0,
+    stationConfig: {},
+  },
+  threads: [],
+  messagesByThread: {},
+  agents: { registered: [], owned: [] },
+  modules: {},
+};
+
+function SessionHarness() {
+  useMiaoxunSession();
+  return null;
+}
+
+async function flushEffects() {
+  for (let index = 0; index < 4; index += 1) {
+    await new Promise<void>(resolve => setImmediate(resolve));
+  }
+}
+
+describe('session synchronization', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    MockWebSocket.instances = [];
+    Object.defineProperty(globalThis, 'WebSocket', {
+      configurable: true,
+      writable: true,
+      value: MockWebSocket,
+    });
+    mockedTokenStore.read.mockResolvedValue('saved-token');
+    mockedApiClient.bootstrap.mockResolvedValue(bootstrap);
+    mockedApiClient.sync.mockResolvedValue({
+      threads: [],
+      messagesByThread: {},
+      serverTime: '2026-07-10T06:00:01.000Z',
+    });
+  });
+
+  test('connection.ready catches up once without rebuilding the socket', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    await ReactTestRenderer.act(async () => {
+      MockWebSocket.instances[0].emitReady();
+      await flushEffects();
+    });
+
+    expect(mockedApiClient.bootstrap).toHaveBeenCalledTimes(1);
+    expect(mockedApiClient.sync).toHaveBeenCalledTimes(1);
+    expect(mockedApiClient.sync).toHaveBeenCalledWith(
+      bootstrap.serverTime,
+      'saved-token',
+    );
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    await ReactTestRenderer.act(() => {
+      renderer?.unmount();
+    });
+  });
+});
