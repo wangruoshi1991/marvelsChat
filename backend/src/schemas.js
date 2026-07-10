@@ -413,6 +413,12 @@ export const agentAccessSchema = z.object({
   grantedScopes: z.array(z.string().trim().min(1).max(80)).optional().default([]),
 });
 
+export const selfAgentAccessSchema = z.object({
+  enabled: z.boolean().optional().default(true),
+  alias: z.string().trim().max(80).optional().default(""),
+  grantedScopes: z.array(z.string().trim().min(1).max(80)).optional().default([]),
+});
+
 export const modelTestSchema = z.object({
   input: z.string().trim().min(1).max(500).optional(),
 });

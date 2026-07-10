@@ -6,7 +6,7 @@
   "description": "Miaoxun Node.js API, PostgreSQL data layer, admin APIs, and Agent orchestration runtime.",
   "scripts": {
     "check": "node --check src/*.js src/routes/*.js scripts/*.js",
-    "test": "node --test test/*.test.js",
+    "test": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/*.test.js",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "db:migrate": "node scripts/db-migrate.js"

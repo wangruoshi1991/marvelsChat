@@ -76,6 +76,7 @@ import {
 } from "../model-generation-service.js";
 import { preprocessFileContent } from "../file-preprocessing-service.js";
 import { buildSiteDraftResponse } from "../site-builder-service.js";
+import { createRateLimitMiddleware } from "../rate-limit-service.js";
 import {
   createUsageEvent,
   hashRequestIp,
@@ -112,6 +113,56 @@ import {
   stationSiteDraftRequestSchema,
   stationVideoDraftRequestSchema,
 } from "../schemas.js";
+
+const hour = 60 * 60 * 1000;
+const siteDraftCreateLimit = createRateLimitMiddleware({
+  action: "station.site_draft.create",
+  limit: 20,
+  windowMs: hour,
+  message: "主页生成请求过于频繁，请稍后再试。",
+});
+const modelJobCreateLimit = createRateLimitMiddleware({
+  action: "station.model_job.create",
+  limit: 10,
+  windowMs: hour,
+  message: "3D 生成请求过于频繁，请稍后再试。",
+});
+const fileAssetCreateLimit = createRateLimitMiddleware({
+  action: "station.file_asset.create",
+  limit: 60,
+  windowMs: hour,
+  message: "文件处理请求过于频繁，请稍后再试。",
+});
+const fileAssetPreprocessLimit = createRateLimitMiddleware({
+  action: "station.file_asset.preprocess",
+  limit: 60,
+  windowMs: hour,
+  message: "文件预处理请求过于频繁，请稍后再试。",
+});
+const albumSuggestionLimit = createRateLimitMiddleware({
+  action: "station.album_suggestion.generate",
+  limit: 60,
+  windowMs: hour,
+  message: "相册整理请求过于频繁，请稍后再试。",
+});
+const comicDiaryCreateLimit = createRateLimitMiddleware({
+  action: "station.comic_diary.create",
+  limit: 30,
+  windowMs: hour,
+  message: "漫画日记生成请求过于频繁，请稍后再试。",
+});
+const videoDraftCreateLimit = createRateLimitMiddleware({
+  action: "station.video_draft.create",
+  limit: 30,
+  windowMs: hour,
+  message: "视频草稿生成请求过于频繁，请稍后再试。",
+});
+const mediaUploadLimit = createRateLimitMiddleware({
+  action: "station.media.upload",
+  limit: 120,
+  windowMs: hour,
+  message: "媒体上传请求过于频繁，请稍后再试。",
+});
 
 const assertMediaKindMatchesMime = ({ kind, mimeType, status = 400 }) => {
   if (!mimeType.startsWith(`${kind}/`)) {
@@ -203,6 +254,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/site-drafts",
     authenticate,
+    siteDraftCreateLimit,
     asyncHandler(async (req, res) => {
       const body = stationSiteDraftRequestSchema.parse(req.body);
       const [profile, stationContent] = await Promise.all([
@@ -286,6 +338,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/file-assets",
     authenticate,
+    fileAssetCreateLimit,
     asyncHandler(async (req, res) => {
       const body = stationFileAssetSchema.parse(req.body);
       const preprocessing = preprocessFileContent({
@@ -328,6 +381,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/file-assets/:fileAssetId/preprocess",
     authenticate,
+    fileAssetPreprocessLimit,
     asyncHandler(async (req, res) => {
       const { fileAssetId } = fileAssetParamsSchema.parse(req.params);
       const body = stationFileAssetSchema.partial({ originalFilename: true }).parse(req.body);
@@ -380,6 +434,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/model-jobs",
     authenticate,
+    modelJobCreateLimit,
     asyncHandler(async (req, res) => {
       const body = stationModelJobRequestSchema.parse(req.body);
       const providerStatus = getMeshyRuntimeStatus();
@@ -549,6 +604,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/comic-diaries",
     authenticate,
+    comicDiaryCreateLimit,
     asyncHandler(async (req, res) => {
       const body = stationComicDiaryRequestSchema.parse(req.body);
       const uniqueMediaIds = Array.from(new Set(body.mediaAssetIds));
@@ -661,6 +717,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/video-drafts",
     authenticate,
+    videoDraftCreateLimit,
     asyncHandler(async (req, res) => {
       const body = stationVideoDraftRequestSchema.parse(req.body);
       const uniqueMediaIds = Array.from(new Set(body.mediaAssetIds));
@@ -983,6 +1040,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/media-assets/:mediaAssetId/upload-url",
     authenticate,
+    mediaUploadLimit,
     asyncHandler(async (req, res) => {
       const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
         req.params,
@@ -1043,6 +1101,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/media-assets/:mediaAssetId/upload-complete",
     authenticate,
+    mediaUploadLimit,
     asyncHandler(async (req, res) => {
       const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
         req.params,
@@ -1236,6 +1295,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.get(
     "/api/station/album-suggestions",
     authenticate,
+    albumSuggestionLimit,
     asyncHandler(async (_req, res) => {
       const assets = await listStationMediaAssetsForUser(_req.user.id, 100);
       res.json({ data: buildAlbumSuggestions({ mediaAssets: assets }) });
