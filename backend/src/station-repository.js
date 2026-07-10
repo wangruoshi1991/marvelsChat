@@ -488,6 +488,80 @@ export async function deleteStationMediaAsset({ userId, mediaAssetId }) {
   return rows[0] ? mapStationMediaAsset(rows[0]) : null;
 }
 
+export async function getStationMediaAssetForUser({ userId, mediaAssetId }) {
+  const rows = await query(
+    `SELECT *
+    FROM station_media_assets
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+    LIMIT 1`,
+    [mediaAssetId, userId],
+  );
+  return rows[0] ? mapStationMediaAsset(rows[0]) : null;
+}
+
+export async function prepareStationMediaAssetUpload({
+  userId,
+  mediaAssetId,
+  storageProvider,
+  storageKey,
+  mimeType,
+  byteSize = null,
+}) {
+  const rows = await query(
+    `UPDATE station_media_assets
+    SET
+      storage_provider = ?,
+      storage_key = ?,
+      mime_type = COALESCE(NULLIF(?, ''), mime_type),
+      byte_size = COALESCE(?::integer, byte_size)
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL AND status = 'pending_upload'
+    RETURNING *`,
+    [
+      storageProvider,
+      storageKey,
+      mimeType || "",
+      byteSize,
+      mediaAssetId,
+      userId,
+    ],
+  );
+  return rows[0] ? mapStationMediaAsset(rows[0]) : null;
+}
+
+export async function markStationMediaAssetUploaded({
+  userId,
+  mediaAssetId,
+  storageKey,
+  mimeType,
+  byteSize,
+  metadata = {},
+}) {
+  const rows = await query(
+    `UPDATE station_media_assets
+    SET
+      status = 'uploaded',
+      mime_type = ?,
+      byte_size = ?,
+      metadata = COALESCE(metadata, '{}'::jsonb) || ?::jsonb
+    WHERE
+      id = ?
+      AND user_id = ?
+      AND deleted_at IS NULL
+      AND status = 'pending_upload'
+      AND storage_key = ?
+    RETURNING *`,
+    [
+      mimeType,
+      byteSize,
+      JSON.stringify(metadata),
+      mediaAssetId,
+      userId,
+      storageKey,
+    ],
+  );
+  return rows[0] ? mapStationMediaAsset(rows[0]) : null;
+}
+
 export async function updateStationMediaAssetTags({
   userId,
   mediaAssetId,

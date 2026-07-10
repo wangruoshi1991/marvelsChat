@@ -7,6 +7,8 @@ import {
   stationDiaryUpdateSchema,
   stationMediaAssetRouteParamsSchema,
   stationMediaAssetUpdateSchema,
+  stationMediaUploadCompleteSchema,
+  stationMediaUploadUrlSchema,
 } from "../src/schemas.js";
 
 const uuid = "11111111-1111-4111-8111-111111111111";
@@ -40,5 +42,54 @@ test("station route params reject malformed identifiers", () => {
   assert.throws(() => stationAlbumParamsSchema.parse({ albumId: "not-a-uuid" }));
   assert.throws(() =>
     stationMediaAssetRouteParamsSchema.parse({ mediaAssetId: "not-a-uuid" }),
+  );
+});
+
+test("station media upload schemas enforce type and size limits", () => {
+  const maxImageBytes = 25 * 1024 * 1024;
+  const maxVideoBytes = 250 * 1024 * 1024;
+
+  assert.equal(
+    stationMediaUploadUrlSchema.parse({
+      mimeType: "image/jpeg",
+      byteSize: maxImageBytes,
+    }).byteSize,
+    maxImageBytes,
+  );
+  assert.equal(
+    stationMediaUploadUrlSchema.parse({
+      mimeType: "video/mp4",
+      byteSize: maxVideoBytes,
+    }).byteSize,
+    maxVideoBytes,
+  );
+
+  assert.throws(() =>
+    stationMediaUploadUrlSchema.parse({
+      mimeType: "image/jpeg",
+      byteSize: maxImageBytes + 1,
+    }),
+  );
+  assert.throws(() =>
+    stationMediaUploadUrlSchema.parse({
+      mimeType: "video/mp4",
+      byteSize: maxVideoBytes + 1,
+    }),
+  );
+  assert.throws(() =>
+    stationMediaUploadUrlSchema.parse({
+      mimeType: "image/svg+xml",
+      byteSize: 100,
+    }),
+  );
+  assert.throws(() =>
+    stationMediaUploadUrlSchema.parse({
+      mimeType: "application/pdf",
+      byteSize: 100,
+    }),
+  );
+  assert.deepEqual(
+    stationMediaUploadCompleteSchema.parse({ storageKey: "users/u/asset.jpg" }),
+    { storageKey: "users/u/asset.jpg" },
   );
 });

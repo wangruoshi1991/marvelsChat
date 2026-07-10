@@ -27,10 +27,12 @@ test("registers the station content routes used by the mobile client", () => {
     "DELETE /api/station/albums/:albumId",
     "PATCH /api/station/media-assets/:mediaAssetId",
     "DELETE /api/station/media-assets/:mediaAssetId",
+    "POST /api/station/media-assets/:mediaAssetId/upload-url",
+    "POST /api/station/media-assets/:mediaAssetId/upload-complete",
+    "GET /api/station/media-assets/:mediaAssetId/file",
   ];
 
   for (const route of expected) {
     assert.ok(routes.has(route), `Missing route: ${route}`);
   }
 });
-

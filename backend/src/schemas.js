@@ -178,6 +178,51 @@ export const stationMediaAssetParamsSchema = z.object({
 
 export const stationMediaAssetRouteParamsSchema = stationMediaAssetParamsSchema;
 
+const stationMediaMimeTypes = new Set([
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-m4v",
+]);
+
+export const stationMediaUploadLimits = Object.freeze({
+  image: 25 * 1024 * 1024,
+  video: 250 * 1024 * 1024,
+});
+
+export const stationMediaUploadUrlSchema = z
+  .object({
+    mimeType: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .refine((value) => stationMediaMimeTypes.has(value), {
+        message: "Unsupported station media type.",
+      }),
+    byteSize: z.number().int().min(0).optional().nullable(),
+  })
+  .superRefine((value, context) => {
+    if (value.byteSize === null || value.byteSize === undefined) return;
+    const kind = value.mimeType.startsWith("video/") ? "video" : "image";
+    if (value.byteSize > stationMediaUploadLimits[kind]) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["byteSize"],
+        message: `Station ${kind} exceeds the upload size limit.`,
+      });
+    }
+  });
+
+export const stationMediaUploadCompleteSchema = z.object({
+  storageKey: z.string().trim().min(1).max(512),
+});
+
 export const stationAlbumSuggestionApplySchema = z.object({
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(1000).optional().default(""),
