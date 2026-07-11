@@ -113,10 +113,30 @@ export const stationDiarySchema = z.object({
   visibility: stationVisibilitySchema.optional().default("private"),
 });
 
+export const stationDiaryUpdateSchema = stationDiarySchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one diary field is required.",
+  });
+
+export const stationDiaryParamsSchema = z.object({
+  entryId: z.string().uuid(),
+});
+
 export const stationAlbumSchema = z.object({
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(1000).optional().default(""),
   visibility: stationVisibilitySchema.optional().default("private"),
+});
+
+export const stationAlbumUpdateSchema = stationAlbumSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one album field is required.",
+  });
+
+export const stationAlbumParamsSchema = z.object({
+  albumId: z.string().uuid(),
 });
 
 export const stationMediaAssetSchema = z.object({
@@ -132,6 +152,15 @@ export const stationMediaAssetSchema = z.object({
   metadata: z.record(z.any()).optional().default({}),
 });
 
+export const stationMediaAssetUpdateSchema = z
+  .object({
+    albumId: z.string().uuid().optional().nullable(),
+    caption: z.string().trim().max(1000).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one media field is required.",
+  });
+
 export const stationMediaTagsSchema = z.object({
   caption: z.string().trim().max(1000).optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(12),
@@ -145,6 +174,53 @@ export const stationMediaSearchSchema = z.object({
 
 export const stationMediaAssetParamsSchema = z.object({
   mediaAssetId: z.string().uuid(),
+});
+
+export const stationMediaAssetRouteParamsSchema = stationMediaAssetParamsSchema;
+
+const stationMediaMimeTypes = new Set([
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-m4v",
+]);
+
+export const stationMediaUploadLimits = Object.freeze({
+  image: 25 * 1024 * 1024,
+  video: 250 * 1024 * 1024,
+});
+
+export const stationMediaUploadUrlSchema = z
+  .object({
+    mimeType: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .refine((value) => stationMediaMimeTypes.has(value), {
+        message: "Unsupported station media type.",
+      }),
+    byteSize: z.number().int().min(0).optional().nullable(),
+  })
+  .superRefine((value, context) => {
+    if (value.byteSize === null || value.byteSize === undefined) return;
+    const kind = value.mimeType.startsWith("video/") ? "video" : "image";
+    if (value.byteSize > stationMediaUploadLimits[kind]) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["byteSize"],
+        message: `Station ${kind} exceeds the upload size limit.`,
+      });
+    }
+  });
+
+export const stationMediaUploadCompleteSchema = z.object({
+  storageKey: z.string().trim().min(1).max(512),
 });
 
 export const stationAlbumSuggestionApplySchema = z.object({
@@ -333,6 +409,12 @@ export const profileAdminSchema = z.object({
 
 export const agentAccessSchema = z.object({
   enabled: z.boolean(),
+  alias: z.string().trim().max(80).optional().default(""),
+  grantedScopes: z.array(z.string().trim().min(1).max(80)).optional().default([]),
+});
+
+export const selfAgentAccessSchema = z.object({
+  enabled: z.boolean().optional().default(true),
   alias: z.string().trim().max(80).optional().default(""),
   grantedScopes: z.array(z.string().trim().min(1).max(80)).optional().default([]),
 });

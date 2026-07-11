@@ -1,4 +1,13 @@
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { resolveLocation } from "../location-service.js";
+import { HttpError } from "../http-error.js";
+import {
+  buildStationMediaObjectKey,
+  createOssPutSignedUrl,
+  fetchOssObject,
+  inspectOssObject,
+} from "../oss-service.js";
 import {
   getOssRuntimeStatus,
   persistProviderModelAssets,
@@ -27,6 +36,9 @@ import {
   createStationOutfit,
   createStationSiteDraft,
   createStationVideoDraft,
+  deleteStationAlbum,
+  deleteStationDiaryEntry,
+  deleteStationMediaAsset,
   getFileAssetForUser,
   getGenerationJobForUser,
   getProfileForUser,
@@ -34,6 +46,7 @@ import {
   getStationComicDiaryForUser,
   getStationDiaryEntryForUser,
   getStationContentForUser,
+  getStationMediaAssetForUser,
   listFileAssetsByIdsForUser,
   listFileAssetsForUser,
   listGenerationJobsForUser,
@@ -43,7 +56,12 @@ import {
   listStationSiteDraftsForUser,
   listStationVideoDraftsForUser,
   moveMediaAssetsToAlbum,
+  markStationMediaAssetUploaded,
+  prepareStationMediaAssetUpload,
   updateFileAssetPreprocessing,
+  updateStationAlbum,
+  updateStationDiaryEntry,
+  updateStationMediaAsset,
   updateStationMediaAssetTags,
   updateProfileVisibility,
   updateGenerationJob,
@@ -58,6 +76,7 @@ import {
 } from "../model-generation-service.js";
 import { preprocessFileContent } from "../file-preprocessing-service.js";
 import { buildSiteDraftResponse } from "../site-builder-service.js";
+import { createRateLimitMiddleware } from "../rate-limit-service.js";
 import {
   createUsageEvent,
   hashRequestIp,
@@ -69,15 +88,23 @@ import {
   locationResolveSchema,
   profileSelfSchema,
   profileVisibilitySchema,
+  stationAlbumParamsSchema,
   stationAlbumSchema,
   stationAlbumSuggestionApplySchema,
+  stationAlbumUpdateSchema,
   stationConfigSchema,
   stationComicDiaryRequestSchema,
   stationComicDiaryParamsSchema,
+  stationDiaryParamsSchema,
   stationDiarySchema,
+  stationDiaryUpdateSchema,
   stationFileAssetSchema,
   stationMediaAssetSchema,
   stationMediaAssetParamsSchema,
+  stationMediaAssetRouteParamsSchema,
+  stationMediaAssetUpdateSchema,
+  stationMediaUploadCompleteSchema,
+  stationMediaUploadUrlSchema,
   stationMediaSearchSchema,
   stationMediaTagsSchema,
   stationModelJobRequestSchema,
@@ -86,6 +113,70 @@ import {
   stationSiteDraftRequestSchema,
   stationVideoDraftRequestSchema,
 } from "../schemas.js";
+
+const hour = 60 * 60 * 1000;
+const siteDraftCreateLimit = createRateLimitMiddleware({
+  action: "station.site_draft.create",
+  limit: 20,
+  windowMs: hour,
+  message: "主页生成请求过于频繁，请稍后再试。",
+});
+const modelJobCreateLimit = createRateLimitMiddleware({
+  action: "station.model_job.create",
+  limit: 10,
+  windowMs: hour,
+  message: "3D 生成请求过于频繁，请稍后再试。",
+});
+const fileAssetCreateLimit = createRateLimitMiddleware({
+  action: "station.file_asset.create",
+  limit: 60,
+  windowMs: hour,
+  message: "文件处理请求过于频繁，请稍后再试。",
+});
+const fileAssetPreprocessLimit = createRateLimitMiddleware({
+  action: "station.file_asset.preprocess",
+  limit: 60,
+  windowMs: hour,
+  message: "文件预处理请求过于频繁，请稍后再试。",
+});
+const albumSuggestionLimit = createRateLimitMiddleware({
+  action: "station.album_suggestion.generate",
+  limit: 60,
+  windowMs: hour,
+  message: "相册整理请求过于频繁，请稍后再试。",
+});
+const comicDiaryCreateLimit = createRateLimitMiddleware({
+  action: "station.comic_diary.create",
+  limit: 30,
+  windowMs: hour,
+  message: "漫画日记生成请求过于频繁，请稍后再试。",
+});
+const videoDraftCreateLimit = createRateLimitMiddleware({
+  action: "station.video_draft.create",
+  limit: 30,
+  windowMs: hour,
+  message: "视频草稿生成请求过于频繁，请稍后再试。",
+});
+const mediaUploadLimit = createRateLimitMiddleware({
+  action: "station.media.upload",
+  limit: 120,
+  windowMs: hour,
+  message: "媒体上传请求过于频繁，请稍后再试。",
+});
+
+const assertMediaKindMatchesMime = ({ kind, mimeType, status = 400 }) => {
+  if (!mimeType.startsWith(`${kind}/`)) {
+    throw new HttpError(status, "Media type does not match the asset kind.");
+  }
+};
+
+const parseSingleByteRange = (value) => {
+  const range = String(value || "").trim();
+  if (range && !/^bytes=(?:\d+-\d*|-\d+)$/.test(range)) {
+    throw new HttpError(416, "Invalid media byte range.");
+  }
+  return range;
+};
 
 export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.patch(
@@ -163,6 +254,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/site-drafts",
     authenticate,
+    siteDraftCreateLimit,
     asyncHandler(async (req, res) => {
       const body = stationSiteDraftRequestSchema.parse(req.body);
       const [profile, stationContent] = await Promise.all([
@@ -246,6 +338,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/file-assets",
     authenticate,
+    fileAssetCreateLimit,
     asyncHandler(async (req, res) => {
       const body = stationFileAssetSchema.parse(req.body);
       const preprocessing = preprocessFileContent({
@@ -288,6 +381,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/file-assets/:fileAssetId/preprocess",
     authenticate,
+    fileAssetPreprocessLimit,
     asyncHandler(async (req, res) => {
       const { fileAssetId } = fileAssetParamsSchema.parse(req.params);
       const body = stationFileAssetSchema.partial({ originalFilename: true }).parse(req.body);
@@ -340,6 +434,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/model-jobs",
     authenticate,
+    modelJobCreateLimit,
     asyncHandler(async (req, res) => {
       const body = stationModelJobRequestSchema.parse(req.body);
       const providerStatus = getMeshyRuntimeStatus();
@@ -509,6 +604,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/comic-diaries",
     authenticate,
+    comicDiaryCreateLimit,
     asyncHandler(async (req, res) => {
       const body = stationComicDiaryRequestSchema.parse(req.body);
       const uniqueMediaIds = Array.from(new Set(body.mediaAssetIds));
@@ -621,6 +717,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/station/video-drafts",
     authenticate,
+    videoDraftCreateLimit,
     asyncHandler(async (req, res) => {
       const body = stationVideoDraftRequestSchema.parse(req.body);
       const uniqueMediaIds = Array.from(new Set(body.mediaAssetIds));
@@ -735,6 +832,58 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
     }),
   );
 
+  app.patch(
+    "/api/station/diary/:entryId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { entryId } = stationDiaryParamsSchema.parse(req.params);
+      const body = stationDiaryUpdateSchema.parse(req.body);
+      const entry = await updateStationDiaryEntry({
+        userId: req.user.id,
+        entryId,
+        ...body,
+      });
+      if (!entry) {
+        throw new HttpError(404, "Diary entry not found");
+      }
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.diary.update",
+        targetType: "station_diary_entry",
+        targetId: entry.id,
+        payload: { visibility: entry.visibility },
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.json({ data: entry });
+    }),
+  );
+
+  app.delete(
+    "/api/station/diary/:entryId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { entryId } = stationDiaryParamsSchema.parse(req.params);
+      const deleted = await deleteStationDiaryEntry({
+        userId: req.user.id,
+        entryId,
+      });
+      if (!deleted) {
+        throw new HttpError(404, "Diary entry not found");
+      }
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.diary.delete",
+        targetType: "station_diary_entry",
+        targetId: entryId,
+        payload: {},
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.status(204).send();
+    }),
+  );
+
   app.post(
     "/api/station/albums",
     authenticate,
@@ -757,6 +906,58 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
     }),
   );
 
+  app.patch(
+    "/api/station/albums/:albumId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { albumId } = stationAlbumParamsSchema.parse(req.params);
+      const body = stationAlbumUpdateSchema.parse(req.body);
+      const album = await updateStationAlbum({
+        userId: req.user.id,
+        albumId,
+        ...body,
+      });
+      if (!album) {
+        throw new HttpError(404, "Album not found");
+      }
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.album.update",
+        targetType: "station_album",
+        targetId: album.id,
+        payload: { visibility: album.visibility },
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.json({ data: album });
+    }),
+  );
+
+  app.delete(
+    "/api/station/albums/:albumId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { albumId } = stationAlbumParamsSchema.parse(req.params);
+      const deleted = await deleteStationAlbum({
+        userId: req.user.id,
+        albumId,
+      });
+      if (!deleted) {
+        throw new HttpError(404, "Album not found");
+      }
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.album.delete",
+        targetType: "station_album",
+        targetId: albumId,
+        payload: {},
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.status(204).send();
+    }),
+  );
+
   app.post(
     "/api/station/media-assets",
     authenticate,
@@ -776,6 +977,265 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
         userAgent: req.get("user-agent") || "",
       });
       res.status(201).json({ data: asset });
+    }),
+  );
+
+  app.patch(
+    "/api/station/media-assets/:mediaAssetId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+        req.params,
+      );
+      const body = stationMediaAssetUpdateSchema.parse(req.body);
+      const asset = await updateStationMediaAsset({
+        userId: req.user.id,
+        mediaAssetId,
+        ...body,
+        hasAlbumId: Object.prototype.hasOwnProperty.call(body, "albumId"),
+      });
+      if (!asset) {
+        throw new HttpError(404, "Media asset not found");
+      }
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.media.update",
+        targetType: "station_media_asset",
+        targetId: asset.id,
+        payload: { albumId: asset.albumId },
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.json({ data: asset });
+    }),
+  );
+
+  app.delete(
+    "/api/station/media-assets/:mediaAssetId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+        req.params,
+      );
+      const asset = await deleteStationMediaAsset({
+        userId: req.user.id,
+        mediaAssetId,
+      });
+      if (!asset) {
+        throw new HttpError(404, "Media asset not found");
+      }
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.media.delete",
+        targetType: "station_media_asset",
+        targetId: asset.id,
+        payload: { albumId: asset.albumId },
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.status(204).send();
+    }),
+  );
+
+  app.post(
+    "/api/station/media-assets/:mediaAssetId/upload-url",
+    authenticate,
+    mediaUploadLimit,
+    asyncHandler(async (req, res) => {
+      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+        req.params,
+      );
+      const asset = await getStationMediaAssetForUser({
+        userId: req.user.id,
+        mediaAssetId,
+      });
+      if (!asset) {
+        throw new HttpError(404, "Media asset not found");
+      }
+      if (asset.status !== "pending_upload") {
+        throw new HttpError(409, "Media asset is not pending upload");
+      }
+
+      const body = stationMediaUploadUrlSchema.parse({
+        ...req.body,
+        byteSize: req.body?.byteSize ?? asset.byteSize,
+      });
+      assertMediaKindMatchesMime({
+        kind: asset.kind,
+        mimeType: body.mimeType,
+      });
+      const objectKey = buildStationMediaObjectKey({
+        userId: req.user.id,
+        assetId: asset.id,
+        originalFilename: asset.originalFilename,
+      });
+      const upload = createOssPutSignedUrl({
+        objectKey,
+        contentType: body.mimeType,
+      });
+      const preparedAsset = await prepareStationMediaAssetUpload({
+        userId: req.user.id,
+        mediaAssetId: asset.id,
+        storageProvider: upload.storageProvider,
+        storageKey: upload.objectKey,
+        mimeType: body.mimeType,
+        byteSize: body.byteSize,
+      });
+      if (!preparedAsset) {
+        throw new HttpError(409, "Media asset upload state changed");
+      }
+
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.media.upload_url",
+        targetType: "station_media_asset",
+        targetId: asset.id,
+        payload: { storageProvider: upload.storageProvider },
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.json({ data: { asset: preparedAsset, upload } });
+    }),
+  );
+
+  app.post(
+    "/api/station/media-assets/:mediaAssetId/upload-complete",
+    authenticate,
+    mediaUploadLimit,
+    asyncHandler(async (req, res) => {
+      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+        req.params,
+      );
+      const body = stationMediaUploadCompleteSchema.parse(req.body);
+      const asset = await getStationMediaAssetForUser({
+        userId: req.user.id,
+        mediaAssetId,
+      });
+      if (!asset) {
+        throw new HttpError(404, "Media asset not found");
+      }
+      if (!asset.storageKey || body.storageKey !== asset.storageKey) {
+        throw new HttpError(409, "Media upload key does not match");
+      }
+      if (asset.status === "uploaded") {
+        res.json({ data: asset });
+        return;
+      }
+      if (asset.status !== "pending_upload") {
+        throw new HttpError(409, "Media asset is not pending upload");
+      }
+
+      const storedObject = await inspectOssObject({
+        objectKey: asset.storageKey,
+      });
+      if (storedObject.contentLength === null) {
+        throw new HttpError(502, "Media storage did not return object size");
+      }
+      const uploadedMedia = stationMediaUploadUrlSchema.safeParse({
+        mimeType: storedObject.contentType || asset.mimeType,
+        byteSize: storedObject.contentLength,
+      });
+      if (!uploadedMedia.success) {
+        throw new HttpError(409, "Uploaded media does not meet requirements");
+      }
+      assertMediaKindMatchesMime({
+        kind: asset.kind,
+        mimeType: uploadedMedia.data.mimeType,
+        status: 409,
+      });
+      if (
+        asset.mimeType &&
+        uploadedMedia.data.mimeType !== asset.mimeType.toLowerCase()
+      ) {
+        throw new HttpError(409, "Uploaded media type does not match");
+      }
+      if (
+        asset.byteSize !== null &&
+        uploadedMedia.data.byteSize !== asset.byteSize
+      ) {
+        throw new HttpError(409, "Uploaded media size does not match");
+      }
+
+      const uploadedAsset = await markStationMediaAssetUploaded({
+        userId: req.user.id,
+        mediaAssetId: asset.id,
+        storageKey: asset.storageKey,
+        mimeType: uploadedMedia.data.mimeType,
+        byteSize: uploadedMedia.data.byteSize,
+        metadata: {
+          uploadEtag: storedObject.etag,
+          uploadVerifiedAt: new Date().toISOString(),
+        },
+      });
+      if (!uploadedAsset) {
+        throw new HttpError(409, "Media asset upload state changed");
+      }
+
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "station.media.upload_complete",
+        targetType: "station_media_asset",
+        targetId: uploadedAsset.id,
+        payload: {
+          albumId: uploadedAsset.albumId,
+          status: uploadedAsset.status,
+        },
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.json({ data: uploadedAsset });
+    }),
+  );
+
+  app.get(
+    "/api/station/media-assets/:mediaAssetId/file",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+        req.params,
+      );
+      const asset = await getStationMediaAssetForUser({
+        userId: req.user.id,
+        mediaAssetId,
+      });
+      if (!asset) {
+        throw new HttpError(404, "Media asset not found");
+      }
+      if (asset.status !== "uploaded" || !asset.storageKey) {
+        throw new HttpError(409, "Media asset is not available");
+      }
+
+      const range = parseSingleByteRange(req.get("range"));
+      const response = await fetchOssObject({
+        objectKey: asset.storageKey,
+        range,
+      });
+      if (!response.body) {
+        throw new HttpError(502, "Media storage returned an empty response");
+      }
+
+      res.status(response.status);
+      for (const header of [
+        "accept-ranges",
+        "content-length",
+        "content-range",
+        "content-type",
+        "etag",
+        "last-modified",
+      ]) {
+        const value = response.headers.get(header);
+        if (value) res.setHeader(header, value);
+      }
+      if (!response.headers.get("content-type") && asset.mimeType) {
+        res.setHeader("content-type", asset.mimeType);
+      }
+      res.setHeader("cache-control", "private, max-age=300");
+
+      try {
+        await pipeline(Readable.fromWeb(response.body), res);
+      } catch (error) {
+        if (!res.destroyed) res.destroy(error);
+      }
     }),
   );
 
@@ -835,6 +1295,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   app.get(
     "/api/station/album-suggestions",
     authenticate,
+    albumSuggestionLimit,
     asyncHandler(async (_req, res) => {
       const assets = await listStationMediaAssetsForUser(_req.user.id, 100);
       res.json({ data: buildAlbumSuggestions({ mediaAssets: assets }) });

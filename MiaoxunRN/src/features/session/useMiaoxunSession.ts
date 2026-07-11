@@ -73,10 +73,18 @@ export function useMiaoxunSession() {
   const [isRestoring, setIsRestoring] = useState(true);
   const [restoreStatus, setRestoreStatus] = useState<RestoreStatus>('checking');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [realtimeNotificationNotice, setRealtimeNotificationNotice] =
     useState<RealtimeNotificationNotice | null>(null);
   const activeThreadIdRef = useRef<string | null>(null);
+  const tokenRef = useRef('');
+  const lastSyncAtRef = useRef<string | null>(null);
+  const bootstrapPromiseRef = useRef<Promise<void> | null>(null);
+  const syncPromiseRef = useRef<Promise<void> | null>(null);
+
+  const updateToken = useCallback((nextToken: string) => {
+    tokenRef.current = nextToken;
+    setToken(nextToken);
+  }, []);
 
   const butlerThread = useMemo(
     () => threads.find(thread => thread.agentId === 'miaoxun-butler') || null,
@@ -101,28 +109,49 @@ export function useMiaoxunSession() {
     setStationContent(bootstrap.stationContent || emptyStationContent);
     setLanguage(bootstrap.profile.stationConfig.language || 'zh');
     setAppearance(bootstrap.profile.stationConfig.appearance || 'light');
-    setLastSyncAt(bootstrap.serverTime || new Date().toISOString());
+    lastSyncAtRef.current = bootstrap.serverTime || new Date().toISOString();
   }, []);
 
   const refreshBootstrap = useCallback(
-    async (nextToken = token, showError = true) => {
+    (nextToken = tokenRef.current, showError = true) => {
       if (!nextToken) {
-        return;
+        return Promise.resolve();
       }
 
-      try {
-        const bootstrap = await apiClient.bootstrap(nextToken);
-        applyBootstrap(bootstrap);
-      } catch (error) {
-        if (showError) {
-          setErrorMessage(
-            error instanceof Error ? error.message : '同步失败。',
-          );
-        }
-        throw error;
+      if (bootstrapPromiseRef.current) {
+        return bootstrapPromiseRef.current;
       }
+
+      const request = (async () => {
+        try {
+          const bootstrap = await apiClient.bootstrap(nextToken);
+          applyBootstrap(bootstrap);
+        } catch (error) {
+          if (showError) {
+            setErrorMessage(
+              error instanceof Error ? error.message : '同步失败。',
+            );
+          }
+          throw error;
+        }
+      })();
+
+      bootstrapPromiseRef.current = request;
+      request.then(
+        () => {
+          if (bootstrapPromiseRef.current === request) {
+            bootstrapPromiseRef.current = null;
+          }
+        },
+        () => {
+          if (bootstrapPromiseRef.current === request) {
+            bootstrapPromiseRef.current = null;
+          }
+        },
+      );
+      return request;
     },
-    [applyBootstrap, token],
+    [applyBootstrap],
   );
 
   const restoreSession = useCallback(async () => {
@@ -133,7 +162,7 @@ export function useMiaoxunSession() {
         return;
       }
       await refreshBootstrap(savedToken, false);
-      setToken(savedToken);
+      updateToken(savedToken);
       setRestoreStatus('authenticated');
     } catch (error) {
       setErrorMessage(
@@ -141,7 +170,7 @@ export function useMiaoxunSession() {
       );
       if (isAuthSessionError(error)) {
         await tokenStore.clear().catch(() => undefined);
-        setToken('');
+        updateToken('');
         setRestoreStatus('signedOut');
       } else {
         setRestoreStatus('networkError');
@@ -149,7 +178,7 @@ export function useMiaoxunSession() {
     } finally {
       setIsRestoring(false);
     }
-  }, [refreshBootstrap]);
+  }, [refreshBootstrap, updateToken]);
 
   useEffect(() => {
     restoreSession().catch(() => undefined);
@@ -163,12 +192,12 @@ export function useMiaoxunSession() {
         const response = await apiClient.login(identifier, password);
         await refreshBootstrap(response.session.token);
         await tokenStore.save(response.session.token);
-        setToken(response.session.token);
+        updateToken(response.session.token);
         setRestoreStatus('authenticated');
       } catch (error) {
         if (isAuthSessionError(error)) {
           await tokenStore.clear().catch(() => undefined);
-          setToken('');
+          updateToken('');
           setRestoreStatus('signedOut');
         }
         setErrorMessage(error instanceof Error ? error.message : '登录失败。');
@@ -176,7 +205,7 @@ export function useMiaoxunSession() {
         setIsBusy(false);
       }
     },
-    [refreshBootstrap],
+    [refreshBootstrap, updateToken],
   );
 
   const signUp = useCallback(
@@ -197,7 +226,7 @@ export function useMiaoxunSession() {
         );
         await refreshBootstrap(response.session.token);
         await tokenStore.save(response.session.token);
-        setToken(response.session.token);
+        updateToken(response.session.token);
         setRestoreStatus('authenticated');
         return response.user;
       } catch (error) {
@@ -207,39 +236,67 @@ export function useMiaoxunSession() {
         setIsBusy(false);
       }
     },
-    [refreshBootstrap],
+    [refreshBootstrap, updateToken],
   );
 
   const incrementalSync = useCallback(
-    async (showError = false) => {
-      if (!token) {
-        return;
+    (showError = false) => {
+      const currentToken = tokenRef.current;
+      if (!currentToken) {
+        return Promise.resolve();
       }
 
-      try {
-        const sync = await apiClient.sync(lastSyncAt, token);
-        setThreads(current =>
-          mergeThreads(
-            current,
-            buildThreadsFromSync(sync.threads, sync.messagesByThread),
-          ),
-        );
-        if (sync.notices) {
-          setNotices(sync.notices);
-        }
-        if (typeof sync.unreadNoticeCount === 'number') {
-          setUnreadNoticeCount(sync.unreadNoticeCount);
-        }
-        setLastSyncAt(sync.serverTime);
-      } catch (error) {
-        if (showError) {
-          setErrorMessage(
-            error instanceof Error ? error.message : '增量同步失败。',
-          );
-        }
+      if (syncPromiseRef.current) {
+        return syncPromiseRef.current;
       }
+
+      const request = (async () => {
+        try {
+          const sync = await apiClient.sync(
+            lastSyncAtRef.current,
+            currentToken,
+          );
+          if (tokenRef.current !== currentToken) {
+            return;
+          }
+          setThreads(current =>
+            mergeThreads(
+              current,
+              buildThreadsFromSync(sync.threads, sync.messagesByThread),
+            ),
+          );
+          if (sync.notices) {
+            setNotices(sync.notices);
+          }
+          if (typeof sync.unreadNoticeCount === 'number') {
+            setUnreadNoticeCount(sync.unreadNoticeCount);
+          }
+          lastSyncAtRef.current = sync.serverTime;
+        } catch (error) {
+          if (showError) {
+            setErrorMessage(
+              error instanceof Error ? error.message : '增量同步失败。',
+            );
+          }
+        }
+      })();
+
+      syncPromiseRef.current = request;
+      request.then(
+        () => {
+          if (syncPromiseRef.current === request) {
+            syncPromiseRef.current = null;
+          }
+        },
+        () => {
+          if (syncPromiseRef.current === request) {
+            syncPromiseRef.current = null;
+          }
+        },
+      );
+      return request;
     },
-    [lastSyncAt, token],
+    [],
   );
 
   const { refreshNotifications, markNotificationsRead, markNotificationRead } =
@@ -272,7 +329,6 @@ export function useMiaoxunSession() {
     token,
     userId: user?.id,
     activeThreadIdRef,
-    refreshBootstrap,
     refreshNotifications,
     incrementalSync,
     setThreads,
@@ -371,7 +427,7 @@ export function useMiaoxunSession() {
       await apiClient.logout(currentToken);
     }
     await tokenStore.clear().catch(() => undefined);
-    setToken('');
+    updateToken('');
     setUser(null);
     setProfile(emptyProfile);
     setThreads([]);
@@ -384,11 +440,11 @@ export function useMiaoxunSession() {
     setSearchHistory([]);
     setRelationships(emptyRelationships);
     setStationContent(emptyStationContent);
-    setLastSyncAt(null);
+    lastSyncAtRef.current = null;
     activeThreadIdRef.current = null;
     setErrorMessage(null);
     setRestoreStatus('signedOut');
-  }, [token]);
+  }, [token, updateToken]);
 
   const retryRestoreSession = useCallback(async () => {
     const savedToken = await tokenStore.read();
@@ -401,7 +457,7 @@ export function useMiaoxunSession() {
     setErrorMessage(null);
     try {
       await refreshBootstrap(savedToken, false);
-      setToken(savedToken);
+      updateToken(savedToken);
       setRestoreStatus('authenticated');
     } catch (error) {
       setErrorMessage(
@@ -409,7 +465,7 @@ export function useMiaoxunSession() {
       );
       if (isAuthSessionError(error)) {
         await tokenStore.clear().catch(() => undefined);
-        setToken('');
+        updateToken('');
         setRestoreStatus('signedOut');
       } else {
         setRestoreStatus('networkError');
@@ -417,7 +473,7 @@ export function useMiaoxunSession() {
     } finally {
       setIsBusy(false);
     }
-  }, [refreshBootstrap]);
+  }, [refreshBootstrap, updateToken]);
 
   const {
     resolveScanPayload,

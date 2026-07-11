@@ -290,6 +290,46 @@ export async function createStationDiaryEntry({ userId, title, body, mood = "", 
   return mapStationDiaryEntry(rows[0]);
 }
 
+export async function updateStationDiaryEntry({
+  userId,
+  entryId,
+  title,
+  body,
+  mood,
+  visibility,
+}) {
+  const rows = await query(
+    `UPDATE station_diary_entries
+    SET
+      title = COALESCE(?::text, title),
+      body = COALESCE(?::text, body),
+      mood = COALESCE(?::text, mood),
+      visibility = COALESCE(?::text, visibility)
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+    RETURNING *`,
+    [
+      title ?? null,
+      body ?? null,
+      mood ?? null,
+      visibility ?? null,
+      entryId,
+      userId,
+    ],
+  );
+  return rows[0] ? mapStationDiaryEntry(rows[0]) : null;
+}
+
+export async function deleteStationDiaryEntry({ userId, entryId }) {
+  const rows = await query(
+    `UPDATE station_diary_entries
+    SET deleted_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+    RETURNING id`,
+    [entryId, userId],
+  );
+  return rows.length > 0;
+}
+
 export async function getStationDiaryEntryForUser({ userId, diaryEntryId }) {
   const rows = await query(
     `SELECT *
@@ -311,6 +351,61 @@ export async function createStationAlbum({ userId, title, description = "", visi
     [id, userId, title, description, visibility],
   );
   return mapStationAlbum(rows[0]);
+}
+
+export async function updateStationAlbum({
+  userId,
+  albumId,
+  title,
+  description,
+  visibility,
+}) {
+  const rows = await query(
+    `WITH updated AS (
+      UPDATE station_albums
+      SET
+        title = COALESCE(?::text, title),
+        description = COALESCE(?::text, description),
+        visibility = COALESCE(?::text, visibility)
+      WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+      RETURNING *
+    )
+    SELECT
+      updated.*,
+      (
+        SELECT COUNT(m.id)
+        FROM station_media_assets m
+        WHERE
+          m.album_id = updated.id
+          AND m.deleted_at IS NULL
+          AND m.status <> 'deleted'
+      ) AS media_count
+    FROM updated`,
+    [title ?? null, description ?? null, visibility ?? null, albumId, userId],
+  );
+  return rows[0] ? mapStationAlbum(rows[0]) : null;
+}
+
+export async function deleteStationAlbum({ userId, albumId }) {
+  return withTransaction(async (connection) => {
+    const rows = await connection.query(
+      `UPDATE station_albums
+      SET deleted_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+      RETURNING id`,
+      [albumId, userId],
+    );
+    if (!rows.length) {
+      return false;
+    }
+    await connection.query(
+      `UPDATE station_media_assets
+      SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP
+      WHERE album_id = ? AND user_id = ? AND deleted_at IS NULL`,
+      [albumId, userId],
+    );
+    return true;
+  });
 }
 
 export async function createStationMediaAsset({
@@ -345,6 +440,126 @@ export async function createStationMediaAsset({
     [id, userId, albumId, kind, originalFilename, mimeType, byteSize, width, height, caption, JSON.stringify(tags), JSON.stringify(metadata)],
   );
   return mapStationMediaAsset(rows[0]);
+}
+
+export async function updateStationMediaAsset({
+  userId,
+  mediaAssetId,
+  albumId,
+  caption,
+  hasAlbumId,
+}) {
+  if (hasAlbumId && albumId) {
+    const albums = await query(
+      "SELECT id FROM station_albums WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
+      [albumId, userId],
+    );
+    if (!albums.length) {
+      throw new HttpError(404, "Album not found");
+    }
+  }
+
+  const rows = await query(
+    `UPDATE station_media_assets
+    SET
+      album_id = CASE WHEN ?::boolean THEN ?::text ELSE album_id END,
+      caption = COALESCE(?::text, caption)
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+    RETURNING *`,
+    [
+      Boolean(hasAlbumId),
+      albumId ?? null,
+      caption ?? null,
+      mediaAssetId,
+      userId,
+    ],
+  );
+  return rows[0] ? mapStationMediaAsset(rows[0]) : null;
+}
+
+export async function deleteStationMediaAsset({ userId, mediaAssetId }) {
+  const rows = await query(
+    `UPDATE station_media_assets
+    SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+    RETURNING *`,
+    [mediaAssetId, userId],
+  );
+  return rows[0] ? mapStationMediaAsset(rows[0]) : null;
+}
+
+export async function getStationMediaAssetForUser({ userId, mediaAssetId }) {
+  const rows = await query(
+    `SELECT *
+    FROM station_media_assets
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+    LIMIT 1`,
+    [mediaAssetId, userId],
+  );
+  return rows[0] ? mapStationMediaAsset(rows[0]) : null;
+}
+
+export async function prepareStationMediaAssetUpload({
+  userId,
+  mediaAssetId,
+  storageProvider,
+  storageKey,
+  mimeType,
+  byteSize = null,
+}) {
+  const rows = await query(
+    `UPDATE station_media_assets
+    SET
+      storage_provider = ?,
+      storage_key = ?,
+      mime_type = COALESCE(NULLIF(?, ''), mime_type),
+      byte_size = COALESCE(?::integer, byte_size)
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL AND status = 'pending_upload'
+    RETURNING *`,
+    [
+      storageProvider,
+      storageKey,
+      mimeType || "",
+      byteSize,
+      mediaAssetId,
+      userId,
+    ],
+  );
+  return rows[0] ? mapStationMediaAsset(rows[0]) : null;
+}
+
+export async function markStationMediaAssetUploaded({
+  userId,
+  mediaAssetId,
+  storageKey,
+  mimeType,
+  byteSize,
+  metadata = {},
+}) {
+  const rows = await query(
+    `UPDATE station_media_assets
+    SET
+      status = 'uploaded',
+      mime_type = ?,
+      byte_size = ?,
+      metadata = COALESCE(metadata, '{}'::jsonb) || ?::jsonb
+    WHERE
+      id = ?
+      AND user_id = ?
+      AND deleted_at IS NULL
+      AND status = 'pending_upload'
+      AND storage_key = ?
+    RETURNING *`,
+    [
+      mimeType,
+      byteSize,
+      JSON.stringify(metadata),
+      mediaAssetId,
+      userId,
+      storageKey,
+    ],
+  );
+  return rows[0] ? mapStationMediaAsset(rows[0]) : null;
 }
 
 export async function updateStationMediaAssetTags({

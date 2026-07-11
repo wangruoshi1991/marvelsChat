@@ -261,6 +261,22 @@ Uploaded MiaoxunRN
 
 2026-07-07 已上传 iOS `1.0 (13)`，`CURRENT_PROJECT_VERSION=13`。该 build 用于验证去地图化位置确认、小站首页日记 4 格/相册 3 项展示、以及后端日记/相册/媒体资产更新和软删除接口。服务器已同步 `location-service.js`、`station-repository.js`、`station-routes.js`、`schemas.js` 到 `/opt/projects/marvels-chat/app/backend` 并重启 `marvels-chat-backend`；高德采样验证返回 `community=桂溪街道`、`activityArea=交子商圈`。本次 TestFlight 仍采用域名实名完成前的临时 API `http://8.153.167.11`，归档内确认 `CFBundleVersion=13` 和 `MiaoxunAPIBaseURL=http://8.153.167.11`；上传返回 `Uploaded MiaoxunRN` 和 `** EXPORT SUCCEEDED **`。上传仍出现 MapLibre、React、ReactNativeDependencies、hermesvm 第三方 framework dSYM warning，不阻止 TestFlight 安装，但会影响对应 framework 崩溃符号化。
 
+## 2026-07-10 Build 23 Foundation
+
+后端已从 `codex/build23-foundation` 部署到 `/opt/projects/marvels-chat/app/backend`。部署恢复日记、相册和媒体资产的 PATCH/DELETE 接口，以及媒体 `upload-url`、`upload-complete` 和鉴权文件读取接口；保留线上已有的 Agent 限流与自助授权 schema。无数据库迁移。
+
+部署前备份位于：
+
+```text
+/opt/projects/marvels-chat/app/deploy-backups/backend-build23-foundation-20260710-183335
+```
+
+远端 `npm run check` 和 14 项既有/新增测试通过，新增 station 路由与 schema 4 项测试单独通过。服务进程由 systemd `Restart=always` 拉起，新进程健康检查 `http://127.0.0.1:4390/api/health` 与外网 `http://8.153.167.11/api/health` 均返回 200。
+
+使用专用测试账号完成并清理了真实闭环：登录、bootstrap、日记创建/更新/删除、相册创建/更新/删除、媒体元数据创建、OSS 签名上传、OSS HEAD 校验、上传完成、鉴权代理读取、媒体更新/删除全部返回预期 2xx。日志不包含密码、token 或 OSS 签名 URL。
+
+回滚时恢复上述备份中的 4 个 source 文件并终止当前 Node 主进程；systemd 会在 5 秒后按现有 `Restart=always` 策略重新拉起。回滚后必须再次检查本机与外网 health。
+
 2026-06-24 本地 iPhone 连接设备 `7501195F-00E2-58E2-88E4-F3D68C3CBD0A` 已成功构建 Debug 包，签名为 Apple Development: Rose Wang，API 指向 `https://miaoxun-api.pizelife.com`。安装时设备上已有 TestFlight 版妙讯，`devicectl` 返回同 Bundle ID 已存在 App Store 安装协调记录，USB Debug 包不能直接覆盖 TestFlight 版；需要先在手机 TestFlight 更新到当前可用最新构建，或用户确认卸载现有 TestFlight 版后再安装 Debug 包。
 
 正式上架 App Store 前，必须继续补 APNs 推送、隐私说明、账号找回/验证、内容审核和未接入模块的产品状态；当前阶段建议只走 TestFlight 给朋友测试。

@@ -359,3 +359,17 @@ TestFlight 手机端必须安装包含本次原生补丁的新 build 后才能�
 2026-07-09 已将 iOS TestFlight build 升到 `1.0 (16)` 并上传 App Store Connect。该 build 将 Release API Base 改为 `http://8.153.167.11/api`，客户端 `buildApiUrl` 会自动处理业务 path 是否带 `/api`，避免 `/api/api` 或漏 `/api`；WebSocket 和地图 style URL 也统一走同一构造规则。网络层新增安全日志，输出 method、最终 URL、状态码、脱敏后的响应摘要和环境名，不输出密码、token、API key、OSS key 或用户隐私正文。AI 伙伴页已接入功能类 Agent API：`site-drafts`、`model-jobs`、`file-assets`、`album-suggestions`、`comic-diaries`、`video-drafts`，并展示 `/api/app/bootstrap` 返回的 `agentReadiness`。上传前已完成 `npm run lint -- --max-warnings=0`、`npx tsc --noEmit`、`npm test -- --runInBand`、Release archive；archive 内确认 `CFBundleVersion=16`，`MiaoxunAPIBaseURL=http://8.153.167.11/api`。同时用 curl 确认 `http://8.153.167.11/api/health` 返回 200，未登录访问 `http://8.153.167.11/api/station/site-drafts` 返回 401，`https://miaoxun-api.pizelife.com/api/health` 当前仍返回 502。上传返回 `Uploaded MiaoxunRN` / `** EXPORT SUCCEEDED **`。上传仍存在 MapLibre、React、ReactNativeDependencies、hermesvm 第三方 framework dSYM 缺失 warning；不阻止 TestFlight 分发，但会影响这些 framework 的崩溃符号化。
 
 2026-07-09 已将 iOS TestFlight build 升到 `1.0 (17)` 并上传 App Store Connect。该 build 延续 build 16 的临时服务器策略，Release API Base 明确为 `http://8.153.167.11/api`，用于域名实名和 HTTPS 完成前验证后端 Agent 接口效果。上传前已确认 archive 内 `CFBundleShortVersionString=1.0`、`CFBundleVersion=17`、`MiaoxunAPIBaseURL=http://8.153.167.11/api`；已完成 `npm run lint -- --max-warnings=0`、`npx tsc --noEmit`、`npm test -- --runInBand`、后端 `npm run check`。同时用 curl 确认 `http://8.153.167.11/api/health` 返回 200，数据库连接正常，未登录访问 `http://8.153.167.11/api/station/site-drafts` 返回 401，说明接口存在且鉴权生效。上传返回 `Uploaded MiaoxunRN` / `** EXPORT SUCCEEDED **`。上传仍存在 MapLibre、React、ReactNativeDependencies、hermesvm 第三方 framework dSYM 缺失 warning；不阻止 TestFlight 分发，但会影响这些 framework 的崩溃符号化。若 Cursor 中 `MiaoxunRN/src/App.tsx` 仍显示未保存冲突，必须先 Compare 并合并，不能直接覆盖磁盘版本；当前 `1.0 (17)` 使用的是磁盘上的 `App.tsx`。
+
+## Build 23 Candidate
+
+`codex/build23-foundation` 包含 build 23 必须合入的移动端同步修复。旧实现会在增量游标更新后重建 `incrementalSync` 和 WebSocket effect，新的 socket 再通过 `connection.ready` 请求完整 bootstrap，形成持续请求循环。新实现使用 ref 保存游标、合并并发 bootstrap/sync 请求，并在 `connection.ready` 时只执行一次增量补偿。回归测试确认一次登录只建立一个 WebSocket、只 bootstrap 一次。
+
+App 负责人需要从该分支生成 `1.0 (23)`：
+
+1. 执行 `npm ci`、`npx tsc --noEmit`、`npm run lint -- --max-warnings=0`、`npm test -- --runInBand`。
+2. 将 `CURRENT_PROJECT_VERSION` 设置为 `23`，Release 继续临时使用 `http://8.153.167.11/api`，并按现有守卫设置 `MIAOXUN_TEMP_IP_TESTFLIGHT=1`。
+3. Archive 后检查包内 `CFBundleShortVersionString=1.0`、`CFBundleVersion=23`、`MiaoxunAPIBaseURL=http://8.153.167.11/api`，再上传 App Store Connect。
+4. Apple 处理完成后，将 build 23 加入当前内外部 TestFlight 群组；公开链接保持 `https://testflight.apple.com/join/jKSqUnYU`。
+5. 真机验收登录后静置至少 2 分钟，服务器不应再出现每秒 bootstrap/sync；随后验证日记编辑/删除、相册编辑/删除、照片上传、照片读取和删除。
+
+后端部分已经于 2026-07-10 部署并完成真实 OSS 闭环，因此 build 22 可以立即验证恢复后的媒体接口，但 build 22 本身仍包含同步循环。只有安装 build 23 后才能验收移动端同步修复。
