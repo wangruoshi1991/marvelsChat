@@ -277,6 +277,29 @@ Uploaded MiaoxunRN
 
 回滚时恢复上述备份中的 4 个 source 文件并终止当前 Node 主进程；systemd 会在 5 秒后按现有 `Restart=always` 策略重新拉起。回滚后必须再次检查本机与外网 health。
 
+## 2026-07-11 iOS 1.0 (23)
+
+已将 PR #1 完整合入 `feat/miaoxun-scaffold`，发布 iOS TestFlight `1.0 (23)`。本次移动端同步修复使用 ref 保存增量同步游标，合并并发 bootstrap/sync 请求，并让 `connection.ready` 只触发 `incrementalSync(false)`，避免恢复会话后重复 bootstrap 和 WebSocket 重建。
+
+发布前已完成：
+
+- `npm ci`
+- `npx tsc --noEmit`
+- `npm run lint -- --max-warnings=0`
+- `npm test -- --runInBand`，3 个 suite、4 个测试通过。
+
+Release archive 内确认：
+
+```text
+CFBundleShortVersionString = 1.0
+CFBundleVersion = 23
+MiaoxunAPIBaseURL = http://8.153.167.11/api
+```
+
+包内未发现 `https://miaoxun-api.pizelife.com`、`http://8.153.167.11/api/api` 或 `http://8.153.167.11/station/`。上传返回 `Uploaded MiaoxunRN` 和 `** EXPORT SUCCEEDED **`；MapLibre、React、ReactNativeDependencies、hermesvm dSYM warning 仍存在，不阻止 TestFlight 分发。App Store Connect 已处理完成，`1.0 (23)` 状态为“正在测试”，已加入内部和外部 TestFlight 群组 `YU yunzhi`；外部公开链接仍为 `https://testflight.apple.com/join/jKSqUnYU`。
+
+尚未完成的是安装 build 23 后的真机 2 分钟网络验收；需要测试账号登录后确认不会再出现每秒 bootstrap/sync 或 WebSocket 重建，并继续验证日记、相册、照片上传和 Agent 接口闭环。
+
 2026-06-24 本地 iPhone 连接设备 `7501195F-00E2-58E2-88E4-F3D68C3CBD0A` 已成功构建 Debug 包，签名为 Apple Development: Rose Wang，API 指向 `https://miaoxun-api.pizelife.com`。安装时设备上已有 TestFlight 版妙讯，`devicectl` 返回同 Bundle ID 已存在 App Store 安装协调记录，USB Debug 包不能直接覆盖 TestFlight 版；需要先在手机 TestFlight 更新到当前可用最新构建，或用户确认卸载现有 TestFlight 版后再安装 Debug 包。
 
 正式上架 App Store 前，必须继续补 APNs 推送、隐私说明、账号找回/验证、内容审核和未接入模块的产品状态；当前阶段建议只走 TestFlight 给朋友测试。
