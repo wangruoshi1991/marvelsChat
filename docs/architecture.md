@@ -5,7 +5,6 @@
 根目录不承载统一依赖包。具体依赖分别放在：
 
 - `MiaoxunRN/package.json`：正式移动端 React Native 工程依赖。
-- `MiaoxunApp/`：SwiftUI 原型目录，用作历史实现和设计参考。
 - `admin/package.json`：后台管理系统前端构建和界面依赖。
 - `backend/package.json`：Node.js API、PostgreSQL、鉴权、Agent 编排依赖。
 - `agents/package.json`：Agent 注册和定义。
@@ -17,11 +16,11 @@ MiaoxunRN/admin -> backend -> PostgreSQL / agents / provider
 ```
 
 - `MiaoxunRN`：正式移动端主线。采用 React Native，并通过 iOS 原生工程接入 Keychain、权限、启动配置和后续推送能力。
-- `MiaoxunApp`：SwiftUI 原型目录，保留历史实现与设计参考。
 - `admin`：后台管理系统前端。当前为 Vite + 原生 JavaScript/CSS，调用 `/api/admin/*`，但不单独拥有后台后端服务。
 - `backend`：Node.js + Express API、鉴权、PostgreSQL、运营管理、Agent 编排、New API 中转。
 - `backend/database`：PostgreSQL schema，当前包含用户、资料、会话、消息、事件、Agent 运行记录、社交关系、好友申请、通知和搜索历史。
 - `agents`：每个 Agent 独立声明能力、权限、提示词计划和 fallback。
+- `python`：当前没有 Python 工程；后续如接入媒体生成、文件解析、模型处理或长任务队列，应作为独立 worker/service 引入，不混入 RN 或 Node API 进程。
 - `docs`：任何结构和接口变化都要同步记录。
 
 ## 移动端技术栈
@@ -71,7 +70,7 @@ src/services/location.ts
 
 ## 后端技术栈
 
-后端采用 Node.js + Express + PostgreSQL：
+后端采用 Node.js + Express + PostgreSQL。当前没有 Python 后端；Python 只作为后续 AI/媒体/文件处理 worker 的候选技术，不作为现阶段主 API 技术栈。
 
 - `Express`：提供 REST API、鉴权中间件、后台管理接口。
 - `PostgreSQL`：保存用户、资料、会话、消息、授权、事件和 Agent 运行记录。

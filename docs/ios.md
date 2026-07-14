@@ -1,11 +1,10 @@
 # iOS 客户端规划
 
-妙讯正式 iOS App 当前以 `MiaoxunRN/` 为主开发目录，采用 React Native 承接上线实现；`MiaoxunApp/` 保留为 SwiftUI 原型和交互参考，不再作为当前正式移动端主线。
+妙讯正式 iOS App 当前以 `MiaoxunRN/` 为唯一移动端主线，采用 React Native 承接上线实现。旧 SwiftUI 原型已从主工程移除。
 
 ## 客户端边界
 
 - `MiaoxunRN/`：正式 iOS App 主线，包含 React Native 业务代码和 iOS 原生工程。
-- `MiaoxunApp/`：SwiftUI 原型，保留历史页面、视觉和信息架构参考。
 - `admin/`：后台管理系统前端，只面向管理端使用。
 - `backend/`：唯一业务 API、鉴权、数据库、Agent 编排和模型供应商接入层。
 

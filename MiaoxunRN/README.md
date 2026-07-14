@@ -4,8 +4,7 @@
 
 ## 定位
 
-- `MiaoxunApp/`：SwiftUI 原型，保留现有实现和样式参考。
-- `MiaoxunRN/`：后续正式迁移目标，逐步替换移动端实现。
+`MiaoxunRN/` 是妙讯唯一正式移动端主线，承接 iOS 和 Android 上线实现。历史 SwiftUI 原型已从主工程移除，后续新增能力都应落在 React Native 业务层或明确的原生薄桥接中。
 
 ## 当前状态
 

@@ -6,7 +6,6 @@
 
 ```text
 marvelsChat/
-  MiaoxunApp/             # SwiftUI 原型目录，保留当前实现与设计参考
   MiaoxunRN/              # React Native 正式实现目录
   admin/           # 后台管理系统前端
   backend/         # Node.js API，承接登录、数据库、管理、Agent 调用
@@ -18,17 +17,17 @@ marvelsChat/
 
 ## 技术栈边界
 
-- 移动端：当前保留 SwiftUI 原型 `MiaoxunApp/`，新的正式实现迁移到 `MiaoxunRN/`。原生能力如钥匙串、推送、文件权限仍通过 iOS / Android 原生层接入。
+- 移动端：`MiaoxunRN/` 是唯一正式 App 主线，采用 React Native + TypeScript；钥匙串、推送、文件权限等系统能力通过 iOS / Android 薄原生层接入。
 - 后台管理前端：独立 `admin/` 工程，当前为 Vite + 原生 JavaScript/CSS，后续也可迁 Vue。它只调用 `/api/admin/*` 和认证接口，不单独拥有后端服务。
 - 后端：Node.js + Express + 数据库层。当前实现使用 PostgreSQL。后端负责 API、鉴权、数据读写、后台管理、Agent 注册、Agent 调用编排、模型供应商适配和审计记录。
 - Agent：独立放在 `agents/` 工程。Agent 以声明式文件注册能力、权限和提示词计划，由后端运行时加载。前端只消费后端返回的 Agent 列表、授权状态和消息结果。
+- Python：当前主工程尚未接入 Python 服务；只有当后续需要独立 AI 任务队列、视频/图片/3D 模型处理、文件解析等 Node.js 不适合长期承载的能力时，再作为独立 worker/service 引入，并通过后端 API 或队列调用。
 
 React Native 是当前正式移动端主线，iOS 上线能力通过 `MiaoxunRN/ios` 原生工程接入。Agent 接入复杂度主要在后端编排、权限、任务状态、流式输出和审计，不在移动端框架本身。后续 iOS 和后台管理都应优先保持现有 `/api` 合约稳定。
 
 ## 当前状态
 
-- SwiftUI 原型客户端已保留在 `MiaoxunApp/`。
-- React Native 正式实现目录已建立 `MiaoxunRN/`。
+- React Native 正式实现目录为 `MiaoxunRN/`，旧 SwiftUI 原型目录已从主工程移除。
 - `MiaoxunRN` 通过自有原生配置桥接 `MiaoxunConfigModule` 显式读取 API 地址；iOS 来源是 `Info.plist` 的 `MiaoxunAPIBaseURL`，Android 来源是 `BuildConfig.MIAOXUN_API_BASE_URL`，缺失或格式错误会直接报错，不静默切换到示例地址。
 - 未登录状态只展示登录/注册页，不展示原型账号、预览聊天或前端假会话。
 - 移动端注册使用唯一昵称作为用户名；用户可用昵称、手机号或邮箱登录。注册或改名时如果昵称已存在，后端返回“名称已使用”。
@@ -38,7 +37,7 @@ React Native 是当前正式移动端主线，iOS 上线能力通过 `MiaoxunRN/
 - 后端已提供健康检查、认证、应用启动数据、消息、事件采集和后台管理 API。
 - 后台管理系统位于 `admin/`，用于创建账号、管理用户状态/角色/资料/登录态/Agent 授权、重置密码，并查看活跃、消息、事件和 Agent 调用记录。
 - 后台管理页使用独立登录态，不复用 App 本地登录缓存；App 登录页也不再提供后台跳转。
-- Agent 已独立成 `agents/`，目前只有 `miaoxun-butler.agent.js` 作为第一个真实注册 Agent。
+- Agent 已独立成 `agents/`，当前包含妙讯管家和建站、3D、文件预处理、相册整理、漫画日记、视频制作等功能类 Agent 注册文件。
 - `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL` 配置完整时，妙讯管家会走 OpenAI-compatible 模型接口；当前本地测试使用 Z.AI GLM。未配置时不会伪造 token 或假装已接入模型。
 - 扫码看主页、关注、好友申请、好友通过通知和通知未读已接入真实后端表与 API；扫码结果必须经后端解析 AI ID 后才打开用户主页。
 - 小站社交页已展示真实关注、粉丝和好友列表；搜索页已接入真实用户搜索和最近搜索记录；设置页已接入主页展示开关，公开主页会按后端可见性策略隐藏字段。
@@ -161,7 +160,7 @@ feat/miaoxun-scaffold
 ## 开发原则
 
 1. 前端、后端、Agent 分目录独立维护；根目录不放统一 `package.json`、`package-lock.json` 或 `node_modules`。
-2. `MiaoxunApp/` 作为 SwiftUI 原型保留，`MiaoxunRN/` 作为正式移动端方向推进。
+2. `MiaoxunRN/` 是唯一正式移动端方向；历史原型不再保留在主工程。
 3. 关键业务数据必须来自 `backend` 和数据库；数据库不可用时 API 返回明确错误，不回退到前端假数据。
 4. 每次新增能力时，同步更新 `README.md` 和 `docs/`。
 5. Agent 独立放在 `agents/`，由后端注册和调用，客户端只消费 API。
