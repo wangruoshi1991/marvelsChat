@@ -17,15 +17,20 @@ import { LegalPage } from "./legal";
 const defaultFetcher: typeof fetch = (...args) => globalThis.fetch(...args);
 
 const endpointForRoute = (route: HomepageRoute) => {
-  if (route.mode === "preview") return `/api/homepage-previews/${encodeURIComponent(route.token)}`;
-  if (route.mode === "share") return `/api/homepage-shares/${encodeURIComponent(route.token)}`;
+  if (route.mode === "preview")
+    return `/api/homepage-previews/${encodeURIComponent(route.token)}`;
+  if (route.mode === "share")
+    return `/api/homepage-shares/${encodeURIComponent(route.token)}`;
   return null;
 };
 
 const mediaForSection = (
   section: HomepageSection,
   mediaById: Map<string, HomepageMedia>,
-) => section.assetIds.map((id) => mediaById.get(id)).filter(Boolean) as HomepageMedia[];
+) =>
+  section.assetIds
+    .map((id) => mediaById.get(id))
+    .filter(Boolean) as HomepageMedia[];
 
 function MediaImage({
   media,
@@ -91,7 +96,9 @@ function SectionView({
         {section.body ? <p className="section-body">{section.body}</p> : null}
         {media.length ? (
           <div className="section-media-row">
-            {media.map((item) => <MediaImage key={item.id} media={item} />)}
+            {media.map((item) => (
+              <MediaImage key={item.id} media={item} />
+            ))}
           </div>
         ) : null}
       </div>
@@ -111,17 +118,33 @@ export function HomepagePage({ view }: { view: HomepagePageView }) {
   const stripMedia = view.media.slice(0, 9);
 
   return (
-    <main className={`homepage ${themeClass(view.page.theme)}`} lang={view.page.language}>
-      {view.mode === "preview" ? <div className="preview-marker">预览</div> : null}
-      <section className={`homepage-hero ${cover ? "has-cover" : "without-cover"}`}>
+    <main
+      className={`homepage ${themeClass(view.page.theme)}`}
+      lang={view.page.language}
+    >
+      {view.mode === "preview" ? (
+        <div className="preview-marker">预览</div>
+      ) : null}
+      <section
+        className={`homepage-hero ${cover ? "has-cover" : "without-cover"}`}
+      >
         <div className="hero-media" aria-hidden={!cover}>
-          {cover ? <MediaImage media={cover} eager /> : <div className="media-placeholder" />}
+          {cover ? (
+            <MediaImage media={cover} eager />
+          ) : (
+            <div className="media-placeholder" />
+          )}
         </div>
         <div className="hero-copy">
-          <p className="owner-name">{view.owner.nickname || view.owner.avatarText}</p>
+          <p className="owner-name">
+            {view.owner.nickname || view.owner.avatarText}
+          </p>
+          <p className="ai-content-marker">AI 生成内容</p>
           <h1>{hero?.title || view.page.title}</h1>
           {hero?.subtitle || view.page.summary ? (
-            <p className="hero-summary">{hero?.subtitle || view.page.summary}</p>
+            <p className="hero-summary">
+              {hero?.subtitle || view.page.summary}
+            </p>
           ) : null}
         </div>
         {stripMedia.length ? (
@@ -135,10 +158,13 @@ export function HomepagePage({ view }: { view: HomepagePageView }) {
         ) : null}
       </section>
 
-      {view.owner.bio && !remaining.some((section) => section.type === "about") ? (
+      {view.owner.bio &&
+      !remaining.some((section) => section.type === "about") ? (
         <section className="content-section section-about">
           <div className="section-inner text-section-inner">
-            <header className="section-heading"><h2>关于我</h2></header>
+            <header className="section-heading">
+              <h2>关于我</h2>
+            </header>
             <p className="section-body">{view.owner.bio}</p>
           </div>
         </section>
@@ -189,10 +215,13 @@ export function HomepageApp({
       signal: controller.signal,
     })
       .then(async (response) => {
-        const body = await response.json() as HomepageApiEnvelope;
+        const body = (await response.json()) as HomepageApiEnvelope;
         if (!response.ok || !body.data) {
           throw Object.assign(new Error("unavailable"), {
-            requestId: body.error?.requestId || response.headers.get("x-request-id") || "",
+            requestId:
+              body.error?.requestId ||
+              response.headers.get("x-request-id") ||
+              "",
           });
         }
         setState({ kind: "ready", view: body.data });
@@ -215,7 +244,11 @@ export function HomepageApp({
 
 function LoadingPage() {
   return (
-    <main className="state-page loading-page" aria-busy="true" aria-label="正在加载主页">
+    <main
+      className="state-page loading-page"
+      aria-busy="true"
+      aria-label="正在加载主页"
+    >
       <div className="loading-identity" />
       <div className="loading-photo" />
       <div className="loading-line" />
@@ -235,7 +268,11 @@ function UnavailablePage({
       <p className="wordmark">妙讯</p>
       <h1>这个主页暂时无法访问</h1>
       <p>链接可能已失效或被撤销。</p>
-      {onRetry ? <button type="button" onClick={onRetry}>重新加载</button> : null}
+      {onRetry ? (
+        <button type="button" onClick={onRetry}>
+          重新加载
+        </button>
+      ) : null}
       {requestId ? <p className="request-id">诊断编号 {requestId}</p> : null}
     </main>
   );

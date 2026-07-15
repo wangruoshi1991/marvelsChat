@@ -259,6 +259,7 @@ describe('HomepageScreen', () => {
     });
 
     expect(renderedText(renderer)).toContain('基础版已生成');
+    expect(renderedText(renderer)).toContain('AI 生成内容');
     expect(renderedText(renderer)).toContain(fallbackDraft.draft.title);
     await unmountScreen(renderer);
   });

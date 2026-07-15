@@ -259,22 +259,27 @@ export function HomepageEditor({
       contentContainerStyle={homepageStyles.content}
       keyboardShouldPersistTaps="handled"
     >
-      {siteDraft.source === 'fallback' ? (
-        <View
-          style={[
-            homepageStyles.statusBand,
-            { backgroundColor: palette.soft, borderLeftColor: palette.sun },
-          ]}
-        >
-          <Text style={[homepageStyles.statusText, { color: palette.text }]}>
-            {textFor(
-              language,
-              '基础版已生成，可直接使用，也可以继续修改。',
-              'A basic version is ready. Use it now or keep editing.',
-            )}
-          </Text>
-        </View>
-      ) : null}
+      <View
+        testID="homepage-ai-marker"
+        style={[
+          homepageStyles.statusBand,
+          { backgroundColor: palette.soft, borderLeftColor: palette.sun },
+        ]}
+      >
+        <Text style={[homepageStyles.statusText, { color: palette.text }]}>
+          {siteDraft.source === 'fallback'
+            ? textFor(
+                language,
+                'AI 生成内容。基础版已生成，可直接使用，也可以继续修改。',
+                'AI-generated content. A basic version is ready. Use it now or keep editing.',
+              )
+            : textFor(
+                language,
+                'AI 生成内容，请检查后再发布。',
+                'AI-generated content. Review it before publishing.',
+              )}
+        </Text>
+      </View>
 
       <Text
         style={[homepageStyles.overviewTitle, { color: palette.text }]}

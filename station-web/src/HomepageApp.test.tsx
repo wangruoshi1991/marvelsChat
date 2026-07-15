@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { HomepagePage } from "./HomepageApp";
+import { LegalPage } from "./legal";
 import type { HomepagePageView } from "./homepageTypes";
 
 const view: HomepagePageView = {
@@ -66,6 +67,7 @@ describe("HomepagePage", () => {
 
     expect(html).toContain("theme-gallery");
     expect(html).toContain("小妙的夏天");
+    expect(html).toContain("AI 生成内容");
     expect(html).toContain("https://media.invalid/photo-2");
     expect(html).toContain("亲自选择的生活片段");
     expect(html).not.toContain("隐藏的私人文字");
@@ -73,10 +75,23 @@ describe("HomepagePage", () => {
 
   it("uses the clean theme without changing content order", () => {
     const html = renderToStaticMarkup(
-      <HomepagePage view={{ ...view, page: { ...view.page, theme: "clean" } }} />,
+      <HomepagePage
+        view={{ ...view, page: { ...view.page, theme: "clean" } }}
+      />,
     );
 
     expect(html).toContain("theme-clean");
     expect(html.indexOf("小妙的夏天")).toBeLessThan(html.indexOf("照片"));
+  });
+});
+
+describe("LegalPage", () => {
+  it("identifies the Build 24 policies as internal legal-review drafts", () => {
+    const privacy = renderToStaticMarkup(<LegalPage document="privacy" />);
+    const terms = renderToStaticMarkup(<LegalPage document="terms" />);
+
+    expect(privacy).toContain("内部测试草案");
+    expect(privacy).toContain("法务审核");
+    expect(terms).toContain("AI 生成内容");
   });
 });
