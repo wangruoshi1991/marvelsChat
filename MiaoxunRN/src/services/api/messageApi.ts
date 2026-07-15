@@ -53,6 +53,21 @@ export const messageApi = {
     });
   },
 
+  updateThreadPreferences(
+    threadId: string,
+    preferences: {muted: boolean},
+    token: string,
+  ) {
+    return request<{muted: boolean}>(
+      `/api/threads/${threadId}/preferences`,
+      {
+        method: 'PATCH',
+        token,
+        body: preferences,
+      },
+    );
+  },
+
   deleteMessage(threadId: string, messageId: string, token: string) {
     return request<{ ok: boolean }>(
       `/api/threads/${threadId}/messages/${messageId}`,

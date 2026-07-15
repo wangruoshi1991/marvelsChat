@@ -106,6 +106,7 @@ export type ThreadDTO = {
   peerAiId?: string | null;
   kind: string;
   pinned: boolean;
+  muted?: boolean;
   lastContent: string;
   lastMessageAt?: string | null;
   unreadCount: number;

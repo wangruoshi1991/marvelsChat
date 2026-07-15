@@ -1,17 +1,34 @@
 import React, {useState} from 'react';
-import {ActivityIndicator, Pressable, ScrollView, Text, View} from 'react-native';
-import {Bell, Database, UserCircle} from 'lucide-react-native';
+import {
+  ActivityIndicator,
+  Image,
+  type ImageSourcePropType,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 
+import {notificationIconAssets} from '../../assets/icons';
 import {Language, useMiaoxunSession} from '../session/useMiaoxunSession';
 import {displayText, textFor} from '../../shared/i18n';
 import {styles} from '../../shared/styles';
 import {Palette} from '../../shared/theme';
-import {IconComponent} from '../../shared/ui';
+
+function resolveNoticeIcon(kind: string): ImageSourcePropType {
+  if (kind.includes('collection') || kind.includes('favorite')) {
+    return notificationIconAssets.favoriteReminder;
+  }
+  if (kind.includes('order') || kind.includes('task')) {
+    return notificationIconAssets.orderAssistant;
+  }
+  return notificationIconAssets.general;
+}
 
 function NoticeRow({
   palette,
   language,
-  icon: Icon,
+  iconSource,
   title,
   message,
   status,
@@ -25,7 +42,7 @@ function NoticeRow({
 }: {
   palette: Palette;
   language: Language;
-  icon: IconComponent;
+  iconSource: ImageSourcePropType;
   title: string;
   message: string;
   status: string;
@@ -39,8 +56,12 @@ function NoticeRow({
 }) {
   return (
     <View style={[styles.noticeRow, {backgroundColor: palette.surface, borderColor: palette.border}]}>
-      <View style={[styles.noticeSymbol, {backgroundColor: `${palette.mint}24`}]}>
-        <Icon color={palette.mint} size={20} strokeWidth={2.4} />
+      <View style={styles.noticeSymbol}>
+        <Image
+          source={iconSource}
+          style={styles.noticeSymbolImage}
+          resizeMode="contain"
+        />
       </View>
       <View style={styles.noticeBody}>
         <View style={styles.noticeTitleRow}>
@@ -143,7 +164,7 @@ export function NoticeList({
               key={notice.id}
               palette={palette}
               language={language}
-              icon={notice.kind.includes('friend') ? UserCircle : notice.kind.includes('follow') ? Bell : Database}
+              iconSource={resolveNoticeIcon(notice.kind)}
               title={displayText(language, notice.title)}
               message={displayText(language, notice.body)}
               status={notice.readAt ? textFor(language, '已读', 'Read') : textFor(language, '未读', 'Unread')}

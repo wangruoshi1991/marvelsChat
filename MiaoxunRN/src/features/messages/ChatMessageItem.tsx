@@ -6,7 +6,8 @@ import {displayText, textFor} from '../../shared/i18n';
 import {styles} from '../../shared/styles';
 import {Palette} from '../../shared/theme';
 import {ChatMessage, ChatThread, Language} from '../session/useMiaoxunSession';
-import {AgentAvatarRenderer, UserAvatarRenderer} from './messageTypes';
+import {UserAvatarRenderer} from './messageTypes';
+import {AgentIconAvatar} from './AgentIconAvatar';
 import {
   messageTimeText,
   resolveAgentIdentity,
@@ -24,7 +25,6 @@ export function ChatMessageItem({
   agents,
   isDarkPalette,
   renderUserAvatar,
-  renderAgentAvatar,
   onOpenMessageMenu,
   onRetrySend,
 }: {
@@ -38,7 +38,6 @@ export function ChatMessageItem({
   agents: AgentDTO[];
   isDarkPalette: boolean;
   renderUserAvatar: UserAvatarRenderer;
-  renderAgentAvatar: AgentAvatarRenderer;
   onOpenMessageMenu: (
     item: ChatMessage,
     isMine: boolean,
@@ -167,15 +166,28 @@ export function ChatMessageItem({
     previousMessage,
     item,
   );
+  const threadAgent = thread.agentId
+    ? agents.find(agent => agent.key === thread.agentId)
+    : null;
+  const shouldShowAgentIcon =
+    Boolean(thread.agentId) && item.senderType !== 'user';
   const messageRow = isMine ? (
     <View style={styles.messageRowMine}>{bubble}</View>
   ) : (
     <View style={styles.messageRowAgent}>
-      {item.senderType === 'agent' && thread.agentId
-        ? renderAgentAvatar({
-            identity: resolveAgentIdentity(agents, thread.agentId),
-            small: true,
-          })
+      {shouldShowAgentIcon && thread.agentId
+        ? (
+            <AgentIconAvatar
+              agentId={thread.agentId}
+              category={threadAgent?.category}
+              identity={
+                threadAgent?.identity ||
+                resolveAgentIdentity(agents, thread.agentId)
+              }
+              palette={palette}
+              small
+            />
+          )
         : renderUserAvatar({
             text: item.senderName.slice(0, 1),
             config: thread.avatarConfig || undefined,

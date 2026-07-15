@@ -1,17 +1,27 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
 import {
+  Image,
+  type ImageSourcePropType,
+  Pressable,
+  Text,
+  View,
+} from 'react-native';
+import {
+  Circle,
   ChevronDown,
-  ChevronLeft,
-  MessageCircle,
-  UserCircle,
+  Settings,
   type LucideIcon,
 } from 'lucide-react-native';
 
+import {
+  contactIconAssets,
+  messageIconAssets,
+  stationPostIconAssets,
+} from '../assets/icons';
 import { Language } from '../features/session/useMiaoxunSession';
 import { textFor } from './i18n';
 import { styles } from './styles';
-import { Palette } from './theme';
+import { Palette, palettes } from './theme';
 
 export type IconComponent = LucideIcon;
 export type RootTab = 'messages' | 'station';
@@ -109,14 +119,18 @@ export function ChatHeader({
   palette,
   language,
   title,
+  subtitle,
+  subtitleStatus,
   onBack,
-  onOpenProfile,
+  onOpenSettings,
 }: {
   palette: Palette;
   language: Language;
   title: string;
+  subtitle?: string;
+  subtitleStatus?: 'online' | 'offline';
   onBack: () => void;
-  onOpenProfile?: () => void;
+  onOpenSettings?: () => void;
 }) {
   return (
     <View
@@ -133,31 +147,59 @@ export function ChatHeader({
         accessibilityLabel={textFor(language, '返回', 'Back')}
         hitSlop={10}
         onPress={onBack}
-        style={[
-          styles.chatBackButton,
-          { backgroundColor: palette.surface, borderColor: palette.border },
-        ]}
+        style={styles.chatBackButton}
       >
-        <ChevronLeft color={palette.mint} size={24} strokeWidth={3} />
+        <Image
+          source={contactIconAssets.back}
+          resizeMode="contain"
+          style={styles.chatBackIcon}
+        />
       </Pressable>
-      <Text
-        style={[styles.chatHeaderTitle, { color: palette.text }]}
-        numberOfLines={1}
-      >
-        {title}
-      </Text>
-      {onOpenProfile ? (
+      <View style={styles.chatHeaderTitleWrap}>
+        <Text
+          style={[styles.chatHeaderTitle, { color: palette.text }]}
+          numberOfLines={1}
+        >
+          {title}
+        </Text>
+        {subtitle ? (
+          <View style={styles.chatHeaderSubtitleRow}>
+            {subtitleStatus ? (
+              <Circle
+                color={
+                  subtitleStatus === 'online' ? '#34C759' : '#FF3B30'
+                }
+                fill={
+                  subtitleStatus === 'online' ? '#34C759' : '#FF3B30'
+                }
+                size={7}
+                strokeWidth={0}
+              />
+            ) : null}
+            <Text
+              style={[
+                styles.chatHeaderSubtitle,
+                { color: palette.secondaryText },
+              ]}
+              numberOfLines={1}
+            >
+              {subtitle}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+      {onOpenSettings ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={textFor(language, '查看主页', 'View profile')}
+          accessibilityLabel={textFor(language, '聊天设置', 'Chat settings')}
           hitSlop={10}
-          onPress={onOpenProfile}
+          onPress={onOpenSettings}
           style={[
-            styles.chatHeaderProfileButton,
+            styles.chatHeaderActionButton,
             { backgroundColor: palette.surface, borderColor: palette.border },
           ]}
         >
-          <UserCircle color={palette.mint} size={22} strokeWidth={2.5} />
+          <Settings color={palette.mint} size={21} strokeWidth={2.4} />
         </Pressable>
       ) : (
         <View style={styles.chatHeaderSpacer} />
@@ -228,23 +270,31 @@ export function BottomBar({
   selectedTab: RootTab;
   onSelectTab: (tab: RootTab) => void;
 }) {
+  const isLightPalette = palette.text === palettes.light.text;
+  const bottomBarColors = isLightPalette
+    ? {backgroundColor: '#FFFFFF', borderTopColor: '#F0EBFD'}
+    : {backgroundColor: palette.surface, borderTopColor: palette.border};
+
   return (
-    <View
-      style={[
-        styles.bottomBar,
-        { backgroundColor: palette.surface, borderTopColor: palette.border },
-      ]}
-    >
+    <View style={[styles.bottomBar, bottomBarColors]}>
       <TabButton
         title={textFor(language, '妙讯', 'Messages')}
-        icon={MessageCircle}
+        iconSource={
+          selectedTab === 'messages'
+            ? messageIconAssets.tabMessagesActive
+            : stationPostIconAssets.tabMessagesInactive
+        }
         selected={selectedTab === 'messages'}
         palette={palette}
         onPress={() => onSelectTab('messages')}
       />
       <TabButton
         title={textFor(language, '小站', 'Station')}
-        icon={UserCircle}
+        iconSource={
+          selectedTab === 'station'
+            ? stationPostIconAssets.tabStationActive
+            : messageIconAssets.tabStationInactive
+        }
         selected={selectedTab === 'station'}
         palette={palette}
         onPress={() => onSelectTab('station')}
@@ -255,28 +305,44 @@ export function BottomBar({
 
 function TabButton({
   title,
-  icon: Icon,
+  iconSource,
   selected,
   palette,
   onPress,
 }: {
   title: string;
-  icon: IconComponent;
+  iconSource: ImageSourcePropType;
   selected: boolean;
   palette: Palette;
   onPress: () => void;
 }) {
+  const isLightPalette = palette.text === palettes.light.text;
+  const titleColor = isLightPalette
+    ? selected
+      ? '#2A00FF'
+      : '#CBC5DE'
+    : selected
+      ? palette.mint
+      : palette.secondaryText;
+
   return (
-    <Pressable onPress={onPress} style={styles.tabButton}>
-      <Icon
-        color={selected ? palette.mint : palette.secondaryText}
-        size={20}
-        strokeWidth={2.4}
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{selected}}
+      onPress={onPress}
+      style={styles.tabButton}>
+      <Image
+        source={iconSource}
+        style={[
+          styles.tabIcon,
+          !isLightPalette && {tintColor: titleColor},
+        ]}
+        resizeMode="contain"
       />
       <Text
         style={[
           styles.tabTitle,
-          { color: selected ? palette.mint : palette.secondaryText },
+          {color: titleColor},
         ]}
       >
         {title}

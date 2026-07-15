@@ -114,6 +114,34 @@ export function useSocialActions({
     [setSearchHistory, token],
   );
 
+  const saveSearchQuery = useCallback(
+    async (query: string) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      const trimmed = query.trim();
+      if (!trimmed) {
+        return [] as SearchHistoryDTO[];
+      }
+      const history = await apiClient.saveSearchHistory(
+        trimmed,
+        token,
+        'contacts',
+      );
+      setSearchHistory(history);
+      return history;
+    },
+    [setSearchHistory, token],
+  );
+
+  const clearSearchHistory = useCallback(async () => {
+    if (!token) {
+      throw new Error('请先登录。');
+    }
+    const history = await apiClient.clearSearchHistory(token);
+    setSearchHistory(history);
+  }, [setSearchHistory, token]);
+
   const loadPublicProfileByAiId = useCallback(
     async (aiId: string) => {
       if (!token) {
@@ -134,6 +162,8 @@ export function useSocialActions({
     cancelFriendRequest,
     refreshRelationships,
     searchUsers,
+    saveSearchQuery,
+    clearSearchHistory,
     loadPublicProfileByAiId,
   };
 }

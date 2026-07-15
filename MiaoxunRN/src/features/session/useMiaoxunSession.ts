@@ -411,6 +411,7 @@ export function useMiaoxunSession() {
     deleteMessage,
     recallMessage,
     markThreadRead,
+    setThreadMuted,
     openFriendThread,
   } = useMessageActions({
     token,
@@ -485,6 +486,8 @@ export function useMiaoxunSession() {
     cancelFriendRequest,
     refreshRelationships,
     searchUsers,
+    saveSearchQuery,
+    clearSearchHistory,
     loadPublicProfileByAiId,
   } = useSocialActions({
     token,
@@ -566,6 +569,7 @@ export function useMiaoxunSession() {
     deleteMessage,
     recallMessage,
     markThreadRead,
+    setThreadMuted,
     setActiveThreadId,
     setLanguage: setLanguageAndSync,
     setAppearance: setAppearanceAndSync,
@@ -584,6 +588,8 @@ export function useMiaoxunSession() {
     refreshNotifications,
     refreshRelationships,
     searchUsers,
+    saveSearchQuery,
+    clearSearchHistory,
     loadPublicProfileByAiId,
     updateProfile,
     refreshStationContent,

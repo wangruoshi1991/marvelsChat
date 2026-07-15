@@ -150,7 +150,7 @@ export async function listThreadsForUser(userId, onlineUserIds = []) {
       ON last_message.id = (
         SELECT m.id
         FROM chat_messages m
-        WHERE m.thread_id = t.id
+        WHERE m.thread_id = t.id AND m.deleted_at IS NULL
         ORDER BY m.created_at DESC, m.id DESC
         LIMIT 1
       )
@@ -416,4 +416,18 @@ export async function markThreadReadForUser(userId, threadId) {
     WHERE user_id = ? AND id = ?`,
     [userId, threadId],
   );
+}
+
+export async function setThreadMutedForUser(userId, threadId, muted) {
+  const rows = await query(
+    `UPDATE chat_threads
+    SET muted = ?
+    WHERE user_id = ? AND id = ?
+    RETURNING muted`,
+    [muted, userId, threadId],
+  );
+  if (!rows.length) {
+    throw new HttpError(404, "Thread not found");
+  }
+  return { muted: Boolean(rows[0].muted) };
 }

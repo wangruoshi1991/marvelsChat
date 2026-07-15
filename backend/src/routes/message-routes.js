@@ -15,6 +15,7 @@ import {
   markThreadReadForUser,
   mirrorDirectMessageToPeer,
   recallMessageForUser,
+  setThreadMutedForUser,
 } from "../message-repository.js";
 import {
   createAgentRun,
@@ -28,6 +29,7 @@ import {
   incrementalMessagesSchema,
   incrementalSyncSchema,
   messageSchema,
+  threadPreferencesSchema,
 } from "../schemas.js";
 
 export function registerMessageRoutes(
@@ -81,6 +83,20 @@ export function registerMessageRoutes(
     asyncHandler(async (req, res) => {
       await markThreadReadForUser(req.user.id, req.params.threadId);
       res.json({ data: { ok: true } });
+    }),
+  );
+
+  app.patch(
+    "/api/threads/:threadId/preferences",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const preferences = threadPreferencesSchema.parse(req.body);
+      const result = await setThreadMutedForUser(
+        req.user.id,
+        req.params.threadId,
+        preferences.muted,
+      );
+      res.json({ data: result });
     }),
   );
 

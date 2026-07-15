@@ -12,18 +12,19 @@ import {
   useMiaoxunSession,
 } from './features/session/useMiaoxunSession';
 import { AuthScreen } from './features/auth/AuthScreen';
-import { AgentAvatar, UserAvatar } from './features/avatar/AvatarBadges';
+import { UserAvatar } from './features/avatar/AvatarBadges';
 import {
   ChatScreen,
   MessageTab,
   MessagesScreen,
 } from './features/messages/MessagesScreen';
+import { resolveMessagePalette } from './features/messages/messagePalette';
 import { useProfileFlows } from './features/profile/useProfileFlows';
 import {
   FloatingMiaoButton,
   StationScreen,
 } from './features/station/StationScreen';
-import { AvatarConfigDTO, AgentIdentityDTO } from './models/api';
+import { AvatarConfigDTO } from './models/api';
 import { appErrorText, textFor } from './shared/i18n';
 import { styles } from './shared/styles';
 import { palettes } from './shared/theme';
@@ -32,13 +33,12 @@ import { BottomBar, RootTab } from './shared/ui';
 function App(): React.JSX.Element {
   const session = useMiaoxunSession();
   const palette = palettes[session.appearance];
+  const messagePalette = resolveMessagePalette(palette);
   const [selectedTab, setSelectedTab] = useState<RootTab>('messages');
   const [modalRoute, setModalRoute] = useState<ModalRoute>(null);
   const [activeThread, setActiveThread] = useState<ChatThread | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showLaunchAnimation, setShowLaunchAnimation] = useState(true);
-  const [isStationFloatingVisible, setIsStationFloatingVisible] =
-    useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMessageTab, setSelectedMessageTab] =
     useState<MessageTab>('chat');
@@ -74,17 +74,6 @@ function App(): React.JSX.Element {
     ),
     [palette],
   );
-  const renderAgentAvatar = useCallback(
-    ({
-      identity,
-      small,
-    }: {
-      identity: AgentIdentityDTO | null;
-      small?: boolean;
-    }) => <AgentAvatar identity={identity} palette={palette} small={small} />,
-    [palette],
-  );
-
   const openThread = useCallback(
     (thread: ChatThread) => {
       setActiveThread(thread);
@@ -223,264 +212,288 @@ function App(): React.JSX.Element {
     }
     consumePendingScanRequest();
   }, [consumePendingScanRequest, modalRoute, pendingScanRequest]);
+  const isChatRoute =
+    Boolean(openedThread) && (modalRoute === 'butler' || modalRoute === 'chat');
+  const isRootTabRoute = Boolean(session.token) && !isChatRoute;
+  const topSafeAreaColor = isChatRoute
+    ? messagePalette.background
+    : isRootTabRoute && selectedTab === 'messages'
+    ? messagePalette.soft
+    : palette.background;
+  const bottomSafeAreaColor = isChatRoute
+    ? messagePalette.surface
+    : isRootTabRoute
+    ? session.appearance === 'light'
+      ? '#FFFFFF'
+      : palette.surface
+    : palette.background;
+
   return (
     <SafeAreaProvider>
       <SafeAreaView
-        style={[styles.safeArea, { backgroundColor: palette.background }]}
+        edges={['top']}
+        style={[styles.safeArea, { backgroundColor: topSafeAreaColor }]}
       >
-        <StatusBar
-          barStyle={
-            session.appearance === 'dark' ? 'light-content' : 'dark-content'
-          }
-          backgroundColor={palette.background}
-        />
-        {session.isRestoring ? null : session.restoreStatus ===
-          'networkError' ? (
-          <RestoreErrorScreen
-            palette={palette}
-            language={session.language}
-            message={session.errorMessage}
-            isBusy={session.isBusy}
-            onRetry={() => {
-              session.retryRestoreSession().catch(error => {
-                showToast(
-                  appErrorText(
-                    session.language,
-                    error,
-                    '同步失败',
-                    'Sync failed',
-                  ),
-                );
-              });
-            }}
-            onSignOut={() => {
-              session.signOut().catch(error => {
-                showToast(
-                  appErrorText(
-                    session.language,
-                    error,
-                    '退出登录失败',
-                    'Logout failed',
-                  ),
-                );
-              });
-            }}
+        <SafeAreaView
+          edges={['bottom']}
+          style={[styles.safeArea, { backgroundColor: bottomSafeAreaColor }]}
+        >
+          <StatusBar
+            barStyle={
+              session.appearance === 'dark' ? 'light-content' : 'dark-content'
+            }
+            backgroundColor={topSafeAreaColor}
           />
-        ) : session.token ? (
-          openedThread && (modalRoute === 'butler' || modalRoute === 'chat') ? (
-            <ChatScreen
+          {session.isRestoring ? null : session.restoreStatus ===
+            'networkError' ? (
+            <RestoreErrorScreen
               palette={palette}
               language={session.language}
-              currentUserId={session.user?.id || ''}
-              currentUserName={session.user?.displayName || ''}
-              thread={openedThread}
-              agents={session.agents}
-              renderUserAvatar={renderUserAvatar}
-              renderAgentAvatar={renderAgentAvatar}
-              onBack={closeThread}
-              onSend={
-                openedThread.agentId === 'miaoxun-butler'
-                  ? (content, retryMessageId, replyToMessageId) =>
-                      sendButlerMessage(
-                        openedThread.id,
-                        content,
-                        retryMessageId,
-                        replyToMessageId,
-                      )
-                  : (content, retryMessageId, replyToMessageId) =>
-                      session.sendMessage(
-                        openedThread.id,
-                        content,
-                        undefined,
-                        retryMessageId,
-                        replyToMessageId,
-                      )
-              }
-              onDeleteMessage={messageId =>
-                session.deleteMessage(openedThread.id, messageId)
-              }
-              onRecallMessage={messageId =>
-                session.recallMessage(openedThread.id, messageId)
-              }
-              onActionError={message =>
-                showToast(
-                  appErrorText(
-                    session.language,
-                    message,
-                    '操作失败',
-                    'Action failed',
-                  ),
-                )
-              }
-              onOpenPeerProfile={
-                openedThread.peerAiId
-                  ? () => {
-                      closeThread();
-                      profileFlows
-                        .openPublicProfileByAiId(openedThread.peerAiId || '')
-                        .catch(() => undefined);
-                    }
-                  : undefined
-              }
+              message={session.errorMessage}
+              isBusy={session.isBusy}
+              onRetry={() => {
+                session.retryRestoreSession().catch(error => {
+                  showToast(
+                    appErrorText(
+                      session.language,
+                      error,
+                      '同步失败',
+                      'Sync failed',
+                    ),
+                  );
+                });
+              }}
+              onSignOut={() => {
+                session.signOut().catch(error => {
+                  showToast(
+                    appErrorText(
+                      session.language,
+                      error,
+                      '退出登录失败',
+                      'Logout failed',
+                    ),
+                  );
+                });
+              }}
             />
-          ) : (
-            <View style={styles.shell}>
-              {selectedTab === 'messages' ? (
-                <MessagesScreen
-                  palette={palette}
-                  language={session.language}
-                  threads={session.threads}
-                  agents={session.agents}
-                  notices={session.notices}
-                  unreadNoticeCount={session.unreadNoticeCount}
-                  selectedMessageTab={selectedMessageTab}
-                  renderUserAvatar={renderUserAvatar}
-                  renderAgentAvatar={renderAgentAvatar}
-                  onOpenThread={openThread}
-                  onOpenMessageActions={() => setModalRoute('message-actions')}
-                  onOpenSearch={() => {
-                    setSearchQuery('');
-                    setModalRoute('search');
-                  }}
-                  onSelectMessageTab={setSelectedMessageTab}
-                  onMarkNotificationRead={session.markNotificationRead}
-                  onAcceptFriendRequest={async requestId => {
-                    try {
-                      await session.acceptFriendRequest(requestId);
-                      await session.refreshBootstrap(undefined, false);
-                      showToast(
-                        textFor(
-                          session.language,
-                          '已通过好友申请',
-                          'Friend request accepted',
-                        ),
-                      );
-                    } catch (error) {
-                      showToast(
-                        appErrorText(
-                          session.language,
-                          error,
-                          '操作失败',
-                          'Action failed',
-                        ),
-                      );
-                    }
-                  }}
-                  onRejectFriendRequest={async requestId => {
-                    try {
-                      await session.rejectFriendRequest(requestId);
-                      await session.refreshNotifications();
-                      showToast(
-                        textFor(
-                          session.language,
-                          '已拒绝好友申请',
-                          'Friend request rejected',
-                        ),
-                      );
-                    } catch (error) {
-                      showToast(
-                        appErrorText(
-                          session.language,
-                          error,
-                          '操作失败',
-                          'Action failed',
-                        ),
-                      );
-                    }
-                  }}
-                />
-              ) : (
-                <StationScreen
-                  palette={palette}
-                  language={session.language}
-                  session={session}
-                  onOpenSettings={() => setModalRoute('settings')}
-                  onOpenLocation={() => setModalRoute('station-location')}
-                  onCopyAIID={copyAIID}
-                  onOpenQRCode={profileFlows.openQRCode}
-                  onOpenFriendThread={openFriendThread}
-                  onOpenAgentThread={openAgentThread}
-                  onOpenPublicProfileByAiId={
-                    profileFlows.openPublicProfileByAiId
-                  }
-                  onActionMessage={showToast}
-                  onActionError={error =>
-                    showToast(
-                      appErrorText(
-                        session.language,
-                        error,
-                        '操作失败',
-                        'Action failed',
-                      ),
-                    )
-                  }
-                  onFloatingVisibilityChange={setIsStationFloatingVisible}
-                />
-              )}
-
-              {selectedTab === 'station' && isStationFloatingVisible ? (
-                <FloatingMiaoButton
-                  palette={palette}
-                  onPress={() => setModalRoute('site-builder')}
-                />
-              ) : null}
-
-              <BottomBar
+          ) : session.token ? (
+            openedThread &&
+            (modalRoute === 'butler' || modalRoute === 'chat') ? (
+              <ChatScreen
                 palette={palette}
                 language={session.language}
-                selectedTab={selectedTab}
-                onSelectTab={setSelectedTab}
+                currentUserId={session.user?.id || ''}
+                currentUserName={session.user?.displayName || ''}
+                thread={openedThread}
+                agents={session.agents}
+                renderUserAvatar={renderUserAvatar}
+                onBack={closeThread}
+                onSend={
+                  openedThread.agentId === 'miaoxun-butler'
+                    ? (content, retryMessageId, replyToMessageId) =>
+                        sendButlerMessage(
+                          openedThread.id,
+                          content,
+                          retryMessageId,
+                          replyToMessageId,
+                        )
+                    : (content, retryMessageId, replyToMessageId) =>
+                        session.sendMessage(
+                          openedThread.id,
+                          content,
+                          undefined,
+                          retryMessageId,
+                          replyToMessageId,
+                        )
+                }
+                onDeleteMessage={messageId =>
+                  session.deleteMessage(openedThread.id, messageId)
+                }
+                onRecallMessage={messageId =>
+                  session.recallMessage(openedThread.id, messageId)
+                }
+                onSetMuted={muted =>
+                  session.setThreadMuted(openedThread.id, muted)
+                }
+                onActionError={message =>
+                  showToast(
+                    appErrorText(
+                      session.language,
+                      message,
+                      '操作失败',
+                      'Action failed',
+                    ),
+                  )
+                }
+                onOpenPeerProfile={
+                  openedThread.peerAiId
+                    ? () => {
+                        closeThread();
+                        profileFlows
+                          .openPublicProfileByAiId(openedThread.peerAiId || '')
+                          .catch(() => undefined);
+                      }
+                    : undefined
+                }
               />
-            </View>
-          )
-        ) : (
-          <AuthScreen
-            palette={palette}
-            language={session.language}
-            isBusy={session.isBusy}
-            errorMessage={session.errorMessage}
-            onSignIn={session.signIn}
-            onSignUp={async (...args) => {
-              await session.signUp(...args);
-              showToast(
-                textFor(
-                  session.language,
-                  '注册成功，已登录妙讯',
-                  'Account created and signed in',
-                ),
-              );
-            }}
-          />
-        )}
+            ) : (
+              <View style={styles.shell}>
+                {selectedTab === 'messages' ? (
+                  <MessagesScreen
+                    palette={palette}
+                    language={session.language}
+                    threads={session.threads}
+                    agents={session.agents}
+                    notices={session.notices}
+                    unreadNoticeCount={session.unreadNoticeCount}
+                    selectedMessageTab={selectedMessageTab}
+                    renderUserAvatar={renderUserAvatar}
+                    onOpenThread={openThread}
+                    onOpenMessageActions={() =>
+                      setModalRoute('message-actions')
+                    }
+                    onOpenSearch={() => {
+                      setSearchQuery('');
+                      setModalRoute('search');
+                    }}
+                    onSelectMessageTab={setSelectedMessageTab}
+                    onMarkNotificationRead={session.markNotificationRead}
+                    onAcceptFriendRequest={async requestId => {
+                      try {
+                        await session.acceptFriendRequest(requestId);
+                        await session.refreshBootstrap(undefined, false);
+                        showToast(
+                          textFor(
+                            session.language,
+                            '已通过好友申请',
+                            'Friend request accepted',
+                          ),
+                        );
+                      } catch (error) {
+                        showToast(
+                          appErrorText(
+                            session.language,
+                            error,
+                            '操作失败',
+                            'Action failed',
+                          ),
+                        );
+                      }
+                    }}
+                    onRejectFriendRequest={async requestId => {
+                      try {
+                        await session.rejectFriendRequest(requestId);
+                        await session.refreshNotifications();
+                        showToast(
+                          textFor(
+                            session.language,
+                            '已拒绝好友申请',
+                            'Friend request rejected',
+                          ),
+                        );
+                      } catch (error) {
+                        showToast(
+                          appErrorText(
+                            session.language,
+                            error,
+                            '操作失败',
+                            'Action failed',
+                          ),
+                        );
+                      }
+                    }}
+                  />
+                ) : (
+                  <StationScreen
+                    palette={palette}
+                    language={session.language}
+                    session={session}
+                    onOpenSettings={() => setModalRoute('settings')}
+                    onOpenLocation={() => setModalRoute('station-location')}
+                    onCopyAIID={copyAIID}
+                    onOpenQRCode={profileFlows.openQRCode}
+                    onOpenFriendThread={openFriendThread}
+                    onOpenAgentThread={openAgentThread}
+                    onOpenPublicProfileByAiId={
+                      profileFlows.openPublicProfileByAiId
+                    }
+                    onActionMessage={showToast}
+                    onActionError={error =>
+                      showToast(
+                        appErrorText(
+                          session.language,
+                          error,
+                          '操作失败',
+                          'Action failed',
+                        ),
+                      )
+                    }
+                  />
+                )}
 
-        <AppModals
-          modalRoute={modalRoute}
-          palette={palette}
-          session={session}
-          profileFlows={profileFlows}
-          searchQuery={searchQuery}
-          renderUserAvatar={renderUserAvatar}
-          onCloseModal={() => setModalRoute(null)}
-          onOpenPublicProfileModal={() => setModalRoute('public-profile')}
-          onOpenThread={openThread}
-          onSearchQueryChange={setSearchQuery}
-          onOpenFriendThread={openFriendThread}
-          onRequestMessageQRCodeScan={requestMessageQRCodeScan}
-          onConsumePendingScanRequest={consumePendingScanRequest}
-          onToast={showToast}
-        />
-        {toastMessage ? (
-          <View style={[styles.toastWrap, styles.pointerEventsNone]}>
-            <View style={[styles.toast, { backgroundColor: palette.text }]}>
-              <Text style={[styles.toastText, { color: palette.background }]}>
-                {toastMessage}
-              </Text>
+                {selectedTab === 'station' ? (
+                  <FloatingMiaoButton
+                    palette={palette}
+                    onPress={() => setModalRoute('site-builder')}
+                  />
+                ) : null}
+
+                <BottomBar
+                  palette={palette}
+                  language={session.language}
+                  selectedTab={selectedTab}
+                  onSelectTab={setSelectedTab}
+                />
+              </View>
+            )
+          ) : (
+            <AuthScreen
+              palette={palette}
+              language={session.language}
+              isBusy={session.isBusy}
+              errorMessage={session.errorMessage}
+              onSignIn={session.signIn}
+              onSignUp={async (...args) => {
+                await session.signUp(...args);
+                showToast(
+                  textFor(
+                    session.language,
+                    '注册成功，已登录妙讯',
+                    'Account created and signed in',
+                  ),
+                );
+              }}
+            />
+          )}
+
+          <AppModals
+            modalRoute={modalRoute}
+            palette={palette}
+            session={session}
+            profileFlows={profileFlows}
+            searchQuery={searchQuery}
+            renderUserAvatar={renderUserAvatar}
+            onCloseModal={() => setModalRoute(null)}
+            onOpenThread={openThread}
+            onSearchQueryChange={setSearchQuery}
+            onOpenFriendThread={openFriendThread}
+            onRequestMessageQRCodeScan={requestMessageQRCodeScan}
+            onConsumePendingScanRequest={consumePendingScanRequest}
+            onToast={showToast}
+          />
+          {toastMessage ? (
+            <View style={[styles.toastWrap, styles.pointerEventsNone]}>
+              <View style={[styles.toast, { backgroundColor: palette.text }]}>
+                <Text style={[styles.toastText, { color: palette.background }]}>
+                  {toastMessage}
+                </Text>
+              </View>
             </View>
-          </View>
-        ) : null}
-        {showLaunchAnimation ? (
-          <LaunchAnimation palette={palette} language={session.language} />
-        ) : null}
+          ) : null}
+          {showLaunchAnimation ? (
+            <LaunchAnimation palette={palette} language={session.language} />
+          ) : null}
+        </SafeAreaView>
       </SafeAreaView>
     </SafeAreaProvider>
   );

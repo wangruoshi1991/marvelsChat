@@ -267,6 +267,7 @@ export const mapThread = (row) => ({
   peerAiId: row.peer_ai_id || null,
   kind: row.kind,
   pinned: Boolean(row.pinned),
+  muted: Boolean(row.muted),
   lastContent: row.last_content || "",
   lastMessageAt: toIso(row.last_message_at),
   unreadCount: Number(row.unread_count || 0),

@@ -39,6 +39,11 @@ export async function saveSearchHistory({ userId, queryText, scope = "all" }) {
   return listSearchHistory(userId);
 }
 
+export async function clearSearchHistory(userId) {
+  await query("DELETE FROM search_history WHERE user_id = ?", [userId]);
+  return [];
+}
+
 export async function searchPublicProfiles({ viewerUserId, queryText, limit = 20, onlineUserIds = [] }) {
   const normalized = String(queryText || "").trim();
   if (!normalized) return [];

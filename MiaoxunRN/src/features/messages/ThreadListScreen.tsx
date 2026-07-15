@@ -2,29 +2,38 @@ import React, {useCallback, useMemo, useRef} from 'react';
 import {
   Animated,
   FlatList,
+  Image,
   PanResponder,
   Pressable,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
-import {Plus, Search} from 'lucide-react-native';
+import Svg, {
+  Defs,
+  LinearGradient as SvgLinearGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 
+import {messageIconAssets} from '../../assets/icons';
 import {AgentDTO} from '../../models/api';
-import {displayText, publicPresenceText, textFor} from '../../shared/i18n';
+import {displayText, textFor} from '../../shared/i18n';
 import {styles} from '../../shared/styles';
-import {Palette} from '../../shared/theme';
-import {IconButton, SegmentedControl} from '../../shared/ui';
+import {Palette, palettes} from '../../shared/theme';
 import {
   ChatThread,
   Language,
   useMiaoxunSession,
 } from '../session/useMiaoxunSession';
 import {NoticeList} from './NoticeList';
-import {AgentAvatarRenderer, MessageTab, UserAvatarRenderer} from './messageTypes';
-import {relativeTimeText, resolveAgentIdentity} from './messageUtils';
+import {MessageTab, UserAvatarRenderer} from './messageTypes';
+import {relativeTimeText} from './messageUtils';
+import {AgentIconAvatar} from './AgentIconAvatar';
+import {resolveMessagePalette} from './messagePalette';
 
 const chatSwipeOpenThreshold = -72;
+const mutedUnreadColor = '#A8A8B0';
 
 function ThreadSwipeRow({
   thread,
@@ -32,7 +41,6 @@ function ThreadSwipeRow({
   language,
   agents,
   renderUserAvatar,
-  renderAgentAvatar,
   onOpenThread,
 }: {
   thread: ChatThread;
@@ -40,12 +48,12 @@ function ThreadSwipeRow({
   language: Language;
   agents: AgentDTO[];
   renderUserAvatar: UserAvatarRenderer;
-  renderAgentAvatar: AgentAvatarRenderer;
   onOpenThread: (thread: ChatThread) => void;
 }) {
-  const agentIdentity = thread.agentId
-    ? resolveAgentIdentity(agents, thread.agentId)
+  const agent = thread.agentId
+    ? agents.find(item => item.key === thread.agentId)
     : null;
+  const agentIdentity = agent?.identity || null;
   const translateX = useRef(new Animated.Value(0)).current;
   const openedRef = useRef(false);
   const windowSize = useWindowDimensions();
@@ -112,41 +120,56 @@ function ThreadSwipeRow({
       <Pressable
         onPress={() => onOpenThread(thread)}
         style={[styles.threadRow, {borderBottomColor: palette.border}]}>
-        {thread.agentId
-          ? renderAgentAvatar({identity: agentIdentity})
-          : renderUserAvatar({
+        <View style={styles.threadAvatarWrap}>
+          {thread.agentId ? (
+            <AgentIconAvatar
+              agentId={thread.agentId}
+              category={agent?.category}
+              identity={agentIdentity}
+              palette={palette}
+            />
+          ) : (
+            renderUserAvatar({
               text: thread.avatarText,
               config: thread.avatarConfig || undefined,
-            })}
+            })
+          )}
+          {thread.unreadCount > 0 ? (
+            <View
+              style={[
+                styles.unread,
+                styles.threadAvatarUnread,
+                {
+                  backgroundColor: thread.muted
+                    ? mutedUnreadColor
+                    : palette.rose,
+                  borderColor: palette.background,
+                },
+              ]}>
+              <Text style={styles.unreadText}>
+                {thread.unreadCount > 99 ? '99+' : thread.unreadCount}
+              </Text>
+            </View>
+          ) : null}
+        </View>
         <View style={styles.threadMain}>
-          <View style={styles.threadTitleRow}>
-            <Text style={[styles.threadTitle, {color: palette.text}]}>
-              {displayText(language, thread.title)}
-            </Text>
-            <Text style={[styles.threadTime, {color: palette.secondaryText}]}>
-              {relativeTimeText(thread.lastMessageAt)}
-            </Text>
-          </View>
+          <Text
+            numberOfLines={1}
+            style={[styles.threadTitle, {color: palette.text}]}>
+            {displayText(language, thread.title)}
+          </Text>
           <Text
             numberOfLines={1}
             style={[styles.threadPreview, {color: palette.secondaryText}]}>
             {displayText(language, thread.lastContent) ||
               textFor(language, '暂无消息', 'No messages yet')}
           </Text>
-          <Text style={[styles.threadStatus, {color: palette.mint}]}>
-            {thread.peerUserId
-              ? publicPresenceText(language, thread.peerPresenceStatus)
-              : displayText(language, thread.status) ||
-                (thread.agentId
-                  ? textFor(language, 'Agent 会话', 'Agent chat')
-                  : textFor(language, '会话', 'Chat'))}
+        </View>
+        <View style={styles.threadTrailing}>
+          <Text style={[styles.threadTime, {color: palette.secondaryText}]}>
+            {relativeTimeText(thread.lastMessageAt)}
           </Text>
         </View>
-        {thread.unreadCount > 0 ? (
-          <View style={[styles.unread, {backgroundColor: palette.rose}]}>
-            <Text style={styles.unreadText}>{thread.unreadCount}</Text>
-          </View>
-        ) : null}
       </Pressable>
     </Animated.View>
   );
@@ -161,7 +184,6 @@ export function ThreadListScreen({
   unreadNoticeCount,
   selectedMessageTab,
   renderUserAvatar,
-  renderAgentAvatar,
   onOpenThread,
   onOpenMessageActions,
   onOpenSearch,
@@ -178,7 +200,6 @@ export function ThreadListScreen({
   unreadNoticeCount: number;
   selectedMessageTab: MessageTab;
   renderUserAvatar: UserAvatarRenderer;
-  renderAgentAvatar: AgentAvatarRenderer;
   onOpenThread: (thread: ChatThread) => void;
   onOpenMessageActions: () => void;
   onOpenSearch: () => void;
@@ -187,64 +208,156 @@ export function ThreadListScreen({
   onAcceptFriendRequest: (requestId: string) => Promise<void>;
   onRejectFriendRequest: (requestId: string) => Promise<void>;
 }) {
+  const messagePalette = useMemo(() => resolveMessagePalette(palette), [
+    palette,
+  ]);
+  const isLightPalette = palette.text === palettes.light.text;
+  const unreadChatCount = useMemo(
+    () => threads.reduce((total, thread) => total + thread.unreadCount, 0),
+    [threads],
+  );
+
   return (
-    <View style={[styles.screen, {backgroundColor: palette.background}]}>
-      <View style={[styles.topBar, {borderBottomColor: palette.border}]}>
-        <IconButton
-          icon={Plus}
-          palette={palette}
-          variant="soft"
+    <View style={[styles.screen, {backgroundColor: messagePalette.background}]}>
+      <View
+        style={[
+          styles.messageTopBar,
+          {
+            backgroundColor: messagePalette.soft,
+            borderBottomColor: messagePalette.border,
+          },
+        ]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={textFor(language, '新建', 'New')}
           onPress={onOpenMessageActions}
-        />
-        <SegmentedControl
-          fill
-          palette={palette}
-          value={selectedMessageTab}
-          options={[
-            {label: textFor(language, '聊天', 'Chats'), value: 'chat'},
+          style={styles.messageHeaderIcon}
+        >
+          <Image
+            source={messageIconAssets.actionAdd}
+            style={styles.messageHeaderAddIcon}
+            resizeMode="contain"
+          />
+        </Pressable>
+
+        <View style={styles.messageTabGroup}>
+          {[
+            {
+              label: textFor(language, '聊天', 'Chats'),
+              value: 'chat' as const,
+              badge: unreadChatCount,
+            },
             {
               label: textFor(language, '通知', 'Notices'),
-              value: 'notice',
+              value: 'notice' as const,
               badge: unreadNoticeCount,
             },
-          ]}
-          onChange={onSelectMessageTab}
-        />
-        <IconButton
-          icon={Search}
-          palette={palette}
-          variant="soft"
+          ].map(option => {
+            const selected = selectedMessageTab === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                accessibilityRole="button"
+                onPress={() => onSelectMessageTab(option.value)}
+                style={styles.messageTabButton}
+              >
+                <Text
+                  style={[
+                    styles.messageTabText,
+                    {
+                      color: selected
+                        ? messagePalette.text
+                        : messagePalette.secondaryText,
+                    },
+                    selected && styles.messageTabTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+                {option.badge && option.badge > 0 ? (
+                  <View
+                    style={[
+                      styles.messageTabBadge,
+                      {backgroundColor: messagePalette.rose},
+                    ]}
+                  >
+                    <Text style={styles.messageTabBadgeText}>
+                      {option.badge > 99 ? '99+' : option.badge}
+                    </Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={textFor(language, '搜索', 'Search')}
           onPress={onOpenSearch}
-        />
+          style={styles.messageHeaderIcon}
+        >
+          <Image
+            source={messageIconAssets.actionSearchContacts}
+            style={styles.messageHeaderSearchIcon}
+            resizeMode="contain"
+          />
+        </Pressable>
       </View>
 
-      {selectedMessageTab === 'chat' ? (
-        <FlatList
-          data={threads}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.threadList}
-          renderItem={({item}) => (
-            <ThreadSwipeRow
-              thread={item}
-              palette={palette}
-              language={language}
-              agents={agents}
-              renderUserAvatar={renderUserAvatar}
-              renderAgentAvatar={renderAgentAvatar}
-              onOpenThread={onOpenThread}
-            />
-          )}
-        />
-      ) : (
-        <NoticeList
-          palette={palette}
-          language={language}
-          notices={notices}
-          onMarkNotificationRead={onMarkNotificationRead}
-          onAcceptFriendRequest={onAcceptFriendRequest}
-          onRejectFriendRequest={onRejectFriendRequest}
-        />
-      )}
+      <View style={styles.messageContent}>
+        {selectedMessageTab === 'chat' ? (
+          <FlatList
+            data={threads}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.threadList}
+            style={styles.messageListViewport}
+            renderItem={({item}) => (
+              <ThreadSwipeRow
+                thread={item}
+                palette={messagePalette}
+                language={language}
+                agents={agents}
+                renderUserAvatar={renderUserAvatar}
+                onOpenThread={onOpenThread}
+              />
+            )}
+          />
+        ) : (
+          <NoticeList
+            palette={messagePalette}
+            language={language}
+            notices={notices}
+            onMarkNotificationRead={onMarkNotificationRead}
+            onAcceptFriendRequest={onAcceptFriendRequest}
+            onRejectFriendRequest={onRejectFriendRequest}
+          />
+        )}
+
+        {isLightPalette ? (
+          <View pointerEvents="none" style={styles.messageBottomFade}>
+            <Svg height="100%" width="100%">
+              <Defs>
+                <SvgLinearGradient
+                  id="messageBottomFade"
+                  x1="0"
+                  x2="0"
+                  y1="0"
+                  y2="1"
+                >
+                  <Stop offset="0" stopColor="#FFFFFF" />
+                  <Stop offset="1" stopColor="#F1EFFA" />
+                </SvgLinearGradient>
+              </Defs>
+              <Rect
+                fill="url(#messageBottomFade)"
+                height="100%"
+                width="100%"
+              />
+            </Svg>
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }

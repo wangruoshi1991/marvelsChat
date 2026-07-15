@@ -46,5 +46,5 @@ export const palettes: Record<Appearance, Palette> = {
 export const spacing = {
   pageX: 18,
   cardRadius: 8,
-  bottomBarHeight: 70,
+  bottomBarMinHeight: 70,
 };

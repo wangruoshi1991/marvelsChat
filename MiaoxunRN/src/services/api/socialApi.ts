@@ -108,4 +108,11 @@ export const socialApi = {
       body: { query, scope },
     });
   },
+
+  clearSearchHistory(token: string) {
+    return request<SearchHistoryDTO[]>('/api/search/history', {
+      method: 'DELETE',
+      token,
+    });
+  },
 };
