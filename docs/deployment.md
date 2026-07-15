@@ -47,6 +47,10 @@ SENTRY_ENVIRONMENT=build24-test
 7. 重启 `marvels-chat-backend.service`，等待 `/api/health` 恢复。
 8. 完成 [Build 24 验收清单](build24-acceptance.md) 的 API 和匿名分享测试。
 
+完整主页链路使用 `backend/scripts/build24-smoke.js` 验收。只能使用临时加入
+allowlist 的 `build24-smoke-*@example.com` 专用账号；脚本完成后会删除账号和
+OSS 测试对象，运维人员仍需移除临时 allowlist 条目并重启服务。
+
 当前部署账号没有 sudo，但拥有后端进程和项目目录。更新完成后可以终止该用户自己的 Node 主进程，systemd 的 `Restart=always` 会自动拉起；必须记录旧 PID、新 PID 和恢复时间。若后续授予受限 sudo，应优先改为：
 
 ```sh

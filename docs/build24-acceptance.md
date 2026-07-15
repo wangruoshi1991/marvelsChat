@@ -89,6 +89,24 @@ npm run lint -- --max-warnings=0
 npm test -- --runInBand
 ```
 
+### 隔离式全链路冒烟
+
+先把专用的 `build24-smoke-*@example.com` 临时加入
+`HOMEPAGE_V1_ALLOWLIST`，然后运行：
+
+```sh
+cd backend
+SMOKE_BASE_URL=http://8.153.167.11 \
+SMOKE_EMAIL=build24-smoke-<timestamp>@example.com \
+ALLOW_DESTRUCTIVE_SMOKE=true \
+npm run smoke:build24
+```
+
+脚本会创建专用临时账号、上传 3 张最小测试图、验证幂等任务、预览失效、
+revision 冲突、链接发布与撤销、历史恢复，最后删除临时账号及其 OSS 对象。
+脚本拒绝真实邮箱，且日志不输出密码、token、素材 ID、提示词或签名 URL。
+运行结束后必须从 allowlist 移除临时邮箱并重启服务。
+
 ## API 验收
 
 每个失败响应都应含 `X-Request-ID`，客户端只显示安全诊断 ID。
@@ -187,4 +205,3 @@ HOMEPAGE_V1_ENABLED=false
 ```
 
 重启后端后，Build 23 API 和消息功能继续保留。数据库迁移是增量迁移，不执行破坏性回滚。必要时恢复部署前代码备份，但保留新增表和用户数据用于调查。
-

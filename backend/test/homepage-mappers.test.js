@@ -41,9 +41,25 @@ test("homepage job mapper keeps provider details out of the public contract", ()
   });
 
   assert.equal(mapped.id, "job-1");
+  assert.equal(mapped.status, "completed");
   assert.equal(mapped.siteDraftId, "draft-1");
   assert.equal(mapped.source, "model");
   assert.equal("provider" in mapped, false);
   assert.equal("prompt" in mapped, false);
   assert.equal("idempotencyKey" in mapped, false);
+});
+
+test("homepage job mapper exposes fallback completion as completed", () => {
+  const mapped = mappers.mapHomepageJob({
+    id: "job-2",
+    user_id: "user-1",
+    selected_media_asset_ids: ["asset-1", "asset-2", "asset-3"],
+    status: "fallback",
+    progress: 100,
+    site_draft_id: "draft-2",
+    source: "fallback",
+  });
+
+  assert.equal(mapped.status, "completed");
+  assert.equal(mapped.source, "fallback");
 });

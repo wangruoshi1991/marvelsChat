@@ -144,11 +144,14 @@ export const mapStationSiteDraft = (row) => ({
   updatedAt: toIso(row.updated_at),
 });
 
+const publicHomepageJobStatus = (status) =>
+  ["succeeded", "fallback"].includes(status) ? "completed" : status || "queued";
+
 export const mapHomepageJob = (row) => ({
   id: row.id,
   userId: row.user_id,
   selectedMediaAssetIds: parseJson(row.selected_media_asset_ids, []),
-  status: row.status || "queued",
+  status: publicHomepageJobStatus(row.status),
   progress: Number(row.progress || 0),
   siteDraftId: row.site_draft_id || null,
   source: row.source || null,
