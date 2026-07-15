@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createInMemoryRateLimiter } from "../src/rate-limit-service.js";
+import {
+  createInMemoryRateLimiter,
+  createRateLimitMiddleware,
+} from "../src/rate-limit-service.js";
 
 test("rate limiter isolates keys and resets after its window", () => {
   let now = 1_000;
@@ -36,3 +39,35 @@ test("rate limiter keeps the anonymous bucket bounded", () => {
   assert.equal(limiter.check("").limited, true);
 });
 
+test("rate limit middleware supports custom subjects", () => {
+  const limiter = createInMemoryRateLimiter({
+    limit: 1,
+    windowMs: 10_000,
+    now: () => 5_000,
+  });
+  const middleware = createRateLimitMiddleware({
+    action: "auth.login",
+    limiter,
+    keyGenerator: (req) => `${req.ip}:${req.body.identifier}`,
+  });
+  const headers = {};
+  const res = {
+    set: (name, value) => {
+      headers[name] = value;
+    },
+  };
+  const req = { ip: "127.0.0.1", body: { identifier: "tester" } };
+
+  let firstError = null;
+  middleware(req, res, (error) => {
+    firstError = error || null;
+  });
+  assert.equal(firstError, null);
+
+  let secondError = null;
+  middleware(req, res, (error) => {
+    secondError = error || null;
+  });
+  assert.equal(secondError.status, 429);
+  assert.equal(headers["Retry-After"], "10");
+});

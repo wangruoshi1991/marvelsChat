@@ -76,9 +76,9 @@ export function useRealtimeChannel({
     const connect = () => {
       clearReconnectTimer();
       setRealtimeStatus('connecting');
-      const socket = new WebSocket(
-        buildRealtimeUrl(`/realtime?token=${encodeURIComponent(token)}`),
-      );
+      const socket = new WebSocket(buildRealtimeUrl('/realtime'), [
+        `miaoxun.auth.${token}`,
+      ]);
       realtimeSocketRef.current = socket;
 
       socket.onopen = () => {

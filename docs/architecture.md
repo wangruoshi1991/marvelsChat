@@ -128,8 +128,9 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 - `PATCH /api/me/presence`：保存当前用户 `presenceMode`，只允许 `online / offline / hidden`。公开资料、搜索、好友/关注列表和 direct 线程只输出 `presenceStatus`，规则为 `presenceMode=online` 且当前 WebSocket 在线时显示 `online`，否则显示 `offline`；仅本人接口可看到自己的 `presenceMode`。后端在 WebSocket 首次连接、最后一个连接断开和本人切换在线模式时向好友、关注关系和 direct 聊天相关用户推送 `presence.changed`，客户端收到后重新读取真实 bootstrap 数据，保证列表和主页状态及时一致。
 - `PATCH /api/me/profile`：保存当前用户昵称、头像文字、简介、社区、活动区域和形象配置。
 - `POST /api/location/resolve`：按坐标调用配置好的 Nominatim-compatible 反向地理编码服务，返回附近社区候选和活动区域候选。
-- `GET /api/map/style`：返回 MapLibre 样式，样式中的瓦片 URL 由 `PUBLIC_API_BASE_URL` 指向后端代理并携带当前登录 token。
-- `GET /api/map/tiles/:z/:x/:y.png`：通过后端代理地图瓦片，客户端不直接依赖第三方瓦片域名。
+- `POST /api/map/ticket`：登录用户用 Bearer token 换取短期地图访问票据，避免把主登录 token 放进 MapLibre 样式或瓦片 URL。
+- `GET /api/map/style`：返回 MapLibre 样式，样式中的瓦片 URL 由 `PUBLIC_API_BASE_URL` 指向后端代理并携带短期地图票据。
+- `GET /api/map/tiles/:z/:x/:y.png`：通过后端代理地图瓦片，客户端不直接依赖第三方瓦片域名，也不在瓦片 URL 中携带主登录 token。
 - `GET /api/realtime`：WebSocket 实时通道。登录用户通过 session token 建立连接，direct 消息写入对方线程后立即推送 `thread.message` 给在线对方；关注、好友申请、好友通过、通知已读会推送 `notification.changed`，关注关系和好友关系变化会推送 `relationships.changed`，在线状态变化会推送 `presence.changed`。客户端收到事件后只重新读取真实通知/增量同步或 bootstrap，不把通知、关系或在线状态复制成第二套状态。客户端按 token 生命周期保持连接，异常断开后只重连同一个 WebSocket 通道，并明确展示未连接/连接中状态，不做短轮询兜底。
 - 客户端发送状态是 UI 内存态，不是后端消息状态；只有 `POST /api/threads/:threadId/messages` 成功返回的 `chat_messages` 记录才表示真实已保存消息。后续如需已送达、已读、正在输入，必须新增后端字段或事件表并通过 API/WebSocket 发布。
 - `GET /api/app/sync`：按 `chat_threads.updated_at` 做增量同步。

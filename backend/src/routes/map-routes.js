@@ -1,15 +1,52 @@
+import crypto from "crypto";
 import { getSessionUserFromToken } from "../auth.js";
 import { config } from "../config.js";
 import { HttpError } from "../http-error.js";
+
+const mapTicketTtlMs = 5 * 60 * 1000;
+const mapTickets = new Map();
+
+const pruneMapTickets = () => {
+  const now = Date.now();
+  for (const [ticket, record] of mapTickets.entries()) {
+    if (record.expiresAt <= now) {
+      mapTickets.delete(ticket);
+    }
+  }
+};
+
+const createMapTicket = (userId) => {
+  pruneMapTickets();
+  const ticket = crypto.randomBytes(24).toString("base64url");
+  const expiresAt = Date.now() + mapTicketTtlMs;
+  mapTickets.set(ticket, { userId, expiresAt });
+  return {
+    ticket,
+    expiresAt: new Date(expiresAt).toISOString(),
+  };
+};
+
+const getUserFromMapTicket = (ticket) => {
+  const record = mapTickets.get(String(ticket || ""));
+  if (!record || record.expiresAt <= Date.now()) {
+    if (record) mapTickets.delete(ticket);
+    throw new HttpError(401, "Invalid map ticket");
+  }
+  return { id: record.userId };
+};
 
 const authenticateMapAsset = async (req, _res, next) => {
   try {
     const header = req.get("authorization") || "";
     const headerToken = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-    const queryToken = typeof req.query.token === "string" ? req.query.token.trim() : "";
-    const session = await getSessionUserFromToken(headerToken || queryToken);
-    req.user = session.user;
-    req.sessionId = session.sessionId;
+    const ticket = typeof req.query.ticket === "string" ? req.query.ticket.trim() : "";
+    if (ticket) {
+      req.user = getUserFromMapTicket(ticket);
+    } else {
+      const session = await getSessionUserFromToken(headerToken);
+      req.user = session.user;
+      req.sessionId = session.sessionId;
+    }
     next();
   } catch (error) {
     next(error);
@@ -17,6 +54,15 @@ const authenticateMapAsset = async (req, _res, next) => {
 };
 
 export function registerMapRoutes(app, { asyncHandler }) {
+  app.post(
+    "/api/map/ticket",
+    authenticateMapAsset,
+    asyncHandler(async (req, res) => {
+      res.set("Cache-Control", "no-store");
+      res.json({ data: createMapTicket(req.user.id) });
+    }),
+  );
+
   app.get(
     "/api/map/style",
     authenticateMapAsset,
@@ -31,11 +77,11 @@ export function registerMapRoutes(app, { asyncHandler }) {
         throw new HttpError(503, "PUBLIC_API_BASE_URL is not configured.");
       }
 
-      const header = req.get("authorization") || "";
-      const token = header.startsWith("Bearer ") ? header.slice(7).trim() : String(req.query.token || "").trim();
-      const tileUrl = `${config.publicApiBaseUrl}/api/map/tiles/{z}/{x}/{y}.png?token=${encodeURIComponent(token)}`;
+      const ticket = typeof req.query.ticket === "string" ? req.query.ticket.trim() : "";
+      const mapTicket = ticket ? { ticket } : createMapTicket(req.user.id);
+      const tileUrl = `${config.publicApiBaseUrl}/api/map/tiles/{z}/{x}/{y}.png?ticket=${encodeURIComponent(mapTicket.ticket)}`;
 
-      res.set("Cache-Control", "private, max-age=300");
+      res.set("Cache-Control", "private, max-age=60");
       res.json({
         version: 8,
         name: "Miaoxun Location Map",
@@ -110,7 +156,7 @@ export function registerMapRoutes(app, { asyncHandler }) {
       }
       const bytes = Buffer.from(await response.arrayBuffer());
       res.set("Content-Type", response.headers.get("content-type") || "image/png");
-      res.set("Cache-Control", "public, max-age=86400");
+      res.set("Cache-Control", "private, max-age=300");
       res.send(bytes);
     }),
   );

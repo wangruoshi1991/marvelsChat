@@ -33,17 +33,20 @@ export function createRealtimeGateway(server) {
 
     const user = publicUser(rawUser);
     const audienceUserIds = await listPresenceAudienceUserIds(userId);
-    const event = {
+    const publicEvent = {
       type: "presence.changed",
       reason,
       userId,
       presenceStatus: publicPresenceStatusFor(user, realtimeClientsByUser.has(userId)),
+    };
+    const selfEvent = {
+      ...publicEvent,
       presenceMode: user.presenceMode,
     };
 
-    sendRealtimeToUser(userId, event);
+    sendRealtimeToUser(userId, selfEvent);
     for (const audienceUserId of audienceUserIds) {
-      sendRealtimeToUser(audienceUserId, event);
+      sendRealtimeToUser(audienceUserId, publicEvent);
     }
   };
 
@@ -83,8 +86,13 @@ export function createRealtimeGateway(server) {
         return;
       }
 
-      const token = url.searchParams.get("token") || "";
-      const session = await getSessionUserFromToken(token);
+      const protocols = String(request.headers["sec-websocket-protocol"] || "")
+        .split(",")
+        .map((item) => item.trim());
+      const protocolToken = protocols
+        .find((item) => item.startsWith("miaoxun.auth."))
+        ?.slice("miaoxun.auth.".length) || "";
+      const session = await getSessionUserFromToken(protocolToken);
       realtimeServer.handleUpgrade(request, socket, head, (ws) => {
         registerRealtimeClient(session.user.id, ws);
         ws.send(JSON.stringify({ type: "connection.ready", userId: session.user.id }));

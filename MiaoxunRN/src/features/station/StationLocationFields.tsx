@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import {
   Camera as MapCamera,
@@ -6,7 +6,7 @@ import {
 } from '@maplibre/maplibre-react-native';
 
 import { LocationCandidateDTO } from '../../models/api';
-import { buildApiUrl } from '../../services/apiClient';
+import { apiClient, buildApiUrl } from '../../services/apiClient';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
@@ -116,7 +116,40 @@ export function LocationMapPicker({
   disabled: boolean;
   onSelectCoordinate: (coordinate: Coordinates) => void;
 }) {
-  const styleURL = buildApiUrl(`/map/style?token=${encodeURIComponent(token)}`);
+  const [mapTicket, setMapTicket] = useState('');
+  const [mapTicketError, setMapTicketError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setMapTicket('');
+    setMapTicketError('');
+    if (!token) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    apiClient
+      .mapTicket(token)
+      .then(ticket => {
+        if (!cancelled) {
+          setMapTicket(ticket.ticket);
+        }
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setMapTicketError(
+            error instanceof Error ? error.message : 'Map is unavailable.',
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const styleURL = mapTicket
+    ? buildApiUrl(`/map/style?ticket=${encodeURIComponent(mapTicket)}`)
+    : '';
   const mapCenter = wgs84ToGcj02(center);
   return (
     <View
@@ -136,29 +169,43 @@ export function LocationMapPicker({
         </Text>
       </View>
       <View style={[styles.mapViewport, { backgroundColor: palette.soft }]}>
-        <MapLibreMap
-          mapStyle={styleURL}
-          style={styles.mapLibreView}
-          logo={false}
-          attribution
-          compass
-          dragPan={!disabled}
-          touchZoom={!disabled}
-          touchPitch={false}
-          touchRotate={false}
-          onPress={event => {
-            const [longitude, latitude] = event.nativeEvent.lngLat;
-            if (typeof latitude === 'number' && typeof longitude === 'number') {
-              onSelectCoordinate(gcj02ToWgs84({ latitude, longitude }));
-            }
-          }}
-        >
-          <MapCamera
-            center={[mapCenter.longitude, mapCenter.latitude]}
-            zoom={15}
-            duration={300}
-          />
-        </MapLibreMap>
+        {styleURL ? (
+          <MapLibreMap
+            mapStyle={styleURL}
+            style={styles.mapLibreView}
+            logo={false}
+            attribution
+            compass
+            dragPan={!disabled}
+            touchZoom={!disabled}
+            touchPitch={false}
+            touchRotate={false}
+            onPress={event => {
+              const [longitude, latitude] = event.nativeEvent.lngLat;
+              if (
+                typeof latitude === 'number' &&
+                typeof longitude === 'number'
+              ) {
+                onSelectCoordinate(gcj02ToWgs84({ latitude, longitude }));
+              }
+            }}
+          >
+            <MapCamera
+              center={[mapCenter.longitude, mapCenter.latitude]}
+              zoom={15}
+              duration={300}
+            />
+          </MapLibreMap>
+        ) : (
+          <View style={styles.mapLibreView}>
+            <Text
+              style={[styles.mapCoordinateText, { color: palette.secondaryText }]}
+            >
+              {mapTicketError ||
+                textFor(language, '正在加载地图', 'Loading map')}
+            </Text>
+          </View>
+        )}
         <View style={[styles.mapCrosshair, styles.pointerEventsNone]}>
           <View
             style={[styles.mapCrosshairRing, { borderColor: palette.rose }]}
