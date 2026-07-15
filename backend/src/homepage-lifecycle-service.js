@@ -36,6 +36,17 @@ const publicSite = (site, webBaseUrl) => {
   };
 };
 
+const publicDraft = (draft) => {
+  if (!draft) return null;
+  const {
+    modelProvider: _modelProvider,
+    modelMissing: _modelMissing,
+    modelError: _modelError,
+    ...safeDraft
+  } = draft;
+  return safeDraft;
+};
+
 export function createHomepageLifecycleService({
   repository = homepageRepository,
   getProfile = getProfileForUser,
@@ -46,7 +57,7 @@ export function createHomepageLifecycleService({
   tokenHasher = hashHomepageAccessToken,
   now = () => new Date(),
   deadlineMs = 20_000,
-  previewTtlMs = 5 * 60 * 1000,
+  previewTtlMs = config.homepage?.previewTtlMs || 5 * 60 * 1000,
   webBaseUrl = config.homepage?.webBaseUrl || config.publicApiBaseUrl,
 } = {}) {
   const normalizedWebBaseUrl = trimTrailingSlash(webBaseUrl);
@@ -104,7 +115,7 @@ export function createHomepageLifecycleService({
         },
       });
 
-      return repository.completeGenerationJob({
+      const completed = await repository.completeGenerationJob({
         userId: user.id,
         jobId,
         prompt: claimed.prompt,
@@ -113,6 +124,7 @@ export function createHomepageLifecycleService({
         source: generation.source,
         model,
       });
+      return { ...completed, siteDraft: publicDraft(completed.siteDraft) };
     } catch (error) {
       await repository.failGenerationJob({
         userId: user.id,
@@ -180,12 +192,12 @@ export function createHomepageLifecycleService({
       profile: await getProfile(userId),
       mediaAssets: assets,
     });
-    return repository.replaceDraft({
+    return publicDraft(await repository.replaceDraft({
       userId,
       draftId,
       expectedRevision: revision,
       draft: normalized,
-    });
+    }));
   };
 
   const refineSection = async ({ user, draftId, revision, sectionId, instruction }) => {
@@ -239,12 +251,12 @@ export function createHomepageLifecycleService({
       profile,
       mediaAssets: assets,
     });
-    const siteDraft = await repository.replaceDraft({
+    const siteDraft = publicDraft(await repository.replaceDraft({
       userId: user.id,
       draftId,
       expectedRevision: revision,
       draft: nextDraft,
-    });
+    }));
     return { source: "model", siteDraft };
   };
 
@@ -263,7 +275,11 @@ export function createHomepageLifecycleService({
       visibility,
       shareToken,
     });
-    return { ...result, site: publicSite(result.site, normalizedWebBaseUrl) };
+    return {
+      ...result,
+      site: publicSite(result.site, normalizedWebBaseUrl),
+      siteDraft: publicDraft(result.siteDraft),
+    };
   };
 
   const unpublish = async ({ userId }) => ({
@@ -295,7 +311,9 @@ export function createHomepageLifecycleService({
     processGenerationJob,
     listGenerationJobs: ({ userId, limit }) => repository.listGenerationJobs({ userId, limit }),
     getGenerationJob: ({ userId, jobId }) => repository.getGenerationJob({ userId, jobId }),
-    getDraft: ({ userId, draftId }) => repository.getDraft({ userId, draftId }),
+    getDraft: async ({ userId, draftId }) => publicDraft(
+      await repository.getDraft({ userId, draftId }),
+    ),
     replaceDraft,
     refineSection,
     issuePreviewToken,
@@ -307,7 +325,9 @@ export function createHomepageLifecycleService({
     }),
     getSharedPage,
     listReleases: ({ userId, limit }) => repository.listReleases({ userId, limit }),
-    restoreRelease: ({ userId, releaseId }) => repository.restoreRelease({ userId, releaseId }),
+    restoreRelease: async ({ userId, releaseId }) => publicDraft(
+      await repository.restoreRelease({ userId, releaseId }),
+    ),
   };
 }
 

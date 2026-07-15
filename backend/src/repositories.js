@@ -96,7 +96,14 @@ export async function getRawUserById(userId) {
   return rows[0] || null;
 }
 
-export async function createUserWithDefaults({ email, phoneNumber = null, displayName, passwordHash, role }) {
+export async function createUserWithDefaults({
+  email,
+  phoneNumber = null,
+  displayName,
+  passwordHash,
+  role,
+  consent = null,
+}) {
   const normalizedPhoneNumber = phoneNumber ? normalizePhoneNumber(phoneNumber) : null;
   const normalizedEmail = normalizeEmail(
     email || (normalizedPhoneNumber ? `${normalizedPhoneNumber}@phone.miaoxun.local` : ""),
@@ -130,6 +137,20 @@ export async function createUserWithDefaults({ email, phoneNumber = null, displa
     );
 
     await connection.execute("INSERT INTO profile_visibility (user_id) VALUES (?)", [userId]);
+
+    if (consent) {
+      for (const [policyType, policyVersion] of [
+        ["privacy", consent.privacyPolicyVersion],
+        ["terms", consent.termsVersion],
+      ]) {
+        await connection.execute(
+          `INSERT INTO user_consents
+            (user_id, policy_type, policy_version, metadata)
+          VALUES (?, ?, ?, ?::jsonb)`,
+          [userId, policyType, policyVersion, JSON.stringify({ source: "registration" })],
+        );
+      }
+    }
 
     await connection.execute(
       `INSERT INTO user_agents
@@ -206,6 +227,74 @@ export async function revokeSessionsForUser(userId) {
     WHERE user_id = ? AND revoked_at IS NULL`,
     [userId],
   );
+}
+
+export async function findUserCredentialById(userId) {
+  const rows = await query(
+    "SELECT id, password_hash FROM users WHERE id = ? LIMIT 1",
+    [userId],
+  );
+  return rows[0] ? { id: rows[0].id, passwordHash: rows[0].password_hash } : null;
+}
+
+export async function listUserStorageKeys(userId) {
+  const rows = await query(
+    `SELECT storage_key
+    FROM station_media_assets
+    WHERE user_id = ? AND storage_key IS NOT NULL AND storage_key <> ''
+    UNION
+    SELECT storage_key
+    FROM file_assets
+    WHERE user_id = ? AND storage_key IS NOT NULL AND storage_key <> ''`,
+    [userId, userId],
+  );
+  return rows.map((row) => row.storage_key).filter(Boolean);
+}
+
+export async function deleteUserAccount({ userId }) {
+  let deleted = false;
+  await withTransaction(async (connection) => {
+    await connection.execute("DELETE FROM usage_events WHERE user_id = ?", [userId]);
+    await connection.execute("DELETE FROM agent_runs WHERE user_id = ?", [userId]);
+    await connection.execute("DELETE FROM notifications WHERE actor_user_id = ?", [userId]);
+    const [rows] = await connection.execute(
+      "DELETE FROM users WHERE id = ? RETURNING id",
+      [userId],
+    );
+    deleted = rows.length > 0;
+  });
+  if (!deleted) throw new HttpError(404, "Account not found.");
+  return { deleted: true };
+}
+
+export async function recordUserConsents({
+  userId,
+  privacyPolicyVersion,
+  termsVersion,
+  metadata = {},
+}) {
+  const acceptedAt = new Date();
+  await withTransaction(async (connection) => {
+    for (const [policyType, policyVersion] of [
+      ["privacy", privacyPolicyVersion],
+      ["terms", termsVersion],
+    ]) {
+      await connection.execute(
+        `INSERT INTO user_consents
+          (user_id, policy_type, policy_version, accepted_at, metadata)
+        VALUES (?, ?, ?, ?, ?::jsonb)
+        ON CONFLICT (user_id, policy_type, policy_version) DO UPDATE SET
+          accepted_at = EXCLUDED.accepted_at,
+          metadata = EXCLUDED.metadata`,
+        [userId, policyType, policyVersion, acceptedAt, JSON.stringify(metadata)],
+      );
+    }
+  });
+  return {
+    privacyPolicyVersion,
+    termsVersion,
+    acceptedAt: acceptedAt.toISOString(),
+  };
 }
 
 export async function adminSessionSummary(userId) {

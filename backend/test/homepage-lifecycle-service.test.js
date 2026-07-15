@@ -41,6 +41,9 @@ const draft = {
   prompt: "记录生活",
   revision: 1,
   selectedMediaAssetIds: mediaAssetIds,
+  modelProvider: "new-api",
+  modelMissing: ["internal-setting"],
+  modelError: "raw provider error",
   draft: {
     version: 2,
     language: "zh",
@@ -210,6 +213,8 @@ test("publishing returns a share URL without exposing the stored token field", a
 
   assert.equal(published.site.shareUrl, `https://staging.example.com/s/${token}`);
   assert.equal("shareToken" in published.site, false);
+  assert.equal("modelProvider" in published.siteDraft, false);
+  assert.equal(JSON.stringify(published).includes("raw provider error"), false);
   assert.equal(publishedInputs[0].shareToken, token);
   assert.equal(unpublished.site.shareUrl, null);
   assert.equal(unpublished.site.visibility, "private");

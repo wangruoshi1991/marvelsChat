@@ -85,7 +85,13 @@ assert.throws(() => homepagePublishSchema.parse({ revision: 1, visibility: "publ
 **Files:**
 - Create: `backend/src/routes/homepage-public-routes.js`
 - Create: `backend/src/routes/account-routes.js`
+- Create: `backend/src/account-service.js`
+- Create: `backend/src/homepage-feature.js`
+- Create: `backend/src/homepage-job-runner.js`
+- Create: `backend/src/legal-policy-service.js`
 - Create: `backend/src/request-observability.js`
+- Create: `backend/src/instrument.js`
+- Create: `backend/src/sentry-privacy.js`
 - Modify: `backend/src/routes/station-site-routes.js`
 - Modify: `backend/src/routes/station-routes.js`
 - Modify: `backend/src/routes/app-routes.js`
@@ -104,14 +110,14 @@ assert.throws(() => homepagePublishSchema.parse({ revision: 1, visibility: "publ
 - Account routes: `GET /api/legal/policies`, `POST /api/me/consents`, and `DELETE /api/account` with password confirmation.
 - Every response includes `X-Request-ID`; error JSON includes the same safe diagnostic ID.
 
-- [ ] **Step 1: Write failing route-contract and request-ID tests**
-- [ ] **Step 2: Run focused tests and verify missing routes/middleware fail**
-- [ ] **Step 3: Register backward-compatible authenticated and public routes**
-- [ ] **Step 4: Add allowlisted `homepageV1` bootstrap feature state and configurable daily quotas**
-- [ ] **Step 5: Add consent recording and password-confirmed account deletion with OSS cleanup**
-- [ ] **Step 6: Add request IDs, structured status/latency logs, safe errors, and optional Sentry hooks**
-- [ ] **Step 7: Run backend checks and tests**
-- [ ] **Step 8: Commit `feat(backend): expose Build 24 homepage APIs`**
+- [x] **Step 1: Write failing route-contract and request-ID tests**
+- [x] **Step 2: Run focused tests and verify missing routes/middleware fail**
+- [x] **Step 3: Register backward-compatible authenticated and public routes**
+- [x] **Step 4: Add allowlisted `homepageV1` bootstrap feature state and configurable daily quotas**
+- [x] **Step 5: Add consent recording and password-confirmed account deletion with OSS cleanup**
+- [x] **Step 6: Add request IDs, structured status/latency logs, safe errors, and optional Sentry hooks**
+- [x] **Step 7: Run backend checks and tests**
+- [x] **Step 8: Commit `feat(backend): expose Build 24 homepage APIs`**
 
 ### Task 4: Shared Web Homepage Renderer
 

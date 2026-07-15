@@ -1,6 +1,7 @@
 import { listAgents } from "../../../agents/registry.js";
 import { checkDatabase } from "../db.js";
 import { HttpError } from "../http-error.js";
+import { homepageFeatureForUser } from "../homepage-feature.js";
 import {
   createUsageEvent,
   getBootstrapForUser,
@@ -73,7 +74,15 @@ export function registerAppRoutes(
     asyncHandler(async (req, res) => {
       const registeredAgents = await listAgents();
       const data = await getBootstrapForUser(req.user, registeredAgents, getOnlineUserIds());
-      res.json({ data });
+      res.json({
+        data: {
+          ...data,
+          features: {
+            ...(data.features || {}),
+            homepageV1: homepageFeatureForUser(req.user),
+          },
+        },
+      });
     }),
   );
 

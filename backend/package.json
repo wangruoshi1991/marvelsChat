@@ -7,11 +7,12 @@
   "scripts": {
     "check": "node --check src/*.js src/routes/*.js scripts/*.js",
     "test": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/*.test.js",
-    "dev": "node --watch src/server.js",
-    "start": "node src/server.js",
+    "dev": "node --watch --import ./src/instrument.js src/server.js",
+    "start": "node --import ./src/instrument.js src/server.js",
     "db:migrate": "node scripts/db-migrate.js"
   },
   "dependencies": {
+    "@sentry/node": "10.65.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.19.2",

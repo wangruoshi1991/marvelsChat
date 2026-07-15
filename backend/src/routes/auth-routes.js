@@ -1,5 +1,7 @@
 import { hashPassword, verifyPassword } from "../auth.js";
 import { HttpError } from "../http-error.js";
+import { assertCurrentPolicyConsent } from "../legal-policy-service.js";
+import { createRateLimitMiddleware } from "../rate-limit-service.js";
 import {
   createSessionForUser,
   createUsageEvent,
@@ -16,11 +18,26 @@ import {
 } from "../repositories.js";
 import { loginSchema, registerSchema } from "../schemas.js";
 
+const registrationLimit = createRateLimitMiddleware({
+  action: "auth.register",
+  limit: 10,
+  windowMs: 60 * 60 * 1000,
+  message: "注册尝试过于频繁，请稍后再试。",
+});
+const loginLimit = createRateLimitMiddleware({
+  action: "auth.login",
+  limit: 20,
+  windowMs: 15 * 60 * 1000,
+  message: "登录尝试过于频繁，请稍后再试。",
+});
+
 export function registerAuthRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/auth/register",
+    registrationLimit,
     asyncHandler(async (req, res) => {
       const body = registerSchema.parse(req.body);
+      if (body.consent) assertCurrentPolicyConsent(body.consent);
       if (body.contactType === "email") {
         const existed = await findUserByEmail(body.email);
         if (existed) throw new HttpError(409, "Email already registered");
@@ -39,6 +56,7 @@ export function registerAuthRoutes(app, { authenticate, asyncHandler }) {
         displayName: body.displayName,
         passwordHash,
         role,
+        consent: body.consent,
       });
       const session = await createSessionForUser(user.id);
       await markLogin(user.id);
@@ -57,6 +75,7 @@ export function registerAuthRoutes(app, { authenticate, asyncHandler }) {
 
   app.post(
     "/api/auth/login",
+    loginLimit,
     asyncHandler(async (req, res) => {
       const body = loginSchema.parse(req.body);
       const userRow = await findUserByLoginIdentifier(body.identifier);

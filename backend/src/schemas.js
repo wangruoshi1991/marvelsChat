@@ -10,12 +10,22 @@ export const passwordSchema = z.string()
 
 export const displayNameSchema = z.string().trim().min(1).max(40);
 
+const policyVersionSchema = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}(?:\.\d+)?$/);
+
+export const userConsentSchema = z.object({
+  privacyPolicyVersion: policyVersionSchema,
+  termsVersion: policyVersionSchema,
+  privacyAccepted: z.literal(true),
+  termsAccepted: z.literal(true),
+});
+
 export const registerSchema = z.object({
   contactType: z.enum(["email", "phone"]),
   email: z.string().email().max(190).optional(),
   phoneNumber: phoneNumberSchema.optional(),
   password: passwordSchema,
   displayName: displayNameSchema,
+  consent: userConsentSchema.optional(),
 }).transform((value) => ({
   ...value,
   email: value.email ? value.email.toLowerCase().trim() : null,
@@ -321,13 +331,6 @@ export const homepageAccessTokenSchema = z.object({
 
 export const homepageReleaseParamsSchema = z.object({
   releaseId: z.string().uuid(),
-});
-
-export const userConsentSchema = z.object({
-  privacyPolicyVersion: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}(?:\.\d+)?$/),
-  termsVersion: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}(?:\.\d+)?$/),
-  privacyAccepted: z.literal(true),
-  termsAccepted: z.literal(true),
 });
 
 export const accountDeletionSchema = z.object({

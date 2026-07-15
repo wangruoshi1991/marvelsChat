@@ -87,6 +87,29 @@ export function createHomepageRepository({
     return rows.map(mapHomepageJob);
   };
 
+  const requeueStaleGenerationJobs = async ({ staleBefore }) => {
+    const rows = await queryFn(
+      `UPDATE station_site_generation_jobs
+      SET status = 'queued', progress = 0, error_message = NULL
+      WHERE status = 'running' AND updated_at < ?
+      RETURNING id, user_id`,
+      [staleBefore],
+    );
+    return rows.map((row) => ({ id: row.id, userId: row.user_id }));
+  };
+
+  const listQueuedGenerationJobs = async ({ limit = 4 } = {}) => {
+    const safeLimit = sqlLimit(limit, 4, 20);
+    const rows = await queryFn(
+      `SELECT id, user_id
+      FROM station_site_generation_jobs
+      WHERE status = 'queued'
+      ORDER BY created_at ASC
+      LIMIT ${safeLimit}`,
+    );
+    return rows.map((row) => ({ id: row.id, userId: row.user_id }));
+  };
+
   const getGenerationJob = async ({ userId, jobId, includePrivate = false }) => {
     const rows = await queryFn(
       `SELECT * FROM station_site_generation_jobs
@@ -447,6 +470,8 @@ export function createHomepageRepository({
   return {
     createGenerationJob,
     listGenerationJobs,
+    requeueStaleGenerationJobs,
+    listQueuedGenerationJobs,
     getGenerationJob,
     claimGenerationJob,
     completeGenerationJob,

@@ -156,3 +156,21 @@ test("consent and account deletion require explicit confirmation", () => {
     }),
   );
 });
+
+test("registration can carry the same explicit versioned consent", () => {
+  const consent = {
+    privacyPolicyVersion: "2026-07-15",
+    termsVersion: "2026-07-15",
+    privacyAccepted: true,
+    termsAccepted: true,
+  };
+  const registration = schemas.registerSchema.parse({
+    contactType: "email",
+    email: "person@example.com",
+    password: "Password1",
+    displayName: "测试用户",
+    consent,
+  });
+
+  assert.deepEqual(registration.consent, consent);
+});

@@ -80,6 +80,25 @@ export const config = {
     timeoutMs: parseNumber(process.env.MESHY_TIMEOUT_MS, 60000),
   },
   publicApiBaseUrl: (process.env.PUBLIC_API_BASE_URL || "").trim().replace(/\/+$/, ""),
+  homepage: {
+    enabled: parseBoolean(process.env.HOMEPAGE_V1_ENABLED, false),
+    allowlist: listFromEnv(process.env.HOMEPAGE_V1_ALLOWLIST),
+    requireAllowlist: isProduction,
+    webBaseUrl: (process.env.HOMEPAGE_WEB_BASE_URL || process.env.PUBLIC_API_BASE_URL || "")
+      .trim()
+      .replace(/\/+$/, ""),
+    generationDailyLimit: parseNumber(process.env.HOMEPAGE_GENERATION_DAILY_LIMIT, 5),
+    refineDailyLimit: parseNumber(process.env.HOMEPAGE_REFINE_DAILY_LIMIT, 20),
+    previewTtlMs: parseNumber(process.env.HOMEPAGE_PREVIEW_TTL_MS, 300000),
+  },
+  legal: {
+    privacyPolicyVersion: (process.env.PRIVACY_POLICY_VERSION || "2026-07-15").trim(),
+    termsVersion: (process.env.TERMS_VERSION || "2026-07-15").trim(),
+  },
+  observability: {
+    sentryDsn: (process.env.SENTRY_DSN || "").trim(),
+    sentryEnvironment: (process.env.SENTRY_ENVIRONMENT || nodeEnv).trim(),
+  },
   geocoding: {
     provider: (process.env.GEOCODING_PROVIDER || "nominatim").trim().toLowerCase(),
     reverseUrl: (process.env.GEOCODING_REVERSE_URL || "").trim(),

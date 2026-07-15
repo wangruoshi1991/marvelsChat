@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS station_site_releases (
   visibility VARCHAR(20) NOT NULL CHECK (visibility IN ('private', 'link')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_homepage_release_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  CONSTRAINT fk_homepage_release_draft FOREIGN KEY (draft_id) REFERENCES station_site_drafts(id) ON DELETE RESTRICT
+  CONSTRAINT fk_homepage_release_draft FOREIGN KEY (draft_id) REFERENCES station_site_drafts(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_homepage_releases_user_created
@@ -101,3 +101,10 @@ CREATE TABLE IF NOT EXISTS user_consents (
 
 CREATE INDEX IF NOT EXISTS idx_user_consents_user_accepted
   ON user_consents (user_id, accepted_at DESC);
+
+ALTER TABLE station_site_releases
+  DROP CONSTRAINT IF EXISTS fk_homepage_release_draft;
+
+ALTER TABLE station_site_releases
+  ADD CONSTRAINT fk_homepage_release_draft
+  FOREIGN KEY (draft_id) REFERENCES station_site_drafts(id) ON DELETE CASCADE;
