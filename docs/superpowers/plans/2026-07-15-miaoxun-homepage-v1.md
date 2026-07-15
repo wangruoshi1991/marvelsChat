@@ -61,6 +61,7 @@ assert.throws(() => homepagePublishSchema.parse({ revision: 1, visibility: "publ
 **Files:**
 - Create: `backend/src/homepage-service.js`
 - Create: `backend/src/homepage-repository.js`
+- Create: `backend/src/homepage-lifecycle-service.js`
 - Modify: `backend/src/site-builder-service.js`
 - Modify: `backend/src/oss-service.js`
 - Test: `backend/test/homepage-service.test.js`
@@ -70,14 +71,14 @@ assert.throws(() => homepagePublishSchema.parse({ revision: 1, visibility: "publ
 - Produces `createHomepageJob`, `processHomepageJob`, `replaceHomepageDraft`, `refineHomepageSection`, `publishHomepage`, `unpublishHomepage`, `restoreHomepageRelease`, `issuePreviewToken`, `getPreviewPage`, and `getSharedPage`.
 - Page views use `{ mode, owner, page, media, visibility, publishedAt }` and never include user email or storage credentials.
 
-- [ ] **Step 1: Write failing tests for explicit media filtering, deterministic fallback, revision conflicts, link revocation, token expiry, and signed-media projection**
-- [ ] **Step 2: Run `node --test test/homepage-service.test.js` and verify behavior failures**
-- [ ] **Step 3: Implement repository operations and pure page-view normalization**
-- [ ] **Step 4: Add the 20-second model deadline and background job processor with idempotency**
-- [ ] **Step 5: Implement immutable release creation, current-site switching, preview token hashing, and share-token revocation**
-- [ ] **Step 6: Add OSS DELETE signing and keep all signed URLs out of logs**
-- [ ] **Step 7: Run focused and full backend tests**
-- [ ] **Step 8: Commit `feat(backend): implement homepage lifecycle`**
+- [x] **Step 1: Write failing tests for explicit media filtering, deterministic fallback, revision conflicts, link revocation, token expiry, and signed-media projection**
+- [x] **Step 2: Run `node --test test/homepage-service.test.js` and verify behavior failures**
+- [x] **Step 3: Implement repository operations and pure page-view normalization**
+- [x] **Step 4: Add the 20-second model deadline and background job processor with idempotency**
+- [x] **Step 5: Implement immutable release creation, current-site switching, preview token hashing, and share-token revocation**
+- [x] **Step 6: Add OSS DELETE signing and keep all signed URLs out of logs**
+- [x] **Step 7: Run focused and full backend tests**
+- [x] **Step 8: Commit `feat(backend): implement homepage lifecycle`**
 
 ### Task 3: Homepage, Consent, Account, and Observability HTTP APIs
 

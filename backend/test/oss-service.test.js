@@ -10,7 +10,9 @@ process.env.OSS_ACCESS_KEY_SECRET = "test-secret";
 
 const {
   buildStationMediaObjectKey,
+  createOssDeleteSignedUrl,
   createOssHeadSignedUrl,
+  deleteOssObject,
   inspectOssObject,
 } = await import("../src/oss-service.js");
 
@@ -67,4 +69,30 @@ test("inspectOssObject performs HEAD and returns normalized metadata", async () 
     contentLength: 2048,
     etag: '"etag-value"',
   });
+});
+
+test("DELETE URLs use the OSS DELETE canonical signature", () => {
+  const objectKey = "users/user-1/station-media/asset-1/photo.jpg";
+  const signedUrl = new URL(createOssDeleteSignedUrl({ objectKey }));
+  const expires = signedUrl.searchParams.get("Expires");
+  const expectedSignature = crypto
+    .createHmac("sha1", "test-secret")
+    .update(`DELETE\n\n\n${expires}\n/miaoxun-test/${objectKey}`)
+    .digest("base64");
+
+  assert.equal(signedUrl.searchParams.get("Signature"), expectedSignature);
+});
+
+test("deleteOssObject treats an already missing object as deleted", async () => {
+  const calls = [];
+  const result = await deleteOssObject({
+    objectKey: "users/user-1/station-media/asset-1/photo.jpg",
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return new Response(null, { status: 404 });
+    },
+  });
+
+  assert.equal(calls[0].options.method, "DELETE");
+  assert.deepEqual(result, { deleted: true });
 });
