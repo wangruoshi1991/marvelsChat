@@ -6,6 +6,7 @@ import { createLegacyApiCompatibilityMiddleware } from "./api-compat.js";
 import { authenticate, requireAdmin } from "./auth.js";
 import { config } from "./config.js";
 import { homepageJobRunner } from "./homepage-job-runner.js";
+import { registerHomepageWebRoutes } from "./homepage-web-service.js";
 import { sentry } from "./instrument.js";
 import {
   createRequestErrorHandler,
@@ -29,7 +30,14 @@ const port = config.port;
 const server = http.createServer(app);
 
 app.use(createRequestObservabilityMiddleware());
-app.use(helmet({ referrerPolicy: { policy: "no-referrer" } }));
+app.use(helmet({
+  referrerPolicy: { policy: "no-referrer" },
+  contentSecurityPolicy: {
+    directives: {
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+}));
 app.use(cors({
   origin: config.corsOrigin,
   exposedHeaders: ["X-Request-ID"],
@@ -81,6 +89,8 @@ registerAuthRoutes(app, { authenticate, asyncHandler });
 registerAccountRoutes(app, { authenticate, asyncHandler });
 
 registerHomepagePublicRoutes(app, { asyncHandler });
+
+registerHomepageWebRoutes(app);
 
 registerSocialRoutes(app, {
   authenticate,

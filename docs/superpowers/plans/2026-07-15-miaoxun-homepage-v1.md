@@ -142,14 +142,14 @@ assert.throws(() => homepagePublishSchema.parse({ revision: 1, visibility: "publ
 - Consumes the page-view JSON from Task 2 or `window.__MIAOXUN_HOMEPAGE__` injected by Express.
 - Produces `/site-assets/*`, `/preview/:token`, `/s/:token`, `/legal/privacy`, and `/legal/terms` from one renderer.
 
-- [ ] **Step 1: Write failing unit tests for section ordering, hidden sections, cover selection, and both themes**
-- [ ] **Step 2: Run `npm test` and verify missing renderer failures**
-- [ ] **Step 3: Scaffold Vite/React with base `/site-assets/` and typed bootstrap loading**
-- [ ] **Step 4: Implement `gallery` and `clean` full-width responsive themes with real media, loading, expired-link, and unavailable states**
-- [ ] **Step 5: Add legal pages and safe metadata injection without `dangerouslySetInnerHTML` for user content**
-- [ ] **Step 6: Add Playwright mobile/desktop tests, screenshot assertions, and nonblank image checks**
-- [ ] **Step 7: Run typecheck, unit tests, build, and Playwright**
-- [ ] **Step 8: Commit `feat(web): add shared homepage renderer`**
+- [x] **Step 1: Write failing unit tests for section ordering, hidden sections, cover selection, and both themes**
+- [x] **Step 2: Run `npm test` and verify missing renderer failures**
+- [x] **Step 3: Scaffold Vite/React with base `/site-assets/` and typed bootstrap loading**
+- [x] **Step 4: Implement `gallery` and `clean` full-width responsive themes with real media, loading, expired-link, and unavailable states**
+- [x] **Step 5: Add legal pages and safe metadata injection without `dangerouslySetInnerHTML` for user content**
+- [x] **Step 6: Add Playwright mobile/desktop tests, screenshot assertions, and nonblank image checks**
+- [x] **Step 7: Run typecheck, unit tests, build, and Playwright**
+- [x] **Step 8: Commit `feat(web): add shared homepage renderer`**
 
 ### Task 5: Mobile API Contract and Session Safety
 

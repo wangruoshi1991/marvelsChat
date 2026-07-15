@@ -27,6 +27,7 @@ export function registerHomepagePublicRoutes(app, {
     asyncHandler(async (req, res) => {
       requireEnabled();
       const { token } = homepageAccessTokenSchema.parse(req.params);
+      res.set("Cache-Control", "private, no-store");
       res.json({ data: await service.getPreviewPage({ token }) });
     }),
   );
@@ -37,6 +38,7 @@ export function registerHomepagePublicRoutes(app, {
     asyncHandler(async (req, res) => {
       requireEnabled();
       const { token } = homepageAccessTokenSchema.parse(req.params);
+      res.set("Cache-Control", "private, no-store");
       res.json({ data: await service.getSharedPage({ token }) });
     }),
   );

@@ -7,6 +7,9 @@ dist/
 .local-backups/
 .worktrees/
 tmp/
+**/test-results/
+**/playwright-report/
+**/blob-report/
 **/.gradle/
 **/.bundle/
 **/xcuserdata/
