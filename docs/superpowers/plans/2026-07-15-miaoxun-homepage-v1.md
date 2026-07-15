@@ -200,15 +200,15 @@ assert.throws(() => homepagePublishSchema.parse({ revision: 1, visibility: "publ
 - Consumes homepage APIs and feature state from Task 5.
 - Produces station-first navigation, 3-9 photo selection/reuse, per-item upload state, job polling, exact WebView preview, constrained editing, module refinement, link publishing, sharing, and unpublishing.
 
-- [ ] **Step 1: Write failing component tests for empty onboarding, photo count validation, fallback result, revision conflict, publish confirmation, and revoked-link state**
-- [ ] **Step 2: Write failing draft-store and upload retry tests**
-- [ ] **Step 3: Install `react-native-webview`, add mocks, and implement secure local draft persistence using the existing Keychain dependency**
-- [ ] **Step 4: Implement multi-photo selection, explicit existing-photo reuse, individual upload progress, and retry**
-- [ ] **Step 5: Implement job polling and the 20-second fallback status UX without provider terminology**
-- [ ] **Step 6: Implement exact WebView preview, two-theme switch, text/cover/photo/section editing, module refinement, and undo**
-- [ ] **Step 7: Implement publish/share/unpublish and default the app to `My Homepage` with Messages second**
-- [ ] **Step 8: Run focused tests, TypeScript, ESLint, and the full Jest suite**
-- [ ] **Step 9: Commit `feat(mobile): complete homepage creation loop`**
+- [x] **Step 1: Write failing component tests for empty onboarding, photo count validation, fallback result, revision conflict, publish confirmation, and revoked-link state**
+- [x] **Step 2: Write failing draft-store and upload retry tests**
+- [x] **Step 3: Install `react-native-webview`, add mocks, and implement secure local draft persistence using the existing Keychain dependency**
+- [x] **Step 4: Implement multi-photo selection, explicit existing-photo reuse, individual upload progress, and retry**
+- [x] **Step 5: Implement job polling and the 20-second fallback status UX without provider terminology**
+- [x] **Step 6: Implement exact WebView preview, two-theme switch, text/cover/photo/section editing, module refinement, and undo**
+- [x] **Step 7: Implement publish/share/unpublish and default the app to `My Homepage` with Messages second**
+- [x] **Step 8: Run focused tests, TypeScript, ESLint, and the full Jest suite**
+- [x] **Step 9: Commit `feat(mobile): complete homepage creation loop`**
 
 ### Task 7: Consent, Legal Links, and Account Deletion UI
 

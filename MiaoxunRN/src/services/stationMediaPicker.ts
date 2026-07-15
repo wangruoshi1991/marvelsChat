@@ -42,6 +42,11 @@ const normalizeAsset = (
 const pickFirstAsset = (assets: Asset[] | undefined) =>
   normalizeAsset(assets?.[0]);
 
+const pickAssets = (assets: Asset[] | undefined) =>
+  (assets || [])
+    .map(asset => normalizeAsset(asset))
+    .filter((asset): asset is PickedStationMedia => Boolean(asset));
+
 export async function pickStationPhotoFromLibrary() {
   const response = await launchImageLibrary(pickerOptions);
   if (response.didCancel) {
@@ -51,6 +56,20 @@ export async function pickStationPhotoFromLibrary() {
     throw new Error(response.errorMessage);
   }
   return pickFirstAsset(response.assets);
+}
+
+export async function pickStationPhotosFromLibrary(selectionLimit = 9) {
+  const response = await launchImageLibrary({
+    ...pickerOptions,
+    selectionLimit: Math.min(Math.max(selectionLimit, 1), 9),
+  });
+  if (response.didCancel) {
+    return [];
+  }
+  if (response.errorMessage) {
+    throw new Error(response.errorMessage);
+  }
+  return pickAssets(response.assets);
 }
 
 export async function takeStationPhoto() {

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, StatusBar, Text, View } from 'react-native';
-import Clipboard from '@react-native-clipboard/clipboard';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AppModals } from './app/AppModals';
 import { ModalRoute } from './app/appTypes';
@@ -19,10 +18,7 @@ import {
   MessagesScreen,
 } from './features/messages/MessagesScreen';
 import { useProfileFlows } from './features/profile/useProfileFlows';
-import {
-  FloatingMiaoButton,
-  StationScreen,
-} from './features/station/StationScreen';
+import { HomepageScreen } from './features/homepage/HomepageScreen';
 import { AvatarConfigDTO, AgentIdentityDTO } from './models/api';
 import { appErrorText, textFor } from './shared/i18n';
 import { styles } from './shared/styles';
@@ -32,13 +28,11 @@ import { BottomBar, RootTab } from './shared/ui';
 function App(): React.JSX.Element {
   const session = useMiaoxunSession();
   const palette = palettes[session.appearance];
-  const [selectedTab, setSelectedTab] = useState<RootTab>('messages');
+  const [selectedTab, setSelectedTab] = useState<RootTab>('station');
   const [modalRoute, setModalRoute] = useState<ModalRoute>(null);
   const [activeThread, setActiveThread] = useState<ChatThread | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showLaunchAnimation, setShowLaunchAnimation] = useState(true);
-  const [isStationFloatingVisible, setIsStationFloatingVisible] =
-    useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMessageTab, setSelectedMessageTab] =
     useState<MessageTab>('chat');
@@ -108,6 +102,19 @@ function App(): React.JSX.Element {
     }, 1600);
   }, []);
 
+  const showHomepageError = useCallback(
+    (error: unknown) =>
+      showToast(
+        appErrorText(
+          session.language,
+          error,
+          '主页操作失败',
+          'Homepage action failed',
+        ),
+      ),
+    [session.language, showToast],
+  );
+
   useEffect(() => {
     const notice = session.realtimeNotificationNotice;
     if (!notice) {
@@ -147,24 +154,6 @@ function App(): React.JSX.Element {
     [openThread, session, showToast],
   );
 
-  const openAgentThread = useCallback(
-    (agentId: string) => {
-      const thread = session.threads.find(item => item.agentId === agentId);
-      if (!thread) {
-        showToast(
-          textFor(
-            session.language,
-            '这个 Agent 还没有可用会话，请先添加。',
-            'Add this agent before opening its chat.',
-          ),
-        );
-        return;
-      }
-      openThread(thread);
-    },
-    [openThread, session.language, session.threads, showToast],
-  );
-
   const { sendButlerMessage } = useButlerActions({
     session,
     setSelectedTab,
@@ -184,22 +173,6 @@ function App(): React.JSX.Element {
     }
     session.markThreadRead(openedThread.id);
   }, [modalRoute, openedThread, session]);
-
-  const copyAIID = () => {
-    const aiId = session.user?.aiId || '';
-    if (!aiId) {
-      showToast(
-        textFor(
-          session.language,
-          '登录后可复制 AI ID',
-          'Log in to copy the AI ID',
-        ),
-      );
-      return;
-    }
-    Clipboard.setString(aiId);
-    showToast(textFor(session.language, 'AI ID 已复制', 'AI ID copied'));
-  };
 
   const requestMessageQRCodeScan = () => {
     if (profileFlows.isScanning || pendingScanRequest) {
@@ -390,40 +363,15 @@ function App(): React.JSX.Element {
                   }}
                 />
               ) : (
-                <StationScreen
+                <HomepageScreen
                   palette={palette}
                   language={session.language}
                   session={session}
                   onOpenSettings={() => setModalRoute('settings')}
-                  onOpenLocation={() => setModalRoute('station-location')}
-                  onCopyAIID={copyAIID}
-                  onOpenQRCode={profileFlows.openQRCode}
-                  onOpenFriendThread={openFriendThread}
-                  onOpenAgentThread={openAgentThread}
-                  onOpenPublicProfileByAiId={
-                    profileFlows.openPublicProfileByAiId
-                  }
                   onActionMessage={showToast}
-                  onActionError={error =>
-                    showToast(
-                      appErrorText(
-                        session.language,
-                        error,
-                        '操作失败',
-                        'Action failed',
-                      ),
-                    )
-                  }
-                  onFloatingVisibilityChange={setIsStationFloatingVisible}
+                  onActionError={showHomepageError}
                 />
               )}
-
-              {selectedTab === 'station' && isStationFloatingVisible ? (
-                <FloatingMiaoButton
-                  palette={palette}
-                  onPress={() => setModalRoute('site-builder')}
-                />
-              ) : null}
 
               <BottomBar
                 palette={palette}

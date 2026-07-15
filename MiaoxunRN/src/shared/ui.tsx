@@ -3,6 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 import {
   ChevronDown,
   ChevronLeft,
+  Globe2,
   MessageCircle,
   UserCircle,
   type LucideIcon,
@@ -91,7 +92,12 @@ export function SegmentedControl<T extends string>({
                 {option.label}
               </Text>
               {option.badge && option.badge > 0 ? (
-                <View style={[styles.segmentBadge, { backgroundColor: palette.rose }]}>
+                <View
+                  style={[
+                    styles.segmentBadge,
+                    { backgroundColor: palette.rose },
+                  ]}
+                >
                   <Text style={styles.segmentBadgeText}>
                     {option.badge > 99 ? '99+' : option.badge}
                   </Text>
@@ -236,18 +242,18 @@ export function BottomBar({
       ]}
     >
       <TabButton
+        title={textFor(language, '主页', 'Homepage')}
+        icon={Globe2}
+        selected={selectedTab === 'station'}
+        palette={palette}
+        onPress={() => onSelectTab('station')}
+      />
+      <TabButton
         title={textFor(language, '妙讯', 'Messages')}
         icon={MessageCircle}
         selected={selectedTab === 'messages'}
         palette={palette}
         onPress={() => onSelectTab('messages')}
-      />
-      <TabButton
-        title={textFor(language, '小站', 'Station')}
-        icon={UserCircle}
-        selected={selectedTab === 'station'}
-        palette={palette}
-        onPress={() => onSelectTab('station')}
       />
     </View>
   );
