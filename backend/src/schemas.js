@@ -247,6 +247,94 @@ export const stationSiteDraftParamsSchema = z.object({
   draftId: z.string().uuid(),
 });
 
+const homepageMediaAssetIdsSchema = z
+  .array(z.string().uuid())
+  .min(3)
+  .max(9)
+  .refine((ids) => new Set(ids).size === ids.length, {
+    message: "Homepage media asset IDs must be unique.",
+  });
+
+const homepageSectionSchema = z.object({
+  id: z.string().trim().min(1).max(80).regex(/^[a-z0-9][a-z0-9_-]*$/i),
+  type: z.enum(["hero", "about", "gallery", "diary", "contact"]),
+  title: z.string().trim().min(1).max(80),
+  subtitle: z.string().trim().max(180).default(""),
+  body: z.string().trim().max(900).default(""),
+  assetIds: z.array(z.string().uuid()).max(9).default([]),
+  diaryEntryIds: z.array(z.string().uuid()).max(8).default([]),
+  actions: z.array(z.object({
+    label: z.string().trim().min(1).max(40),
+    kind: z.enum(["message", "follow", "link"]),
+    href: z.string().trim().max(240).default(""),
+  })).max(3).default([]),
+  hidden: z.boolean().default(false),
+});
+
+export const homepageDraftContentSchema = z.object({
+  version: z.literal(2),
+  language: z.enum(["zh", "en"]).default("zh"),
+  title: z.string().trim().min(1).max(80),
+  theme: z.enum(["clean", "gallery"]),
+  summary: z.string().trim().max(240).default(""),
+  sections: z.array(homepageSectionSchema).min(1).max(8),
+}).superRefine((draft, context) => {
+  const sectionIds = draft.sections.map((section) => section.id);
+  if (new Set(sectionIds).size !== sectionIds.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Homepage section IDs must be unique.",
+      path: ["sections"],
+    });
+  }
+});
+
+export const homepageGenerateSchema = z.object({
+  prompt: z.string().trim().min(1).max(1200),
+  mediaAssetIds: homepageMediaAssetIdsSchema,
+  idempotencyKey: z.string().trim().min(8).max(128).regex(/^[a-zA-Z0-9._:-]+$/),
+});
+
+export const homepageJobParamsSchema = z.object({
+  jobId: z.string().uuid(),
+});
+
+export const homepageDraftUpdateSchema = z.object({
+  revision: z.number().int().min(1),
+  draft: homepageDraftContentSchema,
+});
+
+export const homepageRefineSchema = z.object({
+  revision: z.number().int().min(1),
+  sectionId: z.string().trim().min(1).max(80).regex(/^[a-z0-9][a-z0-9_-]*$/i),
+  instruction: z.string().trim().min(1).max(600),
+});
+
+export const homepagePublishSchema = z.object({
+  revision: z.number().int().min(1),
+  visibility: z.enum(["private", "link"]),
+});
+
+export const homepageAccessTokenSchema = z.object({
+  token: z.string().trim().min(43).max(128).regex(/^[a-zA-Z0-9_-]+$/),
+});
+
+export const homepageReleaseParamsSchema = z.object({
+  releaseId: z.string().uuid(),
+});
+
+export const userConsentSchema = z.object({
+  privacyPolicyVersion: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}(?:\.\d+)?$/),
+  termsVersion: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}(?:\.\d+)?$/),
+  privacyAccepted: z.literal(true),
+  termsAccepted: z.literal(true),
+});
+
+export const accountDeletionSchema = z.object({
+  password: z.string().min(1).max(128),
+  confirmation: z.literal("DELETE"),
+});
+
 export const stationModelJobRequestSchema = z.object({
   inputType: z.enum(["text", "image"]).optional().default("text"),
   prompt: z.string().trim().min(1).max(600),

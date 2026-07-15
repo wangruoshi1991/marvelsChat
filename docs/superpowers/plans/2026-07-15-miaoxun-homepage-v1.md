@@ -35,7 +35,7 @@
 - Produces `station_site_generation_jobs`, draft revision/media fields, `station_sites`, `station_site_releases`, `station_site_preview_tokens`, and `user_consents`.
 - Produces Zod schemas for generation, draft replacement, refinement, preview, publishing, release restore, consent, analytics events, and account deletion.
 
-- [ ] **Step 1: Write failing schema tests**
+- [x] **Step 1: Write failing schema tests**
 
 ```js
 assert.deepEqual(homepageGenerateSchema.parse({
@@ -51,10 +51,10 @@ assert.throws(() => homepageGenerateSchema.parse({ prompt: "x", mediaAssetIds: [
 assert.throws(() => homepagePublishSchema.parse({ revision: 1, visibility: "public" }));
 ```
 
-- [ ] **Step 2: Run `node --test test/homepage-schemas.test.js` and verify missing exports fail**
-- [ ] **Step 3: Add additive SQL tables/columns, constraints, indexes, triggers, schemas, and mappers**
-- [ ] **Step 4: Run the focused test and `npm run check`**
-- [ ] **Step 5: Commit `feat(backend): add homepage persistence contract`**
+- [x] **Step 2: Run `node --test test/homepage-schemas.test.js` and verify missing exports fail**
+- [x] **Step 3: Add additive SQL tables/columns, constraints, indexes, triggers, schemas, and mappers**
+- [x] **Step 4: Run the focused test and `npm run check`**
+- [x] **Step 5: Commit `feat(backend): add homepage persistence contract`**
 
 ### Task 2: Homepage Domain Services
 
@@ -246,4 +246,3 @@ assert.throws(() => homepagePublishSchema.parse({ revision: 1, visibility: "publ
 - [ ] **Step 6: Deploy additive migration, backend, and Web artifacts to the test server with homepage allowlisted only**
 - [ ] **Step 7: Run server health, authenticated generation/publish, anonymous link, revoke, account-safe non-destructive test, and two-minute network checks**
 - [ ] **Step 8: Tag the verified commit and produce the commit-specific App-owner Archive/TestFlight prompt**
-

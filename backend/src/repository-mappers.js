@@ -133,6 +133,8 @@ export const mapStationSiteDraft = (row) => ({
   userId: row.user_id,
   prompt: row.prompt || "",
   draft: parseJson(row.draft, {}),
+  revision: Number(row.revision || 1),
+  selectedMediaAssetIds: parseJson(row.selected_media_asset_ids, []),
   source: row.source || "fallback",
   status: row.status || "draft",
   modelProvider: row.model_provider || "",
@@ -140,6 +142,20 @@ export const mapStationSiteDraft = (row) => ({
   modelError: row.model_error || "",
   createdAt: toIso(row.created_at),
   updatedAt: toIso(row.updated_at),
+});
+
+export const mapHomepageJob = (row) => ({
+  id: row.id,
+  userId: row.user_id,
+  selectedMediaAssetIds: parseJson(row.selected_media_asset_ids, []),
+  status: row.status || "queued",
+  progress: Number(row.progress || 0),
+  siteDraftId: row.site_draft_id || null,
+  source: row.source || null,
+  failureReason: row.status === "failed" ? "generation_failed" : null,
+  createdAt: toIso(row.created_at),
+  updatedAt: toIso(row.updated_at),
+  finishedAt: toIso(row.finished_at),
 });
 
 export const mapGenerationJob = (row) => ({
