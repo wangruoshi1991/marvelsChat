@@ -5,6 +5,7 @@ dist/
 .DS_Store
 *.log
 .local-backups/
+.worktrees/
 tmp/
 **/.gradle/
 **/.bundle/
