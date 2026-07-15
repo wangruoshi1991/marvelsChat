@@ -19,7 +19,7 @@ import {
 
 import {AgentDTO} from '../../models/api';
 import { recognizeSpeechOnce } from '../../services/speechToText';
-import { displayText, textFor } from '../../shared/i18n';
+import { displayText, publicPresenceText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette, palettes } from '../../shared/theme';
 import {ChatHeader} from '../../shared/ui';
@@ -29,16 +29,15 @@ import {
   Language,
 } from '../session/useMiaoxunSession';
 import {ThreadListScreen} from './ThreadListScreen';
-import {
-  AgentAvatarRenderer,
-  MessageTab,
-  UserAvatarRenderer,
-} from './messageTypes';
+import {MessageTab, UserAvatarRenderer} from './messageTypes';
 import {ChatComposer} from './ChatComposer';
 import {ChatMessageItem} from './ChatMessageItem';
 import {ChatMessageMenu} from './ChatMessageMenu';
+import {resolveMessagePalette} from './messagePalette';
+import {ThreadSettingsSheet} from './ThreadSettingsSheet';
+import {isThreadOnline} from './messageUtils';
 
-export type {AgentAvatarRenderer, MessageTab, UserAvatarRenderer};
+export type {MessageTab, UserAvatarRenderer};
 
 const recallWindowMs = 60 * 1000;
 const chatSwipeCloseThreshold = -84;
@@ -57,11 +56,11 @@ export function ChatScreen({
   thread,
   agents,
   renderUserAvatar,
-  renderAgentAvatar,
   onBack,
   onSend,
   onDeleteMessage,
   onRecallMessage,
+  onSetMuted,
   onActionError,
   onOpenPeerProfile,
 }: {
@@ -72,7 +71,6 @@ export function ChatScreen({
   thread: ChatThread;
   agents: AgentDTO[];
   renderUserAvatar: UserAvatarRenderer;
-  renderAgentAvatar: AgentAvatarRenderer;
   onBack: () => void;
   onSend: (
     content: string,
@@ -81,6 +79,7 @@ export function ChatScreen({
   ) => void | Promise<void | boolean>;
   onDeleteMessage: (messageId: string) => void | Promise<void>;
   onRecallMessage: (messageId: string) => void | Promise<void>;
+  onSetMuted: (muted: boolean) => Promise<void>;
   onActionError: (message: string) => void;
   onOpenPeerProfile?: () => void;
 }) {
@@ -97,10 +96,29 @@ export function ChatScreen({
   } | null>(null);
   const messageInlineMenuArrowLeft = messageMenuPosition?.isMine ? 232 : 34;
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
+  const [isThreadSettingsOpen, setIsThreadSettingsOpen] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const chatTranslateX = useRef(new Animated.Value(0)).current;
   const windowSize = useWindowDimensions();
-  const isDarkPalette = palette.text === palettes.dark.text;
+  const messagePalette = useMemo(() => resolveMessagePalette(palette), [
+    palette,
+  ]);
+  const isDarkPalette = messagePalette.text === palettes.dark.text;
+  const canConfigureThread =
+    Boolean(thread.peerUserId) || thread.kind === 'group';
+  const threadAgent = thread.agentId
+    ? agents.find(agent => agent.key === thread.agentId) || null
+    : null;
+  const threadOnline = isThreadOnline(thread, threadAgent);
+  const presenceSubtitle = thread.agentId
+    ? textFor(
+        language,
+        threadOnline ? '在线' : '离线',
+        threadOnline ? 'Online' : 'Offline',
+      )
+    : thread.peerUserId
+      ? publicPresenceText(language, thread.peerPresenceStatus)
+      : '';
   const isSelectedMessageMine =
     selectedMessage?.senderType === 'user' &&
     (typeof selectedMessage.metadata?.senderUserId !== 'string' ||
@@ -194,7 +212,7 @@ export function ChatScreen({
     <ChatMessageItem
       item={item}
       previousMessage={index > 0 ? thread.messages[index - 1] : null}
-      palette={palette}
+      palette={messagePalette}
       language={language}
       currentUserId={currentUserId}
       currentUserName={currentUserName}
@@ -202,7 +220,6 @@ export function ChatScreen({
       agents={agents}
       isDarkPalette={isDarkPalette}
       renderUserAvatar={renderUserAvatar}
-      renderAgentAvatar={renderAgentAvatar}
       onOpenMessageMenu={openMessageMenu}
       onRetrySend={message => {
         if (message.localStatus !== 'failed') {
@@ -281,7 +298,7 @@ export function ChatScreen({
 
   return (
     <KeyboardAvoidingView
-      style={[styles.chatScreen, { backgroundColor: palette.background }]}
+      style={[styles.chatScreen, { backgroundColor: messagePalette.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <Animated.View
@@ -292,11 +309,19 @@ export function ChatScreen({
         ]}
       >
         <ChatHeader
-          palette={palette}
+          palette={messagePalette}
           language={language}
           title={displayText(language, thread.title)}
+          subtitle={presenceSubtitle}
+          subtitleStatus={
+            presenceSubtitle ? (threadOnline ? 'online' : 'offline') : undefined
+          }
           onBack={onBack}
-          onOpenProfile={thread.peerAiId ? onOpenPeerProfile : undefined}
+          onOpenSettings={
+            canConfigureThread
+              ? () => setIsThreadSettingsOpen(true)
+              : undefined
+          }
         />
         <FlatList
           ref={listRef}
@@ -312,7 +337,7 @@ export function ChatScreen({
         />
         {selectedMessage && messageMenuPosition ? (
           <ChatMessageMenu
-            palette={palette}
+            palette={messagePalette}
             language={language}
             selectedMessage={selectedMessage}
             position={messageMenuPosition}
@@ -326,7 +351,7 @@ export function ChatScreen({
           />
         ) : null}
         <ChatComposer
-          palette={palette}
+          palette={messagePalette}
           language={language}
           threadTitle={thread.title}
           draft={draft}
@@ -343,6 +368,16 @@ export function ChatScreen({
           onSend={send}
         />
       </Animated.View>
+      <ThreadSettingsSheet
+        visible={isThreadSettingsOpen}
+        muted={Boolean(thread.muted)}
+        palette={messagePalette}
+        language={language}
+        onClose={() => setIsThreadSettingsOpen(false)}
+        onSetMuted={onSetMuted}
+        onOpenProfile={thread.peerAiId ? onOpenPeerProfile : undefined}
+        onActionError={onActionError}
+      />
     </KeyboardAvoidingView>
   );
 }

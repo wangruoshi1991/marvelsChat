@@ -72,6 +72,10 @@ export const messageSchema = z.object({
   }).optional(),
 });
 
+export const threadPreferencesSchema = z.object({
+  muted: z.boolean(),
+});
+
 export const stationConfigSchema = z.object({
   language: z.enum(["zh", "en"]).optional(),
   appearance: z.enum(["light", "dark"]).optional(),

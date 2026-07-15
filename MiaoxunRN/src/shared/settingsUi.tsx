@@ -142,11 +142,13 @@ export function SettingsSwitchRow({
   title,
   value,
   palette,
+  disabled,
   onChange,
 }: {
   title: string;
   value: boolean;
   palette: Palette;
+  disabled?: boolean;
   onChange: (value: boolean) => void;
 }) {
   return (
@@ -155,6 +157,7 @@ export function SettingsSwitchRow({
         {title}
       </Text>
       <Switch
+        disabled={disabled}
         value={value}
         onValueChange={onChange}
         trackColor={{ false: palette.soft, true: `${palette.mint}66` }}

@@ -1,6 +1,9 @@
 import React from 'react';
 import { Modal, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+} from 'react-native-safe-area-context';
 import { MessageActionSheet } from '../features/messages/MessageActionSheet';
 import {
   ChatThread,
@@ -17,11 +20,12 @@ import { DeleteAccountSheet } from '../features/settings/DeleteAccountSheet';
 import { SettingsScreen } from '../features/settings/SettingsScreen';
 import { SiteBuilderScreen } from '../features/site/SiteBuilderScreen';
 import { StationLocationScreen } from '../features/station/StationLocationScreen';
-import { AvatarConfigDTO, PublicProfileDTO } from '../models/api';
+import { AvatarConfigDTO } from '../models/api';
 import { textFor } from '../shared/i18n';
 import { styles } from '../shared/styles';
 import { Palette } from '../shared/theme';
 import { Header } from '../shared/ui';
+import { resolveMessagePalette } from '../features/messages/messagePalette';
 import { ModalRoute } from './appTypes';
 
 type SessionState = ReturnType<typeof useMiaoxunSession>;
@@ -42,7 +46,6 @@ type AppModalsProps = {
   onCloseModal: () => void;
   onSetModalRoute: (route: ModalRoute) => void;
   onOpenLegalUrl: (url: string) => void;
-  onOpenPublicProfileModal: () => void;
   onOpenThread: (thread: ChatThread) => void;
   onSearchQueryChange: (query: string) => void;
   onOpenFriendThread: (friendUserId: string) => void;
@@ -61,7 +64,6 @@ export function AppModals({
   onCloseModal,
   onSetModalRoute,
   onOpenLegalUrl,
-  onOpenPublicProfileModal,
   onOpenThread,
   onSearchQueryChange,
   onOpenFriendThread,
@@ -76,6 +78,7 @@ export function AppModals({
   const renderHeader = (title: string) => (
     <Header palette={palette} title={title} onBack={onCloseModal} />
   );
+  const searchPalette = resolveMessagePalette(palette);
 
   return (
     <>
@@ -211,31 +214,35 @@ export function AppModals({
 
       <Modal
         visible={modalRoute === 'search'}
-        animationType="slide"
-        presentationStyle="pageSheet"
+        animationType="fade"
+        presentationStyle="fullScreen"
       >
-        <SafeAreaView
-          style={[styles.safeArea, { backgroundColor: palette.background }]}
-        >
-          <SearchScreen
-            palette={palette}
-            language={session.language}
-            query={searchQuery}
-            threads={session.threads}
-            agents={session.agents}
-            searchHistory={session.searchHistory}
-            renderUserAvatar={renderUserAvatar}
-            renderHeader={renderHeader}
-            onBack={onCloseModal}
-            onChangeQuery={onSearchQueryChange}
-            onOpenThread={onOpenThread}
-            onSearchUsers={session.searchUsers}
-            onOpenPublicProfile={(profile: PublicProfileDTO) => {
-              profileFlows.setPublicProfile(profile);
-              onOpenPublicProfileModal();
-            }}
-          />
-        </SafeAreaView>
+        <SafeAreaProvider>
+          <SafeAreaView
+            edges={['top', 'bottom']}
+            style={[
+              styles.safeArea,
+              { backgroundColor: searchPalette.soft },
+            ]}
+          >
+            <SearchScreen
+              palette={searchPalette}
+              language={session.language}
+              query={searchQuery}
+              threads={session.threads}
+              agents={session.agents}
+              friends={session.relationships.friends}
+              searchHistory={session.searchHistory}
+              renderUserAvatar={renderUserAvatar}
+              onBack={onCloseModal}
+              onChangeQuery={onSearchQueryChange}
+              onOpenThread={onOpenThread}
+              onOpenFriend={onOpenFriendThread}
+              onSaveSearch={session.saveSearchQuery}
+              onClearSearchHistory={session.clearSearchHistory}
+            />
+          </SafeAreaView>
+        </SafeAreaProvider>
       </Modal>
 
       <Modal

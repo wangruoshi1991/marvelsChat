@@ -65,11 +65,12 @@ export function createRateLimitMiddleware({
   windowMs,
   limiter = createInMemoryRateLimiter({ limit, windowMs }),
   message = "Too many requests. Please try again later.",
+  keyGenerator = (req) => req.user?.id || req.ip || defaultKey,
 } = {}) {
   const actionName = String(action || "api");
 
   return (req, res, next) => {
-    const subject = req.user?.id || req.ip || defaultKey;
+    const subject = keyGenerator(req) || defaultKey;
     const result = limiter.check(`${actionName}:${subject}`);
     res.set("X-RateLimit-Limit", String(result.limit));
     res.set("X-RateLimit-Remaining", String(result.remaining));
@@ -92,4 +93,3 @@ export function createRateLimitMiddleware({
     next(error);
   };
 }
-

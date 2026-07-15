@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Alert,
   Modal,
@@ -49,7 +49,6 @@ export function StationScreen({
   onOpenPublicProfileByAiId,
   onActionMessage,
   onActionError,
-  onFloatingVisibilityChange,
 }: {
   palette: Palette;
   language: Language;
@@ -63,7 +62,6 @@ export function StationScreen({
   onOpenPublicProfileByAiId: (aiId: string) => void;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
-  onFloatingVisibilityChange: (isVisible: boolean) => void;
 }) {
   const [selectedStationTab, setSelectedStationTab] =
     useState<StationTab>('station');
@@ -80,31 +78,6 @@ export function StationScreen({
   const [isCreatingStationContent, setIsCreatingStationContent] =
     useState(false);
   const { width: windowWidth } = useWindowDimensions();
-  const floatingRestoreTimer = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-
-  const clearFloatingRestoreTimer = () => {
-    if (floatingRestoreTimer.current) {
-      clearTimeout(floatingRestoreTimer.current);
-      floatingRestoreTimer.current = null;
-    }
-  };
-
-  const hideFloatingDuringScroll = () => {
-    clearFloatingRestoreTimer();
-    onFloatingVisibilityChange(false);
-  };
-
-  const restoreFloatingAfterScroll = () => {
-    clearFloatingRestoreTimer();
-    floatingRestoreTimer.current = setTimeout(() => {
-      onFloatingVisibilityChange(true);
-      floatingRestoreTimer.current = null;
-    }, 120);
-  };
-
-  useEffect(() => clearFloatingRestoreTimer, []);
 
   const updatePresence = (presenceMode: PresenceMode) => {
     if (isUpdatingPresence) {
@@ -232,11 +205,6 @@ export function StationScreen({
       <ScrollView
         stickyHeaderIndices={[1]}
         contentContainerStyle={styles.stationScrollContent}
-        onScrollBeginDrag={hideFloatingDuringScroll}
-        onScrollEndDrag={restoreFloatingAfterScroll}
-        onMomentumScrollBegin={hideFloatingDuringScroll}
-        onMomentumScrollEnd={restoreFloatingAfterScroll}
-        scrollEventThrottle={16}
       >
         <View style={styles.stationTopContent}>
           <View style={styles.stationTopRow}>

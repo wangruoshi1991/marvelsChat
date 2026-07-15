@@ -1,5 +1,21 @@
-import {ChatMessage} from '../session/useMiaoxunSession';
+import {ChatMessage, ChatThread} from '../session/useMiaoxunSession';
 import {AgentDTO, AgentIdentityDTO} from '../../models/api';
+
+export const isThreadOnline = (
+  thread: ChatThread,
+  agent: AgentDTO | null,
+) => {
+  if (!thread.agentId) {
+    return thread.peerPresenceStatus === 'online';
+  }
+
+  const statusText = String(thread.status || '').toLowerCase();
+  const isDisabled =
+    statusText.includes('停用') ||
+    statusText.includes('disabled') ||
+    statusText.includes('offline');
+  return agent?.status === 'registered' && !isDisabled;
+};
 
 export const relativeTimeText = (rawValue?: string | null) => {
   if (!rawValue) {

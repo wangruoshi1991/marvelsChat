@@ -1,30 +1,87 @@
-import React, {useState} from 'react';
-import {ActivityIndicator, Pressable, ScrollView, Text, TextInput, View} from 'react-native';
+import React, {useMemo, useState} from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import {Search} from 'lucide-react-native';
+import {pinyin} from 'pinyin-pro';
 
-import {PublicProfileDTO, SearchHistoryDTO} from '../../models/api';
+import {contactIconAssets} from '../../assets/icons';
+import {AgentDTO, RelationshipProfileDTO, SearchHistoryDTO} from '../../models/api';
 import {displayText, publicPresenceText, textFor} from '../../shared/i18n';
 import {styles} from '../../shared/styles';
 import {Palette} from '../../shared/theme';
-import {ChatThread, Language, useMiaoxunSession} from '../session/useMiaoxunSession';
-import {UserAvatarRenderer} from '../messages/MessagesScreen';
+import {AgentIconAvatar} from '../messages/AgentIconAvatar';
+import {UserAvatarRenderer} from '../messages/messageTypes';
+import {ChatThread, Language} from '../session/useMiaoxunSession';
 
-function SearchSection({
+type DirectoryItem =
+  | {
+      id: string;
+      kind: 'agent';
+      title: string;
+      subtitle: string;
+      searchText: string;
+      thread: ChatThread;
+      agent: AgentDTO | null;
+    }
+  | {
+      id: string;
+      kind: 'friend';
+      title: string;
+      subtitle: string;
+      searchText: string;
+      profile: RelationshipProfileDTO;
+    };
+
+type DirectoryGroup = {
+  initial: string;
+  items: DirectoryItem[];
+};
+
+const directoryInitial = (title: string) => {
+  const romanized = pinyin(title.trim().charAt(0), {toneType: 'none'}).trim();
+  const initial = romanized.charAt(0).toUpperCase();
+  return /^[A-Z]$/.test(initial) ? initial : '#';
+};
+
+const directorySortText = (title: string) =>
+  pinyin(title, {toneType: 'none'}).toLocaleLowerCase();
+
+function SectionHeader({
   palette,
   title,
-  empty,
-  children,
+  action,
+  onAction,
 }: {
   palette: Palette;
   title: string;
-  empty: string;
-  children?: React.ReactNode;
+  action?: string;
+  onAction?: () => void;
 }) {
-  const hasChildren = React.Children.count(children) > 0;
+  const actionColor = onAction ? '#2A00FF' : palette.secondaryText;
+
   return (
-    <View style={styles.searchSection}>
-      <Text style={[styles.searchSectionTitle, {color: palette.secondaryText}]}>{title}</Text>
-      {hasChildren ? children : <Text style={[styles.searchEmpty, {color: palette.secondaryText}]}>{empty}</Text>}
+    <View style={styles.searchSectionHeader}>
+      <Text style={[styles.searchSectionTitle, {color: palette.text}]}>
+        {title}
+      </Text>
+      {action ? (
+        <Pressable disabled={!onAction} hitSlop={8} onPress={onAction}>
+          <Text
+            style={[
+              styles.searchSectionAction,
+              {color: actionColor},
+            ]}>
+            {action}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -35,176 +92,291 @@ export function SearchScreen({
   query,
   threads,
   agents,
+  friends,
   searchHistory,
   renderUserAvatar,
-  renderHeader,
   onBack,
   onChangeQuery,
   onOpenThread,
-  onSearchUsers,
-  onOpenPublicProfile,
+  onOpenFriend,
+  onSaveSearch,
+  onClearSearchHistory,
 }: {
   palette: Palette;
   language: Language;
   query: string;
   threads: ChatThread[];
-  agents: ReturnType<typeof useMiaoxunSession>['agents'];
+  agents: AgentDTO[];
+  friends: RelationshipProfileDTO[];
   searchHistory: SearchHistoryDTO[];
   renderUserAvatar: UserAvatarRenderer;
-  renderHeader: (title: string) => React.ReactNode;
   onBack: () => void;
   onChangeQuery: (value: string) => void;
   onOpenThread: (thread: ChatThread) => void;
-  onSearchUsers: (query: string) => Promise<PublicProfileDTO[]>;
-  onOpenPublicProfile: (profile: PublicProfileDTO) => void;
+  onOpenFriend: (friendUserId: string) => void;
+  onSaveSearch: (query: string) => Promise<unknown>;
+  onClearSearchHistory: () => Promise<void>;
 }) {
-  const [userResults, setUserResults] = useState<PublicProfileDTO[]>([]);
-  const [isSearchingUsers, setIsSearchingUsers] = useState(false);
-  const normalized = query.trim().toLowerCase();
-  const threadResults = normalized
-    ? threads.filter(thread => {
-        const text = [thread.title, thread.lastContent, thread.status, thread.agentId || '']
-          .join(' ')
-          .toLowerCase();
-        return text.includes(normalized);
-      })
-    : threads;
-  const agentResults = normalized
-    ? agents.filter(agent => [agent.name, agent.description, agent.key, agent.category].join(' ').toLowerCase().includes(normalized))
-    : agents;
-  const runUserSearch = () => {
-    const value = query.trim();
-    if (!value || isSearchingUsers) {
+  const [pendingAction, setPendingAction] = useState<'save' | 'clear' | null>(
+    null,
+  );
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const directoryItems = useMemo<DirectoryItem[]>(() => {
+    const agentItems: DirectoryItem[] = threads
+      .filter(thread => Boolean(thread.agentId))
+      .map(thread => {
+        const agent =
+          agents.find(item => item.key === thread.agentId) || null;
+        const title = displayText(language, thread.title);
+        const subtitle = displayText(
+          language,
+          agent?.description || thread.status || thread.lastContent,
+        );
+        return {
+          id: `agent:${thread.id}`,
+          kind: 'agent' as const,
+          title,
+          subtitle,
+          searchText: `${title} ${subtitle} ${thread.agentId || ''}`.toLocaleLowerCase(),
+          thread,
+          agent,
+        };
+      });
+    const friendItems: DirectoryItem[] = friends.map(profile => {
+      const title = displayText(
+        language,
+        profile.profile.nickname || profile.user.displayName,
+      );
+      const subtitle =
+        displayText(language, profile.profile.bio) ||
+        publicPresenceText(language, profile.user.presenceStatus);
+      return {
+        id: `friend:${profile.user.id}`,
+        kind: 'friend' as const,
+        title,
+        subtitle,
+        searchText:
+          `${title} ${subtitle} ${profile.user.aiId || ''}`.toLocaleLowerCase(),
+        profile,
+      };
+    });
+
+    return [...agentItems, ...friendItems]
+      .filter(
+        item => !normalizedQuery || item.searchText.includes(normalizedQuery),
+      )
+      .sort((left, right) =>
+        directorySortText(left.title).localeCompare(
+          directorySortText(right.title),
+          'en',
+        ),
+      );
+  }, [agents, friends, language, normalizedQuery, threads]);
+  const directoryGroups = useMemo<DirectoryGroup[]>(() => {
+    const groups: DirectoryGroup[] = [];
+    directoryItems.forEach(item => {
+      const initial = directoryInitial(item.title);
+      const currentGroup = groups[groups.length - 1];
+      if (currentGroup?.initial === initial) {
+        currentGroup.items.push(item);
+      } else {
+        groups.push({initial, items: [item]});
+      }
+    });
+    return groups;
+  }, [directoryItems]);
+
+  const saveSearch = async () => {
+    if (!query.trim() || pendingAction) {
       return;
     }
-    setIsSearchingUsers(true);
-    onSearchUsers(value)
-      .then(setUserResults)
-      .catch(() => setUserResults([]))
-      .finally(() => setIsSearchingUsers(false));
+    setPendingAction('save');
+    try {
+      await onSaveSearch(query);
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const clearHistory = async () => {
+    if (pendingAction) {
+      return;
+    }
+    setPendingAction('clear');
+    try {
+      await onClearSearchHistory();
+    } finally {
+      setPendingAction(null);
+    }
   };
 
   return (
-    <View style={[styles.searchScreen, {backgroundColor: palette.background}]}>
-      {renderHeader(textFor(language, '搜索', 'Search'))}
-      <View style={[styles.searchField, {backgroundColor: palette.surface, borderColor: palette.border}]}>
-        <Search color={palette.secondaryText} size={18} strokeWidth={2.4} />
-        <TextInput
-          value={query}
-          onChangeText={onChangeQuery}
-          placeholder={textFor(language, '搜索 Agent、好友、群、对话记录', 'Search agents, friends, groups, and chat history')}
-          placeholderTextColor={palette.secondaryText}
-          returnKeyType="search"
-          onSubmitEditing={runUserSearch}
-          style={[styles.searchInput, {color: palette.text}]}
-        />
+    <View style={[styles.searchScreen, {backgroundColor: palette.soft}]}>
+      <View style={styles.searchPageHeader}>
         <Pressable
-          disabled={!query.trim() || isSearchingUsers}
-          onPress={runUserSearch}
-          style={[styles.searchSubmit, {backgroundColor: palette.mint}, (!query.trim() || isSearchingUsers) && styles.disabledButton]}>
-          {isSearchingUsers ? (
-            <ActivityIndicator color="#ffffff" size="small" />
-          ) : (
-            <Text style={styles.searchSubmitText}>{textFor(language, '搜人', 'Users')}</Text>
-          )}
+          accessibilityRole="button"
+          accessibilityLabel={textFor(language, '返回', 'Back')}
+          hitSlop={8}
+          onPress={onBack}
+          style={styles.searchBackButton}>
+          <Image
+            source={contactIconAssets.back}
+            resizeMode="contain"
+            style={styles.searchBackIcon}
+          />
         </Pressable>
+        <View
+          style={[
+            styles.searchField,
+            {backgroundColor: palette.surface, borderColor: palette.border},
+          ]}>
+          <Search
+            color={palette.secondaryText}
+            size={16}
+            strokeWidth={2.2}
+          />
+          <TextInput
+            value={query}
+            onChangeText={onChangeQuery}
+            onSubmitEditing={saveSearch}
+            placeholder={textFor(
+              language,
+              '搜索好友、聊天记录、Agent',
+              'Search friends, chats, and agents',
+            )}
+            placeholderTextColor={palette.secondaryText}
+            returnKeyType="search"
+            style={[styles.searchInput, {color: palette.text}]}
+          />
+          {pendingAction === 'save' ? (
+            <ActivityIndicator color="#2A00FF" size="small" />
+          ) : null}
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.searchResults}>
-        <SearchSection
-          palette={palette}
-          title={textFor(language, '最近搜索', 'Recent Searches')}
-          empty={textFor(language, '暂无最近搜索', 'No recent searches')}
-        >
-          {searchHistory.map(item => (
-            <Pressable
-              key={item.id}
-              onPress={() => onChangeQuery(item.query)}
-              style={[styles.searchChip, {backgroundColor: palette.surface, borderColor: palette.border}]}>
-              <Text style={[styles.searchChipText, {color: palette.text}]}>{item.query}</Text>
-            </Pressable>
-          ))}
-        </SearchSection>
-
-        <SearchSection
-          palette={palette}
-          title={textFor(language, '用户', 'Users')}
-          empty={normalized ? textFor(language, '暂无匹配用户', 'No matching users') : textFor(language, '输入昵称或 AI ID 搜索用户', 'Search users by name or AI ID')}
-        >
-          {userResults.map(profile => (
-            <Pressable
-              key={profile.user.id}
-              onPress={() => {
-                onBack();
-                onOpenPublicProfile(profile);
-              }}
-              style={[styles.searchRow, {backgroundColor: palette.surface, borderColor: palette.border}]}>
-              {renderUserAvatar({text: profile.profile.avatarText, config: profile.profile.avatarConfig, small: true})}
-              <View style={styles.searchRowCopy}>
-                <Text style={[styles.searchRowTitle, {color: palette.text}]}>{displayText(language, profile.profile.nickname)}</Text>
-                <Text style={[styles.searchRowBody, {color: palette.secondaryText}]} numberOfLines={1}>
-                  {profile.user.aiId
-                    ? `AI ID ${profile.user.aiId} · ${publicPresenceText(language, profile.user.presenceStatus)}`
-                    : `${textFor(language, '对方已隐藏 AI ID', 'AI ID hidden')} · ${publicPresenceText(language, profile.user.presenceStatus)}`}
-                </Text>
-              </View>
-            </Pressable>
-          ))}
-        </SearchSection>
-
-        <SearchSection
-          palette={palette}
-          title={textFor(language, '对话记录', 'Chat history')}
-          empty={textFor(language, '暂无匹配对话', 'No matching chats')}
-        >
-          {threadResults.map(thread => (
-            <Pressable
-              key={thread.id}
-              onPress={() => {
-                onBack();
-                onOpenThread(thread);
-              }}
-              style={[styles.searchRow, {backgroundColor: palette.surface, borderColor: palette.border}]}>
-              <View style={[styles.searchBadge, {backgroundColor: `${palette.mint}1f`}]} />
-              <View style={styles.searchRowCopy}>
-                <Text style={[styles.searchRowTitle, {color: palette.text}]}>{displayText(language, thread.title)}</Text>
-                <Text style={[styles.searchRowBody, {color: palette.secondaryText}]} numberOfLines={1}>
-                  {displayText(language, thread.lastContent)}
-                </Text>
-              </View>
-            </Pressable>
-          ))}
-        </SearchSection>
-
-        <SearchSection
-          palette={palette}
-          title={textFor(language, 'Agent', 'Agents')}
-          empty={textFor(language, '暂无匹配 Agent', 'No matching agents')}
-        >
-          {agentResults.map(agent => (
-            <View key={agent.key} style={[styles.searchRow, {backgroundColor: palette.surface, borderColor: palette.border}]}>
-              <View style={[styles.searchBadge, {backgroundColor: `${palette.rose}1f`}]} />
-              <View style={styles.searchRowCopy}>
-                <Text style={[styles.searchRowTitle, {color: palette.text}]}>{agent.name}</Text>
-                <Text style={[styles.searchRowBody, {color: palette.secondaryText}]} numberOfLines={1}>
-                  {agent.description}
-                </Text>
-              </View>
+        <View style={styles.searchSection}>
+          <SectionHeader
+            palette={palette}
+            title={textFor(language, '搜索记录', 'Search History')}
+            action={
+              searchHistory.length
+                ? textFor(language, '清除', 'Clear')
+                : undefined
+            }
+            onAction={searchHistory.length ? clearHistory : undefined}
+          />
+          {searchHistory.length ? (
+            <View style={styles.searchHistoryList}>
+              {searchHistory.map(item => (
+                <Pressable
+                  key={item.id}
+                  onPress={() => onChangeQuery(item.query)}
+                  style={[
+                    styles.searchChip,
+                    {
+                      backgroundColor: palette.surface,
+                      borderColor: palette.border,
+                    },
+                  ]}>
+                  <Text
+                    style={[
+                      styles.searchChipText,
+                      {color: palette.secondaryText},
+                    ]}>
+                    {item.query}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
-          ))}
-        </SearchSection>
+          ) : (
+            <Text style={[styles.searchEmpty, {color: palette.secondaryText}]}>
+              {textFor(language, '暂无搜索记录', 'No search history')}
+            </Text>
+          )}
+        </View>
 
-        <SearchSection
-          palette={palette}
-          title={textFor(language, '好友', 'Friends')}
-          empty={textFor(language, '好友会在小站社交页展示', 'Friends are shown on the Station social tab')}
-        />
-
-        <SearchSection
-          palette={palette}
-          title={textFor(language, '群', 'Groups')}
-          empty={textFor(language, '群检索暂缓', 'Group search is pending')}
-        />
+        <View style={styles.searchSection}>
+          <SectionHeader
+            palette={palette}
+            title={textFor(language, '通讯录', 'Contacts')}
+            action={textFor(language, '按字母分类', 'Alphabetical')}
+          />
+          {directoryGroups.length ? (
+            <View style={styles.searchDirectoryList}>
+              {directoryGroups.map(group => (
+                <View key={group.initial} style={styles.searchDirectoryGroup}>
+                  <Text
+                    style={[
+                      styles.searchDirectoryInitial,
+                      {color: palette.secondaryText},
+                    ]}>
+                    {group.initial}
+                  </Text>
+                  <View>
+                    {group.items.map((item, index) => (
+                      <Pressable
+                        key={item.id}
+                        accessibilityRole="button"
+                        onPress={() => {
+                          onBack();
+                          if (item.kind === 'agent') {
+                            onOpenThread(item.thread);
+                          } else {
+                            onOpenFriend(item.profile.user.id);
+                          }
+                        }}
+                        style={[
+                          styles.searchRow,
+                          index < group.items.length - 1 &&
+                            styles.searchRowDivider,
+                          {borderBottomColor: palette.border},
+                        ]}>
+                        {item.kind === 'agent' ? (
+                          <AgentIconAvatar
+                            agentId={item.thread.agentId || ''}
+                            category={item.agent?.category}
+                            identity={item.agent?.identity || null}
+                            palette={palette}
+                            small
+                          />
+                        ) : (
+                          renderUserAvatar({
+                            text: item.profile.profile.avatarText,
+                            config: item.profile.profile.avatarConfig,
+                            small: true,
+                          })
+                        )}
+                        <View style={styles.searchRowCopy}>
+                          <Text
+                            numberOfLines={1}
+                            style={[
+                              styles.searchRowTitle,
+                              {color: palette.text},
+                            ]}>
+                            {item.title}
+                          </Text>
+                          <Text
+                            numberOfLines={1}
+                            style={[
+                              styles.searchRowBody,
+                              {color: palette.secondaryText},
+                            ]}>
+                            {item.subtitle}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.searchEmpty, {color: palette.secondaryText}]}>
+              {textFor(language, '暂无匹配联系人', 'No matching contacts')}
+            </Text>
+          )}
+        </View>
       </ScrollView>
     </View>
   );

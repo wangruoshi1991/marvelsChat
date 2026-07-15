@@ -18,23 +18,36 @@ import {
 } from "../repositories.js";
 import { loginSchema, registerSchema } from "../schemas.js";
 
-const registrationLimit = createRateLimitMiddleware({
-  action: "auth.register",
-  limit: 10,
-  windowMs: 60 * 60 * 1000,
-  message: "注册尝试过于频繁，请稍后再试。",
-});
+const minute = 60 * 1000;
+
+const authKey = (req) => {
+  const identifier = String(req.body?.identifier || req.body?.email || req.body?.phoneNumber || req.body?.displayName || "")
+    .trim()
+    .toLowerCase()
+    .slice(0, 190);
+  return `${req.ip || "anonymous"}:${identifier || "unknown"}`;
+};
+
 const loginLimit = createRateLimitMiddleware({
   action: "auth.login",
-  limit: 20,
-  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  windowMs: 5 * minute,
+  keyGenerator: authKey,
   message: "登录尝试过于频繁，请稍后再试。",
+});
+
+const registerLimit = createRateLimitMiddleware({
+  action: "auth.register",
+  limit: 8,
+  windowMs: 10 * minute,
+  keyGenerator: authKey,
+  message: "注册请求过于频繁，请稍后再试。",
 });
 
 export function registerAuthRoutes(app, { authenticate, asyncHandler }) {
   app.post(
     "/api/auth/register",
-    registrationLimit,
+    registerLimit,
     asyncHandler(async (req, res) => {
       const body = registerSchema.parse(req.body);
       if (body.consent) assertCurrentPolicyConsent(body.consent);

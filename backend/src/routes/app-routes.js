@@ -12,6 +12,7 @@ import {
 } from "../repositories.js";
 import { buildPublicStationView } from "../public-station-service.js";
 import {
+  clearSearchHistory,
   listSearchHistory,
   saveSearchHistory,
   searchPublicProfiles,
@@ -143,6 +144,14 @@ export function registerAppRoutes(
         userAgent: req.get("user-agent") || "",
       });
       res.json({ data: profile });
+    }),
+  );
+
+  app.delete(
+    "/api/search/history",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      res.json({ data: await clearSearchHistory(req.user.id) });
     }),
   );
 

@@ -149,17 +149,22 @@ export function useMessageActions({
 
   const deleteMessage = useCallback(
     async (threadId: string, messageId: string) => {
+      const removeMessage = (thread: ChatThread) => {
+        const messages = thread.messages.filter(
+          message => message.id !== messageId,
+        );
+        return {
+          ...thread,
+          messages,
+          lastContent: messages.at(-1)?.content || '',
+          lastMessageAt: messages.at(-1)?.createdAt || thread.lastMessageAt,
+        };
+      };
+
       if (messageId.startsWith('local-')) {
         setThreads(current =>
           current.map(thread =>
-            thread.id === threadId
-              ? {
-                  ...thread,
-                  messages: thread.messages.filter(
-                    message => message.id !== messageId,
-                  ),
-                }
-              : thread,
+            thread.id === threadId ? removeMessage(thread) : thread,
           ),
         );
         return;
@@ -170,14 +175,7 @@ export function useMessageActions({
       await apiClient.deleteMessage(threadId, messageId, token);
       setThreads(current =>
         current.map(thread =>
-          thread.id === threadId
-            ? {
-                ...thread,
-                messages: thread.messages.filter(
-                  message => message.id !== messageId,
-                ),
-              }
-            : thread,
+          thread.id === threadId ? removeMessage(thread) : thread,
         ),
       );
     },
@@ -237,6 +235,54 @@ export function useMessageActions({
     [setErrorMessage, setThreads, token],
   );
 
+  const setThreadMuted = useCallback(
+    async (threadId: string, muted: boolean) => {
+      const previousMuted =
+        threads.find(thread => thread.id === threadId)?.muted || false;
+      setThreads(current =>
+        current.map(thread =>
+          thread.id === threadId ? {...thread, muted} : thread,
+        ),
+      );
+
+      if (!token) {
+        setThreads(current =>
+          current.map(thread =>
+            thread.id === threadId
+              ? {...thread, muted: previousMuted}
+              : thread,
+          ),
+        );
+        throw new Error('请先登录。');
+      }
+
+      try {
+        const preferences = await apiClient.updateThreadPreferences(
+          threadId,
+          {muted},
+          token,
+        );
+        setThreads(current =>
+          current.map(thread =>
+            thread.id === threadId
+              ? {...thread, muted: preferences.muted}
+              : thread,
+          ),
+        );
+      } catch (error) {
+        setThreads(current =>
+          current.map(thread =>
+            thread.id === threadId
+              ? {...thread, muted: previousMuted}
+              : thread,
+          ),
+        );
+        throw new Error(appErrorMessage(error, 'Notification setting failed.'));
+      }
+    },
+    [setThreads, threads, token],
+  );
+
   const openFriendThread = useCallback(
     async (friendUserId: string) => {
       if (!token) {
@@ -258,6 +304,7 @@ export function useMessageActions({
     deleteMessage,
     recallMessage,
     markThreadRead,
+    setThreadMuted,
     openFriendThread,
   };
 }
