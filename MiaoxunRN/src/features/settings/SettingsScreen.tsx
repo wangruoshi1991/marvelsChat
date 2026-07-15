@@ -1,16 +1,16 @@
 import React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import {
-  Brain,
   ChevronDown,
   ChevronRight,
-  Folder,
-  Image as ImageIcon,
+  FileText,
   LogOut,
+  ShieldCheck,
+  Trash2,
 } from 'lucide-react-native';
 
 import { Language } from '../session/useMiaoxunSession';
-import { ProfileVisibilityDTO } from '../../models/api';
+import { LegalPoliciesDTO, ProfileVisibilityDTO } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Appearance, Palette } from '../../shared/theme';
@@ -29,11 +29,14 @@ export function SettingsScreen({
   language,
   appearance,
   profileVisibility,
+  policies,
   onBack,
   onSetLanguage,
   onSetAppearance,
   onUpdateProfileVisibility,
   onActionError,
+  onOpenLegalUrl,
+  onOpenDeleteAccount,
   onSignOut,
 }: {
   palette: Palette;
@@ -42,6 +45,7 @@ export function SettingsScreen({
   language: Language;
   appearance: Appearance;
   profileVisibility: ProfileVisibilityDTO;
+  policies: LegalPoliciesDTO | null;
   onBack: () => void;
   onSetLanguage: (language: Language) => void;
   onSetAppearance: (appearance: Appearance) => void;
@@ -49,6 +53,8 @@ export function SettingsScreen({
     visibility: Partial<ProfileVisibilityDTO>,
   ) => Promise<ProfileVisibilityDTO>;
   onActionError: (message: string) => void;
+  onOpenLegalUrl: (url: string) => void;
+  onOpenDeleteAccount: () => void;
   onSignOut: () => Promise<void>;
 }) {
   const updateVisibility = (
@@ -143,7 +149,7 @@ export function SettingsScreen({
       </SettingGroup>
 
       <SettingGroup
-        title={textFor(language, '主页展示', 'Profile Visibility')}
+        title={textFor(language, '个人资料展示', 'Profile visibility')}
         palette={palette}
       >
         <SettingsSwitchRow
@@ -199,49 +205,31 @@ export function SettingsScreen({
       </SettingGroup>
 
       <SettingGroup
-        title={textFor(language, '通知', 'Notifications')}
+        title={textFor(language, '隐私与条款', 'Privacy & terms')}
         palette={palette}
       >
-        <SettingsRow
-          title={textFor(
-            language,
-            '允许妙讯通知',
-            'Allow Miaoxun notifications',
-          )}
-          value={textFor(language, '开启', 'On')}
-          palette={palette}
-        />
-        <Text style={[styles.settingHint, { color: palette.secondaryText }]}>
-          {textFor(
-            language,
-            'iOS 推送后续通过 APNs 和 UserNotifications 接入。',
-            'iOS push will be connected through APNs and UserNotifications.',
-          )}
-        </Text>
-      </SettingGroup>
-
-      <SettingGroup
-        title={textFor(language, '空间与权限', 'Space & Permissions')}
-        palette={palette}
-      >
-        <SettingsRow
-          title={textFor(language, '相册素材', 'Album assets')}
-          value={textFor(language, '待授权', 'Pending')}
-          palette={palette}
-          icon={ImageIcon}
-        />
-        <SettingsRow
-          title={textFor(language, '文件访问', 'File access')}
-          value={textFor(language, '待接入', 'Pending')}
-          palette={palette}
-          icon={Folder}
-        />
-        <SettingsRow
-          title={textFor(language, '长期记忆', 'Long-term memory')}
-          value={textFor(language, '需确认', 'Confirm')}
-          palette={palette}
-          icon={Brain}
-        />
+        {policies ? (
+          <>
+            <SettingsRow
+              title={textFor(language, '隐私政策', 'Privacy Policy')}
+              palette={palette}
+              icon={ShieldCheck}
+              onPress={() => onOpenLegalUrl(policies.privacy.url)}
+            />
+            <SettingsRow
+              title={textFor(language, '用户条款', 'Terms of Service')}
+              palette={palette}
+              icon={FileText}
+              onPress={() => onOpenLegalUrl(policies.terms.url)}
+            />
+          </>
+        ) : (
+          <SettingsRow
+            title={textFor(language, '隐私政策和用户条款', 'Privacy and terms')}
+            value={textFor(language, '暂时无法加载', 'Unavailable')}
+            palette={palette}
+          />
+        )}
       </SettingGroup>
 
       <SettingGroup
@@ -249,6 +237,7 @@ export function SettingsScreen({
         palette={palette}
       >
         <Pressable
+          accessibilityRole="button"
           onPress={onSignOut}
           style={[styles.logoutRow, { backgroundColor: palette.soft }]}
         >
@@ -269,6 +258,38 @@ export function SettingsScreen({
                 language,
                 '退出会撤销服务端会话并清除本机登录态。',
                 'This revokes the server session and clears this device.',
+              )}
+            </Text>
+          </View>
+          <ChevronRight
+            color={palette.secondaryText}
+            size={17}
+            strokeWidth={2.6}
+          />
+        </Pressable>
+        <Pressable
+          testID="settings-delete-account"
+          accessibilityRole="button"
+          onPress={onOpenDeleteAccount}
+          style={[styles.logoutRow, { backgroundColor: palette.soft }]}
+        >
+          <View
+            style={[
+              styles.logoutIconBox,
+              { backgroundColor: `${palette.rose}1f` },
+            ]}
+          >
+            <Trash2 color={palette.rose} size={17} strokeWidth={2.6} />
+          </View>
+          <View style={styles.logoutCopy}>
+            <Text style={[styles.logoutTitle, { color: palette.rose }]}>
+              {textFor(language, '删除账号', 'Delete account')}
+            </Text>
+            <Text style={[styles.logoutHint, { color: palette.secondaryText }]}>
+              {textFor(
+                language,
+                '永久删除主页、照片和账号数据。',
+                'Permanently delete your homepage, photos, and account data.',
               )}
             </Text>
           </View>

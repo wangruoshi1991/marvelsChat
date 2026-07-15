@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, Switch, Text, View } from 'react-native';
+import { ChevronRight } from 'lucide-react-native';
 
 import { IconComponent } from './ui';
 import { styles } from './styles';
@@ -90,14 +91,16 @@ export function SettingsRow({
   value,
   palette,
   icon: Icon,
+  onPress,
 }: {
   title: string;
-  value: string;
+  value?: string;
   palette: Palette;
   icon?: IconComponent;
+  onPress?: () => void;
 }) {
-  return (
-    <View style={styles.settingsRow}>
+  const content = (
+    <>
       <View style={styles.settingsRowTitleWrap}>
         {Icon ? (
           <Icon color={palette.mint} size={16} strokeWidth={2.4} />
@@ -106,10 +109,32 @@ export function SettingsRow({
           {title}
         </Text>
       </View>
-      <Text style={[styles.settingsRowValue, { color: palette.secondaryText }]}>
-        {value}
-      </Text>
-    </View>
+      {onPress ? (
+        <ChevronRight
+          color={palette.secondaryText}
+          size={17}
+          strokeWidth={2.4}
+        />
+      ) : (
+        <Text
+          style={[styles.settingsRowValue, { color: palette.secondaryText }]}
+        >
+          {value}
+        </Text>
+      )}
+    </>
+  );
+
+  return onPress ? (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={styles.settingsRow}
+    >
+      {content}
+    </Pressable>
+  ) : (
+    <View style={styles.settingsRow}>{content}</View>
   );
 }
 

@@ -4,6 +4,7 @@ export {
   buildApiUrl,
   buildRealtimeUrl,
   isAuthSessionError,
+  resolvePublicUrl,
   setAuthSessionExpiredHandler,
 } from './api/http';
 

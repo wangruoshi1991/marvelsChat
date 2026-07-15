@@ -2,7 +2,10 @@ import {
   MiaoxunApiError,
   joinApiUrl,
   request,
+  resolvePublicUrl,
+  setAuthSessionExpiredHandler,
 } from '../src/services/api/http';
+import { appApi } from '../src/services/api/appApi';
 import { homepageApi } from '../src/services/api/homepageApi';
 
 const response = ({
@@ -22,7 +25,7 @@ const response = ({
         name.toLowerCase() === 'x-request-id' ? requestId : null,
     },
     text: async () => JSON.stringify({ data }),
-  }) as Response;
+  } as Response);
 
 describe('homepage API diagnostics', () => {
   const originalFetch = globalThis.fetch;
@@ -45,12 +48,27 @@ describe('homepage API diagnostics', () => {
     );
   });
 
-  test('adds a request ID while keeping prompts, IDs, and tokens out of logs', async () => {
-    const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>(
-      async () => response({ data: { accepted: true } }),
+  test('resolves relative legal paths against the API origin', () => {
+    expect(resolvePublicUrl('http://8.153.167.11/api', '/legal/privacy')).toBe(
+      'http://8.153.167.11/legal/privacy',
     );
+    expect(
+      resolvePublicUrl(
+        'http://8.153.167.11/api',
+        'https://miaoxun.pizelife.com/legal/terms',
+      ),
+    ).toBe('https://miaoxun.pizelife.com/legal/terms');
+  });
+
+  test('adds a request ID while keeping prompts, IDs, and tokens out of logs', async () => {
+    const fetchMock = jest.fn<
+      ReturnType<typeof fetch>,
+      Parameters<typeof fetch>
+    >(async () => response({ data: { accepted: true } }));
     globalThis.fetch = fetchMock;
-    const info = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    const info = jest
+      .spyOn(console, 'info')
+      .mockImplementation(() => undefined);
     const prompt = '只给家人看的私人主页正文';
     const bearer = 'private-bearer-token';
     const mediaAssetId = '11111111-1111-4111-8111-111111111111';
@@ -81,45 +99,71 @@ describe('homepage API diagnostics', () => {
     globalThis.fetch = jest.fn<
       ReturnType<typeof fetch>,
       Parameters<typeof fetch>
-    >(async () =>
-      ({
-        ...response({ status: 409, requestId: 'server-conflict-id' }),
-        text: async () =>
-          JSON.stringify({ error: { message: '主页已在另一台设备修改。' } }),
-      }) as Response,
+    >(
+      async () =>
+        ({
+          ...response({ status: 409, requestId: 'server-conflict-id' }),
+          text: async () =>
+            JSON.stringify({ error: { message: '主页已在另一台设备修改。' } }),
+        } as Response),
     );
     jest.spyOn(console, 'info').mockImplementation(() => undefined);
 
-    await expect(request('/api/station/site', { token: 'expired' })).rejects.toMatchObject<
-      Partial<MiaoxunApiError>
-    >({
+    await expect(
+      request('/api/station/site', { token: 'expired' }),
+    ).rejects.toMatchObject<Partial<MiaoxunApiError>>({
       status: 409,
       requestId: 'server-conflict-id',
     });
   });
 
-  test('sends the typed homepage generation contract', async () => {
-    const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>(
+  test('does not expire the session when account password verification fails', async () => {
+    globalThis.fetch = jest.fn<
+      ReturnType<typeof fetch>,
+      Parameters<typeof fetch>
+    >(
       async () =>
-        response({
-          status: 202,
-          data: {
-            created: true,
-            job: {
-              id: '22222222-2222-4222-8222-222222222222',
-              userId: '33333333-3333-4333-8333-333333333333',
-              selectedMediaAssetIds: [],
-              status: 'queued',
-              progress: 0,
-              siteDraftId: null,
-              source: null,
-              failureReason: null,
-              createdAt: null,
-              updatedAt: null,
-              finishedAt: null,
-            },
+        ({
+          ...response({ status: 401, requestId: 'password-check-id' }),
+          text: async () =>
+            JSON.stringify({ error: { message: 'Invalid password.' } }),
+        } as Response),
+    );
+    jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    const onSessionExpired = jest.fn();
+    const clearHandler = setAuthSessionExpiredHandler(onSessionExpired);
+
+    await expect(
+      appApi.deleteAccount('valid-session', 'wrong-password'),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(onSessionExpired).not.toHaveBeenCalled();
+    clearHandler();
+  });
+
+  test('sends the typed homepage generation contract', async () => {
+    const fetchMock = jest.fn<
+      ReturnType<typeof fetch>,
+      Parameters<typeof fetch>
+    >(async () =>
+      response({
+        status: 202,
+        data: {
+          created: true,
+          job: {
+            id: '22222222-2222-4222-8222-222222222222',
+            userId: '33333333-3333-4333-8333-333333333333',
+            selectedMediaAssetIds: [],
+            status: 'queued',
+            progress: 0,
+            siteDraftId: null,
+            source: null,
+            failureReason: null,
+            createdAt: null,
+            updatedAt: null,
+            finishedAt: null,
           },
-        }),
+        },
+      }),
     );
     globalThis.fetch = fetchMock;
     jest.spyOn(console, 'info').mockImplementation(() => undefined);

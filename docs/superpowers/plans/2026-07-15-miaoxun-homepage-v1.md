@@ -224,11 +224,11 @@ assert.throws(() => homepagePublishSchema.parse({ revision: 1, visibility: "publ
 - Consumes policy metadata, consent, account deletion, and Web-base helpers from Task 5.
 - Produces explicit policy agreement, accessible legal links, password reauthentication, destructive confirmation, and local cleanup after deletion.
 
-- [ ] **Step 1: Write failing tests for blocked registration without consent and password-confirmed account deletion**
-- [ ] **Step 2: Implement policy links and versioned consent submission**
-- [ ] **Step 3: Implement a dedicated deletion sheet and clear all local session state only after server success**
-- [ ] **Step 4: Run mobile checks and tests**
-- [ ] **Step 5: Commit `feat(mobile): add consent and account deletion`**
+- [x] **Step 1: Write failing tests for blocked registration without consent and password-confirmed account deletion**
+- [x] **Step 2: Implement policy links and versioned consent submission**
+- [x] **Step 3: Implement a dedicated deletion sheet and clear all local session state only after server success**
+- [x] **Step 4: Run mobile checks and tests**
+- [x] **Step 5: Commit `feat(mobile): add consent and account deletion`**
 
 ### Task 8: Release Configuration, Documentation, and Acceptance
 

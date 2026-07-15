@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, StatusBar, Text, View } from 'react-native';
+import { Linking, Platform, StatusBar, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AppModals } from './app/AppModals';
 import { ModalRoute } from './app/appTypes';
@@ -20,6 +20,7 @@ import {
 import { useProfileFlows } from './features/profile/useProfileFlows';
 import { HomepageScreen } from './features/homepage/HomepageScreen';
 import { AvatarConfigDTO, AgentIdentityDTO } from './models/api';
+import { API_BASE_URL, resolvePublicUrl } from './services/apiClient';
 import { appErrorText, textFor } from './shared/i18n';
 import { styles } from './shared/styles';
 import { palettes } from './shared/theme';
@@ -101,6 +102,32 @@ function App(): React.JSX.Element {
       setToastMessage(current => (current === message ? null : current));
     }, 1600);
   }, []);
+
+  const openLegalUrl = useCallback(
+    (url: string) => {
+      try {
+        const target = resolvePublicUrl(API_BASE_URL, url);
+        Linking.openURL(target).catch(() => {
+          showToast(
+            textFor(
+              session.language,
+              '暂时无法打开该页面',
+              'This page cannot be opened right now',
+            ),
+          );
+        });
+      } catch {
+        showToast(
+          textFor(
+            session.language,
+            '暂时无法打开该页面',
+            'This page cannot be opened right now',
+          ),
+        );
+      }
+    },
+    [session.language, showToast],
+  );
 
   const showHomepageError = useCallback(
     (error: unknown) =>
@@ -387,6 +414,11 @@ function App(): React.JSX.Element {
             language={session.language}
             isBusy={session.isBusy}
             errorMessage={session.errorMessage}
+            policies={session.legalPolicies}
+            onOpenLegalUrl={openLegalUrl}
+            onRefreshPolicies={() => {
+              session.refreshLegalPolicies().catch(() => undefined);
+            }}
             onSignIn={session.signIn}
             onSignUp={async (...args) => {
               await session.signUp(...args);
@@ -409,6 +441,8 @@ function App(): React.JSX.Element {
           searchQuery={searchQuery}
           renderUserAvatar={renderUserAvatar}
           onCloseModal={() => setModalRoute(null)}
+          onSetModalRoute={setModalRoute}
+          onOpenLegalUrl={openLegalUrl}
           onOpenPublicProfileModal={() => setModalRoute('public-profile')}
           onOpenThread={openThread}
           onSearchQueryChange={setSearchQuery}

@@ -508,7 +508,8 @@ export type LegalPoliciesDTO = {
 export type UserConsentPayload = {
   privacyPolicyVersion: string;
   termsVersion: string;
-  accepted: true;
+  privacyAccepted: true;
+  termsAccepted: true;
 };
 
 export type UserConsentDTO = {

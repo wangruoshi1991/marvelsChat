@@ -57,6 +57,21 @@ export const joinApiUrl = (baseUrl: string, path: string) => {
   return `${normalizedBaseUrl}${normalizedPath}`;
 };
 
+export const resolvePublicUrl = (baseUrl: string, value: string) => {
+  const target = value.trim();
+  if (/^https?:\/\/[^/]+/i.test(target)) {
+    return target;
+  }
+  if (target.startsWith('//')) {
+    throw new Error('Miaoxun public URL must not be protocol-relative.');
+  }
+  const origin = baseUrl.trim().match(/^(https?:\/\/[^/]+)/i)?.[1];
+  if (!origin) {
+    throw new Error('Miaoxun API base URL must include an HTTP(S) origin.');
+  }
+  return `${origin}${target.startsWith('/') ? target : `/${target}`}`;
+};
+
 const sanitizeUrlForLog = (url: string) =>
   url
     .replace(
@@ -137,6 +152,7 @@ type RequestOptions = {
   body?: unknown;
   timeoutMs?: number;
   headers?: Record<string, string>;
+  expireSessionOnUnauthorized?: boolean;
 };
 
 type AuthSessionExpiredEvent = {
@@ -229,6 +245,7 @@ export async function request<T>(
   if (
     response.status === 401 &&
     options.token &&
+    options.expireSessionOnUnauthorized !== false &&
     authSessionExpiredHandler
   ) {
     await Promise.resolve(

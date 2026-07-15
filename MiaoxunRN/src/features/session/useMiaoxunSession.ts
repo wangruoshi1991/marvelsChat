@@ -5,6 +5,7 @@ import {
   BootstrapDTO,
   ButlerClientContextPayload,
   HomepageFeatureDTO,
+  LegalPoliciesDTO,
   ModuleDTO,
   NoticeDTO,
   OwnedAgentDTO,
@@ -14,7 +15,9 @@ import {
   SearchHistoryDTO,
   StationContentDTO,
   UserDTO,
+  UserConsentPayload,
 } from '../../models/api';
+import { homepageDraftStore } from '../../services/homepageDraftStore';
 import {
   apiClient,
   isAuthSessionError,
@@ -75,6 +78,9 @@ export function useMiaoxunSession() {
     useState<StationContentDTO>(emptyStationContent);
   const [homepageV1, setHomepageV1] = useState<HomepageFeatureDTO>(
     defaultHomepageFeature,
+  );
+  const [legalPolicies, setLegalPolicies] = useState<LegalPoliciesDTO | null>(
+    null,
   );
   const [language, setLanguage] = useState<Language>('zh');
   const [appearance, setAppearance] = useState<Appearance>('light');
@@ -165,6 +171,16 @@ export function useMiaoxunSession() {
     [expireSession],
   );
 
+  const refreshLegalPolicies = useCallback(async () => {
+    const policies = await apiClient.legalPolicies();
+    setLegalPolicies(policies);
+    return policies;
+  }, []);
+
+  useEffect(() => {
+    refreshLegalPolicies().catch(() => undefined);
+  }, [refreshLegalPolicies]);
+
   const butlerThread = useMemo(
     () => threads.find(thread => thread.agentId === 'miaoxun-butler') || null,
     [threads],
@@ -186,9 +202,7 @@ export function useMiaoxunSession() {
     setSearchHistory(bootstrap.searchHistory || []);
     setRelationships(bootstrap.relationships || emptyRelationships);
     setStationContent(bootstrap.stationContent || emptyStationContent);
-    setHomepageV1(
-      bootstrap.features?.homepageV1 || defaultHomepageFeature,
-    );
+    setHomepageV1(bootstrap.features?.homepageV1 || defaultHomepageFeature);
     setLanguage(bootstrap.profile.stationConfig.language || 'zh');
     setAppearance(bootstrap.profile.stationConfig.appearance || 'light');
     lastSyncAtRef.current = bootstrap.serverTime || new Date().toISOString();
@@ -296,6 +310,7 @@ export function useMiaoxunSession() {
       contact: string,
       password: string,
       displayName: string,
+      consent: UserConsentPayload,
     ) => {
       setIsBusy(true);
       setErrorMessage(null);
@@ -305,6 +320,7 @@ export function useMiaoxunSession() {
           contact,
           password,
           displayName,
+          consent,
         );
         await refreshBootstrap(response.session.token);
         await tokenStore.save(response.session.token);
@@ -519,6 +535,26 @@ export function useMiaoxunSession() {
     setRestoreStatus('signedOut');
   }, [resetAuthenticatedState, token, updateToken]);
 
+  const deleteAccount = useCallback(
+    async (password: string) => {
+      const currentToken = tokenRef.current;
+      if (!currentToken) {
+        throw new Error('请先登录。');
+      }
+      const result = await apiClient.deleteAccount(currentToken, password);
+      updateToken('');
+      await Promise.all([
+        tokenStore.clear().catch(() => undefined),
+        homepageDraftStore.clear().catch(() => undefined),
+      ]);
+      resetAuthenticatedState();
+      setErrorMessage(null);
+      setRestoreStatus('signedOut');
+      return result;
+    },
+    [resetAuthenticatedState, updateToken],
+  );
+
   const retryRestoreSession = useCallback(async () => {
     const savedToken = await tokenStore.read();
     if (!savedToken) {
@@ -633,6 +669,7 @@ export function useMiaoxunSession() {
     relationships,
     stationContent,
     homepageV1,
+    legalPolicies,
     language,
     appearance,
     isBusy,
@@ -645,6 +682,8 @@ export function useMiaoxunSession() {
     signIn,
     signUp,
     signOut,
+    deleteAccount,
+    refreshLegalPolicies,
     retryRestoreSession,
     refreshBootstrap,
     incrementalSync,

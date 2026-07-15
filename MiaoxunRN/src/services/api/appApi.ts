@@ -28,6 +28,7 @@ export const appApi = {
       method: 'DELETE',
       token,
       body: { password, confirmation: 'DELETE' },
+      expireSessionOnUnauthorized: false,
     });
   },
 

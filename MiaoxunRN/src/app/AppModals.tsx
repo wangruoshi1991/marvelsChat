@@ -13,6 +13,7 @@ import {
 import { useProfileFlows } from '../features/profile/useProfileFlows';
 import { QRCodeSheet } from '../features/qr/QRCodeSheet';
 import { SearchScreen } from '../features/search/SearchScreen';
+import { DeleteAccountSheet } from '../features/settings/DeleteAccountSheet';
 import { SettingsScreen } from '../features/settings/SettingsScreen';
 import { SiteBuilderScreen } from '../features/site/SiteBuilderScreen';
 import { StationLocationScreen } from '../features/station/StationLocationScreen';
@@ -39,6 +40,8 @@ type AppModalsProps = {
   searchQuery: string;
   renderUserAvatar: RenderUserAvatar;
   onCloseModal: () => void;
+  onSetModalRoute: (route: ModalRoute) => void;
+  onOpenLegalUrl: (url: string) => void;
   onOpenPublicProfileModal: () => void;
   onOpenThread: (thread: ChatThread) => void;
   onSearchQueryChange: (query: string) => void;
@@ -56,6 +59,8 @@ export function AppModals({
   searchQuery,
   renderUserAvatar,
   onCloseModal,
+  onSetModalRoute,
+  onOpenLegalUrl,
   onOpenPublicProfileModal,
   onOpenThread,
   onSearchQueryChange,
@@ -121,11 +126,14 @@ export function AppModals({
             language={session.language}
             appearance={session.appearance}
             profileVisibility={session.profileVisibility}
+            policies={session.legalPolicies}
             onBack={onCloseModal}
             onSetLanguage={session.setLanguage}
             onSetAppearance={session.setAppearance}
             onUpdateProfileVisibility={session.updateProfileVisibility}
             onActionError={onToast}
+            onOpenLegalUrl={onOpenLegalUrl}
+            onOpenDeleteAccount={() => onSetModalRoute('delete-account')}
             onSignOut={async () => {
               try {
                 await session.signOut();
@@ -141,6 +149,27 @@ export function AppModals({
                       ),
                 );
               }
+            }}
+          />
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={modalRoute === 'delete-account'}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView
+          style={[styles.safeArea, { backgroundColor: palette.background }]}
+        >
+          <DeleteAccountSheet
+            palette={palette}
+            language={session.language}
+            onBack={() => onSetModalRoute('settings')}
+            onDeleteAccount={async password => {
+              const result = await session.deleteAccount(password);
+              onCloseModal();
+              return result;
             }}
           />
         </SafeAreaView>

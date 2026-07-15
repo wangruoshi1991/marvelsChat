@@ -1,11 +1,21 @@
-import React, {useEffect, useState} from 'react';
-import {ActivityIndicator, Pressable, Text, TextInput, View} from 'react-native';
-import {ArrowRightCircle} from 'lucide-react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { ArrowRightCircle, CheckSquare2, Square } from 'lucide-react-native';
 
-import {Language} from '../session/useMiaoxunSession';
-import {authErrorText, textFor} from '../../shared/i18n';
-import {styles} from '../../shared/styles';
-import {Palette} from '../../shared/theme';
+import { Language } from '../session/useMiaoxunSession';
+import { LegalPoliciesDTO, UserConsentPayload } from '../../models/api';
+import { authErrorText, textFor } from '../../shared/i18n';
+import { styles } from '../../shared/styles';
+import { Palette } from '../../shared/theme';
 
 type AuthMode = 'login' | 'register';
 export type RegisterContactType = 'phone' | 'email';
@@ -15,6 +25,9 @@ export function AuthScreen({
   language,
   isBusy,
   errorMessage,
+  policies,
+  onOpenLegalUrl,
+  onRefreshPolicies,
   onSignIn,
   onSignUp,
 }: {
@@ -22,12 +35,16 @@ export function AuthScreen({
   language: Language;
   isBusy: boolean;
   errorMessage: string | null;
+  policies: LegalPoliciesDTO | null;
+  onOpenLegalUrl: (url: string) => void;
+  onRefreshPolicies?: () => void;
   onSignIn: (identifier: string, password: string) => void;
   onSignUp: (
     contactType: RegisterContactType,
     contact: string,
     password: string,
     displayName: string,
+    consent: UserConsentPayload,
   ) => Promise<unknown> | void;
 }) {
   const [mode, setMode] = useState<AuthMode>('login');
@@ -37,14 +54,18 @@ export function AuthScreen({
   const [password, setPassword] = useState('');
   const [topNotice, setTopNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const contactValue = mode === 'login' ? identifier.trim() : registerContact.trim();
+  const [hasPolicyConsent, setHasPolicyConsent] = useState(false);
+  const contactValue =
+    mode === 'login' ? identifier.trim() : registerContact.trim();
   const contactDigits = registerContact.trim().replace(/\D/g, '');
-  const registerContactKind = registerContact.trim().length === 0
-    ? null
-    : /^[\d\s-]+$/.test(registerContact.trim())
+  const registerContactKind =
+    registerContact.trim().length === 0
+      ? null
+      : /^[\d\s-]+$/.test(registerContact.trim())
       ? 'phone'
       : 'email';
-  const registerContactType: RegisterContactType = registerContactKind === 'email' ? 'email' : 'phone';
+  const registerContactType: RegisterContactType =
+    registerContactKind === 'email' ? 'email' : 'phone';
   const isRegisterEmail = registerContactType === 'email';
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const phonePattern = /^1[3-9]\d{9}$/;
@@ -56,10 +77,16 @@ export function AuthScreen({
     ? emailPattern.test(contactValue)
     : phonePattern.test(contactDigits);
   const registerContactWarning =
-    mode === 'register' && registerContact.trim().length > 0 && !registerContactValid
+    mode === 'register' &&
+    registerContact.trim().length > 0 &&
+    !registerContactValid
       ? isRegisterEmail
         ? textFor(language, '邮箱格式不正确', 'Email format is incorrect')
-        : textFor(language, '请输入 11 位中国大陆手机号', 'Enter an 11 digit mainland China mobile number')
+        : textFor(
+            language,
+            '请输入 11 位中国大陆手机号',
+            'Enter an 11 digit mainland China mobile number',
+          )
       : null;
   const passwordWarning =
     mode === 'register' && password.length > 0 && !passwordMeetsRegisterRule
@@ -73,11 +100,18 @@ export function AuthScreen({
   const canSubmit =
     mode === 'login'
       ? identifier.trim().length > 0 && password.length > 0
-      : displayName.trim().length > 0 && registerContactValid && passwordMeetsRegisterRule;
+      : displayName.trim().length > 0 &&
+        registerContactValid &&
+        passwordMeetsRegisterRule;
+  const canSubmitWithPolicy =
+    mode === 'login'
+      ? canSubmit
+      : Boolean(canSubmit && policies && hasPolicyConsent);
 
   const switchMode = (nextMode: AuthMode) => {
     setMode(nextMode);
     setPassword('');
+    setHasPolicyConsent(false);
     setTopNotice(null);
   };
 
@@ -95,7 +129,7 @@ export function AuthScreen({
 
   const submit = async () => {
     setTopNotice(null);
-    if (!canSubmit || isBusy || isSubmitting) {
+    if (!canSubmitWithPolicy || isBusy || isSubmitting) {
       return;
     }
     setIsSubmitting(true);
@@ -108,11 +142,17 @@ export function AuthScreen({
     } else {
       try {
         await onSignUp(
-        registerContactType,
-        isRegisterEmail ? contactValue : contactDigits,
-        password,
-        displayName.trim(),
-      );
+          registerContactType,
+          isRegisterEmail ? contactValue : contactDigits,
+          password,
+          displayName.trim(),
+          {
+            privacyPolicyVersion: policies!.privacy.version,
+            termsVersion: policies!.terms.version,
+            privacyAccepted: true,
+            termsAccepted: true,
+          },
+        );
       } catch {
         // Session hook owns the translated error notice.
       } finally {
@@ -122,120 +162,297 @@ export function AuthScreen({
   };
 
   return (
-    <View style={[styles.authScreen, {backgroundColor: palette.background}]}>
+    <View style={[styles.authScreen, { backgroundColor: palette.background }]}>
       {topNotice ? (
         <View style={[styles.authTopNoticeWrap, styles.pointerEventsNone]}>
-          <View style={[styles.authTopNotice, {backgroundColor: palette.rose}]}>
+          <View
+            style={[styles.authTopNotice, { backgroundColor: palette.rose }]}
+          >
             <Text style={styles.authTopNoticeText}>{topNotice}</Text>
           </View>
         </View>
       ) : null}
-      <View style={styles.authContent}>
-        <View style={styles.authHero}>
-          <Text style={[styles.authTitle, {color: palette.text}]}>
-            {textFor(language, '妙讯', 'Miaoxun')}
-          </Text>
-          <Text style={[styles.authSubtitle, {color: palette.secondaryText}]}>
-            {textFor(language, 'AI 不只问答，找人，找东西，就上妙讯小站。', 'Miaoxun is for people and things, not just answers.')}
-          </Text>
-        </View>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.authKeyboard}
+      >
+        <ScrollView
+          contentContainerStyle={styles.authContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.authHero}>
+            <Text style={[styles.authTitle, { color: palette.text }]}>
+              {textFor(language, '妙讯', 'Miaoxun')}
+            </Text>
+            <Text
+              style={[styles.authSubtitle, { color: palette.secondaryText }]}
+            >
+              {textFor(
+                language,
+                'AI 不只问答，找人，找东西，就上妙讯小站。',
+                'Miaoxun is for people and things, not just answers.',
+              )}
+            </Text>
+          </View>
 
-        <View style={styles.authFields}>
-          {mode === 'register' ? (
-            <>
+          <View style={styles.authFields}>
+            {mode === 'register' ? (
+              <>
+                <TextInput
+                  testID="auth-display-name"
+                  value={displayName}
+                  onChangeText={setDisplayName}
+                  placeholder={textFor(language, '昵称', 'Name')}
+                  placeholderTextColor={palette.secondaryText}
+                  returnKeyType="next"
+                  style={[
+                    styles.authLargeInput,
+                    {
+                      backgroundColor: palette.surface,
+                      borderColor: palette.border,
+                      color: palette.text,
+                    },
+                  ]}
+                />
+                <TextInput
+                  testID="auth-register-contact"
+                  value={registerContact}
+                  onChangeText={setRegisterContact}
+                  placeholder={textFor(
+                    language,
+                    '手机号或邮箱',
+                    'Phone number or email',
+                  )}
+                  placeholderTextColor={palette.secondaryText}
+                  autoCapitalize="none"
+                  keyboardType={
+                    registerContactKind === 'phone'
+                      ? 'phone-pad'
+                      : 'email-address'
+                  }
+                  style={[
+                    styles.authLargeInput,
+                    {
+                      backgroundColor: palette.surface,
+                      borderColor: registerContactWarning
+                        ? palette.rose
+                        : palette.border,
+                      color: palette.text,
+                    },
+                  ]}
+                />
+              </>
+            ) : (
               <TextInput
-                value={displayName}
-                onChangeText={setDisplayName}
-                placeholder={textFor(language, '昵称', 'Name')}
-                placeholderTextColor={palette.secondaryText}
-                returnKeyType="next"
-                style={[styles.authLargeInput, {backgroundColor: palette.surface, borderColor: palette.border, color: palette.text}]}
-              />
-              <TextInput
-                value={registerContact}
-                onChangeText={setRegisterContact}
-                placeholder={textFor(language, '手机号或邮箱', 'Phone number or email')}
+                testID="auth-identifier"
+                value={identifier}
+                onChangeText={setIdentifier}
+                placeholder={textFor(
+                  language,
+                  '手机号 / 邮箱 / 昵称',
+                  'Phone / email / name',
+                )}
                 placeholderTextColor={palette.secondaryText}
                 autoCapitalize="none"
-                keyboardType={registerContactKind === 'phone' ? 'phone-pad' : 'email-address'}
+                keyboardType="email-address"
                 style={[
                   styles.authLargeInput,
                   {
                     backgroundColor: palette.surface,
-                    borderColor: registerContactWarning ? palette.rose : palette.border,
+                    borderColor: palette.border,
                     color: palette.text,
                   },
                 ]}
               />
-            </>
-          ) : (
+            )}
             <TextInput
-              value={identifier}
-              onChangeText={setIdentifier}
-              placeholder={textFor(language, '手机号 / 邮箱 / 昵称', 'Phone / email / name')}
+              testID="auth-password"
+              value={password}
+              onChangeText={setPassword}
+              placeholder={textFor(language, '密码', 'Password')}
               placeholderTextColor={palette.secondaryText}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              style={[styles.authLargeInput, {backgroundColor: palette.surface, borderColor: palette.border, color: palette.text}]}
+              secureTextEntry
+              style={[
+                styles.authLargeInput,
+                {
+                  backgroundColor: palette.surface,
+                  borderColor: passwordWarning ? palette.rose : palette.border,
+                  color: palette.text,
+                },
+              ]}
             />
-          )}
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder={textFor(language, '密码', 'Password')}
-            placeholderTextColor={palette.secondaryText}
-            secureTextEntry
-            style={[
-              styles.authLargeInput,
-              {
-                backgroundColor: palette.surface,
-                borderColor: passwordWarning ? palette.rose : palette.border,
-                color: palette.text,
-              },
-            ]}
-          />
-          {mode === 'register' ? (
-            <View style={styles.authValidationSlot}>
-              <Text style={[styles.authValidationText, registerValidationMessage ? {color: palette.rose} : styles.authFieldErrorHidden]}>
-                {registerValidationMessage || ' '}
-              </Text>
-            </View>
-          ) : null}
-          <Pressable
-            disabled={!canSubmit || isBusy || isSubmitting}
-            onPress={submit}
-            style={[
-              styles.authSubmit,
-              {backgroundColor: palette.mint},
-              (!canSubmit || isBusy || isSubmitting) && styles.disabledButton,
-            ]}>
-            {isBusy || isSubmitting ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <View style={styles.authSubmitContent}>
-                <ArrowRightCircle color="#ffffff" size={19} fill="rgba(255,255,255,0.16)" />
-                <Text style={styles.authSubmitText}>
-                  {mode === 'login' ? textFor(language, '登录', 'Login') : textFor(language, '创建账号', 'Create account')}
+            {mode === 'register' ? (
+              <View style={styles.authValidationSlot}>
+                <Text
+                  style={[
+                    styles.authValidationText,
+                    registerValidationMessage
+                      ? { color: palette.rose }
+                      : styles.authFieldErrorHidden,
+                  ]}
+                >
+                  {registerValidationMessage || ' '}
                 </Text>
               </View>
-            )}
-          </Pressable>
-          <View style={styles.authModeRow}>
-            <Text style={[styles.authModeText, {color: palette.secondaryText}]}>
-              {mode === 'login'
-                ? textFor(language, '还没有账号？', 'No account yet?')
-                : textFor(language, '已有账号？', 'Already have an account?')}
-            </Text>
-            <Pressable onPress={() => switchMode(mode === 'login' ? 'register' : 'login')}>
-              <Text style={[styles.authModeAction, {color: palette.mint}]}>
-                {mode === 'login'
-                  ? textFor(language, '注册一个', 'Create one')
-                  : textFor(language, '返回登录', 'Back to login')}
-              </Text>
+            ) : null}
+            {mode === 'register' ? (
+              policies ? (
+                <View style={styles.authPolicyRow}>
+                  <Pressable
+                    testID="auth-policy-consent"
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: hasPolicyConsent }}
+                    onPress={() => setHasPolicyConsent(current => !current)}
+                    style={styles.authPolicyConsentControl}
+                  >
+                    {hasPolicyConsent ? (
+                      <CheckSquare2
+                        color={palette.mint}
+                        size={21}
+                        strokeWidth={2.4}
+                      />
+                    ) : (
+                      <Square
+                        color={palette.secondaryText}
+                        size={21}
+                        strokeWidth={2.2}
+                      />
+                    )}
+                    <Text
+                      style={[
+                        styles.authPolicyText,
+                        { color: palette.secondaryText },
+                      ]}
+                    >
+                      {textFor(
+                        language,
+                        '我已阅读并同意',
+                        'I have read and agree to',
+                      )}
+                    </Text>
+                  </Pressable>
+                  <View style={styles.authPolicyCopy}>
+                    <View style={styles.authPolicyLinks}>
+                      <Pressable
+                        accessibilityRole="link"
+                        onPress={() => onOpenLegalUrl(policies.privacy.url)}
+                      >
+                        <Text
+                          style={[
+                            styles.authPolicyLink,
+                            { color: palette.mint },
+                          ]}
+                        >
+                          {textFor(language, '隐私政策', 'Privacy Policy')}
+                        </Text>
+                      </Pressable>
+                      <Text
+                        style={[
+                          styles.authPolicyText,
+                          { color: palette.secondaryText },
+                        ]}
+                      >
+                        {textFor(language, '和', 'and')}
+                      </Text>
+                      <Pressable
+                        accessibilityRole="link"
+                        onPress={() => onOpenLegalUrl(policies.terms.url)}
+                      >
+                        <Text
+                          style={[
+                            styles.authPolicyLink,
+                            { color: palette.mint },
+                          ]}
+                        >
+                          {textFor(language, '用户条款', 'Terms')}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.authPolicyUnavailable}>
+                  <Text
+                    style={[styles.authValidationText, { color: palette.rose }]}
+                  >
+                    {textFor(
+                      language,
+                      '隐私政策和用户条款暂时无法加载。',
+                      'Privacy policy and terms are temporarily unavailable.',
+                    )}
+                  </Text>
+                  {onRefreshPolicies ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={onRefreshPolicies}
+                    >
+                      <Text
+                        style={[styles.authPolicyLink, { color: palette.mint }]}
+                      >
+                        {textFor(language, '重试', 'Retry')}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              )
+            ) : null}
+            <Pressable
+              testID="auth-submit"
+              accessibilityState={{
+                disabled: !canSubmitWithPolicy || isBusy || isSubmitting,
+              }}
+              disabled={!canSubmitWithPolicy || isBusy || isSubmitting}
+              onPress={submit}
+              style={[
+                styles.authSubmit,
+                { backgroundColor: palette.mint },
+                (!canSubmitWithPolicy || isBusy || isSubmitting) &&
+                  styles.disabledButton,
+              ]}
+            >
+              {isBusy || isSubmitting ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <View style={styles.authSubmitContent}>
+                  <ArrowRightCircle
+                    color="#ffffff"
+                    size={19}
+                    fill="rgba(255,255,255,0.16)"
+                  />
+                  <Text style={styles.authSubmitText}>
+                    {mode === 'login'
+                      ? textFor(language, '登录', 'Login')
+                      : textFor(language, '创建账号', 'Create account')}
+                  </Text>
+                </View>
+              )}
             </Pressable>
+            <View style={styles.authModeRow}>
+              <Text
+                style={[styles.authModeText, { color: palette.secondaryText }]}
+              >
+                {mode === 'login'
+                  ? textFor(language, '还没有账号？', 'No account yet?')
+                  : textFor(language, '已有账号？', 'Already have an account?')}
+              </Text>
+              <Pressable
+                testID={
+                  mode === 'login' ? 'auth-mode-register' : 'auth-mode-login'
+                }
+                onPress={() =>
+                  switchMode(mode === 'login' ? 'register' : 'login')
+                }
+              >
+                <Text style={[styles.authModeAction, { color: palette.mint }]}>
+                  {mode === 'login'
+                    ? textFor(language, '注册一个', 'Create one')
+                    : textFor(language, '返回登录', 'Back to login')}
+                </Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
