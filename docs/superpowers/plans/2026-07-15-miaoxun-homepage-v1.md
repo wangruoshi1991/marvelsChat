@@ -245,11 +245,14 @@ assert.throws(() => homepagePublishSchema.parse({ revision: 1, visibility: "publ
 **Interfaces:**
 - Produces exact environment variables, migration order, build commands, feature-flag rollback, temporary HTTPS setup, formal-domain cutover, Sentry DSN placeholders, and the App-owner handoff contract.
 
-- [ ] **Step 1: Document migration, backend-first deploy, station-web build, allowlist, HTTPS, and rollback commands**
-- [ ] **Step 2: Add privacy/terms drafts with explicit legal-review status and policy versions matching the API**
-- [ ] **Step 3: Run every backend, Agent, admin, station-web, and RN check from a clean dependency install**
-- [ ] **Step 4: Start local backend/Web services and run API smoke tests without logging secrets**
-- [ ] **Step 5: Capture Playwright screenshots at iPhone SE, iPhone Pro Max, and desktop widths and inspect for blank/overlapping content**
-- [ ] **Step 6: Deploy additive migration, backend, and Web artifacts to the test server with homepage allowlisted only**
+- [x] **Step 1: Document migration, backend-first deploy, station-web build, allowlist, HTTPS, and rollback commands**
+- [x] **Step 2: Add privacy/terms drafts with explicit legal-review status and policy versions matching the API**
+- [x] **Step 3: Run every backend, Agent, admin, station-web, and RN check from a clean dependency install**
+- [x] **Step 4: Start local backend/Web services and run API smoke tests without logging secrets**
+- [x] **Step 5: Capture Playwright screenshots at iPhone SE, iPhone Pro Max, and desktop widths and inspect for blank/overlapping content**
+- [x] **Step 6: Deploy additive migration, backend, and Web artifacts to the test server with homepage allowlisted only**
 - [ ] **Step 7: Run server health, authenticated generation/publish, anonymous link, revoke, account-safe non-destructive test, and two-minute network checks**
+
+  Server health and the isolated create/upload/generate/preview/publish/revoke/restore/delete smoke test passed on 2026-07-15. The TestFlight device two-minute network observation remains assigned to the App owner.
+
 - [ ] **Step 8: Tag the verified commit and produce the commit-specific App-owner Archive/TestFlight prompt**
