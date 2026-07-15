@@ -170,12 +170,12 @@ assert.throws(() => homepagePublishSchema.parse({ revision: 1, visibility: "publ
 - Produces typed client methods matching Task 3 and a session-level `homepageV1` feature flag.
 - `incrementalSync` clears the expired token once, stops polling/realtime work, and retains local homepage draft data.
 
-- [ ] **Step 1: Add a failing regression test proving a sync `401` clears token storage once and does not poll again**
-- [ ] **Step 2: Add failing URL, request-ID, and body-log redaction tests**
-- [ ] **Step 3: Implement safe session expiry and request diagnostics**
-- [ ] **Step 4: Add typed homepage, consent, and account-deletion API methods**
-- [ ] **Step 5: Run TypeScript, focused Jest, and ESLint**
-- [ ] **Step 6: Commit `feat(mobile): add safe homepage API contract`**
+- [x] **Step 1: Add a failing regression test proving a sync `401` clears token storage once and does not poll again**
+- [x] **Step 2: Add failing URL, request-ID, and body-log redaction tests**
+- [x] **Step 3: Implement safe session expiry and request diagnostics**
+- [x] **Step 4: Add typed homepage, consent, and account-deletion API methods**
+- [x] **Step 5: Run TypeScript, focused Jest, and ESLint**
+- [x] **Step 6: Commit `feat(mobile): add safe homepage API contract`**
 
 ### Task 6: Mobile Homepage Creation, Editing, Preview, and Publishing
 

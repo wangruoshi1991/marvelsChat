@@ -1,4 +1,4 @@
-import { AuthResponse } from '../../models/api';
+import { AuthResponse, UserConsentPayload } from '../../models/api';
 import { request } from './http';
 
 export const authApi = {
@@ -14,6 +14,7 @@ export const authApi = {
     contact: string,
     password: string,
     displayName: string,
+    consent?: UserConsentPayload,
   ) {
     return request<AuthResponse>('/api/auth/register', {
       method: 'POST',
@@ -24,6 +25,7 @@ export const authApi = {
           : { phoneNumber: contact }),
         password,
         displayName,
+        ...(consent ? { consent } : {}),
       },
     });
   },

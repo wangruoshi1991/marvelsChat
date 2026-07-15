@@ -13,7 +13,14 @@ jest.mock('../src/services/apiClient', () => ({
     markThreadRead: jest.fn(),
   },
   buildRealtimeUrl: (path: string) => `ws://127.0.0.1:4390${path}`,
-  isAuthSessionError: () => false,
+  setAuthSessionExpiredHandler: () => () => undefined,
+  isAuthSessionError: (error: unknown) =>
+    Boolean(
+      error &&
+        typeof error === 'object' &&
+        'status' in error &&
+        error.status === 401,
+    ),
 }));
 
 jest.mock('../src/services/tokenStore', () => ({
@@ -126,6 +133,41 @@ describe('session synchronization', () => {
       'saved-token',
     );
     expect(MockWebSocket.instances).toHaveLength(1);
+
+    await ReactTestRenderer.act(() => {
+      renderer?.unmount();
+    });
+  });
+
+  test('sync 401 clears the stored token once and stops later sync work', async () => {
+    mockedApiClient.sync.mockRejectedValueOnce(
+      Object.assign(new Error('登录状态已失效。'), { status: 401 }),
+    );
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    await ReactTestRenderer.act(async () => {
+      MockWebSocket.instances[0].emitReady();
+      await flushEffects();
+    });
+
+    expect(mockedApiClient.sync).toHaveBeenCalledTimes(1);
+    expect(mockedTokenStore.clear).toHaveBeenCalledTimes(1);
+    expect(MockWebSocket.instances[0].close).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      MockWebSocket.instances[0].emitReady();
+      await flushEffects();
+    });
+
+    expect(mockedApiClient.sync).toHaveBeenCalledTimes(1);
+    expect(mockedTokenStore.clear).toHaveBeenCalledTimes(1);
 
     await ReactTestRenderer.act(() => {
       renderer?.unmount();

@@ -4,6 +4,7 @@ import {
   AgentDTO,
   BootstrapDTO,
   ButlerClientContextPayload,
+  HomepageFeatureDTO,
   ModuleDTO,
   NoticeDTO,
   OwnedAgentDTO,
@@ -14,10 +15,15 @@ import {
   StationContentDTO,
   UserDTO,
 } from '../../models/api';
-import { apiClient, isAuthSessionError } from '../../services/apiClient';
+import {
+  apiClient,
+  isAuthSessionError,
+  setAuthSessionExpiredHandler,
+} from '../../services/apiClient';
 import { tokenStore } from '../../services/tokenStore';
 import { Appearance } from '../../shared/theme';
 import {
+  defaultHomepageFeature,
   defaultProfileVisibility,
   emptyProfile,
   emptyRelationships,
@@ -67,6 +73,9 @@ export function useMiaoxunSession() {
   const [relationships, setRelationships] = useState(emptyRelationships);
   const [stationContent, setStationContent] =
     useState<StationContentDTO>(emptyStationContent);
+  const [homepageV1, setHomepageV1] = useState<HomepageFeatureDTO>(
+    defaultHomepageFeature,
+  );
   const [language, setLanguage] = useState<Language>('zh');
   const [appearance, setAppearance] = useState<Appearance>('light');
   const [isBusy, setIsBusy] = useState(false);
@@ -80,11 +89,81 @@ export function useMiaoxunSession() {
   const lastSyncAtRef = useRef<string | null>(null);
   const bootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
+  const sessionExpiryPromiseRef = useRef<Promise<void> | null>(null);
+  const expiredTokenRef = useRef('');
 
   const updateToken = useCallback((nextToken: string) => {
+    if (nextToken) {
+      expiredTokenRef.current = '';
+    }
     tokenRef.current = nextToken;
     setToken(nextToken);
   }, []);
+
+  const resetAuthenticatedState = useCallback(() => {
+    setUser(null);
+    setProfile(emptyProfile);
+    setThreads([]);
+    setModules({});
+    setAgents([]);
+    setAgentReadiness({});
+    setOwnedAgents([]);
+    setNotices([]);
+    setUnreadNoticeCount(0);
+    setProfileVisibility(defaultProfileVisibility);
+    setSearchHistory([]);
+    setRelationships(emptyRelationships);
+    setStationContent(emptyStationContent);
+    setHomepageV1(defaultHomepageFeature);
+    lastSyncAtRef.current = null;
+    activeThreadIdRef.current = null;
+  }, []);
+
+  const expireSession = useCallback(
+    (expiredToken: string) => {
+      if (
+        expiredTokenRef.current === expiredToken &&
+        sessionExpiryPromiseRef.current
+      ) {
+        return sessionExpiryPromiseRef.current;
+      }
+      if (!expiredToken || tokenRef.current !== expiredToken) {
+        return Promise.resolve();
+      }
+
+      expiredTokenRef.current = expiredToken;
+      updateToken('');
+      const expiry = (async () => {
+        await tokenStore.clear().catch(() => undefined);
+        resetAuthenticatedState();
+        setErrorMessage('登录状态已失效，请重新登录。');
+        setRestoreStatus('signedOut');
+      })();
+      sessionExpiryPromiseRef.current = expiry;
+      expiry.then(
+        () => {
+          if (sessionExpiryPromiseRef.current === expiry) {
+            sessionExpiryPromiseRef.current = null;
+          }
+        },
+        () => {
+          if (sessionExpiryPromiseRef.current === expiry) {
+            sessionExpiryPromiseRef.current = null;
+          }
+        },
+      );
+      return expiry;
+    },
+    [resetAuthenticatedState, updateToken],
+  );
+
+  useEffect(
+    () =>
+      setAuthSessionExpiredHandler(({ token: expiredToken }) =>
+        expireSession(expiredToken),
+      ),
+    [expireSession],
+  );
 
   const butlerThread = useMemo(
     () => threads.find(thread => thread.agentId === 'miaoxun-butler') || null,
@@ -107,6 +186,9 @@ export function useMiaoxunSession() {
     setSearchHistory(bootstrap.searchHistory || []);
     setRelationships(bootstrap.relationships || emptyRelationships);
     setStationContent(bootstrap.stationContent || emptyStationContent);
+    setHomepageV1(
+      bootstrap.features?.homepageV1 || defaultHomepageFeature,
+    );
     setLanguage(bootstrap.profile.stationConfig.language || 'zh');
     setAppearance(bootstrap.profile.stationConfig.appearance || 'light');
     lastSyncAtRef.current = bootstrap.serverTime || new Date().toISOString();
@@ -273,6 +355,10 @@ export function useMiaoxunSession() {
           }
           lastSyncAtRef.current = sync.serverTime;
         } catch (error) {
+          if (isAuthSessionError(error)) {
+            await expireSession(currentToken);
+            return;
+          }
           if (showError) {
             setErrorMessage(
               error instanceof Error ? error.message : '增量同步失败。',
@@ -296,7 +382,7 @@ export function useMiaoxunSession() {
       );
       return request;
     },
-    [],
+    [expireSession],
   );
 
   const { refreshNotifications, markNotificationsRead, markNotificationRead } =
@@ -424,27 +510,14 @@ export function useMiaoxunSession() {
   const signOut = useCallback(async () => {
     const currentToken = token;
     if (currentToken) {
-      await apiClient.logout(currentToken);
+      await apiClient.logout(currentToken).catch(() => undefined);
     }
     await tokenStore.clear().catch(() => undefined);
     updateToken('');
-    setUser(null);
-    setProfile(emptyProfile);
-    setThreads([]);
-    setModules({});
-    setAgents([]);
-    setAgentReadiness({});
-    setNotices([]);
-    setUnreadNoticeCount(0);
-    setProfileVisibility(defaultProfileVisibility);
-    setSearchHistory([]);
-    setRelationships(emptyRelationships);
-    setStationContent(emptyStationContent);
-    lastSyncAtRef.current = null;
-    activeThreadIdRef.current = null;
+    resetAuthenticatedState();
     setErrorMessage(null);
     setRestoreStatus('signedOut');
-  }, [token, updateToken]);
+  }, [resetAuthenticatedState, token, updateToken]);
 
   const retryRestoreSession = useCallback(async () => {
     const savedToken = await tokenStore.read();
@@ -525,6 +598,18 @@ export function useMiaoxunSession() {
     deleteStationComicDiary,
     createStationVideoDraft,
     resolveLocation,
+    homepageJobs,
+    createHomepageJob,
+    homepageJob,
+    homepageDraft,
+    updateHomepageDraft,
+    refineHomepageSection,
+    createHomepagePreview,
+    publishHomepage,
+    homepageSite,
+    unpublishHomepage,
+    homepageReleases,
+    restoreHomepageRelease,
   } = useStationActions({
     token,
     avatarConfig: profile.avatarConfig,
@@ -547,6 +632,7 @@ export function useMiaoxunSession() {
     searchHistory,
     relationships,
     stationContent,
+    homepageV1,
     language,
     appearance,
     isBusy,
@@ -609,6 +695,18 @@ export function useMiaoxunSession() {
     deleteStationComicDiary,
     createStationVideoDraft,
     resolveLocation,
+    homepageJobs,
+    createHomepageJob,
+    homepageJob,
+    homepageDraft,
+    updateHomepageDraft,
+    refineHomepageSection,
+    createHomepagePreview,
+    publishHomepage,
+    homepageSite,
+    unpublishHomepage,
+    homepageReleases,
+    restoreHomepageRelease,
     updateProfileVisibility,
     updatePresence,
   };

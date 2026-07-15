@@ -370,6 +370,8 @@ export type StationSiteDraftDTO = {
   userId?: string;
   prompt: string;
   draft: StationSiteDraftContentDTO;
+  revision?: number;
+  selectedMediaAssetIds?: string[];
   source: string;
   status?: string;
   modelProvider?: string;
@@ -389,6 +391,7 @@ export type StationSiteDraftContentDTO = {
 };
 
 export type StationSiteSectionDTO = {
+  id?: string;
   type?: string;
   title?: string;
   subtitle?: string;
@@ -400,6 +403,122 @@ export type StationSiteSectionDTO = {
     kind?: string;
     href?: string;
   }>;
+  hidden?: boolean;
+};
+
+export type HomepageTheme = 'clean' | 'gallery';
+export type HomepageSectionType =
+  | 'hero'
+  | 'about'
+  | 'gallery'
+  | 'diary'
+  | 'contact';
+export type HomepageVisibility = 'private' | 'link';
+export type HomepageJobStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+export type HomepageActionDTO = {
+  label: string;
+  kind: 'message' | 'follow' | 'link';
+  href: string;
+};
+
+export type HomepageSectionDTO = {
+  id: string;
+  type: HomepageSectionType;
+  title: string;
+  subtitle: string;
+  body: string;
+  assetIds: string[];
+  diaryEntryIds: string[];
+  actions: HomepageActionDTO[];
+  hidden: boolean;
+};
+
+export type HomepageDraftContentDTO = {
+  version: 2;
+  language: 'zh' | 'en';
+  title: string;
+  theme: HomepageTheme;
+  summary: string;
+  sections: HomepageSectionDTO[];
+};
+
+export type HomepageSiteDraftDTO = {
+  id: string;
+  userId: string;
+  prompt: string;
+  draft: HomepageDraftContentDTO;
+  revision: number;
+  selectedMediaAssetIds: string[];
+  source: 'model' | 'fallback' | string;
+  status: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type HomepageGenerationJobDTO = {
+  id: string;
+  userId: string;
+  selectedMediaAssetIds: string[];
+  status: HomepageJobStatus;
+  progress: number;
+  siteDraftId?: string | null;
+  source?: 'model' | 'fallback' | null;
+  failureReason?: 'generation_failed' | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  finishedAt?: string | null;
+};
+
+export type HomepageSiteDTO = {
+  userId: string;
+  currentDraftId?: string | null;
+  publishedReleaseId?: string | null;
+  visibility: HomepageVisibility;
+  shareUrl?: string | null;
+  publishedAt?: string | null;
+  unpublishedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type HomepageReleaseDTO = {
+  id: string;
+  userId: string;
+  draftId: string;
+  revision: number;
+  snapshot: HomepageDraftContentDTO;
+  selectedMediaAssetIds: string[];
+  visibility: HomepageVisibility;
+  createdAt?: string | null;
+};
+
+export type HomepageFeatureDTO = {
+  enabled: boolean;
+  publicVisibilityEnabled: false;
+  generationDailyLimit: number;
+  refineDailyLimit: number;
+};
+
+export type LegalPoliciesDTO = {
+  privacy: { version: string; url: string };
+  terms: { version: string; url: string };
+};
+
+export type UserConsentPayload = {
+  privacyPolicyVersion: string;
+  termsVersion: string;
+  accepted: true;
+};
+
+export type UserConsentDTO = {
+  privacyPolicyVersion: string;
+  termsVersion: string;
+  acceptedAt: string;
+};
+
+export type AccountDeletionDTO = {
+  deleted: boolean;
 };
 
 export type StationGenerationJobDTO = {
@@ -521,6 +640,10 @@ export type BootstrapDTO = {
   };
   agentReadiness?: Record<string, AgentReadinessDTO>;
   modules: Record<string, ModuleDTO>;
+  features?: {
+    homepageV1?: HomepageFeatureDTO;
+    [key: string]: unknown;
+  };
 };
 
 export type AppSyncDTO = {
