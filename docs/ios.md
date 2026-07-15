@@ -1,5 +1,49 @@
 # iOS 客户端规划
 
+## Build 24 App 负责人交接
+
+Build 24 源码配置：
+
+```text
+Version: 1.0
+Build: 24
+API Base: http://8.153.167.11/api
+Temporary IP TestFlight: MIAOXUN_TEMP_IP_TESTFLIGHT=1
+iOS deployment target: 15.1
+```
+
+本机当前只有系统 Ruby 2.6、没有 CocoaPods，且 `xcode-select` 指向 CommandLineTools，因此本机不能完成原生编译或签名归档。App 负责人必须在安装完整 Xcode、Ruby 3.1+、Bundler 和 CocoaPods 的签名环境中执行：
+
+```sh
+cd MiaoxunRN
+npm ci
+npx tsc --noEmit
+npm run lint -- --max-warnings=0
+npm test -- --runInBand
+
+bundle install
+bundle exec pod install --project-directory=ios
+```
+
+Build 24 新增 `react-native-webview`，`pod install` 不是可选步骤。归档前确认 `Podfile.lock` 已包含 WebView pod，且没有删除 MapLibre 的 `$MLRN.post_install(installer)`。
+
+归档必须基于最终交接 commit，不得只复制单个 JS 文件。Archive 内检查：
+
+```sh
+/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+  <archive>/Products/Applications/MiaoxunRN.app/Info.plist
+/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+  <archive>/Products/Applications/MiaoxunRN.app/Info.plist
+/usr/libexec/PlistBuddy -c 'Print :MiaoxunAPIBaseURL' \
+  <archive>/Products/Applications/MiaoxunRN.app/Info.plist
+```
+
+必须得到 `1.0`、`24`、`http://8.153.167.11/api`。上传后在 App Store Connect 完成处理、出口合规、内部测试组分配，再由手机 TestFlight 确认安装的是 `1.0 (24)`。
+
+真机重点验收：第一屏个人主页、3 至 9 张照片、生成/基础版、AI 标识、编辑、精确预览、链接分享和撤销、法律链接、错误密码删除账号不退出、静置两分钟无 bootstrap 循环。完整列表见 [Build 24 验收清单](build24-acceptance.md)。
+
+MapLibre、React、ReactNativeDependencies 和 hermesvm 的 dSYM warning 仍可作为内测非阻断项，但必须记录；它们会影响第三方 framework 崩溃符号化。
+
 妙讯正式 iOS App 当前以 `MiaoxunRN/` 为唯一移动端主线，采用 React Native 承接上线实现。旧 SwiftUI 原型已从主工程移除。
 
 ## 客户端边界

@@ -1,5 +1,75 @@
 # 妙讯部署说明
 
+## Build 24 当前部署基线（2026-07-15）
+
+当前测试服务器实际运行方式不是 Docker Compose，而是：
+
+```text
+代码目录：/opt/projects/marvels-chat/app
+后端进程：systemd / marvels-chat-backend.service
+运行用户：marvels
+监听端口：4390
+Nginx：80 -> 127.0.0.1:4390
+HTTPS：尚未配置
+```
+
+Nginx 的 `/api/*` 和根路径都反向代理到后端，因此后端同时提供 API、`/site-assets/*`、`/preview/*`、`/s/*` 和 `/legal/*`。Build 24 发布包必须包含 `station-web/dist/index.html`。
+
+### Build 24 环境变量
+
+测试服务器在域名备案和 HTTPS 完成前使用：
+
+```text
+NODE_ENV=production
+CORS_ORIGIN=http://8.153.167.11
+HOMEPAGE_V1_ENABLED=true
+HOMEPAGE_V1_ALLOWLIST=<仅验收账号，逗号分隔>
+HOMEPAGE_WEB_BASE_URL=http://8.153.167.11
+HOMEPAGE_GENERATION_DAILY_LIMIT=5
+HOMEPAGE_REFINE_DAILY_LIMIT=20
+HOMEPAGE_PREVIEW_TTL_MS=300000
+PRIVACY_POLICY_VERSION=2026-07-15
+TERMS_VERSION=2026-07-15
+SENTRY_DSN=
+SENTRY_ENVIRONMENT=build24-test
+```
+
+真实数据库、模型和 OSS 凭据继续保留在服务器 `miaoxun-prod.env`，不得被仓库示例覆盖。`NODE_ENV=production` 是 allowlist 生效条件，不能遗漏。
+
+### systemd 发布顺序
+
+1. 在本地完成所有检查并构建 `station-web/dist`。
+2. 在服务器创建按时间命名的代码和环境文件备份。
+3. 同步 `backend/`、`agents/` 和 `station-web/dist/`，不覆盖真实环境文件。
+4. 在服务器运行 `npm ci --omit=dev`。
+5. 加载真实环境后运行 `npm run db:migrate`，只执行增量迁移。
+6. 更新上述 Build 24 非密钥环境变量。
+7. 重启 `marvels-chat-backend.service`，等待 `/api/health` 恢复。
+8. 完成 [Build 24 验收清单](build24-acceptance.md) 的 API 和匿名分享测试。
+
+当前部署账号没有 sudo，但拥有后端进程和项目目录。更新完成后可以终止该用户自己的 Node 主进程，systemd 的 `Restart=always` 会自动拉起；必须记录旧 PID、新 PID 和恢复时间。若后续授予受限 sudo，应优先改为：
+
+```sh
+sudo systemctl restart marvels-chat-backend
+```
+
+### 回滚
+
+严重问题优先将 `HOMEPAGE_V1_ENABLED=false`，重启后端。数据库迁移是增量迁移，不执行 DROP 或降级；保留新表和用户数据。只有代码故障才恢复部署前目录备份。
+
+### 正式域名切换
+
+备案和证书完成后，一次性切换：
+
+```text
+CORS_ORIGIN=https://miaoxun.pizelife.com
+PUBLIC_API_BASE_URL=https://miaoxun.pizelife.com
+HOMEPAGE_WEB_BASE_URL=https://miaoxun.pizelife.com
+MIAOXUN_API_BASE_URL=https://miaoxun.pizelife.com/api
+```
+
+随后删除 iOS 对 `8.153.167.11` 的 ATS HTTP 例外，验证 HTTPS、WSS、预览、匿名分享、法律页面和证书续期。正式域名完成前仅允许内部 TestFlight，不得公开发布。
+
 ## 当前生产测试目标
 
 TestFlight 只负责把 iOS App 分发给测试用户；登录、聊天、扫码解析、妙讯管家、通知、在线状态、定位名称解析和地图都必须连接公网 HTTPS 后端。
