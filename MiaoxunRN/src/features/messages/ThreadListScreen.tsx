@@ -57,6 +57,11 @@ function ThreadSwipeRow({
   const translateX = useRef(new Animated.Value(0)).current;
   const openedRef = useRef(false);
   const windowSize = useWindowDimensions();
+  const isLightPalette = palette.text === palettes.light.text;
+  const threadTitleColor = isLightPalette ? '#000000' : palette.text;
+  const threadSecondaryColor = isLightPalette
+    ? 'rgba(0,0,0,0.6)'
+    : palette.secondaryText;
 
   const resetPosition = useCallback(() => {
     Animated.spring(translateX, {
@@ -155,18 +160,18 @@ function ThreadSwipeRow({
         <View style={styles.threadMain}>
           <Text
             numberOfLines={1}
-            style={[styles.threadTitle, {color: palette.text}]}>
+            style={[styles.threadTitle, {color: threadTitleColor}]}>
             {displayText(language, thread.title)}
           </Text>
           <Text
             numberOfLines={1}
-            style={[styles.threadPreview, {color: palette.secondaryText}]}>
+            style={[styles.threadPreview, {color: threadSecondaryColor}]}>
             {displayText(language, thread.lastContent) ||
               textFor(language, '暂无消息', 'No messages yet')}
           </Text>
         </View>
         <View style={styles.threadTrailing}>
-          <Text style={[styles.threadTime, {color: palette.secondaryText}]}>
+          <Text style={[styles.threadTime, {color: threadSecondaryColor}]}>
             {relativeTimeText(thread.lastMessageAt)}
           </Text>
         </View>

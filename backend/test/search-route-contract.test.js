@@ -22,4 +22,5 @@ test("registers persistent search history routes", () => {
   assert.ok(routes.includes("GET /api/search/history"));
   assert.ok(routes.includes("POST /api/search/history"));
   assert.ok(routes.includes("DELETE /api/search/history"));
+  assert.ok(routes.includes("DELETE /api/search/history/:historyId"));
 });

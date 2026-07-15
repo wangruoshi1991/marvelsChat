@@ -488,6 +488,7 @@ export function useMiaoxunSession() {
     searchUsers,
     saveSearchQuery,
     clearSearchHistory,
+    deleteSearchHistoryItem,
     loadPublicProfileByAiId,
   } = useSocialActions({
     token,
@@ -590,6 +591,7 @@ export function useMiaoxunSession() {
     searchUsers,
     saveSearchQuery,
     clearSearchHistory,
+    deleteSearchHistoryItem,
     loadPublicProfileByAiId,
     updateProfile,
     refreshStationContent,

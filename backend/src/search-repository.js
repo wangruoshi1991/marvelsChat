@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { query } from "./db.js";
+import { query, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
 import { getPublicProfileByAiId } from "./station-repository.js";
 import {
@@ -7,13 +7,33 @@ import {
   sqlLimit,
 } from "./repository-mappers.js";
 
-export async function listSearchHistory(userId, limit = 12) {
-  const safeLimit = sqlLimit(limit, 12, 30);
+const SEARCH_HISTORY_LIMIT = 12;
+
+async function pruneSearchHistory(connection, userId) {
+  await connection.query(
+    `DELETE FROM search_history
+    WHERE id IN (
+      SELECT id
+      FROM search_history
+      WHERE user_id = ?
+      ORDER BY created_at DESC, id DESC
+      OFFSET ${SEARCH_HISTORY_LIMIT}
+    )`,
+    [userId],
+  );
+}
+
+export async function listSearchHistory(userId, limit = SEARCH_HISTORY_LIMIT) {
+  const safeLimit = sqlLimit(
+    limit,
+    SEARCH_HISTORY_LIMIT,
+    SEARCH_HISTORY_LIMIT,
+  );
   const rows = await query(
     `SELECT *
     FROM search_history
     WHERE user_id = ?
-    ORDER BY created_at DESC
+    ORDER BY created_at DESC, id DESC
     LIMIT ${safeLimit}`,
     [userId],
   );
@@ -25,23 +45,37 @@ export async function saveSearchHistory({ userId, queryText, scope = "all" }) {
   if (!normalized) {
     throw new HttpError(400, "Search query is required");
   }
-  await query(
-    `DELETE FROM search_history
-    WHERE user_id = ? AND lower(query_text) = lower(?) AND scope = ?`,
-    [userId, normalized, scope],
-  );
-  const id = crypto.randomUUID();
-  await query(
-    `INSERT INTO search_history (id, user_id, query_text, scope)
-    VALUES (?, ?, ?, ?)`,
-    [id, userId, normalized.slice(0, 120), scope],
-  );
+  await withTransaction(async (connection) => {
+    await connection.query(
+      `DELETE FROM search_history
+      WHERE user_id = ? AND lower(query_text) = lower(?) AND scope = ?`,
+      [userId, normalized, scope],
+    );
+    const id = crypto.randomUUID();
+    await connection.query(
+      `INSERT INTO search_history (id, user_id, query_text, scope)
+      VALUES (?, ?, ?, ?)`,
+      [id, userId, normalized.slice(0, 120), scope],
+    );
+    await pruneSearchHistory(connection, userId);
+  });
   return listSearchHistory(userId);
 }
 
 export async function clearSearchHistory(userId) {
   await query("DELETE FROM search_history WHERE user_id = ?", [userId]);
   return [];
+}
+
+export async function deleteSearchHistoryItem({ userId, historyId }) {
+  await withTransaction(async (connection) => {
+    await pruneSearchHistory(connection, userId);
+    await connection.query(
+      "DELETE FROM search_history WHERE user_id = ? AND id = ?",
+      [userId, historyId],
+    );
+  });
+  return listSearchHistory(userId);
 }
 
 export async function searchPublicProfiles({ viewerUserId, queryText, limit = 20, onlineUserIds = [] }) {

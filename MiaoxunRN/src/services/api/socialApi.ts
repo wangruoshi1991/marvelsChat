@@ -115,4 +115,14 @@ export const socialApi = {
       token,
     });
   },
+
+  deleteSearchHistoryItem(historyId: string, token: string) {
+    return request<SearchHistoryDTO[]>(
+      `/api/search/history/${encodeURIComponent(historyId)}`,
+      {
+        method: 'DELETE',
+        token,
+      },
+    );
+  },
 };

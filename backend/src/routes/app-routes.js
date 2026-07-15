@@ -12,6 +12,7 @@ import {
 import { buildPublicStationView } from "../public-station-service.js";
 import {
   clearSearchHistory,
+  deleteSearchHistoryItem,
   listSearchHistory,
   saveSearchHistory,
   searchPublicProfiles,
@@ -26,6 +27,7 @@ import {
   agentAccessSchema,
   presenceSchema,
   scanPayloadSchema,
+  searchHistoryParamsSchema,
   searchHistorySchema,
   searchUsersSchema,
 } from "../schemas.js";
@@ -143,6 +145,20 @@ export function registerAppRoutes(
     authenticate,
     asyncHandler(async (req, res) => {
       res.json({ data: await clearSearchHistory(req.user.id) });
+    }),
+  );
+
+  app.delete(
+    "/api/search/history/:historyId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { historyId } = searchHistoryParamsSchema.parse(req.params);
+      res.json({
+        data: await deleteSearchHistoryItem({
+          userId: req.user.id,
+          historyId,
+        }),
+      });
     }),
   );
 

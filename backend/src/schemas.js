@@ -350,6 +350,10 @@ export const searchHistorySchema = z.object({
   scope: z.string().trim().min(1).max(40).optional().default("all"),
 });
 
+export const searchHistoryParamsSchema = z.object({
+  historyId: z.string().uuid(),
+});
+
 export const searchUsersSchema = z.object({
   query: z.string().trim().min(1).max(120),
 });
