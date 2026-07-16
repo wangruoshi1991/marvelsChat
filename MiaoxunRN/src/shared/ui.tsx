@@ -283,17 +283,6 @@ export function BottomBar({
   return (
     <View style={[styles.bottomBar, bottomBarColors]}>
       <TabButton
-        title={textFor(language, '主页', 'Homepage')}
-        iconSource={
-          selectedTab === 'station'
-            ? stationPostIconAssets.tabStationActive
-            : messageIconAssets.tabStationInactive
-        }
-        selected={selectedTab === 'station'}
-        palette={palette}
-        onPress={() => onSelectTab('station')}
-      />
-      <TabButton
         title={textFor(language, '妙讯', 'Messages')}
         iconSource={
           selectedTab === 'messages'
@@ -303,6 +292,17 @@ export function BottomBar({
         selected={selectedTab === 'messages'}
         palette={palette}
         onPress={() => onSelectTab('messages')}
+      />
+      <TabButton
+        title={textFor(language, '小站', 'Station')}
+        iconSource={
+          selectedTab === 'station'
+            ? stationPostIconAssets.tabStationActive
+            : messageIconAssets.tabStationInactive
+        }
+        selected={selectedTab === 'station'}
+        palette={palette}
+        onPress={() => onSelectTab('station')}
       />
     </View>
   );

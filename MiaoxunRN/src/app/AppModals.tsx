@@ -52,6 +52,7 @@ type AppModalsProps = {
   onRequestMessageQRCodeScan: () => void;
   onConsumePendingScanRequest: () => void;
   onToast: (message: string) => void;
+  onHomepageError: (error: unknown) => void;
 };
 
 export function AppModals({
@@ -70,6 +71,7 @@ export function AppModals({
   onRequestMessageQRCodeScan,
   onConsumePendingScanRequest,
   onToast,
+  onHomepageError,
 }: AppModalsProps) {
   if (!session.token) {
     return null;
@@ -93,7 +95,10 @@ export function AppModals({
           <SiteBuilderScreen
             palette={palette}
             language={session.language}
+            session={session}
             onBack={onCloseModal}
+            onActionMessage={onToast}
+            onActionError={onHomepageError}
           />
         </SafeAreaView>
       </Modal>

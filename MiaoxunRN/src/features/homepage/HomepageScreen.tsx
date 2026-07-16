@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import {
+  ChevronDown,
   Eye,
   FileClock,
   Globe2,
@@ -50,29 +51,51 @@ const idempotencyKey = () =>
 function HomepageHeader({
   palette,
   language,
+  onBack,
   onOpenSettings,
 }: {
   palette: Palette;
   language: Language;
-  onOpenSettings: () => void;
+  onBack?: () => void;
+  onOpenSettings?: () => void;
 }) {
   return (
     <View
       style={[homepageStyles.header, { borderBottomColor: palette.border }]}
     >
+      {onBack ? (
+        <Pressable
+          testID="homepage-sheet-back"
+          accessibilityRole="button"
+          accessibilityLabel={textFor(language, '返回', 'Back')}
+          onPress={onBack}
+          style={[
+            homepageStyles.headerButton,
+            { backgroundColor: palette.surface, borderColor: palette.border },
+          ]}
+        >
+          <ChevronDown color={palette.text} size={21} strokeWidth={2.4} />
+        </Pressable>
+      ) : (
+        <View style={homepageStyles.headerSpacer} />
+      )}
       <Text style={[homepageStyles.headerTitle, { color: palette.text }]}>
         {textFor(language, '我的主页', 'My Homepage')}
       </Text>
-      <Pressable
-        accessibilityLabel={textFor(language, '设置', 'Settings')}
-        onPress={onOpenSettings}
-        style={[
-          homepageStyles.headerButton,
-          { backgroundColor: palette.surface, borderColor: palette.border },
-        ]}
-      >
-        <Settings color={palette.text} size={19} strokeWidth={2.3} />
-      </Pressable>
+      {onOpenSettings ? (
+        <Pressable
+          accessibilityLabel={textFor(language, '设置', 'Settings')}
+          onPress={onOpenSettings}
+          style={[
+            homepageStyles.headerButton,
+            { backgroundColor: palette.surface, borderColor: palette.border },
+          ]}
+        >
+          <Settings color={palette.text} size={19} strokeWidth={2.3} />
+        </Pressable>
+      ) : (
+        <View style={homepageStyles.headerSpacer} />
+      )}
     </View>
   );
 }
@@ -82,6 +105,7 @@ export function HomepageScreen({
   language,
   session,
   pollIntervalMs = 1500,
+  onBack,
   onOpenSettings,
   onActionMessage,
   onActionError,
@@ -90,7 +114,8 @@ export function HomepageScreen({
   language: Language;
   session: HomepageSession;
   pollIntervalMs?: number;
-  onOpenSettings: () => void;
+  onBack?: () => void;
+  onOpenSettings?: () => void;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
@@ -601,6 +626,7 @@ export function HomepageScreen({
       <HomepageHeader
         palette={palette}
         language={language}
+        onBack={onBack}
         onOpenSettings={onOpenSettings}
       />
 

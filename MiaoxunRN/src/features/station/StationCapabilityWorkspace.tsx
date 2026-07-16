@@ -3,7 +3,6 @@ import { Text, View } from 'react-native';
 
 import {
   AgentReadinessDTO,
-  ProfileDTO,
   StationAlbumSuggestionDTO,
   StationContentDTO,
   StationFileAssetDTO,
@@ -23,12 +22,11 @@ import { StationVideoAgentPanel } from './StationVideoAgentPanel';
 export function StationCapabilityWorkspace({
   palette,
   language,
-  profile,
   stationContent,
   agentReadiness,
   hasCapability,
-  onCreateSiteDraft,
-  onApplySiteDraft,
+  homepageEnabled,
+  onOpenSiteBuilder,
   onCreateModelJob,
   onSyncModelJob,
   onLoadAlbumSuggestions,
@@ -41,15 +39,11 @@ export function StationCapabilityWorkspace({
 }: {
   palette: Palette;
   language: Language;
-  profile: ProfileDTO;
   stationContent: StationContentDTO;
   agentReadiness: Record<string, AgentReadinessDTO>;
   hasCapability: (agentId: string) => boolean;
-  onCreateSiteDraft: (payload: {
-    prompt: string;
-    apply?: boolean;
-  }) => Promise<unknown>;
-  onApplySiteDraft: (draftId: string) => Promise<unknown>;
+  homepageEnabled: boolean;
+  onOpenSiteBuilder: () => void;
   onCreateModelJob: (payload: {
     inputType: 'text';
     prompt: string;
@@ -92,18 +86,14 @@ export function StationCapabilityWorkspace({
   onActionError: (error: unknown) => void;
 }) {
   const activePanels = [
-    hasCapability('site-builder') ? (
+    hasCapability('site-builder') && homepageEnabled ? (
       <StationSiteBuilderPanel
         key="site-builder"
         palette={palette}
         language={language}
-        profile={profile}
+        enabled={homepageEnabled}
         readiness={agentReadiness['site-builder']}
-        siteDrafts={stationContent.siteDrafts || []}
-        onCreateDraft={onCreateSiteDraft}
-        onApplyDraft={onApplySiteDraft}
-        onActionMessage={onActionMessage}
-        onActionError={onActionError}
+        onOpenBuilder={onOpenSiteBuilder}
       />
     ) : null,
     hasCapability('model-3d') ? (

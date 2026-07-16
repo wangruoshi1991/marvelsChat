@@ -9,6 +9,7 @@ import {
 } from '../src/models/api';
 import { HomepageScreen } from '../src/features/homepage/HomepageScreen';
 import type { HomepageSession } from '../src/features/homepage/homepageTypes';
+import { SiteBuilderScreen } from '../src/features/site/SiteBuilderScreen';
 import { palettes } from '../src/shared/theme';
 
 const userId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -216,6 +217,35 @@ describe('HomepageScreen', () => {
     ).toEqual({ disabled: false });
 
     await unmountScreen(renderer);
+  });
+
+  test('uses the complete homepage flow inside the site-builder sheet', async () => {
+    const onBack = jest.fn();
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <SiteBuilderScreen
+          palette={palettes.light}
+          language="zh"
+          session={makeSession()}
+          onBack={onBack}
+          onActionMessage={jest.fn()}
+          onActionError={jest.fn()}
+        />,
+      );
+      await flushEffects();
+    });
+
+    const mounted =
+      renderer as unknown as ReactTestRenderer.ReactTestRenderer;
+    expect(renderedText(mounted)).toContain('创建我的主页');
+
+    await ReactTestRenderer.act(async () => {
+      mounted.root.findByProps({ testID: 'homepage-sheet-back' }).props.onPress();
+    });
+    expect(onBack).toHaveBeenCalledTimes(1);
+    await unmountScreen(mounted);
   });
 
   test('shows a usable basic draft when generation falls back', async () => {

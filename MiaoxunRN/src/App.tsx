@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Linking, Platform, StatusBar, Text, View } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AppModals } from './app/AppModals';
 import { ModalRoute } from './app/appTypes';
@@ -19,7 +20,10 @@ import {
 } from './features/messages/MessagesScreen';
 import { resolveMessagePalette } from './features/messages/messagePalette';
 import { useProfileFlows } from './features/profile/useProfileFlows';
-import { HomepageScreen } from './features/homepage/HomepageScreen';
+import {
+  FloatingMiaoButton,
+  StationScreen,
+} from './features/station/StationScreen';
 import { AvatarConfigDTO } from './models/api';
 import { API_BASE_URL, resolvePublicUrl } from './services/apiClient';
 import { appErrorText, textFor } from './shared/i18n';
@@ -31,8 +35,9 @@ function App(): React.JSX.Element {
   const session = useMiaoxunSession();
   const palette = palettes[session.appearance];
   const messagePalette = resolveMessagePalette(palette);
-  const [selectedTab, setSelectedTab] = useState<RootTab>('station');
+  const [selectedTab, setSelectedTab] = useState<RootTab>('messages');
   const [modalRoute, setModalRoute] = useState<ModalRoute>(null);
+  const [homepageRefreshVersion, setHomepageRefreshVersion] = useState(0);
   const [activeThread, setActiveThread] = useState<ChatThread | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showLaunchAnimation, setShowLaunchAnimation] = useState(true);
@@ -172,6 +177,24 @@ function App(): React.JSX.Element {
     [openThread, session, showToast],
   );
 
+  const openAgentThread = useCallback(
+    (agentId: string) => {
+      const thread = session.threads.find(item => item.agentId === agentId);
+      if (!thread) {
+        showToast(
+          textFor(
+            session.language,
+            '这个 Agent 还没有可用会话，请先添加。',
+            'Add this agent before opening its chat.',
+          ),
+        );
+        return;
+      }
+      openThread(thread);
+    },
+    [openThread, session.language, session.threads, showToast],
+  );
+
   const { sendButlerMessage } = useButlerActions({
     session,
     setSelectedTab,
@@ -191,6 +214,36 @@ function App(): React.JSX.Element {
     }
     session.markThreadRead(openedThread.id);
   }, [modalRoute, openedThread, session]);
+
+  const copyAIID = () => {
+    const aiId = session.user?.aiId || '';
+    if (!aiId) {
+      showToast(
+        textFor(
+          session.language,
+          '登录后可复制 AI ID',
+          'Log in to copy the AI ID',
+        ),
+      );
+      return;
+    }
+    Clipboard.setString(aiId);
+    showToast(textFor(session.language, 'AI ID 已复制', 'AI ID copied'));
+  };
+
+  const openSiteBuilder = useCallback(() => {
+    if (!session.homepageV1.enabled) {
+      return;
+    }
+    setModalRoute('site-builder');
+  }, [session.homepageV1.enabled]);
+
+  const closeModal = useCallback(() => {
+    if (modalRoute === 'site-builder') {
+      setHomepageRefreshVersion(current => current + 1);
+    }
+    setModalRoute(null);
+  }, [modalRoute]);
 
   const requestMessageQRCodeScan = () => {
     if (profileFlows.isScanning || pendingScanRequest) {
@@ -406,15 +459,41 @@ function App(): React.JSX.Element {
                     }}
                   />
                 ) : (
-                  <HomepageScreen
+                  <StationScreen
                     palette={palette}
                     language={session.language}
                     session={session}
                     onOpenSettings={() => setModalRoute('settings')}
+                    onOpenLocation={() => setModalRoute('station-location')}
+                    onCopyAIID={copyAIID}
+                    onOpenQRCode={profileFlows.openQRCode}
+                    onOpenFriendThread={openFriendThread}
+                    onOpenAgentThread={openAgentThread}
+                    onOpenPublicProfileByAiId={
+                      profileFlows.openPublicProfileByAiId
+                    }
+                    onOpenSiteBuilder={openSiteBuilder}
+                    homepageRefreshVersion={homepageRefreshVersion}
                     onActionMessage={showToast}
-                    onActionError={showHomepageError}
+                    onActionError={error =>
+                      showToast(
+                        appErrorText(
+                          session.language,
+                          error,
+                          '操作失败',
+                          'Action failed',
+                        ),
+                      )
+                    }
                   />
                 )}
+
+                {selectedTab === 'station' && session.homepageV1.enabled ? (
+                  <FloatingMiaoButton
+                    palette={palette}
+                    onPress={openSiteBuilder}
+                  />
+                ) : null}
 
                 <BottomBar
                   palette={palette}
@@ -456,7 +535,7 @@ function App(): React.JSX.Element {
             profileFlows={profileFlows}
             searchQuery={searchQuery}
             renderUserAvatar={renderUserAvatar}
-            onCloseModal={() => setModalRoute(null)}
+            onCloseModal={closeModal}
             onSetModalRoute={setModalRoute}
             onOpenLegalUrl={openLegalUrl}
             onOpenThread={openThread}
@@ -465,6 +544,7 @@ function App(): React.JSX.Element {
             onRequestMessageQRCodeScan={requestMessageQRCodeScan}
             onConsumePendingScanRequest={consumePendingScanRequest}
             onToast={showToast}
+            onHomepageError={showHomepageError}
           />
           {toastMessage ? (
             <View style={[styles.toastWrap, styles.pointerEventsNone]}>

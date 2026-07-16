@@ -5,7 +5,6 @@ import {
   AgentDTO,
   AgentReadinessDTO,
   OwnedAgentDTO,
-  ProfileDTO,
   StationContentDTO,
   StationFileAssetDTO,
   StationAlbumSuggestionDTO,
@@ -22,7 +21,6 @@ import { StationMetricBox } from './StationMetricBox';
 export function StationAgentsPanel({
   palette,
   language,
-  profile,
   stationContent,
   agents,
   agentReadiness,
@@ -30,8 +28,8 @@ export function StationAgentsPanel({
   status,
   onOpenAgentThread,
   onSetAgentEnabled,
-  onCreateSiteDraft,
-  onApplySiteDraft,
+  homepageEnabled,
+  onOpenSiteBuilder,
   onCreateModelJob,
   onSyncModelJob,
   onLoadAlbumSuggestions,
@@ -44,7 +42,6 @@ export function StationAgentsPanel({
 }: {
   palette: Palette;
   language: Language;
-  profile: ProfileDTO;
   stationContent: StationContentDTO;
   agents: AgentDTO[];
   agentReadiness: Record<string, AgentReadinessDTO>;
@@ -55,11 +52,8 @@ export function StationAgentsPanel({
     agentId: string,
     enabled: boolean,
   ) => Promise<OwnedAgentDTO>;
-  onCreateSiteDraft: (payload: {
-    prompt: string;
-    apply?: boolean;
-  }) => Promise<unknown>;
-  onApplySiteDraft: (draftId: string) => Promise<unknown>;
+  homepageEnabled: boolean;
+  onOpenSiteBuilder: () => void;
   onCreateModelJob: (payload: {
     inputType: 'text';
     prompt: string;
@@ -355,12 +349,11 @@ export function StationAgentsPanel({
       <StationCapabilityWorkspace
         palette={palette}
         language={language}
-        profile={profile}
         stationContent={stationContent}
         agentReadiness={agentReadiness}
         hasCapability={hasCapability}
-        onCreateSiteDraft={onCreateSiteDraft}
-        onApplySiteDraft={onApplySiteDraft}
+        homepageEnabled={homepageEnabled}
+        onOpenSiteBuilder={onOpenSiteBuilder}
         onCreateModelJob={onCreateModelJob}
         onSyncModelJob={onSyncModelJob}
         onLoadAlbumSuggestions={onLoadAlbumSuggestions}
