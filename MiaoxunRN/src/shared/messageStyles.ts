@@ -97,9 +97,9 @@ export const messageStyles = {
     justifyContent: 'center',
     minWidth: 54,
   },
-  threadTitle: { fontSize: 16, fontWeight: '900' },
+  threadTitle: { fontSize: 15, fontWeight: '900' },
   threadTime: { fontSize: 12 },
-  threadPreview: { fontSize: 13, lineHeight: 18 },
+  threadPreview: { fontSize: 12, lineHeight: 18 },
   threadStatus: { fontSize: 12, fontWeight: '700' },
   unread: {
     alignItems: 'center',
@@ -327,11 +327,12 @@ export const messageStyles = {
   noticeTitleRow: {
     alignItems: 'center',
     flexDirection: 'row',
+    gap: 8,
     justifyContent: 'space-between',
   },
-  noticeTitle: { fontSize: 17, fontWeight: '800' },
+  noticeTitle: { flex: 1, fontSize: 15, fontWeight: '900' },
   noticeStatus: { fontSize: 12, fontWeight: '800' },
-  noticeMessage: { fontSize: 14, lineHeight: 20 },
+  noticeMessage: { fontSize: 12, lineHeight: 18 },
   noticeActionRow: {
     alignItems: 'center',
     flexDirection: 'row',

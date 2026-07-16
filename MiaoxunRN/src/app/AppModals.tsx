@@ -219,28 +219,33 @@ export function AppModals({
       >
         <SafeAreaProvider>
           <SafeAreaView
-            edges={['top', 'bottom']}
+            edges={['top']}
             style={[
               styles.safeArea,
               { backgroundColor: searchPalette.soft },
             ]}
           >
-            <SearchScreen
-              palette={searchPalette}
-              language={session.language}
-              query={searchQuery}
-              threads={session.threads}
-              agents={session.agents}
-              friends={session.relationships.friends}
-              searchHistory={session.searchHistory}
-              renderUserAvatar={renderUserAvatar}
-              onBack={onCloseModal}
-              onChangeQuery={onSearchQueryChange}
-              onOpenThread={onOpenThread}
-              onOpenFriend={onOpenFriendThread}
-              onSaveSearch={session.saveSearchQuery}
-              onClearSearchHistory={session.clearSearchHistory}
-            />
+            <SafeAreaView
+              edges={['bottom']}
+              style={[styles.safeArea, styles.searchBottomSafeArea]}>
+              <SearchScreen
+                palette={searchPalette}
+                language={session.language}
+                query={searchQuery}
+                threads={session.threads}
+                agents={session.agents}
+                friends={session.relationships.friends}
+                searchHistory={session.searchHistory}
+                renderUserAvatar={renderUserAvatar}
+                onBack={onCloseModal}
+                onChangeQuery={onSearchQueryChange}
+                onOpenThread={onOpenThread}
+                onOpenFriend={onOpenFriendThread}
+                onSaveSearch={session.saveSearchQuery}
+                onClearSearchHistory={session.clearSearchHistory}
+                onDeleteSearchHistory={session.deleteSearchHistoryItem}
+              />
+            </SafeAreaView>
           </SafeAreaView>
         </SafeAreaProvider>
       </Modal>

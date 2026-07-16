@@ -13,7 +13,7 @@ import {notificationIconAssets} from '../../assets/icons';
 import {Language, useMiaoxunSession} from '../session/useMiaoxunSession';
 import {displayText, textFor} from '../../shared/i18n';
 import {styles} from '../../shared/styles';
-import {Palette} from '../../shared/theme';
+import {Palette, palettes} from '../../shared/theme';
 
 function resolveNoticeIcon(kind: string): ImageSourcePropType {
   if (kind.includes('collection') || kind.includes('favorite')) {
@@ -54,6 +54,12 @@ function NoticeRow({
   onAction: () => void;
   onSecondaryAction?: () => void;
 }) {
+  const isLightPalette = palette.text === palettes.light.text;
+  const titleColor = isLightPalette ? '#000000' : palette.text;
+  const messageColor = isLightPalette
+    ? 'rgba(0,0,0,0.6)'
+    : palette.secondaryText;
+
   return (
     <View style={[styles.noticeRow, {backgroundColor: palette.surface, borderColor: palette.border}]}>
       <View style={styles.noticeSymbol}>
@@ -65,12 +71,18 @@ function NoticeRow({
       </View>
       <View style={styles.noticeBody}>
         <View style={styles.noticeTitleRow}>
-          <Text style={[styles.noticeTitle, {color: palette.text}]}>{title}</Text>
+          <Text
+            numberOfLines={1}
+            style={[styles.noticeTitle, {color: titleColor}]}>
+            {title}
+          </Text>
           <Text style={[styles.noticeStatus, {color: active ? palette.mint : palette.secondaryText}]}>
             {status}
           </Text>
         </View>
-        <Text style={[styles.noticeMessage, {color: palette.secondaryText}]}>{message}</Text>
+        <Text style={[styles.noticeMessage, {color: messageColor}]}>
+          {message}
+        </Text>
         {active || actionLabel || secondaryActionLabel ? (
           <View style={styles.noticeActionRow}>
             {secondaryActionLabel && onSecondaryAction ? (

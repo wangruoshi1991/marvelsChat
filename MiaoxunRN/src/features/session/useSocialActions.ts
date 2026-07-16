@@ -142,6 +142,17 @@ export function useSocialActions({
     setSearchHistory(history);
   }, [setSearchHistory, token]);
 
+  const deleteSearchHistoryItem = useCallback(
+    async (historyId: string) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      const history = await apiClient.deleteSearchHistoryItem(historyId, token);
+      setSearchHistory(history);
+    },
+    [setSearchHistory, token],
+  );
+
   const loadPublicProfileByAiId = useCallback(
     async (aiId: string) => {
       if (!token) {
@@ -164,6 +175,7 @@ export function useSocialActions({
     searchUsers,
     saveSearchQuery,
     clearSearchHistory,
+    deleteSearchHistoryItem,
     loadPublicProfileByAiId,
   };
 }
