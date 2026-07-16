@@ -8,11 +8,12 @@
 - `admin/package.json`：后台管理系统前端构建和界面依赖。
 - `backend/package.json`：Node.js API、PostgreSQL、鉴权、Agent 编排依赖。
 - `agents/package.json`：Agent 注册和定义。
+- `station-web/package.json`：个人主页预览、分享和法律页面渲染器。
 
 ## 分层
 
 ```text
-MiaoxunRN/admin -> backend -> PostgreSQL / agents / provider
+MiaoxunRN / station-web / admin -> backend -> PostgreSQL / OSS / agents / model provider
 ```
 
 - `MiaoxunRN`：正式移动端主线。采用 React Native，并通过 iOS 原生工程接入 Keychain、权限、启动配置和后续推送能力。
@@ -20,6 +21,7 @@ MiaoxunRN/admin -> backend -> PostgreSQL / agents / provider
 - `backend`：Node.js + Express API、鉴权、PostgreSQL、运营管理、Agent 编排、New API 中转。
 - `backend/database`：PostgreSQL schema，当前包含用户、资料、会话、消息、事件、Agent 运行记录、社交关系、好友申请、通知和搜索历史。
 - `agents`：每个 Agent 独立声明能力、权限、提示词计划和 fallback。
+- `station-web`：接收后端安全投影的主页 JSON，同一渲染器服务 App WebView 预览和匿名分享页。
 - `python`：当前没有 Python 工程；后续如接入媒体生成、文件解析、模型处理或长任务队列，应作为独立 worker/service 引入，不混入 RN 或 Node API 进程。
 - `docs`：任何结构和接口变化都要同步记录。
 
@@ -36,6 +38,36 @@ MiaoxunRN/admin -> backend -> PostgreSQL / agents / provider
 - `CoreLocation` / Android `LocationManager`：只负责获取用户授权后的坐标；社区和活动区域解析由后端完成。
 
 iOS 和后台管理前端都不直接访问 PostgreSQL，不直接 import `agents/`，不保存 Agent 私钥或模型供应商密钥。它们只通过 `/api` 使用后端能力；需要实时回复时，优先由后端提供 SSE 或 WebSocket。
+
+## Build 24 个人主页架构
+
+```text
+用户明确选择 3-9 张照片
+  -> 私有 OSS 上传 / 已有素材 ID
+  -> POST /api/station/homepage-jobs
+  -> 可恢复异步任务 + 20 秒模型截止时间
+  -> revision 草稿
+  -> PATCH 编辑 / refine
+  -> 短期 preview token
+  -> station-web 同源精确预览
+  -> immutable release
+  -> private 或可撤销 link
+```
+
+关键边界：
+
+- 后端只接受当前用户拥有且状态为 uploaded 的显式素材 ID。
+- 模型上下文只包含必要的资料和素材元数据，不发送 OSS 存储键、原始文件名或照片二进制。
+- 模型结果只能进入固定 schema，不接受任意 HTML、CSS 或 JavaScript。
+- 草稿用 revision 做乐观并发控制；发布版本不可变，恢复会创建新草稿。
+- 预览令牌只保存哈希并短期有效；分享令牌可撤销，停止分享后旧 URL 失效。
+- OSS 保持私有，浏览器只获得短期签名 GET URL。
+- 主页普通 UI 不显示 provider、模型错误、环境变量或数据库信息。
+- 分享页和编辑页显示“AI 生成内容”。
+
+`station-web` 的静态资源由后端在 `/site-assets/*` 提供。`/preview/:token` 和 `/s/:token` 返回相同 shell，再分别读取 `/api/homepage-previews/:token` 与 `/api/homepage-shares/:token`。这保证 App WebView 和浏览器分享没有第二套渲染逻辑。
+
+Build 24 在生产环境必须同时满足 `HOMEPAGE_V1_ENABLED=true` 和 allowlist 命中。关闭 flag 只隐藏新闭环，不删除增量数据库表，也不破坏 Build 23 API。
 
 ## 移动端原生桥接原则
 

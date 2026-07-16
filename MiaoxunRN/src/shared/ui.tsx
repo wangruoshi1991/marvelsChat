@@ -101,7 +101,12 @@ export function SegmentedControl<T extends string>({
                 {option.label}
               </Text>
               {option.badge && option.badge > 0 ? (
-                <View style={[styles.segmentBadge, { backgroundColor: palette.rose }]}>
+                <View
+                  style={[
+                    styles.segmentBadge,
+                    { backgroundColor: palette.rose },
+                  ]}
+                >
                   <Text style={styles.segmentBadgeText}>
                     {option.badge > 99 ? '99+' : option.badge}
                   </Text>

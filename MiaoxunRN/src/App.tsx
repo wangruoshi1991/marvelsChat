@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, StatusBar, Text, View } from 'react-native';
+import { Linking, Platform, StatusBar, Text, View } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AppModals } from './app/AppModals';
@@ -25,6 +25,7 @@ import {
   StationScreen,
 } from './features/station/StationScreen';
 import { AvatarConfigDTO } from './models/api';
+import { API_BASE_URL, resolvePublicUrl } from './services/apiClient';
 import { appErrorText, textFor } from './shared/i18n';
 import { styles } from './shared/styles';
 import { palettes } from './shared/theme';
@@ -36,6 +37,7 @@ function App(): React.JSX.Element {
   const messagePalette = resolveMessagePalette(palette);
   const [selectedTab, setSelectedTab] = useState<RootTab>('messages');
   const [modalRoute, setModalRoute] = useState<ModalRoute>(null);
+  const [homepageRefreshVersion, setHomepageRefreshVersion] = useState(0);
   const [activeThread, setActiveThread] = useState<ChatThread | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showLaunchAnimation, setShowLaunchAnimation] = useState(true);
@@ -96,6 +98,45 @@ function App(): React.JSX.Element {
       setToastMessage(current => (current === message ? null : current));
     }, 1600);
   }, []);
+
+  const openLegalUrl = useCallback(
+    (url: string) => {
+      try {
+        const target = resolvePublicUrl(API_BASE_URL, url);
+        Linking.openURL(target).catch(() => {
+          showToast(
+            textFor(
+              session.language,
+              '暂时无法打开该页面',
+              'This page cannot be opened right now',
+            ),
+          );
+        });
+      } catch {
+        showToast(
+          textFor(
+            session.language,
+            '暂时无法打开该页面',
+            'This page cannot be opened right now',
+          ),
+        );
+      }
+    },
+    [session.language, showToast],
+  );
+
+  const showHomepageError = useCallback(
+    (error: unknown) =>
+      showToast(
+        appErrorText(
+          session.language,
+          error,
+          '主页操作失败',
+          'Homepage action failed',
+        ),
+      ),
+    [session.language, showToast],
+  );
 
   useEffect(() => {
     const notice = session.realtimeNotificationNotice;
@@ -189,6 +230,20 @@ function App(): React.JSX.Element {
     Clipboard.setString(aiId);
     showToast(textFor(session.language, 'AI ID 已复制', 'AI ID copied'));
   };
+
+  const openSiteBuilder = useCallback(() => {
+    if (!session.homepageV1.enabled) {
+      return;
+    }
+    setModalRoute('site-builder');
+  }, [session.homepageV1.enabled]);
+
+  const closeModal = useCallback(() => {
+    if (modalRoute === 'site-builder') {
+      setHomepageRefreshVersion(current => current + 1);
+    }
+    setModalRoute(null);
+  }, [modalRoute]);
 
   const requestMessageQRCodeScan = () => {
     if (profileFlows.isScanning || pendingScanRequest) {
@@ -417,6 +472,8 @@ function App(): React.JSX.Element {
                     onOpenPublicProfileByAiId={
                       profileFlows.openPublicProfileByAiId
                     }
+                    onOpenSiteBuilder={openSiteBuilder}
+                    homepageRefreshVersion={homepageRefreshVersion}
                     onActionMessage={showToast}
                     onActionError={error =>
                       showToast(
@@ -431,10 +488,10 @@ function App(): React.JSX.Element {
                   />
                 )}
 
-                {selectedTab === 'station' ? (
+                {selectedTab === 'station' && session.homepageV1.enabled ? (
                   <FloatingMiaoButton
                     palette={palette}
-                    onPress={() => setModalRoute('site-builder')}
+                    onPress={openSiteBuilder}
                   />
                 ) : null}
 
@@ -452,6 +509,11 @@ function App(): React.JSX.Element {
               language={session.language}
               isBusy={session.isBusy}
               errorMessage={session.errorMessage}
+              policies={session.legalPolicies}
+              onOpenLegalUrl={openLegalUrl}
+              onRefreshPolicies={() => {
+                session.refreshLegalPolicies().catch(() => undefined);
+              }}
               onSignIn={session.signIn}
               onSignUp={async (...args) => {
                 await session.signUp(...args);
@@ -473,13 +535,16 @@ function App(): React.JSX.Element {
             profileFlows={profileFlows}
             searchQuery={searchQuery}
             renderUserAvatar={renderUserAvatar}
-            onCloseModal={() => setModalRoute(null)}
+            onCloseModal={closeModal}
+            onSetModalRoute={setModalRoute}
+            onOpenLegalUrl={openLegalUrl}
             onOpenThread={openThread}
             onSearchQueryChange={setSearchQuery}
             onOpenFriendThread={openFriendThread}
             onRequestMessageQRCodeScan={requestMessageQRCodeScan}
             onConsumePendingScanRequest={consumePendingScanRequest}
             onToast={showToast}
+            onHomepageError={showHomepageError}
           />
           {toastMessage ? (
             <View style={[styles.toastWrap, styles.pointerEventsNone]}>

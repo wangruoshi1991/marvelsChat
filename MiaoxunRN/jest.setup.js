@@ -41,3 +41,15 @@ jest.mock('react-native-qrcode-svg', () => {
     return React.createElement(View, { testID: 'qr-code' });
   };
 });
+
+jest.mock('react-native-webview', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    WebView: props =>
+      React.createElement(View, {
+        ...props,
+        testID: props.testID || 'homepage-webview',
+      }),
+  };
+});

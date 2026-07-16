@@ -1,5 +1,79 @@
 # 妙讯部署说明
 
+## Build 24 当前部署基线（2026-07-15）
+
+当前测试服务器实际运行方式不是 Docker Compose，而是：
+
+```text
+代码目录：/opt/projects/marvels-chat/app
+后端进程：systemd / marvels-chat-backend.service
+运行用户：marvels
+监听端口：4390
+Nginx：80 -> 127.0.0.1:4390
+HTTPS：尚未配置
+```
+
+Nginx 的 `/api/*` 和根路径都反向代理到后端，因此后端同时提供 API、`/site-assets/*`、`/preview/*`、`/s/*` 和 `/legal/*`。Build 24 发布包必须包含 `station-web/dist/index.html`。
+
+### Build 24 环境变量
+
+测试服务器在域名备案和 HTTPS 完成前使用：
+
+```text
+NODE_ENV=production
+CORS_ORIGIN=http://8.153.167.11
+HOMEPAGE_V1_ENABLED=true
+HOMEPAGE_V1_ALLOWLIST=<仅验收账号，逗号分隔>
+HOMEPAGE_WEB_BASE_URL=http://8.153.167.11
+HOMEPAGE_GENERATION_DAILY_LIMIT=5
+HOMEPAGE_REFINE_DAILY_LIMIT=20
+HOMEPAGE_PREVIEW_TTL_MS=300000
+PRIVACY_POLICY_VERSION=2026-07-15
+TERMS_VERSION=2026-07-15
+SENTRY_DSN=
+SENTRY_ENVIRONMENT=build24-test
+```
+
+真实数据库、模型和 OSS 凭据继续保留在服务器 `miaoxun-prod.env`，不得被仓库示例覆盖。`NODE_ENV=production` 是 allowlist 生效条件，不能遗漏。
+
+### systemd 发布顺序
+
+1. 在本地完成所有检查并构建 `station-web/dist`。
+2. 在服务器创建按时间命名的代码和环境文件备份。
+3. 同步 `backend/`、`agents/` 和 `station-web/dist/`，不覆盖真实环境文件。
+4. 在服务器运行 `npm ci --omit=dev`。
+5. 加载真实环境后运行 `npm run db:migrate`，只执行增量迁移。
+6. 更新上述 Build 24 非密钥环境变量。
+7. 重启 `marvels-chat-backend.service`，等待 `/api/health` 恢复。
+8. 完成 [Build 24 验收清单](build24-acceptance.md) 的 API 和匿名分享测试。
+
+完整主页链路使用 `backend/scripts/build24-smoke.js` 验收。只能使用临时加入
+allowlist 的 `build24-smoke-*@example.com` 专用账号；脚本完成后会删除账号和
+OSS 测试对象，运维人员仍需移除临时 allowlist 条目并重启服务。
+
+当前部署账号没有 sudo，但拥有后端进程和项目目录。更新完成后可以终止该用户自己的 Node 主进程，systemd 的 `Restart=always` 会自动拉起；必须记录旧 PID、新 PID 和恢复时间。若后续授予受限 sudo，应优先改为：
+
+```sh
+sudo systemctl restart marvels-chat-backend
+```
+
+### 回滚
+
+严重问题优先将 `HOMEPAGE_V1_ENABLED=false`，重启后端。数据库迁移是增量迁移，不执行 DROP 或降级；保留新表和用户数据。只有代码故障才恢复部署前目录备份。
+
+### 正式域名切换
+
+备案和证书完成后，一次性切换：
+
+```text
+CORS_ORIGIN=https://miaoxun.pizelife.com
+PUBLIC_API_BASE_URL=https://miaoxun.pizelife.com
+HOMEPAGE_WEB_BASE_URL=https://miaoxun.pizelife.com
+MIAOXUN_API_BASE_URL=https://miaoxun.pizelife.com/api
+```
+
+随后删除 iOS 对 `8.153.167.11` 的 ATS HTTP 例外，验证 HTTPS、WSS、预览、匿名分享、法律页面和证书续期。正式域名完成前仅允许内部 TestFlight，不得公开发布。
+
 ## 当前生产测试目标
 
 TestFlight 只负责把 iOS App 分发给测试用户；登录、聊天、扫码解析、妙讯管家、通知、在线状态、定位名称解析和地图都必须连接公网 HTTPS 后端。
@@ -299,6 +373,36 @@ MiaoxunAPIBaseURL = http://8.153.167.11/api
 包内未发现 `https://miaoxun-api.pizelife.com`、`http://8.153.167.11/api/api` 或 `http://8.153.167.11/station/`。上传返回 `Uploaded MiaoxunRN` 和 `** EXPORT SUCCEEDED **`；MapLibre、React、ReactNativeDependencies、hermesvm dSYM warning 仍存在，不阻止 TestFlight 分发。App Store Connect 已处理完成，`1.0 (23)` 状态为“正在测试”，已加入内部和外部 TestFlight 群组 `YU yunzhi`；外部公开链接仍为 `https://testflight.apple.com/join/jKSqUnYU`。
 
 尚未完成的是安装 build 23 后的真机 2 分钟网络验收；需要测试账号登录后确认不会再出现每秒 bootstrap/sync 或 WebSocket 重建，并继续验证日记、相册、照片上传和 Agent 接口闭环。
+
+## 2026-07-16 Build 26 个人主页集成
+
+Build 26 将完整个人主页 Agent 接入 Build 25 的现有“妙讯 / 小站”布局。移动端仍以“妙讯”为默认首屏，“小站”为第二个根 Tab；小站顶部状态区、右下角“妙”和 AI 伙伴建站 Agent 共用同一套创建、编辑、预览、发布和撤销流程。旧的小站结构草稿面板不再作为独立用户流程。
+
+服务器已从本集成分支同步 `backend/`、`agents/` 和 `station-web/dist/` 到：
+
+```text
+/opt/projects/marvels-chat/app
+```
+
+部署前代码和环境备份：
+
+```text
+/opt/projects/marvels-chat/app/deploy-backups/build26-20260716-114127
+```
+
+部署验证结果：
+
+- 服务器 `npm ci --omit=dev`、`npm run check` 和 58 项后端测试通过。
+- PostgreSQL 增量迁移成功，数据库为 `marvels_chat`。
+- systemd 服务恢复为 `active`，最终主进程 PID 为 `170097`。
+- 本机 `http://127.0.0.1:4390/api/health` 与公网 `http://8.153.167.11/api/health` 均返回 200。
+- Build 25 的 `DELETE /api/search/history/:historyId` 未登录返回 401，不再是 404。
+- 主页 `GET /api/station/site` 未登录返回 401，路由存在且鉴权生效。
+- 原 `HOMEPAGE_V1_ALLOWLIST` 已恢复，仍只包含 1 个真实验收账号。
+
+使用一次性 `build24-smoke-*@example.com` 账号完成并清理了真实全链路 smoke：注册、bootstrap、3 张 OSS 图片上传、异步模型生成、幂等任务、草稿 revision 更新、旧预览失效 410、冲突 409、Web 预览、链接发布、匿名访问、撤销后 404、历史恢复、账号删除和删除后登录 404。生成结果 `source=model`，脚本最终返回 `complete: true`；账号和 OSS 对象随删除流程清理，临时 allowlist 已移除。
+
+本轮没有修改或输出任何生产密码、token、模型 Key 或 OSS 签名 URL。完整 Xcode 不在当前工作环境中，因此签名 Archive 和 TestFlight 上传由 App 负责人按 [iOS Build 26 交接](ios.md) 完成。
 
 2026-06-24 本地 iPhone 连接设备 `7501195F-00E2-58E2-88E4-F3D68C3CBD0A` 已成功构建 Debug 包，签名为 Apple Development: Rose Wang，API 指向 `https://miaoxun-api.pizelife.com`。安装时设备上已有 TestFlight 版妙讯，`devicectl` 返回同 Bundle ID 已存在 App Store 安装协调记录，USB Debug 包不能直接覆盖 TestFlight 版；需要先在手机 TestFlight 更新到当前可用最新构建，或用户确认卸载现有 TestFlight 版后再安装 Debug 包。
 

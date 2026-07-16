@@ -21,6 +21,18 @@ export default {
     const profile = appContext?.profile || null;
     const stationContent = appContext?.stationContent || {};
     const language = profile?.stationConfig?.language || "zh";
+    const mediaAssets = (stationContent.mediaAssets || []).slice(0, 12).map((asset) => ({
+      id: String(asset?.id || "").slice(0, 120),
+      kind: String(asset?.kind || "").slice(0, 24),
+      mimeType: String(asset?.mimeType || "").slice(0, 80),
+      width: Number(asset?.width || 0) || null,
+      height: Number(asset?.height || 0) || null,
+      caption: String(asset?.caption || "").slice(0, 160),
+      tags: (Array.isArray(asset?.tags) ? asset.tags : [])
+        .map((tag) => String(tag).slice(0, 40))
+        .slice(0, 12),
+      status: String(asset?.status || "").slice(0, 24),
+    }));
 
     return {
       system: [
@@ -44,7 +56,7 @@ export default {
         `社区: ${profile?.community || "未设置"}`,
         `活动区域: ${profile?.activityArea || "未设置"}`,
         `相册: ${JSON.stringify((stationContent.albums || []).slice(0, 8))}`,
-        `媒体: ${JSON.stringify((stationContent.mediaAssets || []).slice(0, 12))}`,
+        `媒体: ${JSON.stringify(mediaAssets)}`,
         `日记: ${JSON.stringify((stationContent.diaryEntries || []).slice(0, 8))}`,
         `穿搭: ${JSON.stringify((stationContent.outfits || []).slice(0, 6))}`,
         `用户需求: ${input}`,

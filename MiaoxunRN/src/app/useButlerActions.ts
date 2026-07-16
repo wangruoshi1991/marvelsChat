@@ -74,7 +74,8 @@ export function useButlerActions({
           setModalRoute('message-actions');
           return;
         case 'navigation.siteBuilder':
-          setModalRoute('site-builder');
+          setSelectedTab('station');
+          setModalRoute(null);
           return;
         case 'navigation.notices':
           setSelectedTab('messages');

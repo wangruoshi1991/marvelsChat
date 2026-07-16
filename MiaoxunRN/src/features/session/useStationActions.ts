@@ -2,6 +2,8 @@ import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import {
   AvatarConfigDTO,
+  HomepageDraftContentDTO,
+  HomepageVisibility,
   ProfileDTO,
   StationContentDTO,
   StationComicDiaryDTO,
@@ -556,6 +558,133 @@ export function useStationActions({
     [token],
   );
 
+  const homepageJobs = useCallback(
+    async (limit = 10) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      return apiClient.homepageJobs(token, limit);
+    },
+    [token],
+  );
+
+  const createHomepageJob = useCallback(
+    async (payload: {
+      prompt: string;
+      mediaAssetIds: string[];
+      idempotencyKey: string;
+    }) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      return apiClient.createHomepageJob(token, payload);
+    },
+    [token],
+  );
+
+  const homepageJob = useCallback(
+    async (jobId: string) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      return apiClient.homepageJob(token, jobId);
+    },
+    [token],
+  );
+
+  const homepageDraft = useCallback(
+    async (draftId: string) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      return apiClient.homepageDraft(token, draftId);
+    },
+    [token],
+  );
+
+  const updateHomepageDraft = useCallback(
+    async (
+      draftId: string,
+      payload: { revision: number; draft: HomepageDraftContentDTO },
+    ) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      return apiClient.updateHomepageDraft(token, draftId, payload);
+    },
+    [token],
+  );
+
+  const refineHomepageSection = useCallback(
+    async (
+      draftId: string,
+      payload: { revision: number; sectionId: string; instruction: string },
+    ) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      return apiClient.refineHomepageSection(token, draftId, payload);
+    },
+    [token],
+  );
+
+  const createHomepagePreview = useCallback(
+    async (draftId: string) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      return apiClient.createHomepagePreview(token, draftId);
+    },
+    [token],
+  );
+
+  const publishHomepage = useCallback(
+    async (
+      draftId: string,
+      payload: { revision: number; visibility: HomepageVisibility },
+    ) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      return apiClient.publishHomepage(token, draftId, payload);
+    },
+    [token],
+  );
+
+  const homepageSite = useCallback(async () => {
+    if (!token) {
+      throw new Error('请先登录。');
+    }
+    return apiClient.homepageSite(token);
+  }, [token]);
+
+  const unpublishHomepage = useCallback(async () => {
+    if (!token) {
+      throw new Error('请先登录。');
+    }
+    return apiClient.unpublishHomepage(token);
+  }, [token]);
+
+  const homepageReleases = useCallback(
+    async (limit = 10) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      return apiClient.homepageReleases(token, limit);
+    },
+    [token],
+  );
+
+  const restoreHomepageRelease = useCallback(
+    async (releaseId: string) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      return apiClient.restoreHomepageRelease(token, releaseId);
+    },
+    [token],
+  );
+
   return {
     refreshStationContent,
     createStationDiary,
@@ -580,5 +709,17 @@ export function useStationActions({
     deleteStationComicDiary,
     createStationVideoDraft,
     resolveLocation,
+    homepageJobs,
+    createHomepageJob,
+    homepageJob,
+    homepageDraft,
+    updateHomepageDraft,
+    refineHomepageSection,
+    createHomepagePreview,
+    publishHomepage,
+    homepageSite,
+    unpublishHomepage,
+    homepageReleases,
+    restoreHomepageRelease,
   };
 }

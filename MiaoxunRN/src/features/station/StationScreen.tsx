@@ -47,6 +47,8 @@ export function StationScreen({
   onOpenFriendThread,
   onOpenAgentThread,
   onOpenPublicProfileByAiId,
+  onOpenSiteBuilder,
+  homepageRefreshVersion,
   onActionMessage,
   onActionError,
 }: {
@@ -60,6 +62,8 @@ export function StationScreen({
   onOpenFriendThread: (friendUserId: string) => void;
   onOpenAgentThread: (agentId: string) => void;
   onOpenPublicProfileByAiId: (aiId: string) => void;
+  onOpenSiteBuilder: () => void;
+  homepageRefreshVersion: number;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
@@ -317,6 +321,9 @@ export function StationScreen({
             agents={session.agents}
             agentReadiness={session.agentReadiness}
             ownedAgents={session.ownedAgents}
+            homepageEnabled={session.homepageV1.enabled}
+            homepageRefreshVersion={homepageRefreshVersion}
+            loadHomepageSite={session.homepageSite}
             moduleStatus={key =>
               stationModuleStatusText(language, key, session.modules[key])
             }
@@ -328,8 +335,7 @@ export function StationScreen({
             onOpenCreateSheet={setCreateKind}
             onOpenDiaryDetail={openDiaryDetail}
             onOpenAlbumDetail={openAlbumDetail}
-            onCreateSiteDraft={session.createStationSiteDraft}
-            onApplySiteDraft={session.applyStationSiteDraft}
+            onOpenSiteBuilder={onOpenSiteBuilder}
             onCreateModelJob={session.createStationModelJob}
             onSyncModelJob={session.syncStationModelJob}
             onLoadAlbumSuggestions={session.listStationAlbumSuggestions}

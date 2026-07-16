@@ -21,6 +21,9 @@ export function StationPanel({
   agentReadiness,
   ownedAgents,
   moduleStatus,
+  homepageEnabled,
+  homepageRefreshVersion,
+  loadHomepageSite,
   onOpenFriendThread,
   onOpenAgentThread,
   onSetAgentEnabled,
@@ -29,8 +32,7 @@ export function StationPanel({
   onOpenCreateSheet,
   onOpenDiaryDetail,
   onOpenAlbumDetail,
-  onCreateSiteDraft,
-  onApplySiteDraft,
+  onOpenSiteBuilder,
   onCreateModelJob,
   onSyncModelJob,
   onLoadAlbumSuggestions,
@@ -52,6 +54,9 @@ export function StationPanel({
   agentReadiness: ReturnType<typeof useMiaoxunSession>['agentReadiness'];
   ownedAgents: OwnedAgentDTO[];
   moduleStatus: (key: string) => string;
+  homepageEnabled: boolean;
+  homepageRefreshVersion: number;
+  loadHomepageSite: ReturnType<typeof useMiaoxunSession>['homepageSite'];
   onOpenFriendThread: (friendUserId: string) => void;
   onOpenAgentThread: (agentId: string) => void;
   onSetAgentEnabled: (
@@ -63,8 +68,7 @@ export function StationPanel({
   onOpenCreateSheet: (kind: StationCreateKind) => void;
   onOpenDiaryDetail: (entryId: string) => void;
   onOpenAlbumDetail: (albumId: string) => void;
-  onCreateSiteDraft: ReturnType<typeof useMiaoxunSession>['createStationSiteDraft'];
-  onApplySiteDraft: ReturnType<typeof useMiaoxunSession>['applyStationSiteDraft'];
+  onOpenSiteBuilder: () => void;
   onCreateModelJob: ReturnType<typeof useMiaoxunSession>['createStationModelJob'];
   onSyncModelJob: ReturnType<typeof useMiaoxunSession>['syncStationModelJob'];
   onLoadAlbumSuggestions: ReturnType<typeof useMiaoxunSession>['listStationAlbumSuggestions'];
@@ -96,7 +100,6 @@ export function StationPanel({
       <StationAgentsPanel
         palette={palette}
         language={language}
-        profile={profile}
         stationContent={stationContent}
         agents={agents}
         agentReadiness={agentReadiness}
@@ -104,8 +107,8 @@ export function StationPanel({
         status={moduleStatus('agents')}
         onOpenAgentThread={onOpenAgentThread}
         onSetAgentEnabled={onSetAgentEnabled}
-        onCreateSiteDraft={onCreateSiteDraft}
-        onApplySiteDraft={onApplySiteDraft}
+        homepageEnabled={homepageEnabled}
+        onOpenSiteBuilder={onOpenSiteBuilder}
         onCreateModelJob={onCreateModelJob}
         onSyncModelJob={onSyncModelJob}
         onLoadAlbumSuggestions={onLoadAlbumSuggestions}
@@ -142,6 +145,9 @@ export function StationPanel({
       agents={agents}
       ownedAgents={ownedAgents}
       moduleStatus={moduleStatus}
+      homepageEnabled={homepageEnabled}
+      homepageRefreshVersion={homepageRefreshVersion}
+      loadHomepageSite={loadHomepageSite}
       avatarRotation={stationAvatarRotation}
       onAvatarRotate={setStationAvatarRotation}
       onSelectStationTab={onSelectStationTab}
@@ -149,6 +155,7 @@ export function StationPanel({
       onOpenDiaryDetail={onOpenDiaryDetail}
       onOpenAlbumDetail={onOpenAlbumDetail}
       onOpenAgentThread={onOpenAgentThread}
+      onOpenSiteBuilder={onOpenSiteBuilder}
       onActionMessage={onActionMessage}
     />
   );

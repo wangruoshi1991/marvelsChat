@@ -10,6 +10,7 @@ export const longRequestTimeoutMs = 45000;
 
 export class MiaoxunApiError extends Error {
   status?: number;
+  requestId?: string;
   isNetworkError: boolean;
   isTimeout: boolean;
 
@@ -17,6 +18,7 @@ export class MiaoxunApiError extends Error {
     message: string,
     options: {
       status?: number;
+      requestId?: string;
       isNetworkError?: boolean;
       isTimeout?: boolean;
     } = {},
@@ -24,14 +26,14 @@ export class MiaoxunApiError extends Error {
     super(message);
     this.name = 'MiaoxunApiError';
     this.status = options.status;
+    this.requestId = options.requestId;
     this.isNetworkError = options.isNetworkError || false;
     this.isTimeout = options.isTimeout || false;
   }
 }
 
 export const isAuthSessionError = (error: unknown) =>
-  error instanceof MiaoxunApiError &&
-  (error.status === 401 || error.status === 403);
+  error instanceof MiaoxunApiError && error.status === 401;
 
 export const API_BASE_URL =
   typeof nativeConfig?.apiBaseURL === 'string' ? nativeConfig.apiBaseURL : '';
@@ -45,8 +47,38 @@ const normalizedApiBaseURL = (() => {
 })();
 
 const stripApiPrefix = (path: string) => path.replace(/^\/api(?=\/|$)/, '');
+
+export const joinApiUrl = (baseUrl: string, path: string) => {
+  const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, '');
+  const rawPath = path.startsWith('/') ? path : `/${path}`;
+  const normalizedPath = normalizedBaseUrl.endsWith('/api')
+    ? stripApiPrefix(rawPath)
+    : rawPath;
+  return `${normalizedBaseUrl}${normalizedPath}`;
+};
+
+export const resolvePublicUrl = (baseUrl: string, value: string) => {
+  const target = value.trim();
+  if (/^https?:\/\/[^/]+/i.test(target)) {
+    return target;
+  }
+  if (target.startsWith('//')) {
+    throw new Error('Miaoxun public URL must not be protocol-relative.');
+  }
+  const origin = baseUrl.trim().match(/^(https?:\/\/[^/]+)/i)?.[1];
+  if (!origin) {
+    throw new Error('Miaoxun API base URL must include an HTTP(S) origin.');
+  }
+  return `${origin}${target.startsWith('/') ? target : `/${target}`}`;
+};
+
 const sanitizeUrlForLog = (url: string) =>
-  url.replace(/([?&]token=)[^&]+/gi, '$1[redacted]');
+  url
+    .replace(
+      /(\/(?:homepage-(?:previews|shares)|preview|s)\/)[^/?#]+/gi,
+      '$1[redacted]',
+    )
+    .replace(/([?&][^=&#]+)=([^&#]*)/g, '$1=[redacted]');
 
 const summarizeDataForLog = (value: object) => {
   if (Array.isArray(value)) {
@@ -78,27 +110,21 @@ const summarizeDataForLog = (value: object) => {
   };
 };
 
-const sanitizeBodyForLog = (value: unknown): unknown => {
+const summarizeBodyForLog = (value: unknown): unknown => {
   if (!value || typeof value !== 'object') {
-    return value;
+    return value === null || value === undefined ? value : `[${typeof value}]`;
   }
   if (Array.isArray(value)) {
     return `[array:${value.length}]`;
   }
   const input = value as Record<string, unknown>;
-  const output: Record<string, unknown> = {};
-  Object.entries(input).forEach(([key, item]) => {
-    if (/password|token|secret|key|authorization|credential/i.test(key)) {
-      output[key] = '[redacted]';
-      return;
-    }
-    if (key === 'data' && item && typeof item === 'object') {
-      output[key] = summarizeDataForLog(item);
-      return;
-    }
-    output[key] = sanitizeBodyForLog(item);
-  });
-  return output;
+  return {
+    keys: Object.keys(input).slice(0, 16),
+    data:
+      input.data && typeof input.data === 'object'
+        ? summarizeDataForLog(input.data)
+        : undefined,
+  };
 };
 
 const logNetworkEvent = (
@@ -114,11 +140,7 @@ const logNetworkEvent = (
 };
 
 export const buildApiUrl = (path: string) => {
-  const rawPath = path.startsWith('/') ? path : `/${path}`;
-  const normalizedPath = normalizedApiBaseURL.endsWith('/api')
-    ? stripApiPrefix(rawPath)
-    : rawPath;
-  return `${normalizedApiBaseURL}${normalizedPath}`;
+  return joinApiUrl(normalizedApiBaseURL, path);
 };
 
 export const buildRealtimeUrl = (path: string) =>
@@ -129,7 +151,34 @@ type RequestOptions = {
   token?: string;
   body?: unknown;
   timeoutMs?: number;
+  headers?: Record<string, string>;
+  expireSessionOnUnauthorized?: boolean;
 };
+
+type AuthSessionExpiredEvent = {
+  token: string;
+  requestId: string;
+};
+
+type AuthSessionExpiredHandler = (
+  event: AuthSessionExpiredEvent,
+) => void | Promise<void>;
+
+let authSessionExpiredHandler: AuthSessionExpiredHandler | null = null;
+
+export const setAuthSessionExpiredHandler = (
+  handler: AuthSessionExpiredHandler | null,
+) => {
+  authSessionExpiredHandler = handler;
+  return () => {
+    if (authSessionExpiredHandler === handler) {
+      authSessionExpiredHandler = null;
+    }
+  };
+};
+
+const createRequestId = () =>
+  `mx-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 
 export async function request<T>(
   path: string,
@@ -142,6 +191,7 @@ export async function request<T>(
   );
   const method = options.method || 'GET';
   const finalUrl = buildApiUrl(path);
+  const clientRequestId = createRequestId();
   let response: Response;
   let responseText = '';
 
@@ -149,13 +199,16 @@ export async function request<T>(
     logNetworkEvent('request', {
       method,
       url: sanitizeUrlForLog(finalUrl),
+      requestId: clientRequestId,
       hasAuthorization: Boolean(options.token),
-      requestBody: options.body ? sanitizeBodyForLog(options.body) : undefined,
+      requestBody: options.body ? summarizeBodyForLog(options.body) : undefined,
     });
     response = await fetch(finalUrl, {
       method,
       headers: {
         'Content-Type': 'application/json',
+        'X-Request-ID': clientRequestId,
+        ...options.headers,
         ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
@@ -165,10 +218,12 @@ export async function request<T>(
     logNetworkEvent('error', {
       method,
       url: sanitizeUrlForLog(finalUrl),
-      message: error instanceof Error ? error.message : 'Network error',
+      requestId: clientRequestId,
+      errorType: error instanceof Error ? error.name : 'NetworkError',
     });
     if (error instanceof Error && error.name === 'AbortError') {
       throw new MiaoxunApiError('请求超时，请确认手机与后端网络连接后重试。', {
+        requestId: clientRequestId,
         isNetworkError: true,
         isTimeout: true,
       });
@@ -176,6 +231,7 @@ export async function request<T>(
     throw new MiaoxunApiError(
       '网络连接失败，请确认手机与后端网络连接后重试。',
       {
+        requestId: clientRequestId,
         isNetworkError: true,
       },
     );
@@ -183,16 +239,35 @@ export async function request<T>(
     clearTimeout(timeout);
   }
 
+  const responseRequestId =
+    response.headers?.get?.('x-request-id') || clientRequestId;
+
+  if (
+    response.status === 401 &&
+    options.token &&
+    options.expireSessionOnUnauthorized !== false &&
+    authSessionExpiredHandler
+  ) {
+    await Promise.resolve(
+      authSessionExpiredHandler({
+        token: options.token,
+        requestId: responseRequestId,
+      }),
+    ).catch(() => undefined);
+  }
+
   if (response.status === 204) {
     logNetworkEvent('response', {
       method,
       url: sanitizeUrlForLog(finalUrl),
+      requestId: responseRequestId,
       status: response.status,
       responseBody: null,
     });
     if (!response.ok) {
       throw new MiaoxunApiError(`请求失败：${response.status}`, {
         status: response.status,
+        requestId: responseRequestId,
       });
     }
     return undefined as T;
@@ -207,9 +282,10 @@ export async function request<T>(
   logNetworkEvent('response', {
     method,
     url: sanitizeUrlForLog(finalUrl),
+    requestId: responseRequestId,
     status: response.status,
     responseBody: payload
-      ? sanitizeBodyForLog(payload)
+      ? summarizeBodyForLog(payload)
       : responseText
       ? '[non-json response]'
       : null,
@@ -220,11 +296,17 @@ export async function request<T>(
       payload && 'error' in payload
         ? payload.error?.message || `请求失败：${response.status}`
         : `请求失败：${response.status}`;
-    throw new MiaoxunApiError(message, { status: response.status });
+    throw new MiaoxunApiError(message, {
+      status: response.status,
+      requestId: responseRequestId,
+    });
   }
 
   if (!payload || !('data' in payload)) {
-    throw new Error('后端响应格式无效。');
+    throw new MiaoxunApiError('后端响应格式无效。', {
+      status: response.status,
+      requestId: responseRequestId,
+    });
   }
 
   return payload.data;

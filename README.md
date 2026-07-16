@@ -2,6 +2,19 @@
 
 这是妙讯的正式仓库基础，采用单仓库多目录独立工程结构。iOS 客户端、后台管理系统、后端和 Agent 各自维护边界，不使用根目录统一依赖包。
 
+## Build 24 核心闭环
+
+Build 24 将 App 第一屏调整为“我的主页”，实现从一句自然语言和 3 至 9 张明确选择的照片，到异步生成、结构化编辑、精确网页预览、链接分享、撤销和历史版本恢复的完整闭环。
+
+- 后端使用 revision 草稿、不可变 release、短期预览令牌和可撤销分享令牌。
+- `station-web/` 是 App WebView 预览和浏览器分享页共用的 React 渲染器。
+- 主页默认为私密，当前只允许 `private` 和 `link`，不允许公开搜索。
+- 模型在 20 秒内不可用时返回可编辑基础版，不把 provider 或环境变量暴露给用户。
+- 主页和编辑页显示“AI 生成内容”；建站模型上下文不包含 OSS 存储键或原始文件名。
+- 注册需要同意当前版本的隐私政策和用户协议；账号删除需要密码和两次确认。
+
+当前只用于内部验收。域名备案、HTTPS、运营主体信息、法务审阅、模型备案公示和未成年人规则完成前，不得公开发布。验收步骤见 [Build 24 验收清单](docs/build24-acceptance.md)。
+
 ## 目录结构
 
 ```text
@@ -9,6 +22,7 @@ marvelsChat/
   MiaoxunRN/              # React Native 正式实现目录
   admin/           # 后台管理系统前端
   backend/         # Node.js API，承接登录、数据库、管理、Agent 调用
+  station-web/     # 个人主页预览、分享和法律页面渲染器
   backend/database # PostgreSQL schema
   backend/scripts  # 数据库迁移等后端脚本
   agents/          # 独立 Agent 注册目录，后续每个 Agent 一个文件
@@ -20,6 +34,7 @@ marvelsChat/
 - 移动端：`MiaoxunRN/` 是唯一正式 App 主线，采用 React Native + TypeScript；钥匙串、推送、文件权限等系统能力通过 iOS / Android 薄原生层接入。
 - 后台管理前端：独立 `admin/` 工程，当前为 Vite + 原生 JavaScript/CSS，后续也可迁 Vue。它只调用 `/api/admin/*` 和认证接口，不单独拥有后端服务。
 - 后端：Node.js + Express + 数据库层。当前实现使用 PostgreSQL。后端负责 API、鉴权、数据读写、后台管理、Agent 注册、Agent 调用编排、模型供应商适配和审计记录。
+- 主页 Web：`station-web/` 构建为静态资源，由后端同源服务 `/site-assets/*`、`/preview/:token`、`/s/:token` 和 `/legal/*`。
 - Agent：独立放在 `agents/` 工程。Agent 以声明式文件注册能力、权限和提示词计划，由后端运行时加载。前端只消费后端返回的 Agent 列表、授权状态和消息结果。
 - Python：当前主工程尚未接入 Python 服务；只有当后续需要独立 AI 任务队列、视频/图片/3D 模型处理、文件解析等 Node.js 不适合长期承载的能力时，再作为独立 worker/service 引入，并通过后端 API 或队列调用。
 
@@ -29,6 +44,7 @@ React Native 是当前正式移动端主线，iOS 上线能力通过 `MiaoxunRN/
 
 - React Native 正式实现目录为 `MiaoxunRN/`，旧 SwiftUI 原型目录已从主工程移除。
 - `MiaoxunRN` 通过自有原生配置桥接 `MiaoxunConfigModule` 显式读取 API 地址；iOS 来源是 `Info.plist` 的 `MiaoxunAPIBaseURL`，Android 来源是 `BuildConfig.MIAOXUN_API_BASE_URL`，缺失或格式错误会直接报错，不静默切换到示例地址。
+- Build 24 默认进入个人主页；旧 Agent 能力接口继续保留用于兼容，但普通用户首屏不再展示技术型 Agent 注册表。
 - 未登录状态只展示登录/注册页，不展示原型账号、预览聊天或前端假会话。
 - 移动端注册使用唯一昵称作为用户名；用户可用昵称、手机号或邮箱登录。注册或改名时如果昵称已存在，后端返回“名称已使用”。
 - 消息页只展示数据库中的真实会话；不会为了贴近 Demo 继续补前端假聊天，也不再额外插入解释性统计卡。
@@ -69,6 +85,16 @@ npm install
 npm run dev
 ```
 
+构建主页 Web 资源：
+
+```bash
+cd station-web
+npm ci
+npm run build
+```
+
+后端通过 `station-web/dist` 提供主页、分享和法律页面。生产镜像会在多阶段构建中自动生成并复制该目录。
+
 需要让本地后台直接管理 TestFlight 正在使用的线上服务时：
 
 ```bash
@@ -88,11 +114,13 @@ http://127.0.0.1:5175
 http://127.0.0.1:4390/api/health
 ```
 
-`MiaoxunRN` iOS API 地址来自 Xcode build setting，并通过 `MiaoxunConfigModule` 暴露给 JS。当前 Debug 和 Release 都指向线上服务，方便模拟器和 TestFlight 真机使用同一套账号、扫码、好友申请、通知和聊天数据：
+`MiaoxunRN` iOS API 地址来自 Xcode build setting，并通过 `MiaoxunConfigModule` 暴露给 JS。Build 24 内测包在备案和 HTTPS 完成前临时使用：
 
 ```text
-MIAOXUN_API_BASE_URL=https://api.marvelschat.com
+MIAOXUN_API_BASE_URL=http://8.153.167.11/api
 ```
+
+正式发布目标为 `https://miaoxun.pizelife.com/api`，切换后必须移除临时 IP 的 ATS 例外。
 
 需要本地后端调试时，必须显式新建或修改 Debug 配置为 Mac 局域网 IP 或本机测试后端地址；不能让同一次扫码联调里一端连本地、一端连线上。
 
@@ -149,10 +177,10 @@ MAP_TILE_USER_AGENT=marvelsChat/0.1 contact@example.com
 
 ## 分支
 
-当前开发分支：
+Build 24 开发分支：
 
 ```text
-feat/miaoxun-scaffold
+feat/miaoxun-homepage-v1
 ```
 
 这个分支用于你自由调整妙讯结构，不影响 `main`。
@@ -177,4 +205,7 @@ feat/miaoxun-scaffold
 - [Demo 迁移计划](docs/demo-migration.md)
 - [Agent 接入说明](docs/agents.md)
 - [部署说明](docs/deployment.md)
+- [Build 24 验收清单](docs/build24-acceptance.md)
+- [隐私政策内部草案](docs/legal/privacy-policy-draft.md)
+- [用户协议内部草案](docs/legal/terms-draft.md)
 - [移动端上线功能实施清单](docs/mobile-launch-checklist.md)

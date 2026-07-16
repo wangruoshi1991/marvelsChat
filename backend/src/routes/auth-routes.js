@@ -1,5 +1,7 @@
 import { hashPassword, verifyPassword } from "../auth.js";
 import { HttpError } from "../http-error.js";
+import { assertCurrentPolicyConsent } from "../legal-policy-service.js";
+import { createRateLimitMiddleware } from "../rate-limit-service.js";
 import {
   createSessionForUser,
   createUsageEvent,
@@ -15,7 +17,6 @@ import {
   revokeSession,
 } from "../repositories.js";
 import { loginSchema, registerSchema } from "../schemas.js";
-import { createRateLimitMiddleware } from "../rate-limit-service.js";
 
 const minute = 60 * 1000;
 
@@ -49,6 +50,7 @@ export function registerAuthRoutes(app, { authenticate, asyncHandler }) {
     registerLimit,
     asyncHandler(async (req, res) => {
       const body = registerSchema.parse(req.body);
+      if (body.consent) assertCurrentPolicyConsent(body.consent);
       if (body.contactType === "email") {
         const existed = await findUserByEmail(body.email);
         if (existed) throw new HttpError(409, "Email already registered");
@@ -67,6 +69,7 @@ export function registerAuthRoutes(app, { authenticate, asyncHandler }) {
         displayName: body.displayName,
         passwordHash,
         role,
+        consent: body.consent,
       });
       const session = await createSessionForUser(user.id);
       await markLogin(user.id);

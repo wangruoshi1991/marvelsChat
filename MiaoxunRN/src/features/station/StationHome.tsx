@@ -12,6 +12,7 @@ import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { StationAvatarSpace } from './StationAvatarSpace';
+import { StationHomepageStatus } from './StationHomepageStatus';
 import {
   AlbumGrid,
   CallableAgentList,
@@ -30,6 +31,9 @@ type StationHomeProps = {
   agents: AgentDTO[];
   ownedAgents: OwnedAgentDTO[];
   moduleStatus: (key: string) => string;
+  homepageEnabled: boolean;
+  homepageRefreshVersion: number;
+  loadHomepageSite: ReturnType<typeof useMiaoxunSession>['homepageSite'];
   avatarRotation: number;
   onAvatarRotate: (nextRotation: number) => void;
   onSelectStationTab: (tab: StationTab) => void;
@@ -37,6 +41,7 @@ type StationHomeProps = {
   onOpenDiaryDetail: (entryId: string) => void;
   onOpenAlbumDetail: (albumId: string) => void;
   onOpenAgentThread: (agentId: string) => void;
+  onOpenSiteBuilder: () => void;
   onActionMessage: (message: string) => void;
 };
 
@@ -49,6 +54,9 @@ export function StationHome({
   agents,
   ownedAgents,
   moduleStatus,
+  homepageEnabled,
+  homepageRefreshVersion,
+  loadHomepageSite,
   avatarRotation,
   onAvatarRotate,
   onSelectStationTab,
@@ -56,6 +64,7 @@ export function StationHome({
   onOpenDiaryDetail,
   onOpenAlbumDetail,
   onOpenAgentThread,
+  onOpenSiteBuilder,
   onActionMessage,
 }: StationHomeProps) {
   const openDiaryFlow = () => onOpenCreateSheet('diary');
@@ -157,6 +166,15 @@ export function StationHome({
 
   return (
     <View style={styles.stationPanelStack}>
+      <StationHomepageStatus
+        palette={palette}
+        language={language}
+        enabled={homepageEnabled}
+        refreshVersion={homepageRefreshVersion}
+        loadSite={loadHomepageSite}
+        onOpen={onOpenSiteBuilder}
+      />
+
       <StationAvatarSpace
         palette={palette}
         language={language}

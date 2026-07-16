@@ -1,3 +1,13 @@
+FROM node:20-bullseye-slim AS station-web-builder
+
+WORKDIR /app/station-web
+
+COPY station-web/package*.json ./
+RUN npm ci
+
+COPY station-web ./
+RUN npm run build
+
 FROM node:20-bullseye-slim
 
 WORKDIR /app
@@ -12,6 +22,7 @@ COPY backend/src ./src
 COPY backend/scripts ./scripts
 COPY backend/database ./database
 COPY agents ../agents
+COPY --from=station-web-builder /app/station-web/dist ../station-web/dist
 
 EXPOSE 4390
 
