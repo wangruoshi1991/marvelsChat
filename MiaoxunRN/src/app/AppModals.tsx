@@ -215,6 +215,7 @@ export function AppModals({
                 onSaveSearch={session.saveSearchQuery}
                 onClearSearchHistory={session.clearSearchHistory}
                 onDeleteSearchHistory={session.deleteSearchHistoryItem}
+                onError={onToast}
               />
             </SafeAreaView>
           </SafeAreaView>

@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -8,11 +8,9 @@ import {
   ScrollView,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import {ChevronDown, ChevronUp, Search, X} from 'lucide-react-native';
-import {pinyin} from 'pinyin-pro';
 import Svg, {
   Defs,
   LinearGradient as SvgLinearGradient,
@@ -26,53 +24,14 @@ import {
   RelationshipProfileDTO,
   SearchHistoryDTO,
 } from '../../models/api';
-import {displayText, publicPresenceText, textFor} from '../../shared/i18n';
+import {appErrorText, textFor} from '../../shared/i18n';
 import {styles} from '../../shared/styles';
 import {Palette, palettes} from '../../shared/theme';
 import {AgentIconAvatar} from '../messages/AgentIconAvatar';
 import {UserAvatarRenderer} from '../messages/messageTypes';
 import {ChatThread, Language} from '../session/useMiaoxunSession';
-
-type DirectoryItem =
-  | {
-      id: string;
-      kind: 'agent';
-      title: string;
-      subtitle: string;
-      searchText: string;
-      thread: ChatThread;
-      agent: AgentDTO | null;
-    }
-  | {
-      id: string;
-      kind: 'friend';
-      title: string;
-      subtitle: string;
-      searchText: string;
-      profile: RelationshipProfileDTO;
-    };
-
-type DirectoryGroup = {
-  initial: string;
-  items: DirectoryItem[];
-};
-
-const COLLAPSED_SEARCH_HISTORY_ROWS = 3;
-const DEFAULT_COLLAPSED_SEARCH_HISTORY_HEIGHT = 114;
-
-type SearchHistoryItemLayout = {
-  height: number;
-  y: number;
-};
-
-const directoryInitial = (title: string) => {
-  const romanized = pinyin(title.trim().charAt(0), {toneType: 'none'}).trim();
-  const initial = romanized.charAt(0).toUpperCase();
-  return /^[A-Z]$/.test(initial) ? initial : '#';
-};
-
-const directorySortText = (title: string) =>
-  pinyin(title, {toneType: 'none'}).toLocaleLowerCase();
+import {buildSearchDirectory} from './searchDirectory';
+import {useSearchHistoryLayout} from './useSearchHistoryLayout';
 
 function SearchHistoryChip({
   deleteLabel,
@@ -172,6 +131,7 @@ export function SearchScreen({
   onSaveSearch,
   onClearSearchHistory,
   onDeleteSearchHistory,
+  onError,
 }: {
   palette: Palette;
   language: Language;
@@ -188,22 +148,18 @@ export function SearchScreen({
   onSaveSearch: (query: string) => Promise<unknown>;
   onClearSearchHistory: () => Promise<void>;
   onDeleteSearchHistory: (historyId: string) => Promise<void>;
+  onError: (message: string) => void;
 }) {
   const [pendingAction, setPendingAction] = useState<'save' | 'clear' | null>(
     null,
   );
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
-  const {width: windowWidth} = useWindowDimensions();
-  const [collapsedHistoryCount, setCollapsedHistoryCount] = useState(
-    searchHistory.length,
-  );
-  const [collapsedHistoryHeight, setCollapsedHistoryHeight] = useState(
-    DEFAULT_COLLAPSED_SEARCH_HISTORY_HEIGHT,
-  );
-  const searchHistoryLayouts = useRef(
-    new Map<string, SearchHistoryItemLayout>(),
-  );
+  const {
+    collapsedCount: collapsedHistoryCount,
+    collapsedHeight: collapsedHistoryHeight,
+    onItemLayout: handleSearchHistoryLayout,
+  } = useSearchHistoryLayout(searchHistory);
   const isLightPalette = palette.text === palettes.light.text;
   const contactTitleColor = isLightPalette ? '#000000' : palette.text;
   const contactBodyColor = isLightPalette
@@ -212,116 +168,18 @@ export function SearchScreen({
   const visibleSearchHistory = isHistoryExpanded
     ? searchHistory
     : searchHistory.slice(0, collapsedHistoryCount);
-
-  useEffect(() => {
-    searchHistoryLayouts.current.clear();
-    setCollapsedHistoryCount(searchHistory.length);
-  }, [searchHistory, windowWidth]);
-
-  const handleSearchHistoryLayout = useCallback(
-    (itemId: string, event: LayoutChangeEvent) => {
-      const {height, y} = event.nativeEvent.layout;
-      searchHistoryLayouts.current.set(itemId, {height, y});
-
-      const layouts = searchHistory.map(item =>
-        searchHistoryLayouts.current.get(item.id),
-      );
-      if (layouts.some(layout => !layout)) {
-        return;
-      }
-
-      const measuredLayouts = layouts as SearchHistoryItemLayout[];
-      const rowTops = Array.from(
-        new Set(measuredLayouts.map(layout => Math.round(layout.y))),
-      ).sort((left, right) => left - right);
-      const visibleRowTops = rowTops.slice(0, COLLAPSED_SEARCH_HISTORY_ROWS);
-      const lastVisibleRowTop = visibleRowTops[visibleRowTops.length - 1];
-      if (lastVisibleRowTop === undefined) {
-        setCollapsedHistoryCount(0);
-        return;
-      }
-
-      const visibleLayouts = measuredLayouts.filter(
-        layout => Math.round(layout.y) <= lastVisibleRowTop,
-      );
-      const nextCount = visibleLayouts.length;
-      const nextHeight = Math.max(
-        ...visibleLayouts.map(layout => layout.y + layout.height),
-      );
-      setCollapsedHistoryCount(current =>
-        current === nextCount ? current : nextCount,
-      );
-      setCollapsedHistoryHeight(current =>
-        Math.abs(current - nextHeight) < 0.5 ? current : nextHeight,
-      );
-    },
-    [searchHistory],
-  );
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const directoryItems = useMemo<DirectoryItem[]>(() => {
-    const agentItems: DirectoryItem[] = threads
-      .filter(thread => Boolean(thread.agentId))
-      .map(thread => {
-        const agent =
-          agents.find(item => item.key === thread.agentId) || null;
-        const title = displayText(language, thread.title);
-        const subtitle = displayText(
-          language,
-          agent?.description || thread.status || thread.lastContent,
-        );
-        return {
-          id: `agent:${thread.id}`,
-          kind: 'agent' as const,
-          title,
-          subtitle,
-          searchText: `${title} ${subtitle} ${thread.agentId || ''}`.toLocaleLowerCase(),
-          thread,
-          agent,
-        };
-      });
-    const friendItems: DirectoryItem[] = friends.map(profile => {
-      const title = displayText(
+  const directoryGroups = useMemo(
+    () =>
+      buildSearchDirectory({
+        agents,
+        friends,
         language,
-        profile.profile.nickname || profile.user.displayName,
-      );
-      const subtitle =
-        displayText(language, profile.profile.bio) ||
-        publicPresenceText(language, profile.user.presenceStatus);
-      return {
-        id: `friend:${profile.user.id}`,
-        kind: 'friend' as const,
-        title,
-        subtitle,
-        searchText:
-          `${title} ${subtitle} ${profile.user.aiId || ''}`.toLocaleLowerCase(),
-        profile,
-      };
-    });
-
-    return [...agentItems, ...friendItems]
-      .filter(
-        item => !normalizedQuery || item.searchText.includes(normalizedQuery),
-      )
-      .sort((left, right) =>
-        directorySortText(left.title).localeCompare(
-          directorySortText(right.title),
-          'en',
-        ),
-      );
-  }, [agents, friends, language, normalizedQuery, threads]);
-  const directoryGroups = useMemo<DirectoryGroup[]>(() => {
-    const groups: DirectoryGroup[] = [];
-    directoryItems.forEach(item => {
-      const initial = directoryInitial(item.title);
-      const currentGroup = groups[groups.length - 1];
-      if (currentGroup?.initial === initial) {
-        currentGroup.items.push(item);
-      } else {
-        groups.push({initial, items: [item]});
-      }
-    });
-    return groups;
-  }, [directoryItems]);
+        normalizedQuery,
+        threads,
+      }),
+    [agents, friends, language, normalizedQuery, threads],
+  );
 
   const saveSearch = async () => {
     if (!query.trim() || pendingAction || pendingDeleteId) {
@@ -330,6 +188,15 @@ export function SearchScreen({
     setPendingAction('save');
     try {
       await onSaveSearch(query);
+    } catch (error) {
+      onError(
+        appErrorText(
+          language,
+          error,
+          '保存搜索记录失败',
+          'Failed to save search history',
+        ),
+      );
     } finally {
       setPendingAction(null);
     }
@@ -343,6 +210,15 @@ export function SearchScreen({
     try {
       await onClearSearchHistory();
       setIsHistoryExpanded(false);
+    } catch (error) {
+      onError(
+        appErrorText(
+          language,
+          error,
+          '清空搜索记录失败',
+          'Failed to clear search history',
+        ),
+      );
     } finally {
       setPendingAction(null);
     }
@@ -355,6 +231,15 @@ export function SearchScreen({
     setPendingDeleteId(historyId);
     try {
       await onDeleteSearchHistory(historyId);
+    } catch (error) {
+      onError(
+        appErrorText(
+          language,
+          error,
+          '删除搜索记录失败',
+          'Failed to delete search history',
+        ),
+      );
     } finally {
       setPendingDeleteId(null);
     }
@@ -527,10 +412,10 @@ export function SearchScreen({
                           accessibilityRole="button"
                           onPress={() => {
                             onBack();
-                            if (item.kind === 'agent') {
-                              onOpenThread(item.thread);
-                            } else {
+                            if (item.kind === 'friend') {
                               onOpenFriend(item.profile.user.id);
+                            } else {
+                              onOpenThread(item.thread);
                             }
                           }}
                           style={[
@@ -546,10 +431,15 @@ export function SearchScreen({
                               identity={item.agent?.identity || null}
                               palette={palette}
                             />
-                          ) : (
+                          ) : item.kind === 'friend' ? (
                             renderUserAvatar({
                               text: item.profile.profile.avatarText,
                               config: item.profile.profile.avatarConfig,
+                            })
+                          ) : (
+                            renderUserAvatar({
+                              text: item.thread.avatarText,
+                              config: item.thread.avatarConfig || undefined,
                             })
                           )}
                           <View style={styles.searchRowCopy}>
