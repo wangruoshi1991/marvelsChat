@@ -1,18 +1,22 @@
 # iOS 客户端规划
 
-## Build 24 App 负责人交接
+## Build 26 App 负责人交接（2026-07-16）
 
-Build 24 源码配置：
+Build 26 基于 TestFlight Build 25 源码继续开发，不替换现有根布局：
 
 ```text
 Version: 1.0
-Build: 24
+Build: 26
 API Base: http://8.153.167.11/api
 Temporary IP TestFlight: MIAOXUN_TEMP_IP_TESTFLIGHT=1
 iOS deployment target: 15.1
+Default tab: 妙讯
+Second tab: 小站
 ```
 
-本机当前只有系统 Ruby 2.6、没有 CocoaPods，且 `xcode-select` 指向 CommandLineTools，因此本机不能完成原生编译或签名归档。App 负责人必须在安装完整 Xcode、Ruby 3.1+、Bundler 和 CocoaPods 的签名环境中执行：
+个人主页 Agent 现在从三个入口打开同一套页面：`我的小站` 顶部主页状态区、右下角“妙”按钮、`AI伙伴` 中的建站 Agent。三处都支持自然语言要求、明确选择 3 至 9 张照片、生成和恢复、结构化编辑、精确 WebView 预览、私密发布、链接分享、撤销和历史版本恢复。旧的“小站结构草稿 / 应用模块顺序”不再作为独立用户流程。
+
+本工作环境没有完整 Xcode，因此不能执行签名 Archive。App 负责人必须在已有 Xcode、Team `R8K5DUTWB6` 和 CocoaPods 1.16.2 的签名环境中，从最终交接分支执行：
 
 ```sh
 cd MiaoxunRN
@@ -21,13 +25,13 @@ npx tsc --noEmit
 npm run lint -- --max-warnings=0
 npm test -- --runInBand
 
-bundle install
-bundle exec pod install --project-directory=ios
+pod --version
+pod install --project-directory=ios
 ```
 
-Build 24 新增 `react-native-webview`，`pod install` 不是可选步骤。归档前确认 `Podfile.lock` 已包含 WebView pod，且没有删除 MapLibre 的 `$MLRN.post_install(installer)`。
+当前 `Gemfile.lock` 仍记录旧 Bundler 1.17.2，与现代 Ruby 不兼容；Build 26 不要求通过 Bundler 重新解析 Pods，也不要在发布提交中顺带重写 Ruby 依赖。仓库 `Podfile.lock` 已由 CocoaPods 1.16.2 生成并包含 `react-native-webview (13.17.0)`。归档前必须确认 WebView pod 仍存在，且 Podfile 保留 MapLibre 的 `$MLRN.post_install(installer)`。
 
-归档必须基于最终交接 commit，不得只复制单个 JS 文件。Archive 内检查：
+归档必须基于最终交接 commit，不得只复制 JS 文件。Archive 内检查：
 
 ```sh
 /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
@@ -38,11 +42,11 @@ Build 24 新增 `react-native-webview`，`pod install` 不是可选步骤。归�
   <archive>/Products/Applications/MiaoxunRN.app/Info.plist
 ```
 
-必须得到 `1.0`、`24`、`http://8.153.167.11/api`。上传后在 App Store Connect 完成处理、出口合规、内部测试组分配，再由手机 TestFlight 确认安装的是 `1.0 (24)`。
+必须得到 `1.0`、`26`、`http://8.153.167.11/api`。上传后完成 App Store Connect 处理、出口合规和测试组分配，再由手机 TestFlight 确认安装 `1.0 (26)`。
 
-真机重点验收：第一屏个人主页、3 至 9 张照片、生成/基础版、AI 标识、编辑、精确预览、链接分享和撤销、法律链接、错误密码删除账号不退出、静置两分钟无 bootstrap 循环。完整列表见 [Build 24 验收清单](build24-acceptance.md)。
+真机重点验收：冷启动仍进入“妙讯”；进入“小站”可看到主页状态；三个入口打开同一建站流程；3 至 9 张照片、模型生成或基础版、编辑、WebView 预览、分享和撤销均可完成；关闭建站页后状态自动刷新；静置两分钟无 bootstrap 或 WebSocket 重建循环。完整列表见 [Build 26 个人主页验收清单](build24-acceptance.md)。
 
-MapLibre、React、ReactNativeDependencies 和 hermesvm 的 dSYM warning 仍可作为内测非阻断项，但必须记录；它们会影响第三方 framework 崩溃符号化。
+MapLibre、React、ReactNativeDependencies 和 hermesvm 的 dSYM warning 仍是内测非阻断项，但必须记录；它们会影响第三方 framework 崩溃符号化。
 
 妙讯正式 iOS App 当前以 `MiaoxunRN/` 为唯一移动端主线，采用 React Native 承接上线实现。旧 SwiftUI 原型已从主工程移除。
 

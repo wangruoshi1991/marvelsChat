@@ -374,6 +374,36 @@ MiaoxunAPIBaseURL = http://8.153.167.11/api
 
 尚未完成的是安装 build 23 后的真机 2 分钟网络验收；需要测试账号登录后确认不会再出现每秒 bootstrap/sync 或 WebSocket 重建，并继续验证日记、相册、照片上传和 Agent 接口闭环。
 
+## 2026-07-16 Build 26 个人主页集成
+
+Build 26 将完整个人主页 Agent 接入 Build 25 的现有“妙讯 / 小站”布局。移动端仍以“妙讯”为默认首屏，“小站”为第二个根 Tab；小站顶部状态区、右下角“妙”和 AI 伙伴建站 Agent 共用同一套创建、编辑、预览、发布和撤销流程。旧的小站结构草稿面板不再作为独立用户流程。
+
+服务器已从本集成分支同步 `backend/`、`agents/` 和 `station-web/dist/` 到：
+
+```text
+/opt/projects/marvels-chat/app
+```
+
+部署前代码和环境备份：
+
+```text
+/opt/projects/marvels-chat/app/deploy-backups/build26-20260716-114127
+```
+
+部署验证结果：
+
+- 服务器 `npm ci --omit=dev`、`npm run check` 和 58 项后端测试通过。
+- PostgreSQL 增量迁移成功，数据库为 `marvels_chat`。
+- systemd 服务恢复为 `active`，最终主进程 PID 为 `170097`。
+- 本机 `http://127.0.0.1:4390/api/health` 与公网 `http://8.153.167.11/api/health` 均返回 200。
+- Build 25 的 `DELETE /api/search/history/:historyId` 未登录返回 401，不再是 404。
+- 主页 `GET /api/station/site` 未登录返回 401，路由存在且鉴权生效。
+- 原 `HOMEPAGE_V1_ALLOWLIST` 已恢复，仍只包含 1 个真实验收账号。
+
+使用一次性 `build24-smoke-*@example.com` 账号完成并清理了真实全链路 smoke：注册、bootstrap、3 张 OSS 图片上传、异步模型生成、幂等任务、草稿 revision 更新、旧预览失效 410、冲突 409、Web 预览、链接发布、匿名访问、撤销后 404、历史恢复、账号删除和删除后登录 404。生成结果 `source=model`，脚本最终返回 `complete: true`；账号和 OSS 对象随删除流程清理，临时 allowlist 已移除。
+
+本轮没有修改或输出任何生产密码、token、模型 Key 或 OSS 签名 URL。完整 Xcode 不在当前工作环境中，因此签名 Archive 和 TestFlight 上传由 App 负责人按 [iOS Build 26 交接](ios.md) 完成。
+
 2026-06-24 本地 iPhone 连接设备 `7501195F-00E2-58E2-88E4-F3D68C3CBD0A` 已成功构建 Debug 包，签名为 Apple Development: Rose Wang，API 指向 `https://miaoxun-api.pizelife.com`。安装时设备上已有 TestFlight 版妙讯，`devicectl` 返回同 Bundle ID 已存在 App Store 安装协调记录，USB Debug 包不能直接覆盖 TestFlight 版；需要先在手机 TestFlight 更新到当前可用最新构建，或用户确认卸载现有 TestFlight 版后再安装 Debug 包。
 
 正式上架 App Store 前，必须继续补 APNs 推送、隐私说明、账号找回/验证、内容审核和未接入模块的产品状态；当前阶段建议只走 TestFlight 给朋友测试。

@@ -1,8 +1,8 @@
-# Build 24 验收清单
+# Build 26 个人主页验收清单
 
 ## 验收范围
 
-Build 24 只验收“创建并分享个人主页”的核心闭环：
+Build 26 在保留 Build 25“妙讯 / 小站”布局的前提下，验收“创建并分享个人主页”的核心闭环：
 
 1. 登录或注册，并记录当前隐私政策与用户协议版本。
 2. 输入一句主页要求，明确选择 3 至 9 张照片。
@@ -12,12 +12,12 @@ Build 24 只验收“创建并分享个人主页”的核心闭环：
 6. 发布为私密或链接分享，撤销旧链接，恢复历史版本。
 7. 永久删除账号时重新验证密码并进行二次确认。
 
-3D、视频、漫画、公开搜索主页和任意 HTML/CSS 编辑不属于 Build 24。
+3D、视频、漫画、公开搜索主页和任意 HTML/CSS 编辑不属于 Build 26。
 
 ## 发布标识
 
 - Version：`1.0`
-- Build：`24`
+- Build：`26`
 - 临时 API Base：`http://8.153.167.11/api`
 - 正式目标域名：`https://miaoxun.pizelife.com/api`
 - TestFlight 公开链接：`https://testflight.apple.com/join/jKSqUnYU`
@@ -115,7 +115,7 @@ revision 冲突、链接发布与撤销、历史恢复，最后删除临时账�
 - [ ] `GET /api/legal/policies` 返回当前两个版本和可打开 URL。
 - [ ] 登录返回 200，错误密码不会被误报成接口 404。
 - [ ] `GET /api/app/bootstrap` 返回 `features.homepageV1.enabled=true`。
-- [ ] 非 allowlist 账号看不到 Build 24 主页能力。
+- [ ] 非 allowlist 账号看不到 Build 26 主页能力。
 - [ ] 创建任务返回 202，重复 idempotency key 不产生重复任务。
 - [ ] 任务完成后返回 draft ID 和 revision。
 - [ ] 预览令牌可打开，过期或草稿修改后不可继续访问。
@@ -129,9 +129,12 @@ revision 冲突、链接发布与撤销、历史恢复，最后删除临时账�
 
 ### 启动和登录
 
-- [ ] TestFlight 显示 `1.0 (24)`。
+- [ ] TestFlight 显示 `1.0 (26)`。
 - [ ] 冷启动后不会反复请求 bootstrap 或重建 WebSocket。
-- [ ] 现有账号登录后第一屏为“我的主页”，第二栏为“消息”。
+- [ ] 现有账号登录后第一屏仍为“妙讯”，“小站”位于第二个根 Tab。
+- [ ] “我的小站”顶部显示个人主页状态；未创建、草稿、仅自己可见、链接分享中状态与后端一致。
+- [ ] 小站顶部状态、右下角“妙”和 AI 伙伴建站 Agent 打开同一套完整建站流程。
+- [ ] 关闭建站页后，小站顶部状态自动刷新。
 - [ ] 普通用户界面不展示 Agent 注册表、provider、环境变量或原始错误。
 
 ### 创建主页
@@ -184,7 +187,7 @@ revision 冲突、链接发布与撤销、历史恢复，最后删除临时账�
 ## 已知非阻断项
 
 - MapLibre、React、ReactNativeDependencies、hermesvm dSYM warning 不阻止 TestFlight 安装，但影响第三方 framework 崩溃符号化。
-- `MESHY_API_KEY` 不属于 Build 24；3D 真实生成继续保持关闭。
+- `MESHY_API_KEY` 不属于 Build 26 个人主页范围；3D 真实生成继续保持关闭。
 - RN CLI/Jest 开发依赖目前有中等级别 audit 报告，不能用强制升级破坏 RN 版本，需要单独升级验证。
 
 ## 禁止公开发布的阻断项
@@ -204,4 +207,4 @@ revision 冲突、链接发布与撤销、历史恢复，最后删除临时账�
 HOMEPAGE_V1_ENABLED=false
 ```
 
-重启后端后，Build 23 API 和消息功能继续保留。数据库迁移是增量迁移，不执行破坏性回滚。必要时恢复部署前代码备份，但保留新增表和用户数据用于调查。
+重启后端后，Build 25 API、搜索和消息功能继续保留。数据库迁移是增量迁移，不执行破坏性回滚。必要时恢复部署前代码备份，但保留新增表和用户数据用于调查。
