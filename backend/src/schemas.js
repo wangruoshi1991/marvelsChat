@@ -342,6 +342,67 @@ export const accountDeletionSchema = z.object({
   confirmation: z.literal("DELETE"),
 });
 
+export const avatar3dCostVersion = "2026-07-17";
+export const avatar3dPhotoUploadLimit = 10 * 1024 * 1024;
+
+export const avatar3dSessionSchema = loginSchema;
+
+export const avatar3dPhotoUploadSchema = z.object({
+  originalFilename: z.string().trim().min(1).max(180),
+  mimeType: z.enum(["image/jpeg", "image/png"]),
+  byteSize: z.number().int().min(1).max(avatar3dPhotoUploadLimit),
+}).strict();
+
+export const avatar3dPhotoCompleteSchema = z.object({}).strict();
+
+const avatar3dJobPhotoSchema = z.object({
+  photoId: z.string().uuid(),
+  view: z.enum(["front", "left", "back", "right"]),
+}).strict();
+
+export const avatar3dCreateJobSchema = z.object({
+  style: z.enum(["realistic", "cartoon"]),
+  photos: z.array(avatar3dJobPhotoSchema).min(1).max(4),
+  acceptedPhotoRights: z.literal(true),
+  acceptedCostVersion: z.literal(avatar3dCostVersion),
+}).strict().superRefine((value, context) => {
+  const views = value.photos.map((photo) => photo.view);
+  const photoIds = value.photos.map((photo) => photo.photoId);
+  if (!views.includes("front")) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A front photo is required.",
+      path: ["photos"],
+    });
+  }
+  if (new Set(views).size !== views.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Avatar photo views must be unique.",
+      path: ["photos"],
+    });
+  }
+  if (new Set(photoIds).size !== photoIds.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Avatar photo IDs must be unique.",
+      path: ["photos"],
+    });
+  }
+});
+
+export const avatar3dIdempotencySchema = z.object({
+  idempotencyKey: z.string().uuid(),
+}).strict();
+
+export const avatar3dStyleConfirmSchema = z.object({
+  accepted: z.literal(true),
+}).strict();
+
+export const avatar3dPhotoParamsSchema = z.object({ photoId: z.string().uuid() }).strict();
+export const avatar3dJobParamsSchema = z.object({ jobId: z.string().uuid() }).strict();
+export const avatar3dModelParamsSchema = z.object({ modelId: z.string().uuid() }).strict();
+
 export const stationModelJobRequestSchema = z.object({
   inputType: z.enum(["text", "image"]).optional().default("text"),
   prompt: z.string().trim().min(1).max(600),

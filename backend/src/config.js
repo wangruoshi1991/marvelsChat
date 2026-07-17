@@ -74,6 +74,16 @@ export const config = {
     model: process.env.NEW_API_MODEL || "",
     timeoutMs: parseNumber(process.env.NEW_API_TIMEOUT_MS, 30000),
   },
+  dashscope: {
+    baseUrl: (process.env.DASHSCOPE_API_BASE_URL || "https://dashscope.aliyuncs.com")
+      .trim()
+      .replace(/\/+$/, ""),
+    apiKey: process.env.DASHSCOPE_API_KEY || "",
+    workspaceId: (process.env.DASHSCOPE_WORKSPACE_ID || "").trim(),
+    tripoModel: (process.env.DASHSCOPE_TRIPO_MODEL || "Tripo/Tripo-H3.1").trim(),
+    wanxModel: (process.env.DASHSCOPE_WANX_MODEL || "wanx2.1-imageedit").trim(),
+    timeoutMs: parseNumber(process.env.DASHSCOPE_TIMEOUT_MS, 60000),
+  },
   meshy: {
     baseUrl: (process.env.MESHY_API_BASE_URL || "https://api.meshy.ai").trim().replace(/\/+$/, ""),
     apiKey: process.env.MESHY_API_KEY || "",
@@ -90,6 +100,26 @@ export const config = {
     generationDailyLimit: parseNumber(process.env.HOMEPAGE_GENERATION_DAILY_LIMIT, 5),
     refineDailyLimit: parseNumber(process.env.HOMEPAGE_REFINE_DAILY_LIMIT, 20),
     previewTtlMs: parseNumber(process.env.HOMEPAGE_PREVIEW_TTL_MS, 300000),
+  },
+  avatar3d: {
+    enabled: parseBoolean(process.env.AVATAR_3D_ENABLED, false),
+    allowlist: listFromEnv(process.env.AVATAR_3D_ALLOWLIST),
+    requireAllowlist: isProduction,
+    webBaseUrl: (process.env.AVATAR_3D_WEB_BASE_URL || process.env.PUBLIC_API_BASE_URL || "")
+      .trim()
+      .replace(/\/+$/, ""),
+    dailyLimit: parseNumber(process.env.AVATAR_3D_DAILY_LIMIT, 3),
+    retentionDays: parseNumber(process.env.AVATAR_3D_RETENTION_DAYS, 7),
+    costVersion: (process.env.AVATAR_3D_COST_VERSION || "2026-07-17").trim(),
+    realisticEstimatedCostFen: parseNumber(
+      process.env.AVATAR_3D_REALISTIC_ESTIMATED_COST_FEN,
+      210,
+    ),
+    cartoonEstimatedCostFen: parseNumber(
+      process.env.AVATAR_3D_CARTOON_ESTIMATED_COST_FEN,
+      224,
+    ),
+    providerReady: Boolean(process.env.DASHSCOPE_API_KEY),
   },
   legal: {
     privacyPolicyVersion: (process.env.PRIVACY_POLICY_VERSION || "2026-07-15").trim(),
