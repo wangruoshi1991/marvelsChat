@@ -1,5 +1,5 @@
-import { Box, Clock3, ImageOff } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Clock3 } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { AvatarApiError, type AvatarApi } from "../api";
 import type {
   AvatarBootstrap,
@@ -8,6 +8,10 @@ import type {
 } from "../types";
 import { AvatarComposer, type AvatarCreateRequest } from "./AvatarComposer";
 import { TaskProgress } from "./TaskProgress";
+
+const AvatarViewer = lazy(() => import("../viewer/AvatarViewer").then((module) => ({
+  default: module.AvatarViewer,
+})));
 
 interface UploadAttempt {
   idempotencyKey: string;
@@ -29,9 +33,16 @@ const terminalStatuses = new Set<AvatarJob["status"]>([
 export function AvatarWorkspace({ initialBootstrap, api }: AvatarWorkspaceProps) {
   const [snapshot, setSnapshot] = useState(initialBootstrap);
   const [activity, setActivity] = useState("");
+  const [selectedModelId, setSelectedModelId] = useState(initialBootstrap.models[0]?.id || "");
   const attemptRef = useRef<UploadAttempt | null>(null);
 
-  useEffect(() => setSnapshot(initialBootstrap), [initialBootstrap]);
+  useEffect(() => {
+    setSnapshot(initialBootstrap);
+    setSelectedModelId((current) =>
+      initialBootstrap.models.some((model) => model.id === current)
+        ? current
+        : initialBootstrap.models[0]?.id || "");
+  }, [initialBootstrap]);
 
   const refresh = useCallback(async () => {
     const next = await api.bootstrap();
@@ -113,7 +124,15 @@ export function AvatarWorkspace({ initialBootstrap, api }: AvatarWorkspaceProps)
   }, [refresh]);
 
   const activeJob = snapshot.activeJob;
-  const latestModel = snapshot.models[0] || null;
+  const selectedModel = snapshot.models.find((model) => model.id === selectedModelId)
+    || snapshot.models[0]
+    || null;
+
+  const deleteModel = useCallback(async (modelId: string) => {
+    await api.deleteModel(modelId);
+    const next = await refresh();
+    setSelectedModelId(next.models[0]?.id || "");
+  }, [api, refresh]);
 
   return (
     <div className="avatar-workspace">
@@ -149,22 +168,35 @@ export function AvatarWorkspace({ initialBootstrap, api }: AvatarWorkspaceProps)
             previewUrl={activeJob.stylePreviewId ? api.stylePreviewUrl(activeJob.id) : ""}
             onJobChange={onJobChange}
           />
-        ) : latestModel ? (
-          <div className="model-ready-stage">
-            {latestModel.thumbnailAvailable ? (
-              <img src={api.modelThumbnailUrl(latestModel.id)} alt={latestModel.title} />
-            ) : <Box size={80} strokeWidth={0.8} />}
-            <div>
-              <span className="utility-label">LATEST MODEL</span>
-              <h2>{latestModel.title}</h2>
-              <p>模型已保存</p>
-            </div>
-          </div>
         ) : (
-          <div className="empty-result-stage">
-            <ImageOff size={54} strokeWidth={0.9} />
-            <h2>尚未生成个人形象</h2>
-            <p>选择照片后开始创建</p>
+          <div className="viewer-stage">
+            <Suspense fallback={<div className="viewer-empty"><p>正在准备查看器</p></div>}>
+              <AvatarViewer
+                model={selectedModel}
+                modelUrl={selectedModel ? api.modelFileUrl(selectedModel.id) : ""}
+                thumbnailUrl={selectedModel?.thumbnailAvailable
+                  ? api.modelThumbnailUrl(selectedModel.id)
+                  : ""}
+                onDelete={deleteModel}
+              />
+            </Suspense>
+            {snapshot.models.length > 1 ? (
+              <div className="model-switcher" aria-label="我的模型">
+                {snapshot.models.map((model) => (
+                  <button
+                    key={model.id}
+                    type="button"
+                    aria-pressed={model.id === selectedModel?.id}
+                    title={model.title}
+                    onClick={() => setSelectedModelId(model.id)}
+                  >
+                    {model.thumbnailAvailable ? (
+                      <img src={api.modelThumbnailUrl(model.id)} alt="" />
+                    ) : <span>3D</span>}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         )}
       </section>
