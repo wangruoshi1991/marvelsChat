@@ -54,6 +54,24 @@ const detectedImageType = (buffer) => {
   return "";
 };
 
+const normalizeProviderImage = async (buffer, errorCode) => {
+  try {
+    const body = await sharp(buffer, { failOn: "warning", limitInputPixels: 80_000_000 })
+      .rotate()
+      .jpeg({ quality: 90, chromaSubsampling: "4:4:4" })
+      .toBuffer();
+    const metadata = await sharp(body).metadata();
+    return {
+      body,
+      contentType: "image/jpeg",
+      width: Number(metadata.width || 0),
+      height: Number(metadata.height || 0),
+    };
+  } catch {
+    throw new HttpError(502, "Generation result could not be stored.", { code: errorCode });
+  }
+};
+
 const safeHttpsUrl = (value) => {
   try {
     const url = new URL(value);
@@ -253,22 +271,24 @@ export function createAvatar3dStorage({
         url: thumbnailUrl,
         limit: providerImageLimit,
       });
-      const imageType = detectedImageType(thumbnailResult.body);
-      if (!imageType) {
-        throw new HttpError(502, "Generation result could not be stored.", {
-          code: "INVALID_THUMBNAIL_RESULT",
-        });
-      }
+      const normalizedThumbnail = await normalizeProviderImage(
+        thumbnailResult.body,
+        "INVALID_THUMBNAIL_RESULT",
+      );
       const storageKey = buildAvatarThumbnailObjectKey({
         userId,
         jobId,
-        contentType: imageType,
+        contentType: normalizedThumbnail.contentType,
       });
-      await putObject({ objectKey: storageKey, body: thumbnailResult.body, contentType: imageType });
+      await putObject({
+        objectKey: storageKey,
+        body: normalizedThumbnail.body,
+        contentType: normalizedThumbnail.contentType,
+      });
       thumbnail = {
         storageKey,
-        contentType: imageType,
-        byteSize: thumbnailResult.body.length,
+        contentType: normalizedThumbnail.contentType,
+        byteSize: normalizedThumbnail.body.length,
       };
     }
 
@@ -284,21 +304,23 @@ export function createAvatar3dStorage({
 
   const persistAvatarStylePreview = async ({ userId, jobId, imageUrl }) => {
     const result = await downloadProviderResult({ url: imageUrl, limit: providerImageLimit });
-    const contentType = detectedImageType(result.body);
-    if (!contentType) {
-      throw new HttpError(502, "Style preview could not be stored.", {
-        code: "INVALID_STYLE_PREVIEW",
-      });
-    }
-    const storageKey = buildAvatarStylePreviewObjectKey({ userId, jobId, contentType });
-    await putObject({ objectKey: storageKey, body: result.body, contentType });
-    const metadata = await sharp(result.body).metadata();
+    const normalized = await normalizeProviderImage(result.body, "INVALID_STYLE_PREVIEW");
+    const storageKey = buildAvatarStylePreviewObjectKey({
+      userId,
+      jobId,
+      contentType: normalized.contentType,
+    });
+    await putObject({
+      objectKey: storageKey,
+      body: normalized.body,
+      contentType: normalized.contentType,
+    });
     return {
       storageKey,
-      contentType,
-      byteSize: result.body.length,
-      width: Number(metadata.width || 0),
-      height: Number(metadata.height || 0),
+      contentType: normalized.contentType,
+      byteSize: normalized.body.length,
+      width: normalized.width,
+      height: normalized.height,
     };
   };
 

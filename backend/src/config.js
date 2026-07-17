@@ -80,6 +80,12 @@ export const config = {
       .replace(/\/+$/, ""),
     apiKey: process.env.DASHSCOPE_API_KEY || "",
     workspaceId: (process.env.DASHSCOPE_WORKSPACE_ID || "").trim(),
+    wanxBaseUrl: (
+      process.env.DASHSCOPE_WANX_BASE_URL
+      || (process.env.DASHSCOPE_WORKSPACE_ID
+        ? `https://${process.env.DASHSCOPE_WORKSPACE_ID}.cn-beijing.maas.aliyuncs.com`
+        : "")
+    ).trim().replace(/\/+$/, ""),
     tripoModel: (process.env.DASHSCOPE_TRIPO_MODEL || "Tripo/Tripo-H3.1").trim(),
     wanxModel: (process.env.DASHSCOPE_WANX_MODEL || "wanx2.1-imageedit").trim(),
     timeoutMs: parseNumber(process.env.DASHSCOPE_TIMEOUT_MS, 60000),
@@ -108,7 +114,7 @@ export const config = {
       process.env.AVATAR_3D_CARTOON_ESTIMATED_COST_FEN,
       224,
     ),
-    providerReady: Boolean(process.env.DASHSCOPE_API_KEY),
+    providerReady: Boolean(process.env.DASHSCOPE_API_KEY && process.env.DASHSCOPE_WORKSPACE_ID),
   },
   geocoding: {
     provider: (process.env.GEOCODING_PROVIDER || "nominatim").trim().toLowerCase(),
