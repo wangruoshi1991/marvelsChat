@@ -237,16 +237,36 @@ export async function findUserCredentialById(userId) {
   return rows[0] ? { id: rows[0].id, passwordHash: rows[0].password_hash } : null;
 }
 
-export async function listUserStorageKeys(userId) {
-  const rows = await query(
+export async function listUserStorageKeys(userId, { queryFn = query } = {}) {
+  const rows = await queryFn(
     `SELECT storage_key
     FROM station_media_assets
     WHERE user_id = ? AND storage_key IS NOT NULL AND storage_key <> ''
     UNION
     SELECT storage_key
     FROM file_assets
-    WHERE user_id = ? AND storage_key IS NOT NULL AND storage_key <> ''`,
-    [userId, userId],
+    WHERE user_id = ? AND storage_key IS NOT NULL AND storage_key <> ''
+    UNION
+    SELECT source_storage_key AS storage_key
+    FROM avatar_3d_job_photos
+    WHERE user_id = ? AND source_storage_key IS NOT NULL AND source_storage_key <> ''
+    UNION
+    SELECT normalized_storage_key AS storage_key
+    FROM avatar_3d_job_photos
+    WHERE user_id = ? AND normalized_storage_key IS NOT NULL AND normalized_storage_key <> ''
+    UNION
+    SELECT storage_key
+    FROM avatar_3d_style_previews
+    WHERE user_id = ? AND storage_key IS NOT NULL AND storage_key <> ''
+    UNION
+    SELECT glb_storage_key AS storage_key
+    FROM avatar_3d_models
+    WHERE user_id = ? AND glb_storage_key IS NOT NULL AND glb_storage_key <> ''
+    UNION
+    SELECT thumbnail_storage_key AS storage_key
+    FROM avatar_3d_models
+    WHERE user_id = ? AND thumbnail_storage_key IS NOT NULL AND thumbnail_storage_key <> ''`,
+    Array(7).fill(userId),
   );
   return rows.map((row) => row.storage_key).filter(Boolean);
 }
