@@ -91,6 +91,11 @@ export function createOssHeadSignedUrl({ objectKey }) {
   return url.toString();
 }
 
+export function createOssDeleteSignedUrl({ objectKey }) {
+  const { url } = createOssSignedUrl({ method: "DELETE", objectKey });
+  return url.toString();
+}
+
 export async function inspectOssObject({ objectKey, fetchImpl = fetch }) {
   let response;
   try {
@@ -152,4 +157,50 @@ export async function fetchOssObject({
       reason: error instanceof Error ? error.message : "OSS request failed",
     });
   }
+}
+export async function putOssObject({
+  objectKey,
+  body,
+  contentType = "application/octet-stream",
+  fetchImpl = fetch,
+}) {
+  const signed = createOssPutSignedUrl({ objectKey, contentType });
+  let response;
+  try {
+    response = await fetchImpl(signed.url, {
+      method: "PUT",
+      headers: signed.headers,
+      body,
+      signal: AbortSignal.timeout(config.oss.timeoutMs),
+    });
+  } catch (error) {
+    throw new HttpError(502, "Media storage write failed.", {
+      reason: error instanceof Error ? error.message : "OSS request failed",
+    });
+  }
+  if (!response.ok) throw new HttpError(502, "Media storage write failed.");
+  return {
+    stored: true,
+    objectKey,
+    contentType,
+    byteSize: Buffer.isBuffer(body) ? body.length : null,
+  };
+}
+
+export async function deleteOssObject({ objectKey, fetchImpl = fetch }) {
+  let response;
+  try {
+    response = await fetchImpl(createOssDeleteSignedUrl({ objectKey }), {
+      method: "DELETE",
+      signal: AbortSignal.timeout(config.oss.timeoutMs),
+    });
+  } catch (error) {
+    throw new HttpError(502, "Media storage deletion failed.", {
+      reason: error instanceof Error ? error.message : "OSS request failed",
+    });
+  }
+  if (!response.ok && response.status !== 404) {
+    throw new HttpError(502, "Media storage deletion failed.");
+  }
+  return { deleted: true };
 }
