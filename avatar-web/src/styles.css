@@ -1056,9 +1056,10 @@ input:focus-visible {
   }
 
   .viewer-caption {
-    right: 14px;
+    right: auto;
     bottom: 14px;
     left: 14px;
+    width: min(210px, calc(100% - 28px));
   }
 
   .model-switcher {

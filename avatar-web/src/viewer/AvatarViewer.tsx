@@ -57,7 +57,15 @@ export function AvatarViewer({
     setLoadState("loading");
     sceneRef.current.load(modelUrl)
       .then(() => {
-        if (!cancelled) setLoadState("ready");
+        if (!cancelled) {
+          const snapshot = sceneRef.current?.getFramingSnapshot();
+          if (canvasRef.current && snapshot) {
+            canvasRef.current.dataset.frameRadius = String(snapshot.radius);
+            canvasRef.current.dataset.cameraDistance = String(snapshot.cameraDistance);
+            canvasRef.current.dataset.cameraAspect = String(snapshot.aspect);
+          }
+          setLoadState("ready");
+        }
       })
       .catch(() => {
         if (!cancelled) setLoadState("error");

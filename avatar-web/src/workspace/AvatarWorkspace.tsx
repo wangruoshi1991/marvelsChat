@@ -170,16 +170,23 @@ export function AvatarWorkspace({ initialBootstrap, api }: AvatarWorkspaceProps)
           />
         ) : (
           <div className="viewer-stage">
-            <Suspense fallback={<div className="viewer-empty"><p>正在准备查看器</p></div>}>
-              <AvatarViewer
-                model={selectedModel}
-                modelUrl={selectedModel ? api.modelFileUrl(selectedModel.id) : ""}
-                thumbnailUrl={selectedModel?.thumbnailAvailable
-                  ? api.modelThumbnailUrl(selectedModel.id)
-                  : ""}
-                onDelete={deleteModel}
-              />
-            </Suspense>
+            {selectedModel ? (
+              <Suspense fallback={<div className="viewer-empty"><p>正在准备查看器</p></div>}>
+                <AvatarViewer
+                  model={selectedModel}
+                  modelUrl={api.modelFileUrl(selectedModel.id)}
+                  thumbnailUrl={selectedModel.thumbnailAvailable
+                    ? api.modelThumbnailUrl(selectedModel.id)
+                    : ""}
+                  onDelete={deleteModel}
+                />
+              </Suspense>
+            ) : (
+              <div className="viewer-empty">
+                <span className="utility-label">MODEL VIEWER</span>
+                <h2>暂无 3D 模型</h2>
+              </div>
+            )}
             {snapshot.models.length > 1 ? (
               <div className="model-switcher" aria-label="我的模型">
                 {snapshot.models.map((model) => (
