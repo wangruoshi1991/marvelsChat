@@ -6,6 +6,7 @@ import { ZodError } from "zod";
 import { createLegacyApiCompatibilityMiddleware } from "./api-compat.js";
 import { authenticate, requireAdmin } from "./auth.js";
 import { avatar3dJobRunner } from "./avatar-3d-job-runner.js";
+import { registerAvatar3dWebRoutes } from "./avatar-3d-web-service.js";
 import { config } from "./config.js";
 import { createRealtimeGateway } from "./realtime-gateway.js";
 import { registerAdminRoutes } from "./routes/admin-routes.js";
@@ -70,6 +71,8 @@ registerAppRoutes(app, {
 registerAuthRoutes(app, { authenticate, asyncHandler });
 
 registerAvatar3dRoutes(app, { asyncHandler });
+
+registerAvatar3dWebRoutes(app);
 
 registerSocialRoutes(app, {
   authenticate,
