@@ -6,6 +6,7 @@ import { createLegacyApiCompatibilityMiddleware } from "./api-compat.js";
 import { authenticate, requireAdmin } from "./auth.js";
 import { config } from "./config.js";
 import { avatar3dJobRunner } from "./avatar-3d-job-runner.js";
+import { registerAvatar3dWebRoutes } from "./avatar-3d-web-service.js";
 import { homepageJobRunner } from "./homepage-job-runner.js";
 import { registerHomepageWebRoutes } from "./homepage-web-service.js";
 import { sentry } from "./instrument.js";
@@ -95,6 +96,8 @@ registerAccountRoutes(app, { authenticate, asyncHandler });
 registerHomepagePublicRoutes(app, { asyncHandler });
 
 registerHomepageWebRoutes(app);
+
+registerAvatar3dWebRoutes(app);
 
 registerSocialRoutes(app, {
   authenticate,
