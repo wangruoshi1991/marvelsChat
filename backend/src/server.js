@@ -5,6 +5,7 @@ import http from "http";
 import { createLegacyApiCompatibilityMiddleware } from "./api-compat.js";
 import { authenticate, requireAdmin } from "./auth.js";
 import { config } from "./config.js";
+import { avatar3dJobRunner } from "./avatar-3d-job-runner.js";
 import { homepageJobRunner } from "./homepage-job-runner.js";
 import { registerHomepageWebRoutes } from "./homepage-web-service.js";
 import { sentry } from "./instrument.js";
@@ -17,6 +18,7 @@ import { registerAdminRoutes } from "./routes/admin-routes.js";
 import { registerAccountRoutes } from "./routes/account-routes.js";
 import { registerAppRoutes } from "./routes/app-routes.js";
 import { registerAuthRoutes } from "./routes/auth-routes.js";
+import { registerAvatar3dRoutes } from "./routes/avatar-3d-routes.js";
 import { registerEventRoutes } from "./routes/event-routes.js";
 import { registerMapRoutes } from "./routes/map-routes.js";
 import { registerHomepagePublicRoutes } from "./routes/homepage-public-routes.js";
@@ -86,6 +88,8 @@ registerAppRoutes(app, {
 
 registerAuthRoutes(app, { authenticate, asyncHandler });
 
+registerAvatar3dRoutes(app, { asyncHandler });
+
 registerAccountRoutes(app, { authenticate, asyncHandler });
 
 registerHomepagePublicRoutes(app, { asyncHandler });
@@ -130,4 +134,5 @@ app.use(createRequestErrorHandler({ sentry }));
 server.listen(port, () => {
   console.log(`marvelsChat backend listening on http://127.0.0.1:${port}`);
   homepageJobRunner.start();
+  avatar3dJobRunner.start();
 });

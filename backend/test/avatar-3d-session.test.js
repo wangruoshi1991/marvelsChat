@@ -7,6 +7,8 @@ const {
   avatarCsrfCookieName,
   avatarSessionCookieName,
   createAvatar3dSessionService,
+  getAvatarCsrfToken,
+  requireAvatarHttps,
 } = await import("../src/avatar-3d-session.js");
 
 const userRow = {
@@ -77,7 +79,10 @@ test("cookie authentication populates the same request fields as Bearer auth", a
       return { sessionId: "session-id", user: { id: userRow.id } };
     },
   });
-  const req = request({ cookie: `${avatarSessionCookieName}=opaque-cookie-token` });
+  const req = request({
+    cookie: `${avatarSessionCookieName}=opaque-cookie-token`,
+    headers: { "x-forwarded-proto": "https" },
+  });
 
   const error = await invoke(service.authenticateAvatarWeb, req);
 
@@ -85,6 +90,19 @@ test("cookie authentication populates the same request fields as Bearer auth", a
   assert.deepEqual(calls, ["opaque-cookie-token"]);
   assert.equal(req.sessionId, "session-id");
   assert.equal(req.user.id, userRow.id);
+});
+
+test("avatar Web authentication and login reject non-HTTPS requests", async () => {
+  const service = createAvatar3dSessionService({
+    getSession: async () => ({ sessionId: "session-id", user: { id: userRow.id } }),
+  });
+  const insecure = request({ cookie: `${avatarSessionCookieName}=opaque-cookie-token` });
+
+  assert.equal((await invoke(service.authenticateAvatarWeb, insecure))?.status, 426);
+  assert.equal((await invoke(requireAvatarHttps, insecure))?.status, 426);
+  assert.equal(await invoke(requireAvatarHttps, request({
+    headers: { "x-forwarded-proto": "https" },
+  })), null);
 });
 
 test("CSRF requires matching cookie, header, and same HTTPS origin for mutations", async () => {
@@ -137,4 +155,14 @@ test("logout revokes the session before clearing both cookies", async () => {
   assert.deepEqual(calls, ["session-id"]);
   assert.equal(result.cookies.length, 2);
   for (const cookie of result.cookies) assert.match(cookie, /Max-Age=0/);
+});
+
+test("authenticated bootstrap can return the CSRF cookie after a page reload", () => {
+  const token = "csrf-token-after-reload";
+  const req = request({
+    cookie: `unrelated=value; ${avatarCsrfCookieName}=${encodeURIComponent(token)}`,
+  });
+
+  assert.equal(getAvatarCsrfToken(req), token);
+  assert.equal(getAvatarCsrfToken(request()), "");
 });

@@ -247,6 +247,72 @@ test("unknown Tripo submission becomes terminal and is never resubmitted", async
   assert.equal(submitCalls, 1);
 });
 
+test("private media reads verify ownership and expose no storage keys", async () => {
+  const streamed = [];
+  const privateModel = {
+    id: ids.model,
+    userId: ids.user,
+    jobId: ids.job,
+    title: "我的写实 3D 形象",
+    status: "active",
+    byteSize: 1024,
+    thumbnailAvailable: true,
+    glbStorageKey: `users/${ids.user}/avatar-3d/jobs/${ids.job}/model.glb`,
+    glbMimeType: "model/gltf-binary",
+    thumbnailStorageKey: `users/${ids.user}/avatar-3d/jobs/${ids.job}/thumbnail.jpg`,
+    thumbnailMimeType: "image/jpeg",
+  };
+  const service = createAvatar3dLifecycleService({
+    repository: {
+      getPhoto: async () => privatePhoto,
+      getJob: async () => ({
+        id: ids.job,
+        userId: ids.user,
+        style: "cartoon",
+        status: "awaiting_style_confirmation",
+      }),
+      listJobs: async () => [],
+      getStylePreview: async () => ({
+        id: ids.preview,
+        userId: ids.user,
+        jobId: ids.job,
+        storageKey: `users/${ids.user}/avatar-3d/jobs/${ids.job}/style-preview.jpg`,
+        mimeType: "image/jpeg",
+      }),
+      getModel: async () => privateModel,
+    },
+    storage: {
+      streamAvatarObject: async ({ objectKey, range }) => {
+        streamed.push({ objectKey, range });
+        return { status: range ? 206 : 200, body: {} };
+      },
+    },
+    runtime,
+  });
+  const user = { id: ids.user, email: "person@example.com" };
+
+  assert.equal((await service.getJob({ user, jobId: ids.job })).id, ids.job);
+  assert.deepEqual(await service.listJobs({ user, limit: 10 }), []);
+  const photo = await service.getPhotoFile({ user, photoId: ids.photo });
+  const preview = await service.getStylePreviewFile({ user, jobId: ids.job });
+  const model = await service.getModel({ user, modelId: ids.model });
+  const modelFile = await service.getModelFile({
+    user,
+    modelId: ids.model,
+    range: "bytes=0-511",
+  });
+  const thumbnail = await service.getModelThumbnail({ user, modelId: ids.model });
+
+  assert.equal(photo.contentType, "image/jpeg");
+  assert.equal(preview.contentType, "image/jpeg");
+  assert.equal(model.glbStorageKey, undefined);
+  assert.equal(model.thumbnailStorageKey, undefined);
+  assert.equal(modelFile.contentType, "model/gltf-binary");
+  assert.equal(thumbnail.contentType, "image/jpeg");
+  assert.equal(streamed.length, 4);
+  assert.deepEqual(streamed.map((item) => item.range), ["", "", "bytes=0-511", ""]);
+});
+
 test("repeated photo completion never exposes private storage keys", async () => {
   const service = createAvatar3dLifecycleService({
     repository: {

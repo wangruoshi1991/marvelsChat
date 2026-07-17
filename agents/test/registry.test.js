@@ -40,15 +40,17 @@ test("site-builder agent plan asks for structured JSON only", async () => {
   assert.match(plan.user, /林小满/);
 });
 
-test("model-3d agent is registered for 3D model generation", async () => {
+test("model-3d agent is registered for guided personal avatar generation", async () => {
   const agents = await listAgents();
   const modelAgent = agents.find((agent) => agent.key === "model-3d");
 
   assert.ok(modelAgent);
-  assert.equal(modelAgent.name, "3D模型 Agent");
+  assert.equal(modelAgent.name, "3D个人形象 Agent");
   assert.equal(modelAgent.category, "generation");
-  assert.ok(modelAgent.capabilities.includes("text-to-3d"));
-  assert.ok(modelAgent.capabilities.includes("image-to-3d"));
+  assert.ok(modelAgent.capabilities.includes("photo-to-avatar-3d"));
+  assert.ok(modelAgent.capabilities.includes("realistic-avatar"));
+  assert.ok(modelAgent.capabilities.includes("cartoon-avatar"));
+  assert.equal(modelAgent.capabilities.includes("text-to-3d"), false);
   assert.ok(modelAgent.permissions.includes("station:write"));
 });
 

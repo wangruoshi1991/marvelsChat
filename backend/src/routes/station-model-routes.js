@@ -1,21 +1,11 @@
-import {
-  getOssRuntimeStatus,
-  persistProviderModelAssets,
-} from "../asset-storage-service.js";
-import {
-  fetchMeshyModelJob,
-  getMeshyRuntimeStatus,
-  submitMeshyModelJob,
-} from "../model-generation-service.js";
 import { createRateLimitMiddleware } from "../rate-limit-service.js";
+import { createUsageEvent, hashRequestIp } from "../repositories.js";
 import {
   createGenerationJob,
   getGenerationJobForUser,
   listGenerationJobsForUser,
   updateGenerationJob,
-  upsertStationModelAsset,
 } from "../station-repository.js";
-import { createUsageEvent, hashRequestIp } from "../repositories.js";
 import {
   generationJobParamsSchema,
   limitSchema,
@@ -30,13 +20,50 @@ const modelJobCreateLimit = createRateLimitMiddleware({
   message: "3D 生成请求过于频繁，请稍后再试。",
 });
 
-export function registerStationModelRoutes(app, { authenticate, asyncHandler }) {
+const compatibility = Object.freeze({
+  provider: "avatar-web",
+  configured: false,
+  status: "migrated",
+  webPath: "/avatar/",
+});
+
+const migrationMessage = "3D 个人形象生成已迁移到 Web 体验，请前往 /avatar/。";
+const terminalStatuses = new Set(["succeeded", "failed", "cancelled", "blocked"]);
+
+const defaultRepository = {
+  createGenerationJob,
+  getGenerationJobForUser,
+  listGenerationJobsForUser,
+  updateGenerationJob,
+};
+
+export function registerStationModelRoutes(app, {
+  authenticate,
+  asyncHandler,
+  repository = defaultRepository,
+  recordUsageEvent = createUsageEvent,
+} = {}) {
+  const recordUsage = (req, eventType, targetId, payload) => recordUsageEvent({
+    userId: req.user.id,
+    eventType,
+    targetType: "generation_job",
+    targetId,
+    payload,
+    ipHash: hashRequestIp(req.ip),
+    userAgent: req.get("user-agent") || "",
+  });
+
   app.get(
     "/api/station/model-jobs",
     authenticate,
     asyncHandler(async (req, res) => {
       const { limit } = limitSchema.parse(req.query);
-      res.json({ data: await listGenerationJobsForUser({ userId: req.user.id, kind: "3d_model", limit }) });
+      const jobs = await repository.listGenerationJobsForUser({
+        userId: req.user.id,
+        kind: "3d_model",
+        limit,
+      });
+      res.json({ data: jobs });
     }),
   );
 
@@ -46,72 +73,31 @@ export function registerStationModelRoutes(app, { authenticate, asyncHandler }) 
     modelJobCreateLimit,
     asyncHandler(async (req, res) => {
       const body = stationModelJobRequestSchema.parse(req.body);
-      const providerStatus = getMeshyRuntimeStatus();
-      let providerResult = null;
-      let jobStatus = "blocked";
-      let errorMessage = providerStatus.configured ? "" : `Missing provider config: ${providerStatus.missing.join(", ")}`;
-
-      if (providerStatus.configured) {
-        try {
-          providerResult = await submitMeshyModelJob({
-            inputType: body.inputType,
-            prompt: body.prompt,
-            imageUrl: body.imageUrl || "",
-            targetFormats: body.targetFormats,
-            topology: body.topology,
-            poseMode: body.poseMode,
-          });
-          jobStatus = providerResult.status;
-        } catch (error) {
-          jobStatus = "failed";
-          errorMessage = error.message || "3D model provider request failed";
-        }
-      }
-
-      const job = await createGenerationJob({
+      const job = await repository.createGenerationJob({
         userId: req.user.id,
         agentId: "model-3d",
         kind: "3d_model",
         inputType: body.inputType,
         prompt: body.prompt,
         sourceAssetId: body.sourceAssetId || null,
-        provider: body.provider,
-        providerTaskId: providerResult?.providerTaskId || "",
-        status: jobStatus,
-        progress: jobStatus === "blocked" || jobStatus === "failed" ? 0 : 1,
-        requestPayload: providerResult?.requestPayload || {
+        provider: compatibility.provider,
+        status: "blocked",
+        progress: 0,
+        requestPayload: {
+          legacyClient: true,
           inputType: body.inputType,
-          targetFormats: body.targetFormats,
-          topology: body.topology,
-          poseMode: body.poseMode,
-          hasImageUrl: Boolean(body.imageUrl),
+          hasImageReference: Boolean(body.imageUrl),
         },
-        resultPayload: providerResult?.resultPayload || {},
-        errorMessage,
+        resultPayload: { nextPath: compatibility.webPath },
+        errorMessage: migrationMessage,
       });
 
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "station.model_job.create",
-        targetType: "generation_job",
-        targetId: job.id,
-        payload: {
-          inputType: body.inputType,
-          provider: body.provider,
-          status: job.status,
-          providerConfigured: providerStatus.configured,
-          missing: providerStatus.missing,
-        },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
+      await recordUsage(req, "station.model_job.migrated", job.id, {
+        inputType: job.inputType,
+        status: job.status,
       });
 
-      res.status(201).json({
-        data: {
-          job,
-          provider: providerStatus,
-        },
-      });
+      res.status(201).json({ data: { job, provider: compatibility } });
     }),
   );
 
@@ -120,84 +106,30 @@ export function registerStationModelRoutes(app, { authenticate, asyncHandler }) 
     authenticate,
     asyncHandler(async (req, res) => {
       const { jobId } = generationJobParamsSchema.parse(req.params);
-      const job = await getGenerationJobForUser({ userId: req.user.id, jobId });
+      let job = await repository.getGenerationJobForUser({
+        userId: req.user.id,
+        jobId,
+      });
       if (!job) {
         res.status(404).json({ error: { message: "Generation job not found" } });
         return;
       }
-      const providerStatus = getMeshyRuntimeStatus();
-      if (!providerStatus.configured || !job.providerTaskId) {
-        res.json({ data: { job, provider: providerStatus } });
-        return;
+
+      if (!terminalStatuses.has(job.status)) {
+        job = await repository.updateGenerationJob({
+          userId: req.user.id,
+          jobId: job.id,
+          status: "blocked",
+          progress: job.progress,
+          resultPayload: { nextPath: compatibility.webPath },
+          errorMessage: migrationMessage,
+        });
       }
 
-      const providerJob = await fetchMeshyModelJob({
-        providerTaskId: job.providerTaskId,
-        inputType: job.inputType,
+      await recordUsage(req, "station.model_job.sync_compatibility", job.id, {
+        status: job.status,
       });
-      let status = providerJob.status;
-      let storage = null;
-      let modelAsset = null;
-      let errorMessage = providerJob.status === "failed" ? "3D model provider reported failure" : "";
-
-      if (providerJob.status === "succeeded") {
-        try {
-          storage = await persistProviderModelAssets({
-            userId: req.user.id,
-            job,
-            providerJob,
-          });
-          modelAsset = await upsertStationModelAsset({
-            userId: req.user.id,
-            generationJobId: job.id,
-            title: job.prompt,
-            provider: job.provider,
-            providerTaskId: job.providerTaskId,
-            modelFiles: storage.modelFiles,
-            thumbnail: storage.thumbnail,
-            metadata: {
-              source: "provider_sync",
-              providerStatus: providerJob.providerStatus,
-            },
-          });
-        } catch (error) {
-          status = "blocked";
-          errorMessage = error.message || "Generated model assets could not be persisted";
-          storage = {
-            configured: getOssRuntimeStatus().configured,
-            missing: getOssRuntimeStatus().missing,
-            error: errorMessage,
-          };
-        }
-      }
-
-      const updated = await updateGenerationJob({
-        userId: req.user.id,
-        jobId: job.id,
-        status,
-        progress: providerJob.progress,
-        resultPayload: {
-          providerStatus: providerJob.providerStatus,
-          thumbnailUrl: providerJob.thumbnailUrl,
-          modelUrls: providerJob.modelUrls,
-          storage,
-          modelAssetId: modelAsset?.id || null,
-          raw: providerJob.raw,
-        },
-        errorMessage,
-      });
-
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "station.model_job.sync",
-        targetType: "generation_job",
-        targetId: updated.id,
-        payload: { status: updated.status, progress: updated.progress },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
-      });
-
-      res.json({ data: { job: updated, provider: providerStatus, storage, modelAsset } });
+      res.json({ data: { job, provider: compatibility } });
     }),
   );
 }
