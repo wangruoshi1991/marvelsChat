@@ -71,7 +71,12 @@ const disposeObject = (root: Object3D | null) => {
 };
 
 const defaultRendererFactory = (canvas: HTMLCanvasElement): RendererLike => {
-  const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: false });
+  const renderer = new WebGLRenderer({
+    canvas,
+    antialias: true,
+    alpha: false,
+    preserveDrawingBuffer: true,
+  });
   renderer.outputColorSpace = SRGBColorSpace;
   return renderer;
 };
