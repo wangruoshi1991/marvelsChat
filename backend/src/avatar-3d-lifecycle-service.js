@@ -26,6 +26,21 @@ const publicJob = (job) => {
   return safe;
 };
 
+const publicModel = (model) => {
+  if (!model) return null;
+  const {
+    userId,
+    providerTaskId,
+    glbStorageKey,
+    glbMimeType,
+    thumbnailStorageKey,
+    thumbnailMimeType,
+    thumbnailByteSize,
+    ...safe
+  } = model;
+  return safe;
+};
+
 export function createAvatar3dLifecycleService({
   repository = avatar3dRepository,
   storage = avatar3dStorage,
@@ -37,9 +52,14 @@ export function createAvatar3dLifecycleService({
 } = {}) {
   const featureFor = (user) => avatar3dFeatureForUser(user, runtime);
 
-  const assertAvailable = (user) => {
+  const assertEnabled = (user) => {
     const feature = featureFor(user);
     if (!feature.enabled) throw new HttpError(404, "Avatar feature is not available.");
+    return feature;
+  };
+
+  const assertAvailable = (user) => {
+    const feature = assertEnabled(user);
     if (!feature.generationAvailable) {
       throw new HttpError(503, "Avatar generation is temporarily unavailable.", {
         code: "PROVIDER_UNAVAILABLE",
@@ -416,8 +436,7 @@ export function createAvatar3dLifecycleService({
   };
 
   const getBootstrap = async ({ user }) => {
-    const feature = featureFor(user);
-    if (!feature.enabled) throw new HttpError(404, "Avatar feature is not available.");
+    const feature = assertEnabled(user);
     const [quota, jobs, models] = await Promise.all([
       repository.getQuotaState({ userId: user.id }),
       repository.listJobs({ userId: user.id, limit: 10 }),
@@ -445,6 +464,91 @@ export function createAvatar3dLifecycleService({
     return { deleted: true };
   };
 
+  const getJob = async ({ user, jobId }) => {
+    assertEnabled(user);
+    const job = await repository.getJob({ userId: user.id, jobId });
+    if (!job) throw new HttpError(404, "Avatar task not found.");
+    return publicJob(job);
+  };
+
+  const listJobs = async ({ user, limit = 10 }) => {
+    assertEnabled(user);
+    return repository.listJobs({ userId: user.id, limit });
+  };
+
+  const getPhotoFile = async ({ user, photoId, range = "" }) => {
+    assertEnabled(user);
+    const photo = await repository.getPhoto({
+      userId: user.id,
+      photoId,
+      includePrivate: true,
+    });
+    if (!photo) throw new HttpError(404, "Avatar photo not found.");
+    if (photo.status !== "ready" || !photo.normalizedStorageKey) {
+      throw new HttpError(409, "Avatar photo is not ready.");
+    }
+    return {
+      response: await storage.streamAvatarObject({
+        objectKey: photo.normalizedStorageKey,
+        range,
+      }),
+      contentType: photo.normalizedMimeType || "image/jpeg",
+    };
+  };
+
+  const getStylePreviewFile = async ({ user, jobId, range = "" }) => {
+    assertEnabled(user);
+    const preview = await repository.getStylePreview({
+      userId: user.id,
+      jobId,
+      includePrivate: true,
+    });
+    if (!preview?.storageKey) throw new HttpError(404, "Style preview not found.");
+    return {
+      response: await storage.streamAvatarObject({ objectKey: preview.storageKey, range }),
+      contentType: preview.mimeType || "image/jpeg",
+    };
+  };
+
+  const getModel = async ({ user, modelId }) => {
+    assertEnabled(user);
+    const model = await repository.getModel({ userId: user.id, modelId });
+    if (!model) throw new HttpError(404, "Avatar model not found.");
+    return publicModel(model);
+  };
+
+  const getModelFile = async ({ user, modelId, range = "" }) => {
+    assertEnabled(user);
+    const model = await repository.getModel({
+      userId: user.id,
+      modelId,
+      includePrivate: true,
+    });
+    if (!model?.glbStorageKey) throw new HttpError(404, "Avatar model not found.");
+    return {
+      response: await storage.streamAvatarObject({ objectKey: model.glbStorageKey, range }),
+      contentType: model.glbMimeType || "model/gltf-binary",
+    };
+  };
+
+  const getModelThumbnail = async ({ user, modelId, range = "" }) => {
+    assertEnabled(user);
+    const model = await repository.getModel({
+      userId: user.id,
+      modelId,
+      includePrivate: true,
+    });
+    if (!model) throw new HttpError(404, "Avatar model not found.");
+    if (!model.thumbnailStorageKey) throw new HttpError(404, "Avatar thumbnail not found.");
+    return {
+      response: await storage.streamAvatarObject({
+        objectKey: model.thumbnailStorageKey,
+        range,
+      }),
+      contentType: model.thumbnailMimeType || "image/jpeg",
+    };
+  };
+
   return {
     createJob,
     preparePhotoUpload,
@@ -454,6 +558,13 @@ export function createAvatar3dLifecycleService({
     confirmStyle,
     cancelJob,
     getBootstrap,
+    getJob,
+    listJobs,
+    getPhotoFile,
+    getStylePreviewFile,
+    getModel,
+    getModelFile,
+    getModelThumbnail,
     deleteModel,
   };
 }

@@ -90,11 +90,6 @@ export const config = {
     wanxModel: (process.env.DASHSCOPE_WANX_MODEL || "wanx2.1-imageedit").trim(),
     timeoutMs: parseNumber(process.env.DASHSCOPE_TIMEOUT_MS, 60000),
   },
-  meshy: {
-    baseUrl: (process.env.MESHY_API_BASE_URL || "https://api.meshy.ai").trim().replace(/\/+$/, ""),
-    apiKey: process.env.MESHY_API_KEY || "",
-    timeoutMs: parseNumber(process.env.MESHY_TIMEOUT_MS, 60000),
-  },
   publicApiBaseUrl: (process.env.PUBLIC_API_BASE_URL || "").trim().replace(/\/+$/, ""),
   avatar3d: {
     enabled: parseBoolean(process.env.AVATAR_3D_ENABLED, false),

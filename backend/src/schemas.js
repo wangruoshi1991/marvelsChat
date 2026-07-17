@@ -363,7 +363,7 @@ export const stationModelJobRequestSchema = z.object({
   prompt: z.string().trim().min(1).max(600),
   imageUrl: z.string().trim().url().max(2000).optional().nullable(),
   sourceAssetId: z.string().uuid().optional().nullable(),
-  provider: z.enum(["meshy"]).optional().default("meshy"),
+  provider: z.string().trim().min(1).max(40).optional().default("legacy"),
   targetFormats: z.array(z.enum(["glb", "obj", "fbx", "stl", "usdz", "3mf"])).min(1).max(3).optional().default(["glb"]),
   topology: z.enum(["triangle", "quad"]).optional().default("triangle"),
   poseMode: z.enum(["", "a-pose", "t-pose"]).optional().default(""),

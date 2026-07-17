@@ -5,11 +5,13 @@ import http from "http";
 import { ZodError } from "zod";
 import { createLegacyApiCompatibilityMiddleware } from "./api-compat.js";
 import { authenticate, requireAdmin } from "./auth.js";
+import { avatar3dJobRunner } from "./avatar-3d-job-runner.js";
 import { config } from "./config.js";
 import { createRealtimeGateway } from "./realtime-gateway.js";
 import { registerAdminRoutes } from "./routes/admin-routes.js";
 import { registerAppRoutes } from "./routes/app-routes.js";
 import { registerAuthRoutes } from "./routes/auth-routes.js";
+import { registerAvatar3dRoutes } from "./routes/avatar-3d-routes.js";
 import { registerEventRoutes } from "./routes/event-routes.js";
 import { registerMapRoutes } from "./routes/map-routes.js";
 import { registerMessageRoutes } from "./routes/message-routes.js";
@@ -67,6 +69,8 @@ registerAppRoutes(app, {
 
 registerAuthRoutes(app, { authenticate, asyncHandler });
 
+registerAvatar3dRoutes(app, { asyncHandler });
+
 registerSocialRoutes(app, {
   authenticate,
   asyncHandler,
@@ -120,4 +124,5 @@ app.use((error, _req, res, _next) => {
 
 server.listen(port, () => {
   console.log(`marvelsChat backend listening on http://127.0.0.1:${port}`);
+  avatar3dJobRunner.start();
 });

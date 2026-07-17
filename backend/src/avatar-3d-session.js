@@ -34,6 +34,11 @@ const parseCookies = (header = "") => {
   return result;
 };
 
+export const getAvatarCsrfToken = (req) => {
+  const cookies = parseCookies(req.get("cookie") || "");
+  return cookies[avatarCsrfCookieName] || "";
+};
+
 const serializeCookie = ({ name, value, expiresAt, httpOnly = false, clear = false }) => {
   const parts = [
     `${name}=${clear ? "" : encodeURIComponent(value)}`,
@@ -58,14 +63,23 @@ const equalTokens = (left, right) => {
     && crypto.timingSafeEqual(leftBuffer, rightBuffer);
 };
 
+const isHttpsRequest = (req) => (req.get("x-forwarded-proto") || "")
+  .split(",", 1)[0]
+  .trim()
+  .toLowerCase() === "https";
+
+export const requireAvatarHttps = (req, _res, next) => {
+  if (!isHttpsRequest(req)) {
+    next(new HttpError(426, "HTTPS is required.", { code: "HTTPS_REQUIRED" }));
+    return;
+  }
+  next();
+};
+
 const isSameHttpsOrigin = (req) => {
   const origin = req.get("origin") || "";
   const host = req.get("host") || "";
-  const forwardedProto = (req.get("x-forwarded-proto") || "")
-    .split(",", 1)[0]
-    .trim()
-    .toLowerCase();
-  if (!origin || !host || forwardedProto !== "https") return false;
+  if (!origin || !host || !isHttpsRequest(req)) return false;
   try {
     const parsed = new URL(origin);
     return parsed.protocol === "https:" && parsed.host === host;
@@ -114,6 +128,9 @@ export function createAvatar3dSessionService({
 
   const authenticateAvatarWeb = async (req, _res, next) => {
     try {
+      if (!isHttpsRequest(req)) {
+        throw new HttpError(426, "HTTPS is required.", { code: "HTTPS_REQUIRED" });
+      }
       const cookies = parseCookies(req.get("cookie") || "");
       const session = await getSession(cookies[avatarSessionCookieName] || "");
       req.user = session.user;

@@ -463,6 +463,7 @@ export function createAvatar3dRepository({
          byte_size, width, height, retention_until)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (job_id) DO UPDATE SET
+        provider_task_id = EXCLUDED.provider_task_id,
         storage_key = EXCLUDED.storage_key,
         mime_type = EXCLUDED.mime_type,
         byte_size = EXCLUDED.byte_size,
@@ -517,6 +518,7 @@ export function createAvatar3dRepository({
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (job_id) DO UPDATE SET
         title = EXCLUDED.title,
+        provider_task_id = EXCLUDED.provider_task_id,
         glb_storage_key = EXCLUDED.glb_storage_key,
         glb_mime_type = EXCLUDED.glb_mime_type,
         glb_byte_size = EXCLUDED.glb_byte_size,
