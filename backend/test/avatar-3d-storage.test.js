@@ -140,6 +140,34 @@ test("provider persistence rejects non-HTTPS and oversized GLB results", async (
   );
 });
 
+test("provider WebP thumbnails are normalized to private metadata-free JPEG", async () => {
+  const glb = Buffer.alloc(12);
+  glb.write("glTF", 0, "ascii");
+  const webp = await sharp({
+    create: { width: 96, height: 128, channels: 3, background: "#7595a5" },
+  }).webp().toBuffer();
+  const writes = [];
+  const storage = createAvatar3dStorage({
+    fetchImpl: async (url) => url.endsWith("model.glb")
+      ? responseWithBuffer(glb, { contentType: "model/gltf-binary" })
+      : responseWithBuffer(webp, { contentType: "image/webp" }),
+    putObject: async (input) => { writes.push(input); return { stored: true }; },
+  });
+
+  const result = await storage.persistAvatarProviderResult({
+    userId: ids.user,
+    jobId: ids.job,
+    modelUrl: "https://result.example/model.glb",
+    thumbnailUrl: "https://result.example/preview.webp",
+  });
+  const thumbnailWrite = writes.find((write) => write.objectKey.endsWith("thumbnail.jpg"));
+  const metadata = await sharp(thumbnailWrite.body).metadata();
+
+  assert.equal(result.thumbnail.contentType, "image/jpeg");
+  assert.equal(metadata.format, "jpeg");
+  assert.equal(metadata.exif, undefined);
+});
+
 test("Range forwarding accepts exactly one valid byte range", async () => {
   assert.equal(isValidSingleRange("bytes=0-499"), true);
   assert.equal(isValidSingleRange("bytes=500-"), true);
