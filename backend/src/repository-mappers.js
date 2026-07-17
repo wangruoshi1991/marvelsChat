@@ -177,6 +177,60 @@ export const mapStationSiteDraft = (row) => ({
   updatedAt: toIso(row.updated_at),
 });
 
+export const mapAvatar3dJob = (row) => ({
+  id: row.id,
+  userId: row.user_id,
+  style: row.style,
+  status: row.status,
+  progress: Number(row.progress || 0),
+  photoCount: Number(row.photo_count || 0),
+  acceptedCostVersion: row.accepted_cost_version,
+  estimatedCostFen: Number(row.estimated_cost_fen || 0),
+  stylePreviewId: row.style_preview_id || null,
+  modelId: row.model_id || null,
+  errorCode: row.safe_error_code || null,
+  createdAt: toIso(row.created_at),
+  updatedAt: toIso(row.updated_at),
+  finishedAt: toIso(row.finished_at),
+});
+
+export const mapAvatar3dPhoto = (row) => ({
+  id: row.id,
+  jobId: row.job_id || null,
+  view: row.view || null,
+  originalFilename: row.original_filename,
+  mimeType: row.source_mime_type,
+  byteSize: Number(row.source_byte_size || 0),
+  width: row.width === null || row.width === undefined ? null : Number(row.width),
+  height: row.height === null || row.height === undefined ? null : Number(row.height),
+  status: row.status,
+  errorCode: row.safe_error_code || null,
+  createdAt: toIso(row.created_at),
+  updatedAt: toIso(row.updated_at),
+});
+
+export const mapAvatar3dStylePreview = (row) => ({
+  id: row.id,
+  jobId: row.job_id,
+  status: row.status,
+  byteSize: Number(row.byte_size || 0),
+  width: row.width === null || row.width === undefined ? null : Number(row.width),
+  height: row.height === null || row.height === undefined ? null : Number(row.height),
+  createdAt: toIso(row.created_at),
+  updatedAt: toIso(row.updated_at),
+});
+
+export const mapAvatar3dModel = (row) => ({
+  id: row.id,
+  jobId: row.job_id,
+  title: row.title,
+  status: row.status,
+  byteSize: Number(row.glb_byte_size || 0),
+  thumbnailAvailable: Boolean(row.thumbnail_storage_key),
+  createdAt: toIso(row.created_at),
+  updatedAt: toIso(row.updated_at),
+});
+
 export const mapGenerationJob = (row) => ({
   id: row.id,
   userId: row.user_id,
