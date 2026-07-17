@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { HttpError } from "./http-error.js";
 import {
   createOssPutSignedUrl,
+  createOssGetSignedUrl,
   deleteOssObject,
   fetchOssObject,
   inspectOssObject,
@@ -148,6 +149,11 @@ export function createAvatar3dStorage({
         expiresAt: signed.expiresAt,
       },
     };
+  };
+
+  const createProviderReadUrl = ({ objectKey }) => {
+    assertAvatarObjectKey(objectKey);
+    return createOssGetSignedUrl({ objectKey });
   };
 
   const verifyAndNormalizeAvatarPhoto = async ({
@@ -342,6 +348,7 @@ export function createAvatar3dStorage({
 
   return {
     prepareAvatarPhotoUpload,
+    createProviderReadUrl,
     verifyAndNormalizeAvatarPhoto,
     persistAvatarProviderResult,
     persistAvatarStylePreview,

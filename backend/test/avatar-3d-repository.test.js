@@ -161,6 +161,7 @@ test("expired private assets query excludes non-terminal jobs", async () => {
   await repository.listExpiredPrivateAssets({ before: new Date("2026-07-24T00:00:00Z"), limit: 50 });
 
   assert.match(calls[0].sql, /j\.status IN \('succeeded', 'failed', 'cancelled', 'submission_unknown'\)/);
+  assert.match(calls[0].sql, /p\.source_storage_key <> ''/);
   assert.doesNotMatch(calls[0].sql, /avatar_3d_models/);
   assert.deepEqual(calls[0].params, [new Date("2026-07-24T00:00:00Z")]);
 });
