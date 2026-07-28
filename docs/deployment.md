@@ -303,3 +303,17 @@ MiaoxunAPIBaseURL = http://8.153.167.11/api
 2026-06-24 本地 iPhone 连接设备 `7501195F-00E2-58E2-88E4-F3D68C3CBD0A` 已成功构建 Debug 包，签名为 Apple Development: Rose Wang，API 指向 `https://miaoxun-api.pizelife.com`。安装时设备上已有 TestFlight 版妙讯，`devicectl` 返回同 Bundle ID 已存在 App Store 安装协调记录，USB Debug 包不能直接覆盖 TestFlight 版；需要先在手机 TestFlight 更新到当前可用最新构建，或用户确认卸载现有 TestFlight 版后再安装 Debug 包。
 
 正式上架 App Store 前，必须继续补 APNs 推送、隐私说明、账号找回/验证、内容审核和未接入模块的产品状态；当前阶段建议只走 TestFlight 给朋友测试。
+
+## 2026-07-28 App 3D 接入
+
+已在不修改伙伴建模核心的前提下，为妙讯 App 部署 Bearer 鉴权的 `/api/avatar-3d/app/*` 接口和私有 GLB 文件读取路由。线上 `avatar-3d-lifecycle-service.js`、Wan、Tripo、OSS 和多视图提示文件与 `origin/feat/avatar-3d-web-v1` 对应文件哈希一致；本次只新增 App 路由与公共路由辅助模块，并在服务器现有 `server.js` 中增加一次注册。
+
+部署前备份位于：
+
+```text
+/opt/projects/marvels-chat/app/deploy-backups/avatar-app-native-20260728-150831
+```
+
+服务器远端 `npm run check` 和 App 路由 4 项契约测试通过。重启后 `/api/health` 返回 200，未登录访问 `/api/avatar-3d/app/bootstrap` 返回预期 401，systemd 服务无重启。`AVATAR_3D_PROVIDER_CALLS_ENABLED` 已在单账号受限白名单下启用；DashScope 和 OSS 必需配置均存在，未在日志或仓库输出配置值。尚未发起真实付费生成，最终闭环需要测试账号在 App 内完成照片授权和四视图确认。
+
+回滚时恢复备份中的 `src/server.js` 和 `miaoxun-prod.env`，重启 `marvels-chat-backend` 后重新检查 health。新增但未注册的 `avatar-3d-app-routes.js` 和 `avatar-3d-route-support.js` 不影响旧运行路径。

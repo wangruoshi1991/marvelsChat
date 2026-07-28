@@ -70,6 +70,7 @@ test("App avatar routes expose the native lifecycle behind Bearer authentication
       "POST /api/avatar-3d/app/jobs/:jobId/references/reject",
       "POST /api/avatar-3d/app/jobs/:jobId/cancel",
       "GET /api/avatar-3d/app/models/:modelId",
+      "GET /api/avatar-3d/app/models/:modelId/file",
       "GET /api/avatar-3d/app/models/:modelId/thumbnail",
       "DELETE /api/avatar-3d/app/models/:modelId",
     ],
@@ -77,6 +78,52 @@ test("App avatar routes expose the native lifecycle behind Bearer authentication
   for (const route of routes) {
     assert.equal(route.handlers[0], authenticate, `${route.method} ${route.path}`);
   }
+});
+
+test("App model file route streams the authenticated user's private GLB", async () => {
+  const { app, routes } = createRouteHarness();
+  const calls = [];
+  const streamed = [];
+  const resource = {
+    contentLength: 2048,
+    contentType: "model/gltf-binary",
+    response: { body: "private-stream" },
+  };
+  registerAvatar3dAppRoutes(app, {
+    authenticate: (_req, _res, next) => next(),
+    asyncHandler: (handler) => handler,
+    service: {
+      getModelFile: async (input) => {
+        calls.push(input);
+        return resource;
+      },
+    },
+    streamPrivateObject: async (response, input) => {
+      streamed.push({ response, input });
+    },
+  });
+
+  const route = routes.find(
+    (item) => item.path === "/api/avatar-3d/app/models/:modelId/file",
+  );
+  const response = createResponse();
+  await route.handlers.at(-1)(
+    {
+      get: (name) => (name === "range" ? "bytes=0-1023" : ""),
+      params: { modelId: "92d63e87-1ea4-46eb-8333-a812af58f01c" },
+      user: { id: "user-1" },
+    },
+    response,
+  );
+
+  assert.deepEqual(calls, [{
+    user: { id: "user-1" },
+    modelId: "92d63e87-1ea4-46eb-8333-a812af58f01c",
+    range: "bytes=0-1023",
+  }]);
+  assert.equal(streamed.length, 1);
+  assert.equal(streamed[0].response, response);
+  assert.equal(streamed[0].input, resource);
 });
 
 test("App bootstrap exposes no Web session credential", async () => {

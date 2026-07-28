@@ -90,6 +90,13 @@ iOS 和 Android 都通过 `src/services/apiClient.ts` 读取 `NativeModules.Miao
 
 iOS Debug 和 Release 都使用构建阶段写入 App 包内的 `main.jsbundle`，模拟器和真机都不依赖 Metro；缺少内嵌 bundle 时会直接报错，避免联调测试加载到不确定的 JS 来源。
 
+3D GLB 查看器是 App 内置的单文件 HTML 资源，不打开 `/avatar/` Web 工作台。修改 `avatar-web/src/viewer/modelScene.ts` 或 `avatar-web/src/app-viewer/main.ts` 后，需要重新生成并提交该资源：
+
+```sh
+cd avatar-web
+npm run build:app-viewer
+```
+
 从妙讯页 `+` 菜单进入扫码时，RN 必须先关闭当前菜单，并由 `Modal.onDismiss` 确认菜单已关闭后，再调用原生 `QRCodeScannerModule.scan()` 打开相机页；不能在 RN Modal 仍在消失时直接 present 原生扫码页。iOS 原生层必须在 present 前确认存在可用视频设备；模拟器没有真实摄像头时直接返回明确错误，不打开黑屏扫码页。
 
 涉及两台设备互扫的联调必须保证双方都安装或启动同一次代码版本，并且 `MIAOXUN_API_BASE_URL` 指向同一个后端。只更新真机不更新模拟器时，模拟器展示的二维码、页面状态和客户端逻辑可能仍来自旧包，扫码测试结果无效。

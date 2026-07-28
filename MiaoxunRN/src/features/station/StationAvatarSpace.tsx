@@ -7,7 +7,7 @@ import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette, palettes } from '../../shared/theme';
 import { Language } from '../session/useMiaoxunSession';
-import { Avatar3DWebView } from './Avatar3DWebView';
+import { Avatar3DViewer } from './Avatar3DViewer';
 import { Avatar3DLoadState } from './useAvatar3d';
 
 export function StationAvatarSpace({
@@ -89,7 +89,7 @@ export function StationAvatarSpace({
     >
       <View style={[styles.avatarStage, styles.avatarStageStation]}>
         {latestModel && !viewerError ? (
-          <Avatar3DWebView
+          <Avatar3DViewer
             key={`${latestModel.id}:${viewerRevision}`}
             modelId={latestModel.id}
             onError={setViewerError}

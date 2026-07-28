@@ -5,6 +5,8 @@ dist/
 .DS_Store
 *.log
 .local-backups/
+.playwright-cli/
+output/
 tmp/
 backend/storage/
 **/.gradle/

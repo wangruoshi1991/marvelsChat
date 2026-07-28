@@ -25,6 +25,7 @@ export function registerAvatar3dAppRoutes(app, {
   asyncHandler,
   service = avatar3dLifecycleService,
   recordUsageEvent = createUsageEvent,
+  streamPrivateObject = streamAvatar3dPrivateObject,
 } = {}) {
   app.get(
     "/api/avatar-3d/app/bootstrap",
@@ -231,6 +232,20 @@ export function registerAvatar3dAppRoutes(app, {
   );
 
   app.get(
+    "/api/avatar-3d/app/models/:modelId/file",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { modelId } = avatar3dModelParamsSchema.parse(req.params);
+      const resource = await service.getModelFile({
+        user: req.user,
+        modelId,
+        range: req.get("range") || "",
+      });
+      await streamPrivateObject(res, resource);
+    }),
+  );
+
+  app.get(
     "/api/avatar-3d/app/models/:modelId/thumbnail",
     authenticate,
     asyncHandler(async (req, res) => {
@@ -240,7 +255,7 @@ export function registerAvatar3dAppRoutes(app, {
         modelId,
         range: req.get("range") || "",
       });
-      await streamAvatar3dPrivateObject(res, resource);
+      await streamPrivateObject(res, resource);
     }),
   );
 

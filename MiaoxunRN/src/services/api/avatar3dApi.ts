@@ -139,3 +139,6 @@ export const avatar3dReferenceImageUrl = (
 
 export const avatar3dModelThumbnailUrl = (modelId: string) =>
   buildApiUrl(`${appPath}/models/${encodeURIComponent(modelId)}/thumbnail`);
+
+export const avatar3dModelFileUrl = (modelId: string) =>
+  buildApiUrl(`${appPath}/models/${encodeURIComponent(modelId)}/file`);
