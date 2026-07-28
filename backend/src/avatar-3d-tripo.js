@@ -21,10 +21,23 @@ const safeProviderErrorCode = (code) => {
   return "TRIPO_GENERATION_FAILED";
 };
 
-export function buildTripoCreateRequest({ photos, runtime = appConfig.dashscope }) {
+export function buildTripoCreateRequest({
+  photos,
+  geometryQuality = "standard",
+  textureQuality = "standard",
+  runtime = appConfig.dashscope,
+}) {
   const inputs = Array.isArray(photos) ? photos : [];
   if (inputs.length < 1 || inputs.length > 4 || !inputs.some((photo) => photo.view === "front")) {
     throw new HttpError(400, "Avatar photos are invalid.");
+  }
+  if (
+    !["standard", "ultra"].includes(geometryQuality)
+    || !["standard", "detailed"].includes(textureQuality)
+  ) {
+    throw new HttpError(400, "Avatar quality parameters are invalid.", {
+      code: "INVALID_QUALITY_PARAMETERS",
+    });
   }
   const input = inputs.length === 1
     ? { image: inputs[0].url }
@@ -39,8 +52,8 @@ export function buildTripoCreateRequest({ photos, runtime = appConfig.dashscope 
     model: runtime.tripoModel || "Tripo/Tripo-H3.1",
     input,
     parameters: {
-      geometry_quality: "standard",
-      texture_quality: "standard",
+      geometry_quality: geometryQuality,
+      texture_quality: textureQuality,
       pbr: true,
       texture: true,
     },
@@ -109,8 +122,15 @@ const requestJson = async ({ runtime, fetchImpl, url, options, transportCode }) 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Number(runtime.timeoutMs || 60000));
   let response;
+  let payload;
   try {
     response = await fetchImpl(url, { ...options, signal: controller.signal });
+    try {
+      payload = await response.json();
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
+      payload = {};
+    }
   } catch {
     throw new HttpError(502, "3D generation service did not confirm the request.", {
       provider: "tripo",
@@ -119,7 +139,6 @@ const requestJson = async ({ runtime, fetchImpl, url, options, transportCode }) 
   } finally {
     clearTimeout(timer);
   }
-  const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.code) {
     throw new HttpError(502, "3D generation service is unavailable.", {
       provider: "tripo",
@@ -130,7 +149,11 @@ const requestJson = async ({ runtime, fetchImpl, url, options, transportCode }) 
 };
 
 export function createTripoAdapter({ runtime = appConfig.dashscope, fetchImpl = fetch } = {}) {
-  const submitTripoJob = async ({ photos }) => {
+  const submitTripoJob = async ({
+    photos,
+    geometryQuality = "standard",
+    textureQuality = "standard",
+  }) => {
     assertConfigured(runtime);
     const payload = await requestJson({
       runtime,
@@ -139,7 +162,12 @@ export function createTripoAdapter({ runtime = appConfig.dashscope, fetchImpl = 
       options: {
         method: "POST",
         headers: providerHeaders(runtime, { async: true }),
-        body: JSON.stringify(buildTripoCreateRequest({ photos, runtime })),
+        body: JSON.stringify(buildTripoCreateRequest({
+          photos,
+          geometryQuality,
+          textureQuality,
+          runtime,
+        })),
       },
       transportCode: "TRIPO_SUBMISSION_UNKNOWN",
     });

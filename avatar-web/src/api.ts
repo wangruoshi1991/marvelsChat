@@ -5,6 +5,9 @@ import type {
   AvatarJob,
   AvatarModel,
   AvatarPreparedPhoto,
+  AvatarReferenceConfirmation,
+  AvatarReferences,
+  AvatarQualityPreset,
   AvatarSession,
 } from "./types";
 
@@ -147,6 +150,28 @@ export function createAvatarApi(fetcher: typeof fetch = globalThis.fetch) {
     getJob: (jobId: string) => request<AvatarJob>(
       `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}`,
     ),
+    getReferences: (jobId: string) => request<AvatarReferences>(
+      `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}/references`,
+    ),
+    confirmReferences: (
+      jobId: string,
+      input: {
+        referenceSetId: string;
+        qualityPreset: AvatarQualityPreset;
+        acceptedCostVersion: string;
+      },
+    ) => request<AvatarReferenceConfirmation>(
+      `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}/references/confirm`,
+      {
+        method: "POST",
+        body: { ...input, accepted: true },
+        requiresCsrf: true,
+      },
+    ),
+    rejectReferences: (jobId: string, referenceSetId: string) => request<AvatarJob>(
+      `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}/references/reject`,
+      { method: "POST", body: { referenceSetId }, requiresCsrf: true },
+    ),
     confirmStyle: (jobId: string) => request<AvatarJob>(
       `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}/confirm-style`,
       { method: "POST", body: { accepted: true }, requiresCsrf: true },
@@ -166,6 +191,8 @@ export function createAvatarApi(fetcher: typeof fetch = globalThis.fetch) {
       `/api/avatar-3d/photos/${encodeURIComponent(photoId)}/file`,
     stylePreviewUrl: (jobId: string) =>
       `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}/style-preview`,
+    referenceImageUrl: (jobId: string, view: string) =>
+      `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}/references/${encodeURIComponent(view)}/file`,
     modelFileUrl: (modelId: string) =>
       `/api/avatar-3d/models/${encodeURIComponent(modelId)}/file`,
     modelThumbnailUrl: (modelId: string) =>

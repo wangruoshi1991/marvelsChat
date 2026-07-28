@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import { avatar3dCostVersion } from "./avatar-3d-quality.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const backendEnvPath = path.resolve(__dirname, "../.env");
@@ -19,6 +20,19 @@ const parseNumber = (value, fallback) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+
+const avatarRealisticCostFen = parseNumber(
+  process.env.AVATAR_3D_REALISTIC_ESTIMATED_COST_FEN,
+  280,
+);
+const avatarCartoonCostFen = parseNumber(
+  process.env.AVATAR_3D_CARTOON_ESTIMATED_COST_FEN,
+  224,
+);
+const avatar3dProviderCallsEnabled = parseBoolean(
+  process.env.AVATAR_3D_PROVIDER_CALLS_ENABLED,
+  false,
+);
 
 const listFromEnv = (value) =>
   String(value || "")
@@ -86,13 +100,23 @@ export const config = {
         ? `https://${process.env.DASHSCOPE_WORKSPACE_ID}.cn-beijing.maas.aliyuncs.com`
         : "")
     ).trim().replace(/\/+$/, ""),
+    wanBaseUrl: (
+      process.env.DASHSCOPE_WANX_BASE_URL
+      || (process.env.DASHSCOPE_WORKSPACE_ID
+        ? `https://${process.env.DASHSCOPE_WORKSPACE_ID}.cn-beijing.maas.aliyuncs.com`
+        : "")
+    ).trim().replace(/\/+$/, ""),
     tripoModel: (process.env.DASHSCOPE_TRIPO_MODEL || "Tripo/Tripo-H3.1").trim(),
     wanxModel: (process.env.DASHSCOPE_WANX_MODEL || "wanx2.1-imageedit").trim(),
+    wanMultiviewModel: (
+      process.env.DASHSCOPE_WAN_MULTIVIEW_MODEL || "wan2.7-image-pro"
+    ).trim(),
     timeoutMs: parseNumber(process.env.DASHSCOPE_TIMEOUT_MS, 60000),
   },
   publicApiBaseUrl: (process.env.PUBLIC_API_BASE_URL || "").trim().replace(/\/+$/, ""),
   avatar3d: {
     enabled: parseBoolean(process.env.AVATAR_3D_ENABLED, false),
+    providerCallsEnabled: avatar3dProviderCallsEnabled,
     allowlist: listFromEnv(process.env.AVATAR_3D_ALLOWLIST),
     requireAllowlist: isProduction,
     webBaseUrl: (process.env.AVATAR_3D_WEB_BASE_URL || process.env.PUBLIC_API_BASE_URL || "")
@@ -100,16 +124,30 @@ export const config = {
       .replace(/\/+$/, ""),
     dailyLimit: parseNumber(process.env.AVATAR_3D_DAILY_LIMIT, 3),
     retentionDays: parseNumber(process.env.AVATAR_3D_RETENTION_DAYS, 7),
-    costVersion: (process.env.AVATAR_3D_COST_VERSION || "2026-07-17").trim(),
-    realisticEstimatedCostFen: parseNumber(
-      process.env.AVATAR_3D_REALISTIC_ESTIMATED_COST_FEN,
-      210,
+    costVersion: avatar3dCostVersion,
+    referenceGenerationEstimatedCostFen: parseNumber(
+      process.env.AVATAR_3D_REFERENCE_COST_FEN,
+      200,
     ),
-    cartoonEstimatedCostFen: parseNumber(
-      process.env.AVATAR_3D_CARTOON_ESTIMATED_COST_FEN,
-      224,
+    realisticEstimatedCostFen: avatarRealisticCostFen,
+    cartoonEstimatedCostFen: avatarCartoonCostFen,
+    qualityCostsFen: {
+      standard: parseNumber(process.env.AVATAR_3D_STANDARD_COST_FEN, avatarRealisticCostFen),
+      ultra: parseNumber(process.env.AVATAR_3D_ULTRA_COST_FEN, 420),
+    },
+    cartoonStyleCostFen: parseNumber(
+      process.env.AVATAR_3D_CARTOON_STYLE_COST_FEN,
+      Math.max(0, avatarCartoonCostFen - avatarRealisticCostFen),
     ),
-    providerReady: Boolean(process.env.DASHSCOPE_API_KEY && process.env.DASHSCOPE_WORKSPACE_ID),
+    providerReady: Boolean(
+      avatar3dProviderCallsEnabled
+      && process.env.DASHSCOPE_API_KEY
+      && process.env.DASHSCOPE_WORKSPACE_ID
+      && process.env.OSS_BUCKET
+      && process.env.OSS_ENDPOINT
+      && process.env.OSS_ACCESS_KEY_ID
+      && process.env.OSS_ACCESS_KEY_SECRET
+    ),
   },
   geocoding: {
     provider: (process.env.GEOCODING_PROVIDER || "nominatim").trim().toLowerCase(),

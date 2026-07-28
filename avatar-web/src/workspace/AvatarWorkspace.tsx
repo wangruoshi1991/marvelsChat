@@ -4,7 +4,6 @@ import { AvatarApiError, type AvatarApi } from "../api";
 import type {
   AvatarBootstrap,
   AvatarJob,
-  AvatarPhotoView,
 } from "../types";
 import { AvatarComposer, type AvatarCreateRequest } from "./AvatarComposer";
 import { TaskProgress } from "./TaskProgress";
@@ -15,7 +14,7 @@ const AvatarViewer = lazy(() => import("../viewer/AvatarViewer").then((module) =
 
 interface UploadAttempt {
   idempotencyKey: string;
-  photos: Array<{ view: AvatarPhotoView; photoId: string }>;
+  photoId: string | null;
 }
 
 interface AvatarWorkspaceProps {
@@ -26,6 +25,7 @@ interface AvatarWorkspaceProps {
 const terminalStatuses = new Set<AvatarJob["status"]>([
   "succeeded",
   "failed",
+  "quality_failed",
   "cancelled",
   "submission_unknown",
 ]);
@@ -50,8 +50,8 @@ export function AvatarWorkspace({ initialBootstrap, api }: AvatarWorkspaceProps)
     return next;
   }, [api]);
 
-  const cleanupPhotos = useCallback(async (photos: UploadAttempt["photos"]) => {
-    await Promise.allSettled(photos.map(({ photoId }) => api.deletePhoto(photoId)));
+  const cleanupPhoto = useCallback(async (photoId: string | null) => {
+    if (photoId) await Promise.allSettled([api.deletePhoto(photoId)]);
   }, [api]);
 
   const createAvatar = useCallback(async (request: AvatarCreateRequest) => {
@@ -59,34 +59,39 @@ export function AvatarWorkspace({ initialBootstrap, api }: AvatarWorkspaceProps)
       ? attemptRef.current
       : null;
     if (!attempt) {
-      if (attemptRef.current) await cleanupPhotos(attemptRef.current.photos);
-      attempt = { idempotencyKey: request.idempotencyKey, photos: [] };
+      if (attemptRef.current) await cleanupPhoto(attemptRef.current.photoId);
+      attempt = { idempotencyKey: request.idempotencyKey, photoId: null };
       attemptRef.current = attempt;
     }
 
     let creatingJob = false;
     try {
-      if (!attempt.photos.length) {
+      if (!attempt.photoId) {
         setActivity("正在验证照片");
-        for (const { view, file } of request.files) {
-          const prepared = await api.preparePhoto({
-            originalFilename: file.name,
-            mimeType: file.type,
-            byteSize: file.size,
-          });
-          attempt.photos.push({ view, photoId: prepared.photo.id });
-          await api.uploadPhoto(prepared.upload, file);
-          await api.completePhoto(prepared.photo.id);
-        }
+        const prepared = await api.preparePhoto({
+          originalFilename: request.file.name,
+          mimeType: request.file.type,
+          byteSize: request.file.size,
+        });
+        attempt.photoId = prepared.photo.id;
+        await api.uploadPhoto(prepared.upload, request.file);
+        await api.completePhoto(prepared.photo.id);
       }
 
       setActivity("正在创建任务");
       creatingJob = true;
       await api.createJob({
-        style: request.style,
-        photos: attempt.photos,
+        generationMode: "face_first_multiview",
+        photoId: attempt.photoId,
+        bodyShape: request.bodyShape,
+        pose: "natural",
+        outfit: request.outfit,
+        userDescription: request.userDescription,
+        qualityPreset: request.qualityPreset,
         acceptedPhotoRights: true,
-        acceptedCostVersion: request.acceptedCostVersion,
+        acceptedAdultSubject: true,
+        acceptedFaceCompletion: true,
+        acceptedReferenceCostVersion: request.acceptedReferenceCostVersion,
       }, request.idempotencyKey);
       attemptRef.current = null;
       await refresh();
@@ -105,14 +110,14 @@ export function AvatarWorkspace({ initialBootstrap, api }: AvatarWorkspaceProps)
 
       const isDefinitive = cause instanceof AvatarApiError && cause.status < 500;
       if (!creatingJob || isDefinitive) {
-        await cleanupPhotos(attempt.photos);
+        await cleanupPhoto(attempt.photoId);
         attemptRef.current = null;
       }
       throw cause;
     } finally {
       setActivity("");
     }
-  }, [api, cleanupPhotos, refresh]);
+  }, [api, cleanupPhoto, refresh]);
 
   const onJobChange = useCallback((job: AvatarJob) => {
     setSnapshot((current) => ({
@@ -149,7 +154,7 @@ export function AvatarWorkspace({ initialBootstrap, api }: AvatarWorkspaceProps)
             <ol>
               {snapshot.jobs.slice(0, 3).map((job) => (
                 <li key={job.id}>
-                  <span>{job.style === "realistic" ? "写实" : "卡通"}</span>
+                  <span>写实</span>
                   <strong>{terminalStatuses.has(job.status) ? "已结束" : "进行中"}</strong>
                 </li>
               ))}
@@ -162,10 +167,18 @@ export function AvatarWorkspace({ initialBootstrap, api }: AvatarWorkspaceProps)
         {activeJob ? (
           <TaskProgress
             job={activeJob}
+            feature={snapshot.feature}
             getJob={api.getJob}
+            getReferences={api.getReferences}
+            confirmReferences={api.confirmReferences}
+            rejectReferences={api.rejectReferences}
+            referenceImageUrl={api.referenceImageUrl}
             confirmStyle={api.confirmStyle}
             cancelJob={api.cancelJob}
             previewUrl={activeJob.stylePreviewId ? api.stylePreviewUrl(activeJob.id) : ""}
+            resultPreviewUrl={activeJob.status === "persisting" && activeJob.modelId
+              ? api.modelThumbnailUrl(activeJob.modelId)
+              : ""}
             onJobChange={onJobChange}
           />
         ) : (

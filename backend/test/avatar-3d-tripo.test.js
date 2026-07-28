@@ -24,8 +24,13 @@ const photos = [
   { view: "right", url: "https://files.example/right.png", mimeType: "image/png" },
 ];
 
-test("single front photo maps to Tripo image input with fixed standard quality", () => {
-  assert.deepEqual(buildTripoCreateRequest({ photos: photos.slice(0, 1), runtime }), {
+test("single front photo maps to Tripo image input with selected standard quality", () => {
+  assert.deepEqual(buildTripoCreateRequest({
+    photos: photos.slice(0, 1),
+    geometryQuality: "standard",
+    textureQuality: "standard",
+    runtime,
+  }), {
     model: "Tripo/Tripo-H3.1",
     input: { image: photos[0].url },
     parameters: {
@@ -37,9 +42,52 @@ test("single front photo maps to Tripo image input with fixed standard quality",
   });
 });
 
+test("selected detailed and ultra quality map to exact Tripo parameters", () => {
+  const detailed = buildTripoCreateRequest({
+    photos: photos.slice(0, 1),
+    geometryQuality: "standard",
+    textureQuality: "detailed",
+    runtime,
+  });
+  const ultra = buildTripoCreateRequest({
+    photos: photos.slice(0, 1),
+    geometryQuality: "ultra",
+    textureQuality: "detailed",
+    runtime,
+  });
+
+  assert.equal(detailed.parameters.geometry_quality, "standard");
+  assert.equal(detailed.parameters.texture_quality, "detailed");
+  assert.equal(ultra.parameters.geometry_quality, "ultra");
+  assert.equal(ultra.parameters.texture_quality, "detailed");
+});
+
+test("unknown raw quality parameters are rejected", () => {
+  assert.throws(
+    () => buildTripoCreateRequest({
+      photos: photos.slice(0, 1),
+      geometryQuality: "custom",
+      textureQuality: "standard",
+      runtime,
+    }),
+    (error) => error?.status === 400 && error?.details?.code === "INVALID_QUALITY_PARAMETERS",
+  );
+  assert.throws(
+    () => buildTripoCreateRequest({
+      photos: photos.slice(0, 1),
+      geometryQuality: "standard",
+      textureQuality: "custom",
+      runtime,
+    }),
+    (error) => error?.status === 400 && error?.details?.code === "INVALID_QUALITY_PARAMETERS",
+  );
+});
+
 test("two to four views map to the fixed front-left-back-right array with gaps", () => {
   const request = buildTripoCreateRequest({
     photos: [photos[0], photos[2]],
+    geometryQuality: "standard",
+    textureQuality: "standard",
     runtime,
   });
 
@@ -65,12 +113,22 @@ test("Tripo submission sends one async request and returns only controlled field
     },
   });
 
-  const result = await adapter.submitTripoJob({ photos: photos.slice(0, 1) });
+  const result = await adapter.submitTripoJob({
+    photos: photos.slice(0, 1),
+    geometryQuality: "ultra",
+    textureQuality: "detailed",
+  });
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, `${runtime.baseUrl}/api/v1/services/aigc/video-generation/3d-generation`);
   assert.equal(calls[0].options.headers.Authorization, `Bearer ${runtime.apiKey}`);
   assert.equal(calls[0].options.headers["X-DashScope-Async"], "enable");
+  assert.deepEqual(JSON.parse(calls[0].options.body).parameters, {
+    geometry_quality: "ultra",
+    texture_quality: "detailed",
+    pbr: true,
+    texture: true,
+  });
   assert.deepEqual(result, {
     state: "processing",
     taskId: "task-123",
@@ -83,6 +141,29 @@ test("Tripo submission sends one async request and returns only controlled field
   });
   assert.equal(JSON.stringify(result).includes(runtime.apiKey), false);
   assert.equal("raw" in result, false);
+});
+
+test("Tripo timeout remains active while the response body is read", async () => {
+  const adapter = createTripoAdapter({
+    runtime: { ...runtime, timeoutMs: 5 },
+    fetchImpl: async (_url, { signal }) => ({
+      ok: true,
+      json: () => new Promise((resolve, reject) => {
+        const delayedBody = setTimeout(() => resolve({
+          output: { task_id: "late-task", task_status: "PENDING" },
+        }), 25);
+        signal.addEventListener("abort", () => {
+          clearTimeout(delayedBody);
+          reject(new Error("aborted"));
+        }, { once: true });
+      }),
+    }),
+  });
+
+  await assert.rejects(
+    () => adapter.submitTripoJob({ photos: photos.slice(0, 1) }),
+    (error) => error?.details?.code === "TRIPO_SUBMISSION_UNKNOWN",
+  );
 });
 
 test("Tripo task normalization exposes GLB and preview only on success", () => {

@@ -12,6 +12,7 @@ const ids = {
   photo: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
   preview: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
   model: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  referenceSet: "ffffffff-ffff-4fff-8fff-ffffffffffff",
 };
 
 const runtime = {
@@ -20,10 +21,13 @@ const runtime = {
   allowlist: [ids.user],
   dailyLimit: 3,
   retentionDays: 7,
-  costVersion: "2026-07-17",
-  realisticEstimatedCostFen: 210,
-  cartoonEstimatedCostFen: 224,
+  costVersion: "2026-07-21",
+  qualityCostsFen: { standard: 280, ultra: 420 },
+  cartoonStyleCostFen: 14,
+  realisticEstimatedCostFen: 280,
+  cartoonEstimatedCostFen: 294,
   providerReady: true,
+  referenceGenerationEstimatedCostFen: 200,
 };
 
 const privatePhoto = {
@@ -35,12 +39,16 @@ const privatePhoto = {
   normalizedMimeType: "image/jpeg",
 };
 
-function createStatefulRepository(style) {
+function createStatefulRepository(style, { modelProvider } = {}) {
   const calls = [];
   let job = {
     id: ids.job,
     userId: ids.user,
     style,
+    modelProvider,
+    qualityPreset: "standard",
+    geometryQuality: "standard",
+    textureQuality: "standard",
     status: style === "cartoon" ? "queued_style" : "queued_3d",
     progress: 0,
     photoCount: 1,
@@ -93,16 +101,36 @@ function createStatefulRepository(style) {
       },
       createStylePreview: async (input) => {
         preview = { id: ids.preview, jobId: ids.job, status: "active", ...input };
-        calls.push(["createStylePreview", input.jobId]);
+        calls.push(["createStylePreview", input]);
         return preview;
       },
       getStylePreview: async () => preview,
       discardStylePreview: async () => { preview = { ...preview, status: "discarded" }; },
-      createModel: async (input) => {
-        model = { id: ids.model, jobId: ids.job, title: input.title, status: "active" };
-        calls.push(["createModel", input.jobId]);
+      createPreparingModel: async (input) => {
+        if (model?.status === "active") return model;
+        model = {
+          id: ids.model,
+          jobId: ids.job,
+          title: input.title,
+          status: "preparing",
+          thumbnailAvailable: Boolean(input.thumbnail),
+          interactiveAvailable: false,
+          glbStorageKey: null,
+        };
+        calls.push(["createPreparingModel", input]);
         return model;
       },
+      completePreparingModel: async (input) => {
+        model = {
+          ...model,
+          status: "active",
+          interactiveAvailable: true,
+          glbStorageKey: input.glb.storageKey,
+        };
+        calls.push(["completePreparingModel", input]);
+        return model;
+      },
+      getJobModel: async () => model,
       getModel: async () => model,
       markJobAssetsRetention: async (input) => calls.push(["retention", input.jobId]),
       releaseJobClaim: async () => {},
@@ -110,7 +138,7 @@ function createStatefulRepository(style) {
   };
 }
 
-test("realistic lifecycle submits Tripo once, polls, persists GLB, and succeeds", async () => {
+test("realistic lifecycle exposes the thumbnail before persisting GLB and then succeeds", async () => {
   const state = createStatefulRepository("realistic");
   let submitCalls = 0;
   let pollCalls = 0;
@@ -118,10 +146,22 @@ test("realistic lifecycle submits Tripo once, polls, persists GLB, and succeeds"
     repository: state.repository,
     storage: {
       createProviderReadUrl: ({ objectKey }) => `https://signed.example/${objectKey}`,
-      persistAvatarProviderResult: async () => ({
-        glb: { storageKey: "users/u/avatar-3d/jobs/j/model.glb", contentType: "model/gltf-binary", byteSize: 1200 },
-        thumbnail: null,
-      }),
+      persistAvatarProviderThumbnail: async () => {
+        state.calls.push(["persistThumbnail"]);
+        return {
+          storageKey: "users/u/avatar-3d/jobs/j/thumbnail.jpg",
+          contentType: "image/jpeg",
+          byteSize: 120,
+        };
+      },
+      persistAvatarProviderModel: async () => {
+        state.calls.push(["persistModel"]);
+        return {
+          storageKey: "users/u/avatar-3d/jobs/j/model.glb",
+          contentType: "model/gltf-binary",
+          byteSize: 1200,
+        };
+      },
     },
     tripo: {
       submitTripoJob: async ({ photos }) => {
@@ -137,7 +177,7 @@ test("realistic lifecycle submits Tripo once, polls, persists GLB, and succeeds"
           providerStatus: "SUCCEEDED",
           progress: 100,
           pbrModelUrl: "https://result.example/model.glb",
-          renderedImageUrl: null,
+          renderedImageUrl: "https://result.example/preview.webp",
         };
       },
     },
@@ -150,20 +190,415 @@ test("realistic lifecycle submits Tripo once, polls, persists GLB, and succeeds"
     user: { id: ids.user, email: "person@example.com" },
     body: {
       style: "realistic",
+      qualityPreset: "standard",
       photos: [{ photoId: ids.photo, view: "front" }],
       acceptedPhotoRights: true,
-      acceptedCostVersion: "2026-07-17",
+      acceptedCostVersion: "2026-07-20",
     },
     idempotencyKey: "11111111-1111-4111-8111-111111111111",
   });
   await service.processJob(state.currentJob());
   assert.equal(state.currentJob().status, "processing_3d");
   await service.processJob(state.currentJob());
+  assert.equal(state.currentJob().status, "persisting");
+  assert.equal(state.currentJob().modelId, ids.model);
+  assert.equal(state.calls.filter((call) => call[0] === "persistModel").length, 0);
+  assert.deepEqual(
+    state.calls
+      .filter((call) => ["persistThumbnail", "createPreparingModel", "transition"].includes(call[0]))
+      .slice(-3)
+      .map((call) => call[0] === "transition" ? `${call[1]}:${call[2]}` : call[0]),
+    ["persistThumbnail", "createPreparingModel", "processing_3d:persisting"],
+  );
+
+  await service.processJob(state.currentJob());
 
   assert.equal(state.currentJob().status, "succeeded");
   assert.equal(submitCalls, 1);
-  assert.equal(pollCalls, 1);
-  assert.equal(state.calls.filter((call) => call[0] === "createModel").length, 1);
+  assert.equal(pollCalls, 2);
+  assert.equal(state.calls.filter((call) => call[0] === "createPreparingModel").length, 1);
+  assert.equal(state.calls.filter((call) => call[0] === "completePreparingModel").length, 1);
+});
+
+test("face-first job creation plans one private Wan request without calling a Provider", async () => {
+  const calls = [];
+  let wanCalls = 0;
+  const service = createAvatar3dLifecycleService({
+    repository: {
+      createFaceFirstJob: async (input) => {
+        calls.push(input);
+        return {
+          created: true,
+          job: {
+            id: ids.job,
+            status: "queued_references",
+            generationMode: "face_first_multiview",
+            referenceSetId: ids.referenceSet,
+          },
+          referenceSet: { id: ids.referenceSet, status: "queued" },
+        };
+      },
+    },
+    storage: {},
+    wanMultiview: {
+      submitWanMultiviewJob: async () => { wanCalls += 1; },
+      fetchWanMultiviewJob: async () => { wanCalls += 1; },
+    },
+    tripo: {},
+    wanx: {},
+    runtime,
+  });
+
+  const result = await service.createJob({
+    user: { id: ids.user, email: "person@example.com" },
+    body: {
+      generationMode: "face_first_multiview",
+      photoId: ids.photo,
+      bodyShape: "athletic",
+      pose: "natural",
+      outfit: "sport",
+      userDescription: "蓝白色运动套装",
+      qualityPreset: "ultra",
+      acceptedPhotoRights: true,
+      acceptedAdultSubject: true,
+      acceptedFaceCompletion: true,
+      acceptedReferenceCostVersion: "2026-07-21",
+    },
+    idempotencyKey: "11111111-1111-4111-8111-111111111111",
+  });
+
+  assert.equal(result.job.status, "queued_references");
+  assert.equal(wanCalls, 0);
+  assert.equal(calls[0].sourcePhotoId, ids.photo);
+  assert.equal(calls[0].referenceEstimatedCostFen, 200);
+  assert.equal(calls[0].acceptedAdultSubject, true);
+  assert.match(calls[0].promptPlan.providerPrompt, /正面、左侧、背面、右侧/);
+  assert.equal(JSON.stringify(result).includes("providerPrompt"), false);
+});
+
+test("face-first lifecycle persists four private references and waits for explicit confirmation", async () => {
+  const views = ["front", "left", "back", "right"];
+  const urls = views.map((view) => `https://result.example/${view}.png`);
+  let job = {
+    id: ids.job,
+    userId: ids.user,
+    style: "realistic",
+    generationMode: "face_first_multiview",
+    modelProvider: "tripo",
+    sourcePhotoId: ids.photo,
+    referenceSetId: ids.referenceSet,
+    promptPlan: { providerPrompt: "private fixed multiview prompt" },
+    qualityPreset: "ultra",
+    geometryQuality: "ultra",
+    textureQuality: "detailed",
+    status: "queued_references",
+    progress: 0,
+  };
+  let referenceSet = {
+    id: ids.referenceSet,
+    userId: ids.user,
+    jobId: ids.job,
+    sourcePhotoId: ids.photo,
+    status: "queued",
+    providerTaskId: null,
+    promptPlan: { providerPrompt: "private fixed multiview prompt" },
+    usageImageCount: 0,
+  };
+  let images = [];
+  let submitCalls = 0;
+  let pollCalls = 0;
+  let modelSubmitCalls = 0;
+  const transitions = [];
+  const repository = {
+    getJob: async () => ({ ...job }),
+    getReferenceSetForJob: async () => ({ ...referenceSet }),
+    getPhoto: async () => ({ ...privatePhoto, id: ids.photo }),
+    transitionReferenceGeneration: async (input) => {
+      assert.equal(job.status, input.fromJobStatus);
+      assert.equal(referenceSet.status, input.fromReferenceStatus);
+      transitions.push([input.fromJobStatus, input.toJobStatus]);
+      job = {
+        ...job,
+        status: input.toJobStatus,
+        progress: input.progress ?? job.progress,
+      };
+      referenceSet = {
+        ...referenceSet,
+        status: input.toReferenceStatus,
+        providerTaskId: input.providerTaskId ?? referenceSet.providerTaskId,
+        providerRequestId: input.providerRequestId ?? referenceSet.providerRequestId,
+        providerStatus: input.providerStatus ?? referenceSet.providerStatus,
+      };
+      return { job: { ...job }, referenceSet: { ...referenceSet } };
+    },
+    updateReferenceGenerationProgress: async (input) => {
+      job = { ...job, progress: input.progress };
+      referenceSet = { ...referenceSet, providerStatus: input.providerStatus };
+      return { job: { ...job }, referenceSet: { ...referenceSet } };
+    },
+    persistReferenceImages: async (input) => {
+      images = input.images.map(({ storageKey: _storageKey, ...image }) => image);
+      job = { ...job, status: "awaiting_reference_confirmation", progress: 100 };
+      referenceSet = {
+        ...referenceSet,
+        status: "awaiting_confirmation",
+        usageImageCount: input.usageImageCount,
+      };
+      return images;
+    },
+    listReferenceImages: async () => images,
+    confirmReferenceSet: async (input) => {
+      assert.equal(input.referenceSetId, ids.referenceSet);
+      job = {
+        ...job,
+        status: "queued_3d",
+        qualityPreset: input.qualityPreset,
+        geometryQuality: input.geometryQuality,
+        textureQuality: input.textureQuality,
+      };
+      referenceSet = { ...referenceSet, status: "accepted" };
+      return {
+        job: { ...job, promptPlan: undefined, modelProvider: undefined },
+        referenceSet: { id: referenceSet.id, status: referenceSet.status },
+      };
+    },
+    releaseJobClaim: async () => {},
+    markJobAssetsRetention: async () => {},
+  };
+  const service = createAvatar3dLifecycleService({
+    repository,
+    storage: {
+      createProviderReadUrl: ({ objectKey }) => `https://private.example/${objectKey}`,
+      persistAvatarReferenceImages: async ({ imageUrls }) => imageUrls.map((_, index) => ({
+        view: views[index],
+        sequenceIndex: index,
+        storageKey: `users/${ids.user}/avatar-3d/jobs/${ids.job}/references/${views[index]}.jpg`,
+        contentType: "image/jpeg",
+        byteSize: 1024,
+        width: 1024,
+        height: 1536,
+      })),
+    },
+    wanMultiview: {
+      submitWanMultiviewJob: async ({ imageUrl, prompt }) => {
+        submitCalls += 1;
+        assert.match(imageUrl, /^https:\/\/private\.example\//);
+        assert.equal(prompt, "private fixed multiview prompt");
+        return {
+          state: "processing",
+          taskId: "wan-task-private",
+          requestId: "wan-request-private",
+          providerStatus: "PENDING",
+          progress: 10,
+        };
+      },
+      fetchWanMultiviewJob: async ({ taskId }) => {
+        pollCalls += 1;
+        assert.equal(taskId, "wan-task-private");
+        return {
+          state: "succeeded",
+          taskId,
+          requestId: "wan-request-private",
+          providerStatus: "SUCCEEDED",
+          progress: 100,
+          imageUrls: urls,
+          usageCount: 4,
+        };
+      },
+    },
+    providers: {
+      resolve: () => ({
+        submit: async () => { modelSubmitCalls += 1; },
+        fetch: async () => ({}),
+      }),
+    },
+    tripo: {},
+    wanx: {},
+    runtime,
+  });
+
+  await service.processJob({ ...job });
+  assert.equal(job.status, "processing_references");
+  await service.processJob({ ...job });
+  assert.equal(job.status, "persisting_references");
+  await service.processJob({ ...job });
+  assert.equal(job.status, "awaiting_reference_confirmation");
+  assert.deepEqual(images.map((image) => image.view), views);
+  assert.equal(submitCalls, 1);
+  assert.equal(pollCalls, 2);
+  assert.equal(modelSubmitCalls, 0);
+  assert.deepEqual(transitions, [
+    ["queued_references", "submitting_references"],
+    ["submitting_references", "processing_references"],
+    ["processing_references", "persisting_references"],
+  ]);
+
+  const preview = await service.getReferences({ user: { id: ids.user }, jobId: ids.job });
+  assert.deepEqual(preview.images.map((image) => image.view), views);
+  const confirmed = await service.confirmReferences({
+    user: { id: ids.user },
+    jobId: ids.job,
+    body: {
+      referenceSetId: ids.referenceSet,
+      qualityPreset: "ultra",
+      accepted: true,
+      acceptedCostVersion: "2026-07-21",
+    },
+  });
+  assert.equal(confirmed.job.status, "queued_3d");
+  assert.equal(confirmed.referenceSet.status, "accepted");
+  assert.equal(modelSubmitCalls, 0);
+});
+
+test("confirmed face-first jobs submit exactly four accepted references to Tripo", async () => {
+  const views = ["front", "left", "back", "right"];
+  let job = {
+    id: ids.job,
+    userId: ids.user,
+    style: "realistic",
+    generationMode: "face_first_multiview",
+    modelProvider: "tripo",
+    referenceSetId: ids.referenceSet,
+    status: "queued_3d",
+    geometryQuality: "ultra",
+    textureQuality: "detailed",
+  };
+  let submittedInput;
+  const service = createAvatar3dLifecycleService({
+    repository: {
+      transitionJob: async (input) => {
+        assert.equal(job.status, input.fromStatus);
+        job = {
+          ...job,
+          status: input.toStatus,
+          progress: input.progress,
+          modelProviderTaskId: input.modelProviderTaskId ?? job.modelProviderTaskId,
+        };
+        return { ...job };
+      },
+      getReferenceSetForJob: async () => ({
+        id: ids.referenceSet,
+        jobId: ids.job,
+        status: "accepted",
+      }),
+      listReferenceImages: async () => views.map((view, sequenceIndex) => ({
+        id: `${sequenceIndex}`,
+        view,
+        sequenceIndex,
+        storageKey: `users/${ids.user}/avatar-3d/jobs/${ids.job}/references/${view}.jpg`,
+        mimeType: "image/jpeg",
+      })),
+      markJobAssetsRetention: async () => {},
+    },
+    storage: {
+      createProviderReadUrl: ({ objectKey }) => `https://private.example/${objectKey}`,
+    },
+    providers: {
+      resolve: () => ({
+        submit: async (input) => {
+          submittedInput = input;
+          return {
+            state: "processing",
+            taskId: "tripo-private-task",
+            providerStatus: "PENDING",
+            progress: 10,
+          };
+        },
+        fetch: async () => ({}),
+      }),
+    },
+    tripo: {},
+    wanx: {},
+    runtime,
+  });
+
+  const result = await service.processJob({ ...job });
+
+  assert.equal(result.status, "processing_3d");
+  assert.deepEqual(submittedInput.photos.map((photo) => photo.view), views);
+  assert.equal(submittedInput.photos.every((photo) => photo.url.startsWith("https://private.example/")), true);
+  assert.equal(submittedInput.geometryQuality, "ultra");
+  assert.equal(submittedInput.textureQuality, "detailed");
+});
+
+test("a job with an unsupported 3D provider fails closed without a Provider call", async () => {
+  const state = createStatefulRepository("realistic", { modelProvider: "unsupported_provider" });
+  let providerCalls = 0;
+  const service = createAvatar3dLifecycleService({
+    repository: state.repository,
+    storage: {
+      createProviderReadUrl: ({ objectKey }) => `https://signed.example/${objectKey}`,
+    },
+    tripo: {
+      submitTripoJob: async () => {
+        providerCalls += 1;
+        throw new Error("must not submit");
+      },
+      fetchTripoJob: async () => {
+        providerCalls += 1;
+        throw new Error("must not poll");
+      },
+    },
+    wanx: {},
+    runtime,
+    now: () => new Date("2026-07-17T00:00:00.000Z"),
+  });
+
+  await service.processJob(state.currentJob());
+
+  assert.equal(state.currentJob().status, "failed");
+  assert.equal(state.currentJob().errorCode, "AVATAR_PROVIDER_UNSUPPORTED");
+  assert.equal(providerCalls, 0);
+});
+
+test("persisting recovery finishes an already active model without downloading it again", async () => {
+  let providerPolls = 0;
+  let modelDownloads = 0;
+  const job = {
+    id: ids.job,
+    userId: ids.user,
+    style: "realistic",
+    status: "persisting",
+    progress: 95,
+    modelId: ids.model,
+    modelProviderTaskId: "tripo-task",
+  };
+  const repository = {
+    getJobModel: async () => ({
+      id: ids.model,
+      jobId: ids.job,
+      status: "active",
+      glbStorageKey: "users/u/avatar-3d/jobs/j/model.glb",
+    }),
+    transitionJob: async (input) => ({
+      ...job,
+      status: input.toStatus,
+      progress: input.progress,
+    }),
+    markJobAssetsRetention: async () => {},
+    releaseJobClaim: async () => {},
+  };
+  const service = createAvatar3dLifecycleService({
+    repository,
+    storage: {
+      persistAvatarProviderModel: async () => {
+        modelDownloads += 1;
+      },
+    },
+    tripo: {
+      fetchTripoJob: async () => {
+        providerPolls += 1;
+      },
+    },
+    wanx: {},
+    runtime,
+  });
+
+  const result = await service.processJob(job);
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(providerPolls, 0);
+  assert.equal(modelDownloads, 0);
 });
 
 test("cartoon lifecycle stops for confirmation and submits Tripo only after acceptance", async () => {
@@ -211,6 +646,8 @@ test("cartoon lifecycle stops for confirmation and submits Tripo only after acce
   assert.equal(state.currentJob().status, "awaiting_style_confirmation");
   assert.equal(wanxSubmits, 1);
   assert.equal(tripoSubmits, 0);
+  const previewCall = state.calls.find((call) => call[0] === "createStylePreview");
+  assert.equal(previewCall[1].mimeType, "image/jpeg");
 
   await service.confirmStyle({ user: { id: ids.user }, jobId: ids.job });
   await service.confirmStyle({ user: { id: ids.user }, jobId: ids.job });
@@ -245,6 +682,76 @@ test("unknown Tripo submission becomes terminal and is never resubmitted", async
   assert.equal(state.currentJob().status, "submission_unknown");
   await service.processJob(state.currentJob());
   assert.equal(submitCalls, 1);
+});
+
+test("a Tripo task is never resubmitted when saving its task ID fails", async () => {
+  const state = createStatefulRepository("realistic");
+  const transitionJob = state.repository.transitionJob;
+  let submitCalls = 0;
+  let failTaskIdWrite = true;
+  state.repository.transitionJob = async (input) => {
+    if (
+      failTaskIdWrite
+      && input.fromStatus === "submitting_3d"
+      && input.toStatus === "processing_3d"
+    ) {
+      failTaskIdWrite = false;
+      throw new Error("database unavailable after Provider acceptance");
+    }
+    return transitionJob(input);
+  };
+  const service = createAvatar3dLifecycleService({
+    repository: state.repository,
+    storage: {
+      createProviderReadUrl: () => "https://signed.example/front.jpg",
+    },
+    tripo: {
+      submitTripoJob: async () => {
+        submitCalls += 1;
+        return {
+          state: "processing",
+          taskId: "tripo-paid-task",
+          providerStatus: "PENDING",
+          progress: 10,
+        };
+      },
+    },
+    wanx: {},
+    runtime,
+    now: () => new Date("2026-07-17T00:00:00.000Z"),
+  });
+
+  await assert.rejects(
+    () => service.processJob(state.currentJob()),
+    /database unavailable/,
+  );
+  assert.equal(state.currentJob().status, "submitting_3d");
+
+  await service.processJob(state.currentJob());
+  assert.equal(state.currentJob().status, "submission_unknown");
+  assert.equal(submitCalls, 1);
+});
+
+test("bootstrap never reports a quality_failed job as active", async () => {
+  const failedJob = {
+    id: ids.job,
+    userId: ids.user,
+    style: "realistic",
+    status: "quality_failed",
+  };
+  const service = createAvatar3dLifecycleService({
+    repository: {
+      getQuotaState: async () => ({ dailyUsed: 1, hasActiveJob: false }),
+      listJobs: async () => [failedJob],
+      listModels: async () => [],
+    },
+    runtime,
+  });
+
+  const bootstrap = await service.getBootstrap({ user: { id: ids.user } });
+
+  assert.equal(bootstrap.activeJob, null);
+  assert.deepEqual(bootstrap.jobs, [failedJob]);
 });
 
 test("private media reads verify ownership and expose no storage keys", async () => {
@@ -334,4 +841,69 @@ test("repeated photo completion never exposes private storage keys", async () =>
   assert.equal(result.status, "ready");
   assert.equal(result.sourceStorageKey, undefined);
   assert.equal(result.normalizedStorageKey, undefined);
+});
+
+test("a preparing model cannot be deleted while its GLB is still being saved", async () => {
+  let storageDeletes = 0;
+  const service = createAvatar3dLifecycleService({
+    repository: {
+      getModel: async () => ({
+        id: ids.model,
+        userId: ids.user,
+        jobId: ids.job,
+        status: "preparing",
+        glbStorageKey: null,
+        thumbnailStorageKey: "users/u/avatar-3d/jobs/j/thumbnail.jpg",
+      }),
+    },
+    storage: {
+      deleteAvatarObjects: async () => {
+        storageDeletes += 1;
+      },
+    },
+    runtime,
+  });
+
+  await assert.rejects(
+    () => service.deleteModel({ user: { id: ids.user }, modelId: ids.model }),
+    (error) => error?.status === 409 && error?.details?.code === "MODEL_PREPARING",
+  );
+  assert.equal(storageDeletes, 0);
+});
+
+test("cancelling a private job never exposes quality metrics", async () => {
+  const qualityMetrics = {
+    minimumSimilarityThreshold: 0.82,
+    providerTaskId: "quality-provider-task-private",
+    providerRequestId: "quality-provider-request-private",
+    resultUrl: "https://quality.example/private-result.json",
+    sourceStorageKey: "users/private/quality-input.jpg",
+    rawError: "quality evaluator stack trace",
+  };
+  const privateJob = {
+    id: ids.job,
+    userId: ids.user,
+    style: "realistic",
+    status: "queued_3d",
+    qualityMetrics,
+  };
+  const service = createAvatar3dLifecycleService({
+    repository: {
+      getJob: async () => privateJob,
+      transitionJob: async () => ({ ...privateJob, status: "cancelled" }),
+      markJobAssetsRetention: async () => {},
+    },
+    storage: {},
+    tripo: {},
+    wanx: {},
+    runtime,
+  });
+
+  const cancelled = await service.cancelJob({ user: { id: ids.user }, jobId: ids.job });
+
+  assert.equal(Object.hasOwn(cancelled, "qualityMetrics"), false);
+  const serialized = JSON.stringify(cancelled);
+  for (const privateValue of Object.values(qualityMetrics)) {
+    assert.equal(serialized.includes(String(privateValue)), false);
+  }
 });
