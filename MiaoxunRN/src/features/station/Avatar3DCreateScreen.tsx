@@ -175,7 +175,11 @@ export function Avatar3DCreateScreen({
     : textFor(language, '我的3D形象', 'My 3D Avatars');
 
   return (
-    <View style={[localStyles.screen, { backgroundColor: colors.background }]}>
+    <View
+      accessibilityViewIsModal
+      style={[localStyles.screen, { backgroundColor: colors.background }]}
+      testID="avatar3d-create-screen"
+    >
       <View
         style={[
           localStyles.header,
@@ -221,6 +225,8 @@ export function Avatar3DCreateScreen({
           <ScrollView
             contentContainerStyle={localStyles.composerContent}
             keyboardShouldPersistTaps="handled"
+            style={localStyles.bodyScroll}
+            testID="avatar3d-composer-scroll"
           >
             <Section
               colors={colors}
@@ -784,7 +790,11 @@ function JobView({
 
   return (
     <>
-      <ScrollView contentContainerStyle={localStyles.jobContent}>
+      <ScrollView
+        contentContainerStyle={localStyles.jobContent}
+        style={localStyles.bodyScroll}
+        testID="avatar3d-job-scroll"
+      >
         <View
           style={[
             localStyles.progressSection,
@@ -1026,7 +1036,11 @@ function ModelManager({
   onDelete: (model: Avatar3DModelDTO) => void;
 }) {
   return (
-    <ScrollView contentContainerStyle={localStyles.managerContent}>
+    <ScrollView
+      contentContainerStyle={localStyles.managerContent}
+      style={localStyles.bodyScroll}
+      testID="avatar3d-manager-scroll"
+    >
       <View
         style={[
           localStyles.managerSummary,
@@ -1314,6 +1328,7 @@ type ScreenColors = {
 
 const localStyles = StyleSheet.create({
   screen: { flex: 1 },
+  bodyScroll: { flex: 1 },
   header: {
     alignItems: 'center',
     borderBottomWidth: 2,

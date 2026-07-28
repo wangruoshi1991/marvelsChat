@@ -140,9 +140,10 @@ export function Stat({
   secondaryTextColor?: string;
   onPress?: () => void;
 }) {
+  const displayValue = Number.isFinite(value) ? value : 0;
   const content = (
     <>
-      <Text style={[styles.statValue, {color: textColor || palette.text}]}>{value}</Text>
+      <Text style={[styles.statValue, {color: textColor || palette.text}]}>{displayValue}</Text>
       <Text
         adjustsFontSizeToFit
         minimumFontScale={0.82}
