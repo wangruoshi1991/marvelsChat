@@ -1,6 +1,13 @@
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { config } from "../config.js";
 import { HttpError } from "../http-error.js";
+import {
+  deleteLocalMediaObject,
+  fetchLocalMediaObject,
+  inspectLocalMediaObject,
+  writeLocalMediaObject,
+} from "../local-media-storage.js";
 import {
   buildMediaSearchMatcher,
   normalizeMediaTags,
@@ -32,6 +39,7 @@ import {
   stationMediaSearchSchema,
   stationMediaTagsSchema,
   stationMediaUploadCompleteSchema,
+  stationMediaUploadLimits,
   stationMediaUploadUrlSchema,
 } from "../schemas.js";
 
@@ -55,6 +63,28 @@ const parseSingleByteRange = (value) => {
     throw new HttpError(416, "Invalid media byte range.");
   }
   return range;
+};
+
+const ossUploadConfigured = () =>
+  Boolean(
+    config.oss.bucket &&
+      config.oss.endpoint &&
+      config.oss.accessKeyId &&
+      config.oss.accessKeySecret,
+  );
+
+const createStationMediaUpload = ({ asset, objectKey, contentType }) => {
+  if (ossUploadConfigured() || config.isProduction) {
+    return createOssPutSignedUrl({ objectKey, contentType });
+  }
+  return {
+    method: "PUT",
+    url: `/api/station/media-assets/${asset.id}/local-upload`,
+    headers: { "Content-Type": contentType },
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    objectKey,
+    storageProvider: "local",
+  };
 };
 
 export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) {
@@ -124,6 +154,9 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
       if (!asset) {
         throw new HttpError(404, "Media asset not found");
       }
+      if (asset.storageProvider === "local" && asset.storageKey) {
+        await deleteLocalMediaObject(asset.storageKey).catch(() => undefined);
+      }
       await createUsageEvent({
         userId: req.user.id,
         eventType: "station.media.delete",
@@ -169,7 +202,8 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
         assetId: asset.id,
         originalFilename: asset.originalFilename,
       });
-      const upload = createOssPutSignedUrl({
+      const upload = createStationMediaUpload({
+        asset,
         objectKey,
         contentType: body.mimeType,
       });
@@ -195,6 +229,55 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
         userAgent: req.get("user-agent") || "",
       });
       res.json({ data: { asset: preparedAsset, upload } });
+    }),
+  );
+
+  app.put(
+    "/api/station/media-assets/:mediaAssetId/local-upload",
+    authenticate,
+    mediaUploadLimit,
+    asyncHandler(async (req, res) => {
+      if (config.isProduction) {
+        throw new HttpError(404, "Local media upload is not available");
+      }
+      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+        req.params,
+      );
+      const asset = await getStationMediaAssetForUser({
+        userId: req.user.id,
+        mediaAssetId,
+      });
+      if (!asset) {
+        throw new HttpError(404, "Media asset not found");
+      }
+      if (
+        asset.status !== "pending_upload" ||
+        asset.storageProvider !== "local" ||
+        !asset.storageKey
+      ) {
+        throw new HttpError(409, "Media asset is not ready for local upload");
+      }
+      const contentLength = Number(req.get("content-length"));
+      const uploadMedia = stationMediaUploadUrlSchema.parse({
+        mimeType: req.get("content-type") || asset.mimeType,
+        byteSize: Number.isInteger(contentLength)
+          ? contentLength
+          : asset.byteSize,
+      });
+      assertMediaKindMatchesMime({
+        kind: asset.kind,
+        mimeType: uploadMedia.mimeType,
+      });
+      if (asset.mimeType && uploadMedia.mimeType !== asset.mimeType) {
+        throw new HttpError(409, "Uploaded media type does not match");
+      }
+      await writeLocalMediaObject({
+        objectKey: asset.storageKey,
+        readable: req,
+        expectedBytes: asset.byteSize,
+        maxBytes: stationMediaUploadLimits[asset.kind],
+      });
+      res.status(204).send();
     }),
   );
 
@@ -225,9 +308,13 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
         throw new HttpError(409, "Media asset is not pending upload");
       }
 
-      const storedObject = await inspectOssObject({
-        objectKey: asset.storageKey,
-      });
+      const storedObject =
+        asset.storageProvider === "local"
+          ? await inspectLocalMediaObject({
+              objectKey: asset.storageKey,
+              contentType: asset.mimeType,
+            })
+          : await inspectOssObject({ objectKey: asset.storageKey });
       if (storedObject.contentLength === null) {
         throw new HttpError(502, "Media storage did not return object size");
       }
@@ -306,10 +393,14 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
       }
 
       const range = parseSingleByteRange(req.get("range"));
-      const response = await fetchOssObject({
-        objectKey: asset.storageKey,
-        range,
-      });
+      const response =
+        asset.storageProvider === "local"
+          ? await fetchLocalMediaObject({
+              objectKey: asset.storageKey,
+              contentType: asset.mimeType,
+              range,
+            })
+          : await fetchOssObject({ objectKey: asset.storageKey, range });
       if (!response.body) {
         throw new HttpError(502, "Media storage returned an empty response");
       }

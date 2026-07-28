@@ -552,6 +552,7 @@ function buildAppModules({ profile, ownedAgents = [], registeredAgents = [] }) {
         miaoPoints: Number(profile?.miaoPoints || 0),
         following: Number(profile?.followingCount || 0),
         followers: Number(profile?.followersCount || 0),
+        likes: Number(profile?.likesCount || 0),
         collections: Number(profile?.collectionsCount || 0),
       },
     }),
@@ -567,10 +568,7 @@ function buildAppModules({ profile, ownedAgents = [], registeredAgents = [] }) {
       "search_index",
       "agent_capability_index",
     ]),
-    points: pending("points", "妙点明细", "user_profiles 已有妙点余额字段，明细流水表尚未接入。", [
-      "point_ledger",
-      "point_rules",
-    ]),
+    points: connected("points", "妙点明细", "余额来自 user_profiles，明细来自 miao_point_ledger。"),
     privacy: pending("privacy", "主页可见范围", "保留隐私设置入口，尚未接入可见范围策略表。", [
       "privacy_rules",
       "profile_visibility",

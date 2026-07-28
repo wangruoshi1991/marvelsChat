@@ -9,7 +9,7 @@ const { registerMapRoutes } = await import("../src/routes/map-routes.js");
 const createRouteCollector = () => {
   const routes = [];
   const app = {};
-  for (const method of ["get", "post", "patch", "delete"]) {
+  for (const method of ["get", "post", "put", "patch", "delete"]) {
     app[method] = (path) => routes.push(`${method.toUpperCase()} ${path}`);
   }
   return { app, routes };
@@ -27,6 +27,9 @@ const collectStationRoutes = () => {
 test("registers the station content routes used by the mobile client", () => {
   const routes = collectStationRoutes();
   const expected = [
+    "GET /api/me/miao-points",
+    "POST /api/station/posts",
+    "DELETE /api/station/posts/:postId",
     "PATCH /api/station/diary/:entryId",
     "DELETE /api/station/diary/:entryId",
     "PATCH /api/station/albums/:albumId",
@@ -34,6 +37,7 @@ test("registers the station content routes used by the mobile client", () => {
     "PATCH /api/station/media-assets/:mediaAssetId",
     "DELETE /api/station/media-assets/:mediaAssetId",
     "POST /api/station/media-assets/:mediaAssetId/upload-url",
+    "PUT /api/station/media-assets/:mediaAssetId/local-upload",
     "POST /api/station/media-assets/:mediaAssetId/upload-complete",
     "GET /api/station/media-assets/:mediaAssetId/file",
   ];

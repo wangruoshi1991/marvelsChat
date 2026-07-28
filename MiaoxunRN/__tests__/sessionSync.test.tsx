@@ -66,6 +66,7 @@ const bootstrap: BootstrapDTO = {
     miaoPoints: 0,
     followingCount: 0,
     followersCount: 0,
+    likesCount: 0,
     collectionsCount: 0,
     stationConfig: {},
   },

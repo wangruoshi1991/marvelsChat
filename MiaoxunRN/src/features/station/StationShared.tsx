@@ -35,33 +35,47 @@ export function ProfileRegionRow({
   title,
   value,
   palette,
+  backgroundColor,
+  borderColor,
+  textColor,
+  secondaryTextColor,
+  showChevron = true,
   onPress,
 }: {
   title: string;
   value: string;
   palette: Palette;
+  backgroundColor?: string;
+  borderColor?: string;
+  textColor?: string;
+  secondaryTextColor?: string;
+  showChevron?: boolean;
   onPress?: () => void;
 }) {
   const content = (
     <>
       <View style={styles.profileRegionCopy}>
-        <Text style={[styles.profileRegionTitle, {color: palette.secondaryText}]}>{title}</Text>
-        <Text style={[styles.profileRegionValue, {color: palette.text}]} numberOfLines={1}>
+        <Text style={[styles.profileRegionTitle, {color: secondaryTextColor || palette.secondaryText}]}>{title}</Text>
+        <Text style={[styles.profileRegionValue, {color: textColor || palette.text}]} numberOfLines={1}>
           {value}
         </Text>
       </View>
-      {onPress ? <ChevronRight color={palette.secondaryText} size={16} strokeWidth={2.6} /> : null}
+      {onPress && showChevron ? <ChevronRight color={secondaryTextColor || palette.secondaryText} size={15} strokeWidth={2.2} /> : null}
     </>
   );
+  const rowColors = {
+    backgroundColor: backgroundColor || palette.surface,
+    borderColor: borderColor || palette.border,
+  };
   if (onPress) {
     return (
-      <Pressable onPress={onPress} style={[styles.profileRegionRow, {backgroundColor: palette.surface, borderColor: palette.border}]}>
+      <Pressable onPress={onPress} style={[styles.profileRegionRow, rowColors]}>
         {content}
       </Pressable>
     );
   }
   return (
-    <View style={[styles.profileRegionRow, {backgroundColor: palette.surface, borderColor: palette.border}]}>
+    <View style={[styles.profileRegionRow, rowColors]}>
       {content}
     </View>
   );
@@ -115,32 +129,35 @@ export function Stat({
   value,
   label,
   palette,
+  textColor,
+  secondaryTextColor,
   onPress,
 }: {
   value: number;
   label: string;
   palette: Palette;
+  textColor?: string;
+  secondaryTextColor?: string;
   onPress?: () => void;
 }) {
   const content = (
     <>
-      <Text style={[styles.statValue, {color: palette.text}]}>{value}</Text>
-      <Text style={[styles.statLabel, {color: palette.secondaryText}]}>{label}</Text>
+      <Text style={[styles.statValue, {color: textColor || palette.text}]}>{value}</Text>
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.82}
+        numberOfLines={1}
+        style={[styles.statLabel, {color: secondaryTextColor || palette.secondaryText}]}>
+        {label}
+      </Text>
     </>
   );
   if (onPress) {
     return (
-      <Pressable
-        accessibilityRole="button"
-        onPress={onPress}
-        style={[styles.statCell, {backgroundColor: palette.surface, borderColor: palette.border}]}>
+      <Pressable accessibilityRole="button" onPress={onPress} style={styles.statCell}>
         {content}
       </Pressable>
     );
   }
-  return (
-    <View style={[styles.statCell, {backgroundColor: palette.surface, borderColor: palette.border}]}>
-      {content}
-    </View>
-  );
+  return <View style={styles.statCell}>{content}</View>;
 }

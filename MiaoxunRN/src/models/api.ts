@@ -42,6 +42,7 @@ export type ProfileDTO = {
   miaoPoints: number;
   followingCount: number;
   followersCount: number;
+  likesCount: number;
   collectionsCount: number;
   stationConfig: {
     language?: 'zh' | 'en';
@@ -238,6 +239,7 @@ export type PublicProfileDTO = {
     miaoPoints: number;
     followingCount: number;
     followersCount: number;
+    likesCount: number;
     collectionsCount: number;
   };
   relation: {
@@ -266,6 +268,7 @@ export type RelationshipProfileDTO = {
     activityArea: string;
     followersCount: number;
     followingCount: number;
+    likesCount: number;
     collectionsCount: number;
   };
   relationType: string;
@@ -286,6 +289,19 @@ export type SearchHistoryDTO = {
 };
 
 export type StationVisibility = 'private' | 'friends' | 'public';
+
+export type MiaoPointLedgerEntryDTO = {
+  id: string;
+  userId: string;
+  amount: number;
+  balanceAfter?: number | null;
+  title: string;
+  description: string;
+  eventType: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  createdAt: string;
+};
 
 export type StationDiaryEntryDTO = {
   id: string;
@@ -328,6 +344,21 @@ export type StationMediaAssetDTO = {
   updatedAt?: string | null;
 };
 
+export type StationPostDTO = {
+  id: string;
+  userId: string;
+  body: string;
+  locationLabel: string;
+  visibility: StationVisibility;
+  agentCapabilities: string[];
+  likeCount: number;
+  commentCount: number;
+  favoriteCount: number;
+  media: StationMediaAssetDTO[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
 export type StationOutfitDTO = {
   id: string;
   userId: string;
@@ -342,6 +373,7 @@ export type StationOutfitDTO = {
 };
 
 export type StationContentDTO = {
+  posts: StationPostDTO[];
   diaryEntries: StationDiaryEntryDTO[];
   albums: StationAlbumDTO[];
   mediaAssets: StationMediaAssetDTO[];

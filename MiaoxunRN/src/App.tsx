@@ -20,10 +20,9 @@ import {
 } from './features/messages/MessagesScreen';
 import { resolveMessagePalette } from './features/messages/messagePalette';
 import { useProfileFlows } from './features/profile/useProfileFlows';
-import {
-  FloatingMiaoButton,
-  StationScreen,
-} from './features/station/StationScreen';
+import { StationPostComposerScreen } from './features/station/StationPostComposerScreen';
+import { StationScreen } from './features/station/StationScreen';
+import { StationTab } from './features/station/stationTypes';
 import { AvatarConfigDTO } from './models/api';
 import { appErrorText, textFor } from './shared/i18n';
 import { styles } from './shared/styles';
@@ -35,6 +34,9 @@ function App(): React.JSX.Element {
   const palette = palettes[session.appearance];
   const messagePalette = resolveMessagePalette(palette);
   const [selectedTab, setSelectedTab] = useState<RootTab>('messages');
+  const [selectedStationTab, setSelectedStationTab] =
+    useState<StationTab>('station');
+  const [isPostComposerOpen, setIsPostComposerOpen] = useState(false);
   const [modalRoute, setModalRoute] = useState<ModalRoute>(null);
   const [activeThread, setActiveThread] = useState<ChatThread | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -65,12 +67,20 @@ function App(): React.JSX.Element {
       text,
       config,
       small,
+      size,
     }: {
       text: string;
       config?: AvatarConfigDTO;
       small?: boolean;
+      size?: number;
     }) => (
-      <UserAvatar text={text} config={config} palette={palette} small={small} />
+      <UserAvatar
+        text={text}
+        config={config}
+        palette={palette}
+        small={small}
+        size={size}
+      />
     ),
     [palette],
   );
@@ -187,7 +197,7 @@ function App(): React.JSX.Element {
       return;
     }
     Clipboard.setString(aiId);
-    showToast(textFor(session.language, 'AI ID 已复制', 'AI ID copied'));
+    showToast(textFor(session.language, '已复制ID', 'ID copied'));
   };
 
   const requestMessageQRCodeScan = () => {
@@ -219,6 +229,10 @@ function App(): React.JSX.Element {
     ? messagePalette.background
     : isRootTabRoute && selectedTab === 'messages'
     ? messagePalette.soft
+    : isRootTabRoute &&
+      selectedTab === 'station' &&
+      session.appearance === 'light'
+    ? '#FFFFFF'
     : palette.background;
   const bottomSafeAreaColor = isChatRoute
     ? messagePalette.surface
@@ -408,6 +422,9 @@ function App(): React.JSX.Element {
                     palette={palette}
                     language={session.language}
                     session={session}
+                    selectedStationTab={selectedStationTab}
+                    onSelectStationTab={setSelectedStationTab}
+                    renderUserAvatar={renderUserAvatar}
                     onOpenSettings={() => setModalRoute('settings')}
                     onOpenLocation={() => setModalRoute('station-location')}
                     onCopyAIID={copyAIID}
@@ -431,18 +448,12 @@ function App(): React.JSX.Element {
                   />
                 )}
 
-                {selectedTab === 'station' ? (
-                  <FloatingMiaoButton
-                    palette={palette}
-                    onPress={() => setModalRoute('site-builder')}
-                  />
-                ) : null}
-
                 <BottomBar
                   palette={palette}
                   language={session.language}
                   selectedTab={selectedTab}
                   onSelectTab={setSelectedTab}
+                  onCreatePost={() => setIsPostComposerOpen(true)}
                 />
               </View>
             )
@@ -481,6 +492,32 @@ function App(): React.JSX.Element {
             onConsumePendingScanRequest={consumePendingScanRequest}
             onToast={showToast}
           />
+          {isPostComposerOpen ? (
+            <StationPostComposerScreen
+              palette={palette}
+              language={session.language}
+              session={session}
+              onClose={() => setIsPostComposerOpen(false)}
+              onPublished={() => {
+                setIsPostComposerOpen(false);
+                setSelectedTab('station');
+                setSelectedStationTab('posts');
+                showToast(
+                  textFor(session.language, '动态已发布', 'Post published'),
+                );
+              }}
+              onActionError={error =>
+                showToast(
+                  appErrorText(
+                    session.language,
+                    error,
+                    '发布失败，请稍后重试',
+                    'Could not publish. Try again.',
+                  ),
+                )
+              }
+            />
+          ) : null}
           {toastMessage ? (
             <View style={[styles.toastWrap, styles.pointerEventsNone]}>
               <View style={[styles.toast, { backgroundColor: palette.text }]}>

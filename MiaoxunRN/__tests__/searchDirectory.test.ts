@@ -31,6 +31,7 @@ const friend: RelationshipProfileDTO = {
     activityArea: '',
     followersCount: 0,
     followingCount: 0,
+    likesCount: 0,
     collectionsCount: 0,
   },
   relationType: 'friend',

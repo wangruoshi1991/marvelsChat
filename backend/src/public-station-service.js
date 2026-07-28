@@ -50,6 +50,12 @@ export function buildPublicStationView({ publicProfile, ownerProfile = {}, stati
   const relation = publicProfile?.relation || {};
   const canShowAlbums = publicListEnabled(publicProfile, "showAlbum");
   const canShowDiary = publicListEnabled(publicProfile, "showDiary");
+  const canShowPosts = publicListEnabled(publicProfile, "showPosts");
+
+  const posts = canShowPosts
+    ? (stationContent.posts || []).filter((post) =>
+      canSeeVisibility(post.visibility || "private", relation))
+    : [];
 
   const albums = canShowAlbums
     ? (stationContent.albums || []).filter((album) => canSeeVisibility(album.visibility || "private", relation))
@@ -78,6 +84,7 @@ export function buildPublicStationView({ publicProfile, ownerProfile = {}, stati
     visibility: cloneJson(publicProfile?.visibility || {}, {}),
     siteLayout,
     stationContent: {
+      posts: cloneJson(posts, []),
       albums: cloneJson(albums, []),
       mediaAssets: cloneJson(mediaAssets, []),
       diaryEntries: cloneJson(diaryEntries, []),

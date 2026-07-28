@@ -1,295 +1,358 @@
-import React from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import {
+  Alert,
+  Image,
+  type ImageSourcePropType,
+  Pressable,
+  Text,
+  View,
+} from 'react-native';
+import { MapPin, Play } from 'lucide-react-native';
 
-import { StationContentDTO } from '../../models/api';
+import { stationPostIconAssets } from '../../assets/icons';
+import {
+  OwnedAgentDTO,
+  ProfileDTO,
+  StationContentDTO,
+  StationPostDTO,
+} from '../../models/api';
 import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
-import { textFor } from '../../shared/i18n';
+import { displayText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
-import { Palette } from '../../shared/theme';
+import { Palette, palettes } from '../../shared/theme';
+import { UserAvatar } from '../avatar/AvatarBadges';
 import { Language } from '../session/useMiaoxunSession';
-import { StationCreateKind } from './stationTypes';
-import { buildStationTimeline, StationTimelineItem } from './stationTimeline';
 
 export function StationPostsPanel({
   palette,
   language,
+  profile,
   stationContent,
+  ownedAgents,
   token,
-  onOpenCreateSheet,
-  onOpenDiaryDetail,
-  onOpenAlbumDetail,
+  onDeletePost,
+  onActionMessage,
+  onActionError,
 }: {
   palette: Palette;
   language: Language;
+  profile: ProfileDTO;
   stationContent: StationContentDTO;
+  ownedAgents: OwnedAgentDTO[];
   token: string;
-  onOpenCreateSheet: (kind: StationCreateKind) => void;
-  onOpenDiaryDetail: (entryId: string) => void;
-  onOpenAlbumDetail: (albumId: string) => void;
+  onDeletePost: (postId: string) => Promise<void>;
+  onActionMessage: (message: string) => void;
+  onActionError: (error: unknown) => void;
 }) {
-  const timeline = buildStationTimeline(stationContent);
+  const posts = stationContent.posts || [];
+  const surfaceColor =
+    palette.text === palettes.light.text ? '#FFFFFF' : palette.surface;
 
-  if (!timeline.length) {
+  if (!posts.length) {
     return (
-      <View style={styles.stationPanelStack}>
-        <View
-          style={[
-            styles.stationPostCard,
-            { backgroundColor: palette.surface, borderColor: palette.border },
-          ]}
+      <View
+        style={[
+          styles.stationFeedEmpty,
+          { backgroundColor: surfaceColor },
+        ]}
+      >
+        <Text style={[styles.stationFeedEmptyTitle, { color: palette.text }]}
         >
-          <View style={styles.stationPostMeta}>
-            <Text style={[styles.stationPostType, { color: palette.text }]}>
-              {textFor(language, '我的动态', 'Activity')}
-            </Text>
-          </View>
-          <Text style={[styles.stationPostBody, { color: palette.text }]}>
-            {textFor(
-              language,
-              '写日记、创建相册或保存穿搭后，这里会自动生成真实动态。',
-              'Create diaries, albums, or outfits to build a real activity feed.',
-            )}
-          </Text>
-          <View style={styles.stationPostActionRow}>
-            <PostActionButton
-              palette={palette}
-              title={textFor(language, '写日记', 'Diary')}
-              onPress={() => onOpenCreateSheet('diary')}
-            />
-            <PostActionButton
-              palette={palette}
-              title={textFor(language, '建相册', 'Album')}
-              onPress={() => onOpenCreateSheet('album')}
-            />
-          </View>
-        </View>
+          {textFor(language, '还没有动态', 'No posts yet')}
+        </Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.stationPanelStack}>
-      {timeline.slice(0, 20).map(item => (
-        <TimelineCard
-          key={item.id}
-          item={item}
-          palette={palette}
+    <View style={styles.stationFeedStack}>
+      {posts.map(post => (
+        <StationPostCard
+          key={post.id}
           language={language}
+          ownedAgents={ownedAgents}
+          palette={palette}
+          post={post}
+          profile={profile}
           token={token}
-          onOpenDiaryDetail={onOpenDiaryDetail}
-          onOpenAlbumDetail={onOpenAlbumDetail}
+          onActionError={onActionError}
+          onActionMessage={onActionMessage}
+          onDeletePost={onDeletePost}
         />
       ))}
     </View>
   );
 }
 
-function TimelineCard({
-  item,
-  palette,
+function StationPostCard({
   language,
+  ownedAgents,
+  palette,
+  post,
+  profile,
   token,
-  onOpenDiaryDetail,
-  onOpenAlbumDetail,
+  onDeletePost,
+  onActionMessage,
+  onActionError,
 }: {
-  item: StationTimelineItem;
-  palette: Palette;
   language: Language;
+  ownedAgents: OwnedAgentDTO[];
+  palette: Palette;
+  post: StationPostDTO;
+  profile: ProfileDTO;
   token: string;
-  onOpenDiaryDetail: (entryId: string) => void;
-  onOpenAlbumDetail: (albumId: string) => void;
+  onDeletePost: (postId: string) => Promise<void>;
+  onActionMessage: (message: string) => void;
+  onActionError: (error: unknown) => void;
 }) {
-  const type = timelineTitle(item, language);
-  const title = timelineContentTitle(item, language);
-  const body = timelineBody(item, language);
-  const openItem = () => {
-    if (item.kind === 'diary') {
-      onOpenDiaryDetail(item.diary.id);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const agentTags = post.agentCapabilities
+    .map(agentId => {
+      const agent = ownedAgents.find(item => item.id === agentId);
+      return agent ? { id: agent.id, name: agent.name } : null;
+    })
+    .filter(
+      (agent): agent is { id: string; name: string } => Boolean(agent),
+    );
+  const isLight = palette.text === palettes.light.text;
+  const borderColor = isLight ? '#F0EBFD' : palette.border;
+  const softColor = isLight ? '#F4F6FF' : palette.soft;
+  const surfaceColor = isLight ? '#FFFFFF' : palette.surface;
+
+  const deletePost = () => {
+    if (isDeleting) {
       return;
     }
-    if (item.kind === 'album') {
-      onOpenAlbumDetail(item.album.id);
-      return;
-    }
-    if (item.kind === 'media' && item.album) {
-      onOpenAlbumDetail(item.album.id);
-    }
+    Alert.alert(
+      textFor(language, '删除这条动态？', 'Delete this post?'),
+      textFor(
+        language,
+        '删除后无法恢复。',
+        'This action cannot be undone.',
+      ),
+      [
+        { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
+        {
+          text: textFor(language, '删除', 'Delete'),
+          style: 'destructive',
+          onPress: () => {
+            setIsDeleting(true);
+            onDeletePost(post.id)
+              .then(() =>
+                onActionMessage(
+                  textFor(language, '动态已删除', 'Post deleted'),
+                ),
+              )
+              .catch(onActionError)
+              .finally(() => setIsDeleting(false));
+          },
+        },
+      ],
+    );
   };
-  const isOpenable =
-    item.kind === 'diary' ||
-    item.kind === 'album' ||
-    (item.kind === 'media' && Boolean(item.album));
 
   return (
-    <Pressable
-      accessibilityRole={isOpenable ? 'button' : undefined}
-      disabled={!isOpenable}
-      onPress={openItem}
+    <View
       style={[
-        styles.stationPostCard,
-        { backgroundColor: palette.surface, borderColor: palette.border },
+        styles.stationFeedCard,
+        { backgroundColor: surfaceColor },
       ]}
     >
-      <View style={styles.stationPostMeta}>
-        <Text style={[styles.stationPostType, { color: palette.text }]}>
-          {type}
-        </Text>
-        <Text
-          style={[styles.stationPostTime, { color: palette.secondaryText }]}
-        >
-          {formatTimelineTime(item.createdAt, language)}
-        </Text>
-      </View>
-      <Text style={[styles.stationPostTitle, { color: palette.text }]}>
-        {title}
-      </Text>
-      {body ? (
-        <Text style={[styles.stationPostBody, { color: palette.text }]}>
-          {body}
-        </Text>
-      ) : null}
-      {item.kind === 'media' && item.media.status === 'uploaded' ? (
-        <Image
-          resizeMode="cover"
-          source={{
-            uri: buildStationMediaFileUrl(item.media.id),
-            headers: { Authorization: `Bearer ${token}` },
-          }}
-          style={styles.stationPostImage}
+      <View style={styles.stationFeedHeader}>
+        <UserAvatar
+          config={profile.avatarConfig}
+          palette={palette}
+          size={42}
+          text={profile.avatarText}
         />
-      ) : null}
-      {item.kind === 'media' && item.media.status === 'pending_upload' ? (
-        <View
-          style={[
-            styles.stationPostMediaPlaceholder,
-            { backgroundColor: palette.soft },
-          ]}
-        >
+        <View style={styles.stationFeedAuthor}>
+          <Text
+            numberOfLines={1}
+            style={[styles.stationFeedAuthorName, { color: palette.text }]}
+          >
+            {displayText(language, profile.nickname)}
+          </Text>
           <Text
             style={[
-              styles.stationPostMediaText,
+              styles.stationFeedTime,
               { color: palette.secondaryText },
             ]}
           >
-            {textFor(language, '照片上传中', 'Photo uploading')}
+            {formatPostTime(post.createdAt, language)} ·{' '}
+            {visibilityLabel(post, language)}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={textFor(language, '更多', 'More')}
+          disabled={isDeleting}
+          onPress={deletePost}
+          style={styles.stationFeedMore}
+        >
+          <Image
+            resizeMode="contain"
+            source={stationPostIconAssets.more}
+            style={styles.stationFeedMoreIcon}
+          />
+        </Pressable>
+      </View>
+
+      {post.body ? (
+        <Text style={[styles.stationFeedBody, { color: palette.text }]}
+        >
+          {post.body}
+        </Text>
+      ) : null}
+
+      {post.locationLabel ? (
+        <View style={styles.stationFeedLocation}>
+          <MapPin color={palette.secondaryText} size={13} strokeWidth={2} />
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.stationFeedLocationText,
+              { color: palette.secondaryText },
+            ]}
+          >
+            {post.locationLabel}
           </Text>
         </View>
       ) : null}
-      <Text
+
+      {post.media.length ? (
+        <View style={styles.stationFeedMediaGrid}>
+          {post.media.map(asset => (
+            <View
+              key={asset.id}
+              style={[
+                styles.stationFeedMediaItem,
+                post.media.length === 1 && styles.stationFeedMediaItemSingle,
+                post.media.length === 2 && styles.stationFeedMediaItemDouble,
+                { backgroundColor: softColor },
+              ]}
+            >
+              {asset.kind === 'image' ? (
+                <Image
+                  resizeMode="cover"
+                  source={{
+                    uri: buildStationMediaFileUrl(asset.id),
+                    headers: { Authorization: `Bearer ${token}` },
+                  }}
+                  style={styles.stationFeedMediaImage}
+                />
+              ) : (
+                <View style={styles.stationFeedVideo}>
+                  <View style={styles.stationFeedVideoPlay}>
+                    <Play
+                      color="#FFFFFF"
+                      fill="#FFFFFF"
+                      size={21}
+                    />
+                  </View>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.stationFeedVideoText,
+                      { color: palette.secondaryText },
+                    ]}
+                  >
+                    {textFor(language, '视频', 'Video')}
+                  </Text>
+                </View>
+              )}
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {agentTags.length ? (
+        <View style={styles.stationFeedAgents}>
+          {agentTags.map(agent => (
+            <View
+              key={agent.id}
+              style={[
+                styles.stationFeedAgentChip,
+                { backgroundColor: softColor },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.stationFeedAgentText,
+                  { color: palette.text },
+                ]}
+              >
+                {agent.name}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      <View
         style={[
-          styles.stationPostFooter,
-          { borderTopColor: palette.border, color: palette.secondaryText },
+          styles.stationFeedActions,
+          { borderTopColor: borderColor },
         ]}
       >
-        {timelineMeta(item, language)}
-      </Text>
-    </Pressable>
+        <PostMetric
+          icon={stationPostIconAssets.likeInactive}
+          palette={palette}
+          value={post.likeCount}
+        />
+        <PostMetric
+          icon={stationPostIconAssets.comment}
+          palette={palette}
+          value={post.commentCount}
+        />
+        <PostMetric
+          icon={stationPostIconAssets.favoriteInactive}
+          palette={palette}
+          value={post.favoriteCount}
+        />
+      </View>
+    </View>
   );
 }
 
-function PostActionButton({
+function PostMetric({
+  icon,
   palette,
-  title,
-  onPress,
+  value,
 }: {
+  icon: ImageSourcePropType;
   palette: Palette;
-  title: string;
-  onPress: () => void;
+  value: number;
 }) {
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={[styles.stationPostAction, { backgroundColor: palette.soft }]}
-    >
-      <Text style={[styles.stationPostActionText, { color: palette.text }]}>
-        {title}
+    <View style={styles.stationFeedAction}>
+      <Image
+        resizeMode="contain"
+        source={icon}
+        style={styles.stationFeedActionIcon}
+      />
+      <Text
+        style={[
+          styles.stationFeedActionText,
+          { color: palette.secondaryText },
+        ]}
+      >
+        {value || ''}
       </Text>
-    </Pressable>
+    </View>
   );
 }
 
-function timelineTitle(item: StationTimelineItem, language: Language) {
-  if (item.kind === 'diary') {
-    return textFor(language, '日记', 'Diary');
-  }
-  if (item.kind === 'album') {
-    return textFor(language, '相册', 'Album');
-  }
-  if (item.kind === 'outfit') {
-    return textFor(language, '穿搭', 'Outfit');
-  }
-  return textFor(language, '照片', 'Photo');
-}
-
-function timelineBody(item: StationTimelineItem, language: Language) {
-  if (item.kind === 'diary') {
-    return item.diary.body;
-  }
-  if (item.kind === 'album') {
-    return item.album.description || '';
-  }
-  if (item.kind === 'outfit') {
-    return (
-      item.outfit.note ||
-      textFor(
-        language,
-        '已保存当前形象配置快照',
-        'Saved current avatar snapshot',
-      )
-    );
-  }
-  if (item.album) {
-    return textFor(
-      language,
-      `上传到《${item.album.title}》`,
-      `Uploaded to ${item.album.title}`,
-    );
-  }
-  return item.media.caption;
-}
-
-function timelineContentTitle(item: StationTimelineItem, language: Language) {
-  if (item.kind === 'diary') {
-    return item.diary.title || textFor(language, '今天的日记', "Today's diary");
-  }
-  if (item.kind === 'album') {
-    return item.album.title;
-  }
-  if (item.kind === 'outfit') {
-    return item.outfit.title || textFor(language, '今日穿搭', 'OOTD');
-  }
-  if (item.album) {
-    return item.album.title;
-  }
-  return textFor(language, '新照片', 'New photo');
-}
-
-function timelineMeta(item: StationTimelineItem, language: Language) {
-  if (item.kind === 'media') {
-    return item.media.status === 'uploaded'
-      ? textFor(language, '已上传', 'Uploaded')
-      : textFor(language, '等待上传完成', 'Waiting for upload');
-  }
-  const visibility =
-    item.kind === 'diary'
-      ? item.diary.visibility
-      : item.kind === 'album'
-      ? item.album.visibility
-      : item.outfit.visibility;
-  if (visibility === 'public') {
-    return textFor(language, '公开可见', 'Public');
-  }
-  if (visibility === 'friends') {
+function visibilityLabel(post: StationPostDTO, language: Language) {
+  if (post.visibility === 'friends') {
     return textFor(language, '好友可见', 'Friends');
   }
-  return textFor(language, '仅自己可见', 'Private');
+  if (post.visibility === 'private') {
+    return textFor(language, '仅自己可见', 'Only Me');
+  }
+  return textFor(language, '公开', 'Public');
 }
 
-function formatTimelineTime(
-  value: string | null | undefined,
-  language: Language,
-) {
+function formatPostTime(value: string | null | undefined, language: Language) {
   if (!value) {
     return '';
   }

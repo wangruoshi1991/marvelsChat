@@ -1,5 +1,5 @@
 import { StationMediaAssetDTO } from '../models/api';
-import { apiClient } from './apiClient';
+import { apiClient, buildApiUrl } from './apiClient';
 import { PickedStationMedia } from './stationMediaPicker';
 
 export async function uploadStationMediaAsset({
@@ -21,11 +21,18 @@ export async function uploadStationMediaAsset({
   );
   const fileResponse = await fetch(media.uri);
   const blob = await fileResponse.blob();
-  const uploadResponse = await fetch(prepared.upload.url, {
+  const usesLocalStorage = prepared.upload.storageProvider === 'local';
+  const uploadResponse = await fetch(
+    usesLocalStorage ? buildApiUrl(prepared.upload.url) : prepared.upload.url,
+    {
     method: prepared.upload.method,
-    headers: prepared.upload.headers,
+    headers: {
+      ...prepared.upload.headers,
+      ...(usesLocalStorage ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: blob,
-  });
+    },
+  );
 
   if (!uploadResponse.ok) {
     throw new Error(`Upload failed: ${uploadResponse.status}`);

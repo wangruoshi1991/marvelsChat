@@ -1,17 +1,7 @@
 import React, { useState } from 'react';
-import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Settings } from 'lucide-react-native';
+import { Alert, Modal, ScrollView, View } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-import { PresenceMode } from '../../models/api';
 import {
   pickStationPhotoFromLibrary,
   takeStationPhoto,
@@ -19,27 +9,26 @@ import {
 import { displayLocationText, displayText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
-import { SegmentedControl } from '../../shared/ui';
+import { UserAvatarRenderer } from '../messages/messageTypes';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
+import { MiaoPointsScreen } from './MiaoPointsScreen';
 import {
   StationContentManageSheet,
   StationManageTarget,
 } from './StationContentManageSheet';
 import { StationCreatePayload, StationCreateSheet } from './StationCreateSheet';
-import { PresenceMenu, StationProfileHeader } from './StationHeader';
+import { StationProfileHeader, StationTabs } from './StationHeader';
 import { StationPanel } from './StationPanels';
-import { Stat } from './StationShared';
 import { stationModuleStatusText } from './stationModuleStatus';
-import {
-  PresenceMenuAnchor,
-  StationCreateKind,
-  StationTab,
-} from './stationTypes';
+import { StationCreateKind, StationTab } from './stationTypes';
 
 export function StationScreen({
   palette,
   language,
   session,
+  selectedStationTab,
+  onSelectStationTab,
+  renderUserAvatar,
   onOpenSettings,
   onOpenLocation,
   onCopyAIID,
@@ -53,6 +42,9 @@ export function StationScreen({
   palette: Palette;
   language: Language;
   session: ReturnType<typeof useMiaoxunSession>;
+  selectedStationTab: StationTab;
+  onSelectStationTab: (tab: StationTab) => void;
+  renderUserAvatar: UserAvatarRenderer;
   onOpenSettings: () => void;
   onOpenLocation: () => void;
   onCopyAIID: () => void;
@@ -63,46 +55,13 @@ export function StationScreen({
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
-  const [selectedStationTab, setSelectedStationTab] =
-    useState<StationTab>('station');
-  const [isPresenceMenuOpen, setIsPresenceMenuOpen] = useState(false);
-  const [isUpdatingPresence, setIsUpdatingPresence] = useState(false);
-  const [presenceMenuPosition, setPresenceMenuPosition] = useState({
-    left: 14,
-    top: 96,
-  });
+  const [isPointsOpen, setIsPointsOpen] = useState(false);
   const [createKind, setCreateKind] = useState<StationCreateKind | null>(null);
   const [manageTarget, setManageTarget] = useState<StationManageTarget | null>(
     null,
   );
   const [isCreatingStationContent, setIsCreatingStationContent] =
     useState(false);
-  const { width: windowWidth } = useWindowDimensions();
-
-  const updatePresence = (presenceMode: PresenceMode) => {
-    if (isUpdatingPresence) {
-      return;
-    }
-    setIsUpdatingPresence(true);
-    session
-      .updatePresence(presenceMode)
-      .then(() => {
-        setIsPresenceMenuOpen(false);
-      })
-      .catch(onActionError)
-      .finally(() => setIsUpdatingPresence(false));
-  };
-
-  const openPresenceMenu = (anchor: PresenceMenuAnchor) => {
-    const menuWidth = 132;
-    const left = Math.min(
-      Math.max(anchor.x + anchor.width / 2 - menuWidth / 2, 14),
-      Math.max(windowWidth - menuWidth - 14, 14),
-    );
-    const top = anchor.y + anchor.height + 8;
-    setPresenceMenuPosition({ left, top });
-    setIsPresenceMenuOpen(true);
-  };
 
   const createStationContent = async (payload: StationCreatePayload) => {
     if (isCreatingStationContent) {
@@ -133,7 +92,7 @@ export function StationScreen({
         });
         onActionMessage(textFor(language, '穿搭已保存', 'Outfit saved'));
       }
-      setSelectedStationTab('station');
+      onSelectStationTab('station');
       setCreateKind(null);
     } catch (error) {
       onActionError(error);
@@ -200,108 +159,71 @@ export function StationScreen({
     setManageTarget({ kind: 'album', id: albumId });
   };
 
+  const isDark = session.appearance === 'dark';
+  const stationBackgroundColor = isDark ? palette.background : '#F8F7FD';
+  const stationSurfaceColor = isDark ? palette.surface : '#FFFFFF';
+  const stationBorderColor = isDark ? palette.border : '#F0EBFD';
+
+  // Presence stays in the session model; its station entry awaits a final design location.
+
   return (
-    <View style={[styles.screen, { backgroundColor: palette.background }]}>
+    <View style={[styles.screen, { backgroundColor: stationBackgroundColor }]}>
       <ScrollView
         stickyHeaderIndices={[1]}
         contentContainerStyle={styles.stationScrollContent}
       >
-        <View style={styles.stationTopContent}>
-          <View style={styles.stationTopRow}>
-            <StationProfileHeader
-              palette={palette}
-              language={language}
-              nickname={displayText(language, session.profile.nickname)}
-              aiId={session.user?.aiId || '--'}
-              presenceMode={session.user?.presenceMode || 'online'}
-              miaoPoints={session.profile.miaoPoints}
-              community={
-                displayLocationText(language, session.profile.community) ||
-                textFor(language, '未设置', 'Not set')
-              }
-              activityArea={
-                displayLocationText(language, session.profile.activityArea) ||
-                textFor(language, '未设置', 'Not set')
-              }
-              onTogglePresenceMenu={openPresenceMenu}
-              onCopyAIID={onCopyAIID}
-              onShowQRCode={onOpenQRCode}
-              onOpenLocation={onOpenLocation}
-            />
-            <Pressable
-              onPress={onOpenSettings}
-              style={[
-                styles.iconButton,
-                {
-                  backgroundColor: palette.surface,
-                  borderColor: palette.border,
-                },
-              ]}
-            >
-              <Settings color={palette.text} size={18} strokeWidth={2.2} />
-            </Pressable>
-          </View>
-
-          <View
-            style={[
-              styles.statsRow,
-              { backgroundColor: palette.surface, borderColor: palette.border },
-            ]}
-          >
-            <Stat
-              value={session.profile.followingCount}
-              label={textFor(language, '关注', 'Following')}
-              palette={palette}
-              onPress={() => setSelectedStationTab('social')}
-            />
-            <View
-              style={[styles.statDivider, { backgroundColor: palette.border }]}
-            />
-            <Stat
-              value={session.profile.followersCount}
-              label={textFor(language, '粉丝', 'Followers')}
-              palette={palette}
-              onPress={() => setSelectedStationTab('social')}
-            />
-            <View
-              style={[styles.statDivider, { backgroundColor: palette.border }]}
-            />
-            <Stat
-              value={session.profile.collectionsCount}
-              label={textFor(language, '收藏', 'Saved')}
-              palette={palette}
-            />
-          </View>
+        <View
+          style={[
+            styles.stationTopContent,
+            { backgroundColor: stationSurfaceColor },
+          ]}
+        >
+          <StationProfileHeader
+            palette={palette}
+            language={language}
+            isDark={isDark}
+            nickname={displayText(language, session.profile.nickname)}
+            aiId={session.user?.aiId || '--'}
+            avatarText={session.profile.avatarText}
+            avatarConfig={session.profile.avatarConfig}
+            followingCount={session.profile.followingCount}
+            followersCount={session.profile.followersCount}
+            likesCount={session.profile.likesCount}
+            collectionsCount={session.profile.collectionsCount}
+            miaoPoints={session.profile.miaoPoints}
+            community={
+              displayLocationText(language, session.profile.community) ||
+              textFor(language, '未设置', 'Not set')
+            }
+            activityArea={
+              displayLocationText(language, session.profile.activityArea) ||
+              textFor(language, '未设置', 'Not set')
+            }
+            renderUserAvatar={renderUserAvatar}
+            onCopyAIID={onCopyAIID}
+            onShowQRCode={onOpenQRCode}
+            onOpenSettings={onOpenSettings}
+            onOpenPoints={() => setIsPointsOpen(true)}
+            onOpenLocation={onOpenLocation}
+            onOpenSocial={() => onSelectStationTab('social')}
+          />
         </View>
 
         <View
           style={[
             styles.stationTabHeader,
             {
-              backgroundColor: palette.background,
-              borderBottomColor: palette.border,
+              backgroundColor: stationSurfaceColor,
+              borderBottomColor: stationBorderColor,
             },
           ]}
         >
-          <SegmentedControl
+          <StationTabs
             palette={palette}
+            language={language}
+            isDark={isDark}
             value={selectedStationTab}
-            options={[
-              {
-                label: textFor(language, '我的小站', 'Station'),
-                value: 'station',
-              },
-              { label: textFor(language, '我的动态', 'Posts'), value: 'posts' },
-              {
-                label: textFor(language, 'AI伙伴', 'AI Partners'),
-                value: 'agents',
-              },
-              {
-                label: textFor(language, '社交网络', 'Social'),
-                value: 'social',
-              },
-            ]}
-            onChange={setSelectedStationTab}
+            onChange={onSelectStationTab}
           />
         </View>
 
@@ -324,10 +246,11 @@ export function StationScreen({
             onOpenAgentThread={onOpenAgentThread}
             onSetAgentEnabled={session.setAgentEnabled}
             onOpenPublicProfileByAiId={onOpenPublicProfileByAiId}
-            onSelectStationTab={setSelectedStationTab}
+            onSelectStationTab={onSelectStationTab}
             onOpenCreateSheet={setCreateKind}
             onOpenDiaryDetail={openDiaryDetail}
             onOpenAlbumDetail={openAlbumDetail}
+            onDeletePost={session.deleteStationPost}
             onCreateSiteDraft={session.createStationSiteDraft}
             onApplySiteDraft={session.applyStationSiteDraft}
             onCreateModelJob={session.createStationModelJob}
@@ -342,27 +265,28 @@ export function StationScreen({
           />
         </View>
       </ScrollView>
-      {isPresenceMenuOpen ? (
-        <Modal
-          animationType="fade"
-          transparent
-          visible={isPresenceMenuOpen}
-          onRequestClose={() => setIsPresenceMenuOpen(false)}
-        >
-          <Pressable
-            style={styles.presenceOverlayDismiss}
-            onPress={() => setIsPresenceMenuOpen(false)}
-          />
-          <PresenceMenu
-            palette={palette}
-            language={language}
-            presenceMode={session.user?.presenceMode || 'online'}
-            isUpdatingPresence={isUpdatingPresence}
-            position={presenceMenuPosition}
-            onSelectPresence={updatePresence}
-          />
-        </Modal>
-      ) : null}
+      <Modal
+        animationType="slide"
+        presentationStyle="fullScreen"
+        visible={isPointsOpen}
+        onRequestClose={() => setIsPointsOpen(false)}
+      >
+        <SafeAreaProvider>
+          <SafeAreaView
+            edges={['top', 'bottom']}
+            style={[styles.safeArea, { backgroundColor: stationSurfaceColor }]}
+          >
+            <MiaoPointsScreen
+              palette={palette}
+              language={language}
+              isDark={isDark}
+              miaoPoints={session.profile.miaoPoints}
+              onBack={() => setIsPointsOpen(false)}
+              onLoadEntries={session.listMiaoPointLedger}
+            />
+          </SafeAreaView>
+        </SafeAreaProvider>
+      </Modal>
       <Modal
         animationType="slide"
         presentationStyle="pageSheet"
@@ -410,30 +334,5 @@ export function StationScreen({
         </SafeAreaView>
       </Modal>
     </View>
-  );
-}
-
-export function FloatingMiaoButton({
-  palette,
-  onPress,
-}: {
-  palette: Palette;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="妙"
-      onPress={onPress}
-      style={[
-        styles.floatingMiao,
-        {
-          backgroundColor: palette.rose,
-          shadowColor: palette.rose,
-        },
-      ]}
-    >
-      <Text style={styles.floatingMiaoText}>妙</Text>
-    </Pressable>
   );
 }

@@ -19,6 +19,7 @@ export const emptyProfile: ProfileDTO = {
   miaoPoints: 0,
   followingCount: 0,
   followersCount: 0,
+  likesCount: 0,
   collectionsCount: 0,
   stationConfig: {},
 };
@@ -46,6 +47,7 @@ export const emptyRelationships: RelationshipsState = {
 };
 
 export const emptyStationContent: StationContentDTO = {
+  posts: [],
   diaryEntries: [],
   albums: [],
   mediaAssets: [],

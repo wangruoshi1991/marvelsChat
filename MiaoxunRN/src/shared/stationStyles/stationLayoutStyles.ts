@@ -1,15 +1,16 @@
 import { spacing } from '../theme';
 
 export const stationLayoutStyles = {
-  stationScrollContent: { paddingBottom: 154, paddingTop: 18 },
-  stationTopContent: { gap: 14, paddingBottom: 8, paddingHorizontal: 14 },
+  stationScrollContent: { paddingBottom: 154 },
+  stationTopContent: {
+    paddingBottom: 18,
+    paddingHorizontal: 26,
+    paddingTop: 18,
+  },
   stationPanelWrap: { paddingHorizontal: 14, paddingTop: 16 },
-  stationTopRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 12 },
   stationTabHeader: {
     borderBottomWidth: 1,
-    paddingBottom: 9,
     paddingHorizontal: 14,
-    paddingTop: 10,
     zIndex: 20,
   },
   stationPanelStack: { gap: 12 },
@@ -260,49 +261,6 @@ export const stationLayoutStyles = {
   stationModuleEmptyMeta: { fontSize: 11, fontWeight: '900' },
   stationModuleEmptyTitle: { fontSize: 13, fontWeight: '900' },
   stationModuleEmptyBody: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
-  stationPostCard: {
-    borderRadius: spacing.cardRadius,
-    borderWidth: 1,
-    gap: 10,
-    padding: 12,
-  },
-  stationPostMeta: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  stationPostType: { fontSize: 14, fontWeight: '900' },
-  stationPostTime: { fontSize: 12, fontWeight: '700' },
-  stationPostTitle: { fontSize: 17, fontWeight: '900', lineHeight: 23 },
-  stationPostBody: { fontSize: 14, lineHeight: 23 },
-  stationPostMediaPlaceholder: {
-    alignItems: 'center',
-    aspectRatio: 4 / 3,
-    borderRadius: spacing.cardRadius,
-    justifyContent: 'center',
-  },
-  stationPostImage: {
-    aspectRatio: 4 / 3,
-    borderRadius: spacing.cardRadius,
-    width: '100%',
-  },
-  stationPostActionRow: { flexDirection: 'row', gap: 8 },
-  stationPostMediaText: { fontSize: 12, fontWeight: '900' },
-  stationPostAction: {
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    borderRadius: spacing.cardRadius,
-    height: 34,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  stationPostActionText: { fontSize: 13, fontWeight: '900' },
-  stationPostFooter: {
-    borderTopWidth: 1,
-    fontSize: 12,
-    fontWeight: '700',
-    paddingTop: 10,
-  },
   stationPartnerStatusCard: {
     borderRadius: spacing.cardRadius,
     gap: 12,

@@ -67,9 +67,26 @@ export const mapProfile = (row) => ({
   miaoPoints: Number(row.miao_points || 0),
   followingCount: Number(row.following_count || 0),
   followersCount: Number(row.followers_count || 0),
+  likesCount: Number(row.likes_count || 0),
   collectionsCount: Number(row.collections_count || 0),
   stationConfig: parseJson(row.station_config, {}),
   updatedAt: toIso(row.updated_at),
+});
+
+export const mapMiaoPointLedgerEntry = (row) => ({
+  id: row.id,
+  userId: row.user_id,
+  amount: Number(row.amount || 0),
+  balanceAfter:
+    row.balance_after === null || row.balance_after === undefined
+      ? null
+      : Number(row.balance_after),
+  title: row.title,
+  description: row.description || "",
+  eventType: row.event_type,
+  sourceType: row.source_type || null,
+  sourceId: row.source_id || null,
+  createdAt: toIso(row.created_at),
 });
 
 export const mapStationDiaryEntry = (row) => ({
@@ -83,6 +100,24 @@ export const mapStationDiaryEntry = (row) => ({
   createdAt: toIso(row.created_at),
   updatedAt: toIso(row.updated_at),
 });
+
+export const mapStationPost = (row, { media = [] } = {}) => {
+  const agentCapabilities = parseJson(row.agent_capabilities, []);
+  return {
+    id: row.id,
+    userId: row.user_id,
+    body: row.body || "",
+    locationLabel: row.location_label || "",
+    visibility: row.visibility,
+    agentCapabilities: Array.isArray(agentCapabilities) ? agentCapabilities : [],
+    likeCount: Number(row.like_count || 0),
+    commentCount: Number(row.comment_count || 0),
+    favoriteCount: Number(row.favorite_count || 0),
+    media,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+};
 
 export const mapStationAlbum = (row) => ({
   id: row.id,
@@ -336,6 +371,7 @@ export const mapPublicProfile = (row, relation = {}) => {
       miaoPoints: Number(row.miao_points || 0),
       followingCount: canShowCounts ? Number(row.following_count || 0) : 0,
       followersCount: canShowCounts ? Number(row.followers_count || 0) : 0,
+      likesCount: canShowCounts ? Number(row.likes_count || 0) : 0,
       collectionsCount: canShowCounts && visibility.showCollections ? Number(row.collections_count || 0) : 0,
     },
     relation: {
@@ -368,6 +404,7 @@ export const mapRelationshipProfile = (row) => ({
     activityArea: normalizeLocationText(row.activity_area),
     followersCount: Number(row.followers_count || 0),
     followingCount: Number(row.following_count || 0),
+    likesCount: Number(row.likes_count || 0),
     collectionsCount: Number(row.collections_count || 0),
   },
   relationType: row.relation_type,

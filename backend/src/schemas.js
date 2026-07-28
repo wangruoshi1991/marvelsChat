@@ -71,6 +71,10 @@ export const stationConfigSchema = z.object({
   appearance: z.enum(["light", "dark"]).optional(),
 });
 
+export const miaoPointLedgerQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional().default(80),
+});
+
 export const presenceSchema = z.object({
   presenceMode: z.enum(["online", "offline", "hidden"]),
 });
@@ -109,6 +113,47 @@ export const profileSelfSchema = z.object({
 });
 
 export const stationVisibilitySchema = z.enum(["private", "friends", "public"]);
+
+export const stationPostSchema = z
+  .object({
+    body: z.string().trim().max(5000).optional().default(""),
+    locationLabel: z.string().trim().max(120).optional().default(""),
+    visibility: stationVisibilitySchema.optional().default("public"),
+    agentCapabilities: z
+      .array(z.string().trim().min(1).max(80))
+      .max(8)
+      .optional()
+      .default([]),
+    mediaAssetIds: z.array(z.string().uuid()).max(9).optional().default([]),
+  })
+  .superRefine((value, context) => {
+    if (!value.body && !value.mediaAssetIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Post body or media is required.",
+      });
+    }
+    if (new Set(value.mediaAssetIds).size !== value.mediaAssetIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["mediaAssetIds"],
+        message: "Post media assets must be unique.",
+      });
+    }
+    if (
+      new Set(value.agentCapabilities).size !== value.agentCapabilities.length
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["agentCapabilities"],
+        message: "Post agent capabilities must be unique.",
+      });
+    }
+  });
+
+export const stationPostParamsSchema = z.object({
+  postId: z.string().uuid(),
+});
 
 export const stationDiarySchema = z.object({
   title: z.string().trim().min(1).max(120),
@@ -206,6 +251,7 @@ export const stationMediaUploadUrlSchema = z
       .string()
       .trim()
       .toLowerCase()
+      .transform((value) => (value === "image/jpg" ? "image/jpeg" : value))
       .refine((value) => stationMediaMimeTypes.has(value), {
         message: "Unsupported station media type.",
       }),

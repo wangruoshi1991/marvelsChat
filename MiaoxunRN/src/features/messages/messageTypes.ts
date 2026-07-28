@@ -8,4 +8,5 @@ export type UserAvatarRenderer = (props: {
   text: string;
   config?: AvatarConfigDTO;
   small?: boolean;
+  size?: number;
 }) => React.ReactNode;

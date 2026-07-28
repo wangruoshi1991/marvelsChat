@@ -507,6 +507,9 @@ export function useMiaoxunSession() {
 
   const {
     refreshStationContent,
+    listMiaoPointLedger,
+    createStationPost,
+    deleteStationPost,
     createStationDiary,
     updateStationDiary,
     deleteStationDiary,
@@ -595,6 +598,9 @@ export function useMiaoxunSession() {
     loadPublicProfileByAiId,
     updateProfile,
     refreshStationContent,
+    listMiaoPointLedger,
+    createStationPost,
+    deleteStationPost,
     createStationDiary,
     updateStationDiary,
     deleteStationDiary,

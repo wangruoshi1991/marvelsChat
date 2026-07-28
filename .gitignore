@@ -6,6 +6,7 @@ dist/
 *.log
 .local-backups/
 tmp/
+backend/storage/
 **/.gradle/
 **/.bundle/
 **/xcuserdata/

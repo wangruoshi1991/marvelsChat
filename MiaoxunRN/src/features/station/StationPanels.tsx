@@ -29,6 +29,7 @@ export function StationPanel({
   onOpenCreateSheet,
   onOpenDiaryDetail,
   onOpenAlbumDetail,
+  onDeletePost,
   onCreateSiteDraft,
   onApplySiteDraft,
   onCreateModelJob,
@@ -63,6 +64,7 @@ export function StationPanel({
   onOpenCreateSheet: (kind: StationCreateKind) => void;
   onOpenDiaryDetail: (entryId: string) => void;
   onOpenAlbumDetail: (albumId: string) => void;
+  onDeletePost: ReturnType<typeof useMiaoxunSession>['deleteStationPost'];
   onCreateSiteDraft: ReturnType<typeof useMiaoxunSession>['createStationSiteDraft'];
   onApplySiteDraft: ReturnType<typeof useMiaoxunSession>['applyStationSiteDraft'];
   onCreateModelJob: ReturnType<typeof useMiaoxunSession>['createStationModelJob'];
@@ -82,11 +84,13 @@ export function StationPanel({
       <StationPostsPanel
         palette={palette}
         language={language}
+        profile={profile}
         stationContent={stationContent}
+        ownedAgents={ownedAgents}
         token={token}
-        onOpenCreateSheet={onOpenCreateSheet}
-        onOpenDiaryDetail={onOpenDiaryDetail}
-        onOpenAlbumDetail={onOpenAlbumDetail}
+        onDeletePost={onDeletePost}
+        onActionMessage={onActionMessage}
+        onActionError={onActionError}
       />
     );
   }
