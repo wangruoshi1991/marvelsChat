@@ -1,4 +1,5 @@
 import { normalizeAvatarConfig } from "./avatar-service.js";
+import { projectAvatarPhotoQuality } from "./avatar-3d-photo-quality.js";
 import { normalizeLocationText } from "./location-labels.js";
 
 export const toIso = (value) => (value instanceof Date ? value.toISOString() : value || null);
@@ -165,6 +166,11 @@ export const mapAvatar3dJob = (row) => ({
   id: row.id,
   userId: row.user_id,
   style: row.style,
+  qualityPreset: row.quality_preset || "standard",
+  generationMode: row.generation_mode || "legacy_photo_3d",
+  referenceSetId: row.reference_set_id || null,
+  technicalRetryCount: Number(row.technical_retry_count || 0),
+  qualityStatus: row.quality_status || null,
   status: row.status,
   progress: Number(row.progress || 0),
   photoCount: Number(row.photo_count || 0),
@@ -188,6 +194,11 @@ export const mapAvatar3dPhoto = (row) => ({
   width: row.width === null || row.width === undefined ? null : Number(row.width),
   height: row.height === null || row.height === undefined ? null : Number(row.height),
   status: row.status,
+  purpose: row.purpose || "reference",
+  quality: projectAvatarPhotoQuality({
+    qualityStatus: row.quality_status || null,
+    qualityMetadata: row.quality_metadata || null,
+  }),
   errorCode: row.safe_error_code || null,
   createdAt: toIso(row.created_at),
   updatedAt: toIso(row.updated_at),
@@ -209,8 +220,11 @@ export const mapAvatar3dModel = (row) => ({
   jobId: row.job_id,
   title: row.title,
   status: row.status,
+  modelProvider: row.model_provider || "tripo",
+  qualityStatus: row.quality_status || null,
   byteSize: Number(row.glb_byte_size || 0),
   thumbnailAvailable: Boolean(row.thumbnail_storage_key),
+  interactiveAvailable: row.status === "active" && Boolean(row.glb_storage_key),
   createdAt: toIso(row.created_at),
   updatedAt: toIso(row.updated_at),
 });

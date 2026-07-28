@@ -58,6 +58,29 @@ test("Wanx submission uses the workspace endpoint once", async () => {
   assert.equal(JSON.stringify(result).includes(runtime.apiKey), false);
 });
 
+test("Wanx timeout remains active while the response body is read", async () => {
+  const adapter = createWanxAdapter({
+    runtime: { ...runtime, timeoutMs: 5 },
+    fetchImpl: async (_url, { signal }) => ({
+      ok: true,
+      json: () => new Promise((resolve, reject) => {
+        const delayedBody = setTimeout(() => resolve({
+          output: { task_id: "late-task", task_status: "PENDING" },
+        }), 25);
+        signal.addEventListener("abort", () => {
+          clearTimeout(delayedBody);
+          reject(new Error("aborted"));
+        }, { once: true });
+      }),
+    }),
+  });
+
+  await assert.rejects(
+    () => adapter.submitWanxStyleJob({ imageUrl: "https://files.example/front.jpg" }),
+    (error) => error?.details?.code === "WANX_SUBMISSION_UNKNOWN",
+  );
+});
+
 test("Wanx success exposes one image URL and no raw prompt", () => {
   const result = normalizeWanxTask({
     output: {

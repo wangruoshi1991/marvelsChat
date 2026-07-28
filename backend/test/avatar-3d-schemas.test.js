@@ -31,54 +31,68 @@ test("avatar photo upload accepts only JPEG or PNG up to 10 MB", () => {
   }));
 });
 
-test("avatar job requires one front view, unique views, rights, and current cost version", () => {
+test("avatar job requires one face photo and explicit face-first consent", () => {
   const parsed = schemas.avatar3dCreateJobSchema.parse({
-    style: "realistic",
-    photos: [
-      { photoId: photoIds[0], view: "front" },
-      { photoId: photoIds[1], view: "left" },
-      { photoId: photoIds[2], view: "back" },
-      { photoId: photoIds[3], view: "right" },
-    ],
+    generationMode: "face_first_multiview",
+    photoId: photoIds[0],
+    bodyShape: "athletic",
+    pose: "natural",
+    outfit: "sport",
+    userDescription: "蓝白色运动套装",
+    qualityPreset: "ultra",
     acceptedPhotoRights: true,
-    acceptedCostVersion: "2026-07-17",
+    acceptedAdultSubject: true,
+    acceptedFaceCompletion: true,
+    acceptedReferenceCostVersion: "2026-07-21",
   });
 
-  assert.equal(parsed.photos.length, 4);
-  assert.equal(parsed.style, "realistic");
+  assert.equal(parsed.photoId, photoIds[0]);
+  assert.equal(parsed.generationMode, "face_first_multiview");
+  assert.equal(parsed.qualityPreset, "ultra");
 
   const base = {
-    style: "cartoon",
+    generationMode: "face_first_multiview",
+    photoId: photoIds[0],
+    bodyShape: "balanced",
+    pose: "natural",
+    outfit: "smart_casual",
+    qualityPreset: "standard",
     acceptedPhotoRights: true,
-    acceptedCostVersion: "2026-07-17",
+    acceptedAdultSubject: true,
+    acceptedFaceCompletion: true,
+    acceptedReferenceCostVersion: "2026-07-21",
   };
   assert.throws(() => schemas.avatar3dCreateJobSchema.parse({
     ...base,
-    photos: [{ photoId: photoIds[0], view: "left" }],
+    generationMode: "legacy_photo_3d",
   }));
   assert.throws(() => schemas.avatar3dCreateJobSchema.parse({
     ...base,
-    photos: [
-      { photoId: photoIds[0], view: "front" },
-      { photoId: photoIds[1], view: "front" },
-    ],
+    bodyShape: "strong",
   }));
   assert.throws(() => schemas.avatar3dCreateJobSchema.parse({
     ...base,
-    photos: [
-      { photoId: photoIds[0], view: "front" },
-      { photoId: photoIds[0], view: "left" },
-    ],
+    pose: "dynamic",
   }));
   assert.throws(() => schemas.avatar3dCreateJobSchema.parse({
     ...base,
     acceptedPhotoRights: false,
-    photos: [{ photoId: photoIds[0], view: "front" }],
   }));
   assert.throws(() => schemas.avatar3dCreateJobSchema.parse({
     ...base,
-    acceptedCostVersion: "2026-07-16",
-    photos: [{ photoId: photoIds[0], view: "front" }],
+    acceptedAdultSubject: false,
+  }));
+  assert.throws(() => schemas.avatar3dCreateJobSchema.parse({
+    ...base,
+    acceptedFaceCompletion: false,
+  }));
+  assert.throws(() => schemas.avatar3dCreateJobSchema.parse({
+    ...base,
+    acceptedReferenceCostVersion: "2026-07-20",
+  }));
+  assert.throws(() => schemas.avatar3dCreateJobSchema.parse({
+    ...base,
+    userDescription: "衣".repeat(241),
   }));
 });
 
@@ -100,4 +114,32 @@ test("style confirmation is explicit and upload completion accepts no client sto
   assert.throws(() => schemas.avatar3dStyleConfirmSchema.parse({ accepted: false }));
   assert.deepEqual(schemas.avatar3dPhotoCompleteSchema.parse({}), {});
   assert.throws(() => schemas.avatar3dPhotoCompleteSchema.parse({ storageKey: "users/private" }));
+});
+
+test("reference confirmation binds the exact set, quality, and current model cost", () => {
+  assert.deepEqual(schemas.avatar3dReferenceConfirmSchema.parse({
+    referenceSetId: photoIds[0],
+    qualityPreset: "ultra",
+    accepted: true,
+    acceptedCostVersion: "2026-07-21",
+  }), {
+    referenceSetId: photoIds[0],
+    qualityPreset: "ultra",
+    accepted: true,
+    acceptedCostVersion: "2026-07-21",
+  });
+  assert.throws(() => schemas.avatar3dReferenceConfirmSchema.parse({
+    referenceSetId: photoIds[0],
+    qualityPreset: "ultra",
+    accepted: false,
+    acceptedCostVersion: "2026-07-21",
+  }));
+  assert.deepEqual(schemas.avatar3dReferenceImageParamsSchema.parse({
+    jobId: photoIds[0],
+    view: "back",
+  }), { jobId: photoIds[0], view: "back" });
+  assert.throws(() => schemas.avatar3dReferenceImageParamsSchema.parse({
+    jobId: photoIds[0],
+    view: "three-quarter",
+  }));
 });

@@ -11,6 +11,7 @@ const model = (id: string): AvatarModel => ({
   status: "active",
   byteSize: 1024,
   thumbnailAvailable: true,
+  interactiveAvailable: true,
   createdAt: "2026-07-17T00:00:00.000Z",
   updatedAt: "2026-07-17T00:00:00.000Z",
 });

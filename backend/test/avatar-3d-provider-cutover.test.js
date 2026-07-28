@@ -4,7 +4,26 @@ import test from "node:test";
 
 process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 
-const { buildAgentReadiness } = await import("../src/agent-readiness-service.js");
+const {
+  buildAgentReadiness,
+  getAvatarFeatureRuntimeStatus,
+} = await import("../src/agent-readiness-service.js");
+
+test("3D readiness reports the explicit paid-call switch while calibration is paused", () => {
+  const paused = getAvatarFeatureRuntimeStatus({
+    enabled: true,
+    providerCallsEnabled: false,
+  });
+  const active = getAvatarFeatureRuntimeStatus({
+    enabled: true,
+    providerCallsEnabled: true,
+  });
+
+  assert.equal(paused.configured, false);
+  assert.deepEqual(paused.missing, ["AVATAR_3D_PROVIDER_CALLS_ENABLED"]);
+  assert.equal(active.configured, true);
+  assert.deepEqual(active.missing, []);
+});
 
 test("3D readiness requires Aliyun Model Studio, OSS, and the Web feature", () => {
   const readiness = buildAgentReadiness({
@@ -28,6 +47,7 @@ test("3D readiness requires Aliyun Model Studio, OSS, and the Web feature", () =
   assert.ok(model3d.requiredEnv.includes("DASHSCOPE_API_KEY"));
   assert.ok(model3d.requiredEnv.includes("DASHSCOPE_WORKSPACE_ID"));
   assert.ok(model3d.requiredEnv.includes("AVATAR_3D_ENABLED"));
+  assert.ok(model3d.requiredEnv.includes("AVATAR_3D_PROVIDER_CALLS_ENABLED"));
   assert.equal(JSON.stringify(model3d).toLowerCase().includes("meshy"), false);
 });
 

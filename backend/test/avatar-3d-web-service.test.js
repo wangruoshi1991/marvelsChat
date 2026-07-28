@@ -30,6 +30,7 @@ test("avatar Web mounts immutable assets and a private no-store shell", () => {
     },
     fileExists: () => true,
     requireHttps,
+    uploadOrigin: "https://private-bucket.oss-cn-hangzhou.aliyuncs.com",
   });
 
   assert.deepEqual(state.uses.map((entry) => entry.path), ["/avatar-assets"]);
@@ -46,6 +47,15 @@ test("avatar Web mounts immutable assets and a private no-store shell", () => {
   };
   state.gets[0].handlers.at(-1)({}, response, () => {});
   assert.equal(headers.get("Cache-Control"), "private, no-store");
+  assert.match(headers.get("Content-Security-Policy"), /img-src 'self' blob: data:/);
+  assert.match(
+    headers.get("Content-Security-Policy"),
+    /connect-src 'self' blob: https:\/\/private-bucket\.oss-cn-hangzhou\.aliyuncs\.com/,
+  );
+  assert.equal(
+    headers.get("Content-Security-Policy").includes("connect-src 'self' https:;"),
+    false,
+  );
 });
 
 test("avatar Web reports a controlled error when its build is missing", () => {

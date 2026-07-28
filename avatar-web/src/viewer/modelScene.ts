@@ -51,6 +51,9 @@ export interface FramingSnapshot {
   target: Vector3;
 }
 
+const CAMERA_FRAME_MARGIN = 1.08;
+const CAMERA_HOME_DIRECTION = new Vector3(1.45, 0.45, 2.7).normalize();
+
 const disposeMaterial = (material: Material) => {
   for (const value of Object.values(material)) {
     const texture = value as Texture | undefined;
@@ -115,12 +118,39 @@ export function createModelScene(
   let homePosition = new Vector3(0, 0, 3);
   let homeTarget = new Vector3();
 
+  const requiredCameraDistance = () => {
+    const verticalHalfFov = (camera.fov * Math.PI / 180) / 2;
+    const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * camera.aspect);
+    const limitingHalfFov = Math.max(0.01, Math.min(verticalHalfFov, horizontalHalfFov));
+    return (radius / Math.sin(limitingHalfFov)) * CAMERA_FRAME_MARGIN;
+  };
+
+  const updateHomePosition = () => {
+    homePosition = CAMERA_HOME_DIRECTION.clone().multiplyScalar(requiredCameraDistance());
+  };
+
+  const ensureCurrentCameraFits = () => {
+    if (radius <= 0) return;
+    updateHomePosition();
+    const minimumDistance = requiredCameraDistance();
+    const offset = camera.position.clone().sub(controls.target);
+    if (offset.length() < minimumDistance) {
+      const direction = offset.lengthSq() > 0 ? offset.normalize() : CAMERA_HOME_DIRECTION;
+      camera.position.copy(controls.target).addScaledVector(direction, minimumDistance);
+      camera.lookAt(controls.target);
+      controls.update();
+    }
+    camera.far = Math.max(100, minimumDistance + radius * 10);
+    camera.updateProjectionMatrix();
+  };
+
   const resize = (width = canvas.clientWidth, height = canvas.clientHeight) => {
     const safeWidth = Math.max(1, Math.floor(width));
     const safeHeight = Math.max(1, Math.floor(height));
     camera.aspect = safeWidth / safeHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(safeWidth, safeHeight, false);
+    ensureCurrentCameraFits();
   };
 
   const frameModel = (model: Object3D) => {
@@ -134,9 +164,9 @@ export function createModelScene(
     const sphere = box.getBoundingSphere(new Sphere());
     radius = Math.max(sphere.radius, 0.01);
     homeTarget = new Vector3(0, 0, 0);
-    homePosition = new Vector3(radius * 1.45, radius * 0.45, radius * 2.7);
+    updateHomePosition();
     camera.near = Math.max(0.01, radius / 100);
-    camera.far = Math.max(100, radius * 30);
+    camera.far = Math.max(100, homePosition.length() + radius * 10);
     camera.updateProjectionMatrix();
     camera.position.copy(homePosition);
     camera.lookAt(homeTarget);

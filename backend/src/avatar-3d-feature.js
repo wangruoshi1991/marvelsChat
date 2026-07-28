@@ -1,5 +1,10 @@
 import { config } from "./config.js";
 import { HttpError } from "./http-error.js";
+import {
+  avatar3dCostVersion,
+  avatar3dDefaultQualityPreset,
+  publicAvatar3dQualityCatalog,
+} from "./avatar-3d-quality.js";
 
 export function avatar3dFeatureForUser(user, runtime = config.avatar3d) {
   const identifiers = [user?.id, user?.email]
@@ -15,11 +20,12 @@ export function avatar3dFeatureForUser(user, runtime = config.avatar3d) {
     generationAvailable: Boolean(runtime?.providerReady),
     dailyLimit: Number(runtime?.dailyLimit || 3),
     retentionDays: Number(runtime?.retentionDays || 7),
-    costVersion: String(runtime?.costVersion || "2026-07-17"),
-    estimatedCostsFen: {
-      realistic: Number(runtime?.realisticEstimatedCostFen || 210),
-      cartoon: Number(runtime?.cartoonEstimatedCostFen || 224),
-    },
+    costVersion: avatar3dCostVersion,
+    referenceGenerationEstimatedCostFen: Number(
+      runtime?.referenceGenerationEstimatedCostFen || 200
+    ),
+    defaultQualityPreset: avatar3dDefaultQualityPreset,
+    qualityPresets: publicAvatar3dQualityCatalog(runtime),
   };
 }
 

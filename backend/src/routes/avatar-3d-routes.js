@@ -20,6 +20,9 @@ import {
   avatar3dPhotoCompleteSchema,
   avatar3dPhotoParamsSchema,
   avatar3dPhotoUploadSchema,
+  avatar3dReferenceConfirmSchema,
+  avatar3dReferenceImageParamsSchema,
+  avatar3dReferenceRejectSchema,
   avatar3dSessionSchema,
   avatar3dStyleConfirmSchema,
   limitSchema,
@@ -255,6 +258,72 @@ export function registerAvatar3dRoutes(app, {
       const { jobId } = avatar3dJobParamsSchema.parse(req.params);
       noStore(res);
       res.json({ data: await service.getJob({ user: req.user, jobId }) });
+    }),
+  );
+
+  app.get(
+    "/api/avatar-3d/jobs/:jobId/references",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { jobId } = avatar3dJobParamsSchema.parse(req.params);
+      noStore(res);
+      res.json({ data: await service.getReferences({ user: req.user, jobId }) });
+    }),
+  );
+
+  app.get(
+    "/api/avatar-3d/jobs/:jobId/references/:view/file",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { jobId, view } = avatar3dReferenceImageParamsSchema.parse(req.params);
+      const resource = await service.getReferenceImageFile({
+        user: req.user,
+        jobId,
+        view,
+        range: req.get("range") || "",
+      });
+      await streamPrivateObject(res, resource);
+    }),
+  );
+
+  app.post(
+    "/api/avatar-3d/jobs/:jobId/references/confirm",
+    authenticate,
+    requireCsrf,
+    jobCreateLimit,
+    asyncHandler(async (req, res) => {
+      const { jobId } = avatar3dJobParamsSchema.parse(req.params);
+      const body = avatar3dReferenceConfirmSchema.parse(req.body);
+      const data = await service.confirmReferences({ user: req.user, jobId, body });
+      await recordUsage(req, "avatar3d.references.confirm", "avatar_3d_job", jobId, {
+        referenceSetId: body.referenceSetId,
+        qualityPreset: body.qualityPreset,
+        status: data.job.status,
+        estimatedCostFen: data.job.estimatedCostFen,
+      });
+      noStore(res);
+      res.json({ data });
+    }),
+  );
+
+  app.post(
+    "/api/avatar-3d/jobs/:jobId/references/reject",
+    authenticate,
+    requireCsrf,
+    asyncHandler(async (req, res) => {
+      const { jobId } = avatar3dJobParamsSchema.parse(req.params);
+      const { referenceSetId } = avatar3dReferenceRejectSchema.parse(req.body);
+      const job = await service.rejectReferences({
+        user: req.user,
+        jobId,
+        referenceSetId,
+      });
+      await recordUsage(req, "avatar3d.references.reject", "avatar_3d_job", jobId, {
+        referenceSetId,
+        status: job.status,
+      });
+      noStore(res);
+      res.json({ data: job });
     }),
   );
 

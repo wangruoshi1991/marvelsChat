@@ -85,8 +85,15 @@ const requestJson = async ({ runtime, fetchImpl, url, options, transportCode }) 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Number(runtime.timeoutMs || 60000));
   let response;
+  let payload;
   try {
     response = await fetchImpl(url, { ...options, signal: controller.signal });
+    try {
+      payload = await response.json();
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
+      payload = {};
+    }
   } catch {
     throw new HttpError(502, "Cartoon style service did not confirm the request.", {
       provider: "wanx",
@@ -95,7 +102,6 @@ const requestJson = async ({ runtime, fetchImpl, url, options, transportCode }) 
   } finally {
     clearTimeout(timer);
   }
-  const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.code) {
     throw new HttpError(502, "Cartoon style service is unavailable.", {
       provider: "wanx",

@@ -1,32 +1,36 @@
 import { Check, ImagePlus, Sparkles, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AvatarApiError } from "../api";
-import type {
-  AvatarFeature,
-  AvatarPhotoView,
-  AvatarQuota,
-  AvatarStyle,
-} from "../types";
-
-const viewOptions: Array<{
-  view: AvatarPhotoView;
-  label: string;
-  inputLabel: string;
-  required?: boolean;
-}> = [
-  { view: "front", label: "正面全身", inputLabel: "正面全身照片", required: true },
-  { view: "left", label: "左侧", inputLabel: "左侧照片" },
-  { view: "back", label: "背面", inputLabel: "背面照片" },
-  { view: "right", label: "右侧", inputLabel: "右侧照片" },
-];
+import type { AvatarFeature, AvatarQualityPreset, AvatarQuota } from "../types";
+import { inspectPhotoFile, type PhotoInspection } from "./photoInspection";
 
 const allowedTypes = new Set(["image/jpeg", "image/png"]);
 const maximumBytes = 10 * 1024 * 1024;
 
+type BodyShape = "balanced" | "slender" | "athletic";
+type Outfit = "business" | "smart_casual" | "casual" | "sport" | "formal";
+
+const bodyOptions: Array<{ id: BodyShape; label: string }> = [
+  { id: "balanced", label: "匀称" },
+  { id: "slender", label: "修长" },
+  { id: "athletic", label: "运动感" },
+];
+
+const outfitOptions: Array<{ id: Outfit; label: string }> = [
+  { id: "smart_casual", label: "商务休闲" },
+  { id: "casual", label: "日常休闲" },
+  { id: "business", label: "商务" },
+  { id: "sport", label: "运动" },
+  { id: "formal", label: "正式" },
+];
+
 export interface AvatarCreateRequest {
-  style: AvatarStyle;
-  files: Array<{ view: AvatarPhotoView; file: File }>;
-  acceptedCostVersion: string;
+  file: File;
+  bodyShape: BodyShape;
+  outfit: Outfit;
+  userDescription: string;
+  qualityPreset: AvatarQualityPreset;
+  acceptedReferenceCostVersion: string;
   idempotencyKey: string;
 }
 
@@ -34,26 +38,38 @@ interface AvatarComposerProps {
   feature: AvatarFeature;
   quota: AvatarQuota;
   onCreate: (request: AvatarCreateRequest) => Promise<void>;
+  inspectPhoto?: typeof inspectPhotoFile;
 }
 
-function PhotoSlot({
-  view,
-  label,
-  inputLabel,
-  required = false,
-  file,
-  disabled,
-  onChange,
-}: {
-  view: AvatarPhotoView;
-  label: string;
-  inputLabel: string;
-  required?: boolean;
-  file?: File;
-  disabled: boolean;
-  onChange: (view: AvatarPhotoView, file?: File) => void;
-}) {
+const safeCreateError = (cause: unknown) => {
+  if (!(cause instanceof AvatarApiError)) return "未确认是否创建成功，请刷新状态后再试";
+  if (cause.code === "PROVIDER_UNAVAILABLE" || cause.status === 503) return "生成服务暂时不可用";
+  if (cause.code === "ACTIVE_JOB_EXISTS") return "已有任务进行中";
+  if (cause.code === "DAILY_LIMIT_REACHED" || cause.status === 429) return "今日次数已用完";
+  if (cause.code === "COST_VERSION_CHANGED") return "费用信息已更新，请刷新后确认";
+  return "创建未完成，可再次确认重试";
+};
+
+export function AvatarComposer({
+  feature,
+  quota,
+  onCreate,
+  inspectPhoto = inspectPhotoFile,
+}: AvatarComposerProps) {
+  const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
+  const [inspection, setInspection] = useState<PhotoInspection | null>(null);
+  const inspectionSequence = useRef(0);
+  const [bodyShape, setBodyShape] = useState<BodyShape>("balanced");
+  const [outfit, setOutfit] = useState<Outfit>("smart_casual");
+  const [userDescription, setUserDescription] = useState("");
+  const [identityAccepted, setIdentityAccepted] = useState(false);
+  const [completionAccepted, setCompletionAccepted] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
+
   useEffect(() => {
     if (!file || typeof URL.createObjectURL !== "function") {
       setPreview("");
@@ -64,121 +80,75 @@ function PhotoSlot({
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  return (
-    <div className={`photo-slot${disabled ? " is-disabled" : ""}`} data-testid="photo-slot">
-      <label className="photo-slot-target">
-        {preview ? <img src={preview} alt={`${label}预览`} /> : (
-          <span className="photo-slot-empty" aria-hidden="true">
-            <ImagePlus size={22} />
-          </span>
-        )}
-        <input
-          aria-label={inputLabel}
-          type="file"
-          accept="image/jpeg,image/png"
-          disabled={disabled}
-          onChange={(event) => onChange(view, event.target.files?.[0])}
-        />
-      </label>
-      <div className="photo-slot-meta">
-        <span>{label}{required ? <b>必选</b> : null}</span>
-        {file ? (
-          <button
-            className="slot-remove"
-            type="button"
-            title={`移除${label}照片`}
-            aria-label={`移除${label}照片`}
-            onClick={() => onChange(view, undefined)}
-          >
-            <X size={15} />
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-const safeCreateError = (cause: unknown) => {
-  if (!(cause instanceof AvatarApiError)) return "未确认是否创建成功，请刷新状态后再试";
-  if (cause.code === "PROVIDER_UNAVAILABLE" || cause.status === 503) return "生成服务待配置";
-  if (cause.code === "ACTIVE_JOB_EXISTS") return "已有任务进行中";
-  if (cause.code === "DAILY_LIMIT_REACHED" || cause.status === 429) return "今日次数已用完";
-  return "创建未完成，可再次确认重试";
-};
-
-export function AvatarComposer({ feature, quota, onCreate }: AvatarComposerProps) {
-  const [style, setStyle] = useState<AvatarStyle>("realistic");
-  const [files, setFiles] = useState<Partial<Record<AvatarPhotoView, File>>>({});
-  const [rightsAccepted, setRightsAccepted] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
-  const costFen = feature.estimatedCostsFen[style];
-
-  const selectedFiles = useMemo(() => viewOptions
-    .filter(({ view }) => style === "realistic" || view === "front")
-    .map(({ view }) => ({ view, file: files[view] }))
-    .filter((item): item is { view: AvatarPhotoView; file: File } => Boolean(item.file)),
-  [files, style]);
-
   const resetAttempt = () => setIdempotencyKey(null);
 
-  const selectStyle = (nextStyle: AvatarStyle) => {
-    if (nextStyle === style) return;
-    setStyle(nextStyle);
-    setFiles({});
+  const setPhoto = (nextFile?: File) => {
     setError("");
     resetAttempt();
-  };
-
-  const setPhoto = (view: AvatarPhotoView, file?: File) => {
-    setError("");
-    resetAttempt();
-    if (!file) {
-      setFiles((current) => {
-        const next = { ...current };
-        delete next[view];
-        return next;
-      });
+    inspectionSequence.current += 1;
+    const sequence = inspectionSequence.current;
+    if (!nextFile) {
+      setFile(null);
+      setInspection(null);
       return;
     }
-    if (!allowedTypes.has(file.type) || file.size > maximumBytes) {
+    if (!allowedTypes.has(nextFile.type) || nextFile.size > maximumBytes) {
       setError("仅支持 10 MB 以内的 JPG 或 PNG 照片");
       return;
     }
-    setFiles((current) => ({ ...current, [view]: file }));
+    setFile(nextFile);
+    setInspection({ status: "checking", message: "正在检查照片" });
+    void inspectPhoto(nextFile).then((result) => {
+      if (inspectionSequence.current === sequence) setInspection(result);
+    }).catch(() => {
+      if (inspectionSequence.current === sequence) {
+        setInspection({ status: "usable", message: "照片可用" });
+      }
+    });
   };
 
   const openConfirmation = () => {
     setError("");
-    if (!files.front) {
-      setError("请添加正面全身照");
+    if (!file) {
+      setError("请添加正面脸照");
       return;
     }
-    if (!rightsAccepted) {
-      setError("请确认拥有照片使用授权");
+    if (inspection?.status === "invalid") {
+      setError("这张照片无法使用，请更换后再试");
+      return;
+    }
+    if (!identityAccepted) {
+      setError("请确认照片授权及人物已成年");
+      return;
+    }
+    if (!completionAccepted) {
+      setError("请确认允许 AI 补全未展示内容");
       return;
     }
     setConfirmOpen(true);
   };
 
   const confirm = async () => {
-    if (pending) return;
+    if (pending || !file) return;
     const requestKey = idempotencyKey || globalThis.crypto.randomUUID();
     if (!idempotencyKey) setIdempotencyKey(requestKey);
     setPending(true);
     setError("");
     try {
       await onCreate({
-        style,
-        files: selectedFiles,
-        acceptedCostVersion: feature.costVersion,
+        file,
+        bodyShape,
+        outfit,
+        userDescription: userDescription.trim(),
+        qualityPreset: feature.defaultQualityPreset,
+        acceptedReferenceCostVersion: feature.costVersion,
         idempotencyKey: requestKey,
       });
       setConfirmOpen(false);
-      setFiles({});
-      setRightsAccepted(false);
+      setPhoto(undefined);
+      setIdentityAccepted(false);
+      setCompletionAccepted(false);
+      setUserDescription("");
       setIdempotencyKey(null);
     } catch (cause) {
       setConfirmOpen(false);
@@ -189,15 +159,16 @@ export function AvatarComposer({ feature, quota, onCreate }: AvatarComposerProps
   };
 
   const blockedLabel = !feature.generationAvailable
-    ? "生成服务待配置"
+    ? "生成服务暂时不可用"
     : quota.hasActiveJob
       ? "已有任务进行中"
       : quota.dailyRemaining <= 0
         ? "今日次数已用完"
         : "";
+  const referenceCostFen = feature.referenceGenerationEstimatedCostFen;
 
   return (
-    <section className="composer-panel" aria-labelledby="composer-title">
+    <section className="composer-panel face-first-composer" aria-labelledby="composer-title">
       <div className="panel-heading">
         <div>
           <span className="utility-label">NEW AVATAR</span>
@@ -206,48 +177,98 @@ export function AvatarComposer({ feature, quota, onCreate }: AvatarComposerProps
         <span className="quota-label">今日剩余 {quota.dailyRemaining} 次</span>
       </div>
 
-      <div className="style-segment" aria-label="形象风格">
-        <button
-          type="button"
-          aria-pressed={style === "realistic"}
-          onClick={() => selectStyle("realistic")}
-        >
-          写实数字人
-        </button>
-        <button
-          type="button"
-          aria-pressed={style === "cartoon"}
-          onClick={() => selectStyle("cartoon")}
-        >
-          卡通潮玩
-        </button>
+      <div className="face-photo-field">
+        <label className="face-photo-target">
+          {preview ? <img src={preview} alt="正面脸照预览" /> : (
+            <span aria-hidden="true"><ImagePlus size={22} /></span>
+          )}
+          <input
+            aria-label="正面脸照"
+            type="file"
+            accept="image/jpeg,image/png"
+            onChange={(event) => setPhoto(event.target.files?.[0])}
+          />
+        </label>
+        <div className="face-photo-copy">
+          <strong>正面脸照</strong>
+          <p className={`photo-inspection is-${inspection?.status || "idle"}`} aria-live="polite">
+            {inspection?.message || "清楚展示脸部即可"}
+          </p>
+          {file ? (
+            <button
+              className="slot-remove"
+              type="button"
+              title="移除照片"
+              aria-label="移除照片"
+              onClick={() => setPhoto(undefined)}
+            >
+              <X size={15} />
+            </button>
+          ) : null}
+        </div>
       </div>
 
-      <div className="photo-rail" aria-label="人物照片">
-        {viewOptions.map((option) => (
-          <PhotoSlot
-            key={option.view}
-            {...option}
-            file={files[option.view]}
-            disabled={style === "cartoon" && option.view !== "front"}
-            onChange={setPhoto}
-          />
-        ))}
-      </div>
+      <fieldset className="brief-fieldset">
+        <legend>身材方向</legend>
+        <div className="brief-segment" aria-label="身材方向">
+          {bodyOptions.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={bodyShape === option.id}
+              onClick={() => { setBodyShape(option.id); resetAttempt(); }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
+      <label className="brief-select">
+        <span>服装方向</span>
+        <select
+          value={outfit}
+          onChange={(event) => { setOutfit(event.target.value as Outfit); resetAttempt(); }}
+        >
+          {outfitOptions.map((option) => (
+            <option key={option.id} value={option.id}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+
+      <label className="brief-description">
+        <span>补充要求</span>
+        <textarea
+          value={userDescription}
+          maxLength={240}
+          rows={3}
+          placeholder="例如：蓝白色运动套装，气质自信自然"
+          onChange={(event) => { setUserDescription(event.target.value); resetAttempt(); }}
+        />
+      </label>
 
       <label className="rights-check">
         <input
           type="checkbox"
-          checked={rightsAccepted}
-          onChange={(event) => setRightsAccepted(event.target.checked)}
+          checked={identityAccepted}
+          onChange={(event) => setIdentityAccepted(event.target.checked)}
         />
         <span className="check-indicator" aria-hidden="true"><Check size={14} /></span>
-        <span>确认拥有照片使用授权，且照片中的人物同意本次生成</span>
+        <span>确认拥有照片使用授权，且照片中的人物已成年</span>
+      </label>
+      <label className="rights-check">
+        <input
+          type="checkbox"
+          checked={completionAccepted}
+          onChange={(event) => setCompletionAccepted(event.target.checked)}
+        />
+        <span className="check-indicator" aria-hidden="true"><Check size={14} /></span>
+        <span>同意 AI 根据描述补全未展示的身体、服装与背面</span>
       </label>
 
       <div className="cost-row">
-        <span>本次只生成 1 个模型</span>
-        <strong>预计 ¥{(costFen / 100).toFixed(2)}</strong>
+        <span>本次先生成 4 张参考图</span>
+        <strong>预计 ¥{(referenceCostFen / 100).toFixed(2)}</strong>
       </div>
       {error ? <p className="composer-error" role="alert">{error}</p> : null}
       <button
@@ -257,25 +278,27 @@ export function AvatarComposer({ feature, quota, onCreate }: AvatarComposerProps
         onClick={openConfirmation}
       >
         <Sparkles size={18} />
-        {blockedLabel || (pending ? "正在创建" : "生成 3D 形象")}
+        {blockedLabel || (pending ? "正在创建" : "生成四视图")}
       </button>
 
       {confirmOpen ? (
         <div className="confirm-backdrop" role="presentation">
           <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-            <span className="utility-label">COST CONFIRMATION</span>
-            <h2 id="confirm-title">确认本次生成</h2>
+            <span className="utility-label">REFERENCE CONFIRMATION</span>
+            <h2 id="confirm-title">确认生成四视图</h2>
             <dl>
-              <div><dt>风格</dt><dd>{style === "realistic" ? "写实数字人" : "卡通潮玩"}</dd></div>
-              <div><dt>照片</dt><dd>{selectedFiles.length} 张</dd></div>
-              <div><dt>预计费用</dt><dd>¥{(costFen / 100).toFixed(2)}</dd></div>
+              <div><dt>照片</dt><dd>1 张正面脸照</dd></div>
+              <div><dt>身材</dt><dd>{bodyOptions.find(({ id }) => id === bodyShape)?.label}</dd></div>
+              <div><dt>服装</dt><dd>{outfitOptions.find(({ id }) => id === outfit)?.label}</dd></div>
+              <div><dt>预计费用</dt><dd>¥{(referenceCostFen / 100).toFixed(2)}</dd></div>
             </dl>
+            <p className="confirm-note">此步骤只生成四视图，确认效果后才会开始 3D 建模。</p>
             <div className="confirm-actions">
               <button className="secondary-command" type="button" onClick={() => setConfirmOpen(false)} disabled={pending}>
                 取消
               </button>
               <button className="primary-command" type="button" onClick={() => void confirm()} disabled={pending}>
-                {pending ? "正在创建" : "确认并生成"}
+                {pending ? "正在创建" : "确认并生成四视图"}
               </button>
             </div>
           </section>

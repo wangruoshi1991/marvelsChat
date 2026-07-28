@@ -55,6 +55,8 @@ describe("createModelScene", () => {
     const firstFrame = scene.getFramingSnapshot();
     expect(firstFrame.radius).toBeGreaterThan(0);
     expect(firstFrame.cameraDistance).toBeGreaterThan(firstFrame.radius);
+    const minimumVerticalDistance = firstFrame.radius / Math.sin((34 * Math.PI / 180) / 2);
+    expect(firstFrame.cameraDistance).toBeGreaterThanOrEqual(minimumVerticalDistance * 1.08);
     expect(firstFrame.target.toArray()).toEqual([0, 0, 0]);
 
     await scene.load("/model-2.glb");
@@ -65,6 +67,13 @@ describe("createModelScene", () => {
     expect(renderer.setSize).toHaveBeenLastCalledWith(400, 200, false);
     expect(scene.getFramingSnapshot().aspect).toBe(2);
     expect(renderer.setPixelRatio).toHaveBeenCalledWith(2);
+
+    scene.resize(200, 400);
+    const narrowFrame = scene.getFramingSnapshot();
+    const verticalHalfFov = (34 * Math.PI / 180) / 2;
+    const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * narrowFrame.aspect);
+    const narrowMinimumDistance = narrowFrame.radius / Math.sin(horizontalHalfFov);
+    expect(narrowFrame.cameraDistance).toBeGreaterThanOrEqual(narrowMinimumDistance * 1.08);
 
     scene.resetCamera();
     scene.dispose();

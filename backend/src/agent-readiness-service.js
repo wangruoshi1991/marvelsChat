@@ -42,11 +42,16 @@ export const getDashscopeRuntimeStatus = (runtime = config.dashscope) => {
   };
 };
 
-export const getAvatarFeatureRuntimeStatus = (runtime = config.avatar3d) => ({
-  provider: "avatar-3d-web",
-  configured: Boolean(runtime?.enabled),
-  missing: runtime?.enabled ? [] : ["AVATAR_3D_ENABLED"],
-});
+export const getAvatarFeatureRuntimeStatus = (runtime = config.avatar3d) => {
+  const missing = [];
+  if (!runtime?.enabled) missing.push("AVATAR_3D_ENABLED");
+  if (!runtime?.providerCallsEnabled) missing.push("AVATAR_3D_PROVIDER_CALLS_ENABLED");
+  return {
+    provider: "avatar-3d-web",
+    configured: missing.length === 0,
+    missing,
+  };
+};
 
 export function buildAgentReadiness({
   modelStatus = getModelRuntimeStatus(),
@@ -79,6 +84,7 @@ export function buildAgentReadiness({
       configured: dashscope.configured && oss.configured && avatarWeb.configured,
       requiredEnv: [
         "AVATAR_3D_ENABLED",
+        "AVATAR_3D_PROVIDER_CALLS_ENABLED",
         "DASHSCOPE_API_KEY",
         "DASHSCOPE_WORKSPACE_ID",
         ...ossRequired,

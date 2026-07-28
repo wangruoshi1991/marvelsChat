@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  avatar3dCostVersion,
+  avatar3dQualityPresetIds,
+} from "./avatar-3d-quality.js";
 
 export const phoneNumberSchema = z.string().trim().regex(/^1[3-9]\d{9}$/, "Phone number must be a valid mainland China mobile number");
 
@@ -342,7 +346,7 @@ export const accountDeletionSchema = z.object({
   confirmation: z.literal("DELETE"),
 });
 
-export const avatar3dCostVersion = "2026-07-17";
+export { avatar3dCostVersion };
 export const avatar3dPhotoUploadLimit = 10 * 1024 * 1024;
 
 export const avatar3dSessionSchema = loginSchema;
@@ -355,41 +359,19 @@ export const avatar3dPhotoUploadSchema = z.object({
 
 export const avatar3dPhotoCompleteSchema = z.object({}).strict();
 
-const avatar3dJobPhotoSchema = z.object({
-  photoId: z.string().uuid(),
-  view: z.enum(["front", "left", "back", "right"]),
-}).strict();
-
 export const avatar3dCreateJobSchema = z.object({
-  style: z.enum(["realistic", "cartoon"]),
-  photos: z.array(avatar3dJobPhotoSchema).min(1).max(4),
+  generationMode: z.literal("face_first_multiview"),
+  photoId: z.string().uuid(),
+  bodyShape: z.enum(["balanced", "slender", "athletic"]),
+  pose: z.literal("natural"),
+  outfit: z.enum(["business", "smart_casual", "casual", "sport", "formal"]),
+  userDescription: z.string().max(240).optional().default(""),
+  qualityPreset: z.enum(avatar3dQualityPresetIds),
   acceptedPhotoRights: z.literal(true),
-  acceptedCostVersion: z.literal(avatar3dCostVersion),
-}).strict().superRefine((value, context) => {
-  const views = value.photos.map((photo) => photo.view);
-  const photoIds = value.photos.map((photo) => photo.photoId);
-  if (!views.includes("front")) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "A front photo is required.",
-      path: ["photos"],
-    });
-  }
-  if (new Set(views).size !== views.length) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Avatar photo views must be unique.",
-      path: ["photos"],
-    });
-  }
-  if (new Set(photoIds).size !== photoIds.length) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Avatar photo IDs must be unique.",
-      path: ["photos"],
-    });
-  }
-});
+  acceptedAdultSubject: z.literal(true),
+  acceptedFaceCompletion: z.literal(true),
+  acceptedReferenceCostVersion: z.literal(avatar3dCostVersion),
+}).strict();
 
 export const avatar3dIdempotencySchema = z.object({
   idempotencyKey: z.string().uuid(),
@@ -399,8 +381,23 @@ export const avatar3dStyleConfirmSchema = z.object({
   accepted: z.literal(true),
 }).strict();
 
+export const avatar3dReferenceConfirmSchema = z.object({
+  referenceSetId: z.string().uuid(),
+  qualityPreset: z.enum(avatar3dQualityPresetIds),
+  accepted: z.literal(true),
+  acceptedCostVersion: z.literal(avatar3dCostVersion),
+}).strict();
+
+export const avatar3dReferenceRejectSchema = z.object({
+  referenceSetId: z.string().uuid(),
+}).strict();
+
 export const avatar3dPhotoParamsSchema = z.object({ photoId: z.string().uuid() }).strict();
 export const avatar3dJobParamsSchema = z.object({ jobId: z.string().uuid() }).strict();
+export const avatar3dReferenceImageParamsSchema = z.object({
+  jobId: z.string().uuid(),
+  view: z.enum(["front", "left", "back", "right"]),
+}).strict();
 export const avatar3dModelParamsSchema = z.object({ modelId: z.string().uuid() }).strict();
 
 export const stationModelJobRequestSchema = z.object({

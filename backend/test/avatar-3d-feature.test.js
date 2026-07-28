@@ -38,9 +38,12 @@ test("feature projection contains prices and no secret configuration", () => {
     allowlist: [],
     dailyLimit: 3,
     retentionDays: 7,
-    costVersion: "2026-07-17",
-    realisticEstimatedCostFen: 210,
-    cartoonEstimatedCostFen: 224,
+    costVersion: "2026-07-21",
+    referenceGenerationEstimatedCostFen: 200,
+    realisticEstimatedCostFen: 280,
+    cartoonEstimatedCostFen: 294,
+    qualityCostsFen: { standard: 280, ultra: 420 },
+    cartoonStyleCostFen: 14,
     providerReady: true,
     apiKey: "must-not-escape",
     workspaceId: "must-not-escape",
@@ -51,10 +54,37 @@ test("feature projection contains prices and no secret configuration", () => {
     generationAvailable: true,
     dailyLimit: 3,
     retentionDays: 7,
-    costVersion: "2026-07-17",
-    estimatedCostsFen: { realistic: 210, cartoon: 224 },
+    costVersion: "2026-07-21",
+    referenceGenerationEstimatedCostFen: 200,
+    defaultQualityPreset: "ultra",
+    qualityPresets: [
+      {
+        id: "standard",
+        label: "标准",
+        description: "高清纹理，适合个人主页和日常查看",
+        estimatedCostFen: 280,
+      },
+      {
+        id: "ultra",
+        label: "超精细",
+        description: "适合大屏查看和专业处理",
+        estimatedCostFen: 420,
+      },
+    ],
   });
   assert.equal(JSON.stringify(projection).includes("must-not-escape"), false);
+});
+
+test("feature projection cannot publish a stale environment cost version", () => {
+  const projection = avatar3dFeatureForUser(user, {
+    enabled: true,
+    requireAllowlist: false,
+    allowlist: [],
+    costVersion: "2026-07-17",
+    providerReady: true,
+  });
+
+  assert.equal(projection.costVersion, "2026-07-21");
 });
 
 test("quota blocks the fourth daily job and a second active job", () => {
