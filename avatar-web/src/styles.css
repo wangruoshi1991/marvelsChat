@@ -277,6 +277,15 @@ input:focus-visible {
   min-height: 100vh;
 }
 
+.embedded-shell,
+.embedded-viewer-stage {
+  width: 100%;
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #f7f8fc;
+}
+
 .workspace-header {
   min-height: 64px;
   display: flex;
@@ -924,6 +933,18 @@ input:focus-visible {
   min-width: 0;
   min-height: 100%;
   overflow: hidden;
+}
+
+.avatar-viewer.is-embedded {
+  height: 100vh;
+  min-height: 100vh;
+  background: #f7f8fc;
+}
+
+.avatar-viewer.is-embedded .viewer-state {
+  border-color: #dbe2ff;
+  color: #4f5563;
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .avatar-viewer {

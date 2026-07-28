@@ -2,9 +2,14 @@ import express from "express";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { requireAvatarHttps } from "./avatar-3d-session.js";
+import {
+  createAvatarAppSession,
+  isAvatarHttpsRequest,
+  requireAvatarHttps,
+} from "./avatar-3d-session.js";
 import { config } from "./config.js";
 import { HttpError } from "./http-error.js";
+import { avatar3dModelParamsSchema } from "./schemas.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const defaultAvatar3dDistDir = path.resolve(__dirname, "../../avatar-web/dist");
@@ -38,13 +43,40 @@ const avatarContentSecurityPolicy = (uploadOrigin) => [
 ].join("; ");
 
 export function registerAvatar3dWebRoutes(app, {
+  asyncHandler = (handler) => handler,
   distDir = defaultAvatar3dDistDir,
   staticMiddleware = express.static,
   fileExists = existsSync,
   requireHttps = requireAvatarHttps,
+  sessionService = { createAvatarAppSession },
+  secureRequest = isAvatarHttpsRequest,
   uploadOrigin = configuredUploadOrigin(),
 } = {}) {
   const exactUploadOrigin = normalizeHttpsOrigin(uploadOrigin);
+
+  app.get(
+    "/avatar/app-session",
+    requireHttps,
+    asyncHandler(async (req, res) => {
+      const { modelId } = avatar3dModelParamsSchema.parse({
+        modelId: req.query?.modelId,
+      });
+      const header = String(req.get("authorization") || "");
+      const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+      const result = await sessionService.createAvatarAppSession({
+        token,
+        secure: secureRequest(req),
+      });
+      res.setHeader("Set-Cookie", result.cookies);
+      res.set("Cache-Control", "private, no-store");
+      res.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'");
+      res.set("Referrer-Policy", "no-referrer");
+      res.status(200).type("html").send(
+        `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/avatar/?mode=viewer&amp;modelId=${encodeURIComponent(modelId)}"></head><body></body></html>`,
+      );
+    }),
+  );
+
   app.use(
     "/avatar-assets",
     requireHttps,

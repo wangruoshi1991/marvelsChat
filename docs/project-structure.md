@@ -150,7 +150,6 @@ backend/src/routes/station-routes.js
 backend/src/routes/station-content-routes.js
 backend/src/routes/station-profile-routes.js
 backend/src/routes/station-site-routes.js
-backend/src/routes/station-model-routes.js
 backend/src/routes/station-file-routes.js
 backend/src/routes/station-comic-routes.js
 backend/src/routes/station-video-routes.js
@@ -160,11 +159,20 @@ backend/src/routes/station-media-routes.js
 backend/src/routes/station-outfit-routes.js
 ```
 
-小站数据访问和 API 路由。`station-routes.js` 只负责注册小站子路由，不再承载具体业务实现；内容读取、资料/定位、建站 Agent、3D 模型 Agent、文件预处理、漫画日记、视频制作、日记、相册整理、媒体上传和穿搭都按领域拆到独立 route 模块。后续新增小站能力也应继续新增独立 route 模块，避免把业务代码重新堆回聚合入口。
+小站数据访问和 API 路由。`station-routes.js` 只负责注册小站子路由，不再承载具体业务实现；内容读取、资料/定位、建站 Agent、文件预处理、漫画日记、视频制作、日记、相册整理、媒体上传和穿搭都按领域拆到独立 route 模块。3D 形象不属于 Station Agent 路由，由下方独立领域负责。
+
+```text
+backend/src/avatar-3d-lifecycle-service.js
+backend/src/avatar-3d-repository.js
+backend/src/routes/avatar-3d-app-routes.js
+backend/src/routes/avatar-3d-routes.js
+backend/src/avatar-3d-web-service.js
+```
+
+3D 形象领域。App 使用 Bearer API 完成原生生成流程；`avatar-3d-routes.js` 和 `avatar-3d-web-service.js` 保留伙伴 Web 工具及 App 单模型 Three.js 查看器所需的 Cookie 会话。两套入口共享生命周期、私有存储、幂等和任务状态，不共享产品 UI。
 
 ```text
 backend/src/site-builder-service.js
-backend/src/model-generation-service.js
 backend/src/album-management-service.js
 backend/src/file-preprocessing-service.js
 backend/src/comic-diary-service.js

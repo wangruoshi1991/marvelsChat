@@ -4,19 +4,21 @@ import type { AvatarModel } from "../types";
 import { createModelScene, type ModelScene } from "./modelScene";
 
 interface AvatarViewerProps {
+  embedded?: boolean;
   model: AvatarModel | null;
   modelUrl: string;
   thumbnailUrl: string;
-  onDelete: (modelId: string) => Promise<void>;
+  onDelete?: (modelId: string) => Promise<void>;
   sceneFactory?: (canvas: HTMLCanvasElement) => ModelScene;
 }
 
 export function AvatarViewer({
+  embedded = false,
   model,
   modelUrl,
   thumbnailUrl,
   onDelete,
-  sceneFactory = createModelScene,
+  sceneFactory,
 }: AvatarViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -29,7 +31,11 @@ export function AvatarViewer({
 
   useEffect(() => {
     if (!hasModel || !canvasRef.current) return undefined;
-    const scene = sceneFactory(canvasRef.current);
+    const scene = sceneFactory
+      ? sceneFactory(canvasRef.current)
+      : createModelScene(canvasRef.current, {
+          backgroundColor: embedded ? "#f7f8fc" : "#1b2422",
+        });
     sceneRef.current = scene;
     const resize = () => {
       const bounds = containerRef.current?.getBoundingClientRect();
@@ -49,7 +55,7 @@ export function AvatarViewer({
       scene.dispose();
       sceneRef.current = null;
     };
-  }, [hasModel, sceneFactory]);
+  }, [embedded, hasModel, sceneFactory]);
 
   useEffect(() => {
     if (!model || !modelUrl || !sceneRef.current) return undefined;
@@ -99,7 +105,7 @@ export function AvatarViewer({
   };
 
   const deleteSelected = async () => {
-    if (deleting) return;
+    if (deleting || !onDelete) return;
     setDeleting(true);
     try {
       await onDelete(model.id);
@@ -110,12 +116,16 @@ export function AvatarViewer({
   };
 
   return (
-    <div className="avatar-viewer" ref={containerRef} data-testid="avatar-viewer">
+    <div
+      className={`avatar-viewer${embedded ? " is-embedded" : ""}`}
+      ref={containerRef}
+      data-testid="avatar-viewer"
+    >
       {thumbnailUrl && loadState !== "ready" ? (
         <img className="viewer-poster" src={thumbnailUrl} alt="" aria-hidden="true" />
       ) : null}
       <canvas ref={canvasRef} aria-label={`${model.title} 3D 预览`} />
-      <div className="viewer-toolbar" aria-label="模型查看工具">
+      {!embedded ? <div className="viewer-toolbar" aria-label="模型查看工具">
         <button type="button" title="重置视角" aria-label="重置视角" onClick={() => sceneRef.current?.resetCamera()}>
           <RotateCcw size={18} />
         </button>
@@ -130,16 +140,16 @@ export function AvatarViewer({
         <button className="danger-tool" type="button" title="删除模型" aria-label="删除模型" onClick={() => setConfirmDelete(true)}>
           <Trash2 size={18} />
         </button>
-      </div>
-      <div className="viewer-caption">
+      </div> : null}
+      {!embedded ? <div className="viewer-caption">
         <span className="utility-label">PRIVATE MODEL</span>
         <h2>{model.title}</h2>
         <p>{(model.byteSize / 1024 / 1024).toFixed(1)} MB</p>
-      </div>
+      </div> : null}
       {loadState === "loading" ? <div className="viewer-state">正在加载模型</div> : null}
       {loadState === "error" ? <div className="viewer-state is-error">模型暂时无法显示</div> : null}
 
-      {confirmDelete ? (
+      {!embedded && confirmDelete ? (
         <div className="confirm-backdrop" role="presentation">
           <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-model-title">
             <span className="utility-label">DELETE MODEL</span>

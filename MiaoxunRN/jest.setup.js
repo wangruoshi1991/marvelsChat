@@ -24,6 +24,15 @@ jest.mock('react-native-image-picker', () => ({
   launchImageLibrary: jest.fn(async () => ({ didCancel: true })),
 }));
 
+jest.mock('react-native-webview', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    WebView: props =>
+      React.createElement(View, { ...props, testID: 'avatar-webview' }),
+  };
+});
+
 jest.mock('@maplibre/maplibre-react-native', () => {
   const React = require('react');
   const { View } = require('react-native');

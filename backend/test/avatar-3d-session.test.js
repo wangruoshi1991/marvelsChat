@@ -71,6 +71,35 @@ test("Web login returns secure cookies without exposing the session token", asyn
   assert.doesNotMatch(csrfCookie, /HttpOnly/);
 });
 
+test("App session exchanges an existing Bearer token for HttpOnly cookies", async () => {
+  const calls = [];
+  const service = createAvatar3dSessionService({
+    getSession: async (token) => {
+      calls.push(token);
+      return {
+        sessionId: "session-id",
+        expiresAt: "2026-08-17T00:00:00.000Z",
+        user: { id: userRow.id },
+      };
+    },
+    randomToken: () => "app-csrf-token-abcdefghijklmnopqrstuvwxyz",
+  });
+
+  const result = await service.createAvatarAppSession({
+    token: "  existing-app-token  ",
+    secure: false,
+  });
+
+  assert.deepEqual(calls, ["existing-app-token"]);
+  assert.equal(result.user.id, userRow.id);
+  assert.equal(JSON.stringify(result).includes("existing-app-token"), true);
+  const sessionCookie = result.cookies.find((value) =>
+    value.startsWith(`${avatarSessionCookieName}=`));
+  assert.match(sessionCookie, /HttpOnly/);
+  assert.doesNotMatch(sessionCookie, /Secure/);
+  assert.match(sessionCookie, /SameSite=Strict/);
+});
+
 test("cookie authentication populates the same request fields as Bearer auth", async () => {
   const calls = [];
   const service = createAvatar3dSessionService({
@@ -102,6 +131,9 @@ test("avatar Web authentication and login reject non-HTTPS requests", async () =
   assert.equal((await invoke(requireAvatarHttps, insecure))?.status, 426);
   assert.equal(await invoke(requireAvatarHttps, request({
     headers: { "x-forwarded-proto": "https" },
+  })), null);
+  assert.equal(await invoke(requireAvatarHttps, request({
+    headers: { host: "127.0.0.1:4390" },
   })), null);
 });
 
@@ -142,6 +174,16 @@ test("CSRF requires matching cookie, header, and same HTTPS origin for mutations
 
   const getRequest = request({ method: "GET" });
   assert.equal(await invoke(service.requireAvatarCsrf, getRequest), null);
+
+  const local = request({
+    headers: {
+      "x-csrf-token": token,
+      origin: "http://127.0.0.1:4390",
+      host: "127.0.0.1:4390",
+    },
+    cookie: `${avatarCsrfCookieName}=${token}`,
+  });
+  assert.equal(await invoke(service.requireAvatarCsrf, local), null);
 });
 
 test("logout revokes the session before clearing both cookies", async () => {

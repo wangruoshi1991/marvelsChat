@@ -53,8 +53,6 @@ export const emptyStationContent: StationContentDTO = {
   mediaAssets: [],
   outfits: [],
   siteDrafts: [],
-  modelJobs: [],
-  modelAssets: [],
   fileAssets: [],
   comicDiaries: [],
   videoDrafts: [],

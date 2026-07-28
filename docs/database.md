@@ -75,8 +75,11 @@ POSTGRES_CONNECTION_LIMIT=10
 - `station_media_assets`：相册图片/视频素材登记、上传状态、标签和素材元数据。
 - `station_outfits`：今日穿搭记录，关联头像配置和可选媒体素材。
 - `station_site_drafts`：自然语言建站 Agent 生成的小站草稿，支持草稿应用状态。
-- `generation_jobs`：3D 模型等生成类任务，记录 provider、进度、请求/结果载荷和错误状态。
-- `station_model_assets`：3D 模型生成成功后的模型文件、缩略图和元数据。
+- `generation_jobs`：旧的通用异步生成任务表；新的 3D 形象流程不再读写该表。
+- `station_model_assets`：旧的 Station 3D 资产表；新的 3D 形象流程不再读写该表。
+- `avatar_3d_jobs`、`avatar_3d_job_photos`：独立 3D 形象任务、幂等状态、授权快照和私有源照片。
+- `avatar_3d_reference_sets`、`avatar_3d_reference_images`：需要用户明确确认的四视图及私有图片对象。
+- `avatar_3d_generation_attempts`、`avatar_3d_models`：供应商任务尝试、质量/计费状态和最终私有 GLB/缩略图。
 - `file_assets`：文件/文本素材登记和预处理结果。
 - `station_comic_diaries`：漫画日记 Agent 生成的分镜草稿、来源日记/素材和状态。
 - `station_video_drafts`：视频制作 Agent 生成的脚本、镜头表、来源素材和状态。

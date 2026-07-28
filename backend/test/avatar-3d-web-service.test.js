@@ -34,7 +34,12 @@ test("avatar Web mounts immutable assets and a private no-store shell", () => {
   });
 
   assert.deepEqual(state.uses.map((entry) => entry.path), ["/avatar-assets"]);
-  assert.deepEqual(state.gets.map((entry) => entry.path), ["/avatar", "/avatar/", "/avatar/*"]);
+  assert.deepEqual(state.gets.map((entry) => entry.path), [
+    "/avatar/app-session",
+    "/avatar",
+    "/avatar/",
+    "/avatar/*",
+  ]);
   assert.equal(staticCalls[0].directory, "/tmp/avatar-dist");
   assert.equal(staticCalls[0].options.immutable, true);
   assert.equal(state.uses[0].handlers[0], requireHttps);
@@ -45,7 +50,8 @@ test("avatar Web mounts immutable assets and a private no-store shell", () => {
     set: (name, value) => headers.set(name, value),
     sendFile: (_path, callback) => callback(null),
   };
-  state.gets[0].handlers.at(-1)({}, response, () => {});
+  const shellRoute = state.gets.find((route) => route.path === "/avatar");
+  shellRoute.handlers.at(-1)({}, response, () => {});
   assert.equal(headers.get("Cache-Control"), "private, no-store");
   assert.match(headers.get("Content-Security-Policy"), /img-src 'self' blob: data:/);
   assert.match(
@@ -66,10 +72,53 @@ test("avatar Web reports a controlled error when its build is missing", () => {
     fileExists: () => false,
   });
   let observed = null;
-  state.gets[0].handlers.at(-1)({}, {}, (error) => {
+  const shellRoute = state.gets.find((route) => route.path === "/avatar");
+  shellRoute.handlers.at(-1)({}, {}, (error) => {
     observed = error;
   });
 
   assert.equal(observed?.status, 503);
   assert.equal(observed?.message, "Avatar Web build is unavailable.");
+});
+
+test("App handoff exchanges only the Authorization header and opens one requested model", async () => {
+  const state = createApp();
+  const calls = [];
+  registerAvatar3dWebRoutes(state.app, {
+    asyncHandler: (handler) => handler,
+    staticMiddleware: () => "static-handler",
+    fileExists: () => true,
+    requireHttps: (_req, _res, next) => next(),
+    secureRequest: () => false,
+    sessionService: {
+      createAvatarAppSession: async (input) => {
+        calls.push(input);
+        return { cookies: ["mx_avatar_session=opaque; HttpOnly"] };
+      },
+    },
+  });
+
+  const route = state.gets.find((entry) => entry.path === "/avatar/app-session");
+  const headers = new Map();
+  let html = "";
+  const response = {
+    setHeader: (name, value) => headers.set(name, value),
+    set: (name, value) => headers.set(name, value),
+    status() { return this; },
+    type() { return this; },
+    send(value) { html = value; },
+  };
+  const modelId = "4ab04377-00d1-44d4-b31b-3af973afb8d8";
+  await route.handlers.at(-1)({
+    query: { modelId },
+    get: (name) => name.toLowerCase() === "authorization"
+      ? "Bearer private-app-token"
+      : "",
+  }, response);
+
+  assert.deepEqual(calls, [{ token: "private-app-token", secure: false }]);
+  assert.deepEqual(headers.get("Set-Cookie"), ["mx_avatar_session=opaque; HttpOnly"]);
+  assert.match(html, new RegExp(`url=/avatar/\\?mode=viewer&amp;modelId=${modelId}`));
+  assert.equal(html.includes("private-app-token"), false);
+  assert.equal(headers.get("Cache-Control"), "private, no-store");
 });

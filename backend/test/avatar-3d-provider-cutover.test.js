@@ -4,58 +4,27 @@ import test from "node:test";
 
 process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 
-const {
-  buildAgentReadiness,
-  getAvatarFeatureRuntimeStatus,
-} = await import("../src/agent-readiness-service.js");
+const { buildAgentReadiness } = await import("../src/agent-readiness-service.js");
 
-test("3D readiness reports the explicit paid-call switch while calibration is paused", () => {
-  const paused = getAvatarFeatureRuntimeStatus({
-    enabled: true,
-    providerCallsEnabled: false,
-  });
-  const active = getAvatarFeatureRuntimeStatus({
-    enabled: true,
-    providerCallsEnabled: true,
-  });
-
-  assert.equal(paused.configured, false);
-  assert.deepEqual(paused.missing, ["AVATAR_3D_PROVIDER_CALLS_ENABLED"]);
-  assert.equal(active.configured, true);
-  assert.deepEqual(active.missing, []);
-});
-
-test("3D readiness requires Aliyun Model Studio, OSS, and the Web feature", () => {
+test("3D advisor readiness is independent from the paid avatar pipeline", () => {
   const readiness = buildAgentReadiness({
-    dashscopeStatus: {
-      provider: "aliyun-model-studio",
-      configured: true,
-      missing: [],
-    },
     ossStatus: { provider: "oss", configured: true, missing: [] },
-    avatarFeatureStatus: { provider: "avatar-3d-web", configured: true, missing: [] },
     modelStatus: { provider: "new-api", configured: true, missing: [] },
   });
   const model3d = readiness["model-3d"];
 
   assert.equal(model3d.configured, true);
-  assert.deepEqual(Object.keys(model3d.providers).sort(), [
-    "avatarWeb",
-    "dashscope",
-    "oss",
-  ]);
-  assert.ok(model3d.requiredEnv.includes("DASHSCOPE_API_KEY"));
-  assert.ok(model3d.requiredEnv.includes("DASHSCOPE_WORKSPACE_ID"));
-  assert.ok(model3d.requiredEnv.includes("AVATAR_3D_ENABLED"));
-  assert.ok(model3d.requiredEnv.includes("AVATAR_3D_PROVIDER_CALLS_ENABLED"));
-  assert.equal(JSON.stringify(model3d).toLowerCase().includes("meshy"), false);
+  assert.deepEqual(Object.keys(model3d.providers), ["model"]);
+  assert.deepEqual(model3d.capabilityNeeds, ["avatar_generation_guidance_only"]);
+  assert.equal(JSON.stringify(model3d).includes("AVATAR_3D_"), false);
+  assert.equal(JSON.stringify(model3d).includes("DASHSCOPE_"), false);
 });
 
-test("active 3D runtime sources contain no Meshy provider integration", async () => {
+test("active 3D runtime contains no Meshy provider or legacy station route", async () => {
   const sourceFiles = [
     "../src/config.js",
     "../src/agent-readiness-service.js",
-    "../src/routes/station-model-routes.js",
+    "../src/routes/station-routes.js",
     "../src/schemas.js",
     "../src/station-repository.js",
     "../src/repository-mappers.js",
@@ -68,4 +37,19 @@ test("active 3D runtime sources contain no Meshy provider integration", async ()
     () => readFile(new URL("../src/model-generation-service.js", import.meta.url), "utf8"),
     (error) => error?.code === "ENOENT",
   );
+  await assert.rejects(
+    () => readFile(new URL("../src/routes/station-model-routes.js", import.meta.url), "utf8"),
+    (error) => error?.code === "ENOENT",
+  );
+});
+
+test("retired Station 3D tables have no implicit provider fallback", async () => {
+  const migration = await readFile(
+    new URL("../database/020_remove_station_3d_provider_defaults.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(migration, /ALTER TABLE generation_jobs[\s\S]*ALTER COLUMN provider DROP DEFAULT/);
+  assert.match(migration, /ALTER TABLE station_model_assets[\s\S]*ALTER COLUMN provider DROP DEFAULT/);
+  assert.doesNotMatch(migration, /SET DEFAULT|meshy|legacy/i);
 });

@@ -40,18 +40,25 @@ test("site-builder agent plan asks for structured JSON only", async () => {
   assert.match(plan.user, /林小满/);
 });
 
-test("model-3d agent is registered for guided personal avatar generation", async () => {
+test("model-3d agent only advises and cannot trigger avatar generation", async () => {
   const agents = await listAgents();
   const modelAgent = agents.find((agent) => agent.key === "model-3d");
 
   assert.ok(modelAgent);
-  assert.equal(modelAgent.name, "3D个人形象 Agent");
-  assert.equal(modelAgent.category, "generation");
-  assert.ok(modelAgent.capabilities.includes("photo-to-avatar-3d"));
-  assert.ok(modelAgent.capabilities.includes("realistic-avatar"));
-  assert.ok(modelAgent.capabilities.includes("cartoon-avatar"));
-  assert.equal(modelAgent.capabilities.includes("text-to-3d"), false);
-  assert.ok(modelAgent.permissions.includes("station:write"));
+  assert.equal(modelAgent.name, "3D形象顾问 Agent");
+  assert.equal(modelAgent.category, "advisory");
+  assert.ok(modelAgent.capabilities.includes("photo-readiness-guidance"));
+  assert.equal(modelAgent.capabilities.includes("photo-to-avatar-3d"), false);
+  assert.equal(modelAgent.permissions.includes("station:write"), false);
+
+  const fullAgent = await getAgent("model-3d");
+  const plan = await fullAgent.plan({
+    input: "帮我生成一个3D形象",
+    user: { displayName: "测试用户", aiId: "000001000001" },
+  });
+  assert.match(plan.system, /App 内的独立产品流程/);
+  assert.match(plan.system, /不能调用、控制或代替/);
+  assert.doesNotMatch(plan.system, /\/avatar\/|Web 工作台中/);
 });
 
 test("file-preprocessor agent is registered for file preprocessing", async () => {

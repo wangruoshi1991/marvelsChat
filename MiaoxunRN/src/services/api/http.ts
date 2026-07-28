@@ -10,6 +10,8 @@ export const longRequestTimeoutMs = 45000;
 
 export class MiaoxunApiError extends Error {
   status?: number;
+  code?: string;
+  details?: Record<string, unknown>;
   isNetworkError: boolean;
   isTimeout: boolean;
 
@@ -17,6 +19,8 @@ export class MiaoxunApiError extends Error {
     message: string,
     options: {
       status?: number;
+      code?: string;
+      details?: Record<string, unknown>;
       isNetworkError?: boolean;
       isTimeout?: boolean;
     } = {},
@@ -24,6 +28,8 @@ export class MiaoxunApiError extends Error {
     super(message);
     this.name = 'MiaoxunApiError';
     this.status = options.status;
+    this.code = options.code;
+    this.details = options.details;
     this.isNetworkError = options.isNetworkError || false;
     this.isTimeout = options.isTimeout || false;
   }
@@ -128,6 +134,7 @@ type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   token?: string;
   body?: unknown;
+  headers?: Record<string, string>;
   timeoutMs?: number;
 };
 
@@ -157,6 +164,7 @@ export async function request<T>(
       headers: {
         'Content-Type': 'application/json',
         ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+        ...options.headers,
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
@@ -220,7 +228,13 @@ export async function request<T>(
       payload && 'error' in payload
         ? payload.error?.message || `请求失败：${response.status}`
         : `请求失败：${response.status}`;
-    throw new MiaoxunApiError(message, { status: response.status });
+    const details =
+      payload && 'error' in payload ? payload.error?.details : undefined;
+    throw new MiaoxunApiError(message, {
+      status: response.status,
+      code: details?.code,
+      details,
+    });
   }
 
   if (!payload || !('data' in payload)) {

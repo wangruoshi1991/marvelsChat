@@ -3,6 +3,7 @@ import { View } from 'react-native';
 
 import {
   AgentDTO,
+  Avatar3DBootstrapDTO,
   OwnedAgentDTO,
   StationContentDTO,
   StationSiteSectionDTO,
@@ -20,6 +21,7 @@ import {
   StationModule,
 } from './StationHomeModules';
 import { StationCreateKind, StationTab } from './stationTypes';
+import { Avatar3DLoadState } from './useAvatar3d';
 
 type StationHomeProps = {
   palette: Palette;
@@ -27,11 +29,13 @@ type StationHomeProps = {
   token: string;
   profile: ReturnType<typeof useMiaoxunSession>['profile'];
   stationContent: StationContentDTO;
+  avatar3d: Avatar3DBootstrapDTO | null;
+  avatar3dStatus: Avatar3DLoadState;
+  avatar3dError: string;
   agents: AgentDTO[];
   ownedAgents: OwnedAgentDTO[];
   moduleStatus: (key: string) => string;
-  avatarRotation: number;
-  onAvatarRotate: (nextRotation: number) => void;
+  onOpenAvatar3d: () => void;
   onSelectStationTab: (tab: StationTab) => void;
   onOpenCreateSheet: (kind: StationCreateKind) => void;
   onOpenDiaryDetail: (entryId: string) => void;
@@ -46,11 +50,13 @@ export function StationHome({
   token,
   profile,
   stationContent,
+  avatar3d,
+  avatar3dStatus,
+  avatar3dError,
   agents,
   ownedAgents,
   moduleStatus,
-  avatarRotation,
-  onAvatarRotate,
+  onOpenAvatar3d,
   onSelectStationTab,
   onOpenCreateSheet,
   onOpenDiaryDetail,
@@ -160,9 +166,11 @@ export function StationHome({
       <StationAvatarSpace
         palette={palette}
         language={language}
-        profile={profile}
-        rotation={avatarRotation}
-        onRotate={onAvatarRotate}
+        token={token}
+        avatar3d={avatar3d}
+        avatar3dStatus={avatar3dStatus}
+        avatar3dError={avatar3dError}
+        onOpenGenerator={onOpenAvatar3d}
         onOpenOotd={() => onOpenCreateSheet('outfit')}
         onOpenDiary={openDiaryFlow}
         onOpenAgents={openAgentFlow}

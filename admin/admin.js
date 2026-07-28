@@ -105,9 +105,9 @@ const agentModuleBindings = {
     endpoint: "形象建议会话",
   },
   "model-3d": {
-    module: "我的模样 / 3D 个人形象",
+    module: "3D形象准备建议",
     owner: "Agent 模块负责",
-    endpoint: "/api/avatar-3d/jobs",
+    endpoint: "/api/threads/:threadId/messages",
   },
   "site-builder": {
     module: "个人主页 / 小站结构草稿",

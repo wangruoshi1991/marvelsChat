@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Alert, Modal, ScrollView, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
@@ -12,6 +12,7 @@ import { Palette } from '../../shared/theme';
 import { UserAvatarRenderer } from '../messages/messageTypes';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { MiaoPointsScreen } from './MiaoPointsScreen';
+import { Avatar3DCreateScreen } from './Avatar3DCreateScreen';
 import {
   StationContentManageSheet,
   StationManageTarget,
@@ -21,6 +22,7 @@ import { StationProfileHeader, StationTabs } from './StationHeader';
 import { StationPanel } from './StationPanels';
 import { stationModuleStatusText } from './stationModuleStatus';
 import { StationCreateKind, StationTab } from './stationTypes';
+import { useAvatar3d } from './useAvatar3d';
 
 export function StationScreen({
   palette,
@@ -56,12 +58,39 @@ export function StationScreen({
   onActionError: (error: unknown) => void;
 }) {
   const [isPointsOpen, setIsPointsOpen] = useState(false);
+  const [isAvatar3dOpen, setIsAvatar3dOpen] = useState(false);
   const [createKind, setCreateKind] = useState<StationCreateKind | null>(null);
   const [manageTarget, setManageTarget] = useState<StationManageTarget | null>(
     null,
   );
   const [isCreatingStationContent, setIsCreatingStationContent] =
     useState(false);
+  const avatar3d = useAvatar3d(session.token);
+  const refreshAvatar3d = avatar3d.refresh;
+
+  const openAvatar3d = useCallback(() => {
+    if (avatar3d.status !== 'ready') {
+      onActionMessage(
+        avatar3d.errorMessage ||
+          textFor(
+            language,
+            '3D建模服务当前不可用',
+            '3D service is unavailable',
+          ),
+      );
+      return;
+    }
+    setIsAvatar3dOpen(true);
+  }, [avatar3d.errorMessage, avatar3d.status, language, onActionMessage]);
+
+  const closeAvatar3d = useCallback(() => {
+    setIsAvatar3dOpen(false);
+    refreshAvatar3d().catch(() => undefined);
+  }, [refreshAvatar3d]);
+
+  const handleAvatar3dChanged = useCallback(() => {
+    refreshAvatar3d().catch(() => undefined);
+  }, [refreshAvatar3d]);
 
   const createStationContent = async (payload: StationCreatePayload) => {
     if (isCreatingStationContent) {
@@ -236,6 +265,9 @@ export function StationScreen({
             profile={session.profile}
             relationships={session.relationships}
             stationContent={session.stationContent}
+            avatar3d={avatar3d.bootstrap}
+            avatar3dStatus={avatar3d.status}
+            avatar3dError={avatar3d.errorMessage}
             agents={session.agents}
             agentReadiness={session.agentReadiness}
             ownedAgents={session.ownedAgents}
@@ -253,8 +285,7 @@ export function StationScreen({
             onDeletePost={session.deleteStationPost}
             onCreateSiteDraft={session.createStationSiteDraft}
             onApplySiteDraft={session.applyStationSiteDraft}
-            onCreateModelJob={session.createStationModelJob}
-            onSyncModelJob={session.syncStationModelJob}
+            onOpenAvatar3d={openAvatar3d}
             onLoadAlbumSuggestions={session.listStationAlbumSuggestions}
             onApplyAlbumSuggestion={session.applyStationAlbumSuggestion}
             onCreateFileAsset={session.createStationFileAsset}
@@ -265,6 +296,30 @@ export function StationScreen({
           />
         </View>
       </ScrollView>
+      {isAvatar3dOpen ? (
+        <Modal
+          animationType="slide"
+          presentationStyle="fullScreen"
+          visible
+          onRequestClose={closeAvatar3d}
+        >
+          <SafeAreaProvider>
+            <SafeAreaView
+              edges={['top', 'bottom']}
+              style={[styles.safeArea, { backgroundColor: stationSurfaceColor }]}
+            >
+              <Avatar3DCreateScreen
+                initialBootstrap={avatar3d.bootstrap}
+                language={language}
+                onBack={closeAvatar3d}
+                onChanged={handleAvatar3dChanged}
+                palette={palette}
+                token={session.token}
+              />
+            </SafeAreaView>
+          </SafeAreaProvider>
+        </Modal>
+      ) : null}
       <Modal
         animationType="slide"
         presentationStyle="fullScreen"

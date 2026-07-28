@@ -245,41 +245,6 @@ export const mapAvatar3dModel = (row) => ({
   updatedAt: toIso(row.updated_at),
 });
 
-export const mapGenerationJob = (row) => ({
-  id: row.id,
-  userId: row.user_id,
-  agentId: row.agent_id,
-  kind: row.kind,
-  inputType: row.input_type,
-  prompt: row.prompt || "",
-  sourceAssetId: row.source_asset_id || null,
-  provider: row.provider || "legacy",
-  providerTaskId: row.provider_task_id || "",
-  status: row.status || "queued",
-  progress: Number(row.progress || 0),
-  requestPayload: parseJson(row.request_payload, {}),
-  resultPayload: parseJson(row.result_payload, {}),
-  errorMessage: row.error_message || "",
-  createdAt: toIso(row.created_at),
-  updatedAt: toIso(row.updated_at),
-  finishedAt: toIso(row.finished_at),
-});
-
-export const mapStationModelAsset = (row) => ({
-  id: row.id,
-  userId: row.user_id,
-  generationJobId: row.generation_job_id,
-  title: row.title,
-  provider: row.provider || "legacy",
-  providerTaskId: row.provider_task_id || "",
-  modelFiles: parseJson(row.model_files, {}),
-  thumbnail: parseJson(row.thumbnail, null),
-  metadata: parseJson(row.metadata, {}),
-  status: row.status || "active",
-  createdAt: toIso(row.created_at),
-  updatedAt: toIso(row.updated_at),
-});
-
 export const mapFileAsset = (row) => ({
   id: row.id,
   userId: row.user_id,

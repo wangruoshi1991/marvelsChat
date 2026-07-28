@@ -12,6 +12,7 @@ import { createRealtimeGateway } from "./realtime-gateway.js";
 import { registerAdminRoutes } from "./routes/admin-routes.js";
 import { registerAppRoutes } from "./routes/app-routes.js";
 import { registerAuthRoutes } from "./routes/auth-routes.js";
+import { registerAvatar3dAppRoutes } from "./routes/avatar-3d-app-routes.js";
 import { registerAvatar3dRoutes } from "./routes/avatar-3d-routes.js";
 import { registerEventRoutes } from "./routes/event-routes.js";
 import { registerMapRoutes } from "./routes/map-routes.js";
@@ -70,9 +71,11 @@ registerAppRoutes(app, {
 
 registerAuthRoutes(app, { authenticate, asyncHandler });
 
+registerAvatar3dAppRoutes(app, { authenticate, asyncHandler });
+
 registerAvatar3dRoutes(app, { asyncHandler });
 
-registerAvatar3dWebRoutes(app);
+registerAvatar3dWebRoutes(app, { asyncHandler });
 
 registerSocialRoutes(app, {
   authenticate,

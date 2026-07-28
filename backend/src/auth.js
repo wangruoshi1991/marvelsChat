@@ -85,6 +85,7 @@ export async function getSessionUserFromToken(token) {
 
   return {
     sessionId: user.session_id,
+    expiresAt: user.expires_at,
     user: {
       id: user.id,
       loginName: user.login_name || null,

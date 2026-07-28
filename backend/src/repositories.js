@@ -582,19 +582,11 @@ function buildAppModules({ profile, ownedAgents = [], registeredAgents = [] }) {
     ]),
     addFriend: connected("addFriend", "添加好友", "好友申请写入 social_requests，通知写入 notifications。"),
     scan: connected("scan", "扫码", "扫码结果经后端解析 AI ID 后打开公开主页。"),
-    stationAvatar: agentRegistered("model-3d")
-      ? connected("station-avatar", "3D 名片素材", "3D模型 Agent 已注册；生成任务使用 generation_jobs 记录，正式资产持久化仍需接 OSS。", {
-          needs: [
-            "storage_provider",
-            "asset_consents",
-            "model_asset_persistence",
-          ],
-        })
-      : pending("station-avatar", "3D 名片素材", "当前只渲染默认形象，尚未接入用户素材和生成授权。", [
-          "station_assets",
-          "generation_jobs",
-          "asset_consents",
-        ]),
+    stationAvatar: connected(
+      "station-avatar",
+      "3D个人形象",
+      "App 通过独立的3D形象流程读取 avatar_3d_models，不绑定 Agent 会话。",
+    ),
     posts: pending("posts", "我的动态", "保留发布与动态展示入口，尚未建立内容发布数据表。", [
       "posts",
       "media_assets",

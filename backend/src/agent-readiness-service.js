@@ -1,6 +1,5 @@
 import { getModelRuntimeStatus } from "./agent-runtime.js";
 import { getOssRuntimeStatus } from "./asset-storage-service.js";
-import { config } from "./config.js";
 
 const unique = (items = []) =>
   Array.from(new Set(items.map((item) => String(item || "").trim()).filter(Boolean)));
@@ -31,38 +30,12 @@ const readiness = ({
   providers,
 });
 
-export const getDashscopeRuntimeStatus = (runtime = config.dashscope) => {
-  const missing = [];
-  if (!runtime?.apiKey) missing.push("DASHSCOPE_API_KEY");
-  if (!runtime?.workspaceId) missing.push("DASHSCOPE_WORKSPACE_ID");
-  return {
-    provider: "aliyun-model-studio",
-    configured: missing.length === 0,
-    missing,
-  };
-};
-
-export const getAvatarFeatureRuntimeStatus = (runtime = config.avatar3d) => {
-  const missing = [];
-  if (!runtime?.enabled) missing.push("AVATAR_3D_ENABLED");
-  if (!runtime?.providerCallsEnabled) missing.push("AVATAR_3D_PROVIDER_CALLS_ENABLED");
-  return {
-    provider: "avatar-3d-web",
-    configured: missing.length === 0,
-    missing,
-  };
-};
-
 export function buildAgentReadiness({
   modelStatus = getModelRuntimeStatus(),
-  dashscopeStatus = getDashscopeRuntimeStatus(),
   ossStatus = getOssRuntimeStatus(),
-  avatarFeatureStatus = getAvatarFeatureRuntimeStatus(),
 } = {}) {
   const model = providerStatus(modelStatus, "new-api");
-  const dashscope = providerStatus(dashscopeStatus, "aliyun-model-studio");
   const oss = providerStatus(ossStatus, "oss");
-  const avatarWeb = providerStatus(avatarFeatureStatus, "avatar-3d-web");
   const ossRequired = ["OSS_BUCKET", "OSS_ENDPOINT", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET"];
 
   return {
@@ -81,23 +54,11 @@ export function buildAgentReadiness({
       providers: { model },
     }),
     "model-3d": readiness({
-      configured: dashscope.configured && oss.configured && avatarWeb.configured,
-      requiredEnv: [
-        "AVATAR_3D_ENABLED",
-        "AVATAR_3D_PROVIDER_CALLS_ENABLED",
-        "DASHSCOPE_API_KEY",
-        "DASHSCOPE_WORKSPACE_ID",
-        ...ossRequired,
-      ],
-      missingEnv: [...avatarWeb.missing, ...dashscope.missing, ...oss.missing],
-      optionalEnv: [
-        "DASHSCOPE_API_BASE_URL",
-        "DASHSCOPE_WANX_BASE_URL",
-        "DASHSCOPE_TRIPO_MODEL",
-        "DASHSCOPE_WANX_MODEL",
-      ],
-      capabilityNeeds: ["https_avatar_web"],
-      providers: { avatarWeb, dashscope, oss },
+      configured: true,
+      optionalEnv: ["NEW_API_BASE_URL", "NEW_API_KEY", "NEW_API_MODEL"],
+      missingOptionalEnv: model.missing,
+      capabilityNeeds: ["avatar_generation_guidance_only"],
+      providers: { model },
     }),
     "album-manager": readiness({
       configured: oss.configured,

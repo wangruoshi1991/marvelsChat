@@ -36,6 +36,7 @@ interface ControlsLike {
 }
 
 interface ModelSceneDependencies {
+  backgroundColor?: string;
   rendererFactory?: (canvas: HTMLCanvasElement) => RendererLike;
   loaderFactory?: () => LoaderLike;
   controlsFactory?: (camera: PerspectiveCamera, canvas: HTMLCanvasElement) => ControlsLike;
@@ -88,6 +89,7 @@ export function createModelScene(
   canvas: HTMLCanvasElement,
   {
     rendererFactory = defaultRendererFactory,
+    backgroundColor = "#1b2422",
     loaderFactory = () => new GLTFLoader(),
     controlsFactory = (camera, targetCanvas) => new OrbitControls(camera, targetCanvas),
     requestFrame = requestAnimationFrame,
@@ -96,7 +98,7 @@ export function createModelScene(
   }: ModelSceneDependencies = {},
 ) {
   const scene = new Scene();
-  scene.background = new Color("#1b2422");
+  scene.background = new Color(backgroundColor);
   const camera = new PerspectiveCamera(34, 1, 0.01, 1000);
   const renderer = rendererFactory(canvas);
   renderer.setPixelRatio(Math.min(2, Math.max(1, devicePixelRatio())));

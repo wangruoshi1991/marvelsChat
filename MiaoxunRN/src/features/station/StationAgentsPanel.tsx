@@ -32,8 +32,6 @@ export function StationAgentsPanel({
   onSetAgentEnabled,
   onCreateSiteDraft,
   onApplySiteDraft,
-  onCreateModelJob,
-  onSyncModelJob,
   onLoadAlbumSuggestions,
   onApplyAlbumSuggestion,
   onCreateFileAsset,
@@ -60,12 +58,6 @@ export function StationAgentsPanel({
     apply?: boolean;
   }) => Promise<unknown>;
   onApplySiteDraft: (draftId: string) => Promise<unknown>;
-  onCreateModelJob: (payload: {
-    inputType: 'text';
-    prompt: string;
-    provider: 'meshy';
-  }) => Promise<unknown>;
-  onSyncModelJob: (jobId: string) => Promise<unknown>;
   onLoadAlbumSuggestions: () => Promise<StationAlbumSuggestionDTO[]>;
   onApplyAlbumSuggestion: (payload: {
     title: string;
@@ -361,8 +353,6 @@ export function StationAgentsPanel({
         hasCapability={hasCapability}
         onCreateSiteDraft={onCreateSiteDraft}
         onApplySiteDraft={onApplySiteDraft}
-        onCreateModelJob={onCreateModelJob}
-        onSyncModelJob={onSyncModelJob}
         onLoadAlbumSuggestions={onLoadAlbumSuggestions}
         onApplyAlbumSuggestion={onApplyAlbumSuggestion}
         onCreateFileAsset={onCreateFileAsset}
@@ -463,8 +453,8 @@ const agentModuleBindings: Record<string, { zh: string; en: string }> = {
     en: 'Station / My Look',
   },
   'model-3d': {
-    zh: '我的模样 / 3D 模型生成',
-    en: 'My Look / 3D Model Generation',
+    zh: '3D形象准备建议（不发起生成）',
+    en: '3D Avatar Guidance (No Generation)',
   },
   'site-builder': {
     zh: '个人主页 / 小站结构草稿',

@@ -6,7 +6,6 @@ import { normalizeLocationText } from "./location-labels.js";
 import {
   displayInitial,
   mapFileAsset,
-  mapGenerationJob,
   mapMiaoPointLedgerEntry,
   mapProfile,
   mapPublicProfile,
@@ -14,7 +13,6 @@ import {
   mapStationComicDiary,
   mapStationDiaryEntry,
   mapStationMediaAsset,
-  mapStationModelAsset,
   mapStationOutfit,
   mapStationPost,
   mapStationSiteDraft,
@@ -224,8 +222,6 @@ export async function getStationContentForUser(userId) {
     mediaRows,
     outfitRows,
     siteDraftRows,
-    modelJobRows,
-    modelAssetRows,
     fileRows,
     comicDiaryRows,
     videoDraftRows,
@@ -277,22 +273,6 @@ export async function getStationContentForUser(userId) {
     ),
     query(
       `SELECT *
-      FROM generation_jobs
-      WHERE user_id = ? AND kind = '3d_model' AND deleted_at IS NULL
-      ORDER BY created_at DESC
-      LIMIT 10`,
-      [userId],
-    ),
-    query(
-      `SELECT *
-      FROM station_model_assets
-      WHERE user_id = ? AND deleted_at IS NULL
-      ORDER BY created_at DESC
-      LIMIT 20`,
-      [userId],
-    ),
-    query(
-      `SELECT *
       FROM file_assets
       WHERE user_id = ? AND deleted_at IS NULL
       ORDER BY created_at DESC
@@ -324,8 +304,6 @@ export async function getStationContentForUser(userId) {
     mediaAssets: mediaRows.map(mapStationMediaAsset),
     outfits: outfitRows.map(mapStationOutfit),
     siteDrafts: siteDraftRows.map(mapStationSiteDraft),
-    modelJobs: modelJobRows.map(mapGenerationJob),
-    modelAssets: modelAssetRows.map(mapStationModelAsset),
     fileAssets: fileRows.map(mapFileAsset),
     comicDiaries: comicDiaryRows.map(mapStationComicDiary),
     videoDrafts: videoDraftRows.map(mapStationVideoDraft),
@@ -901,163 +879,6 @@ export async function applyStationSiteDraft({ userId, draftId }) {
     siteDraft,
     profile: await getProfileForUser(userId),
   };
-}
-
-export async function listGenerationJobsForUser({ userId, kind = "3d_model", limit = 20 }) {
-  const safeLimit = sqlLimit(limit, 20, 50);
-  const rows = await query(
-    `SELECT *
-    FROM generation_jobs
-    WHERE user_id = ? AND kind = ? AND deleted_at IS NULL
-    ORDER BY created_at DESC
-    LIMIT ${safeLimit}`,
-    [userId, kind],
-  );
-  return rows.map(mapGenerationJob);
-}
-
-export async function getGenerationJobForUser({ userId, jobId }) {
-  const rows = await query(
-    `SELECT *
-    FROM generation_jobs
-    WHERE id = ? AND user_id = ? AND deleted_at IS NULL
-    LIMIT 1`,
-    [jobId, userId],
-  );
-  return rows[0] ? mapGenerationJob(rows[0]) : null;
-}
-
-export async function createGenerationJob({
-  userId,
-  agentId = "model-3d",
-  kind = "3d_model",
-  inputType,
-  prompt,
-  sourceAssetId = null,
-  provider = "legacy",
-  providerTaskId = "",
-  status = "queued",
-  progress = 0,
-  requestPayload = {},
-  resultPayload = {},
-  errorMessage = "",
-}) {
-  const id = crypto.randomUUID();
-  const rows = await query(
-    `INSERT INTO generation_jobs
-      (
-        id, user_id, agent_id, kind, input_type, prompt, source_asset_id,
-        provider, provider_task_id, status, progress, request_payload, result_payload,
-        error_message, finished_at
-      )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, CASE WHEN ?::text IN ('succeeded', 'failed', 'cancelled', 'blocked') THEN CURRENT_TIMESTAMP ELSE NULL END)
-    RETURNING *`,
-    [
-      id,
-      userId,
-      agentId,
-      kind,
-      inputType,
-      prompt,
-      sourceAssetId,
-      provider,
-      providerTaskId || null,
-      status,
-      progress,
-      JSON.stringify(requestPayload),
-      JSON.stringify(resultPayload),
-      errorMessage || null,
-      status,
-    ],
-  );
-  return mapGenerationJob(rows[0]);
-}
-
-export async function updateGenerationJob({
-  userId,
-  jobId,
-  status,
-  progress = null,
-  providerTaskId = null,
-  requestPayload = null,
-  resultPayload = null,
-  errorMessage = null,
-}) {
-  const rows = await query(
-    `UPDATE generation_jobs
-    SET
-      status = COALESCE(?::text, status),
-      progress = COALESCE(?::integer, progress),
-      provider_task_id = COALESCE(?::text, provider_task_id),
-      request_payload = CASE WHEN ?::jsonb IS NULL THEN request_payload ELSE ?::jsonb END,
-      result_payload = CASE WHEN ?::jsonb IS NULL THEN result_payload ELSE ?::jsonb END,
-      error_message = COALESCE(?::text, error_message),
-      finished_at = CASE
-        WHEN COALESCE(?::text, status) IN ('succeeded', 'failed', 'cancelled', 'blocked') THEN COALESCE(finished_at, CURRENT_TIMESTAMP)
-        ELSE finished_at
-      END
-    WHERE id = ? AND user_id = ? AND deleted_at IS NULL
-    RETURNING *`,
-    [
-      status || null,
-      progress,
-      providerTaskId || null,
-      requestPayload === null ? null : JSON.stringify(requestPayload),
-      requestPayload === null ? null : JSON.stringify(requestPayload),
-      resultPayload === null ? null : JSON.stringify(resultPayload),
-      resultPayload === null ? null : JSON.stringify(resultPayload),
-      errorMessage,
-      status || null,
-      jobId,
-      userId,
-    ],
-  );
-  if (!rows.length) throw new HttpError(404, "Generation job not found");
-  return mapGenerationJob(rows[0]);
-}
-
-export async function upsertStationModelAsset({
-  userId,
-  generationJobId,
-  title,
-  provider = "legacy",
-  providerTaskId = "",
-  modelFiles = {},
-  thumbnail = null,
-  metadata = {},
-}) {
-  const id = crypto.randomUUID();
-  const rows = await query(
-    `INSERT INTO station_model_assets
-      (
-        id, user_id, generation_job_id, title, provider, provider_task_id,
-        model_files, thumbnail, metadata, status
-      )
-    VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, 'active')
-    ON CONFLICT (generation_job_id)
-    DO UPDATE SET
-      title = EXCLUDED.title,
-      provider = EXCLUDED.provider,
-      provider_task_id = EXCLUDED.provider_task_id,
-      model_files = EXCLUDED.model_files,
-      thumbnail = EXCLUDED.thumbnail,
-      metadata = EXCLUDED.metadata,
-      status = 'active',
-      deleted_at = NULL
-    RETURNING *`,
-    [
-      id,
-      userId,
-      generationJobId,
-      String(title || "3D 模型").trim().slice(0, 160) || "3D 模型",
-      provider,
-      providerTaskId || null,
-      JSON.stringify(modelFiles),
-      JSON.stringify(thumbnail),
-      JSON.stringify(metadata),
-    ],
-  );
-  return mapStationModelAsset(rows[0]);
 }
 
 export async function listFileAssetsForUser(userId, limit = 30) {

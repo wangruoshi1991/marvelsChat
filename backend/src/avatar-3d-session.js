@@ -3,6 +3,7 @@ import {
   getSessionUserFromToken,
   verifyPassword as verifyStoredPassword,
 } from "./auth.js";
+import { config } from "./config.js";
 import { HttpError } from "./http-error.js";
 import {
   createSessionForUser,
@@ -39,13 +40,20 @@ export const getAvatarCsrfToken = (req) => {
   return cookies[avatarCsrfCookieName] || "";
 };
 
-const serializeCookie = ({ name, value, expiresAt, httpOnly = false, clear = false }) => {
+const serializeCookie = ({
+  name,
+  value,
+  expiresAt,
+  httpOnly = false,
+  clear = false,
+  secure = true,
+}) => {
   const parts = [
     `${name}=${clear ? "" : encodeURIComponent(value)}`,
     `Path=${cookiePath}`,
-    "Secure",
     "SameSite=Strict",
   ];
+  if (secure) parts.push("Secure");
   if (httpOnly) parts.push("HttpOnly");
   if (clear) {
     parts.push("Max-Age=0", "Expires=Thu, 01 Jan 1970 00:00:00 GMT");
@@ -63,26 +71,44 @@ const equalTokens = (left, right) => {
     && crypto.timingSafeEqual(leftBuffer, rightBuffer);
 };
 
-const isHttpsRequest = (req) => (req.get("x-forwarded-proto") || "")
+export const isAvatarHttpsRequest = (req) => (req.get("x-forwarded-proto") || "")
   .split(",", 1)[0]
   .trim()
   .toLowerCase() === "https";
 
+const requestHostname = (req) => {
+  const host = String(req.get("host") || "").trim().toLowerCase();
+  if (host.startsWith("[")) return host.slice(1, host.indexOf("]"));
+  return host.split(":", 1)[0];
+};
+
+const isLoopbackHostname = (hostname) =>
+  ["localhost", "127.0.0.1", "::1"].includes(String(hostname || "").toLowerCase());
+
+export const isAvatarLoopbackRequest = (req) =>
+  !config.isProduction && isLoopbackHostname(requestHostname(req));
+
+export const isAvatarTrustedRequest = (req) =>
+  isAvatarHttpsRequest(req) || isAvatarLoopbackRequest(req);
+
 export const requireAvatarHttps = (req, _res, next) => {
-  if (!isHttpsRequest(req)) {
+  if (!isAvatarTrustedRequest(req)) {
     next(new HttpError(426, "HTTPS is required.", { code: "HTTPS_REQUIRED" }));
     return;
   }
   next();
 };
 
-const isSameHttpsOrigin = (req) => {
+const isSameTrustedOrigin = (req) => {
   const origin = req.get("origin") || "";
   const host = req.get("host") || "";
-  if (!origin || !host || !isHttpsRequest(req)) return false;
+  if (!origin || !host || !isAvatarTrustedRequest(req)) return false;
   try {
     const parsed = new URL(origin);
-    return parsed.protocol === "https:" && parsed.host === host;
+    const validProtocol = isAvatarHttpsRequest(req)
+      ? parsed.protocol === "https:"
+      : parsed.protocol === "http:" && isLoopbackHostname(parsed.hostname);
+    return validProtocol && parsed.host === host;
   } catch {
     return false;
   }
@@ -126,9 +152,34 @@ export function createAvatar3dSessionService({
     };
   };
 
+  const createAvatarAppSession = async ({ token, secure = true }) => {
+    const normalizedToken = String(token || "").trim();
+    const session = await getSession(normalizedToken);
+    const csrfToken = randomToken();
+    return {
+      user: session.user,
+      csrfToken,
+      cookies: [
+        serializeCookie({
+          name: avatarSessionCookieName,
+          value: normalizedToken,
+          expiresAt: session.expiresAt,
+          httpOnly: true,
+          secure,
+        }),
+        serializeCookie({
+          name: avatarCsrfCookieName,
+          value: csrfToken,
+          expiresAt: session.expiresAt,
+          secure,
+        }),
+      ],
+    };
+  };
+
   const authenticateAvatarWeb = async (req, _res, next) => {
     try {
-      if (!isHttpsRequest(req)) {
+      if (!isAvatarTrustedRequest(req)) {
         throw new HttpError(426, "HTTPS is required.", { code: "HTTPS_REQUIRED" });
       }
       const cookies = parseCookies(req.get("cookie") || "");
@@ -149,7 +200,7 @@ export function createAvatar3dSessionService({
     const cookies = parseCookies(req.get("cookie") || "");
     const cookieToken = cookies[avatarCsrfCookieName] || "";
     const headerToken = req.get("x-csrf-token") || "";
-    if (!equalTokens(cookieToken, headerToken) || !isSameHttpsOrigin(req)) {
+    if (!equalTokens(cookieToken, headerToken) || !isSameTrustedOrigin(req)) {
       next(new HttpError(403, "Request verification failed.", { code: "CSRF_REJECTED" }));
       return;
     }
@@ -168,6 +219,7 @@ export function createAvatar3dSessionService({
 
   return {
     createAvatarWebSession,
+    createAvatarAppSession,
     authenticateAvatarWeb,
     requireAvatarCsrf,
     clearAvatarWebSession,
@@ -177,6 +229,7 @@ export function createAvatar3dSessionService({
 const avatar3dSessionService = createAvatar3dSessionService();
 
 export const createAvatarWebSession = avatar3dSessionService.createAvatarWebSession;
+export const createAvatarAppSession = avatar3dSessionService.createAvatarAppSession;
 export const authenticateAvatarWeb = avatar3dSessionService.authenticateAvatarWeb;
 export const requireAvatarCsrf = avatar3dSessionService.requireAvatarCsrf;
 export const clearAvatarWebSession = avatar3dSessionService.clearAvatarWebSession;

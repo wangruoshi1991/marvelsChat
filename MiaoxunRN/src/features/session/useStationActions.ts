@@ -6,7 +6,6 @@ import {
   StationContentDTO,
   StationComicDiaryDTO,
   StationFileAssetDTO,
-  StationGenerationJobDTO,
   StationSiteDraftDTO,
   StationVideoDraftDTO,
   StationVisibility,
@@ -415,60 +414,6 @@ export function useStationActions({
     [setProfile, setStationContent, token],
   );
 
-  const createStationModelJob = useCallback(
-    async (payload: {
-      prompt: string;
-      inputType?: 'text' | 'image';
-      provider?: 'meshy';
-      imageUrl?: string | null;
-      sourceAssetId?: string | null;
-    }) => {
-      if (!token) {
-        throw new Error('请先登录。');
-      }
-      const result = await apiClient.createStationModelJob(token, payload);
-      setStationContent(current => ({
-        ...current,
-        modelJobs: [
-          result.job,
-          ...(current.modelJobs || []).filter(
-            (item: StationGenerationJobDTO) => item.id !== result.job.id,
-          ),
-        ],
-      }));
-      return result;
-    },
-    [setStationContent, token],
-  );
-
-  const syncStationModelJob = useCallback(
-    async (jobId: string) => {
-      if (!token) {
-        throw new Error('请先登录。');
-      }
-      const result = await apiClient.syncStationModelJob(token, jobId);
-      setStationContent(current => ({
-        ...current,
-        modelJobs: (current.modelJobs || []).map(
-          (item: StationGenerationJobDTO) =>
-            item.id === result.job.id ? result.job : item,
-        ),
-        modelAssets: result.modelAsset
-          ? [
-              result.modelAsset,
-              ...(current.modelAssets || []).filter(
-                asset =>
-                  asset.generationJobId !== result.job.id &&
-                  asset.id !== result.modelAsset?.id,
-              ),
-            ]
-          : current.modelAssets || [],
-      }));
-      return result;
-    },
-    [setStationContent, token],
-  );
-
   const createStationFileAsset = useCallback(
     async (payload: {
       originalFilename: string;
@@ -636,8 +581,6 @@ export function useStationActions({
     createStationOutfit,
     createStationSiteDraft,
     applyStationSiteDraft,
-    createStationModelJob,
-    syncStationModelJob,
     createStationFileAsset,
     preprocessStationFileAsset,
     listStationAlbumSuggestions,

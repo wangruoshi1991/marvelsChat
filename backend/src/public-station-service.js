@@ -89,7 +89,6 @@ export function buildPublicStationView({ publicProfile, ownerProfile = {}, stati
       mediaAssets: cloneJson(mediaAssets, []),
       diaryEntries: cloneJson(diaryEntries, []),
       fileAssets: publicFileAssets({ publicProfile, stationContent, relation }),
-      modelAssets: [],
       comicDiaries: [],
       videoDrafts: [],
     },

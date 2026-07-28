@@ -355,27 +355,6 @@ export const avatar3dReferenceImageParamsSchema = z.object({
 }).strict();
 export const avatar3dModelParamsSchema = z.object({ modelId: z.string().uuid() }).strict();
 
-export const stationModelJobRequestSchema = z.object({
-  inputType: z.enum(["text", "image"]).optional().default("text"),
-  prompt: z.string().trim().min(1).max(600),
-  imageUrl: z.string().trim().url().max(2000).optional().nullable(),
-  sourceAssetId: z.string().uuid().optional().nullable(),
-  provider: z.string().trim().min(1).max(40).optional().default("legacy"),
-  targetFormats: z.array(z.enum(["glb", "obj", "fbx", "stl", "usdz", "3mf"])).min(1).max(3).optional().default(["glb"]),
-  topology: z.enum(["triangle", "quad"]).optional().default("triangle"),
-  poseMode: z.enum(["", "a-pose", "t-pose"]).optional().default(""),
-}).refine((value) => {
-  if (value.inputType === "text") return true;
-  return typeof value.imageUrl === "string" && value.imageUrl.startsWith("https://");
-}, {
-  message: "Image to 3D requires an HTTPS imageUrl",
-  path: ["imageUrl"],
-});
-
-export const generationJobParamsSchema = z.object({
-  jobId: z.string().uuid(),
-});
-
 export const stationFileAssetSchema = z.object({
   originalFilename: z.string().trim().min(1).max(180),
   mimeType: z.string().trim().max(160).optional().default("text/plain"),

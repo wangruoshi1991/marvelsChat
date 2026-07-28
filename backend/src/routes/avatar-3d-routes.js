@@ -1,6 +1,11 @@
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { avatar3dLifecycleService } from "../avatar-3d-lifecycle-service.js";
+import {
+  avatar3dJobCreateLimit as jobCreateLimit,
+  avatar3dPhotoMutationLimit as photoMutationLimit,
+  createAvatar3dUsageRecorder,
+  noStore,
+  streamAvatar3dPrivateObject as streamPrivateObject,
+} from "../avatar-3d-route-support.js";
 import {
   authenticateAvatarWeb,
   clearAvatarWebSession,
@@ -9,9 +14,8 @@ import {
   requireAvatarCsrf,
   requireAvatarHttps,
 } from "../avatar-3d-session.js";
-import { HttpError } from "../http-error.js";
 import { createRateLimitMiddleware } from "../rate-limit-service.js";
-import { createUsageEvent, hashRequestIp } from "../repositories.js";
+import { createUsageEvent } from "../repositories.js";
 import {
   avatar3dCreateJobSchema,
   avatar3dIdempotencySchema,
@@ -28,9 +32,6 @@ import {
   limitSchema,
 } from "../schemas.js";
 
-const hour = 60 * 60 * 1000;
-const day = 24 * hour;
-
 const loginLimit = createRateLimitMiddleware({
   action: "avatar3d.session.create",
   limit: 12,
@@ -44,52 +45,14 @@ const loginLimit = createRateLimitMiddleware({
   },
 });
 
-const photoMutationLimit = createRateLimitMiddleware({
-  action: "avatar3d.photo.mutate",
-  limit: 30,
-  windowMs: hour,
-  message: "照片操作过于频繁，请稍后再试。",
-});
-
-const jobCreateLimit = createRateLimitMiddleware({
-  action: "avatar3d.job.create",
-  limit: 6,
-  windowMs: day,
-  message: "生成请求过于频繁，请明天再试。",
-});
-
 const defaultSessionService = {
   createAvatarWebSession,
   clearAvatarWebSession,
   getAvatarCsrfToken,
 };
 
-const noStore = (res) => res.set("Cache-Control", "private, no-store");
-
 const setSessionCookies = (res, cookies) => {
   res.setHeader("Set-Cookie", cookies);
-};
-
-const streamPrivateObject = async (res, resource) => {
-  const response = resource?.response;
-  if (!response?.body) throw new HttpError(502, "Private storage returned an empty response.");
-
-  res.status(response.status);
-  for (const header of ["accept-ranges", "content-length", "content-range", "content-type"]) {
-    const value = response.headers?.get?.(header);
-    if (value) res.setHeader(header, value);
-  }
-  if (!response.headers?.get?.("content-type") && resource.contentType) {
-    res.setHeader("content-type", resource.contentType);
-  }
-  res.setHeader("cache-control", "private, no-store");
-  res.setHeader("x-content-type-options", "nosniff");
-
-  try {
-    await pipeline(Readable.fromWeb(response.body), res);
-  } catch (error) {
-    if (!res.destroyed) res.destroy(error);
-  }
 };
 
 export function registerAvatar3dRoutes(app, {
@@ -101,17 +64,6 @@ export function registerAvatar3dRoutes(app, {
   service = avatar3dLifecycleService,
   recordUsageEvent = createUsageEvent,
 } = {}) {
-  const recordUsage = (req, eventType, targetType, targetId, payload = {}) =>
-    recordUsageEvent({
-      userId: req.user.id,
-      eventType,
-      targetType,
-      targetId,
-      payload,
-      ipHash: hashRequestIp(req.ip),
-      userAgent: req.get("user-agent") || "",
-    });
-
   app.post(
     "/api/avatar-3d/session",
     requireHttps,
@@ -160,10 +112,12 @@ export function registerAvatar3dRoutes(app, {
     asyncHandler(async (req, res) => {
       const body = avatar3dPhotoUploadSchema.parse(req.body);
       const data = await service.preparePhotoUpload({ user: req.user, body });
-      await recordUsage(req, "avatar3d.photo.prepare", "avatar_3d_photo", data.photo.id, {
+      await createAvatar3dUsageRecorder(req, recordUsageEvent)(
+        "avatar3d.photo.prepare", "avatar_3d_photo", data.photo.id, {
         mimeType: data.photo.mimeType,
         byteSize: data.photo.byteSize,
-      });
+        },
+      );
       noStore(res);
       res.status(201).json({ data });
     }),
@@ -178,9 +132,11 @@ export function registerAvatar3dRoutes(app, {
       const { photoId } = avatar3dPhotoParamsSchema.parse(req.params);
       avatar3dPhotoCompleteSchema.parse(req.body || {});
       const photo = await service.completePhotoUpload({ user: req.user, photoId });
-      await recordUsage(req, "avatar3d.photo.complete", "avatar_3d_photo", photo.id, {
+      await createAvatar3dUsageRecorder(req, recordUsageEvent)(
+        "avatar3d.photo.complete", "avatar_3d_photo", photo.id, {
         status: photo.status,
-      });
+        },
+      );
       noStore(res);
       res.json({ data: photo });
     }),
@@ -194,7 +150,9 @@ export function registerAvatar3dRoutes(app, {
     asyncHandler(async (req, res) => {
       const { photoId } = avatar3dPhotoParamsSchema.parse(req.params);
       await service.deletePhoto({ user: req.user, photoId });
-      await recordUsage(req, "avatar3d.photo.delete", "avatar_3d_photo", photoId);
+      await createAvatar3dUsageRecorder(req, recordUsageEvent)(
+        "avatar3d.photo.delete", "avatar_3d_photo", photoId,
+      );
       noStore(res);
       res.status(204).send();
     }),
@@ -229,13 +187,15 @@ export function registerAvatar3dRoutes(app, {
         body,
         idempotencyKey,
       });
-      await recordUsage(req, "avatar3d.job.create", "avatar_3d_job", result.job.id, {
+      await createAvatar3dUsageRecorder(req, recordUsageEvent)(
+        "avatar3d.job.create", "avatar_3d_job", result.job.id, {
         created: result.created,
         style: result.job.style,
         status: result.job.status,
         photoCount: result.job.photoCount,
         estimatedCostFen: result.job.estimatedCostFen,
-      });
+        },
+      );
       noStore(res);
       res.status(result.created ? 201 : 200).json({ data: result });
     }),
@@ -295,12 +255,14 @@ export function registerAvatar3dRoutes(app, {
       const { jobId } = avatar3dJobParamsSchema.parse(req.params);
       const body = avatar3dReferenceConfirmSchema.parse(req.body);
       const data = await service.confirmReferences({ user: req.user, jobId, body });
-      await recordUsage(req, "avatar3d.references.confirm", "avatar_3d_job", jobId, {
+      await createAvatar3dUsageRecorder(req, recordUsageEvent)(
+        "avatar3d.references.confirm", "avatar_3d_job", jobId, {
         referenceSetId: body.referenceSetId,
         qualityPreset: body.qualityPreset,
         status: data.job.status,
         estimatedCostFen: data.job.estimatedCostFen,
-      });
+        },
+      );
       noStore(res);
       res.json({ data });
     }),
@@ -318,10 +280,12 @@ export function registerAvatar3dRoutes(app, {
         jobId,
         referenceSetId,
       });
-      await recordUsage(req, "avatar3d.references.reject", "avatar_3d_job", jobId, {
+      await createAvatar3dUsageRecorder(req, recordUsageEvent)(
+        "avatar3d.references.reject", "avatar_3d_job", jobId, {
         referenceSetId,
         status: job.status,
-      });
+        },
+      );
       noStore(res);
       res.json({ data: job });
     }),
@@ -335,10 +299,12 @@ export function registerAvatar3dRoutes(app, {
       const { jobId } = avatar3dJobParamsSchema.parse(req.params);
       avatar3dStyleConfirmSchema.parse(req.body);
       const job = await service.confirmStyle({ user: req.user, jobId });
-      await recordUsage(req, "avatar3d.style.confirm", "avatar_3d_job", job.id, {
+      await createAvatar3dUsageRecorder(req, recordUsageEvent)(
+        "avatar3d.style.confirm", "avatar_3d_job", job.id, {
         style: job.style,
         status: job.status,
-      });
+        },
+      );
       noStore(res);
       res.json({ data: job });
     }),
@@ -352,10 +318,12 @@ export function registerAvatar3dRoutes(app, {
       const { jobId } = avatar3dJobParamsSchema.parse(req.params);
       avatar3dPhotoCompleteSchema.parse(req.body || {});
       const job = await service.cancelJob({ user: req.user, jobId });
-      await recordUsage(req, "avatar3d.job.cancel", "avatar_3d_job", job.id, {
+      await createAvatar3dUsageRecorder(req, recordUsageEvent)(
+        "avatar3d.job.cancel", "avatar_3d_job", job.id, {
         style: job.style,
         status: job.status,
-      });
+        },
+      );
       noStore(res);
       res.json({ data: job });
     }),
@@ -420,7 +388,9 @@ export function registerAvatar3dRoutes(app, {
     asyncHandler(async (req, res) => {
       const { modelId } = avatar3dModelParamsSchema.parse(req.params);
       await service.deleteModel({ user: req.user, modelId });
-      await recordUsage(req, "avatar3d.model.delete", "avatar_3d_model", modelId);
+      await createAvatar3dUsageRecorder(req, recordUsageEvent)(
+        "avatar3d.model.delete", "avatar_3d_model", modelId,
+      );
       noStore(res);
       res.status(204).send();
     }),
