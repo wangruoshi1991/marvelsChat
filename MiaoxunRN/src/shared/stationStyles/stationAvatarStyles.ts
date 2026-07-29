@@ -339,6 +339,8 @@ export const stationAvatarStyles = {
   },
   avatar3dEmptyState: {
     alignItems: 'center',
+    alignSelf: 'stretch',
+    flex: 1,
     gap: 8,
     justifyContent: 'center',
     paddingHorizontal: 48,
@@ -360,7 +362,6 @@ export const stationAvatarStyles = {
   avatar3dActionRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 8,
     marginTop: 6,
   },
   avatar3dGenerateButton: {
@@ -398,14 +399,6 @@ export const stationAvatarStyles = {
   avatarFloatingTag_3: { right: 28, top: 190 },
   avatarFloatingTagCallable: { minHeight: 32, paddingHorizontal: 12 },
   avatarFloatingTagText: { fontSize: 12, fontWeight: '900' },
-  avatarOotdButton: {
-    alignSelf: 'flex-start',
-    borderRadius: 999,
-    marginTop: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  avatarOotdButtonText: { fontSize: 12, fontWeight: '900' },
   avatarRotateControls: {
     bottom: 16,
     flexDirection: 'row',

@@ -75,14 +75,28 @@ export function StationPanel({
   onOpenDiaryDetail: (entryId: string) => void;
   onOpenAlbumDetail: (albumId: string) => void;
   onDeletePost: ReturnType<typeof useMiaoxunSession>['deleteStationPost'];
-  onCreateSiteDraft: ReturnType<typeof useMiaoxunSession>['createStationSiteDraft'];
-  onApplySiteDraft: ReturnType<typeof useMiaoxunSession>['applyStationSiteDraft'];
+  onCreateSiteDraft: ReturnType<
+    typeof useMiaoxunSession
+  >['createStationSiteDraft'];
+  onApplySiteDraft: ReturnType<
+    typeof useMiaoxunSession
+  >['applyStationSiteDraft'];
   onOpenAvatar3d: () => void;
-  onLoadAlbumSuggestions: ReturnType<typeof useMiaoxunSession>['listStationAlbumSuggestions'];
-  onApplyAlbumSuggestion: ReturnType<typeof useMiaoxunSession>['applyStationAlbumSuggestion'];
-  onCreateFileAsset: ReturnType<typeof useMiaoxunSession>['createStationFileAsset'];
-  onPreprocessFileAsset: ReturnType<typeof useMiaoxunSession>['preprocessStationFileAsset'];
-  onCreateVideoDraft: ReturnType<typeof useMiaoxunSession>['createStationVideoDraft'];
+  onLoadAlbumSuggestions: ReturnType<
+    typeof useMiaoxunSession
+  >['listStationAlbumSuggestions'];
+  onApplyAlbumSuggestion: ReturnType<
+    typeof useMiaoxunSession
+  >['applyStationAlbumSuggestion'];
+  onCreateFileAsset: ReturnType<
+    typeof useMiaoxunSession
+  >['createStationFileAsset'];
+  onPreprocessFileAsset: ReturnType<
+    typeof useMiaoxunSession
+  >['preprocessStationFileAsset'];
+  onCreateVideoDraft: ReturnType<
+    typeof useMiaoxunSession
+  >['createStationVideoDraft'];
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
@@ -91,7 +105,6 @@ export function StationPanel({
       <StationPostsPanel
         palette={palette}
         language={language}
-        profile={profile}
         stationContent={stationContent}
         ownedAgents={ownedAgents}
         token={token}

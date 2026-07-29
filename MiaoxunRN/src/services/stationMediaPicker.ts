@@ -16,6 +16,7 @@ export type PickedStationMedia = {
 };
 
 const photoPickerOptions: ImageLibraryOptions = {
+  assetRepresentationMode: 'compatible',
   mediaType: 'photo',
   selectionLimit: 1,
   quality: 0.9,
@@ -30,12 +31,13 @@ const normalizeAsset = (
   if (!asset?.uri) {
     return null;
   }
-  const sourceMimeType = String(asset.type || '').trim().toLowerCase();
+  const sourceMimeType = String(asset.type || '')
+    .trim()
+    .toLowerCase();
   const mimeType =
     sourceMimeType === 'image/jpg'
       ? 'image/jpeg'
-      : sourceMimeType ||
-        (kind === 'video' ? 'video/quicktime' : 'image/jpeg');
+      : sourceMimeType || (kind === 'video' ? 'video/quicktime' : 'image/jpeg');
 
   return {
     kind,

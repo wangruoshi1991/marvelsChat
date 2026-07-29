@@ -20,7 +20,7 @@ export async function uploadAndValidateAvatar3dPhoto({
     throw new Error('无法读取所选照片，请重新选择。');
   }
   const blob = await fileResponse.blob();
-  const byteSize = media.byteSize || blob.size;
+  const byteSize = blob.size;
   if (!byteSize) {
     throw new Error('无法读取照片大小，请重新选择。');
   }

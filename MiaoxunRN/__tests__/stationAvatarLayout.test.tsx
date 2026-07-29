@@ -8,6 +8,7 @@ import {
   Avatar3DReferencesDTO,
 } from '../src/models/api';
 import { Avatar3DCreateScreen } from '../src/features/station/Avatar3DCreateScreen';
+import { StationAvatarSpace } from '../src/features/station/StationAvatarSpace';
 import { Stat } from '../src/features/station/StationShared';
 import { useAvatar3dWorkflow } from '../src/features/station/useAvatar3dWorkflow';
 import { palettes } from '../src/shared/theme';
@@ -346,6 +347,43 @@ describe('station avatar layout', () => {
         testID: 'avatar3d-confirm-references',
       }).props.disabled,
     ).toBe(true);
+
+    await ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
+  it('fills the 3D stage and keeps only one outfit entry', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <StationAvatarSpace
+          avatar3d={bootstrap}
+          avatar3dError=""
+          avatar3dStatus="ready"
+          language="zh"
+          onOpenGenerator={jest.fn()}
+          onOpenOotd={jest.fn()}
+          palette={palettes.light}
+          token="token"
+        />,
+      );
+    });
+
+    const labels = renderer!.root
+      .findAllByType(Text)
+      .map(node => node.props.children);
+    const stageStyle = StyleSheet.flatten(
+      renderer!.root.findByProps({ testID: 'avatar3d-stage' }).props.style,
+    );
+    const emptyStyle = StyleSheet.flatten(
+      renderer!.root.findByProps({ testID: 'avatar3d-empty-state' }).props
+        .style,
+    );
+
+    expect(labels.filter(label => label === '今日穿搭')).toHaveLength(1);
+    expect(labels).toContain('生成形象');
+    expect(stageStyle.backgroundColor).toBe('#F7F8FC');
+    expect(emptyStyle.flex).toBe(1);
 
     await ReactTestRenderer.act(() => renderer!.unmount());
   });

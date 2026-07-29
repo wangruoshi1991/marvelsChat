@@ -87,7 +87,14 @@ export function StationAvatarSpace({
         },
       ]}
     >
-      <View style={[styles.avatarStage, styles.avatarStageStation]}>
+      <View
+        style={[
+          styles.avatarStage,
+          styles.avatarStageStation,
+          { backgroundColor: stageBackgroundColor },
+        ]}
+        testID="avatar3d-stage"
+      >
         {latestModel && !viewerError ? (
           <Avatar3DViewer
             key={`${latestModel.id}:${viewerRevision}`}
@@ -97,12 +104,7 @@ export function StationAvatarSpace({
             token={token}
           />
         ) : (
-          <View
-            style={[
-              styles.avatar3dEmptyState,
-              { backgroundColor: stageBackgroundColor },
-            ]}
-          >
+          <View style={styles.avatar3dEmptyState} testID="avatar3d-empty-state">
             {avatar3dStatus === 'loading' ? (
               <ActivityIndicator color="#2012D9" />
             ) : (
@@ -196,16 +198,6 @@ export function StationAvatarSpace({
               {latestModel
                 ? textFor(language, '管理形象', 'Manage avatar')
                 : textFor(language, '生成形象', 'Create avatar')}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={onOpenOotd}
-            style={[styles.avatarOotdButton, { backgroundColor: palette.soft }]}
-          >
-            <Text
-              style={[styles.avatarOotdButtonText, { color: palette.text }]}
-            >
-              {textFor(language, '今日穿搭', 'Today’s OOTD')}
             </Text>
           </Pressable>
         </View>

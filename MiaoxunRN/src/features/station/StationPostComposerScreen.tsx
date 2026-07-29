@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import {
+  AlertCircle,
   ChevronRight,
   Globe2,
   LockKeyhole,
@@ -31,7 +32,7 @@ import {
   pickStationImagesFromLibrary,
   pickStationVideoFromLibrary,
 } from '../../services/stationMediaPicker';
-import { textFor } from '../../shared/i18n';
+import { appErrorText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
@@ -63,6 +64,7 @@ export function StationPostComposerScreen({
   const [isPublishing, setIsPublishing] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
   const [preparedAssetIds, setPreparedAssetIds] = useState<string[]>([]);
+  const [publishError, setPublishError] = useState('');
 
   const enabledAgents = useMemo(
     () => session.ownedAgents.filter(agent => agent.enabled).slice(0, 6),
@@ -303,6 +305,7 @@ export function StationPostComposerScreen({
       );
       return;
     }
+    setPublishError('');
     setIsPublishing(true);
     setUploadedCount(preparedAssetIds.length);
     let mediaAssetIds = preparedAssetIds;
@@ -340,6 +343,14 @@ export function StationPostComposerScreen({
         setPreparedAssetIds([]);
         setUploadedCount(0);
         setIsPublishing(false);
+        setPublishError(
+          appErrorText(
+            language,
+            failedUpload.reason,
+            '附件上传失败，请重试',
+            'Attachment upload failed. Try again.',
+          ),
+        );
         onActionError(failedUpload.reason);
         return;
       }
@@ -360,6 +371,14 @@ export function StationPostComposerScreen({
       onPublished();
     } catch (error) {
       setIsPublishing(false);
+      setPublishError(
+        appErrorText(
+          language,
+          error,
+          '发布失败，请稍后重试',
+          'Could not publish. Try again.',
+        ),
+      );
       onActionError(error);
     }
   };
@@ -444,6 +463,7 @@ export function StationPostComposerScreen({
                     }}
                     disabled={isPublishing}
                     onPress={publish}
+                    testID="post-composer-publish"
                     style={[
                       styles.postComposerPublish,
                       { backgroundColor: accentColor },
@@ -470,6 +490,32 @@ export function StationPostComposerScreen({
                   </Pressable>
                 </View>
               </View>
+
+              {publishError ? (
+                <View
+                  accessibilityRole="alert"
+                  style={styles.postComposerError}
+                  testID="post-composer-error"
+                >
+                  <AlertCircle color="#D9364F" size={18} strokeWidth={2} />
+                  <Text style={styles.postComposerErrorText}>
+                    {publishError}
+                  </Text>
+                  <Pressable
+                    accessibilityLabel={textFor(
+                      language,
+                      '关闭错误提示',
+                      'Dismiss error',
+                    )}
+                    accessibilityRole="button"
+                    hitSlop={8}
+                    onPress={() => setPublishError('')}
+                    style={styles.postComposerErrorDismiss}
+                  >
+                    <X color="#D9364F" size={17} strokeWidth={2} />
+                  </Pressable>
+                </View>
+              ) : null}
 
               <ScrollView
                 contentContainerStyle={styles.postComposerScrollContent}

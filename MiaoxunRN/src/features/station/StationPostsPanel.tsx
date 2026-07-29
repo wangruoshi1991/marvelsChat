@@ -7,26 +7,30 @@ import {
   Text,
   View,
 } from 'react-native';
-import { MapPin, Play } from 'lucide-react-native';
+import {
+  Clock3,
+  FileText,
+  Images,
+  MapPin,
+  Play,
+  Video,
+} from 'lucide-react-native';
 
 import { stationPostIconAssets } from '../../assets/icons';
 import {
   OwnedAgentDTO,
-  ProfileDTO,
   StationContentDTO,
   StationPostDTO,
 } from '../../models/api';
 import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
-import { displayText, textFor } from '../../shared/i18n';
+import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette, palettes } from '../../shared/theme';
-import { UserAvatar } from '../avatar/AvatarBadges';
 import { Language } from '../session/useMiaoxunSession';
 
 export function StationPostsPanel({
   palette,
   language,
-  profile,
   stationContent,
   ownedAgents,
   token,
@@ -36,7 +40,6 @@ export function StationPostsPanel({
 }: {
   palette: Palette;
   language: Language;
-  profile: ProfileDTO;
   stationContent: StationContentDTO;
   ownedAgents: OwnedAgentDTO[];
   token: string;
@@ -51,13 +54,9 @@ export function StationPostsPanel({
   if (!posts.length) {
     return (
       <View
-        style={[
-          styles.stationFeedEmpty,
-          { backgroundColor: surfaceColor },
-        ]}
+        style={[styles.stationFeedEmpty, { backgroundColor: surfaceColor }]}
       >
-        <Text style={[styles.stationFeedEmptyTitle, { color: palette.text }]}
-        >
+        <Text style={[styles.stationFeedEmptyTitle, { color: palette.text }]}>
           {textFor(language, '还没有动态', 'No posts yet')}
         </Text>
       </View>
@@ -73,7 +72,6 @@ export function StationPostsPanel({
           ownedAgents={ownedAgents}
           palette={palette}
           post={post}
-          profile={profile}
           token={token}
           onActionError={onActionError}
           onActionMessage={onActionMessage}
@@ -89,7 +87,6 @@ function StationPostCard({
   ownedAgents,
   palette,
   post,
-  profile,
   token,
   onDeletePost,
   onActionMessage,
@@ -99,7 +96,6 @@ function StationPostCard({
   ownedAgents: OwnedAgentDTO[];
   palette: Palette;
   post: StationPostDTO;
-  profile: ProfileDTO;
   token: string;
   onDeletePost: (postId: string) => Promise<void>;
   onActionMessage: (message: string) => void;
@@ -111,13 +107,11 @@ function StationPostCard({
       const agent = ownedAgents.find(item => item.id === agentId);
       return agent ? { id: agent.id, name: agent.name } : null;
     })
-    .filter(
-      (agent): agent is { id: string; name: string } => Boolean(agent),
-    );
+    .filter((agent): agent is { id: string; name: string } => Boolean(agent));
   const isLight = palette.text === palettes.light.text;
-  const borderColor = isLight ? '#F0EBFD' : palette.border;
   const softColor = isLight ? '#F4F6FF' : palette.soft;
   const surfaceColor = isLight ? '#FFFFFF' : palette.surface;
+  const previewMedia = post.media.slice(0, 3);
 
   const deletePost = () => {
     if (isDeleting) {
@@ -125,11 +119,7 @@ function StationPostCard({
     }
     Alert.alert(
       textFor(language, '删除这条动态？', 'Delete this post?'),
-      textFor(
-        language,
-        '删除后无法恢复。',
-        'This action cannot be undone.',
-      ),
+      textFor(language, '删除后无法恢复。', 'This action cannot be undone.'),
       [
         { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
         {
@@ -152,35 +142,56 @@ function StationPostCard({
   };
 
   return (
-    <View
-      style={[
-        styles.stationFeedCard,
-        { backgroundColor: surfaceColor },
-      ]}
-    >
+    <View style={[styles.stationFeedCard, { backgroundColor: surfaceColor }]}>
       <View style={styles.stationFeedHeader}>
-        <UserAvatar
-          config={profile.avatarConfig}
-          palette={palette}
-          size={42}
-          text={profile.avatarText}
-        />
-        <View style={styles.stationFeedAuthor}>
+        <View style={styles.stationFeedDateCopy}>
           <Text
             numberOfLines={1}
-            style={[styles.stationFeedAuthorName, { color: palette.text }]}
+            style={[styles.stationFeedDay, { color: palette.text }]}
           >
-            {displayText(language, profile.nickname)}
+            {formatPostDay(post.createdAt, language)}
           </Text>
-          <Text
-            style={[
-              styles.stationFeedTime,
-              { color: palette.secondaryText },
-            ]}
-          >
-            {formatPostTime(post.createdAt, language)} ·{' '}
-            {visibilityLabel(post, language)}
-          </Text>
+          <View style={styles.stationFeedMetaRow}>
+            <View style={styles.stationFeedMetaItem}>
+              <Clock3
+                color={palette.secondaryText}
+                size={11}
+                strokeWidth={1.8}
+              />
+              <Text
+                style={[
+                  styles.stationFeedMetaText,
+                  { color: palette.secondaryText },
+                ]}
+              >
+                {formatPostClock(post.createdAt, language)}
+              </Text>
+            </View>
+            <View style={styles.stationFeedMetaItem}>
+              <PostKindIcon
+                color={palette.secondaryText}
+                kind={post.media[0]?.kind || 'text'}
+              />
+              <Text
+                style={[
+                  styles.stationFeedMetaText,
+                  { color: palette.secondaryText },
+                ]}
+              >
+                {postKindLabel(post, language)}
+              </Text>
+            </View>
+            {post.visibility !== 'public' ? (
+              <Text
+                style={[
+                  styles.stationFeedMetaText,
+                  { color: palette.secondaryText },
+                ]}
+              >
+                {visibilityLabel(post, language)}
+              </Text>
+            ) : null}
+          </View>
         </View>
         <Pressable
           accessibilityRole="button"
@@ -198,8 +209,7 @@ function StationPostCard({
       </View>
 
       {post.body ? (
-        <Text style={[styles.stationFeedBody, { color: palette.text }]}
-        >
+        <Text style={[styles.stationFeedBody, { color: palette.text }]}>
           {post.body}
         </Text>
       ) : null}
@@ -221,7 +231,7 @@ function StationPostCard({
 
       {post.media.length ? (
         <View style={styles.stationFeedMediaGrid}>
-          {post.media.map(asset => (
+          {previewMedia.map((asset, index) => (
             <View
               key={asset.id}
               style={[
@@ -243,11 +253,7 @@ function StationPostCard({
               ) : (
                 <View style={styles.stationFeedVideo}>
                   <View style={styles.stationFeedVideoPlay}>
-                    <Play
-                      color="#FFFFFF"
-                      fill="#FFFFFF"
-                      size={21}
-                    />
+                    <Play color="#FFFFFF" fill="#FFFFFF" size={21} />
                   </View>
                   <Text
                     numberOfLines={1}
@@ -260,6 +266,13 @@ function StationPostCard({
                   </Text>
                 </View>
               )}
+              {index === 2 && post.media.length > previewMedia.length ? (
+                <View style={styles.stationFeedMediaMore}>
+                  <Text style={styles.stationFeedMediaMoreText}>
+                    +{post.media.length - previewMedia.length}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           ))}
         </View>
@@ -276,10 +289,7 @@ function StationPostCard({
               ]}
             >
               <Text
-                style={[
-                  styles.stationFeedAgentText,
-                  { color: palette.text },
-                ]}
+                style={[styles.stationFeedAgentText, { color: palette.text }]}
               >
                 {agent.name}
               </Text>
@@ -288,26 +298,21 @@ function StationPostCard({
         </View>
       ) : null}
 
-      <View
-        style={[
-          styles.stationFeedActions,
-          { borderTopColor: borderColor },
-        ]}
-      >
+      <View style={styles.stationFeedActions}>
         <PostMetric
           icon={stationPostIconAssets.likeInactive}
           palette={palette}
           value={post.likeCount}
         />
         <PostMetric
-          icon={stationPostIconAssets.comment}
-          palette={palette}
-          value={post.commentCount}
-        />
-        <PostMetric
           icon={stationPostIconAssets.favoriteInactive}
           palette={palette}
           value={post.favoriteCount}
+        />
+        <PostMetric
+          icon={stationPostIconAssets.comment}
+          palette={palette}
+          value={post.commentCount}
         />
       </View>
     </View>
@@ -331,10 +336,7 @@ function PostMetric({
         style={styles.stationFeedActionIcon}
       />
       <Text
-        style={[
-          styles.stationFeedActionText,
-          { color: palette.secondaryText },
-        ]}
+        style={[styles.stationFeedActionText, { color: palette.secondaryText }]}
       >
         {value || ''}
       </Text>
@@ -352,18 +354,82 @@ function visibilityLabel(post: StationPostDTO, language: Language) {
   return textFor(language, '公开', 'Public');
 }
 
-function formatPostTime(value: string | null | undefined, language: Language) {
+function PostKindIcon({
+  color,
+  kind,
+}: {
+  color: string;
+  kind: 'image' | 'video' | 'text';
+}) {
+  if (kind === 'video') {
+    return <Video color={color} size={11} strokeWidth={1.8} />;
+  }
+  if (kind === 'image') {
+    return <Images color={color} size={11} strokeWidth={1.8} />;
+  }
+  return <FileText color={color} size={11} strokeWidth={1.8} />;
+}
+
+function postKindLabel(post: StationPostDTO, language: Language) {
+  if (post.media[0]?.kind === 'video') {
+    return textFor(language, '视频', 'Video');
+  }
+  if (post.media.length) {
+    return textFor(language, '图片', 'Photos');
+  }
+  return textFor(language, '文字', 'Text');
+}
+
+function parsePostDate(value: string | null | undefined) {
   if (!value) {
-    return '';
+    return null;
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+}
+
+function formatPostDay(value: string | null | undefined, language: Language) {
+  const date = parsePostDate(value);
+  if (!date) {
     return '';
   }
-  return date.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US', {
-    month: 'short',
+  const today = new Date();
+  const startOfToday = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  );
+  const startOfPostDay = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  );
+  const dayDifference = Math.round(
+    (startOfToday.getTime() - startOfPostDay.getTime()) / 86_400_000,
+  );
+  if (dayDifference === 0) {
+    return textFor(language, '今天', 'Today');
+  }
+  if (dayDifference === 1) {
+    return textFor(language, '昨天', 'Yesterday');
+  }
+  return date.toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', {
+    month: language === 'zh' ? 'numeric' : 'short',
     day: 'numeric',
+  });
+}
+
+function formatPostClock(value: string | null | undefined, language: Language) {
+  const date = parsePostDate(value);
+  if (!date) {
+    return '';
+  }
+  return date.toLocaleTimeString(language === 'zh' ? 'zh-CN' : 'en-US', {
     hour: '2-digit',
     minute: '2-digit',
+    hour12: false,
   });
 }
