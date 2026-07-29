@@ -28,8 +28,15 @@ jest.mock('react-native-webview', () => {
   const React = require('react');
   const { View } = require('react-native');
   return {
-    WebView: props =>
-      React.createElement(View, { ...props, testID: 'avatar-webview' }),
+    WebView: React.forwardRef((props, ref) => {
+      const injectJavaScript = React.useRef(jest.fn()).current;
+      React.useImperativeHandle(ref, () => ({ injectJavaScript }));
+      return React.createElement(View, {
+        ...props,
+        injectJavaScript,
+        testID: 'avatar-webview',
+      });
+    }),
   };
 });
 

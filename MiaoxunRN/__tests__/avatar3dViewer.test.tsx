@@ -50,7 +50,6 @@ describe('Avatar3DViewer', () => {
         <Avatar3DViewer
           modelId="model-1"
           onError={onError}
-          thumbnailAvailable
           token="private-token"
         />,
       );
@@ -63,9 +62,25 @@ describe('Avatar3DViewer', () => {
       'http://*',
       'https://*',
     ]);
-    expect(webView.props.injectedJavaScript).toContain(
-      '/api/avatar-3d/app/models/model-1/file',
+    expect(webView.props.injectJavaScript).not.toHaveBeenCalled();
+    expect(
+      renderer!.root.findByProps({ testID: 'avatar3d-viewer-loading' }),
+    ).toBeDefined();
+
+    ReactTestRenderer.act(() => {
+      webView.props.onMessage({
+        nativeEvent: { data: JSON.stringify({ type: 'ready' }) },
+      });
+    });
+    expect(webView.props.injectJavaScript).toHaveBeenCalledWith(
+      expect.stringContaining('/api/avatar-3d/app/models/model-1/file'),
     );
+
+    ReactTestRenderer.act(() => {
+      webView.props.onMessage({
+        nativeEvent: { data: JSON.stringify({ type: 'parsing' }) },
+      });
+    });
     expect(
       renderer!.root.findByProps({ testID: 'avatar3d-viewer-loading' }),
     ).toBeDefined();

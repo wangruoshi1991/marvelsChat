@@ -1,7 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
-  Image,
   StyleProp,
   StyleSheet,
   View,
@@ -9,15 +14,14 @@ import {
 } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 
-import {
-  avatar3dModelFileUrl,
-  avatar3dModelThumbnailUrl,
-} from '../../services/api/avatar3dApi';
+import { avatar3dModelFileUrl } from '../../services/api/avatar3dApi';
 
 type ViewerMessage = {
   type?: unknown;
   message?: unknown;
 };
+
+type ViewerStatus = 'booting' | 'loading' | 'parsing' | 'loaded' | 'error';
 
 const serializeViewerConfig = (value: object) =>
   JSON.stringify(value).replace(/</g, '\\u003c');
@@ -49,47 +53,77 @@ export function buildAvatar3DViewerScript({
 export function Avatar3DViewer({
   modelId,
   token,
-  thumbnailAvailable = false,
   onError,
   style,
 }: {
   modelId: string;
   token: string;
-  thumbnailAvailable?: boolean;
   onError?: (message: string) => void;
   style?: StyleProp<ViewStyle>;
 }) {
-  const [loaded, setLoaded] = useState(false);
+  const webViewRef = useRef<WebView<object>>(null);
+  const [status, setStatus] = useState<ViewerStatus>('booting');
   const modelUrl = useMemo(() => avatar3dModelFileUrl(modelId), [modelId]);
-  const thumbnailUrl = useMemo(
-    () => avatar3dModelThumbnailUrl(modelId),
-    [modelId],
-  );
-  const injectedJavaScript = useMemo(
+  const loadScript = useMemo(
     () => buildAvatar3DViewerScript({ modelUrl, token }),
     [modelUrl, token],
   );
+  const failViewer = useCallback(
+    (message = '3D形象页面加载失败') => {
+      setStatus('error');
+      onError?.(message);
+    },
+    [onError],
+  );
 
   useEffect(() => {
-    setLoaded(false);
+    setStatus('booting');
   }, [modelId]);
+
+  useEffect(() => {
+    if (status !== 'booting') return undefined;
+    const timeout = setTimeout(() => failViewer(), 10_000);
+    return () => clearTimeout(timeout);
+  }, [failViewer, status]);
 
   const handleMessage = (event: WebViewMessageEvent) => {
     try {
       const message = JSON.parse(event.nativeEvent.data) as ViewerMessage;
+      if (message.type === 'ready') {
+        const viewer = webViewRef.current;
+        if (!viewer) {
+          failViewer();
+          return;
+        }
+        try {
+          viewer.injectJavaScript(loadScript);
+          setStatus('loading');
+        } catch {
+          failViewer();
+        }
+        return;
+      }
+      if (message.type === 'downloading') {
+        setStatus('loading');
+        return;
+      }
+      if (message.type === 'parsing') {
+        setStatus('parsing');
+        return;
+      }
       if (message.type === 'loaded') {
-        setLoaded(true);
+        setStatus('loaded');
         return;
       }
       if (message.type === 'error') {
-        onError?.(
+        failViewer(
           typeof message.message === 'string'
             ? message.message
             : '3D形象页面加载失败',
         );
       }
     } catch {
-      onError?.('3D形象页面加载失败');
+      failViewer();
     }
   };
 
@@ -102,49 +136,30 @@ export function Avatar3DViewer({
         bounces={false}
         cacheEnabled={false}
         domStorageEnabled={false}
-        injectedJavaScript={injectedJavaScript}
         javaScriptCanOpenWindowsAutomatically={false}
         javaScriptEnabled
         mixedContentMode="never"
-        onContentProcessDidTerminate={() =>
-          onError?.('3D形象页面加载失败')
-        }
-        onError={() => onError?.('3D形象页面加载失败')}
-        onLoadStart={() => setLoaded(false)}
+        onContentProcessDidTerminate={() => failViewer()}
+        onError={() => failViewer()}
+        onLoadStart={() => setStatus('booting')}
         onMessage={handleMessage}
         onShouldStartLoadWithRequest={request =>
           isAvatar3DViewerDocumentUrl(request.url)
         }
         originWhitelist={['file://*', 'http://*', 'https://*']}
-        renderLoading={() => (
-          <View style={localStyles.loading}>
-            <ActivityIndicator color="#2012D9" />
-          </View>
-        )}
+        ref={webViewRef}
         scrollEnabled={false}
         setSupportMultipleWindows={false}
         sharedCookiesEnabled={false}
         source={require('../../assets/avatar-viewer/avatar-viewer.html')}
-        startInLoadingState
         thirdPartyCookiesEnabled={false}
       />
-      {!loaded ? (
+      {status !== 'loaded' && status !== 'error' ? (
         <View
           pointerEvents="none"
           style={localStyles.preview}
           testID="avatar3d-viewer-loading"
         >
-          {thumbnailAvailable ? (
-            <Image
-              accessibilityLabel="3D形象预览"
-              resizeMode="contain"
-              source={{
-                headers: { Authorization: `Bearer ${token}` },
-                uri: thumbnailUrl,
-              }}
-              style={localStyles.previewImage}
-            />
-          ) : null}
           <View style={localStyles.loadingIndicator}>
             <ActivityIndicator color="#2012D9" />
           </View>
@@ -164,16 +179,6 @@ const localStyles = StyleSheet.create({
     justifyContent: 'center',
     width: 40,
   },
-  loading: {
-    alignItems: 'center',
-    backgroundColor: '#F7F8FC',
-    bottom: 0,
-    justifyContent: 'center',
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-  },
   preview: {
     alignItems: 'center',
     backgroundColor: '#F7F8FC',
@@ -183,14 +188,5 @@ const localStyles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     top: 0,
-  },
-  previewImage: {
-    bottom: 0,
-    height: '100%',
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    width: '100%',
   },
 });

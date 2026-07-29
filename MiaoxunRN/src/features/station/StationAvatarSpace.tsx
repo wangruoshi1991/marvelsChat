@@ -112,7 +112,6 @@ export function StationAvatarSpace({
             modelId={latestModel.id}
             onError={setViewerError}
             style={styles.avatar3dStageWebView}
-            thumbnailAvailable={latestModel.thumbnailAvailable}
             token={token}
           />
         ) : (

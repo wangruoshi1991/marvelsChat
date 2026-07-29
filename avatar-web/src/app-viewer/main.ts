@@ -30,7 +30,10 @@ const scene = createModelScene(canvas, { backgroundColor: "#F7F8FC" });
 let loadRevision = 0;
 let activeRequest: AbortController | null = null;
 
-const notify = (message: { type: "loaded" | "error"; message?: string }) => {
+const notify = (message: {
+  type: "ready" | "downloading" | "parsing" | "loaded" | "error";
+  message?: string;
+}) => {
   window.ReactNativeWebView?.postMessage(JSON.stringify(message));
 };
 
@@ -55,6 +58,7 @@ const load = async ({ modelUrl, token }: ViewerConfig) => {
   activeRequest?.abort();
   activeRequest = new AbortController();
   setLoading(true);
+  notify({ type: "downloading" });
 
   try {
     const response = await fetch(assertModelUrl(modelUrl), {
@@ -70,6 +74,7 @@ const load = async ({ modelUrl, token }: ViewerConfig) => {
 
     const objectUrl = URL.createObjectURL(await response.blob());
     try {
+      notify({ type: "parsing" });
       await scene.load(objectUrl);
     } finally {
       URL.revokeObjectURL(objectUrl);
@@ -101,3 +106,4 @@ window.MiaoxunAvatarViewer = Object.freeze({
   load,
   resetCamera: () => scene.resetCamera(),
 });
+notify({ type: "ready" });
