@@ -7,7 +7,7 @@ import {
   ImagePlus,
   Trash2,
 } from 'lucide-react-native';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -47,6 +47,46 @@ import { useAvatar3dWorkflow } from './useAvatar3dWorkflow';
 type BodyShape = 'balanced' | 'slender' | 'athletic';
 type Outfit = 'business' | 'smart_casual' | 'casual' | 'sport' | 'formal';
 
+const bodyShapeOptions = (language: Language) => [
+  {
+    label: textFor(language, '匀称', 'Balanced'),
+    value: 'balanced' as const,
+  },
+  {
+    label: textFor(language, '修长', 'Slender'),
+    value: 'slender' as const,
+  },
+  {
+    label: textFor(language, '运动感', 'Athletic'),
+    value: 'athletic' as const,
+  },
+];
+
+const outfitOptions = (language: Language) => [
+  {
+    label: textFor(language, '商务休闲', 'Smart Casual'),
+    value: 'smart_casual' as const,
+  },
+  {
+    label: textFor(language, '日常休闲', 'Casual'),
+    value: 'casual' as const,
+  },
+  {
+    label: textFor(language, '商务', 'Business'),
+    value: 'business' as const,
+  },
+  {
+    label: textFor(language, '运动', 'Sport'),
+    value: 'sport' as const,
+  },
+  {
+    label: textFor(language, '正式', 'Formal'),
+    value: 'formal' as const,
+  },
+];
+
+const formatCost = (fen: number) => `¥${(fen / 100).toFixed(2)}`;
+
 export function Avatar3DCreateScreen({
   palette,
   language,
@@ -74,12 +114,12 @@ export function Avatar3DCreateScreen({
   const [bodyShape, setBodyShape] = useState<BodyShape>('balanced');
   const [outfit, setOutfit] = useState<Outfit>('smart_casual');
   const [qualityPreset, setQualityPreset] =
-    useState<Avatar3DQualityPresetId>('standard');
+    useState<Avatar3DQualityPresetId | null>(
+      initialBootstrap?.feature.defaultQualityPreset || null,
+    );
   const [description, setDescription] = useState('');
-  const [acceptedPhotoRights, setAcceptedPhotoRights] = useState(false);
-  const [acceptedAdultSubject, setAcceptedAdultSubject] = useState(false);
+  const [acceptedIdentity, setAcceptedIdentity] = useState(false);
   const [acceptedFaceCompletion, setAcceptedFaceCompletion] = useState(false);
-  const qualityInitializedRef = useRef(false);
 
   const isDark = palette.text === palettes.dark.text;
   const colors = {
@@ -94,11 +134,10 @@ export function Avatar3DCreateScreen({
   };
 
   useEffect(() => {
-    if (workflow.bootstrap && !qualityInitializedRef.current) {
+    if (workflow.bootstrap && !qualityPreset) {
       setQualityPreset(workflow.bootstrap.feature.defaultQualityPreset);
-      qualityInitializedRef.current = true;
     }
-  }, [workflow.bootstrap]);
+  }, [qualityPreset, workflow.bootstrap]);
 
   useEffect(() => {
     if (!workflow.isSubmissionUncertain || !workflow.pendingOptions) {
@@ -108,14 +147,12 @@ export function Avatar3DCreateScreen({
     setOutfit(workflow.pendingOptions.outfit);
     setQualityPreset(workflow.pendingOptions.qualityPreset);
     setDescription(workflow.pendingOptions.userDescription);
-    setAcceptedPhotoRights(true);
-    setAcceptedAdultSubject(true);
+    setAcceptedIdentity(true);
     setAcceptedFaceCompletion(true);
   }, [workflow.isSubmissionUncertain, workflow.pendingOptions]);
 
   const isBusy = workflow.busyAction !== 'none';
-  const allConsentsAccepted =
-    acceptedPhotoRights && acceptedAdultSubject && acceptedFaceCompletion;
+  const allConsentsAccepted = acceptedIdentity && acceptedFaceCompletion;
   const canGenerate = Boolean(
     workflow.validatedPhoto &&
       allConsentsAccepted &&
@@ -153,14 +190,54 @@ export function Avatar3DCreateScreen({
     if (!canGenerate && !workflow.isSubmissionUncertain) {
       return;
     }
-    await workflow
-      .createJob({
-        bodyShape,
-        outfit,
-        qualityPreset,
-        userDescription: description,
-      })
-      .catch(() => undefined);
+    const feature = workflow.bootstrap?.feature;
+    if (!feature) {
+      return;
+    }
+    const create = () =>
+      workflow
+        .createJob({
+          bodyShape,
+          outfit,
+          qualityPreset: feature.defaultQualityPreset,
+          userDescription: description,
+        })
+        .catch(() => undefined);
+    if (workflow.isSubmissionUncertain) {
+      await create();
+      return;
+    }
+    const selectedBody = bodyShapeOptions(language).find(
+      option => option.value === bodyShape,
+    );
+    const selectedOutfit = outfitOptions(language).find(
+      option => option.value === outfit,
+    );
+    Alert.alert(
+      textFor(language, '确认生成四视图', 'Confirm Four Views'),
+      textFor(
+        language,
+        `照片：1 张正面脸照\n身材：${selectedBody?.label}\n服装：${
+          selectedOutfit?.label
+        }\n预计费用：${formatCost(
+          feature.referenceGenerationEstimatedCostFen,
+        )}\n\n此步骤只生成四视图，确认效果后才会开始 3D 建模。`,
+        `Photo: 1 front-facing portrait\nBody: ${
+          selectedBody?.label
+        }\nOutfit: ${selectedOutfit?.label}\nEstimated cost: ${formatCost(
+          feature.referenceGenerationEstimatedCostFen,
+        )}\n\nThis step only generates four reference views. 3D modeling starts after your review.`,
+      ),
+      [
+        { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
+        {
+          text: textFor(language, '确认生成', 'Generate'),
+          onPress: () => {
+            create().catch(() => undefined);
+          },
+        },
+      ],
+    );
   };
 
   const closeScreen = async () => {
@@ -211,6 +288,8 @@ export function Avatar3DCreateScreen({
           job={workflow.job}
           language={language}
           qualityPreset={qualityPreset}
+          qualityPresets={workflow.bootstrap?.feature.qualityPresets || []}
+          onQualityPresetChange={setQualityPreset}
           token={token}
           workflow={workflow}
           onManage={() => {
@@ -230,7 +309,7 @@ export function Avatar3DCreateScreen({
           >
             <Section
               colors={colors}
-              title={textFor(language, '正面照片', 'Front Photo')}
+              title={textFor(language, '正面脸照', 'Front-facing Portrait')}
             >
               <Pressable
                 accessibilityRole="button"
@@ -285,8 +364,8 @@ export function Avatar3DCreateScreen({
                     >
                       {textFor(
                         language,
-                        '仅支持单人、清晰的 JPG 或 PNG 正面照',
-                        'Use one clear front-facing JPG or PNG photo',
+                        '清楚展示脸部即可，仅支持单人 JPG 或 PNG 照片',
+                        'Use one clear JPG or PNG portrait with a visible face',
                       )}
                     </Text>
                   </View>
@@ -355,24 +434,11 @@ export function Avatar3DCreateScreen({
 
             <Section
               colors={colors}
-              title={textFor(language, '体型', 'Body Shape')}
+              title={textFor(language, '身材方向', 'Body Direction')}
             >
               <OptionRow
                 colors={colors}
-                options={[
-                  {
-                    label: textFor(language, '匀称', 'Balanced'),
-                    value: 'balanced',
-                  },
-                  {
-                    label: textFor(language, '修长', 'Slender'),
-                    value: 'slender',
-                  },
-                  {
-                    label: textFor(language, '健美', 'Athletic'),
-                    value: 'athletic',
-                  },
-                ]}
+                options={bodyShapeOptions(language)}
                 value={bodyShape}
                 onChange={setBodyShape}
                 disabled={workflow.isSubmissionUncertain}
@@ -381,29 +447,11 @@ export function Avatar3DCreateScreen({
 
             <Section
               colors={colors}
-              title={textFor(language, '穿搭', 'Outfit')}
+              title={textFor(language, '服装方向', 'Outfit Direction')}
             >
               <OptionRow
                 colors={colors}
-                options={[
-                  {
-                    label: textFor(language, '商务', 'Business'),
-                    value: 'business',
-                  },
-                  {
-                    label: textFor(language, '轻商务', 'Smart'),
-                    value: 'smart_casual',
-                  },
-                  {
-                    label: textFor(language, '休闲', 'Casual'),
-                    value: 'casual',
-                  },
-                  { label: textFor(language, '运动', 'Sport'), value: 'sport' },
-                  {
-                    label: textFor(language, '正式', 'Formal'),
-                    value: 'formal',
-                  },
-                ]}
+                options={outfitOptions(language)}
                 value={outfit}
                 onChange={setOutfit}
                 disabled={workflow.isSubmissionUncertain}
@@ -413,68 +461,7 @@ export function Avatar3DCreateScreen({
 
             <Section
               colors={colors}
-              title={textFor(language, '模型精度', 'Quality')}
-            >
-              <View style={localStyles.qualityOptions}>
-                {(workflow.bootstrap?.feature.qualityPresets || []).map(
-                  option => (
-                    <Pressable
-                      accessibilityRole="radio"
-                      accessibilityState={{
-                        checked: qualityPreset === option.id,
-                      }}
-                      disabled={workflow.isSubmissionUncertain}
-                      key={option.id}
-                      onPress={() => setQualityPreset(option.id)}
-                      style={[
-                        localStyles.qualityOption,
-                        {
-                          backgroundColor:
-                            qualityPreset === option.id
-                              ? colors.soft
-                              : colors.surface,
-                          borderColor:
-                            qualityPreset === option.id
-                              ? colors.accent
-                              : colors.border,
-                        },
-                      ]}
-                    >
-                      <View style={localStyles.qualityTitleRow}>
-                        <Text
-                          style={[
-                            localStyles.qualityTitle,
-                            { color: colors.text },
-                          ]}
-                        >
-                          {option.label}
-                        </Text>
-                        <Text
-                          style={[
-                            localStyles.qualityCost,
-                            { color: colors.accent },
-                          ]}
-                        >
-                          {(option.estimatedCostFen / 100).toFixed(2)} 元
-                        </Text>
-                      </View>
-                      <Text
-                        style={[
-                          localStyles.qualityBody,
-                          { color: colors.muted },
-                        ]}
-                      >
-                        {option.description}
-                      </Text>
-                    </Pressable>
-                  ),
-                )}
-              </View>
-            </Section>
-
-            <Section
-              colors={colors}
-              title={textFor(language, '补充描述', 'Description')}
+              title={textFor(language, '补充要求', 'Additional Request')}
             >
               <TextInput
                 editable={!workflow.isSubmissionUncertain}
@@ -509,25 +496,14 @@ export function Avatar3DCreateScreen({
               title={textFor(language, '授权确认', 'Consent')}
             >
               <ConsentRow
-                checked={acceptedPhotoRights}
+                checked={acceptedIdentity}
                 colors={colors}
                 label={textFor(
                   language,
-                  '我拥有这张照片的使用权',
-                  'I have the right to use this photo',
+                  '确认拥有照片使用授权，且照片中的人物已成年',
+                  'I have permission to use this photo and the person is an adult',
                 )}
-                onChange={setAcceptedPhotoRights}
-                disabled={workflow.isSubmissionUncertain}
-              />
-              <ConsentRow
-                checked={acceptedAdultSubject}
-                colors={colors}
-                label={textFor(
-                  language,
-                  '照片中的人物已成年',
-                  'The person in the photo is an adult',
-                )}
-                onChange={setAcceptedAdultSubject}
+                onChange={setAcceptedIdentity}
                 disabled={workflow.isSubmissionUncertain}
               />
               <ConsentRow
@@ -535,12 +511,60 @@ export function Avatar3DCreateScreen({
                 colors={colors}
                 label={textFor(
                   language,
-                  '我同意系统补全未展示的面部视角',
-                  'I agree to generated unseen facial views',
+                  '同意 AI 根据描述补全未展示的身体、服装与背面',
+                  'I allow AI to complete the unseen body, clothing, and back view',
                 )}
                 onChange={setAcceptedFaceCompletion}
                 disabled={workflow.isSubmissionUncertain}
               />
+              {workflow.bootstrap ? (
+                <View
+                  style={[
+                    localStyles.costSummary,
+                    { backgroundColor: colors.soft },
+                  ]}
+                  testID="avatar3d-reference-cost"
+                >
+                  <View style={localStyles.costSummaryCopy}>
+                    <Text
+                      style={[
+                        localStyles.costSummaryTitle,
+                        { color: colors.text },
+                      ]}
+                    >
+                      {textFor(
+                        language,
+                        '本次先生成 4 张参考图',
+                        'Generate four reference views first',
+                      )}
+                    </Text>
+                    <Text
+                      style={[
+                        localStyles.costSummaryHint,
+                        { color: colors.muted },
+                      ]}
+                    >
+                      {textFor(
+                        language,
+                        '确认效果后才会开始 3D 建模',
+                        '3D modeling starts only after your review',
+                      )}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      localStyles.costSummaryValue,
+                      { color: colors.accent },
+                    ]}
+                  >
+                    {textFor(language, '预计 ', 'Est. ')}
+                    {formatCost(
+                      workflow.bootstrap.feature
+                        .referenceGenerationEstimatedCostFen,
+                    )}
+                  </Text>
+                </View>
+              ) : null}
             </Section>
 
             {workflow.errorMessage ? (
@@ -577,6 +601,7 @@ export function Avatar3DCreateScreen({
                     !workflow.isSubmissionUncertain)) &&
                   localStyles.buttonDisabled,
               ]}
+              testID="avatar3d-submit"
             >
               {isBusy ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
@@ -589,7 +614,7 @@ export function Avatar3DCreateScreen({
                   : workflow.isSubmissionUncertain
                   ? textFor(language, '重试原提交', 'Retry Submission')
                   : workflow.validatedPhoto
-                  ? textFor(language, '开始生成', 'Start Generation')
+                  ? textFor(language, '生成四视图', 'Generate Four Views')
                   : textFor(language, '检查照片', 'Check Photo')}
               </Text>
             </Pressable>
@@ -749,22 +774,35 @@ function JobView({
   job,
   language,
   qualityPreset,
+  qualityPresets,
   token,
   workflow,
+  onQualityPresetChange,
   onManage,
 }: {
   colors: ScreenColors;
   job: Avatar3DJobDTO;
   language: Language;
-  qualityPreset: Avatar3DQualityPresetId;
+  qualityPreset: Avatar3DQualityPresetId | null;
+  qualityPresets: Avatar3DBootstrapDTO['feature']['qualityPresets'];
   token: string;
   workflow: ReturnType<typeof useAvatar3dWorkflow>;
+  onQualityPresetChange: (preset: Avatar3DQualityPresetId) => void;
   onManage: () => void;
 }) {
   const terminal = isAvatar3dTerminalStatus(job.status);
   const awaitingReferences = job.status === 'awaiting_reference_confirmation';
   const progress = Math.max(0, Math.min(100, job.progress));
   const statusCopy = jobStatusCopy(language, job);
+  const referenceImages = workflow.references
+    ? [...workflow.references.images].sort(
+        (left, right) => left.sequenceIndex - right.sequenceIndex,
+      )
+    : [];
+  const referencesReady = referenceImages.length === 4;
+  const selectedQuality = qualityPresets.find(
+    option => option.id === qualityPreset,
+  );
 
   const confirmReject = () => {
     Alert.alert(
@@ -872,7 +910,7 @@ function JobView({
             </Text>
             {workflow.references ? (
               <View style={localStyles.referenceGrid}>
-                {workflow.references.images.map(image => (
+                {referenceImages.map(image => (
                   <View key={image.id} style={localStyles.referenceItem}>
                     <Image
                       resizeMode="cover"
@@ -893,6 +931,114 @@ function JobView({
                 <ActivityIndicator color={colors.accent} />
               </View>
             )}
+            {workflow.references ? (
+              <View
+                style={[
+                  localStyles.referenceQuality,
+                  { borderTopColor: colors.border },
+                ]}
+                testID="avatar3d-quality-options"
+              >
+                <Text
+                  style={[
+                    localStyles.referenceQualityTitle,
+                    { color: colors.text },
+                  ]}
+                >
+                  {textFor(language, '3D 生成精度', '3D Generation Quality')}
+                </Text>
+                <Text
+                  style={[
+                    localStyles.referenceQualityHint,
+                    { color: colors.muted },
+                  ]}
+                >
+                  {selectedQuality?.description || ''}
+                </Text>
+                <View style={localStyles.qualitySegment}>
+                  {qualityPresets.map(option => {
+                    const selected = option.id === qualityPreset;
+                    return (
+                      <Pressable
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: selected }}
+                        disabled={workflow.busyAction !== 'none'}
+                        key={option.id}
+                        onPress={() => onQualityPresetChange(option.id)}
+                        style={[
+                          localStyles.qualitySegmentButton,
+                          {
+                            backgroundColor: selected
+                              ? colors.accent
+                              : colors.soft,
+                            borderColor: selected
+                              ? colors.accent
+                              : colors.border,
+                          },
+                        ]}
+                        testID={`avatar3d-quality-${option.id}`}
+                      >
+                        <Text
+                          style={[
+                            localStyles.qualitySegmentLabel,
+                            { color: colors.text },
+                            selected && localStyles.optionTextSelected,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <View
+                  style={[
+                    localStyles.costSummary,
+                    { backgroundColor: colors.soft },
+                  ]}
+                  testID="avatar3d-model-cost"
+                >
+                  <View style={localStyles.costSummaryCopy}>
+                    <Text
+                      style={[
+                        localStyles.costSummaryTitle,
+                        { color: colors.text },
+                      ]}
+                    >
+                      {textFor(
+                        language,
+                        '确认后开始 3D 建模',
+                        'Start 3D modeling after confirmation',
+                      )}
+                    </Text>
+                    <Text
+                      style={[
+                        localStyles.costSummaryHint,
+                        { color: colors.muted },
+                      ]}
+                    >
+                      {textFor(
+                        language,
+                        '精度可在确认前调整',
+                        'Quality can be changed before confirmation',
+                      )}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      localStyles.costSummaryValue,
+                      { color: colors.accent },
+                    ]}
+                  >
+                    {selectedQuality
+                      ? `${textFor(language, '预计 ', 'Est. ')}${formatCost(
+                          selectedQuality.estimatedCostFen,
+                        )}`
+                      : ''}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -966,23 +1112,38 @@ function JobView({
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              disabled={workflow.busyAction !== 'none' || !workflow.references}
+              disabled={
+                workflow.busyAction !== 'none' ||
+                !referencesReady ||
+                !qualityPreset
+              }
               onPress={() =>
-                workflow.confirmReferences(qualityPreset).catch(() => undefined)
+                qualityPreset
+                  ? workflow
+                      .confirmReferences(qualityPreset)
+                      .catch(() => undefined)
+                  : undefined
               }
               style={[
                 localStyles.primaryButton,
                 localStyles.referencePrimaryButton,
                 { backgroundColor: colors.accent },
-                (workflow.busyAction !== 'none' || !workflow.references) &&
+                (workflow.busyAction !== 'none' ||
+                  !referencesReady ||
+                  !qualityPreset) &&
                   localStyles.buttonDisabled,
               ]}
+              testID="avatar3d-confirm-references"
             >
               {workflow.busyAction === 'confirming' ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : null}
               <Text style={localStyles.primaryButtonText}>
-                {textFor(language, '确认并继续', 'Confirm and Continue')}
+                {textFor(
+                  language,
+                  '确认四视图并生成 3D',
+                  'Confirm Views and Generate 3D',
+                )}
               </Text>
             </Pressable>
           </View>
@@ -1405,16 +1566,6 @@ const localStyles = StyleSheet.create({
   optionButtonWrap: { flexBasis: '30%', flexGrow: 1 },
   optionText: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
   optionTextSelected: { color: '#FFFFFF' },
-  qualityOptions: { gap: 8 },
-  qualityOption: { borderRadius: 8, borderWidth: 1, gap: 5, padding: 12 },
-  qualityTitleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  qualityTitle: { fontSize: 14, fontWeight: '700' },
-  qualityCost: { fontSize: 12, fontWeight: '700' },
-  qualityBody: { fontSize: 12, lineHeight: 18 },
   descriptionInput: {
     borderRadius: 8,
     borderWidth: 1,
@@ -1439,6 +1590,17 @@ const localStyles = StyleSheet.create({
     width: 22,
   },
   consentText: { flex: 1, fontSize: 13, lineHeight: 19 },
+  costSummary: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 12,
+  },
+  costSummaryCopy: { flex: 1, gap: 3 },
+  costSummaryTitle: { fontSize: 13, fontWeight: '700', lineHeight: 19 },
+  costSummaryHint: { fontSize: 11, lineHeight: 17 },
+  costSummaryValue: { fontSize: 14, fontWeight: '700' },
   footer: { borderTopWidth: 2, paddingHorizontal: 18, paddingVertical: 12 },
   primaryButton: {
     alignItems: 'center',
@@ -1522,6 +1684,25 @@ const localStyles = StyleSheet.create({
     height: 220,
     justifyContent: 'center',
   },
+  referenceQuality: {
+    borderTopWidth: 2,
+    gap: 10,
+    marginTop: 18,
+    paddingTop: 18,
+  },
+  referenceQualityTitle: { fontSize: 16, fontWeight: '700' },
+  referenceQualityHint: { fontSize: 12, lineHeight: 18, minHeight: 18 },
+  qualitySegment: { flexDirection: 'row', gap: 8 },
+  qualitySegmentButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: 10,
+  },
+  qualitySegmentLabel: { fontSize: 13, fontWeight: '700' },
   referenceActions: { flexDirection: 'row', gap: 10 },
   secondaryButton: {
     alignItems: 'center',
