@@ -1,8 +1,16 @@
 import { Box, RotateCcw } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { Avatar3DBootstrapDTO } from '../../models/api';
+import { avatar3dModelThumbnailUrl } from '../../services/api/avatar3dApi';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette, palettes } from '../../shared/theme';
@@ -47,6 +55,9 @@ export function StationAvatarSpace({
     [avatar3d?.models],
   );
   const latestModelId = latestModel?.id || '';
+  const activeJob = avatar3d?.activeJob || null;
+  const preparingModelId =
+    activeJob?.status === 'persisting' ? activeJob.modelId : null;
 
   useEffect(() => {
     setViewerError('');
@@ -101,17 +112,38 @@ export function StationAvatarSpace({
             modelId={latestModel.id}
             onError={setViewerError}
             style={styles.avatar3dStageWebView}
+            thumbnailAvailable={latestModel.thumbnailAvailable}
             token={token}
           />
         ) : (
           <View style={styles.avatar3dEmptyState} testID="avatar3d-empty-state">
-            {avatar3dStatus === 'loading' ? (
+            {preparingModelId ? (
+              <>
+                <Image
+                  accessibilityLabel="3D形象预览"
+                  resizeMode="contain"
+                  source={{
+                    headers: { Authorization: `Bearer ${token}` },
+                    uri: avatar3dModelThumbnailUrl(preparingModelId),
+                  }}
+                  style={localStyles.preparingPreview}
+                />
+                <View style={localStyles.preparingScrim} />
+              </>
+            ) : null}
+            {avatar3dStatus === 'loading' || activeJob ? (
               <ActivityIndicator color="#2012D9" />
             ) : (
               <Box color={palette.secondaryText} size={28} strokeWidth={1.8} />
             )}
             <Text style={[styles.avatar3dEmptyTitle, { color: palette.text }]}>
-              {emptyStateTitle(language, avatar3dStatus, Boolean(viewerError))}
+              {activeJob
+                ? activeJobStageCopy(language, activeJob.status).title
+                : emptyStateTitle(
+                    language,
+                    avatar3dStatus,
+                    Boolean(viewerError),
+                  )}
             </Text>
             <Text
               style={[
@@ -121,7 +153,9 @@ export function StationAvatarSpace({
             >
               {viewerError ||
                 avatar3dError ||
-                emptyStateBody(language, avatar3dStatus)}
+                (activeJob
+                  ? activeJobStageCopy(language, activeJob.status).body
+                  : emptyStateBody(language, avatar3dStatus))}
             </Text>
             {viewerError && latestModel ? (
               <Pressable
@@ -204,6 +238,60 @@ export function StationAvatarSpace({
       </View>
     </View>
   );
+}
+
+const localStyles = StyleSheet.create({
+  preparingPreview: {
+    bottom: 0,
+    height: '100%',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: '100%',
+  },
+  preparingScrim: {
+    backgroundColor: 'rgba(247,248,252,0.58)',
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+});
+
+function activeJobStageCopy(
+  language: Language,
+  status: NonNullable<Avatar3DBootstrapDTO['activeJob']>['status'],
+) {
+  if (status === 'awaiting_reference_confirmation') {
+    return {
+      title: textFor(language, '参考视图待确认', 'References need review'),
+      body: textFor(
+        language,
+        '进入形象管理确认后才会开始3D建模。',
+        'Open avatar management to review the references before modeling.',
+      ),
+    };
+  }
+  if (status === 'persisting') {
+    return {
+      title: textFor(language, '正在准备3D形象', 'Preparing 3D avatar'),
+      body: textFor(
+        language,
+        '模型已生成，正在准备交互文件。',
+        'The model is ready and its interactive file is being prepared.',
+      ),
+    };
+  }
+  return {
+    title: textFor(language, '正在生成3D形象', 'Creating 3D avatar'),
+    body: textFor(
+      language,
+      '任务会在后台继续。',
+      'Generation continues in the background.',
+    ),
+  };
 }
 
 function emptyStateTitle(

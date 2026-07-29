@@ -5,6 +5,12 @@ import { avatar3dStorage } from "./avatar-3d-storage.js";
 
 const hourMs = 60 * 60 * 1000;
 const defaultLogger = { error: (entry) => console.error(JSON.stringify(entry)) };
+const safeRunnerErrorCode = (error) => {
+  const code = error?.details?.code;
+  return typeof code === "string" && /^[A-Z0-9_]{1,80}$/.test(code)
+    ? code
+    : "UNEXPECTED_RUNNER_ERROR";
+};
 
 export function createAvatar3dJobRunner({
   repository = avatar3dRepository,
@@ -34,7 +40,11 @@ export function createAvatar3dJobRunner({
       lastCleanupAt = now().getTime();
       return true;
     } catch (error) {
-      logger.error({ type: "avatar_3d_cleanup_error", errorName: error?.name || "Error" });
+      logger.error({
+        type: "avatar_3d_cleanup_error",
+        errorCode: safeRunnerErrorCode(error),
+        errorName: error?.name || "Error",
+      });
       return false;
     }
   };
@@ -55,6 +65,8 @@ export function createAvatar3dJobRunner({
           logger.error({
             type: "avatar_3d_job_runner_error",
             jobId: job.id,
+            jobStatus: job.status,
+            errorCode: safeRunnerErrorCode(error),
             errorName: error?.name || "Error",
           });
         }
@@ -65,6 +77,7 @@ export function createAvatar3dJobRunner({
       logger.error({
         type: "avatar_3d_job_runner_error",
         jobId: null,
+        errorCode: safeRunnerErrorCode(error),
         errorName: error?.name || "Error",
       });
       return { skipped: false };

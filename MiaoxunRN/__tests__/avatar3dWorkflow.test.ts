@@ -1,7 +1,9 @@
 import {
+  avatar3dPollingDelayMs,
   canCancelAvatar3dJob,
   createAvatar3dIdempotencyKey,
   isAvatar3dTerminalStatus,
+  shouldPollAvatar3dJob,
 } from '../src/features/station/avatar3dWorkflow';
 
 describe('avatar3d workflow helpers', () => {
@@ -28,5 +30,18 @@ describe('avatar3d workflow helpers', () => {
     expect(canCancelAvatar3dJob('queued_3d')).toBe(true);
     expect(canCancelAvatar3dJob('processing_references')).toBe(false);
     expect(canCancelAvatar3dJob('processing_3d')).toBe(false);
+  });
+
+  it('polls only background work and follows the backend runner cadence', () => {
+    expect(shouldPollAvatar3dJob('processing_references')).toBe(true);
+    expect(shouldPollAvatar3dJob('processing_3d')).toBe(true);
+    expect(shouldPollAvatar3dJob('persisting')).toBe(true);
+    expect(shouldPollAvatar3dJob('awaiting_reference_confirmation')).toBe(
+      false,
+    );
+    expect(shouldPollAvatar3dJob('succeeded')).toBe(false);
+    expect(avatar3dPollingDelayMs('processing_3d')).toBe(5000);
+    expect(avatar3dPollingDelayMs('persisting')).toBe(3000);
+    expect(avatar3dPollingDelayMs('queued_3d')).toBe(2000);
   });
 });

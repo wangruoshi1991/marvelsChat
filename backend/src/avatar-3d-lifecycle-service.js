@@ -689,6 +689,7 @@ export function createAvatar3dLifecycleService({
         toStatus: "persisting",
         progress: 95,
         modelId: model.id,
+        providerStatus: result.providerStatus,
       });
     } catch (error) {
       await repository.releaseJobClaim({ jobId: job.id });

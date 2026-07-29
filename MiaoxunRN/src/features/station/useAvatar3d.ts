@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { Avatar3DBootstrapDTO } from '../../models/api';
 import { apiClient, MiaoxunApiError } from '../../services/apiClient';
+import {
+  avatar3dPollingDelayMs,
+  shouldPollAvatar3dJob,
+} from './avatar3dWorkflow';
 
 export type Avatar3DLoadState =
   | 'loading'
@@ -9,7 +13,7 @@ export type Avatar3DLoadState =
   | 'unavailable'
   | 'error';
 
-export function useAvatar3d(token: string) {
+export function useAvatar3d(token: string, pollingEnabled = true) {
   const [bootstrap, setBootstrap] = useState<Avatar3DBootstrapDTO | null>(null);
   const [status, setStatus] = useState<Avatar3DLoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
@@ -44,6 +48,43 @@ export function useAvatar3d(token: string) {
   useEffect(() => {
     refresh().catch(() => undefined);
   }, [refresh]);
+
+  const activeJobId = bootstrap?.activeJob?.id;
+  const activeJobStatus = bootstrap?.activeJob?.status;
+
+  useEffect(() => {
+    if (
+      !pollingEnabled ||
+      !activeJobId ||
+      !activeJobStatus ||
+      !shouldPollAvatar3dJob(activeJobStatus)
+    ) {
+      return undefined;
+    }
+
+    let active = true;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      const next = await refresh();
+      const nextStatus = next?.activeJob?.status;
+      if (active && nextStatus && shouldPollAvatar3dJob(nextStatus)) {
+        timeout = setTimeout(poll, avatar3dPollingDelayMs(nextStatus));
+      }
+    };
+
+    timeout = setTimeout(poll, avatar3dPollingDelayMs(activeJobStatus));
+    return () => {
+      active = false;
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    };
+  }, [
+    activeJobId,
+    activeJobStatus,
+    pollingEnabled,
+    refresh,
+  ]);
 
   return { bootstrap, errorMessage, refresh, status };
 }

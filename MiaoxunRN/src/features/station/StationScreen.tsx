@@ -65,7 +65,7 @@ export function StationScreen({
   );
   const [isCreatingStationContent, setIsCreatingStationContent] =
     useState(false);
-  const avatar3d = useAvatar3d(session.token);
+  const avatar3d = useAvatar3d(session.token, !isAvatar3dOpen);
   const refreshAvatar3d = avatar3d.refresh;
 
   const openAvatar3d = useCallback(() => {

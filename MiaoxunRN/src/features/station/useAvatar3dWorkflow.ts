@@ -16,8 +16,10 @@ import {
 import { uploadAndValidateAvatar3dPhoto } from '../../services/avatar3dUpload';
 import { PickedStationMedia } from '../../services/stationMediaPicker';
 import {
+  avatar3dPollingDelayMs,
   createAvatar3dIdempotencyKey,
   isAvatar3dTerminalStatus,
+  shouldPollAvatar3dJob,
 } from './avatar3dWorkflow';
 
 type BusyAction =
@@ -41,8 +43,6 @@ type PendingAttempt = {
   photo: Avatar3DPhotoDTO;
   submissionUncertain: boolean;
 };
-
-const pollingDelayMs = 2500;
 
 export function useAvatar3dWorkflow({
   token,
@@ -131,8 +131,37 @@ export function useAvatar3dWorkflow({
   useEffect(() => {
     if (
       !polledJobId ||
+      polledJobStatus !== 'awaiting_reference_confirmation'
+    ) {
+      return undefined;
+    }
+
+    let active = true;
+    apiClient
+      .getAvatar3dReferences(token, polledJobId)
+      .then(nextReferences => {
+        if (active) {
+          setReferences(nextReferences);
+          setErrorMessage('');
+        }
+      })
+      .catch(error => {
+        if (active) {
+          setErrorMessage(
+            error instanceof Error ? error.message : '参考视图加载失败',
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [polledJobId, polledJobStatus, token]);
+
+  useEffect(() => {
+    if (
+      !polledJobId ||
       !polledJobStatus ||
-      isAvatar3dTerminalStatus(polledJobStatus)
+      !shouldPollAvatar3dJob(polledJobStatus)
     ) {
       return undefined;
     }
@@ -140,27 +169,23 @@ export function useAvatar3dWorkflow({
     let active = true;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
+      let nextDelayStatus = polledJobStatus;
       try {
         const nextJob = await apiClient.getAvatar3dJob(token, polledJobId);
         if (!active) {
           return;
         }
         setJob(nextJob);
+        nextDelayStatus = nextJob.status;
         setErrorMessage('');
-        if (nextJob.status === 'awaiting_reference_confirmation') {
-          const nextReferences = await apiClient.getAvatar3dReferences(
-            token,
-            nextJob.id,
-          );
-          if (active) {
-            setReferences(nextReferences);
-          }
-        }
         if (isAvatar3dTerminalStatus(nextJob.status)) {
           await loadBootstrap({ keepTerminalJob: true });
           if (active) {
             onChanged();
           }
+          return;
+        }
+        if (!shouldPollAvatar3dJob(nextJob.status)) {
           return;
         }
       } catch (error) {
@@ -171,7 +196,10 @@ export function useAvatar3dWorkflow({
         }
       }
       if (active) {
-        timeout = setTimeout(poll, pollingDelayMs);
+        timeout = setTimeout(
+          poll,
+          avatar3dPollingDelayMs(nextDelayStatus),
+        );
       }
     };
 

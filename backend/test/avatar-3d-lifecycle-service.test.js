@@ -83,6 +83,7 @@ function createStatefulRepository(style, { modelProvider } = {}) {
           progress: input.progress ?? job.progress,
           styleProviderTaskId: input.styleProviderTaskId ?? job.styleProviderTaskId,
           modelProviderTaskId: input.modelProviderTaskId ?? job.modelProviderTaskId,
+          providerStatus: input.providerStatus ?? job.providerStatus,
           stylePreviewId: input.stylePreviewId ?? job.stylePreviewId,
           modelId: input.modelId ?? job.modelId,
           errorCode: input.safeErrorCode ?? null,
@@ -202,6 +203,7 @@ test("realistic lifecycle exposes the thumbnail before persisting GLB and then s
   await service.processJob(state.currentJob());
   assert.equal(state.currentJob().status, "persisting");
   assert.equal(state.currentJob().modelId, ids.model);
+  assert.equal(state.currentJob().providerStatus, "SUCCEEDED");
   assert.equal(state.calls.filter((call) => call[0] === "persistModel").length, 0);
   assert.deepEqual(
     state.calls

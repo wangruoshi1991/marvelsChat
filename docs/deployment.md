@@ -317,3 +317,17 @@ MiaoxunAPIBaseURL = http://8.153.167.11/api
 服务器远端 `npm run check` 和 App 路由 4 项契约测试通过。重启后 `/api/health` 返回 200，未登录访问 `/api/avatar-3d/app/bootstrap` 返回预期 401，systemd 服务无重启。`AVATAR_3D_PROVIDER_CALLS_ENABLED` 已在单账号受限白名单下启用；DashScope 和 OSS 必需配置均存在，未在日志或仓库输出配置值。尚未发起真实付费生成，最终闭环需要测试账号在 App 内完成照片授权和四视图确认。
 
 回滚时恢复备份中的 `src/server.js` 和 `miaoxun-prod.env`，重启 `marvels-chat-backend` 后重新检查 health。新增但未注册的 `avatar-3d-app-routes.js` 和 `avatar-3d-route-support.js` 不影响旧运行路径。
+
+## 2026-07-29 App 3D 查看器修复
+
+App 内置查看器从 `file://` 页面读取私有 GLB，请求来源在 WebView 中表现为 `Origin: null`。后端仅对 `GET|HEAD|OPTIONS /api/avatar-3d/app/models/:uuid/file` 返回该来源的 CORS 授权，并且实际文件请求仍必须通过 Bearer 鉴权和模型归属校验；其他 API 继续使用 `CORS_ORIGIN`，不得全局允许 `null` 来源。
+
+线上增量部署前备份位于：
+
+```text
+/opt/projects/marvels-chat/backups/20260729-avatar-viewer-cors.tgz
+```
+
+部署后需同时验证模型路由预检返回 `Access-Control-Allow-Origin: null`，普通 `/api/app/bootstrap` 预检仍返回配置的站点来源。精细模型文件可能达到数十 MB，App 在下载和 Three.js 解析期间显示已生成缩略图；等待四视图人工确认时停止任务轮询，后台处理阶段按 Runner 节奏查询。
+
+iOS `1.0 (28)` 已完成 Release archive 并上传 App Store Connect，上传返回 `Uploaded MiaoxunRN` 和 `** EXPORT SUCCEEDED **`。MapLibre、React、ReactNativeDependencies 和 Hermes 的第三方 dSYM warning 仍存在，不阻止 TestFlight 分发。

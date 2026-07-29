@@ -8,6 +8,7 @@ import { authenticate, requireAdmin } from "./auth.js";
 import { avatar3dJobRunner } from "./avatar-3d-job-runner.js";
 import { registerAvatar3dWebRoutes } from "./avatar-3d-web-service.js";
 import { config } from "./config.js";
+import { createCorsOptionsDelegate } from "./cors-policy.js";
 import { createRealtimeGateway } from "./realtime-gateway.js";
 import { registerAdminRoutes } from "./routes/admin-routes.js";
 import { registerAppRoutes } from "./routes/app-routes.js";
@@ -26,7 +27,7 @@ const port = config.port;
 const server = http.createServer(app);
 
 app.use(helmet());
-app.use(cors({ origin: config.corsOrigin }));
+app.use(cors(createCorsOptionsDelegate({ origin: config.corsOrigin })));
 app.use(express.json({ limit: "1mb" }));
 app.use(createLegacyApiCompatibilityMiddleware());
 

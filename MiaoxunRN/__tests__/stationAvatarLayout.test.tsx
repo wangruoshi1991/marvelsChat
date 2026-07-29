@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, ScrollView, StyleSheet, Text } from 'react-native';
+import { Alert, Image, ScrollView, StyleSheet, Text } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import {
@@ -384,6 +384,42 @@ describe('station avatar layout', () => {
     expect(labels).toContain('生成形象');
     expect(stageStyle.backgroundColor).toBe('#F7F8FC');
     expect(emptyStyle.flex).toBe(1);
+
+    await ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
+  it('shows the generated preview while the interactive model is being saved', async () => {
+    const persistingJob: Avatar3DJobDTO = {
+      ...awaitingReferencesJob,
+      modelId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      progress: 95,
+      status: 'persisting',
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <StationAvatarSpace
+          avatar3d={{
+            ...bootstrap,
+            activeJob: persistingJob,
+            jobs: [persistingJob],
+            quota: { ...bootstrap.quota, hasActiveJob: true },
+          }}
+          avatar3dError=""
+          avatar3dStatus="ready"
+          language="zh"
+          onOpenGenerator={jest.fn()}
+          palette={palettes.light}
+          token="token"
+        />,
+      );
+    });
+
+    expect(renderedText(renderer!)).toContain('模型已生成，正在准备交互文件。');
+    expect(
+      renderer!.root.findByType(Image).props.source.uri,
+    ).toContain('/models/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/thumbnail');
 
     await ReactTestRenderer.act(() => renderer!.unmount());
   });
