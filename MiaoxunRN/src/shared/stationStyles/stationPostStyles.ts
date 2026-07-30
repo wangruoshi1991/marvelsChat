@@ -283,6 +283,7 @@ export const stationPostStyles = {
     flexDirection: 'row',
     gap: 3,
   },
+  stationFeedMetaIcon: { height: 11, width: 11 },
   stationFeedMetaText: { fontSize: 10, lineHeight: 14 },
   stationFeedMore: {
     alignItems: 'center',

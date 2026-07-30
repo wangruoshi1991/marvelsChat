@@ -7,14 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import {
-  Clock3,
-  FileText,
-  Images,
-  MapPin,
-  Play,
-  Video,
-} from 'lucide-react-native';
+import { MapPin, Play } from 'lucide-react-native';
 
 import { stationPostIconAssets } from '../../assets/icons';
 import {
@@ -153,10 +146,9 @@ function StationPostCard({
           </Text>
           <View style={styles.stationFeedMetaRow}>
             <View style={styles.stationFeedMetaItem}>
-              <Clock3
+              <PostMetaIcon
                 color={palette.secondaryText}
-                size={11}
-                strokeWidth={1.8}
+                source={stationPostIconAssets.time}
               />
               <Text
                 style={[
@@ -362,12 +354,33 @@ function PostKindIcon({
   kind: 'image' | 'video' | 'text';
 }) {
   if (kind === 'video') {
-    return <Video color={color} size={11} strokeWidth={1.8} />;
+    return (
+      <PostMetaIcon color={color} source={stationPostIconAssets.video} />
+    );
   }
   if (kind === 'image') {
-    return <Images color={color} size={11} strokeWidth={1.8} />;
+    return (
+      <PostMetaIcon color={color} source={stationPostIconAssets.photo} />
+    );
   }
-  return <FileText color={color} size={11} strokeWidth={1.8} />;
+  return <PostMetaIcon color={color} source={stationPostIconAssets.text} />;
+}
+
+function PostMetaIcon({
+  color,
+  source,
+}: {
+  color: string;
+  source: ImageSourcePropType;
+}) {
+  return (
+    <Image
+      accessibilityIgnoresInvertColors
+      resizeMode="contain"
+      source={source}
+      style={[styles.stationFeedMetaIcon, { tintColor: color }]}
+    />
+  );
 }
 
 function postKindLabel(post: StationPostDTO, language: Language) {
@@ -375,7 +388,7 @@ function postKindLabel(post: StationPostDTO, language: Language) {
     return textFor(language, '视频', 'Video');
   }
   if (post.media.length) {
-    return textFor(language, '图片', 'Photos');
+    return textFor(language, '照片', 'Photos');
   }
   return textFor(language, '文字', 'Text');
 }

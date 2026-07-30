@@ -2,6 +2,7 @@ import React from 'react';
 import { Image, Text, TextInput } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
+import { stationPostIconAssets } from '../src/assets/icons';
 import { StationPostComposerScreen } from '../src/features/station/StationPostComposerScreen';
 import { StationPostsPanel } from '../src/features/station/StationPostsPanel';
 import { StationMediaAssetDTO, StationPostDTO } from '../src/models/api';
@@ -89,13 +90,20 @@ describe('Station post experience', () => {
           ? node.props.children.join('')
           : node.props.children,
       );
+    const imageSources = renderer!.root
+      .findAllByType(Image)
+      .map(node => node.props.source);
 
     expect(remoteImages).toHaveLength(3);
     expect(textValues).toContain('今天');
+    expect(textValues).toContain('照片');
+    expect(textValues).not.toContain('图片');
     expect(textValues).toContain('+2');
     expect(textValues).toContain(32);
     expect(textValues).toContain(6);
     expect(textValues).toContain(8);
+    expect(imageSources).toContain(stationPostIconAssets.time);
+    expect(imageSources).toContain(stationPostIconAssets.photo);
   });
 
   it('shows publish errors inside the full-screen composer', async () => {
