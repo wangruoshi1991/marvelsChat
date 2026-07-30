@@ -6,9 +6,10 @@ const scene = vi.hoisted(() => ({
   resetCamera: vi.fn(),
   resize: vi.fn(),
 }));
+const sceneFactory = vi.hoisted(() => vi.fn(() => scene));
 
 vi.mock("../viewer/modelScene", () => ({
-  createModelScene: vi.fn(() => scene),
+  createModelScene: sceneFactory,
 }));
 
 class ResizeObserverMock {
@@ -49,6 +50,7 @@ describe("App avatar viewer bridge", () => {
 
     await import("./main");
 
+    expect(sceneFactory).not.toHaveBeenCalled();
     expect(postMessage).toHaveBeenNthCalledWith(
       1,
       JSON.stringify({ type: "ready" }),
@@ -60,6 +62,7 @@ describe("App avatar viewer bridge", () => {
       token: "private-token",
     });
 
+    expect(sceneFactory).toHaveBeenCalledTimes(1);
     expect(fetchModel).toHaveBeenCalledWith(
       "https://api.example.com/api/avatar-3d/app/models/model-1/file",
       expect.objectContaining({

@@ -26,9 +26,9 @@ if (!canvas || !loading) {
   throw new Error("Avatar viewer document is incomplete.");
 }
 
-const scene = createModelScene(canvas, { backgroundColor: "#F7F8FC" });
 let loadRevision = 0;
 let activeRequest: AbortController | null = null;
+let scene: ReturnType<typeof createModelScene> | null = null;
 
 const notify = (message: {
   type: "ready" | "downloading" | "parsing" | "loaded" | "error";
@@ -59,6 +59,7 @@ const load = async ({ modelUrl, token }: ViewerConfig) => {
   activeRequest = new AbortController();
   setLoading(true);
   notify({ type: "downloading" });
+  let phase: "downloading" | "parsing" = "downloading";
 
   try {
     const response = await fetch(assertModelUrl(modelUrl), {
@@ -74,7 +75,9 @@ const load = async ({ modelUrl, token }: ViewerConfig) => {
 
     const objectUrl = URL.createObjectURL(await response.blob());
     try {
+      phase = "parsing";
       notify({ type: "parsing" });
+      scene ||= createModelScene(canvas, { backgroundColor: "#F7F8FC" });
       await scene.load(objectUrl);
     } finally {
       URL.revokeObjectURL(objectUrl);
@@ -88,22 +91,25 @@ const load = async ({ modelUrl, token }: ViewerConfig) => {
       return;
     }
     setLoading(false);
-    notify({ type: "error", message: "3D形象页面加载失败" });
+    notify({
+      type: "error",
+      message: phase === "downloading" ? "3D模型下载失败" : "3D模型解析失败",
+    });
   }
 };
 
-const resize = () => scene.resize(canvas.clientWidth, canvas.clientHeight);
+const resize = () => scene?.resize(canvas.clientWidth, canvas.clientHeight);
 const resizeObserver = new ResizeObserver(resize);
 resizeObserver.observe(canvas);
 window.addEventListener("resize", resize);
 window.addEventListener("pagehide", () => {
   activeRequest?.abort();
   resizeObserver.disconnect();
-  scene.dispose();
+  scene?.dispose();
 }, { once: true });
 
 window.MiaoxunAvatarViewer = Object.freeze({
   load,
-  resetCamera: () => scene.resetCamera(),
+  resetCamera: () => scene?.resetCamera(),
 });
 notify({ type: "ready" });

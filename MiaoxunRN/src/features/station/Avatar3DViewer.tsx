@@ -28,15 +28,12 @@ const serializeViewerConfig = (value: object) =>
 
 export const isAvatar3DViewerDocumentUrl = (value: string) => {
   if (value === 'about:blank') return true;
-  try {
-    const url = new URL(value);
-    return (
-      ['file:', 'http:', 'https:'].includes(url.protocol) &&
-      url.pathname.endsWith('/avatar-viewer/avatar-viewer.html')
-    );
-  } catch {
-    return false;
-  }
+  const documentUrl = value.split(/[?#]/, 1)[0];
+  if (!documentUrl.endsWith('/avatar-viewer/avatar-viewer.html')) return false;
+  if (documentUrl.startsWith('file://')) return true;
+  return /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?\//i.test(
+    documentUrl,
+  );
 };
 
 export function buildAvatar3DViewerScript({
@@ -47,7 +44,17 @@ export function buildAvatar3DViewerScript({
   token: string;
 }) {
   const config = serializeViewerConfig({ modelUrl, token });
-  return `window.MiaoxunAvatarViewer.load(${config}); true;`;
+  return `(() => {
+    const viewer = window.MiaoxunAvatarViewer;
+    if (!viewer || typeof viewer.load !== 'function') {
+      window.ReactNativeWebView?.postMessage(JSON.stringify({
+        type: 'error',
+        message: '3D查看器初始化失败',
+      }));
+      return;
+    }
+    void viewer.load(${config});
+  })(); true;`;
 }
 
 export function Avatar3DViewer({
@@ -62,6 +69,7 @@ export function Avatar3DViewer({
   style?: StyleProp<ViewStyle>;
 }) {
   const webViewRef = useRef<WebView<object>>(null);
+  const loadRequestedRef = useRef(false);
   const [status, setStatus] = useState<ViewerStatus>('booting');
   const modelUrl = useMemo(() => avatar3dModelFileUrl(modelId), [modelId]);
   const loadScript = useMemo(
@@ -77,30 +85,56 @@ export function Avatar3DViewer({
   );
 
   useEffect(() => {
+    loadRequestedRef.current = false;
     setStatus('booting');
-  }, [modelId]);
+  }, [modelId, token]);
 
   useEffect(() => {
-    if (status !== 'booting') return undefined;
-    const timeout = setTimeout(() => failViewer(), 10_000);
+    if (status === 'loaded' || status === 'error') return undefined;
+    const timeoutMs =
+      status === 'booting' ? 15_000 : status === 'parsing' ? 60_000 : 120_000;
+    const message =
+      status === 'booting'
+        ? '3D查看器初始化失败'
+        : status === 'parsing'
+        ? '3D模型解析超时'
+        : '3D模型下载超时';
+    const timeout = setTimeout(() => failViewer(message), timeoutMs);
     return () => clearTimeout(timeout);
   }, [failViewer, status]);
+
+  const handleViewerDocumentLoaded = useCallback(
+    (event: { nativeEvent: { url: string } }) => {
+      const documentUrl = event.nativeEvent.url;
+      if (
+        documentUrl === 'about:blank' ||
+        !isAvatar3DViewerDocumentUrl(documentUrl) ||
+        loadRequestedRef.current
+      ) {
+        return;
+      }
+
+      const viewer = webViewRef.current;
+      if (!viewer) {
+        failViewer('3D查看器初始化失败');
+        return;
+      }
+
+      loadRequestedRef.current = true;
+      try {
+        viewer.injectJavaScript(loadScript);
+        setStatus('loading');
+      } catch {
+        failViewer('3D查看器初始化失败');
+      }
+    },
+    [failViewer, loadScript],
+  );
 
   const handleMessage = (event: WebViewMessageEvent) => {
     try {
       const message = JSON.parse(event.nativeEvent.data) as ViewerMessage;
       if (message.type === 'ready') {
-        const viewer = webViewRef.current;
-        if (!viewer) {
-          failViewer();
-          return;
-        }
-        try {
-          viewer.injectJavaScript(loadScript);
-          setStatus('loading');
-        } catch {
-          failViewer();
-        }
         return;
       }
       if (message.type === 'downloading') {
@@ -141,6 +175,7 @@ export function Avatar3DViewer({
         mixedContentMode="never"
         onContentProcessDidTerminate={() => failViewer()}
         onError={() => failViewer()}
+        onLoadEnd={handleViewerDocumentLoaded}
         onLoadStart={() => setStatus('booting')}
         onMessage={handleMessage}
         onShouldStartLoadWithRequest={request =>

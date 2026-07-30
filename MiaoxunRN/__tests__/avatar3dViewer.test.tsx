@@ -41,7 +41,7 @@ describe('Avatar3DViewer', () => {
     ).toBe(false);
   });
 
-  it('loads a bundled document and forwards viewer errors', () => {
+  it('starts loading after the bundled document finishes and forwards viewer errors', () => {
     const onError = jest.fn();
     let renderer: ReactTestRenderer.ReactTestRenderer;
 
@@ -70,6 +70,15 @@ describe('Avatar3DViewer', () => {
     ReactTestRenderer.act(() => {
       webView.props.onMessage({
         nativeEvent: { data: JSON.stringify({ type: 'ready' }) },
+      });
+    });
+    expect(webView.props.injectJavaScript).not.toHaveBeenCalled();
+
+    ReactTestRenderer.act(() => {
+      webView.props.onLoadEnd({
+        nativeEvent: {
+          url: 'file:///private/app/assets/avatar-viewer/avatar-viewer.html',
+        },
       });
     });
     expect(webView.props.injectJavaScript).toHaveBeenCalledWith(
