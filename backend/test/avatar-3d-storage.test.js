@@ -324,13 +324,15 @@ test("partial reference persistence removes already written private objects", as
 test("provider model persistence never downloads the thumbnail", async () => {
   const glb = glbWithDocument({ asset: { version: "2.0" }, scenes: [{ nodes: [] }] });
   const fetched = [];
+  const writes = [];
   const storage = createAvatar3dStorage({
     lookupHost: publicLookup,
     fetchImpl: async (url) => {
       fetched.push(url);
       return responseWithBuffer(glb, { contentType: "model/gltf-binary" });
     },
-    putObject: async () => ({ stored: true }),
+    optimizeMobileModel: async (source) => ({ body: Buffer.from(source) }),
+    putObject: async (input) => { writes.push(input); return { stored: true }; },
   });
 
   const result = await storage.persistAvatarProviderModel({
@@ -342,6 +344,12 @@ test("provider model persistence never downloads the thumbnail", async () => {
   assert.deepEqual(fetched, ["https://result.example/model.glb"]);
   assert.equal(result.contentType, "model/gltf-binary");
   assert.equal(result.byteSize, glb.length);
+  assert.equal(result.mobile.contentType, "model/gltf-binary");
+  assert.equal(result.mobile.byteSize, glb.length);
+  assert.deepEqual(
+    writes.map((item) => item.objectKey.split("/").at(-1)),
+    ["model.glb", "model-mobile.glb"],
+  );
 });
 
 test("provider GLB must be structurally valid and self-contained", async () => {

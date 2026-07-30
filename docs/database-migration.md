@@ -16,7 +16,18 @@
 - `008_profile_location_avatar.sql` - 个人资料位置和头像
 - `009_user_presence.sql` - 用户在线状态
 - `010_unique_display_name.sql` - 唯一显示名约束
-虚拟人物、日记和素材资产后续通过 Agent 能力和正式资源管线接入。未进入上线实现前，不在迁移中保留草案表。
+- `011_station_content.sql` - 小站日记、相册、媒体与穿搭
+- `012_station_agent_capabilities.sql` - 小站 Agent 能力与生成任务
+- `013_thread_muted.sql` - 会话免打扰
+- `014_search_history_consistency.sql` - 搜索历史一致性
+- `015_station_profile_metrics_points.sql` - 小站资料指标与妙点
+- `016_station_posts.sql` - 小站动态
+- `017_avatar_3d_web.sql` - 私有 3D 建模任务与资产
+- `018_avatar_3d_quality_and_preview.sql` - 3D 质量档位与预览
+- `019_avatar_3d_face_first_pipeline.sql` - 单照片与四视图确认流程
+- `020_remove_station_3d_provider_defaults.sql` - 移除旧 Station 3D 默认供应商
+- `021_station_posts_compat.sql` - 动态兼容迁移
+- `022_avatar_3d_mobile_model.sql` - 保留原始 GLB，并登记 App 轻量 GLB
 
 ## 迁移执行
 

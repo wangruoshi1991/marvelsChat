@@ -2,6 +2,7 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import net from "node:net";
 import path from "node:path";
 import sharp from "sharp";
+import { optimizeAvatarGlbForMobile } from "./avatar-3d-mobile-optimizer.js";
 import {
   assessAvatarPhotoQuality,
   avatarPhotoMinimumSide,
@@ -37,6 +38,9 @@ export const buildAvatarNormalizedPhotoObjectKey = ({ userId, photoId }) =>
 
 const buildAvatarModelObjectKey = ({ userId, jobId }) =>
   `users/${userId}/avatar-3d/jobs/${jobId}/model.glb`;
+
+const buildAvatarMobileModelObjectKey = ({ userId, jobId }) =>
+  `users/${userId}/avatar-3d/jobs/${jobId}/model-mobile.glb`;
 
 const buildAvatarThumbnailObjectKey = ({ userId, jobId, contentType }) =>
   `users/${userId}/avatar-3d/jobs/${jobId}/thumbnail.${imageExtension(contentType)}`;
@@ -215,6 +219,7 @@ export function createAvatar3dStorage({
   putObject = putOssObject,
   deleteObject = deleteOssObject,
   createUploadUrl = createOssPutSignedUrl,
+  optimizeMobileModel = optimizeAvatarGlbForMobile,
   fetchImpl = fetch,
   lookupHost = dnsLookup,
 } = {}) {
@@ -339,6 +344,33 @@ export function createAvatar3dStorage({
     };
   };
 
+  const persistAvatarMobileModel = async ({ userId, jobId, source }) => {
+    if (!validateSelfContainedGlb(source)) {
+      throw new HttpError(502, "Generation result could not be stored.", {
+        code: "INVALID_GLB_RESULT",
+      });
+    }
+    const optimized = await optimizeMobileModel(source);
+    const body = Buffer.isBuffer(optimized) ? optimized : optimized?.body;
+    if (!validateSelfContainedGlb(body)) {
+      throw new HttpError(502, "Avatar model could not be prepared for the App.", {
+        code: "MOBILE_MODEL_OPTIMIZATION_FAILED",
+      });
+    }
+    const storageKey = buildAvatarMobileModelObjectKey({ userId, jobId });
+    await putObject({
+      objectKey: storageKey,
+      body,
+      contentType: "model/gltf-binary",
+    });
+    return {
+      storageKey,
+      contentType: "model/gltf-binary",
+      byteSize: body.length,
+      metrics: optimized?.metrics || {},
+    };
+  };
+
   const persistAvatarProviderModel = async ({ userId, jobId, modelUrl }) => {
     const modelResult = await downloadProviderResult({ url: modelUrl, limit: providerGlbLimit });
     if (!validateSelfContainedGlb(modelResult.body)) {
@@ -352,10 +384,16 @@ export function createAvatar3dStorage({
       body: modelResult.body,
       contentType: "model/gltf-binary",
     });
+    const mobile = await persistAvatarMobileModel({
+      userId,
+      jobId,
+      source: modelResult.body,
+    });
     return {
       storageKey: glbStorageKey,
       contentType: "model/gltf-binary",
       byteSize: modelResult.body.length,
+      mobile,
     };
   };
 
@@ -483,6 +521,7 @@ export function createAvatar3dStorage({
     createProviderReadUrl,
     verifyAndNormalizeAvatarPhoto,
     persistAvatarProviderModel,
+    persistAvatarMobileModel,
     persistAvatarProviderThumbnail,
     persistAvatarStylePreview,
     persistAvatarReferenceImages,

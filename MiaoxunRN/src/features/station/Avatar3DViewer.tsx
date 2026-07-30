@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
+  Image,
   StyleProp,
   StyleSheet,
   View,
@@ -14,7 +15,10 @@ import {
 } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 
-import { avatar3dModelFileUrl } from '../../services/api/avatar3dApi';
+import {
+  avatar3dModelFileUrl,
+  avatar3dModelThumbnailUrl,
+} from '../../services/api/avatar3dApi';
 
 type ViewerMessage = {
   type?: unknown;
@@ -60,11 +64,13 @@ export function buildAvatar3DViewerScript({
 export function Avatar3DViewer({
   modelId,
   token,
+  thumbnailAvailable = false,
   onError,
   style,
 }: {
   modelId: string;
   token: string;
+  thumbnailAvailable?: boolean;
   onError?: (message: string) => void;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -72,6 +78,11 @@ export function Avatar3DViewer({
   const loadRequestedRef = useRef(false);
   const [status, setStatus] = useState<ViewerStatus>('booting');
   const modelUrl = useMemo(() => avatar3dModelFileUrl(modelId), [modelId]);
+  const thumbnailUrl = useMemo(
+    () =>
+      thumbnailAvailable ? avatar3dModelThumbnailUrl(modelId) : undefined,
+    [modelId, thumbnailAvailable],
+  );
   const loadScript = useMemo(
     () => buildAvatar3DViewerScript({ modelUrl, token }),
     [modelUrl, token],
@@ -168,7 +179,7 @@ export function Avatar3DViewer({
         allowFileAccessFromFileURLs={false}
         allowUniversalAccessFromFileURLs
         bounces={false}
-        cacheEnabled={false}
+        cacheEnabled
         domStorageEnabled={false}
         javaScriptCanOpenWindowsAutomatically={false}
         javaScriptEnabled
@@ -195,6 +206,28 @@ export function Avatar3DViewer({
           style={localStyles.preview}
           testID="avatar3d-viewer-loading"
         >
+          {thumbnailUrl ? (
+            <>
+              <Image
+                blurRadius={18}
+                resizeMode="cover"
+                source={{
+                  headers: { Authorization: `Bearer ${token}` },
+                  uri: thumbnailUrl,
+                }}
+                style={localStyles.previewBackdrop}
+              />
+              <Image
+                accessibilityLabel="3D形象加载预览"
+                resizeMode="contain"
+                source={{
+                  headers: { Authorization: `Bearer ${token}` },
+                  uri: thumbnailUrl,
+                }}
+                style={localStyles.previewImage}
+              />
+            </>
+          ) : null}
           <View style={localStyles.loadingIndicator}>
             <ActivityIndicator color="#2012D9" />
           </View>
@@ -209,9 +242,12 @@ const localStyles = StyleSheet.create({
   loadingIndicator: {
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.88)',
+    bottom: 12,
     borderRadius: 20,
     height: 40,
     justifyContent: 'center',
+    position: 'absolute',
+    right: 12,
     width: 40,
   },
   preview: {
@@ -223,5 +259,22 @@ const localStyles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     top: 0,
+  },
+  previewBackdrop: {
+    bottom: 0,
+    left: 0,
+    opacity: 0.32,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  previewImage: {
+    bottom: 0,
+    height: '100%',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: '100%',
   },
 });

@@ -420,7 +420,8 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
       if (!response.headers.get("content-type") && asset.mimeType) {
         res.setHeader("content-type", asset.mimeType);
       }
-      res.setHeader("cache-control", "private, max-age=300");
+      res.setHeader("cache-control", "private, max-age=31536000, immutable");
+      res.setHeader("vary", "Authorization");
 
       try {
         await pipeline(Readable.fromWeb(response.body), res);

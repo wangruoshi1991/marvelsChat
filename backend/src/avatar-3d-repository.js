@@ -104,6 +104,11 @@ const mapPrivateModel = (row) => ({
   providerTaskId: row.provider_task_id || null,
   glbStorageKey: row.glb_storage_key,
   glbMimeType: row.glb_mime_type,
+  mobileGlbStorageKey: row.mobile_glb_storage_key || null,
+  mobileGlbMimeType: row.mobile_glb_mime_type || null,
+  mobileGlbByteSize: row.mobile_glb_byte_size === null || row.mobile_glb_byte_size === undefined
+    ? null
+    : Number(row.mobile_glb_byte_size),
   thumbnailStorageKey: row.thumbnail_storage_key || null,
   thumbnailMimeType: row.thumbnail_mime_type || null,
   thumbnailByteSize: row.thumbnail_byte_size === null || row.thumbnail_byte_size === undefined
@@ -1567,12 +1572,28 @@ export function createAvatar3dRepository({
   };
 
   const completePreparingModel = async ({ userId, jobId, glb }) => {
+    if (!glb?.mobile?.storageKey || !glb.mobile.contentType) {
+      throw new HttpError(500, "App avatar model asset is missing.", {
+        code: "MOBILE_MODEL_ASSET_MISSING",
+      });
+    }
     const rows = await queryFn(
       `UPDATE avatar_3d_models
-      SET glb_storage_key = ?, glb_mime_type = ?, glb_byte_size = ?, status = 'active'
+      SET glb_storage_key = ?, glb_mime_type = ?, glb_byte_size = ?,
+        mobile_glb_storage_key = ?, mobile_glb_mime_type = ?, mobile_glb_byte_size = ?,
+        status = 'active'
       WHERE job_id = ? AND user_id = ? AND status = 'preparing' AND deleted_at IS NULL
       RETURNING *`,
-      [glb.storageKey, glb.contentType, glb.byteSize, jobId, userId],
+      [
+        glb.storageKey,
+        glb.contentType,
+        glb.byteSize,
+        glb.mobile.storageKey,
+        glb.mobile.contentType,
+        glb.mobile.byteSize,
+        jobId,
+        userId,
+      ],
     );
     return rows[0] ? mapAvatar3dModel(rows[0]) : null;
   };
@@ -1585,18 +1606,27 @@ export function createAvatar3dRepository({
     glb,
     thumbnail = null,
   }) => {
+    if (!glb?.mobile?.storageKey || !glb.mobile.contentType) {
+      throw new HttpError(500, "App avatar model asset is missing.", {
+        code: "MOBILE_MODEL_ASSET_MISSING",
+      });
+    }
     const rows = await queryFn(
       `INSERT INTO avatar_3d_models
         (id, user_id, job_id, title, provider_task_id, glb_storage_key,
-         glb_mime_type, glb_byte_size, thumbnail_storage_key,
+         glb_mime_type, glb_byte_size, mobile_glb_storage_key,
+         mobile_glb_mime_type, mobile_glb_byte_size, thumbnail_storage_key,
          thumbnail_mime_type, thumbnail_byte_size, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
       ON CONFLICT (job_id) DO UPDATE SET
         title = EXCLUDED.title,
         provider_task_id = EXCLUDED.provider_task_id,
         glb_storage_key = EXCLUDED.glb_storage_key,
         glb_mime_type = EXCLUDED.glb_mime_type,
         glb_byte_size = EXCLUDED.glb_byte_size,
+        mobile_glb_storage_key = EXCLUDED.mobile_glb_storage_key,
+        mobile_glb_mime_type = EXCLUDED.mobile_glb_mime_type,
+        mobile_glb_byte_size = EXCLUDED.mobile_glb_byte_size,
         thumbnail_storage_key = EXCLUDED.thumbnail_storage_key,
         thumbnail_mime_type = EXCLUDED.thumbnail_mime_type,
         thumbnail_byte_size = EXCLUDED.thumbnail_byte_size,
@@ -1606,6 +1636,7 @@ export function createAvatar3dRepository({
       [
         randomUUID(), userId, jobId, title, providerTaskId,
         glb.storageKey, glb.contentType, glb.byteSize,
+        glb.mobile.storageKey, glb.mobile.contentType, glb.mobile.byteSize,
         thumbnail?.storageKey || null,
         thumbnail?.contentType || null,
         thumbnail?.byteSize ?? null,

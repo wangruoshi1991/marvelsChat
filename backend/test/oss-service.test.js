@@ -5,6 +5,7 @@ import test from "node:test";
 process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 process.env.OSS_BUCKET = "miaoxun-test";
 process.env.OSS_ENDPOINT = "oss-cn-test.aliyuncs.com";
+process.env.OSS_INTERNAL_ENDPOINT = "oss-cn-test-internal.aliyuncs.com";
 process.env.OSS_ACCESS_KEY_ID = "test-access-key";
 process.env.OSS_ACCESS_KEY_SECRET = "test-secret";
 
@@ -62,6 +63,10 @@ test("inspectOssObject performs HEAD and returns normalized metadata", async () 
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].options.method, "HEAD");
+  assert.equal(
+    new URL(calls[0].url).hostname,
+    "miaoxun-test.oss-cn-test-internal.aliyuncs.com",
+  );
   assert.deepEqual(result, {
     contentType: "image/jpeg",
     contentLength: 2048,

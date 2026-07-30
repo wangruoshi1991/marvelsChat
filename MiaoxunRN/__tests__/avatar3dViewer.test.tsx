@@ -50,6 +50,7 @@ describe('Avatar3DViewer', () => {
         <Avatar3DViewer
           modelId="model-1"
           onError={onError}
+          thumbnailAvailable
           token="private-token"
         />,
       );
@@ -57,6 +58,7 @@ describe('Avatar3DViewer', () => {
 
     const webView = renderer!.root.findByProps({ testID: 'avatar-webview' });
     expect(webView.props.source).toBeDefined();
+    expect(webView.props.cacheEnabled).toBe(true);
     expect(webView.props.originWhitelist).toEqual([
       'file://*',
       'http://*',
@@ -66,6 +68,17 @@ describe('Avatar3DViewer', () => {
     expect(
       renderer!.root.findByProps({ testID: 'avatar3d-viewer-loading' }),
     ).toBeDefined();
+    expect(
+      renderer!.root.findByProps({ accessibilityLabel: '3D形象加载预览' })
+        .props.source,
+    ).toEqual(
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer private-token' },
+        uri: expect.stringContaining(
+          '/api/avatar-3d/app/models/model-1/thumbnail',
+        ),
+      }),
+    );
 
     ReactTestRenderer.act(() => {
       webView.props.onMessage({

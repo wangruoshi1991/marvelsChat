@@ -146,9 +146,11 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 
 小站页承载位置、本人在线状态和 3D 形象展示，设置页不承载这些个人主页内容编辑。“我的小站”面板按原型结构保留 3D 形象舞台、个人日记、个人相册、喜欢的音乐菜单、可调用能力 Agent 和我的文件的位置；未接入内容模块只展示真实空状态，不展示示例列表、示例封面、示例数量或示例文件，补后端 schema/API 后再接真实列表。
 
-`avatar_config` 只用于人类用户的小站展示和用户小头像，当前不提供正式编辑入口。小站主舞台已接入 `react-native-filament@1.9.0` 渲染真实 GLB，iOS 使用 Metal，Android 后续使用同一 RN 渲染层，滑动时只旋转模型本体。本地模型资源为 `MiaoxunRN/src/assets/avatar/miaoxun-avatar.glb`，由 `MiaoxunRN/scripts/generate-miaoxun-avatar-glb.js` 通过 `npm run generate:avatar-model` 可复现生成；当前 GLB 为低模卡通人形验证资产，只用于验证模型加载、材质更新、舞台旋转、Skybox 背景和真机稳定性。主舞台使用不透明 `FilamentView`、固定色 `Skybox` 背景、正面方向光和点光校准亮度；`Skybox` 只用于填满背景像素，避免 iOS 真机透明 Metal 层露出未清屏缓冲，不接入环境贴图或 `EnvironmentalLight`。
+`avatar_config` 只用于人类用户的小站资料和用户小头像。小站 3D 主舞台使用 App 内置的 Three.js `0.180.0`、GLTFLoader 和 OrbitControls，通过本地 `WKWebView` 加载 Bearer 鉴权的 `/api/avatar-3d/app/models/:modelId/file`，不加载伙伴 Web 工作台页面。上传照片、四视图生成与确认、Tripo 建模、任务状态和费用控制仍由伙伴的后端生命周期负责；App 只是该流程的移动端产品界面。
 
-已删除未达上线标准的捏脸、装扮、动作和上传图片生成编辑器。当前脚本几何 GLB 不能作为最终 QQ 秀级形象方案；要达到完整人物、发型、服装褶皱和动作统一画风，必须接入完整授权角色模型/贴图/动作资产管线。升级商业素材库、骨骼动画或图片生成形象时需要新增模型/素材资源、生成服务、审核流程、模型压缩、跨平台性能验证和资源授权记录。Agent 头像由 Agent 注册 identity 决定，不允许复用用户可编辑形象。收藏列表、签名动态码、好友拒绝/取消、群聊、已读回执、正在输入、媒体消息和内容级可见性记录在 [社交关系流程](social-graph.md)，后续必须继续按后端校验优先实现。
+PostgreSQL 只保存任务、模型状态、字节数和 OSS object key，不保存 GLB、图片或视频二进制。每个成功模型在 OSS 中保留伙伴输出的原始高精 `model.glb`，同时由独立 Node Worker 生成 App 专用 `model-mobile.glb`：最多 25 万三角面、最大 2048px 纹理、`KHR_mesh_quantization` 顶点量化。App 路由只读取移动端资产，缺失时明确失败，不回退到 40-57MB 原件；伙伴 Web 路由继续读取原始资产。模型加载期间先显示已有缩略图，模型和媒体文件按资源 ID 使用带 `Vary: Authorization` 的私有不可变缓存。删除模型时必须同时删除原始 GLB、App GLB 和缩略图。
+
+当前没有捏脸、骨骼动作或任意换装编辑器。后续升级商业素材库或动画时，必须继续保留原始生成资产与平台派生资产的边界，并完成授权、审核、移动端性能和跨平台验证。Agent 头像由 Agent 注册 identity 决定，不允许复用用户可编辑形象。收藏列表、签名动态码、好友拒绝/取消、群聊、已读回执、正在输入、媒体消息和内容级可见性记录在 [社交关系流程](social-graph.md)，后续必须继续按后端校验优先实现。
 
 App 通知列表只读取 `notifications` 表；通知创建、标题正文、通知种类集中在后端 `backend/src/notification-service.js`，社交关系仓储只返回创建结果，接口层负责实时推送刷新信号。当前标准通知种类为 `friend.request`、`friend.accepted`、`follow.created`，后续关注的人发布动态、收藏板块更新、系统审核等通知必须先扩展 `notification-service` 枚举和模板，再接入对应业务事件。`usage_events` 和 `agent_runs` 保持为后台审计与运行记录，不进入用户通知流。客户端在妙讯页 `聊天 / 通知` 切换中显示通知未读数，进入通知列表不会自动清空，点击单条、通过好友申请或显式标记已读才更新 `read_at`。妙讯管家当前聊天页内的同步回复不计入会话未读，只有用户未打开的会话消息才应显示未读数字。
 

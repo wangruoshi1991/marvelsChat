@@ -66,6 +66,7 @@ describe("App avatar viewer bridge", () => {
     expect(fetchModel).toHaveBeenCalledWith(
       "https://api.example.com/api/avatar-3d/app/models/model-1/file",
       expect.objectContaining({
+        cache: "force-cache",
         headers: { Authorization: "Bearer private-token" },
       }),
     );

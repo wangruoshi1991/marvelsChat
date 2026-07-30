@@ -23,21 +23,35 @@ export const avatar3dJobCreateLimit = createRateLimitMiddleware({
 
 export const noStore = (res) => res.set("Cache-Control", "private, no-store");
 
-export const streamAvatar3dPrivateObject = async (res, resource) => {
+export const privateImmutableCacheControl = "private, max-age=31536000, immutable";
+
+export const streamAvatar3dPrivateObject = async (
+  res,
+  resource,
+  { cacheControl = "private, no-store" } = {},
+) => {
   const response = resource?.response;
   if (!response?.body) {
     throw new HttpError(502, "Private storage returned an empty response.");
   }
 
   res.status(response.status);
-  for (const header of ["accept-ranges", "content-length", "content-range", "content-type"]) {
+  for (const header of [
+    "accept-ranges",
+    "content-length",
+    "content-range",
+    "content-type",
+    "etag",
+    "last-modified",
+  ]) {
     const value = response.headers?.get?.(header);
     if (value) res.setHeader(header, value);
   }
   if (!response.headers?.get?.("content-type") && resource.contentType) {
     res.setHeader("content-type", resource.contentType);
   }
-  res.setHeader("cache-control", "private, no-store");
+  res.setHeader("cache-control", cacheControl);
+  res.setHeader("vary", "Authorization");
   res.setHeader("x-content-type-options", "nosniff");
 
   try {

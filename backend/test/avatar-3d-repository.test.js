@@ -328,6 +328,7 @@ test("public job, preview, and model projections never expose private identifier
     job_id: ids.job,
     title: "我的 3D 形象",
     glb_storage_key: "users/private/model.glb",
+    mobile_glb_storage_key: "users/private/model-mobile.glb",
     thumbnail_storage_key: "users/private/thumb.jpg",
     provider_task_id: "tripo-private",
     glb_byte_size: 1024,
@@ -447,6 +448,9 @@ test("preparing models expose only their preview and become interactive atomical
     glb_storage_key: "users/private/model.glb",
     glb_mime_type: "model/gltf-binary",
     glb_byte_size: 2048,
+    mobile_glb_storage_key: "users/private/model-mobile.glb",
+    mobile_glb_mime_type: "model/gltf-binary",
+    mobile_glb_byte_size: 512,
     status: "active",
   };
   const calls = [];
@@ -487,6 +491,11 @@ test("preparing models expose only their preview and become interactive atomical
       storageKey: "users/private/model.glb",
       contentType: "model/gltf-binary",
       byteSize: 2048,
+      mobile: {
+        storageKey: "users/private/model-mobile.glb",
+        contentType: "model/gltf-binary",
+        byteSize: 512,
+      },
     },
   });
   const wrongOwner = await repository.getJobModel({
@@ -499,8 +508,10 @@ test("preparing models expose only their preview and become interactive atomical
   assert.equal(created.interactiveAvailable, false);
   assert.equal(byId.thumbnailStorageKey, "users/private/thumb.jpg");
   assert.equal(byJob.glbStorageKey, null);
+  assert.equal(byJob.mobileGlbStorageKey, null);
   assert.equal(completed.status, "active");
   assert.equal(completed.interactiveAvailable, true);
+  assert.equal(calls[3].params[3], "users/private/model-mobile.glb");
   assert.equal(wrongOwner, null);
   assert.match(calls[0].sql, /status\)\s+VALUES \([^)]*'preparing'/s);
   assert.doesNotMatch(calls[0].sql, /glb_storage_key/);

@@ -959,7 +959,11 @@ export function createAvatar3dLifecycleService({
         code: "MODEL_PREPARING",
       });
     }
-    await storage.deleteAvatarObjects([model.glbStorageKey, model.thumbnailStorageKey]);
+    await storage.deleteAvatarObjects([
+      model.glbStorageKey,
+      model.mobileGlbStorageKey,
+      model.thumbnailStorageKey,
+    ]);
     await repository.deleteModelRecord({ userId: user.id, modelId });
     return { deleted: true };
   };
@@ -1049,6 +1053,27 @@ export function createAvatar3dLifecycleService({
     };
   };
 
+  const getAppModelFile = async ({ user, modelId, range = "" }) => {
+    assertEnabled(user);
+    const model = await repository.getModel({
+      userId: user.id,
+      modelId,
+      includePrivate: true,
+    });
+    if (!model?.mobileGlbStorageKey) {
+      throw new HttpError(409, "Avatar model is not ready for the App.", {
+        code: "MOBILE_MODEL_ASSET_MISSING",
+      });
+    }
+    return {
+      response: await storage.streamAvatarObject({
+        objectKey: model.mobileGlbStorageKey,
+        range,
+      }),
+      contentType: model.mobileGlbMimeType || "model/gltf-binary",
+    };
+  };
+
   const getModelThumbnail = async ({ user, modelId, range = "" }) => {
     assertEnabled(user);
     const model = await repository.getModel({
@@ -1086,6 +1111,7 @@ export function createAvatar3dLifecycleService({
     getReferenceImageFile,
     getModel,
     getModelFile,
+    getAppModelFile,
     getModelThumbnail,
     deleteModel,
   };

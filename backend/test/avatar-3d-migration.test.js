@@ -11,6 +11,10 @@ const faceFirstMigrationUrl = new URL(
   "../database/019_avatar_3d_face_first_pipeline.sql",
   import.meta.url,
 );
+const mobileModelMigrationUrl = new URL(
+  "../database/022_avatar_3d_mobile_model.sql",
+  import.meta.url,
+);
 
 test("avatar 3D migration creates private jobs, photos, previews, and models", async () => {
   const sql = await readFile(migrationUrl, "utf8");
@@ -126,4 +130,14 @@ test("face-first migration preserves legacy jobs and adds private reference sets
   );
   assert.doesNotMatch(sql, /hunyuan|template_proposal|template_id|quality_retry|retry_queued/i);
   assert.doesNotMatch(sql, /DROP TABLE/);
+});
+
+test("mobile model migration keeps the original GLB and adds one complete App asset", async () => {
+  const sql = await readFile(mobileModelMigrationUrl, "utf8");
+
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS mobile_glb_storage_key/);
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS mobile_glb_mime_type/);
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS mobile_glb_byte_size/);
+  assert.match(sql, /avatar_3d_models_mobile_glb_complete_check/);
+  assert.doesNotMatch(sql, /DROP COLUMN|DROP TABLE/);
 });

@@ -93,13 +93,13 @@ test("App model file route streams the authenticated user's private GLB", async 
     authenticate: (_req, _res, next) => next(),
     asyncHandler: (handler) => handler,
     service: {
-      getModelFile: async (input) => {
+      getAppModelFile: async (input) => {
         calls.push(input);
         return resource;
       },
     },
-    streamPrivateObject: async (response, input) => {
-      streamed.push({ response, input });
+    streamPrivateObject: async (response, input, options) => {
+      streamed.push({ response, input, options });
     },
   });
 
@@ -124,6 +124,9 @@ test("App model file route streams the authenticated user's private GLB", async 
   assert.equal(streamed.length, 1);
   assert.equal(streamed[0].response, response);
   assert.equal(streamed[0].input, resource);
+  assert.deepEqual(streamed[0].options, {
+    cacheControl: "private, max-age=31536000, immutable",
+  });
 });
 
 test("App bootstrap exposes no Web session credential", async () => {

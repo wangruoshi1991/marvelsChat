@@ -63,7 +63,7 @@ const load = async ({ modelUrl, token }: ViewerConfig) => {
 
   try {
     const response = await fetch(assertModelUrl(modelUrl), {
-      cache: "no-store",
+      cache: "force-cache",
       credentials: "omit",
       headers: { Authorization: `Bearer ${String(token || "")}` },
       referrerPolicy: "no-referrer",

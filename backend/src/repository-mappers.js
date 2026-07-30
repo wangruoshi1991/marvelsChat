@@ -240,7 +240,8 @@ export const mapAvatar3dModel = (row) => ({
   qualityStatus: row.quality_status || null,
   byteSize: Number(row.glb_byte_size || 0),
   thumbnailAvailable: Boolean(row.thumbnail_storage_key),
-  interactiveAvailable: row.status === "active" && Boolean(row.glb_storage_key),
+  interactiveAvailable:
+    row.status === "active" && Boolean(row.mobile_glb_storage_key),
   createdAt: toIso(row.created_at),
   updatedAt: toIso(row.updated_at),
 });

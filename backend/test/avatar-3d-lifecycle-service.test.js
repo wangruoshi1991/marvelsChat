@@ -127,6 +127,7 @@ function createStatefulRepository(style, { modelProvider } = {}) {
           status: "active",
           interactiveAvailable: true,
           glbStorageKey: input.glb.storageKey,
+          mobileGlbStorageKey: input.glb.mobile.storageKey,
         };
         calls.push(["completePreparingModel", input]);
         return model;
@@ -161,6 +162,11 @@ test("realistic lifecycle exposes the thumbnail before persisting GLB and then s
           storageKey: "users/u/avatar-3d/jobs/j/model.glb",
           contentType: "model/gltf-binary",
           byteSize: 1200,
+          mobile: {
+            storageKey: "users/u/avatar-3d/jobs/j/model-mobile.glb",
+            contentType: "model/gltf-binary",
+            byteSize: 240,
+          },
         };
       },
     },
@@ -768,6 +774,8 @@ test("private media reads verify ownership and expose no storage keys", async ()
     thumbnailAvailable: true,
     glbStorageKey: `users/${ids.user}/avatar-3d/jobs/${ids.job}/model.glb`,
     glbMimeType: "model/gltf-binary",
+    mobileGlbStorageKey: `users/${ids.user}/avatar-3d/jobs/${ids.job}/model-mobile.glb`,
+    mobileGlbMimeType: "model/gltf-binary",
     thumbnailStorageKey: `users/${ids.user}/avatar-3d/jobs/${ids.job}/thumbnail.jpg`,
     thumbnailMimeType: "image/jpeg",
   };
@@ -810,6 +818,11 @@ test("private media reads verify ownership and expose no storage keys", async ()
     modelId: ids.model,
     range: "bytes=0-511",
   });
+  const appModelFile = await service.getAppModelFile({
+    user,
+    modelId: ids.model,
+    range: "bytes=0-255",
+  });
   const thumbnail = await service.getModelThumbnail({ user, modelId: ids.model });
 
   assert.equal(photo.contentType, "image/jpeg");
@@ -817,9 +830,80 @@ test("private media reads verify ownership and expose no storage keys", async ()
   assert.equal(model.glbStorageKey, undefined);
   assert.equal(model.thumbnailStorageKey, undefined);
   assert.equal(modelFile.contentType, "model/gltf-binary");
+  assert.equal(appModelFile.contentType, "model/gltf-binary");
   assert.equal(thumbnail.contentType, "image/jpeg");
-  assert.equal(streamed.length, 4);
-  assert.deepEqual(streamed.map((item) => item.range), ["", "", "bytes=0-511", ""]);
+  assert.equal(streamed.length, 5);
+  assert.deepEqual(
+    streamed.map((item) => item.range),
+    ["", "", "bytes=0-511", "bytes=0-255", ""],
+  );
+  assert.equal(streamed[2].objectKey.endsWith("/model.glb"), true);
+  assert.equal(streamed[3].objectKey.endsWith("/model-mobile.glb"), true);
+});
+
+test("App model reads never fall back to the original high-detail GLB", async () => {
+  let storageReads = 0;
+  const service = createAvatar3dLifecycleService({
+    repository: {
+      getModel: async () => ({
+        id: ids.model,
+        userId: ids.user,
+        status: "active",
+        glbStorageKey: `users/${ids.user}/avatar-3d/jobs/${ids.job}/model.glb`,
+        mobileGlbStorageKey: null,
+      }),
+    },
+    storage: {
+      streamAvatarObject: async () => {
+        storageReads += 1;
+        return { body: {} };
+      },
+    },
+    runtime,
+  });
+
+  await assert.rejects(
+    () => service.getAppModelFile({
+      user: { id: ids.user },
+      modelId: ids.model,
+    }),
+    (error) => error?.status === 409
+      && error?.details?.code === "MOBILE_MODEL_ASSET_MISSING",
+  );
+  assert.equal(storageReads, 0);
+});
+
+test("deleting an active model removes original, App, and thumbnail objects", async () => {
+  const deletes = [];
+  let recordDeletes = 0;
+  const service = createAvatar3dLifecycleService({
+    repository: {
+      getModel: async () => ({
+        id: ids.model,
+        userId: ids.user,
+        status: "active",
+        glbStorageKey: "users/u/avatar-3d/jobs/j/model.glb",
+        mobileGlbStorageKey: "users/u/avatar-3d/jobs/j/model-mobile.glb",
+        thumbnailStorageKey: "users/u/avatar-3d/jobs/j/thumbnail.jpg",
+      }),
+      deleteModelRecord: async () => {
+        recordDeletes += 1;
+      },
+    },
+    storage: {
+      deleteAvatarObjects: async (objectKeys) => deletes.push(...objectKeys),
+    },
+    runtime,
+  });
+
+  await service.deleteModel({ user: { id: ids.user }, modelId: ids.model });
+
+  assert.deepEqual(deletes, [
+    "users/u/avatar-3d/jobs/j/model.glb",
+    "users/u/avatar-3d/jobs/j/model-mobile.glb",
+    "users/u/avatar-3d/jobs/j/thumbnail.jpg",
+  ]);
+  assert.equal(recordDeletes, 1);
 });
 
 test("repeated photo completion never exposes private storage keys", async () => {

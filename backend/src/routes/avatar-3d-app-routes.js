@@ -4,6 +4,7 @@ import {
   avatar3dPhotoMutationLimit,
   createAvatar3dUsageRecorder,
   noStore,
+  privateImmutableCacheControl,
   streamAvatar3dPrivateObject,
 } from "../avatar-3d-route-support.js";
 import { createUsageEvent } from "../repositories.js";
@@ -236,12 +237,14 @@ export function registerAvatar3dAppRoutes(app, {
     authenticate,
     asyncHandler(async (req, res) => {
       const { modelId } = avatar3dModelParamsSchema.parse(req.params);
-      const resource = await service.getModelFile({
+      const resource = await service.getAppModelFile({
         user: req.user,
         modelId,
         range: req.get("range") || "",
       });
-      await streamPrivateObject(res, resource);
+      await streamPrivateObject(res, resource, {
+        cacheControl: privateImmutableCacheControl,
+      });
     }),
   );
 
@@ -255,7 +258,9 @@ export function registerAvatar3dAppRoutes(app, {
         modelId,
         range: req.get("range") || "",
       });
-      await streamPrivateObject(res, resource);
+      await streamPrivateObject(res, resource, {
+        cacheControl: privateImmutableCacheControl,
+      });
     }),
   );
 
