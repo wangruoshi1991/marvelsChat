@@ -331,3 +331,18 @@ App 内置查看器从 `file://` 页面读取私有 GLB，请求来源在 WebVie
 部署后需同时验证模型路由预检返回 `Access-Control-Allow-Origin: null`，普通 `/api/app/bootstrap` 预检仍返回配置的站点来源。精细模型文件可能达到数十 MB，App 在下载和 Three.js 解析期间显示已生成缩略图；等待四视图人工确认时停止任务轮询，后台处理阶段按 Runner 节奏查询。
 
 iOS `1.0 (28)` 已完成 Release archive 并上传 App Store Connect，上传返回 `Uploaded MiaoxunRN` 和 `** EXPORT SUCCEEDED **`。MapLibre、React、ReactNativeDependencies 和 Hermes 的第三方 dSYM warning 仍存在，不阻止 TestFlight 分发。
+
+## 2026-07-30 App 媒体与 3D 加载优化
+
+生产后端已启用 OSS 内网读取、私有媒体长期缓存、3D 缩略图占位和 App 专用轻量 GLB。伙伴生成的原始 GLB 保持不变；新增 Worker 将 App 版本限制为最多 25 万三角面、最大 2048 像素纹理，并使用 `KHR_mesh_quantization`。App 模型接口不回退到原始大文件，轻量资产缺失时会明确返回错误，避免手机静默下载数十 MB 原件。
+
+部署前备份位于：
+
+```text
+/opt/projects/marvels-chat/app/deploy-backups/media-loading-20260730-140933
+/opt/projects/marvels-chat/app/deploy-backups/avatar-mobile-model-20260730-155317
+```
+
+已执行 `022_avatar_3d_mobile_model.sql` 和 `npm run avatar3d:backfill-mobile`。线上 4 个 active 模型均已生成轻量资产，原始文件总计 `198,908,508` bytes，App 文件总计 `25,736,428` bytes。当前测试账号模型从 `57,205,168` bytes 降至 `6,432,516` bytes，缩略图为 `11,418` bytes。鉴权 Range 冒烟测试返回 206，模型和缩略图均包含 `ETag`、`Vary: Authorization` 与 `Cache-Control: private, max-age=31536000, immutable`。重启后本机和公网 health 正常，systemd `NRestarts=0`。
+
+iOS build 30 可直接受益于后端轻量模型；WebView 缓存和加载中缩略图属于客户端变更，需要 build 31 才能生效。
