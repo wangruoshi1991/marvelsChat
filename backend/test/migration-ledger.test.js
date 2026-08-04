@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   applyPendingMigrations,
+  checkMigrationStatus,
   migrationChecksum,
 } from "../src/migration-ledger.js";
 
@@ -18,6 +19,11 @@ class FakeClient {
   async query(sql, params = []) {
     const normalized = String(sql).trim();
     this.calls.push({ sql: normalized, params });
+    if (normalized.startsWith("SELECT to_regclass")) {
+      return {
+        rows: [{ table_name: this.ledgerExists === false ? null : "schema_migrations" }],
+      };
+    }
     if (normalized.startsWith("SELECT filename, checksum")) {
       return { rows: [...this.applied.values()] };
     }
@@ -126,4 +132,77 @@ test("migration filenames are constrained before acquiring a lock", async () => 
     /Invalid migration filename/,
   );
   assert.equal(client.calls.length, 0);
+});
+
+test("migration status reports a missing ledger without creating it", async () => {
+  const client = new FakeClient();
+  client.ledgerExists = false;
+
+  const status = await checkMigrationStatus({
+    client,
+    migrations: [migration("001_first.sql", "SELECT 1")],
+  });
+
+  assert.deepEqual(status, {
+    current: false,
+    appliedCount: 0,
+    expectedCount: 1,
+    pending: ["001_first.sql"],
+    message: "Migration ledger is missing",
+  });
+  assert.equal(
+    client.calls.some((call) => call.sql.startsWith("CREATE TABLE")),
+    false,
+  );
+});
+
+test("migration status is current only when every checksum matches", async () => {
+  const sql = "SELECT 'applied'";
+  const currentClient = new FakeClient({
+    applied: [{ filename: "001_first.sql", checksum: migrationChecksum(sql) }],
+  });
+  const current = await checkMigrationStatus({
+    client: currentClient,
+    migrations: [migration("001_first.sql", sql)],
+  });
+
+  assert.deepEqual(current, {
+    current: true,
+    appliedCount: 1,
+    expectedCount: 1,
+    pending: [],
+  });
+
+  const editedClient = new FakeClient({
+    applied: [{ filename: "001_first.sql", checksum: migrationChecksum("SELECT 'old'") }],
+  });
+  const edited = await checkMigrationStatus({
+    client: editedClient,
+    migrations: [migration("001_first.sql", sql)],
+  });
+
+  assert.equal(edited.current, false);
+  assert.match(edited.message, /checksum mismatch/);
+});
+
+test("migration status reports unapplied files", async () => {
+  const firstSql = "SELECT 'first'";
+  const client = new FakeClient({
+    applied: [{ filename: "001_first.sql", checksum: migrationChecksum(firstSql) }],
+  });
+
+  const status = await checkMigrationStatus({
+    client,
+    migrations: [
+      migration("001_first.sql", firstSql),
+      migration("002_second.sql", "SELECT 'second'"),
+    ],
+  });
+
+  assert.deepEqual(status, {
+    current: false,
+    appliedCount: 1,
+    expectedCount: 2,
+    pending: ["002_second.sql"],
+  });
 });

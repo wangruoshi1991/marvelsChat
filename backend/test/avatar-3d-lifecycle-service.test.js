@@ -5,6 +5,9 @@ import { HttpError } from "../src/http-error.js";
 process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 
 const { createAvatar3dLifecycleService } = await import("../src/avatar-3d-lifecycle-service.js");
+const { createAvatar3dProviderRegistry } = await import("../src/avatar-3d-provider-registry.js");
+
+const providersForTripo = (tripo) => createAvatar3dProviderRegistry({ tripo });
 
 const ids = {
   user: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -23,9 +26,6 @@ const runtime = {
   retentionDays: 7,
   costVersion: "2026-07-21",
   qualityCostsFen: { standard: 280, ultra: 420 },
-  cartoonStyleCostFen: 14,
-  realisticEstimatedCostFen: 280,
-  cartoonEstimatedCostFen: 294,
   providerReady: true,
   referenceGenerationEstimatedCostFen: 200,
 };
@@ -39,39 +39,46 @@ const privatePhoto = {
   normalizedMimeType: "image/jpeg",
 };
 
-function createStatefulRepository(style, { modelProvider } = {}) {
+function createConfirmedJobRepository({ modelProvider = "tripo" } = {}) {
   const calls = [];
   let job = {
     id: ids.job,
     userId: ids.user,
-    style,
+    style: "realistic",
+    generationMode: "face_first_multiview",
+    referenceSetId: ids.referenceSet,
     modelProvider,
     qualityPreset: "standard",
     geometryQuality: "standard",
     textureQuality: "standard",
-    status: style === "cartoon" ? "queued_style" : "queued_3d",
+    status: "queued_3d",
     progress: 0,
     photoCount: 1,
-    styleProviderTaskId: null,
     modelProviderTaskId: null,
-    stylePreviewId: null,
     modelId: null,
   };
-  let preview = null;
   let model = null;
   return {
     calls,
     currentJob: () => ({ ...job }),
     repository: {
       getQuotaState: async () => ({ dailyUsed: 0, hasActiveJob: false }),
-      createJobWithPhotos: async (input) => {
-        calls.push(["createJobWithPhotos", input]);
-        return { created: true, job: { ...job } };
-      },
       getJob: async () => ({ ...job }),
       listJobs: async () => [{ ...job }],
       listModels: async () => model ? [model] : [],
-      listJobPhotos: async () => [privatePhoto],
+      getReferenceSetForJob: async () => ({
+        id: ids.referenceSet,
+        jobId: ids.job,
+        status: "accepted",
+      }),
+      listReferenceImages: async () => ["front", "left", "back", "right"].map(
+        (view, sequenceIndex) => ({
+          id: `reference-${view}`,
+          view,
+          sequenceIndex,
+          storageKey: `users/${ids.user}/avatar-3d/jobs/${ids.job}/references/${view}.jpg`,
+        }),
+      ),
       transitionJob: async (input) => {
         calls.push(["transition", input.fromStatus, input.toStatus]);
         if (job.status !== input.fromStatus) {
@@ -81,10 +88,8 @@ function createStatefulRepository(style, { modelProvider } = {}) {
           ...job,
           status: input.toStatus,
           progress: input.progress ?? job.progress,
-          styleProviderTaskId: input.styleProviderTaskId ?? job.styleProviderTaskId,
           modelProviderTaskId: input.modelProviderTaskId ?? job.modelProviderTaskId,
           providerStatus: input.providerStatus ?? job.providerStatus,
-          stylePreviewId: input.stylePreviewId ?? job.stylePreviewId,
           modelId: input.modelId ?? job.modelId,
           errorCode: input.safeErrorCode ?? null,
         };
@@ -95,18 +100,10 @@ function createStatefulRepository(style, { modelProvider } = {}) {
         job = {
           ...job,
           progress: input.progress ?? job.progress,
-          styleProviderTaskId: input.styleProviderTaskId ?? job.styleProviderTaskId,
           modelProviderTaskId: input.modelProviderTaskId ?? job.modelProviderTaskId,
         };
         return { ...job };
       },
-      createStylePreview: async (input) => {
-        preview = { id: ids.preview, jobId: ids.job, status: "active", ...input };
-        calls.push(["createStylePreview", input]);
-        return preview;
-      },
-      getStylePreview: async () => preview,
-      discardStylePreview: async () => { preview = { ...preview, status: "discarded" }; },
       createPreparingModel: async (input) => {
         if (model?.status === "active") return model;
         model = {
@@ -140,8 +137,8 @@ function createStatefulRepository(style, { modelProvider } = {}) {
   };
 }
 
-test("realistic lifecycle exposes the thumbnail before persisting GLB and then succeeds", async () => {
-  const state = createStatefulRepository("realistic");
+test("confirmed four-view lifecycle exposes the thumbnail before persisting GLB and then succeeds", async () => {
+  const state = createConfirmedJobRepository();
   let submitCalls = 0;
   let pollCalls = 0;
   const service = createAvatar3dLifecycleService({
@@ -170,13 +167,13 @@ test("realistic lifecycle exposes the thumbnail before persisting GLB and then s
         };
       },
     },
-    tripo: {
-      submitTripoJob: async ({ photos }) => {
+    providers: providersForTripo({
+      submit: async ({ photos }) => {
         submitCalls += 1;
-        assert.equal(photos.length, 1);
+        assert.equal(photos.length, 4);
         return { state: "processing", taskId: "tripo-task", providerStatus: "PENDING", progress: 10 };
       },
-      fetchTripoJob: async () => {
+      fetch: async () => {
         pollCalls += 1;
         return {
           state: "succeeded",
@@ -187,23 +184,11 @@ test("realistic lifecycle exposes the thumbnail before persisting GLB and then s
           renderedImageUrl: "https://result.example/preview.webp",
         };
       },
-    },
-    wanx: {},
+    }),
     runtime,
     now: () => new Date("2026-07-17T00:00:00.000Z"),
   });
 
-  await service.createJob({
-    user: { id: ids.user, email: "person@example.com" },
-    body: {
-      style: "realistic",
-      qualityPreset: "standard",
-      photos: [{ photoId: ids.photo, view: "front" }],
-      acceptedPhotoRights: true,
-      acceptedCostVersion: "2026-07-20",
-    },
-    idempotencyKey: "11111111-1111-4111-8111-111111111111",
-  });
   await service.processJob(state.currentJob());
   assert.equal(state.currentJob().status, "processing_3d");
   await service.processJob(state.currentJob());
@@ -252,7 +237,6 @@ test("face-first job creation plans one private Wan request without calling a Pr
       submitWanMultiviewJob: async () => { wanCalls += 1; },
       fetchWanMultiviewJob: async () => { wanCalls += 1; },
     },
-    tripo: {},
     wanx: {},
     runtime,
   });
@@ -420,7 +404,6 @@ test("face-first lifecycle persists four private references and waits for explic
         fetch: async () => ({}),
       }),
     },
-    tripo: {},
     wanx: {},
     runtime,
   });
@@ -515,7 +498,6 @@ test("confirmed face-first jobs submit exactly four accepted references to Tripo
         fetch: async () => ({}),
       }),
     },
-    tripo: {},
     wanx: {},
     runtime,
   });
@@ -530,23 +512,23 @@ test("confirmed face-first jobs submit exactly four accepted references to Tripo
 });
 
 test("a job with an unsupported 3D provider fails closed without a Provider call", async () => {
-  const state = createStatefulRepository("realistic", { modelProvider: "unsupported_provider" });
+  const state = createConfirmedJobRepository({ modelProvider: "unsupported_provider" });
   let providerCalls = 0;
   const service = createAvatar3dLifecycleService({
     repository: state.repository,
     storage: {
       createProviderReadUrl: ({ objectKey }) => `https://signed.example/${objectKey}`,
     },
-    tripo: {
-      submitTripoJob: async () => {
+    providers: providersForTripo({
+      submit: async () => {
         providerCalls += 1;
         throw new Error("must not submit");
       },
-      fetchTripoJob: async () => {
+      fetch: async () => {
         providerCalls += 1;
         throw new Error("must not poll");
       },
-    },
+    }),
     wanx: {},
     runtime,
     now: () => new Date("2026-07-17T00:00:00.000Z"),
@@ -593,11 +575,11 @@ test("persisting recovery finishes an already active model without downloading i
         modelDownloads += 1;
       },
     },
-    tripo: {
-      fetchTripoJob: async () => {
+    providers: providersForTripo({
+      fetch: async () => {
         providerPolls += 1;
       },
-    },
+    }),
     wanx: {},
     runtime,
   });
@@ -609,78 +591,20 @@ test("persisting recovery finishes an already active model without downloading i
   assert.equal(modelDownloads, 0);
 });
 
-test("cartoon lifecycle stops for confirmation and submits Tripo only after acceptance", async () => {
-  const state = createStatefulRepository("cartoon");
-  let wanxSubmits = 0;
-  let tripoSubmits = 0;
-  const service = createAvatar3dLifecycleService({
-    repository: state.repository,
-    storage: {
-      createProviderReadUrl: ({ objectKey }) => `https://signed.example/${objectKey}`,
-      persistAvatarStylePreview: async () => ({
-        storageKey: "users/u/avatar-3d/jobs/j/style-preview.jpg",
-        contentType: "image/jpeg",
-        byteSize: 500,
-        width: 1024,
-        height: 1024,
-      }),
-    },
-    wanx: {
-      submitWanxStyleJob: async () => {
-        wanxSubmits += 1;
-        return { state: "processing", taskId: "wanx-task", providerStatus: "PENDING", progress: 10 };
-      },
-      fetchWanxStyleJob: async () => ({
-        state: "succeeded",
-        taskId: "wanx-task",
-        providerStatus: "SUCCEEDED",
-        progress: 100,
-        imageUrl: "https://result.example/style.png",
-      }),
-    },
-    tripo: {
-      submitTripoJob: async ({ photos }) => {
-        tripoSubmits += 1;
-        assert.equal(photos[0].url.includes("style-preview.jpg"), true);
-        return { state: "processing", taskId: "tripo-task", providerStatus: "PENDING", progress: 10 };
-      },
-    },
-    runtime,
-    now: () => new Date("2026-07-17T00:00:00.000Z"),
-  });
-
-  await service.processJob(state.currentJob());
-  await service.processJob(state.currentJob());
-  assert.equal(state.currentJob().status, "awaiting_style_confirmation");
-  assert.equal(wanxSubmits, 1);
-  assert.equal(tripoSubmits, 0);
-  const previewCall = state.calls.find((call) => call[0] === "createStylePreview");
-  assert.equal(previewCall[1].mimeType, "image/jpeg");
-
-  await service.confirmStyle({ user: { id: ids.user }, jobId: ids.job });
-  await service.confirmStyle({ user: { id: ids.user }, jobId: ids.job });
-  assert.equal(state.currentJob().status, "queued_3d");
-  assert.equal(tripoSubmits, 0);
-
-  await service.processJob(state.currentJob());
-  assert.equal(tripoSubmits, 1);
-  assert.equal(state.currentJob().status, "processing_3d");
-});
-
 test("unknown Tripo submission becomes terminal and is never resubmitted", async () => {
-  const state = createStatefulRepository("realistic");
+  const state = createConfirmedJobRepository();
   let submitCalls = 0;
   const service = createAvatar3dLifecycleService({
     repository: state.repository,
     storage: {
       createProviderReadUrl: () => "https://signed.example/front.jpg",
     },
-    tripo: {
-      submitTripoJob: async () => {
+    providers: providersForTripo({
+      submit: async () => {
         submitCalls += 1;
         throw new HttpError(502, "unknown", { code: "TRIPO_SUBMISSION_UNKNOWN" });
       },
-    },
+    }),
     wanx: {},
     runtime,
     now: () => new Date("2026-07-17T00:00:00.000Z"),
@@ -693,7 +617,7 @@ test("unknown Tripo submission becomes terminal and is never resubmitted", async
 });
 
 test("a Tripo task is never resubmitted when saving its task ID fails", async () => {
-  const state = createStatefulRepository("realistic");
+  const state = createConfirmedJobRepository();
   const transitionJob = state.repository.transitionJob;
   let submitCalls = 0;
   let failTaskIdWrite = true;
@@ -713,8 +637,8 @@ test("a Tripo task is never resubmitted when saving its task ID fails", async ()
     storage: {
       createProviderReadUrl: () => "https://signed.example/front.jpg",
     },
-    tripo: {
-      submitTripoJob: async () => {
+    providers: providersForTripo({
+      submit: async () => {
         submitCalls += 1;
         return {
           state: "processing",
@@ -723,7 +647,7 @@ test("a Tripo task is never resubmitted when saving its task ID fails", async ()
           progress: 10,
         };
       },
-    },
+    }),
     wanx: {},
     runtime,
     now: () => new Date("2026-07-17T00:00:00.000Z"),
@@ -762,7 +686,7 @@ test("bootstrap never reports a quality_failed job as active", async () => {
   assert.deepEqual(bootstrap.jobs, [failedJob]);
 });
 
-test("private media reads verify ownership and expose no storage keys", async () => {
+test("private model and reference reads verify ownership and expose no storage keys", async () => {
   const streamed = [];
   const privateModel = {
     id: ids.model,
@@ -781,19 +705,21 @@ test("private media reads verify ownership and expose no storage keys", async ()
   };
   const service = createAvatar3dLifecycleService({
     repository: {
-      getPhoto: async () => privatePhoto,
       getJob: async () => ({
         id: ids.job,
         userId: ids.user,
-        style: "cartoon",
-        status: "awaiting_style_confirmation",
+        style: "realistic",
+        generationMode: "face_first_multiview",
+        referenceSetId: ids.referenceSet,
+        status: "awaiting_reference_confirmation",
       }),
-      listJobs: async () => [],
-      getStylePreview: async () => ({
+      getReferenceImage: async () => ({
         id: ids.preview,
         userId: ids.user,
         jobId: ids.job,
-        storageKey: `users/${ids.user}/avatar-3d/jobs/${ids.job}/style-preview.jpg`,
+        referenceSetId: ids.referenceSet,
+        view: "front",
+        storageKey: `users/${ids.user}/avatar-3d/jobs/${ids.job}/references/front.jpg`,
         mimeType: "image/jpeg",
       }),
       getModel: async () => privateModel,
@@ -809,9 +735,11 @@ test("private media reads verify ownership and expose no storage keys", async ()
   const user = { id: ids.user, email: "person@example.com" };
 
   assert.equal((await service.getJob({ user, jobId: ids.job })).id, ids.job);
-  assert.deepEqual(await service.listJobs({ user, limit: 10 }), []);
-  const photo = await service.getPhotoFile({ user, photoId: ids.photo });
-  const preview = await service.getStylePreviewFile({ user, jobId: ids.job });
+  const reference = await service.getReferenceImageFile({
+    user,
+    jobId: ids.job,
+    view: "front",
+  });
   const model = await service.getModel({ user, modelId: ids.model });
   const modelFile = await service.getModelFile({
     user,
@@ -825,20 +753,21 @@ test("private media reads verify ownership and expose no storage keys", async ()
   });
   const thumbnail = await service.getModelThumbnail({ user, modelId: ids.model });
 
-  assert.equal(photo.contentType, "image/jpeg");
-  assert.equal(preview.contentType, "image/jpeg");
+  assert.equal(reference.contentType, "image/jpeg");
   assert.equal(model.glbStorageKey, undefined);
+  assert.equal(model.mobileGlbStorageKey, undefined);
   assert.equal(model.thumbnailStorageKey, undefined);
   assert.equal(modelFile.contentType, "model/gltf-binary");
   assert.equal(appModelFile.contentType, "model/gltf-binary");
   assert.equal(thumbnail.contentType, "image/jpeg");
-  assert.equal(streamed.length, 5);
+  assert.equal(streamed.length, 4);
   assert.deepEqual(
     streamed.map((item) => item.range),
-    ["", "", "bytes=0-511", "bytes=0-255", ""],
+    ["", "bytes=0-511", "bytes=0-255", ""],
   );
-  assert.equal(streamed[2].objectKey.endsWith("/model.glb"), true);
-  assert.equal(streamed[3].objectKey.endsWith("/model-mobile.glb"), true);
+  assert.equal(streamed[0].objectKey.endsWith("/references/front.jpg"), true);
+  assert.equal(streamed[1].objectKey.endsWith("/model.glb"), true);
+  assert.equal(streamed[2].objectKey.endsWith("/model-mobile.glb"), true);
 });
 
 test("App model reads never fall back to the original high-detail GLB", async () => {
@@ -914,7 +843,6 @@ test("repeated photo completion never exposes private storage keys", async () =>
         : { id: ids.photo, status: "ready", jobId: null },
     },
     storage: {},
-    tripo: {},
     wanx: {},
     runtime,
   });
@@ -980,7 +908,6 @@ test("cancelling a private job never exposes quality metrics", async () => {
       markJobAssetsRetention: async () => {},
     },
     storage: {},
-    tripo: {},
     wanx: {},
     runtime,
   });

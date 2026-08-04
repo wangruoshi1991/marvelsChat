@@ -3,7 +3,6 @@ import { pipeline } from "node:stream/promises";
 import { config } from "../config.js";
 import { HttpError } from "../http-error.js";
 import {
-  deleteLocalMediaObject,
   fetchLocalMediaObject,
   inspectLocalMediaObject,
   writeLocalMediaObject,
@@ -21,9 +20,9 @@ import {
 } from "../oss-service.js";
 import { createRateLimitMiddleware } from "../rate-limit-service.js";
 import { createUsageEvent, hashRequestIp } from "../repositories.js";
+import { deleteOwnedStationMediaAsset } from "../station-media-deletion-service.js";
 import {
   createStationMediaAsset,
-  deleteStationMediaAsset,
   getStationMediaAssetForUser,
   listStationMediaAssetsForUser,
   markStationMediaAssetUploaded,
@@ -33,7 +32,6 @@ import {
 } from "../station-repository.js";
 import {
   stationMediaAssetParamsSchema,
-  stationMediaAssetRouteParamsSchema,
   stationMediaAssetSchema,
   stationMediaAssetUpdateSchema,
   stationMediaSearchSchema,
@@ -114,7 +112,7 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
     "/api/station/media-assets/:mediaAssetId",
     authenticate,
     asyncHandler(async (req, res) => {
-      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+      const { mediaAssetId } = stationMediaAssetParamsSchema.parse(
         req.params,
       );
       const body = stationMediaAssetUpdateSchema.parse(req.body);
@@ -144,19 +142,13 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
     "/api/station/media-assets/:mediaAssetId",
     authenticate,
     asyncHandler(async (req, res) => {
-      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+      const { mediaAssetId } = stationMediaAssetParamsSchema.parse(
         req.params,
       );
-      const asset = await deleteStationMediaAsset({
+      const asset = await deleteOwnedStationMediaAsset({
         userId: req.user.id,
         mediaAssetId,
       });
-      if (!asset) {
-        throw new HttpError(404, "Media asset not found");
-      }
-      if (asset.storageProvider === "local" && asset.storageKey) {
-        await deleteLocalMediaObject(asset.storageKey).catch(() => undefined);
-      }
       await createUsageEvent({
         userId: req.user.id,
         eventType: "station.media.delete",
@@ -175,7 +167,7 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
     authenticate,
     mediaUploadLimit,
     asyncHandler(async (req, res) => {
-      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+      const { mediaAssetId } = stationMediaAssetParamsSchema.parse(
         req.params,
       );
       const asset = await getStationMediaAssetForUser({
@@ -240,7 +232,7 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
       if (config.isProduction) {
         throw new HttpError(404, "Local media upload is not available");
       }
-      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+      const { mediaAssetId } = stationMediaAssetParamsSchema.parse(
         req.params,
       );
       const asset = await getStationMediaAssetForUser({
@@ -286,7 +278,7 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
     authenticate,
     mediaUploadLimit,
     asyncHandler(async (req, res) => {
-      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+      const { mediaAssetId } = stationMediaAssetParamsSchema.parse(
         req.params,
       );
       const body = stationMediaUploadCompleteSchema.parse(req.body);
@@ -378,7 +370,7 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
     "/api/station/media-assets/:mediaAssetId/file",
     authenticate,
     asyncHandler(async (req, res) => {
-      const { mediaAssetId } = stationMediaAssetRouteParamsSchema.parse(
+      const { mediaAssetId } = stationMediaAssetParamsSchema.parse(
         req.params,
       );
       const asset = await getStationMediaAssetForUser({

@@ -169,7 +169,7 @@ export const mapStationSiteDraft = (row) => ({
   userId: row.user_id,
   prompt: row.prompt || "",
   draft: parseJson(row.draft, {}),
-  source: row.source || "fallback",
+  source: row.source,
   status: row.status || "draft",
   modelProvider: row.model_provider || "",
   modelMissing: parseJson(row.model_missing, []),
@@ -181,18 +181,15 @@ export const mapStationSiteDraft = (row) => ({
 export const mapAvatar3dJob = (row) => ({
   id: row.id,
   userId: row.user_id,
-  style: row.style,
+  style: "realistic",
   qualityPreset: row.quality_preset || "standard",
-  generationMode: row.generation_mode || "legacy_photo_3d",
+  generationMode: "face_first_multiview",
   referenceSetId: row.reference_set_id || null,
-  technicalRetryCount: Number(row.technical_retry_count || 0),
-  qualityStatus: row.quality_status || null,
   status: row.status,
   progress: Number(row.progress || 0),
   photoCount: Number(row.photo_count || 0),
   acceptedCostVersion: row.accepted_cost_version,
   estimatedCostFen: Number(row.estimated_cost_fen || 0),
-  stylePreviewId: row.style_preview_id || null,
   modelId: row.model_id || null,
   errorCode: row.safe_error_code || null,
   createdAt: toIso(row.created_at),
@@ -220,24 +217,12 @@ export const mapAvatar3dPhoto = (row) => ({
   updatedAt: toIso(row.updated_at),
 });
 
-export const mapAvatar3dStylePreview = (row) => ({
-  id: row.id,
-  jobId: row.job_id,
-  status: row.status,
-  byteSize: Number(row.byte_size || 0),
-  width: row.width === null || row.width === undefined ? null : Number(row.width),
-  height: row.height === null || row.height === undefined ? null : Number(row.height),
-  createdAt: toIso(row.created_at),
-  updatedAt: toIso(row.updated_at),
-});
-
 export const mapAvatar3dModel = (row) => ({
   id: row.id,
   jobId: row.job_id,
   title: row.title,
   status: row.status,
   modelProvider: row.model_provider || "tripo",
-  qualityStatus: row.quality_status || null,
   byteSize: Number(row.glb_byte_size || 0),
   thumbnailAvailable: Boolean(row.thumbnail_storage_key),
   interactiveAvailable:

@@ -37,6 +37,13 @@ const readAppliedMigrations = async (client) => {
   return new Map(result.rows.map((row) => [row.filename, row]));
 };
 
+const migrationLedgerExists = async (client) => {
+  const result = await client.query(
+    "SELECT to_regclass('public.schema_migrations') AS table_name",
+  );
+  return Boolean(result.rows[0]?.table_name);
+};
+
 const assertLedgerMatchesFiles = ({ applied, migrations, filenames }) => {
   for (const filename of applied.keys()) {
     if (!filenames.has(filename)) {
@@ -98,4 +105,45 @@ export async function applyPendingMigrations({ client, migrations }) {
   } finally {
     await client.query("SELECT pg_advisory_unlock($1)", [migrationLockId]);
   }
+}
+
+export async function checkMigrationStatus({ client, migrations }) {
+  const orderedMigrations = [...migrations].sort((left, right) =>
+    left.filename.localeCompare(right.filename),
+  );
+  const filenames = validateMigrations(orderedMigrations);
+
+  if (!(await migrationLedgerExists(client))) {
+    return {
+      current: false,
+      appliedCount: 0,
+      expectedCount: orderedMigrations.length,
+      pending: orderedMigrations.map((migration) => migration.filename),
+      message: "Migration ledger is missing",
+    };
+  }
+
+  const applied = await readAppliedMigrations(client);
+  const pending = orderedMigrations
+    .filter((migration) => !applied.has(migration.filename))
+    .map((migration) => migration.filename);
+
+  try {
+    assertLedgerMatchesFiles({ applied, migrations: orderedMigrations, filenames });
+  } catch (error) {
+    return {
+      current: false,
+      appliedCount: applied.size,
+      expectedCount: orderedMigrations.length,
+      pending,
+      message: error.message,
+    };
+  }
+
+  return {
+    current: pending.length === 0,
+    appliedCount: applied.size,
+    expectedCount: orderedMigrations.length,
+    pending,
+  };
 }

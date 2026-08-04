@@ -85,10 +85,10 @@ const requestHostname = (req) => {
 const isLoopbackHostname = (hostname) =>
   ["localhost", "127.0.0.1", "::1"].includes(String(hostname || "").toLowerCase());
 
-export const isAvatarLoopbackRequest = (req) =>
+const isAvatarLoopbackRequest = (req) =>
   !config.isProduction && isLoopbackHostname(requestHostname(req));
 
-export const isAvatarTrustedRequest = (req) =>
+const isAvatarTrustedRequest = (req) =>
   isAvatarHttpsRequest(req) || isAvatarLoopbackRequest(req);
 
 export const requireAvatarHttps = (req, _res, next) => {

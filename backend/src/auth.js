@@ -118,7 +118,7 @@ export async function authenticate(req, _res, next) {
   }
 }
 
-export function hasAdminPermission(user, permission) {
+function hasAdminPermission(user, permission) {
   if (user?.role !== "admin") return false;
   const permissions = Array.isArray(user.adminPermissions) ? user.adminPermissions : [];
   return permissions.includes("*") || permissions.includes(permission);
@@ -133,13 +133,4 @@ export function requireAdmin(permission = "admin:access") {
 
     next();
   };
-}
-
-export function requireAdminUser(req, _res, next) {
-  if (req.user?.role !== "admin") {
-    next(new HttpError(403, "Admin permission required"));
-    return;
-  }
-
-  next();
 }

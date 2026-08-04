@@ -103,7 +103,7 @@ export function buildAlbumSuggestions({ mediaAssets = [] } = {}) {
       tags: normalizeMediaTags([tag, ...assets.flatMap((asset) => suggestTagsForMediaAsset(asset))]),
       mediaAssetIds: assets.map((asset) => asset.id),
       confidence: Math.min(0.95, 0.55 + assets.length * 0.1),
-      source: "agent-rule",
+      source: "metadata-rule",
     }))
     .sort((a, b) => b.mediaAssetIds.length - a.mediaAssetIds.length || b.confidence - a.confidence)
     .slice(0, 8);

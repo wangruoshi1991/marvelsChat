@@ -29,14 +29,6 @@ export function avatar3dFeatureForUser(user, runtime = config.avatar3d) {
   };
 }
 
-export function requireAvatar3d(req, _res, next) {
-  if (!avatar3dFeatureForUser(req.user).enabled) {
-    next(new HttpError(404, "Avatar feature is not available."));
-    return;
-  }
-  next();
-}
-
 export function assertAvatar3dQuota({ dailyUsed, dailyLimit, hasActiveJob }) {
   if (hasActiveJob) {
     throw new HttpError(409, "Another avatar task is already active.", {

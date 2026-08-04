@@ -15,12 +15,11 @@ const runtime = {
     standard: 280,
     ultra: 420,
   },
-  cartoonStyleCostFen: 14,
 };
 
 test("standard quality keeps detailed texture with standard geometry", () => {
   assert.deepEqual(
-    resolveAvatar3dQuality({ preset: "standard", style: "realistic", runtime }),
+    resolveAvatar3dQuality({ preset: "standard", runtime }),
     {
       id: "standard",
       geometryQuality: "standard",
@@ -30,16 +29,9 @@ test("standard quality keeps detailed texture with standard geometry", () => {
   );
 });
 
-test("legacy cartoon jobs still add their snapshotted style cost", () => {
-  assert.equal(
-    resolveAvatar3dQuality({ preset: "ultra", style: "cartoon", runtime }).estimatedCostFen,
-    434,
-  );
-});
-
 test("maps ultra quality to ultra geometry and detailed texture", () => {
   assert.deepEqual(
-    resolveAvatar3dQuality({ preset: "ultra", style: "realistic", runtime }),
+    resolveAvatar3dQuality({ preset: "ultra", runtime }),
     {
       id: "ultra",
       geometryQuality: "ultra",
@@ -51,7 +43,7 @@ test("maps ultra quality to ultra geometry and detailed texture", () => {
 
 test("rejects unknown quality presets before provider submission", () => {
   assert.throws(
-    () => resolveAvatar3dQuality({ preset: "custom", style: "realistic", runtime }),
+    () => resolveAvatar3dQuality({ preset: "custom", runtime }),
     (error) => error?.status === 400 && error?.details?.code === "INVALID_QUALITY_PRESET",
   );
 });

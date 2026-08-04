@@ -109,9 +109,7 @@ test("avatar route and idempotency schemas require UUIDs", () => {
   assert.throws(() => schemas.avatar3dIdempotencySchema.parse({ idempotencyKey: "retry-me" }));
 });
 
-test("style confirmation is explicit and upload completion accepts no client storage key", () => {
-  assert.deepEqual(schemas.avatar3dStyleConfirmSchema.parse({ accepted: true }), { accepted: true });
-  assert.throws(() => schemas.avatar3dStyleConfirmSchema.parse({ accepted: false }));
+test("upload completion accepts no client storage key", () => {
   assert.deepEqual(schemas.avatar3dPhotoCompleteSchema.parse({}), {});
   assert.throws(() => schemas.avatar3dPhotoCompleteSchema.parse({ storageKey: "users/private" }));
 });

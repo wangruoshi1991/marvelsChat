@@ -1,3 +1,5 @@
+import { replaceControlCharacters } from "./text-sanitization.js";
+
 const minDurationSeconds = 10;
 const maxDurationSeconds = 180;
 const minShots = 3;
@@ -13,13 +15,12 @@ const formatLabels = {
   promo: "推广短片",
 };
 
-export const sanitizeVideoText = (value, max = 800) =>
-  String(value || "")
+const sanitizeVideoText = (value, max = 800) =>
+  replaceControlCharacters(value)
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\b(script|iframe|javascript:|onerror|onload|alert)\b/gi, " ")
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, max);
@@ -69,7 +70,7 @@ function scoreMedia(asset, terms) {
   return score;
 }
 
-export function selectVideoSourceMedia({ mediaAssets = [], query = "", limit = 8 } = {}) {
+function selectVideoSourceMedia({ mediaAssets = [], query = "", limit = 8 } = {}) {
   const safeLimit = Math.min(Math.max(Number(limit) || 8, 1), 40);
   const terms = compactTerms(query);
   return (Array.isArray(mediaAssets) ? mediaAssets : [])
@@ -206,7 +207,7 @@ export function buildVideoDraft({
     format: normalizedFormat,
     aspectRatio: normalizedAspectRatio,
     durationSeconds: normalizedDuration,
-    source: "agent-rule",
+    source: "deterministic-script",
     summary,
     script: {
       hook: sanitizeVideoText(narration[0] || fallbackBeat, 120),

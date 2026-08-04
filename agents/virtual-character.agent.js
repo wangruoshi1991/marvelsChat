@@ -17,7 +17,7 @@ export default {
   capabilities: ["avatar-consultation", "style-guidance"],
   permissions: ["profile:read", "messages:read"],
 
-  async plan({ input, user, thread, messages = [], appContext = null }) {
+  async plan({ input, user, messages = [], appContext = null }) {
     const history = messages
       .filter((message) => message.content !== input)
       .slice(-10)

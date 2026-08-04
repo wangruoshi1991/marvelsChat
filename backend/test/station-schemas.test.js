@@ -6,7 +6,7 @@ import {
   stationAlbumUpdateSchema,
   stationDiaryParamsSchema,
   stationDiaryUpdateSchema,
-  stationMediaAssetRouteParamsSchema,
+  stationMediaAssetParamsSchema,
   stationMediaAssetUpdateSchema,
   stationMediaUploadCompleteSchema,
   stationMediaUploadUrlSchema,
@@ -45,7 +45,7 @@ test("station route params reject malformed identifiers", () => {
   assert.equal(stationDiaryParamsSchema.parse({ entryId: uuid }).entryId, uuid);
   assert.equal(stationAlbumParamsSchema.parse({ albumId: uuid }).albumId, uuid);
   assert.equal(
-    stationMediaAssetRouteParamsSchema.parse({ mediaAssetId: uuid })
+    stationMediaAssetParamsSchema.parse({ mediaAssetId: uuid })
       .mediaAssetId,
     uuid,
   );
@@ -54,7 +54,7 @@ test("station route params reject malformed identifiers", () => {
   assert.throws(() => stationPostParamsSchema.parse({ postId: "not-a-uuid" }));
   assert.throws(() => stationAlbumParamsSchema.parse({ albumId: "not-a-uuid" }));
   assert.throws(() =>
-    stationMediaAssetRouteParamsSchema.parse({ mediaAssetId: "not-a-uuid" }),
+    stationMediaAssetParamsSchema.parse({ mediaAssetId: "not-a-uuid" }),
   );
 });
 

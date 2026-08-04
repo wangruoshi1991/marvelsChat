@@ -12,7 +12,7 @@ import { HttpError } from "./http-error.js";
 import { avatar3dModelParamsSchema } from "./schemas.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const defaultAvatar3dDistDir = path.resolve(__dirname, "../../avatar-web/dist");
+const defaultAvatar3dDistDir = path.resolve(__dirname, "../../avatar-web/dist");
 
 const normalizeHttpsOrigin = (value) => {
   try {

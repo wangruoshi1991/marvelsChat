@@ -10,6 +10,7 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "db:migrate": "node scripts/db-migrate.js",
+    "admin:bootstrap": "node scripts/admin-bootstrap.js",
     "avatar3d:backfill-mobile": "node scripts/avatar-3d-backfill-mobile-models.js"
   },
   "dependencies": {

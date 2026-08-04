@@ -4,15 +4,15 @@ import {
   avatar3dQualityPresetIds,
 } from "./avatar-3d-quality.js";
 
-export const phoneNumberSchema = z.string().trim().regex(/^1[3-9]\d{9}$/, "Phone number must be a valid mainland China mobile number");
+const phoneNumberSchema = z.string().trim().regex(/^1[3-9]\d{9}$/, "Phone number must be a valid mainland China mobile number");
 
-export const passwordSchema = z.string()
+const passwordSchema = z.string()
   .min(8)
   .max(128)
   .regex(/[A-Z]/, "Password must include one uppercase letter")
   .regex(/[a-z]/, "Password must include one lowercase letter");
 
-export const displayNameSchema = z.string().trim().min(1).max(40);
+const displayNameSchema = z.string().trim().min(1).max(40);
 
 export const registerSchema = z.object({
   contactType: z.enum(["email", "phone"]),
@@ -88,7 +88,7 @@ export const presenceSchema = z.object({
   presenceMode: z.enum(["online", "offline", "hidden"]),
 });
 
-export const avatarConfigSchema = z.object({
+const avatarConfigSchema = z.object({
   version: z.literal(2).optional().default(2),
   seed: z.string().trim().max(40).optional(),
   body: z.enum(["compact", "standard", "tall", "strong"]).optional(),
@@ -121,7 +121,7 @@ export const profileSelfSchema = z.object({
   avatarConfig: avatarConfigSchema.optional().default({}),
 });
 
-export const stationVisibilitySchema = z.enum(["private", "friends", "public"]);
+const stationVisibilitySchema = z.enum(["private", "friends", "public"]);
 
 export const stationPostSchema = z
   .object({
@@ -234,8 +234,6 @@ export const stationMediaAssetParamsSchema = z.object({
   mediaAssetId: z.string().uuid(),
 });
 
-export const stationMediaAssetRouteParamsSchema = stationMediaAssetParamsSchema;
-
 const stationMediaMimeTypes = new Set([
   "image/gif",
   "image/heic",
@@ -306,10 +304,7 @@ export const stationSiteDraftParamsSchema = z.object({
   draftId: z.string().uuid(),
 });
 
-export { avatar3dCostVersion };
-export const avatar3dPhotoUploadLimit = 10 * 1024 * 1024;
-
-export const avatar3dSessionSchema = loginSchema;
+const avatar3dPhotoUploadLimit = 10 * 1024 * 1024;
 
 export const avatar3dPhotoUploadSchema = z.object({
   originalFilename: z.string().trim().min(1).max(180),
@@ -335,10 +330,6 @@ export const avatar3dCreateJobSchema = z.object({
 
 export const avatar3dIdempotencySchema = z.object({
   idempotencyKey: z.string().uuid(),
-}).strict();
-
-export const avatar3dStyleConfirmSchema = z.object({
-  accepted: z.literal(true),
 }).strict();
 
 export const avatar3dReferenceConfirmSchema = z.object({
@@ -505,12 +496,6 @@ export const profileAdminSchema = z.object({
 
 export const agentAccessSchema = z.object({
   enabled: z.boolean(),
-  alias: z.string().trim().max(80).optional().default(""),
-  grantedScopes: z.array(z.string().trim().min(1).max(80)).optional().default([]),
-});
-
-export const selfAgentAccessSchema = z.object({
-  enabled: z.boolean().optional().default(true),
   alias: z.string().trim().max(80).optional().default(""),
   grantedScopes: z.array(z.string().trim().min(1).max(80)).optional().default([]),
 });

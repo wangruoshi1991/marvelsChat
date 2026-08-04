@@ -40,6 +40,40 @@ test("overlapping runner calls do not overlap and processing jobs resume", async
   assert.equal(processed[0].modelProviderTaskId, "task-1");
 });
 
+test("stop waits for the active job and prevents another claim", async () => {
+  let resolveProcess;
+  let claims = 0;
+  const runner = createAvatar3dJobRunner({
+    repository: {
+      claimNextStep: async () => {
+        claims += 1;
+        return claims === 1 ? { id: "job-1", status: "processing_3d" } : null;
+      },
+      listExpiredPrivateAssets: async () => [],
+    },
+    service: {
+      processJob: async () => new Promise((resolve) => { resolveProcess = resolve; }),
+    },
+    storage: { deleteAvatarObjects: async () => {} },
+    enabled: () => true,
+    now: () => new Date("2026-07-17T00:00:00.000Z"),
+  });
+
+  const activeRun = runner.runOnce();
+  await new Promise((resolve) => setImmediate(resolve));
+  let stopped = false;
+  const stopping = runner.stop().then(() => { stopped = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(stopped, false);
+  assert.deepEqual(await runner.runOnce(), { skipped: true });
+  assert.equal(claims, 1);
+
+  resolveProcess();
+  await Promise.all([activeRun, stopping]);
+  assert.equal(stopped, true);
+});
+
 test("cleanup deletes OSS first and leaves failed records retryable", async () => {
   const calls = [];
   let shouldFail = true;

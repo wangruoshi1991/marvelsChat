@@ -24,7 +24,8 @@ export function createAvatar3dJobRunner({
   logger = defaultLogger,
 } = {}) {
   let timer = null;
-  let running = false;
+  let inFlight = null;
+  let stopping = false;
   let lastCleanupAt = 0;
 
   const runCleanup = async () => {
@@ -49,9 +50,7 @@ export function createAvatar3dJobRunner({
     }
   };
 
-  const runOnce = async () => {
-    if (!enabled() || running) return { skipped: true };
-    running = true;
+  const executeRun = async () => {
     try {
       for (let index = 0; index < batchSize; index += 1) {
         const job = await repository.claimNextStep({
@@ -82,20 +81,29 @@ export function createAvatar3dJobRunner({
       });
       return { skipped: false };
     } finally {
-      running = false;
+      inFlight = null;
     }
+  };
+
+  const runOnce = () => {
+    if (!enabled() || stopping || inFlight) return Promise.resolve({ skipped: true });
+    inFlight = executeRun();
+    return inFlight;
   };
 
   const start = () => {
     if (timer) return;
+    stopping = false;
     void runOnce();
     timer = setInterval(() => void runOnce(), intervalMs);
     timer.unref?.();
   };
 
-  const stop = () => {
+  const stop = async () => {
+    stopping = true;
     if (timer) clearInterval(timer);
     timer = null;
+    await inFlight;
   };
 
   return { runOnce, runCleanup, start, stop };

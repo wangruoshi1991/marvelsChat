@@ -18,6 +18,8 @@ import { loginSchema, registerSchema } from "../schemas.js";
 import { createRateLimitMiddleware } from "../rate-limit-service.js";
 
 const minute = 60 * 1000;
+const dummyPasswordHash =
+  "pbkdf2$310000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 const authKey = (req) => {
   const identifier = String(req.body?.identifier || req.body?.email || req.body?.phoneNumber || req.body?.displayName || "")
@@ -42,6 +44,25 @@ const registerLimit = createRateLimitMiddleware({
   keyGenerator: authKey,
   message: "注册请求过于频繁，请稍后再试。",
 });
+
+export async function verifyLoginCredentials(
+  { identifier, password },
+  {
+    findUser = findUserByLoginIdentifier,
+    verify = verifyPassword,
+  } = {},
+) {
+  const user = await findUser(identifier);
+  const valid = await verify(
+    password,
+    user?.password_hash || dummyPasswordHash,
+  );
+  if (!user || !valid) {
+    throw new HttpError(401, "Invalid account or password");
+  }
+  if (user.status !== "active") throw new HttpError(403, "User is disabled");
+  return user;
+}
 
 export function registerAuthRoutes(app, { authenticate, asyncHandler }) {
   app.post(
@@ -88,11 +109,7 @@ export function registerAuthRoutes(app, { authenticate, asyncHandler }) {
     loginLimit,
     asyncHandler(async (req, res) => {
       const body = loginSchema.parse(req.body);
-      const userRow = await findUserByLoginIdentifier(body.identifier);
-      if (!userRow) throw new HttpError(404, "Account not found");
-      const valid = await verifyPassword(body.password, userRow.password_hash);
-      if (!valid) throw new HttpError(401, "Invalid password");
-      if (userRow.status !== "active") throw new HttpError(403, "User is disabled");
+      const userRow = await verifyLoginCredentials(body);
 
       const session = await createSessionForUser(userRow.id);
       await markLogin(userRow.id);

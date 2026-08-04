@@ -48,7 +48,7 @@ const wgs84ToGcj02 = (lat, lon) => {
     return { latitude: lat, longitude: lon };
   }
   const a = 6378245.0;
-  const ee = 0.00669342162296594323;
+  const ee = 0.006693421622965943;
   let dLat = transformLat(lon - 105.0, lat - 35.0);
   let dLon = transformLon(lon - 105.0, lat - 35.0);
   const radLat = lat / 180.0 * Math.PI;

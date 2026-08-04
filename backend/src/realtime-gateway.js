@@ -14,6 +14,8 @@ export function createRealtimeGateway(server) {
   const realtimeClientsByUser = new Map();
   const offlineTimersByUser = new Map();
   const offlineBroadcastDelayMs = 8000;
+  let closing = false;
+  let closePromise = null;
 
   const sendRealtimeToUser = (userId, event) => {
     const clients = realtimeClientsByUser.get(userId);
@@ -51,6 +53,10 @@ export function createRealtimeGateway(server) {
   };
 
   const registerRealtimeClient = (userId, socket) => {
+    if (closing) {
+      socket.close(1001, "Server shutting down");
+      return;
+    }
     const clients = realtimeClientsByUser.get(userId) || new Set();
     const wasOffline = !clients.size;
     const offlineTimer = offlineTimersByUser.get(userId);
@@ -67,6 +73,7 @@ export function createRealtimeGateway(server) {
       clients.delete(socket);
       if (!clients.size) {
         realtimeClientsByUser.delete(userId);
+        if (closing) return;
         const timer = setTimeout(() => {
           offlineTimersByUser.delete(userId);
           if (!realtimeClientsByUser.has(userId)) {
@@ -78,7 +85,7 @@ export function createRealtimeGateway(server) {
     });
   };
 
-  server.on("upgrade", async (request, socket, head) => {
+  const handleUpgrade = async (request, socket, head) => {
     try {
       const url = new URL(request.url || "", `http://${request.headers.host || "localhost"}`);
       if (url.pathname !== "/api/realtime") {
@@ -100,11 +107,39 @@ export function createRealtimeGateway(server) {
     } catch {
       socket.destroy();
     }
-  });
+  };
+
+  server.on("upgrade", handleUpgrade);
+
+  const close = () => {
+    if (closePromise) return closePromise;
+    closing = true;
+    server.off("upgrade", handleUpgrade);
+    for (const timer of offlineTimersByUser.values()) clearTimeout(timer);
+    offlineTimersByUser.clear();
+    const sockets = Array.from(realtimeClientsByUser.values()).flatMap((clients) => [
+      ...clients,
+    ]);
+    for (const socket of sockets) socket.close(1001, "Server shutting down");
+    closePromise = new Promise((resolve, reject) => {
+      const forceTimer = setTimeout(() => {
+        for (const socket of sockets) socket.terminate();
+      }, 5000);
+      realtimeServer.close((error) => {
+        clearTimeout(forceTimer);
+        if (error) reject(error);
+        else resolve();
+      });
+    }).finally(() => {
+      realtimeClientsByUser.clear();
+    });
+    return closePromise;
+  };
 
   return {
     getOnlineUserIds: () => Array.from(realtimeClientsByUser.keys()),
     sendPresenceChanged,
     sendRealtimeToUser,
+    close,
   };
 }

@@ -30,14 +30,6 @@ export const parseTrustProxyHops = (value, fallback = 0) => {
   return parsed;
 };
 
-const avatarRealisticCostFen = parseNumber(
-  process.env.AVATAR_3D_REALISTIC_ESTIMATED_COST_FEN,
-  280,
-);
-const avatarCartoonCostFen = parseNumber(
-  process.env.AVATAR_3D_CARTOON_ESTIMATED_COST_FEN,
-  224,
-);
 const avatar3dProviderCallsEnabled = parseBoolean(
   process.env.AVATAR_3D_PROVIDER_CALLS_ENABLED,
   false,
@@ -49,21 +41,54 @@ const listFromEnv = (value) =>
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
 
-const parseCorsOrigin = (value) => {
+export const parseCorsOrigin = (
+  value,
+  { production = isProduction } = {},
+) => {
   if (value === undefined || value === "") {
-    if (isProduction) {
+    if (production) {
       throw new Error("CORS_ORIGIN must be set when NODE_ENV=production.");
     }
     return true;
   }
-  if (String(value).toLowerCase() === "true") return true;
-  if (String(value).toLowerCase() === "false") return false;
-  return value;
+  const normalized = String(value).trim();
+  if (normalized.toLowerCase() === "true") {
+    if (production) {
+      throw new Error("CORS_ORIGIN must be an explicit origin in production.");
+    }
+    return true;
+  }
+  if (normalized.toLowerCase() === "false") return false;
+
+  let origin;
+  try {
+    const parsed = new URL(normalized);
+    if (
+      !["http:", "https:"].includes(parsed.protocol)
+      || !parsed.hostname
+      || parsed.username
+      || parsed.password
+      || (parsed.pathname && parsed.pathname !== "/")
+      || parsed.search
+      || parsed.hash
+    ) {
+      throw new Error("invalid origin");
+    }
+    origin = parsed.origin;
+  } catch {
+    throw new Error("CORS_ORIGIN must be one absolute HTTP(S) origin.");
+  }
+  return origin;
 };
 
 const databaseUrl = process.env.DATABASE_URL || "";
-const defaultAdminEnabled = parseBoolean(process.env.DEFAULT_ADMIN_ENABLED, !isProduction);
+const defaultAdminEnabled = parseBoolean(process.env.DEFAULT_ADMIN_ENABLED, false);
 const defaultAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD || "";
+const adminEmails = listFromEnv(process.env.ADMIN_EMAILS);
+const createFirstUserAsAdmin = parseBoolean(
+  process.env.CREATE_FIRST_USER_AS_ADMIN,
+  !isProduction,
+);
 const hasPostgresConfig = Boolean(
   databaseUrl ||
     (process.env.POSTGRES_HOST && process.env.POSTGRES_USER && process.env.POSTGRES_DATABASE),
@@ -73,6 +98,43 @@ if (defaultAdminEnabled && !defaultAdminPassword) {
   throw new Error("DEFAULT_ADMIN_PASSWORD must be set when default admin is enabled.");
 }
 
+export function validateAdminBootstrapConfig({
+  production,
+  allowedEmails,
+  firstUserIsAdmin,
+  defaultAccountEnabled,
+  defaultAccountPassword,
+}) {
+  if (!production) return;
+  if (firstUserIsAdmin) {
+    throw new Error("CREATE_FIRST_USER_AS_ADMIN must be false in production.");
+  }
+  if (allowedEmails.length > 0) {
+    throw new Error(
+      "ADMIN_EMAILS cannot grant roles before contact verification is implemented.",
+    );
+  }
+  if (
+    defaultAccountEnabled
+    && (
+      defaultAccountPassword.length < 16
+      || /^(change|password|admin|miaoxun)/i.test(defaultAccountPassword)
+    )
+  ) {
+    throw new Error(
+      "DEFAULT_ADMIN_PASSWORD must be a non-placeholder value of at least 16 characters.",
+    );
+  }
+}
+
+validateAdminBootstrapConfig({
+  production: isProduction,
+  allowedEmails: adminEmails,
+  firstUserIsAdmin: createFirstUserAsAdmin,
+  defaultAccountEnabled: defaultAdminEnabled,
+  defaultAccountPassword: defaultAdminPassword,
+});
+
 export const config = {
   env: nodeEnv,
   isProduction,
@@ -80,11 +142,14 @@ export const config = {
   port: parseNumber(process.env.PORT, 4390),
   trustProxyHops: parseTrustProxyHops(process.env.TRUST_PROXY_HOPS),
   corsOrigin: parseCorsOrigin(process.env.CORS_ORIGIN),
-  adminEmails: listFromEnv(process.env.ADMIN_EMAILS),
-  createFirstUserAsAdmin: parseBoolean(process.env.CREATE_FIRST_USER_AS_ADMIN, !isProduction),
+  adminEmails,
+  createFirstUserAsAdmin,
   defaultAdmin: {
     enabled: defaultAdminEnabled,
-    resetPasswordOnMigrate: parseBoolean(process.env.DEFAULT_ADMIN_RESET_PASSWORD_ON_MIGRATE, false),
+    resetPasswordOnBootstrap: parseBoolean(
+      process.env.DEFAULT_ADMIN_RESET_PASSWORD_ON_BOOTSTRAP,
+      false,
+    ),
     loginName: process.env.DEFAULT_ADMIN_LOGIN || "admin",
     email: process.env.DEFAULT_ADMIN_EMAIL || "admin@miaoxun.local",
     password: defaultAdminPassword,
@@ -105,12 +170,6 @@ export const config = {
       .replace(/\/+$/, ""),
     apiKey: process.env.DASHSCOPE_API_KEY || "",
     workspaceId: (process.env.DASHSCOPE_WORKSPACE_ID || "").trim(),
-    wanxBaseUrl: (
-      process.env.DASHSCOPE_WANX_BASE_URL
-      || (process.env.DASHSCOPE_WORKSPACE_ID
-        ? `https://${process.env.DASHSCOPE_WORKSPACE_ID}.cn-beijing.maas.aliyuncs.com`
-        : "")
-    ).trim().replace(/\/+$/, ""),
     wanBaseUrl: (
       process.env.DASHSCOPE_WANX_BASE_URL
       || (process.env.DASHSCOPE_WORKSPACE_ID
@@ -118,21 +177,16 @@ export const config = {
         : "")
     ).trim().replace(/\/+$/, ""),
     tripoModel: (process.env.DASHSCOPE_TRIPO_MODEL || "Tripo/Tripo-H3.1").trim(),
-    wanxModel: (process.env.DASHSCOPE_WANX_MODEL || "wanx2.1-imageedit").trim(),
     wanMultiviewModel: (
       process.env.DASHSCOPE_WAN_MULTIVIEW_MODEL || "wan2.7-image-pro"
     ).trim(),
     timeoutMs: parseNumber(process.env.DASHSCOPE_TIMEOUT_MS, 60000),
   },
-  publicApiBaseUrl: (process.env.PUBLIC_API_BASE_URL || "").trim().replace(/\/+$/, ""),
   avatar3d: {
     enabled: parseBoolean(process.env.AVATAR_3D_ENABLED, false),
     providerCallsEnabled: avatar3dProviderCallsEnabled,
     allowlist: listFromEnv(process.env.AVATAR_3D_ALLOWLIST),
     requireAllowlist: isProduction,
-    webBaseUrl: (process.env.AVATAR_3D_WEB_BASE_URL || process.env.PUBLIC_API_BASE_URL || "")
-      .trim()
-      .replace(/\/+$/, ""),
     dailyLimit: parseNumber(process.env.AVATAR_3D_DAILY_LIMIT, 3),
     retentionDays: parseNumber(process.env.AVATAR_3D_RETENTION_DAYS, 7),
     costVersion: avatar3dCostVersion,
@@ -140,16 +194,10 @@ export const config = {
       process.env.AVATAR_3D_REFERENCE_COST_FEN,
       200,
     ),
-    realisticEstimatedCostFen: avatarRealisticCostFen,
-    cartoonEstimatedCostFen: avatarCartoonCostFen,
     qualityCostsFen: {
-      standard: parseNumber(process.env.AVATAR_3D_STANDARD_COST_FEN, avatarRealisticCostFen),
+      standard: parseNumber(process.env.AVATAR_3D_STANDARD_COST_FEN, 280),
       ultra: parseNumber(process.env.AVATAR_3D_ULTRA_COST_FEN, 420),
     },
-    cartoonStyleCostFen: parseNumber(
-      process.env.AVATAR_3D_CARTOON_STYLE_COST_FEN,
-      Math.max(0, avatarCartoonCostFen - avatarRealisticCostFen),
-    ),
     providerReady: Boolean(
       avatar3dProviderCallsEnabled
       && process.env.DASHSCOPE_API_KEY
@@ -169,11 +217,6 @@ export const config = {
     timeoutMs: parseNumber(process.env.GEOCODING_TIMEOUT_MS, 15000),
     amapKey: (process.env.AMAP_WEB_SERVICE_KEY || "").trim(),
     amapReverseUrl: (process.env.AMAP_REVERSE_URL || "https://restapi.amap.com/v3/geocode/regeo").trim(),
-  },
-  mapTiles: {
-    urlTemplate: (process.env.MAP_TILE_URL_TEMPLATE || "").trim(),
-    userAgent: (process.env.MAP_TILE_USER_AGENT || process.env.GEOCODING_USER_AGENT || "").trim(),
-    timeoutMs: parseNumber(process.env.MAP_TILE_TIMEOUT_MS, 8000),
   },
   redis: {
     url: (process.env.REDIS_URL || "").trim(),

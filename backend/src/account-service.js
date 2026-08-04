@@ -1,34 +1,13 @@
 import { verifyPassword as verifyStoredPassword } from "./auth.js";
-import { deleteLocalMediaObject } from "./local-media-storage.js";
-import { deleteOssObject } from "./oss-service.js";
 import {
   deleteUserAccount,
   findUserCredentialById,
   listUserStorageObjects,
 } from "./account-repository.js";
 import { HttpError } from "./http-error.js";
+import { deletePrivateStorageObject } from "./storage-deletion-service.js";
 
-const ossProviders = new Set(["oss", "aliyun-oss"]);
-
-export async function deleteAccountStorageObject(
-  { provider, objectKey },
-  {
-    deleteLocalObject = deleteLocalMediaObject,
-    deleteOss = deleteOssObject,
-  } = {},
-) {
-  if (provider === "local") {
-    await deleteLocalObject(objectKey);
-    return;
-  }
-  if (ossProviders.has(provider)) {
-    await deleteOss({ objectKey });
-    return;
-  }
-  throw new HttpError(500, "Unsupported account storage provider.", {
-    code: "UNSUPPORTED_STORAGE_PROVIDER",
-  });
-}
+export const deleteAccountStorageObject = deletePrivateStorageObject;
 
 export function createAccountService({
   getCredential = findUserCredentialById,

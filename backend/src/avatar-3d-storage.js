@@ -45,9 +45,6 @@ const buildAvatarMobileModelObjectKey = ({ userId, jobId }) =>
 const buildAvatarThumbnailObjectKey = ({ userId, jobId, contentType }) =>
   `users/${userId}/avatar-3d/jobs/${jobId}/thumbnail.${imageExtension(contentType)}`;
 
-const buildAvatarStylePreviewObjectKey = ({ userId, jobId, contentType }) =>
-  `users/${userId}/avatar-3d/jobs/${jobId}/style-preview.${imageExtension(contentType)}`;
-
 const buildAvatarReferenceImageObjectKey = ({ userId, jobId, view }) =>
   `users/${userId}/avatar-3d/jobs/${jobId}/references/${view}.jpg`;
 
@@ -426,28 +423,6 @@ export function createAvatar3dStorage({
     };
   };
 
-  const persistAvatarStylePreview = async ({ userId, jobId, imageUrl }) => {
-    const result = await downloadProviderResult({ url: imageUrl, limit: providerImageLimit });
-    const normalized = await normalizeProviderImage(result.body, "INVALID_STYLE_PREVIEW");
-    const storageKey = buildAvatarStylePreviewObjectKey({
-      userId,
-      jobId,
-      contentType: normalized.contentType,
-    });
-    await putObject({
-      objectKey: storageKey,
-      body: normalized.body,
-      contentType: normalized.contentType,
-    });
-    return {
-      storageKey,
-      contentType: normalized.contentType,
-      byteSize: normalized.body.length,
-      width: normalized.width,
-      height: normalized.height,
-    };
-  };
-
   const persistAvatarReferenceImages = async ({
     userId,
     jobId,
@@ -523,7 +498,6 @@ export function createAvatar3dStorage({
     persistAvatarProviderModel,
     persistAvatarMobileModel,
     persistAvatarProviderThumbnail,
-    persistAvatarStylePreview,
     persistAvatarReferenceImages,
     streamAvatarObject,
     deleteAvatarObjects,

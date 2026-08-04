@@ -1,4 +1,5 @@
 import { HttpError } from "./http-error.js";
+import { replaceControlCharacters } from "./text-sanitization.js";
 
 export const avatarMultiviewPromptVersion = "avatar-multiview-v1";
 
@@ -27,8 +28,7 @@ const invalidBrief = () => new HttpError(422, "Avatar preferences are invalid.",
 const normalizeDescription = (value) => {
   if (value === undefined || value === null || value === "") return "";
   if (typeof value !== "string") throw invalidBrief();
-  const normalized = value
-    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+  const normalized = replaceControlCharacters(value)
     .replace(/\s+/g, " ")
     .trim();
   if (normalized.length > 240) {

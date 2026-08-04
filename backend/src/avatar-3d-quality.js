@@ -27,19 +27,18 @@ const qualityCost = (runtime, preset) => {
   return fallbacks[preset];
 };
 
-export function resolveAvatar3dQuality({ preset, style, runtime }) {
+export function resolveAvatar3dQuality({ preset, runtime }) {
   const definition = presetDefinitions[preset];
   if (!definition) {
     throw new HttpError(400, "Avatar quality is invalid.", {
       code: "INVALID_QUALITY_PRESET",
     });
   }
-  const styleCost = style === "cartoon" ? Number(runtime?.cartoonStyleCostFen || 0) : 0;
   return {
     id: preset,
     geometryQuality: definition.geometryQuality,
     textureQuality: definition.textureQuality,
-    estimatedCostFen: qualityCost(runtime, preset) + styleCost,
+    estimatedCostFen: qualityCost(runtime, preset),
   };
 }
 
@@ -48,7 +47,6 @@ export function publicAvatar3dQualityCatalog(runtime) {
     id,
     label: presetDefinitions[id].label,
     description: presetDefinitions[id].description,
-    estimatedCostFen: resolveAvatar3dQuality({ preset: id, style: "realistic", runtime })
-      .estimatedCostFen,
+    estimatedCostFen: resolveAvatar3dQuality({ preset: id, runtime }).estimatedCostFen,
   }));
 }

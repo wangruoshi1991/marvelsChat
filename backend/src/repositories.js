@@ -29,7 +29,6 @@ import {
   normalizePresenceMode,
   parseJson,
   publicUser,
-  sqlLimit,
   toIso,
 } from "./repository-mappers.js";
 import {
@@ -44,12 +43,9 @@ export {
   markNotificationsRead,
   unreadNotificationCount,
   publicUser,
-  getProfileForUser,
-  getProfileVisibility,
-  getStationContentForUser,
 };
 
-export async function countUsers() {
+async function countUsers() {
   const rows = await query("SELECT COUNT(*) AS total FROM users");
   return Number(rows[0]?.total || 0);
 }
@@ -232,7 +228,7 @@ export function parseAiIdFromScanPayload(payload) {
   return match ? match[1] : "";
 }
 
-export async function listOwnedAgents(userId, registeredAgents = []) {
+async function listOwnedAgents(userId, registeredAgents = []) {
   const rows = await query(
     `SELECT user_id, agent_id, alias, enabled, granted_scopes, created_at
     FROM user_agents
@@ -485,49 +481,7 @@ export async function getAgentContextForUser(user, registeredAgents = []) {
   };
 }
 
-export async function listUsageEventsForUser(userId, limit = 12) {
-  const safeLimit = sqlLimit(limit, 12, 50);
-  const rows = await query(
-    `SELECT
-      e.id,
-      e.user_id,
-      e.event_type,
-      e.target_type,
-      e.target_id,
-      e.payload,
-      e.created_at
-    FROM usage_events e
-    WHERE e.user_id = ?
-    ORDER BY e.created_at DESC
-    LIMIT ${safeLimit}`,
-    [userId],
-  );
-
-  return rows.map((row) => ({
-    id: row.id,
-    eventType: row.event_type,
-    targetType: row.target_type || "",
-    targetId: row.target_id || "",
-    payload: parseJson(row.payload, {}),
-    createdAt: toIso(row.created_at),
-  }));
-}
-
-export async function listAgentRunsForUser(userId, limit = 12) {
-  const safeLimit = sqlLimit(limit, 12, 50);
-  const rows = await query(
-    `SELECT *
-    FROM agent_runs
-    WHERE user_id = ?
-    ORDER BY created_at DESC
-    LIMIT ${safeLimit}`,
-    [userId],
-  );
-
-  return rows.map(mapAgentRun);
-}
-
-function buildAppModules({ profile, ownedAgents = [], registeredAgents = [] }) {
+export function buildAppModules({ profile, ownedAgents = [], registeredAgents = [] }) {
   const agentRegistered = (key) => registeredAgents.some((agent) => agent.key === key);
   const connected = (key, title, description, meta = {}) => ({
     key,
@@ -563,16 +517,17 @@ function buildAppModules({ profile, ownedAgents = [], registeredAgents = [] }) {
       registeredCount: registeredAgents.length,
     }),
     aiQr: connected("ai-qr", "AI ID 动态码", "由真实 AI ID 在前端生成短效动态码。"),
-    search: pending("search", "搜索", "search_history 表已建，搜索历史 API、联系人检索和全文索引尚未接入。", [
-      "search_history_api",
-      "search_index",
-      "agent_capability_index",
-    ]),
+    search: connected(
+      "search",
+      "搜索",
+      "搜索记录来自 search_history；好友、会话和 Agent 使用真实同步数据检索。",
+    ),
     points: connected("points", "妙点明细", "余额来自 user_profiles，明细来自 miao_point_ledger。"),
-    privacy: pending("privacy", "主页可见范围", "保留隐私设置入口，尚未接入可见范围策略表。", [
-      "privacy_rules",
-      "profile_visibility",
-    ]),
+    privacy: connected(
+      "privacy",
+      "主页可见范围",
+      "主页字段和内容可见范围由 profile_visibility 与内容 visibility 校验。",
+    ),
     notifications: pending("notifications", "通知偏好", "通知由真实事件聚合，偏好配置表尚未接入。", [
       "notification_preferences",
     ]),
@@ -587,11 +542,11 @@ function buildAppModules({ profile, ownedAgents = [], registeredAgents = [] }) {
       "3D个人形象",
       "App 通过独立的3D形象流程读取 avatar_3d_models，不绑定 Agent 会话。",
     ),
-    posts: pending("posts", "我的动态", "保留发布与动态展示入口，尚未建立内容发布数据表。", [
+    posts: connected(
       "posts",
-      "media_assets",
-      "post_audits",
-    ]),
+      "我的动态",
+      "动态来自 station_posts，媒体关联来自 station_post_media。",
+    ),
     diary: agentRegistered("comic-diary")
       ? connected("diary", "个人日记", "漫画日记 Agent 已注册；手写日记来自 station_diary_entries，分镜草稿保存到 station_comic_diaries。", {
           needs: [
@@ -626,22 +581,23 @@ function buildAppModules({ profile, ownedAgents = [], registeredAgents = [] }) {
             "media_audits",
           ],
         })
-      : connected("album", "个人相册", "相册元数据来自 station_albums，媒体资产来自 station_media_assets；上传链路仍需接 OSS。", {
-      needs: [
-      "storage_provider",
-      "upload_credentials",
-      "media_audits",
-      ],
-    }),
+      : connected("album", "个人相册", "相册元数据来自 station_albums，媒体资产来自 station_media_assets。", {
+          needs: [
+            "storage_provider",
+            "upload_credentials",
+            "media_audits",
+          ],
+        }),
     music: pending("music", "音乐菜单", "保留音乐菜单入口，尚未接入音乐偏好与外部授权。", [
       "music_items",
       "external_music_auth",
     ]),
-    social: pending("social", "社交网络", "关注和好友关系已接入，关系列表、信任评分和互动事件尚未接入。", [
-      "relationship_lists",
-      "trust_scores",
-      "interaction_events",
-    ]),
+    social: connected(
+      "social",
+      "社交网络",
+      "关注、粉丝、好友关系和关系列表来自 social_relationships。",
+      { needs: ["trust_scores", "interaction_events"] },
+    ),
     outfits: connected("outfits", "今日穿搭", "穿搭记录来自 station_outfits，当前保存 avatar_config 快照；正式衣物素材库仍需接入。", {
       needs: [
         "wardrobe_assets",
@@ -668,11 +624,12 @@ function buildAppModules({ profile, ownedAgents = [], registeredAgents = [] }) {
           "station_templates",
           "generation_jobs",
         ]),
-    publish: pending("publish", "发布动态", "保留发布入口，等待内容表、审核流和权限策略。", [
-      "posts",
-      "media_assets",
-      "post_audits",
-    ]),
+    publish: connected(
+      "publish",
+      "发布动态",
+      "发布内容写入 station_posts，图片和视频通过 station_media_assets 关联。",
+      { needs: ["content_moderation", "post_audits"] },
+    ),
   };
 }
 

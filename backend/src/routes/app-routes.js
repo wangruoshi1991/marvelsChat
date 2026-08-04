@@ -34,14 +34,36 @@ import {
 
 export function registerAppRoutes(
   app,
-  { authenticate, asyncHandler, getOnlineUserIds, sendPresenceChanged },
+  {
+    authenticate,
+    asyncHandler,
+    getOnlineUserIds,
+    sendPresenceChanged,
+    checkDatabaseStatus = checkDatabase,
+  },
 ) {
-  app.get("/api/health", asyncHandler(async (_req, res) => {
+  app.get("/api/health", (_req, res) => {
     res.json({
       ok: true,
       app: "marvelsChat",
       service: "miaoxun-backend",
-      db: await checkDatabase(),
+    });
+  });
+
+  app.get("/api/ready", asyncHandler(async (_req, res) => {
+    const database = await checkDatabaseStatus();
+    const ready = database.configured && database.connected && database.migrationsCurrent;
+    res.status(ready ? 200 : 503).json({
+      ok: ready,
+      app: "marvelsChat",
+      service: "miaoxun-backend",
+      dependencies: {
+        database: {
+          configured: database.configured,
+          connected: database.connected,
+          migrationsCurrent: Boolean(database.migrationsCurrent),
+        },
+      },
     });
   }));
 

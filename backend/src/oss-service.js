@@ -13,8 +13,8 @@ const encodeObjectKey = (key) =>
 const safeFilename = (filename = "") =>
   String(filename)
     .trim()
-    .replace(/[^\w.\-]+/g, "-")
-    .replace(/^[.\-]+|[.\-]+$/g, "")
+    .replace(/[^\w.-]+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "")
     .slice(0, 120) || "upload";
 
 const assertOssConfigured = () => {
@@ -104,7 +104,7 @@ export function createOssHeadSignedUrl({ objectKey, useInternalEndpoint = false 
   return url.toString();
 }
 
-export function createOssDeleteSignedUrl({ objectKey, useInternalEndpoint = false }) {
+function createOssDeleteSignedUrl({ objectKey, useInternalEndpoint = false }) {
   const { url } = createOssSignedUrl({ method: "DELETE", objectKey, useInternalEndpoint });
   return url.toString();
 }

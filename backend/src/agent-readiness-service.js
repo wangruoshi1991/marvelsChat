@@ -36,54 +36,66 @@ export function buildAgentReadiness({
 } = {}) {
   const model = providerStatus(modelStatus, "new-api");
   const oss = providerStatus(ossStatus, "oss");
+  const modelRequired = ["NEW_API_BASE_URL", "NEW_API_KEY", "NEW_API_MODEL"];
   const ossRequired = ["OSS_BUCKET", "OSS_ENDPOINT", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET"];
 
   return {
     "miaoxun-butler": readiness({
-      configured: true,
+      configured: model.configured,
+      requiredEnv: modelRequired,
+      missingEnv: model.missing,
       capabilityNeeds: ["agent_orchestration"],
+      providers: { model },
     }),
     "virtual-character": readiness({
-      configured: true,
+      configured: model.configured,
+      requiredEnv: modelRequired,
+      missingEnv: model.missing,
       capabilityNeeds: ["production_avatar_assets"],
+      providers: { model },
     }),
     "site-builder": readiness({
-      configured: true,
-      optionalEnv: ["NEW_API_BASE_URL", "NEW_API_KEY", "NEW_API_MODEL"],
-      missingOptionalEnv: model.missing,
+      configured: model.configured,
+      requiredEnv: modelRequired,
+      missingEnv: model.missing,
       providers: { model },
     }),
     "model-3d": readiness({
-      configured: true,
-      optionalEnv: ["NEW_API_BASE_URL", "NEW_API_KEY", "NEW_API_MODEL"],
-      missingOptionalEnv: model.missing,
+      configured: model.configured,
+      requiredEnv: modelRequired,
+      missingEnv: model.missing,
       capabilityNeeds: ["avatar_generation_guidance_only"],
       providers: { model },
     }),
     "album-manager": readiness({
-      configured: oss.configured,
-      requiredEnv: ossRequired,
-      missingEnv: oss.missing,
+      configured: model.configured && oss.configured,
+      requiredEnv: [...modelRequired, ...ossRequired],
+      missingEnv: [...model.missing, ...oss.missing],
       capabilityNeeds: ["vision_captioning"],
-      providers: { oss },
+      providers: { model, oss },
     }),
     "file-preprocessor": readiness({
-      configured: true,
-      requiredEnv: ossRequired,
-      missingEnv: oss.missing,
+      configured: model.configured,
+      requiredEnv: modelRequired,
+      missingEnv: model.missing,
+      optionalEnv: ossRequired,
+      missingOptionalEnv: oss.missing,
       capabilityNeeds: ["document_parsers"],
-      providers: { oss },
+      providers: { model, oss },
     }),
     "comic-diary": readiness({
-      configured: true,
+      configured: model.configured,
+      requiredEnv: modelRequired,
+      missingEnv: model.missing,
       capabilityNeeds: ["image_generation", "comic_rendering"],
+      providers: { model },
     }),
     "video-production": readiness({
       configured: false,
-      requiredEnv: ossRequired,
-      missingEnv: oss.missing,
+      requiredEnv: [...modelRequired, ...ossRequired],
+      missingEnv: [...model.missing, ...oss.missing],
       capabilityNeeds: ["video_generation_provider", "render_queue"],
-      providers: { oss },
+      providers: { model, oss },
     }),
   };
 }
