@@ -1,8 +1,8 @@
-import {pinyin} from 'pinyin-pro';
+import { pinyin } from 'pinyin-pro';
 
-import type {AgentDTO, RelationshipProfileDTO} from '../../models/api';
-import {displayText, publicPresenceText} from '../../shared/i18n';
-import type {ChatThread, Language} from '../session/useMiaoxunSession';
+import type { AgentDTO, RelationshipProfileDTO } from '../../models/api';
+import { displayText, publicPresenceText } from '../../shared/i18n';
+import type { ChatThread, Language } from '../session/useMiaoxunSession';
 
 type DirectoryItemBase = {
   id: string;
@@ -67,13 +67,13 @@ const threadSearchText = (thread?: ChatThread) =>
     : '';
 
 const directoryInitial = (title: string) => {
-  const romanized = pinyin(title.trim().charAt(0), {toneType: 'none'}).trim();
+  const romanized = pinyin(title.trim().charAt(0), { toneType: 'none' }).trim();
   const initial = romanized.charAt(0).toUpperCase();
   return /^[A-Z]$/.test(initial) ? initial : '#';
 };
 
 const directorySortText = (title: string) =>
-  pinyin(title, {toneType: 'none'}).toLocaleLowerCase();
+  pinyin(title, { toneType: 'none' }).toLocaleLowerCase();
 
 export function buildSearchDirectory({
   agents,
@@ -106,11 +106,7 @@ export function buildSearchDirectory({
         kind: 'agent' as const,
         title,
         subtitle,
-        searchText: [
-          title,
-          agent?.description,
-          threadSearchText(thread),
-        ]
+        searchText: [title, agent?.description, threadSearchText(thread)]
           .filter(Boolean)
           .join(' ')
           .toLocaleLowerCase(),

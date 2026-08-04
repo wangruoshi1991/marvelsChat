@@ -1,13 +1,13 @@
 import React from 'react';
-import {Pressable, View} from 'react-native';
+import { Pressable, View } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
-import {Copy, RefreshCw, Trash2, Undo2} from 'lucide-react-native';
+import { Copy, RefreshCw, Trash2, Undo2 } from 'lucide-react-native';
 
-import {textFor} from '../../shared/i18n';
-import {styles} from '../../shared/styles';
-import {Palette} from '../../shared/theme';
-import {MessageInlineAction} from '../../shared/ui';
-import {ChatMessage, Language} from '../session/useMiaoxunSession';
+import { textFor } from '../../shared/i18n';
+import { styles } from '../../shared/styles';
+import { Palette } from '../../shared/theme';
+import { MessageInlineAction } from '../../shared/ui';
+import { ChatMessage, Language } from '../session/useMiaoxunSession';
 
 export function ChatMessageMenu({
   palette,
@@ -25,7 +25,7 @@ export function ChatMessageMenu({
   palette: Palette;
   language: Language;
   selectedMessage: ChatMessage;
-  position: {x: number; y: number; isMine: boolean};
+  position: { x: number; y: number; isMine: boolean };
   arrowLeft: number;
   canRecall: boolean;
   onClose: () => void;
@@ -47,7 +47,8 @@ export function ChatMessageMenu({
             shadowColor: palette.shadow,
             top: position.y,
           },
-        ]}>
+        ]}
+      >
         <View
           style={[
             styles.messageInlineMenuArrow,

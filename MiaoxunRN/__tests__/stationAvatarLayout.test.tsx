@@ -417,9 +417,9 @@ describe('station avatar layout', () => {
     });
 
     expect(renderedText(renderer!)).toContain('模型已生成，正在准备交互文件。');
-    expect(
-      renderer!.root.findByType(Image).props.source.uri,
-    ).toContain('/models/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/thumbnail');
+    expect(renderer!.root.findByType(Image).props.source.uri).toContain(
+      '/models/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/thumbnail',
+    );
 
     await ReactTestRenderer.act(() => renderer!.unmount());
   });

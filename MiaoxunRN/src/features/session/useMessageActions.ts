@@ -241,7 +241,7 @@ export function useMessageActions({
         threads.find(thread => thread.id === threadId)?.muted || false;
       setThreads(current =>
         current.map(thread =>
-          thread.id === threadId ? {...thread, muted} : thread,
+          thread.id === threadId ? { ...thread, muted } : thread,
         ),
       );
 
@@ -249,7 +249,7 @@ export function useMessageActions({
         setThreads(current =>
           current.map(thread =>
             thread.id === threadId
-              ? {...thread, muted: previousMuted}
+              ? { ...thread, muted: previousMuted }
               : thread,
           ),
         );
@@ -259,13 +259,13 @@ export function useMessageActions({
       try {
         const preferences = await apiClient.updateThreadPreferences(
           threadId,
-          {muted},
+          { muted },
           token,
         );
         setThreads(current =>
           current.map(thread =>
             thread.id === threadId
-              ? {...thread, muted: preferences.muted}
+              ? { ...thread, muted: preferences.muted }
               : thread,
           ),
         );
@@ -273,7 +273,7 @@ export function useMessageActions({
         setThreads(current =>
           current.map(thread =>
             thread.id === threadId
-              ? {...thread, muted: previousMuted}
+              ? { ...thread, muted: previousMuted }
               : thread,
           ),
         );

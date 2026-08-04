@@ -1,16 +1,11 @@
-import {useCallback, useRef, useState} from 'react';
-import {
-  PublicProfileDTO,
-  UserDTO,
-} from '../../models/api';
-import {scanQRCode} from '../../services/qrScanner';
-import {
-  appErrorText,
-  textFor,
-} from '../../shared/i18n';
-import {Language} from '../session/useMiaoxunSession';
+import { useCallback, useRef, useState } from 'react';
+import { PublicProfileDTO, UserDTO } from '../../models/api';
+import { scanQRCode } from '../../services/qrScanner';
+import { appErrorText, textFor } from '../../shared/i18n';
+import { Language } from '../session/useMiaoxunSession';
 
-const miaoxunScanPayloadPattern = /^(miaoxun:\/\/ai\/\d{12}(?:[?&][^#\s]+)?|\d{12})$/;
+const miaoxunScanPayloadPattern =
+  /^(miaoxun:\/\/ai\/\d{12}(?:[?&][^#\s]+)?|\d{12})$/;
 
 type ProfileFlowsOptions = {
   language: Language;
@@ -32,17 +27,27 @@ export function useProfileFlows({
   closePublicProfileModal,
 }: ProfileFlowsOptions) {
   const [qrPayload, setQrPayload] = useState('');
-  const [publicProfile, setPublicProfile] = useState<PublicProfileDTO | null>(null);
+  const [publicProfile, setPublicProfile] = useState<PublicProfileDTO | null>(
+    null,
+  );
   const [isResolvingScan, setIsResolvingScan] = useState(false);
   const isScanningRef = useRef(false);
 
   const openQRCode = useCallback(() => {
     const aiId = user?.aiId || '';
     if (!aiId) {
-      showToast(textFor(language, '登录后可查看 AI ID 动态码', 'Log in to view the AI ID code'));
+      showToast(
+        textFor(
+          language,
+          '登录后可查看 AI ID 动态码',
+          'Log in to view the AI ID code',
+        ),
+      );
       return;
     }
-    setQrPayload(`miaoxun://ai/${aiId}?e=${Math.floor(Date.now() / 1000) + 120}`);
+    setQrPayload(
+      `miaoxun://ai/${aiId}?e=${Math.floor(Date.now() / 1000) + 120}`,
+    );
     openModal('qr-code');
   }, [language, openModal, showToast, user?.aiId]);
 
@@ -53,7 +58,14 @@ export function useProfileFlows({
         setPublicProfile(profile);
         openModal('public-profile');
       } catch (error) {
-        showToast(appErrorText(language, error, '无法打开用户主页', 'Cannot open profile'));
+        showToast(
+          appErrorText(
+            language,
+            error,
+            '无法打开用户主页',
+            'Cannot open profile',
+          ),
+        );
       }
     },
     [language, loadPublicProfileByAiId, openModal, showToast],
@@ -67,7 +79,13 @@ export function useProfileFlows({
     try {
       const value = await scanQRCode();
       if (!miaoxunScanPayloadPattern.test(value.trim())) {
-        showToast(textFor(language, '这不是妙讯主页二维码', 'This is not a Miaoxun profile code'));
+        showToast(
+          textFor(
+            language,
+            '这不是妙讯主页二维码',
+            'This is not a Miaoxun profile code',
+          ),
+        );
         return;
       }
       setPublicProfile(null);
@@ -85,7 +103,13 @@ export function useProfileFlows({
       isScanningRef.current = false;
       setIsResolvingScan(false);
     }
-  }, [closePublicProfileModal, language, openModal, resolveScanPayload, showToast]);
+  }, [
+    closePublicProfileModal,
+    language,
+    openModal,
+    resolveScanPayload,
+    showToast,
+  ]);
 
   return {
     qrPayload,

@@ -17,8 +17,8 @@ export const messageStyles = {
     justifyContent: 'center',
     width: 38,
   },
-  messageHeaderAddIcon: {height: 22, width: 22},
-  messageHeaderSearchIcon: {height: 22, width: 30},
+  messageHeaderAddIcon: { height: 22, width: 22 },
+  messageHeaderSearchIcon: { height: 22, width: 30 },
   messageTabGroup: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -322,7 +322,7 @@ export const messageStyles = {
     justifyContent: 'center',
     width: 45,
   },
-  noticeSymbolImage: {height: 45, width: 45},
+  noticeSymbolImage: { height: 45, width: 45 },
   noticeBody: { flex: 1, gap: 5 },
   noticeTitleRow: {
     alignItems: 'center',

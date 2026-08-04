@@ -73,7 +73,7 @@ export function StationHome({
         '音乐菜单需要先接入音乐来源、版权和播放能力。',
         'Music menu needs sources, rights, and playback first.',
       ),
-  );
+    );
   const openAgentFlow = () => onSelectStationTab('agents');
   const openCallableFlow = () => {
     onActionMessage(
@@ -183,12 +183,7 @@ export function StationHome({
 }
 
 function orderedStationModuleKeys(sections?: StationSiteSectionDTO[]) {
-  const defaults = [
-    'diary',
-    'gallery',
-    'music',
-    'agents',
-  ];
+  const defaults = ['diary', 'gallery', 'music', 'agents'];
   const sectionMap: Record<string, string> = {
     diary: 'diary',
     gallery: 'gallery',

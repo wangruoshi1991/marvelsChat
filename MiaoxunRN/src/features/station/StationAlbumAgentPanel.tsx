@@ -34,7 +34,9 @@ export function StationAlbumAgentPanel({
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
-  const [suggestions, setSuggestions] = useState<StationAlbumSuggestionDTO[]>([]);
+  const [suggestions, setSuggestions] = useState<StationAlbumSuggestionDTO[]>(
+    [],
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [applyingTitle, setApplyingTitle] = useState<string | null>(null);
 
@@ -85,7 +87,11 @@ export function StationAlbumAgentPanel({
     <StationModule
       palette={palette}
       title={textFor(language, '相册管理 Agent', 'Album Management Agent')}
-      action={isLoading ? textFor(language, '整理中', 'Organizing') : textFor(language, '整理', 'Organize')}
+      action={
+        isLoading
+          ? textFor(language, '整理中', 'Organizing')
+          : textFor(language, '整理', 'Organize')
+      }
       onAction={loadSuggestions}
     >
       <View style={styles.stationAgentLoopStack}>
@@ -96,7 +102,11 @@ export function StationAlbumAgentPanel({
           configured={readiness?.configured}
           body={
             readiness?.configured
-              ? textFor(language, '可根据照片内容建议相册分类', 'Ready to suggest album groups')
+              ? textFor(
+                  language,
+                  '可根据照片内容建议相册分类',
+                  'Ready to suggest album groups',
+                )
               : textFor(language, '暂无素材可整理', 'No media to organize yet')
           }
         />
@@ -107,15 +117,28 @@ export function StationAlbumAgentPanel({
               key={`${suggestion.title}-${suggestion.mediaAssetIds.join('-')}`}
               style={[
                 styles.stationAgentLoopCard,
-                { borderColor: palette.border, backgroundColor: palette.surface },
+                {
+                  borderColor: palette.border,
+                  backgroundColor: palette.surface,
+                },
               ]}
             >
               <View style={styles.stationAgentLoopCardHeader}>
                 <View style={styles.stationAgentLoopStatusCopy}>
-                  <Text style={[styles.stationAgentLoopTitle, { color: palette.text }]}>
+                  <Text
+                    style={[
+                      styles.stationAgentLoopTitle,
+                      { color: palette.text },
+                    ]}
+                  >
                     {suggestion.title}
                   </Text>
-                  <Text style={[styles.stationAgentLoopMeta, { color: palette.secondaryText }]}>
+                  <Text
+                    style={[
+                      styles.stationAgentLoopMeta,
+                      { color: palette.secondaryText },
+                    ]}
+                  >
                     {textFor(
                       language,
                       `${suggestion.mediaAssetIds.length} 张照片`,
@@ -129,13 +152,21 @@ export function StationAlbumAgentPanel({
                   onPress={() => applySuggestion(suggestion)}
                   style={[
                     styles.stationAgentLoopButton,
-                    { backgroundColor: applyingTitle ? palette.soft : palette.text },
+                    {
+                      backgroundColor: applyingTitle
+                        ? palette.soft
+                        : palette.text,
+                    },
                   ]}
                 >
                   <Text
                     style={[
                       styles.stationAgentLoopButtonText,
-                      { color: applyingTitle ? palette.secondaryText : palette.background },
+                      {
+                        color: applyingTitle
+                          ? palette.secondaryText
+                          : palette.background,
+                      },
                     ]}
                   >
                     {applyingTitle === suggestion.title
@@ -144,7 +175,12 @@ export function StationAlbumAgentPanel({
                   </Text>
                 </Pressable>
               </View>
-              <Text style={[styles.stationAgentLoopBody, { color: palette.secondaryText }]}>
+              <Text
+                style={[
+                  styles.stationAgentLoopBody,
+                  { color: palette.secondaryText },
+                ]}
+              >
                 {suggestion.reason || suggestion.description}
               </Text>
               <View style={styles.stationAgentLoopChipRow}>
@@ -164,7 +200,9 @@ export function StationAlbumAgentPanel({
             </View>
           ))
         ) : (
-          <Text style={[styles.relationshipEmpty, { color: palette.secondaryText }]}>
+          <Text
+            style={[styles.relationshipEmpty, { color: palette.secondaryText }]}
+          >
             {textFor(
               language,
               '暂无素材。上传照片后，可以一键整理成相册分类。',
@@ -198,7 +236,12 @@ function AgentStatus({
       ]}
     >
       <View style={styles.stationAgentLoopStatusCopy}>
-        <Text style={[styles.stationAgentLoopEyebrow, { color: palette.secondaryText }]}>
+        <Text
+          style={[
+            styles.stationAgentLoopEyebrow,
+            { color: palette.secondaryText },
+          ]}
+        >
           {title}
         </Text>
         <Text style={[styles.stationAgentLoopTitle, { color: palette.text }]}>

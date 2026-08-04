@@ -1,6 +1,6 @@
-import type {AgentDTO, RelationshipProfileDTO} from '../src/models/api';
-import type {ChatThread} from '../src/features/session/sessionTypes';
-import {buildSearchDirectory} from '../src/features/search/searchDirectory';
+import type { AgentDTO, RelationshipProfileDTO } from '../src/models/api';
+import type { ChatThread } from '../src/features/session/sessionTypes';
+import { buildSearchDirectory } from '../src/features/search/searchDirectory';
 
 const thread = (overrides: Partial<ChatThread>): ChatThread => ({
   id: 'thread-1',

@@ -354,14 +354,10 @@ function PostKindIcon({
   kind: 'image' | 'video' | 'text';
 }) {
   if (kind === 'video') {
-    return (
-      <PostMetaIcon color={color} source={stationPostIconAssets.video} />
-    );
+    return <PostMetaIcon color={color} source={stationPostIconAssets.video} />;
   }
   if (kind === 'image') {
-    return (
-      <PostMetaIcon color={color} source={stationPostIconAssets.photo} />
-    );
+    return <PostMetaIcon color={color} source={stationPostIconAssets.photo} />;
   }
   return <PostMetaIcon color={color} source={stationPostIconAssets.text} />;
 }

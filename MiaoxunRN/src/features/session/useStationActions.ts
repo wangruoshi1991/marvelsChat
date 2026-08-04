@@ -406,7 +406,10 @@ export function useStationActions({
           (item: StationSiteDraftDTO) =>
             item.id === result.siteDraft.id
               ? result.siteDraft
-              : { ...item, status: item.status === 'applied' ? 'draft' : item.status },
+              : {
+                  ...item,
+                  status: item.status === 'applied' ? 'draft' : item.status,
+                },
         ),
       }));
       return result;

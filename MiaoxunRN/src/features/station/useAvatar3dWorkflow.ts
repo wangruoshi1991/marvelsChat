@@ -129,10 +129,7 @@ export function useAvatar3dWorkflow({
   }, [loadBootstrap]);
 
   useEffect(() => {
-    if (
-      !polledJobId ||
-      polledJobStatus !== 'awaiting_reference_confirmation'
-    ) {
+    if (!polledJobId || polledJobStatus !== 'awaiting_reference_confirmation') {
       return undefined;
     }
 
@@ -196,10 +193,7 @@ export function useAvatar3dWorkflow({
         }
       }
       if (active) {
-        timeout = setTimeout(
-          poll,
-          avatar3dPollingDelayMs(nextDelayStatus),
-        );
+        timeout = setTimeout(poll, avatar3dPollingDelayMs(nextDelayStatus));
       }
     };
 

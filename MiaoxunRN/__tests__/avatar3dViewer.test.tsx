@@ -10,8 +10,7 @@ import {
 describe('Avatar3DViewer', () => {
   it('injects only the authenticated App model endpoint into the local viewer', () => {
     const script = buildAvatar3DViewerScript({
-      modelUrl:
-        'http://127.0.0.1:4390/api/avatar-3d/app/models/model-1/file',
+      modelUrl: 'http://127.0.0.1:4390/api/avatar-3d/app/models/model-1/file',
       token: 'token</script>',
     });
 
@@ -69,8 +68,8 @@ describe('Avatar3DViewer', () => {
       renderer!.root.findByProps({ testID: 'avatar3d-viewer-loading' }),
     ).toBeDefined();
     expect(
-      renderer!.root.findByProps({ accessibilityLabel: '3D形象加载预览' })
-        .props.source,
+      renderer!.root.findByProps({ accessibilityLabel: '3D形象加载预览' }).props
+        .source,
     ).toEqual(
       expect.objectContaining({
         headers: { Authorization: 'Bearer private-token' },

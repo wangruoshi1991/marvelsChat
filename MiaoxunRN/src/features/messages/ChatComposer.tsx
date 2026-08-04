@@ -6,12 +6,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import {Mic, Send} from 'lucide-react-native';
+import { Mic, Send } from 'lucide-react-native';
 
-import {displayText, textFor} from '../../shared/i18n';
-import {styles} from '../../shared/styles';
-import {Palette} from '../../shared/theme';
-import {ChatMessage, Language} from '../session/useMiaoxunSession';
+import { displayText, textFor } from '../../shared/i18n';
+import { styles } from '../../shared/styles';
+import { Palette } from '../../shared/theme';
+import { ChatMessage, Language } from '../session/useMiaoxunSession';
 
 export function ChatComposer({
   palette,
@@ -48,7 +48,8 @@ export function ChatComposer({
           backgroundColor: palette.surface,
           borderTopColor: palette.border,
         },
-      ]}>
+      ]}
+    >
       {replyTarget ? (
         <View
           style={[
@@ -57,33 +58,38 @@ export function ChatComposer({
               backgroundColor: palette.soft,
               borderLeftColor: palette.mint,
             },
-          ]}>
+          ]}
+        >
           <View style={styles.replyComposerText}>
             <Text
               style={[
                 styles.replyPreviewName,
-                {color: palette.secondaryText},
-              ]}>
+                { color: palette.secondaryText },
+              ]}
+            >
               {textFor(language, '回复', 'Reply')}{' '}
               {displayText(language, replyTarget.senderName)}
             </Text>
             <Text
               style={[
                 styles.replyPreviewContent,
-                {color: palette.secondaryText},
+                { color: palette.secondaryText },
               ]}
-              numberOfLines={1}>
+              numberOfLines={1}
+            >
               {displayText(language, replyTarget.content)}
             </Text>
           </View>
           <Pressable
             onPress={onClearReplyTarget}
-            style={styles.replyComposerClose}>
+            style={styles.replyComposerClose}
+          >
             <Text
               style={[
                 styles.messageActionText,
-                {color: palette.secondaryText},
-              ]}>
+                { color: palette.secondaryText },
+              ]}
+            >
               ×
             </Text>
           </Pressable>
@@ -96,9 +102,10 @@ export function ChatComposer({
           onPress={onRecognizeSpeech}
           style={[
             styles.composerIconButton,
-            {backgroundColor: palette.soft},
+            { backgroundColor: palette.soft },
             (isRecognizingSpeech || isSending) && styles.disabledButton,
-          ]}>
+          ]}
+        >
           {isRecognizingSpeech ? (
             <ActivityIndicator color={palette.mint} size="small" />
           ) : (
@@ -118,7 +125,7 @@ export function ChatComposer({
           onFocus={onFocusInput}
           style={[
             styles.input,
-            {backgroundColor: palette.input, color: palette.text},
+            { backgroundColor: palette.input, color: palette.text },
           ]}
         />
         <Pressable
@@ -126,9 +133,10 @@ export function ChatComposer({
           onPress={onSend}
           style={[
             styles.sendButton,
-            {backgroundColor: palette.mint},
+            { backgroundColor: palette.mint },
             isSending && styles.disabledButton,
-          ]}>
+          ]}
+        >
           <Send color="#ffffff" size={19} strokeWidth={3} />
         </Pressable>
       </View>

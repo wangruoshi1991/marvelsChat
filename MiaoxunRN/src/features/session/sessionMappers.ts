@@ -1,13 +1,5 @@
-import {
-  BootstrapDTO,
-  MessageDTO,
-  ThreadDTO,
-} from '../../models/api';
-import {
-  ChatMessage,
-  ChatThread,
-  RelationshipsState,
-} from './sessionTypes';
+import { BootstrapDTO, MessageDTO, ThreadDTO } from '../../models/api';
+import { ChatMessage, ChatThread, RelationshipsState } from './sessionTypes';
 
 export const mapMessage = (message: MessageDTO): ChatMessage => ({
   id: message.id,
@@ -34,17 +26,26 @@ export const applyPresenceToRelationships = (
   presenceStatus: 'online' | 'offline',
 ) => ({
   following: current.following.map(item =>
-    item.user.id === userId ? {...item, user: {...item.user, presenceStatus}} : item,
+    item.user.id === userId
+      ? { ...item, user: { ...item.user, presenceStatus } }
+      : item,
   ),
   followers: current.followers.map(item =>
-    item.user.id === userId ? {...item, user: {...item.user, presenceStatus}} : item,
+    item.user.id === userId
+      ? { ...item, user: { ...item.user, presenceStatus } }
+      : item,
   ),
   friends: current.friends.map(item =>
-    item.user.id === userId ? {...item, user: {...item.user, presenceStatus}} : item,
+    item.user.id === userId
+      ? { ...item, user: { ...item.user, presenceStatus } }
+      : item,
   ),
 });
 
-export function mergeMessages(existing: ChatMessage[], incoming: ChatMessage[]) {
+export function mergeMessages(
+  existing: ChatMessage[],
+  incoming: ChatMessage[],
+) {
   const incomingIds = new Set(incoming.map(message => message.id));
   return sortMessages([
     ...existing.filter(message => !incomingIds.has(message.id)),
@@ -54,10 +55,18 @@ export function mergeMessages(existing: ChatMessage[], incoming: ChatMessage[]) 
 
 export function sortMessages(messages: ChatMessage[]) {
   return [...messages].sort((left, right) => {
-    const leftTime = left.createdAt ? Date.parse(left.createdAt) : Number.MAX_SAFE_INTEGER;
-    const rightTime = right.createdAt ? Date.parse(right.createdAt) : Number.MAX_SAFE_INTEGER;
-    const normalizedLeftTime = Number.isNaN(leftTime) ? Number.MAX_SAFE_INTEGER : leftTime;
-    const normalizedRightTime = Number.isNaN(rightTime) ? Number.MAX_SAFE_INTEGER : rightTime;
+    const leftTime = left.createdAt
+      ? Date.parse(left.createdAt)
+      : Number.MAX_SAFE_INTEGER;
+    const rightTime = right.createdAt
+      ? Date.parse(right.createdAt)
+      : Number.MAX_SAFE_INTEGER;
+    const normalizedLeftTime = Number.isNaN(leftTime)
+      ? Number.MAX_SAFE_INTEGER
+      : leftTime;
+    const normalizedRightTime = Number.isNaN(rightTime)
+      ? Number.MAX_SAFE_INTEGER
+      : rightTime;
     if (normalizedLeftTime !== normalizedRightTime) {
       return normalizedLeftTime - normalizedRightTime;
     }
@@ -85,7 +94,10 @@ export function mergeThreads(existing: ChatThread[], incoming: ChatThread[]) {
   const mergedIncoming = incoming.map(thread => {
     const current = existingById.get(thread.id);
     return current
-      ? {...thread, messages: mergeMessages(current.messages, thread.messages)}
+      ? {
+          ...thread,
+          messages: mergeMessages(current.messages, thread.messages),
+        }
       : thread;
   });
 

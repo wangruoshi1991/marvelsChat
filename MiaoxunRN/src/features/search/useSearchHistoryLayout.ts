@@ -1,7 +1,7 @@
-import {useCallback, useEffect, useRef, useState} from 'react';
-import {type LayoutChangeEvent, useWindowDimensions} from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { type LayoutChangeEvent, useWindowDimensions } from 'react-native';
 
-import type {SearchHistoryDTO} from '../../models/api';
+import type { SearchHistoryDTO } from '../../models/api';
 
 const COLLAPSED_ROWS = 3;
 const DEFAULT_COLLAPSED_HEIGHT = 114;
@@ -20,21 +20,19 @@ export function calculateCollapsedHistoryLayout(
   ).sort((left, right) => left - right);
   const lastVisibleRowTop = rowTops[Math.min(maxRows, rowTops.length) - 1];
   if (lastVisibleRowTop === undefined) {
-    return {count: 0, height: 0};
+    return { count: 0, height: 0 };
   }
   const visibleLayouts = layouts.filter(
     layout => Math.round(layout.y) <= lastVisibleRowTop,
   );
   return {
     count: visibleLayouts.length,
-    height: Math.max(
-      ...visibleLayouts.map(layout => layout.y + layout.height),
-    ),
+    height: Math.max(...visibleLayouts.map(layout => layout.y + layout.height)),
   };
 }
 
 export function useSearchHistoryLayout(searchHistory: SearchHistoryDTO[]) {
-  const {width: windowWidth} = useWindowDimensions();
+  const { width: windowWidth } = useWindowDimensions();
   const [collapsedCount, setCollapsedCount] = useState(searchHistory.length);
   const [collapsedHeight, setCollapsedHeight] = useState(
     DEFAULT_COLLAPSED_HEIGHT,
@@ -48,8 +46,8 @@ export function useSearchHistoryLayout(searchHistory: SearchHistoryDTO[]) {
 
   const onItemLayout = useCallback(
     (itemId: string, event: LayoutChangeEvent) => {
-      const {height, y} = event.nativeEvent.layout;
-      layouts.current.set(itemId, {height, y});
+      const { height, y } = event.nativeEvent.layout;
+      layouts.current.set(itemId, { height, y });
       const measuredLayouts = searchHistory.map(item =>
         layouts.current.get(item.id),
       );
@@ -69,5 +67,5 @@ export function useSearchHistoryLayout(searchHistory: SearchHistoryDTO[]) {
     [searchHistory],
   );
 
-  return {collapsedCount, collapsedHeight, onItemLayout};
+  return { collapsedCount, collapsedHeight, onItemLayout };
 }

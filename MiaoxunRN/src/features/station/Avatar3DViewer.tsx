@@ -79,8 +79,7 @@ export function Avatar3DViewer({
   const [status, setStatus] = useState<ViewerStatus>('booting');
   const modelUrl = useMemo(() => avatar3dModelFileUrl(modelId), [modelId]);
   const thumbnailUrl = useMemo(
-    () =>
-      thumbnailAvailable ? avatar3dModelThumbnailUrl(modelId) : undefined,
+    () => (thumbnailAvailable ? avatar3dModelThumbnailUrl(modelId) : undefined),
     [modelId, thumbnailAvailable],
   );
   const loadScript = useMemo(

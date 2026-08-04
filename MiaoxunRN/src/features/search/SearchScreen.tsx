@@ -1,4 +1,4 @@
-import React, {useMemo, useState} from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import {ChevronDown, ChevronUp, Search, X} from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Search, X } from 'lucide-react-native';
 import Svg, {
   Defs,
   LinearGradient as SvgLinearGradient,
@@ -18,20 +18,20 @@ import Svg, {
   Stop,
 } from 'react-native-svg';
 
-import {contactIconAssets} from '../../assets/icons';
+import { contactIconAssets } from '../../assets/icons';
 import {
   AgentDTO,
   RelationshipProfileDTO,
   SearchHistoryDTO,
 } from '../../models/api';
-import {appErrorText, textFor} from '../../shared/i18n';
-import {styles} from '../../shared/styles';
-import {Palette, palettes} from '../../shared/theme';
-import {AgentIconAvatar} from '../messages/AgentIconAvatar';
-import {UserAvatarRenderer} from '../messages/messageTypes';
-import {ChatThread, Language} from '../session/useMiaoxunSession';
-import {buildSearchDirectory} from './searchDirectory';
-import {useSearchHistoryLayout} from './useSearchHistoryLayout';
+import { appErrorText, textFor } from '../../shared/i18n';
+import { styles } from '../../shared/styles';
+import { Palette, palettes } from '../../shared/theme';
+import { AgentIconAvatar } from '../messages/AgentIconAvatar';
+import { UserAvatarRenderer } from '../messages/messageTypes';
+import { ChatThread, Language } from '../session/useMiaoxunSession';
+import { buildSearchDirectory } from './searchDirectory';
+import { useSearchHistoryLayout } from './useSearchHistoryLayout';
 
 function SearchHistoryChip({
   deleteLabel,
@@ -53,11 +53,13 @@ function SearchHistoryChip({
       <Pressable
         accessibilityRole="button"
         onPress={onPress}
-        style={styles.searchChipLabelButton}>
+        style={styles.searchChipLabelButton}
+      >
         <Text
           ellipsizeMode="tail"
           numberOfLines={1}
-          style={styles.searchChipText}>
+          style={styles.searchChipText}
+        >
           {label}
         </Text>
       </Pressable>
@@ -67,7 +69,8 @@ function SearchHistoryChip({
         disabled={disabled}
         hitSlop={6}
         onPress={onDelete}
-        style={[styles.searchChipDelete, disabled && styles.disabledButton]}>
+        style={[styles.searchChipDelete, disabled && styles.disabledButton]}
+      >
         <X color="rgba(0,0,0,0.5)" size={13} strokeWidth={2} />
       </Pressable>
     </View>
@@ -92,21 +95,17 @@ function SectionHeader({
       ? '#2012D9'
       : palette.mint
     : isLightPalette
-      ? 'rgba(0,0,0,0.6)'
-      : palette.secondaryText;
+    ? 'rgba(0,0,0,0.6)'
+    : palette.secondaryText;
 
   return (
     <View style={styles.searchSectionHeader}>
-      <Text style={[styles.searchSectionTitle, {color: titleColor}]}>
+      <Text style={[styles.searchSectionTitle, { color: titleColor }]}>
         {title}
       </Text>
       {action ? (
         <Pressable disabled={!onAction} hitSlop={8} onPress={onAction}>
-          <Text
-            style={[
-              styles.searchSectionAction,
-              {color: actionColor},
-            ]}>
+          <Text style={[styles.searchSectionAction, { color: actionColor }]}>
             {action}
           </Text>
         </Pressable>
@@ -257,7 +256,7 @@ export function SearchScreen({
         'Clear all search history? This action cannot be undone.',
       ),
       [
-        {text: textFor(language, '取消', 'Cancel'), style: 'cancel'},
+        { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
         {
           text: textFor(language, '清空', 'Clear'),
           style: 'destructive',
@@ -268,18 +267,20 @@ export function SearchScreen({
   };
 
   return (
-    <View style={[styles.searchScreen, {backgroundColor: palette.surface}]}>
+    <View style={[styles.searchScreen, { backgroundColor: palette.surface }]}>
       <View
         style={[
           styles.searchPageHeader,
-          {backgroundColor: palette.soft, borderBottomColor: palette.border},
-        ]}>
+          { backgroundColor: palette.soft, borderBottomColor: palette.border },
+        ]}
+      >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={textFor(language, '返回', 'Back')}
           hitSlop={8}
           onPress={onBack}
-          style={styles.searchBackButton}>
+          style={styles.searchBackButton}
+        >
           <Image
             source={contactIconAssets.back}
             resizeMode="contain"
@@ -289,13 +290,10 @@ export function SearchScreen({
         <View
           style={[
             styles.searchField,
-            {backgroundColor: palette.surface, borderColor: palette.border},
-          ]}>
-          <Search
-            color={palette.secondaryText}
-            size={16}
-            strokeWidth={2.2}
-          />
+            { backgroundColor: palette.surface, borderColor: palette.border },
+          ]}
+        >
+          <Search color={palette.secondaryText} size={16} strokeWidth={2.2} />
           <TextInput
             value={query}
             onChangeText={onChangeQuery}
@@ -307,7 +305,7 @@ export function SearchScreen({
             )}
             placeholderTextColor={palette.secondaryText}
             returnKeyType="search"
-            style={[styles.searchInput, {color: palette.text}]}
+            style={[styles.searchInput, { color: palette.text }]}
           />
           {pendingAction === 'save' ? (
             <ActivityIndicator color="#2A00FF" size="small" />
@@ -316,10 +314,12 @@ export function SearchScreen({
       </View>
 
       <View
-        style={[styles.searchContent, {backgroundColor: palette.surface}]}>
+        style={[styles.searchContent, { backgroundColor: palette.surface }]}
+      >
         <ScrollView
           style={styles.searchListViewport}
-          contentContainerStyle={styles.searchResults}>
+          contentContainerStyle={styles.searchResults}
+        >
           <View style={styles.searchSection}>
             <SectionHeader
               palette={palette}
@@ -339,9 +339,10 @@ export function SearchScreen({
                       ? undefined
                       : [
                           styles.searchHistoryCollapsed,
-                          {maxHeight: collapsedHistoryHeight},
+                          { maxHeight: collapsedHistoryHeight },
                         ]
-                  }>
+                  }
+                >
                   <View style={styles.searchHistoryList}>
                     {visibleSearchHistory.map(item => (
                       <SearchHistoryChip
@@ -368,7 +369,8 @@ export function SearchScreen({
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => setIsHistoryExpanded(value => !value)}
-                    style={styles.searchHistoryToggle}>
+                    style={styles.searchHistoryToggle}
+                  >
                     <Text style={styles.searchHistoryToggleText}>
                       {isHistoryExpanded
                         ? textFor(language, '收起', 'Collapse')
@@ -384,7 +386,8 @@ export function SearchScreen({
               </>
             ) : (
               <Text
-                style={[styles.searchEmpty, {color: palette.secondaryText}]}>
+                style={[styles.searchEmpty, { color: palette.secondaryText }]}
+              >
                 {textFor(language, '暂无搜索记录', 'No search history')}
               </Text>
             )}
@@ -399,9 +402,7 @@ export function SearchScreen({
             {directoryGroups.length ? (
               <View style={styles.searchDirectoryList}>
                 {directoryGroups.map(group => (
-                  <View
-                    key={group.initial}
-                    style={styles.searchDirectoryGroup}>
+                  <View key={group.initial} style={styles.searchDirectoryGroup}>
                     <Text style={styles.searchDirectoryInitial}>
                       {group.initial}
                     </Text>
@@ -422,8 +423,9 @@ export function SearchScreen({
                             styles.searchRow,
                             index < group.items.length - 1 &&
                               styles.searchRowDivider,
-                            {borderBottomColor: palette.border},
-                          ]}>
+                            { borderBottomColor: palette.border },
+                          ]}
+                        >
                           {item.kind === 'agent' ? (
                             <AgentIconAvatar
                               agentId={item.thread.agentId || ''}
@@ -447,16 +449,18 @@ export function SearchScreen({
                               numberOfLines={1}
                               style={[
                                 styles.searchRowTitle,
-                                {color: contactTitleColor},
-                              ]}>
+                                { color: contactTitleColor },
+                              ]}
+                            >
                               {item.title}
                             </Text>
                             <Text
                               numberOfLines={1}
                               style={[
                                 styles.searchRowBody,
-                                {color: contactBodyColor},
-                              ]}>
+                                { color: contactBodyColor },
+                              ]}
+                            >
                               {item.subtitle}
                             </Text>
                           </View>
@@ -468,7 +472,8 @@ export function SearchScreen({
               </View>
             ) : (
               <Text
-                style={[styles.searchEmpty, {color: palette.secondaryText}]}>
+                style={[styles.searchEmpty, { color: palette.secondaryText }]}
+              >
                 {textFor(language, '暂无匹配联系人', 'No matching contacts')}
               </Text>
             )}
@@ -484,16 +489,13 @@ export function SearchScreen({
                   x1="0"
                   x2="0"
                   y1="0"
-                  y2="1">
+                  y2="1"
+                >
                   <Stop offset="0" stopColor="#FFFFFF" />
                   <Stop offset="1" stopColor="#F1EFFA" />
                 </SvgLinearGradient>
               </Defs>
-              <Rect
-                fill="url(#searchBottomFade)"
-                height="100%"
-                width="100%"
-              />
+              <Rect fill="url(#searchBottomFade)" height="100%" width="100%" />
             </Svg>
           </View>
         ) : null}

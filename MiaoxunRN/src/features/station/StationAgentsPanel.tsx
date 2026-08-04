@@ -104,8 +104,8 @@ export function StationAgentsPanel({
       ...agent,
       identity: registeredByKey.get(agent.id)?.identity || null,
     }));
-  const displayedAssistants = ownedCards.filter(
-    agent => isAssistantAgent(agent.id, agent.category),
+  const displayedAssistants = ownedCards.filter(agent =>
+    isAssistantAgent(agent.id, agent.category),
   );
   const assistantKeys = new Set(displayedAssistants.map(agent => agent.id));
   const displayedCapabilities = ownedCards.filter(
@@ -479,7 +479,10 @@ const agentModuleBindings: Record<string, { zh: string; en: string }> = {
 };
 
 const assistantAgentIds = new Set(['miaoxun-butler', 'virtual-character']);
-const assistantAgentCategories = new Set(['orchestrator', 'character-management']);
+const assistantAgentCategories = new Set([
+  'orchestrator',
+  'character-management',
+]);
 
 const isAssistantAgent = (agentId: string, category: string) =>
   assistantAgentIds.has(agentId) || assistantAgentCategories.has(category);
@@ -497,11 +500,7 @@ const readinessSummary = (
   readiness?: AgentReadinessDTO,
 ) => {
   if (!readiness) {
-    return textFor(
-      language,
-      '能力准备中。',
-      'Capability is preparing.',
-    );
+    return textFor(language, '能力准备中。', 'Capability is preparing.');
   }
   if (readiness.configured) {
     return readiness.capabilityNeeds.length
@@ -512,11 +511,7 @@ const readinessSummary = (
         )
       : textFor(language, '基础能力可用。', 'Base capability ready.');
   }
-  return textFor(
-    language,
-    '生成服务待配置。',
-    'Generation service pending.',
-  );
+  return textFor(language, '生成服务待配置。', 'Generation service pending.');
 };
 
 type AgentCard = OwnedAgentDTO & {

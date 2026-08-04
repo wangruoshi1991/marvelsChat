@@ -1,10 +1,10 @@
 import React from 'react';
-import {Image, View} from 'react-native';
+import { Image, View } from 'react-native';
 
-import {AgentIdentityDTO} from '../../models/api';
-import {styles} from '../../shared/styles';
-import {Palette} from '../../shared/theme';
-import {resolveAgentThreadIcon} from './threadIconRegistry';
+import { AgentIdentityDTO } from '../../models/api';
+import { styles } from '../../shared/styles';
+import { Palette } from '../../shared/theme';
+import { resolveAgentThreadIcon } from './threadIconRegistry';
 
 export function AgentIconAvatar({
   agentId,
@@ -44,10 +44,7 @@ export function AgentIconAvatar({
       {iconSpec.imageSource ? (
         <Image
           source={iconSpec.imageSource}
-          style={[
-            styles.threadIconImage,
-            small && styles.threadIconImageSmall,
-          ]}
+          style={[styles.threadIconImage, small && styles.threadIconImageSmall]}
           resizeMode="contain"
         />
       ) : Icon ? (

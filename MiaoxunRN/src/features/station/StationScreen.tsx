@@ -306,7 +306,10 @@ export function StationScreen({
           <SafeAreaProvider>
             <SafeAreaView
               edges={['top', 'bottom']}
-              style={[styles.safeArea, { backgroundColor: stationSurfaceColor }]}
+              style={[
+                styles.safeArea,
+                { backgroundColor: stationSurfaceColor },
+              ]}
             >
               <Avatar3DCreateScreen
                 initialBootstrap={avatar3d.bootstrap}

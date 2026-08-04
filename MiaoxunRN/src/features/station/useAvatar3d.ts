@@ -7,11 +7,7 @@ import {
   shouldPollAvatar3dJob,
 } from './avatar3dWorkflow';
 
-export type Avatar3DLoadState =
-  | 'loading'
-  | 'ready'
-  | 'unavailable'
-  | 'error';
+export type Avatar3DLoadState = 'loading' | 'ready' | 'unavailable' | 'error';
 
 export function useAvatar3d(token: string, pollingEnabled = true) {
   const [bootstrap, setBootstrap] = useState<Avatar3DBootstrapDTO | null>(null);
@@ -40,7 +36,9 @@ export function useAvatar3d(token: string, pollingEnabled = true) {
         return null;
       }
       setStatus('error');
-      setErrorMessage(error instanceof Error ? error.message : '3D形象加载失败');
+      setErrorMessage(
+        error instanceof Error ? error.message : '3D形象加载失败',
+      );
       return null;
     }
   }, [token]);
@@ -79,12 +77,7 @@ export function useAvatar3d(token: string, pollingEnabled = true) {
         clearTimeout(timeout);
       }
     };
-  }, [
-    activeJobId,
-    activeJobStatus,
-    pollingEnabled,
-    refresh,
-  ]);
+  }, [activeJobId, activeJobStatus, pollingEnabled, refresh]);
 
   return { bootstrap, errorMessage, refresh, status };
 }

@@ -1,9 +1,9 @@
 import React from 'react';
-import {Pressable, Text, View} from 'react-native';
-import {ChevronRight, Sparkles} from 'lucide-react-native';
+import { Pressable, Text, View } from 'react-native';
+import { ChevronRight, Sparkles } from 'lucide-react-native';
 
-import {styles} from '../../shared/styles';
-import {Palette} from '../../shared/theme';
+import { styles } from '../../shared/styles';
+import { Palette } from '../../shared/theme';
 
 export function StationCard({
   title,
@@ -17,12 +17,27 @@ export function StationCard({
   children: React.ReactNode;
 }) {
   return (
-    <View style={[styles.stationCard, {backgroundColor: palette.surface, borderColor: palette.border, shadowColor: palette.shadow}]}>
+    <View
+      style={[
+        styles.stationCard,
+        {
+          backgroundColor: palette.surface,
+          borderColor: palette.border,
+          shadowColor: palette.shadow,
+        },
+      ]}
+    >
       <View style={styles.stationCardHeader}>
-        <Text style={[styles.stationCardTitle, {color: palette.text}]} numberOfLines={1}>
+        <Text
+          style={[styles.stationCardTitle, { color: palette.text }]}
+          numberOfLines={1}
+        >
           {title}
         </Text>
-        <Text style={[styles.stationCardDetail, {color: palette.secondaryText}]} numberOfLines={1}>
+        <Text
+          style={[styles.stationCardDetail, { color: palette.secondaryText }]}
+          numberOfLines={1}
+        >
           {detail}
         </Text>
       </View>
@@ -55,12 +70,31 @@ export function ProfileRegionRow({
   const content = (
     <>
       <View style={styles.profileRegionCopy}>
-        <Text style={[styles.profileRegionTitle, {color: secondaryTextColor || palette.secondaryText}]}>{title}</Text>
-        <Text style={[styles.profileRegionValue, {color: textColor || palette.text}]} numberOfLines={1}>
+        <Text
+          style={[
+            styles.profileRegionTitle,
+            { color: secondaryTextColor || palette.secondaryText },
+          ]}
+        >
+          {title}
+        </Text>
+        <Text
+          style={[
+            styles.profileRegionValue,
+            { color: textColor || palette.text },
+          ]}
+          numberOfLines={1}
+        >
           {value}
         </Text>
       </View>
-      {onPress && showChevron ? <ChevronRight color={secondaryTextColor || palette.secondaryText} size={15} strokeWidth={2.2} /> : null}
+      {onPress && showChevron ? (
+        <ChevronRight
+          color={secondaryTextColor || palette.secondaryText}
+          size={15}
+          strokeWidth={2.2}
+        />
+      ) : null}
     </>
   );
   const rowColors = {
@@ -74,11 +108,7 @@ export function ProfileRegionRow({
       </Pressable>
     );
   }
-  return (
-    <View style={[styles.profileRegionRow, rowColors]}>
-      {content}
-    </View>
-  );
+  return <View style={[styles.profileRegionRow, rowColors]}>{content}</View>;
 }
 
 export function ProfileDataRow({
@@ -94,33 +124,61 @@ export function ProfileDataRow({
 }) {
   const content = (
     <>
-      <Text style={[styles.profileDataTitle, {color: palette.secondaryText}]}>{title}</Text>
-      <Text style={[styles.profileDataValue, {color: palette.text}]} numberOfLines={1}>
+      <Text style={[styles.profileDataTitle, { color: palette.secondaryText }]}>
+        {title}
+      </Text>
+      <Text
+        style={[styles.profileDataValue, { color: palette.text }]}
+        numberOfLines={1}
+      >
         {value}
       </Text>
-      {onPress ? <ChevronRight color={palette.secondaryText} size={16} strokeWidth={2.6} /> : null}
+      {onPress ? (
+        <ChevronRight
+          color={palette.secondaryText}
+          size={16}
+          strokeWidth={2.6}
+        />
+      ) : null}
     </>
   );
   if (onPress) {
     return (
-      <Pressable onPress={onPress} style={[styles.profileDataRow, {backgroundColor: palette.soft}]}>
+      <Pressable
+        onPress={onPress}
+        style={[styles.profileDataRow, { backgroundColor: palette.soft }]}
+      >
         {content}
       </Pressable>
     );
   }
   return (
-    <View style={[styles.profileDataRow, {backgroundColor: palette.soft}]}>
+    <View style={[styles.profileDataRow, { backgroundColor: palette.soft }]}>
       {content}
     </View>
   );
 }
 
-export function StationPlaceholder({title, message, palette}: {title: string; message: string; palette: Palette}) {
+export function StationPlaceholder({
+  title,
+  message,
+  palette,
+}: {
+  title: string;
+  message: string;
+  palette: Palette;
+}) {
   return (
-    <View style={[styles.stationPlaceholder, {backgroundColor: palette.soft}]}>
+    <View
+      style={[styles.stationPlaceholder, { backgroundColor: palette.soft }]}
+    >
       <Sparkles color={palette.mint} size={30} strokeWidth={2.5} />
-      <Text style={[styles.placeholderTitle, {color: palette.text}]}>{title}</Text>
-      <Text style={[styles.placeholderBody, {color: palette.secondaryText}]}>{message}</Text>
+      <Text style={[styles.placeholderTitle, { color: palette.text }]}>
+        {title}
+      </Text>
+      <Text style={[styles.placeholderBody, { color: palette.secondaryText }]}>
+        {message}
+      </Text>
     </View>
   );
 }
@@ -143,19 +201,29 @@ export function Stat({
   const displayValue = Number.isFinite(value) ? value : 0;
   const content = (
     <>
-      <Text style={[styles.statValue, {color: textColor || palette.text}]}>{displayValue}</Text>
+      <Text style={[styles.statValue, { color: textColor || palette.text }]}>
+        {displayValue}
+      </Text>
       <Text
         adjustsFontSizeToFit
         minimumFontScale={0.82}
         numberOfLines={1}
-        style={[styles.statLabel, {color: secondaryTextColor || palette.secondaryText}]}>
+        style={[
+          styles.statLabel,
+          { color: secondaryTextColor || palette.secondaryText },
+        ]}
+      >
         {label}
       </Text>
     </>
   );
   if (onPress) {
     return (
-      <Pressable accessibilityRole="button" onPress={onPress} style={styles.statCell}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onPress}
+        style={styles.statCell}
+      >
         {content}
       </Pressable>
     );

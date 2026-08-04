@@ -1,6 +1,6 @@
 import React from 'react';
 
-import {AvatarConfigDTO} from '../../models/api';
+import { AvatarConfigDTO } from '../../models/api';
 
 export type MessageTab = 'chat' | 'notice';
 

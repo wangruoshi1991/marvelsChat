@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo, useRef} from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import {
   Animated,
   FlatList,
@@ -16,21 +16,21 @@ import Svg, {
   Stop,
 } from 'react-native-svg';
 
-import {messageIconAssets} from '../../assets/icons';
-import {AgentDTO} from '../../models/api';
-import {displayText, textFor} from '../../shared/i18n';
-import {styles} from '../../shared/styles';
-import {Palette, palettes} from '../../shared/theme';
+import { messageIconAssets } from '../../assets/icons';
+import { AgentDTO } from '../../models/api';
+import { displayText, textFor } from '../../shared/i18n';
+import { styles } from '../../shared/styles';
+import { Palette, palettes } from '../../shared/theme';
 import {
   ChatThread,
   Language,
   useMiaoxunSession,
 } from '../session/useMiaoxunSession';
-import {NoticeList} from './NoticeList';
-import {MessageTab, UserAvatarRenderer} from './messageTypes';
-import {relativeTimeText} from './messageUtils';
-import {AgentIconAvatar} from './AgentIconAvatar';
-import {resolveMessagePalette} from './messagePalette';
+import { NoticeList } from './NoticeList';
+import { MessageTab, UserAvatarRenderer } from './messageTypes';
+import { relativeTimeText } from './messageUtils';
+import { AgentIconAvatar } from './AgentIconAvatar';
+import { resolveMessagePalette } from './messagePalette';
 
 const chatSwipeOpenThreshold = -72;
 const mutedUnreadColor = '#A8A8B0';
@@ -120,11 +120,13 @@ function ThreadSwipeRow({
     <Animated.View
       {...panResponder.panHandlers}
       style={[
-        {borderBottomColor: palette.border, transform: [{translateX}]},
-      ]}>
+        { borderBottomColor: palette.border, transform: [{ translateX }] },
+      ]}
+    >
       <Pressable
         onPress={() => onOpenThread(thread)}
-        style={[styles.threadRow, {borderBottomColor: palette.border}]}>
+        style={[styles.threadRow, { borderBottomColor: palette.border }]}
+      >
         <View style={styles.threadAvatarWrap}>
           {thread.agentId ? (
             <AgentIconAvatar
@@ -150,7 +152,8 @@ function ThreadSwipeRow({
                     : palette.rose,
                   borderColor: palette.background,
                 },
-              ]}>
+              ]}
+            >
               <Text style={styles.unreadText}>
                 {thread.unreadCount > 99 ? '99+' : thread.unreadCount}
               </Text>
@@ -160,18 +163,20 @@ function ThreadSwipeRow({
         <View style={styles.threadMain}>
           <Text
             numberOfLines={1}
-            style={[styles.threadTitle, {color: threadTitleColor}]}>
+            style={[styles.threadTitle, { color: threadTitleColor }]}
+          >
             {displayText(language, thread.title)}
           </Text>
           <Text
             numberOfLines={1}
-            style={[styles.threadPreview, {color: threadSecondaryColor}]}>
+            style={[styles.threadPreview, { color: threadSecondaryColor }]}
+          >
             {displayText(language, thread.lastContent) ||
               textFor(language, '暂无消息', 'No messages yet')}
           </Text>
         </View>
         <View style={styles.threadTrailing}>
-          <Text style={[styles.threadTime, {color: threadSecondaryColor}]}>
+          <Text style={[styles.threadTime, { color: threadSecondaryColor }]}>
             {relativeTimeText(thread.lastMessageAt)}
           </Text>
         </View>
@@ -213,9 +218,10 @@ export function ThreadListScreen({
   onAcceptFriendRequest: (requestId: string) => Promise<void>;
   onRejectFriendRequest: (requestId: string) => Promise<void>;
 }) {
-  const messagePalette = useMemo(() => resolveMessagePalette(palette), [
-    palette,
-  ]);
+  const messagePalette = useMemo(
+    () => resolveMessagePalette(palette),
+    [palette],
+  );
   const isLightPalette = palette.text === palettes.light.text;
   const unreadChatCount = useMemo(
     () => threads.reduce((total, thread) => total + thread.unreadCount, 0),
@@ -223,7 +229,9 @@ export function ThreadListScreen({
   );
 
   return (
-    <View style={[styles.screen, {backgroundColor: messagePalette.background}]}>
+    <View
+      style={[styles.screen, { backgroundColor: messagePalette.background }]}
+    >
       <View
         style={[
           styles.messageTopBar,
@@ -231,7 +239,8 @@ export function ThreadListScreen({
             backgroundColor: messagePalette.soft,
             borderBottomColor: messagePalette.border,
           },
-        ]}>
+        ]}
+      >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={textFor(language, '新建', 'New')}
@@ -283,7 +292,7 @@ export function ThreadListScreen({
                   <View
                     style={[
                       styles.messageTabBadge,
-                      {backgroundColor: messagePalette.rose},
+                      { backgroundColor: messagePalette.rose },
                     ]}
                   >
                     <Text style={styles.messageTabBadgeText}>
@@ -317,7 +326,7 @@ export function ThreadListScreen({
             keyExtractor={item => item.id}
             contentContainerStyle={styles.threadList}
             style={styles.messageListViewport}
-            renderItem={({item}) => (
+            renderItem={({ item }) => (
               <ThreadSwipeRow
                 thread={item}
                 palette={messagePalette}
@@ -354,11 +363,7 @@ export function ThreadListScreen({
                   <Stop offset="1" stopColor="#F1EFFA" />
                 </SvgLinearGradient>
               </Defs>
-              <Rect
-                fill="url(#messageBottomFade)"
-                height="100%"
-                width="100%"
-              />
+              <Rect fill="url(#messageBottomFade)" height="100%" width="100%" />
             </Svg>
           </View>
         ) : null}

@@ -8,7 +8,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 
-import {messageIconAssets} from '../../assets/icons';
+import { messageIconAssets } from '../../assets/icons';
 
 export type ThreadIconSpec = {
   Icon?: LucideIcon;
@@ -50,5 +50,4 @@ export const resolveAgentThreadIcon = (
   category?: string | null,
 ): ThreadIconSpec =>
   agentThreadIcons[agentId] ||
-  categoryThreadIcons[String(category || '')] ||
-  { Icon: Sparkles };
+  categoryThreadIcons[String(category || '')] || { Icon: Sparkles };

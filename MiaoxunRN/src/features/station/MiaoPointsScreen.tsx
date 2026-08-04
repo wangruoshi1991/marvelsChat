@@ -124,10 +124,7 @@ export function MiaoPointsScreen({
       ) : null}
 
       <View
-        style={[
-          styles.miaoPointsHeader,
-          { backgroundColor: surfaceColor },
-        ]}
+        style={[styles.miaoPointsHeader, { backgroundColor: surfaceColor }]}
       >
         <Pressable
           accessibilityLabel={textFor(language, '返回', 'Back')}
@@ -237,9 +234,7 @@ export function MiaoPointsScreen({
               <Text style={styles.miaoPointsEmptyAmount}>--</Text>
             </ImageBackground>
             <View style={styles.miaoPointsEmptyCopy}>
-              <Text
-                style={[styles.miaoPointsEmptyTitle, { color: textColor }]}
-              >
+              <Text style={[styles.miaoPointsEmptyTitle, { color: textColor }]}>
                 {textFor(language, '暂无妙点明细', 'No point activity yet')}
               </Text>
               <Text

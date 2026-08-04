@@ -25,12 +25,12 @@ export async function uploadStationMediaAsset({
   const uploadResponse = await fetch(
     usesLocalStorage ? buildApiUrl(prepared.upload.url) : prepared.upload.url,
     {
-    method: prepared.upload.method,
-    headers: {
-      ...prepared.upload.headers,
-      ...(usesLocalStorage ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: blob,
+      method: prepared.upload.method,
+      headers: {
+        ...prepared.upload.headers,
+        ...(usesLocalStorage ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: blob,
     },
   );
 

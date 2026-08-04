@@ -101,7 +101,12 @@ export function SegmentedControl<T extends string>({
                 {option.label}
               </Text>
               {option.badge && option.badge > 0 ? (
-                <View style={[styles.segmentBadge, { backgroundColor: palette.rose }]}>
+                <View
+                  style={[
+                    styles.segmentBadge,
+                    { backgroundColor: palette.rose },
+                  ]}
+                >
                   <Text style={styles.segmentBadgeText}>
                     {option.badge > 99 ? '99+' : option.badge}
                   </Text>
@@ -166,12 +171,8 @@ export function ChatHeader({
           <View style={styles.chatHeaderSubtitleRow}>
             {subtitleStatus ? (
               <Circle
-                color={
-                  subtitleStatus === 'online' ? '#34C759' : '#FF3B30'
-                }
-                fill={
-                  subtitleStatus === 'online' ? '#34C759' : '#FF3B30'
-                }
+                color={subtitleStatus === 'online' ? '#34C759' : '#FF3B30'}
+                fill={subtitleStatus === 'online' ? '#34C759' : '#FF3B30'}
                 size={7}
                 strokeWidth={0}
               />
@@ -274,8 +275,8 @@ export function BottomBar({
 }) {
   const isLightPalette = palette.text === palettes.light.text;
   const bottomBarColors = isLightPalette
-    ? {backgroundColor: '#FFFFFF', borderTopColor: '#F0EBFD'}
-    : {backgroundColor: palette.surface, borderTopColor: palette.border};
+    ? { backgroundColor: '#FFFFFF', borderTopColor: '#F0EBFD' }
+    : { backgroundColor: palette.surface, borderTopColor: palette.border };
 
   return (
     <View style={[styles.bottomBar, bottomBarColors]}>
@@ -338,31 +339,22 @@ function TabButton({
       ? '#2A00FF'
       : '#CBC5DE'
     : selected
-      ? palette.mint
-      : palette.secondaryText;
+    ? palette.mint
+    : palette.secondaryText;
 
   return (
     <Pressable
       accessibilityRole="tab"
-      accessibilityState={{selected}}
+      accessibilityState={{ selected }}
       onPress={onPress}
-      style={styles.tabButton}>
+      style={styles.tabButton}
+    >
       <Image
         source={iconSource}
-        style={[
-          styles.tabIcon,
-          !isLightPalette && {tintColor: titleColor},
-        ]}
+        style={[styles.tabIcon, !isLightPalette && { tintColor: titleColor }]}
         resizeMode="contain"
       />
-      <Text
-        style={[
-          styles.tabTitle,
-          {color: titleColor},
-        ]}
-      >
-        {title}
-      </Text>
+      <Text style={[styles.tabTitle, { color: titleColor }]}>{title}</Text>
     </Pressable>
   );
 }

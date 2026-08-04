@@ -46,7 +46,9 @@ export function StationSiteBuilderPanel({
   const sortedDrafts = useMemo(
     () =>
       [...siteDrafts].sort((left, right) =>
-        String(right.createdAt || '').localeCompare(String(left.createdAt || '')),
+        String(right.createdAt || '').localeCompare(
+          String(left.createdAt || ''),
+        ),
       ),
     [siteDrafts],
   );
@@ -61,7 +63,9 @@ export function StationSiteBuilderPanel({
     setIsCreating(true);
     try {
       await onCreateDraft({ prompt: prompt.trim(), apply: false });
-      onActionMessage(textFor(language, '小站草稿已生成', 'Station draft created'));
+      onActionMessage(
+        textFor(language, '小站草稿已生成', 'Station draft created'),
+      );
     } catch (error) {
       onActionError(error);
     } finally {
@@ -110,8 +114,16 @@ export function StationSiteBuilderPanel({
   return (
     <StationModule
       palette={palette}
-      title={textFor(language, '小站结构 / 建站 Agent', 'Station Builder Agent')}
-      action={isCreating ? textFor(language, '生成中', 'Creating') : textFor(language, '生成', 'Create')}
+      title={textFor(
+        language,
+        '小站结构 / 建站 Agent',
+        'Station Builder Agent',
+      )}
+      action={
+        isCreating
+          ? textFor(language, '生成中', 'Creating')
+          : textFor(language, '生成', 'Create')
+      }
       onAction={createDraft}
     >
       <View style={styles.stationAgentLoopStack}>
@@ -122,10 +134,17 @@ export function StationSiteBuilderPanel({
           ]}
         >
           <View style={styles.stationAgentLoopStatusCopy}>
-            <Text style={[styles.stationAgentLoopEyebrow, { color: palette.secondaryText }]}>
+            <Text
+              style={[
+                styles.stationAgentLoopEyebrow,
+                { color: palette.secondaryText },
+              ]}
+            >
               {textFor(language, '主页生成', 'Site Builder')}
             </Text>
-            <Text style={[styles.stationAgentLoopTitle, { color: palette.text }]}>
+            <Text
+              style={[styles.stationAgentLoopTitle, { color: palette.text }]}
+            >
               {readinessText}
             </Text>
           </View>
@@ -148,14 +167,27 @@ export function StationSiteBuilderPanel({
               { borderColor: palette.border, backgroundColor: palette.surface },
             ]}
           >
-            <Text style={[styles.stationAgentLoopEyebrow, { color: palette.secondaryText }]}>
+            <Text
+              style={[
+                styles.stationAgentLoopEyebrow,
+                { color: palette.secondaryText },
+              ]}
+            >
               {textFor(language, '当前小站结构', 'Current Station Layout')}
             </Text>
-            <Text style={[styles.stationAgentLoopTitle, { color: palette.text }]}>
-              {activeLayout.title || textFor(language, '已应用结构', 'Applied Layout')}
+            <Text
+              style={[styles.stationAgentLoopTitle, { color: palette.text }]}
+            >
+              {activeLayout.title ||
+                textFor(language, '已应用结构', 'Applied Layout')}
             </Text>
             {activeLayout.summary ? (
-              <Text style={[styles.stationAgentLoopBody, { color: palette.secondaryText }]}>
+              <Text
+                style={[
+                  styles.stationAgentLoopBody,
+                  { color: palette.secondaryText },
+                ]}
+              >
                 {activeLayout.summary}
               </Text>
             ) : null}
@@ -172,7 +204,11 @@ export function StationSiteBuilderPanel({
           onChangeText={setPrompt}
           multiline
           maxLength={600}
-          placeholder={textFor(language, '描述你想要的小站主页', 'Describe the station page you want')}
+          placeholder={textFor(
+            language,
+            '描述你想要的小站主页',
+            'Describe the station page you want',
+          )}
           placeholderTextColor={palette.secondaryText}
           style={[
             styles.settingsInput,
@@ -192,13 +228,17 @@ export function StationSiteBuilderPanel({
               draft={draft}
               palette={palette}
               language={language}
-              isApplied={draft.id === appliedDraftId || draft.status === 'applied'}
+              isApplied={
+                draft.id === appliedDraftId || draft.status === 'applied'
+              }
               isApplying={applyingDraftId === draft.id}
               onApply={() => applyDraft(draft.id)}
             />
           ))
         ) : (
-          <Text style={[styles.relationshipEmpty, { color: palette.secondaryText }]}>
+          <Text
+            style={[styles.relationshipEmpty, { color: palette.secondaryText }]}
+          >
             {textFor(
               language,
               '还没有小站结构草稿。生成后会显示标题、摘要和页面模块。',
@@ -237,9 +277,15 @@ function SiteDraftCard({
       <View style={styles.stationAgentLoopCardHeader}>
         <View style={styles.stationAgentLoopStatusCopy}>
           <Text style={[styles.stationAgentLoopTitle, { color: palette.text }]}>
-            {draft.draft.title || textFor(language, '小站草稿', 'Station Draft')}
+            {draft.draft.title ||
+              textFor(language, '小站草稿', 'Station Draft')}
           </Text>
-          <Text style={[styles.stationAgentLoopMeta, { color: palette.secondaryText }]}>
+          <Text
+            style={[
+              styles.stationAgentLoopMeta,
+              { color: palette.secondaryText },
+            ]}
+          >
             {formatDate(draft.createdAt, language)}
           </Text>
         </View>
@@ -261,12 +307,14 @@ function SiteDraftCard({
             {isApplied
               ? textFor(language, '已应用', 'Applied')
               : isApplying
-                ? textFor(language, '应用中', 'Applying')
-                : textFor(language, '应用', 'Apply')}
+              ? textFor(language, '应用中', 'Applying')
+              : textFor(language, '应用', 'Apply')}
           </Text>
         </Pressable>
       </View>
-      <Text style={[styles.stationAgentLoopBody, { color: palette.secondaryText }]}>
+      <Text
+        style={[styles.stationAgentLoopBody, { color: palette.secondaryText }]}
+      >
         {draft.draft.summary || draft.prompt}
       </Text>
       <SectionChips palette={palette} language={language} sections={sections} />
@@ -309,9 +357,17 @@ function readinessLabel(language: Language, readiness?: AgentReadinessDTO) {
     return textFor(language, '准备中', 'Preparing');
   }
   if (readiness.configured) {
-    return textFor(language, '已接入，可生成结构草稿', 'Ready to create layout drafts');
+    return textFor(
+      language,
+      '已接入，可生成结构草稿',
+      'Ready to create layout drafts',
+    );
   }
-  return textFor(language, '基础入口可用，生成服务待配置', 'Entry ready; generation service pending');
+  return textFor(
+    language,
+    '基础入口可用，生成服务待配置',
+    'Entry ready; generation service pending',
+  );
 }
 
 function sectionLabel(language: Language, type?: string) {
@@ -323,7 +379,9 @@ function sectionLabel(language: Language, type?: string) {
     contact: { zh: '联系', en: 'Contact' },
   };
   const label = labels[type || ''];
-  return label ? textFor(language, label.zh, label.en) : textFor(language, '模块', 'Section');
+  return label
+    ? textFor(language, label.zh, label.en)
+    : textFor(language, '模块', 'Section');
 }
 
 function formatDate(value: string | null | undefined, language: Language) {
