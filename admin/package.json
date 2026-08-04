@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Miaoxun admin console frontend.",
   "scripts": {
-    "check": "node --check admin.js vite.config.js",
+    "check": "node --check *.js test/*.js",
+    "test": "node --test test/*.test.js",
     "dev": "vite --host 127.0.0.1",
     "dev:prod-api": "MIAOXUN_ADMIN_API_TARGET=https://api.marvelschat.com vite --host 127.0.0.1",
     "build": "vite build",
