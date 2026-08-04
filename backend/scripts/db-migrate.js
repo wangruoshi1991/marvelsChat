@@ -7,6 +7,7 @@ import { config } from "../src/config.js";
 import { createConnectionAdapter } from "../src/db.js";
 import { hashPassword } from "../src/auth.js";
 import { createAiId, formatAiId } from "../src/ai-id.js";
+import { applyPendingMigrations } from "../src/migration-ledger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const backendDir = path.resolve(__dirname, "..");
@@ -308,6 +309,12 @@ async function main() {
   const migrationFiles = (await fs.readdir(databaseDir))
     .filter((file) => /^\d+_.+\.sql$/.test(file))
     .sort();
+  const migrations = await Promise.all(
+    migrationFiles.map(async (filename) => ({
+      filename,
+      sql: await fs.readFile(path.join(databaseDir, filename), "utf8"),
+    })),
+  );
 
   if (!config.db.databaseUrl) {
     await createDatabaseIfNeeded();
@@ -316,10 +323,7 @@ async function main() {
   const client = await createClient();
   const connection = createConnectionAdapter(client);
 
-  for (const file of migrationFiles) {
-    const sql = await fs.readFile(path.join(databaseDir, file), "utf8");
-    await client.query(sql);
-  }
+  const migrationResult = await applyPendingMigrations({ client, migrations });
   await ensureLoginNameColumn(connection);
   await ensurePhoneNumberColumn(connection);
   await ensureAdminPermissionsColumn(connection);
@@ -331,6 +335,9 @@ async function main() {
   await client.end();
 
   console.log(`PostgreSQL migration completed for ${config.db.database}.`);
+  console.log(
+    `Schema migrations: ${migrationResult.applied.length} applied, ${migrationResult.skipped.length} unchanged.`,
+  );
   if (defaultAdmin.enabled) {
     console.log(`Default super admin ensured: ${defaultAdmin.loginName}`);
   }

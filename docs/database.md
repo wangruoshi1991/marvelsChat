@@ -58,6 +58,7 @@ POSTGRES_CONNECTION_LIMIT=10
 ## 关键表
 
 - `users`：注册用户、角色、状态、AI ID、最近登录时间。
+- `schema_migrations`：已执行迁移文件、SHA-256 校验和与执行时间。
 - `user_profiles`：小站资料。昵称、头像文字、`avatar_config`、简介、社区、活动区域、`miao_points`、关注/粉丝/收藏计数保存在这里；关注和粉丝计数由社交关系写入后刷新。
 - `auth_sessions`：登录 token 的哈希值、过期时间和最近使用时间。
 - `user_agents`：用户已启用的 Agent 和授权范围。
