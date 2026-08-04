@@ -728,3 +728,7 @@ export type AuthResponse = {
   user: UserDTO;
   session: SessionDTO;
 };
+
+export type AccountDeletionDTO = {
+  deleted: true;
+};

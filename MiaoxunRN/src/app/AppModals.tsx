@@ -1,9 +1,6 @@
 import React from 'react';
 import { Modal, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  SafeAreaView,
-} from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { MessageActionSheet } from '../features/messages/MessageActionSheet';
 import {
   ChatThread,
@@ -16,6 +13,7 @@ import {
 import { useProfileFlows } from '../features/profile/useProfileFlows';
 import { QRCodeSheet } from '../features/qr/QRCodeSheet';
 import { SearchScreen } from '../features/search/SearchScreen';
+import { DeleteAccountSheet } from '../features/settings/DeleteAccountSheet';
 import { SettingsScreen } from '../features/settings/SettingsScreen';
 import { SiteBuilderScreen } from '../features/site/SiteBuilderScreen';
 import { StationLocationScreen } from '../features/station/StationLocationScreen';
@@ -43,6 +41,7 @@ type AppModalsProps = {
   searchQuery: string;
   renderUserAvatar: RenderUserAvatar;
   onCloseModal: () => void;
+  onNavigateModal: (route: ModalRoute) => void;
   onOpenThread: (thread: ChatThread) => void;
   onSearchQueryChange: (query: string) => void;
   onOpenFriendThread: (friendUserId: string) => void;
@@ -59,6 +58,7 @@ export function AppModals({
   searchQuery,
   renderUserAvatar,
   onCloseModal,
+  onNavigateModal,
   onOpenThread,
   onSearchQueryChange,
   onOpenFriendThread,
@@ -129,6 +129,7 @@ export function AppModals({
             onSetAppearance={session.setAppearance}
             onUpdateProfileVisibility={session.updateProfileVisibility}
             onActionError={onToast}
+            onDeleteAccount={() => onNavigateModal('delete-account')}
             onSignOut={async () => {
               try {
                 await session.signOut();
@@ -144,6 +145,30 @@ export function AppModals({
                       ),
                 );
               }
+            }}
+          />
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={modalRoute === 'delete-account'}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView
+          style={[styles.safeArea, { backgroundColor: palette.background }]}
+        >
+          <DeleteAccountSheet
+            palette={palette}
+            language={session.language}
+            isBusy={session.isBusy}
+            onBack={() => onNavigateModal('settings')}
+            onDeleteAccount={async password => {
+              await session.deleteAccount(password);
+              onCloseModal();
+              onToast(
+                textFor(session.language, '账号已注销', 'Account deleted'),
+              );
             }}
           />
         </SafeAreaView>
@@ -191,14 +216,12 @@ export function AppModals({
         <SafeAreaProvider>
           <SafeAreaView
             edges={['top']}
-            style={[
-              styles.safeArea,
-              { backgroundColor: searchPalette.soft },
-            ]}
+            style={[styles.safeArea, { backgroundColor: searchPalette.soft }]}
           >
             <SafeAreaView
               edges={['bottom']}
-              style={[styles.safeArea, styles.searchBottomSafeArea]}>
+              style={[styles.safeArea, styles.searchBottomSafeArea]}
+            >
               <SearchScreen
                 palette={searchPalette}
                 language={session.language}

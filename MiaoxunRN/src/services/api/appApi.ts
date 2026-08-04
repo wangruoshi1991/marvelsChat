@@ -1,4 +1,5 @@
 import {
+  AccountDeletionDTO,
   AppSyncDTO,
   AuthResponse,
   BootstrapDTO,
@@ -12,6 +13,14 @@ export type MapTicketDTO = {
 };
 
 export const appApi = {
+  deleteAccount(token: string, password: string) {
+    return request<AccountDeletionDTO>('/api/account', {
+      method: 'DELETE',
+      token,
+      body: { password, confirmation: 'DELETE' },
+    });
+  },
+
   updatePresence(token: string, presenceMode: PresenceMode) {
     return request<AuthResponse['user']>('/api/me/presence', {
       method: 'PATCH',

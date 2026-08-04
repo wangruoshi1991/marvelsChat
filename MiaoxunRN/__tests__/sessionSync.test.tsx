@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import type { BootstrapDTO } from '../src/models/api';
+import { avatar3dAttemptStore } from '../src/services/avatar3dAttemptStore';
 import { apiClient } from '../src/services/apiClient';
 import { tokenStore } from '../src/services/tokenStore';
 import { useMiaoxunSession } from '../src/features/session/useMiaoxunSession';
@@ -11,6 +12,8 @@ jest.mock('../src/services/apiClient', () => ({
     sync: jest.fn(),
     notifications: jest.fn(),
     markThreadRead: jest.fn(),
+    logout: jest.fn(),
+    deleteAccount: jest.fn(),
   },
   buildRealtimeUrl: (path: string) => `ws://127.0.0.1:4390${path}`,
   setAuthSessionExpiredHandler: () => () => undefined,
@@ -23,6 +26,12 @@ jest.mock('../src/services/apiClient', () => ({
     ),
 }));
 
+jest.mock('../src/services/avatar3dAttemptStore', () => ({
+  avatar3dAttemptStore: {
+    clear: jest.fn(),
+  },
+}));
+
 jest.mock('../src/services/tokenStore', () => ({
   tokenStore: {
     read: jest.fn(),
@@ -32,7 +41,11 @@ jest.mock('../src/services/tokenStore', () => ({
 }));
 
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>;
+const mockedAvatar3dAttemptStore = avatar3dAttemptStore as jest.Mocked<
+  typeof avatar3dAttemptStore
+>;
 const mockedTokenStore = tokenStore as jest.Mocked<typeof tokenStore>;
+let currentSession: ReturnType<typeof useMiaoxunSession> | null = null;
 
 class MockWebSocket {
   static instances: MockWebSocket[] = [];
@@ -84,7 +97,7 @@ const bootstrap: BootstrapDTO = {
 };
 
 function SessionHarness() {
-  useMiaoxunSession();
+  currentSession = useMiaoxunSession();
   return null;
 }
 
@@ -97,6 +110,7 @@ async function flushEffects() {
 describe('session synchronization', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    currentSession = null;
     MockWebSocket.instances = [];
     Object.defineProperty(globalThis, 'WebSocket', {
       configurable: true,
@@ -105,7 +119,10 @@ describe('session synchronization', () => {
     });
     mockedTokenStore.read.mockResolvedValue('saved-token');
     mockedTokenStore.clear.mockResolvedValue(undefined);
+    mockedAvatar3dAttemptStore.clear.mockResolvedValue(undefined);
     mockedApiClient.bootstrap.mockResolvedValue(bootstrap);
+    mockedApiClient.logout.mockResolvedValue({ ok: true });
+    mockedApiClient.deleteAccount.mockResolvedValue({ deleted: true });
     mockedApiClient.sync.mockResolvedValue({
       threads: [],
       messagesByThread: {},
@@ -161,6 +178,7 @@ describe('session synchronization', () => {
 
     expect(mockedApiClient.sync).toHaveBeenCalledTimes(1);
     expect(mockedTokenStore.clear).toHaveBeenCalledTimes(1);
+    expect(mockedAvatar3dAttemptStore.clear).toHaveBeenCalledTimes(1);
     expect(MockWebSocket.instances[0].close).toHaveBeenCalledTimes(1);
 
     await ReactTestRenderer.act(async () => {
@@ -170,6 +188,58 @@ describe('session synchronization', () => {
 
     expect(mockedApiClient.sync).toHaveBeenCalledTimes(1);
     expect(mockedTokenStore.clear).toHaveBeenCalledTimes(1);
+    expect(mockedAvatar3dAttemptStore.clear).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(() => {
+      renderer?.unmount();
+    });
+  });
+
+  test('logout clears local credentials even when server logout fails', async () => {
+    mockedApiClient.logout.mockRejectedValueOnce(new Error('offline'));
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+
+    await ReactTestRenderer.act(async () => {
+      await currentSession?.signOut();
+      await flushEffects();
+    });
+
+    expect(mockedApiClient.logout).toHaveBeenCalledWith('saved-token');
+    expect(mockedTokenStore.clear).toHaveBeenCalledTimes(1);
+    expect(mockedAvatar3dAttemptStore.clear).toHaveBeenCalledTimes(1);
+    expect(currentSession?.token).toBe('');
+
+    await ReactTestRenderer.act(() => {
+      renderer?.unmount();
+    });
+  });
+
+  test('account deletion verifies the password and clears all local state', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+
+    await ReactTestRenderer.act(async () => {
+      await currentSession?.deleteAccount('correct-password');
+      await flushEffects();
+    });
+
+    expect(mockedApiClient.deleteAccount).toHaveBeenCalledWith(
+      'saved-token',
+      'correct-password',
+    );
+    expect(mockedTokenStore.clear).toHaveBeenCalledTimes(1);
+    expect(mockedAvatar3dAttemptStore.clear).toHaveBeenCalledTimes(1);
+    expect(currentSession?.token).toBe('');
+    expect(currentSession?.user).toBeNull();
 
     await ReactTestRenderer.act(() => {
       renderer?.unmount();

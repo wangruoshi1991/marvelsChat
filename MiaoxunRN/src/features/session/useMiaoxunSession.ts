@@ -19,6 +19,7 @@ import {
   isAuthSessionError,
   setAuthSessionExpiredHandler,
 } from '../../services/apiClient';
+import { avatar3dAttemptStore } from '../../services/avatar3dAttemptStore';
 import { tokenStore } from '../../services/tokenStore';
 import { Appearance } from '../../shared/theme';
 import {
@@ -51,6 +52,13 @@ export type {
   RealtimeStatus,
   RestoreStatus,
 } from './sessionTypes';
+
+async function clearLocalSession() {
+  await Promise.all([
+    tokenStore.clear().catch(() => undefined),
+    avatar3dAttemptStore.clear().catch(() => undefined),
+  ]);
+}
 
 export function useMiaoxunSession() {
   const [token, setToken] = useState('');
@@ -128,7 +136,7 @@ export function useMiaoxunSession() {
       expiredTokenRef.current = expiredToken;
       updateToken('');
       const expiry = (async () => {
-        await tokenStore.clear().catch(() => undefined);
+        await clearLocalSession();
         resetAuthenticatedState();
         setErrorMessage('登录状态已失效，请重新登录。');
         setRestoreStatus('signedOut');
@@ -235,7 +243,7 @@ export function useMiaoxunSession() {
         error instanceof Error ? error.message : '登录状态恢复失败。',
       );
       if (isAuthSessionError(error)) {
-        await tokenStore.clear().catch(() => undefined);
+        await clearLocalSession();
         updateToken('');
         setRestoreStatus('signedOut');
       } else {
@@ -262,7 +270,7 @@ export function useMiaoxunSession() {
         setRestoreStatus('authenticated');
       } catch (error) {
         if (isAuthSessionError(error)) {
-          await tokenStore.clear().catch(() => undefined);
+          await clearLocalSession();
           updateToken('');
           setRestoreStatus('signedOut');
         }
@@ -497,12 +505,39 @@ export function useMiaoxunSession() {
     if (currentToken) {
       await apiClient.logout(currentToken).catch(() => undefined);
     }
-    await tokenStore.clear().catch(() => undefined);
+    await clearLocalSession();
     updateToken('');
     resetAuthenticatedState();
     setErrorMessage(null);
     setRestoreStatus('signedOut');
   }, [resetAuthenticatedState, token, updateToken]);
+
+  const deleteAccount = useCallback(
+    async (password: string) => {
+      const currentToken = tokenRef.current;
+      if (!currentToken) {
+        throw new Error('请先登录。');
+      }
+
+      setIsBusy(true);
+      setErrorMessage(null);
+      try {
+        await apiClient.deleteAccount(currentToken, password);
+        await clearLocalSession();
+        updateToken('');
+        resetAuthenticatedState();
+        setRestoreStatus('signedOut');
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : '账号注销失败。',
+        );
+        throw error;
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [resetAuthenticatedState, updateToken],
+  );
 
   const retryRestoreSession = useCallback(async () => {
     const savedToken = await tokenStore.read();
@@ -522,7 +557,7 @@ export function useMiaoxunSession() {
         error instanceof Error ? error.message : '登录状态恢复失败。',
       );
       if (isAuthSessionError(error)) {
-        await tokenStore.clear().catch(() => undefined);
+        await clearLocalSession();
         updateToken('');
         setRestoreStatus('signedOut');
       } else {
@@ -621,6 +656,7 @@ export function useMiaoxunSession() {
     signIn,
     signUp,
     signOut,
+    deleteAccount,
     retryRestoreSession,
     refreshBootstrap,
     incrementalSync,

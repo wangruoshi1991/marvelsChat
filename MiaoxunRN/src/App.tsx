@@ -485,6 +485,7 @@ function App(): React.JSX.Element {
             searchQuery={searchQuery}
             renderUserAvatar={renderUserAvatar}
             onCloseModal={() => setModalRoute(null)}
+            onNavigateModal={setModalRoute}
             onOpenThread={openThread}
             onSearchQueryChange={setSearchQuery}
             onOpenFriendThread={openFriendThread}

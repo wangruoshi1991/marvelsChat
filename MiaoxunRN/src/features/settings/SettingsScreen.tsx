@@ -7,6 +7,7 @@ import {
   Folder,
   Image as ImageIcon,
   LogOut,
+  Trash2,
 } from 'lucide-react-native';
 
 import { Language } from '../session/useMiaoxunSession';
@@ -35,6 +36,7 @@ export function SettingsScreen({
   onUpdateProfileVisibility,
   onActionError,
   onSignOut,
+  onDeleteAccount,
 }: {
   palette: Palette;
   userName: string;
@@ -50,6 +52,7 @@ export function SettingsScreen({
   ) => Promise<ProfileVisibilityDTO>;
   onActionError: (message: string) => void;
   onSignOut: () => Promise<void>;
+  onDeleteAccount: () => void;
 }) {
   const updateVisibility = (
     key: keyof ProfileVisibilityDTO,
@@ -269,6 +272,37 @@ export function SettingsScreen({
                 language,
                 '退出会撤销服务端会话并清除本机登录态。',
                 'This revokes the server session and clears this device.',
+              )}
+            </Text>
+          </View>
+          <ChevronRight
+            color={palette.secondaryText}
+            size={17}
+            strokeWidth={2.6}
+          />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onDeleteAccount}
+          style={[styles.logoutRow, { backgroundColor: palette.soft }]}
+        >
+          <View
+            style={[
+              styles.logoutIconBox,
+              { backgroundColor: `${palette.rose}1f` },
+            ]}
+          >
+            <Trash2 color={palette.rose} size={17} strokeWidth={2.6} />
+          </View>
+          <View style={styles.logoutCopy}>
+            <Text style={[styles.logoutTitle, { color: palette.rose }]}>
+              {textFor(language, '注销账号', 'Delete account')}
+            </Text>
+            <Text style={[styles.logoutHint, { color: palette.secondaryText }]}>
+              {textFor(
+                language,
+                '永久删除账号及相关数据。',
+                'Permanently delete the account and related data.',
               )}
             </Text>
           </View>
