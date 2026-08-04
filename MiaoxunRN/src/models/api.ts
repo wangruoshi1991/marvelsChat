@@ -5,6 +5,7 @@ export type APIEnvelope<T> = {
 export type APIErrorEnvelope = {
   error?: {
     message?: string;
+    requestId?: string;
     details?: {
       code?: string;
       [key: string]: unknown;
