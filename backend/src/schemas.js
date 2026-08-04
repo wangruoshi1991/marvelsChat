@@ -43,6 +43,11 @@ export const loginSchema = z.object({
   path: ["identifier"],
 });
 
+export const accountDeletionSchema = z.object({
+  password: z.string().min(1).max(128),
+  confirmation: z.literal("DELETE"),
+});
+
 export const messageSchema = z.object({
   content: z.string().trim().min(1).max(2000),
   replyToMessageId: z.string().uuid().optional(),

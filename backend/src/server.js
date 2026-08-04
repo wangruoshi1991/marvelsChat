@@ -15,6 +15,7 @@ import {
 } from "./request-observability.js";
 import { createRealtimeGateway } from "./realtime-gateway.js";
 import { registerAdminRoutes } from "./routes/admin-routes.js";
+import { registerAccountRoutes } from "./routes/account-routes.js";
 import { registerAppRoutes } from "./routes/app-routes.js";
 import { registerAuthRoutes } from "./routes/auth-routes.js";
 import { registerAvatar3dAppRoutes } from "./routes/avatar-3d-app-routes.js";
@@ -80,6 +81,8 @@ registerAppRoutes(app, {
 });
 
 registerAuthRoutes(app, { authenticate, asyncHandler });
+
+registerAccountRoutes(app, { authenticate, asyncHandler });
 
 registerAvatar3dAppRoutes(app, { authenticate, asyncHandler });
 
