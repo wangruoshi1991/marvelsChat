@@ -17,7 +17,7 @@ class QRCodeScannerModule(
   private val activityEventListener: ActivityEventListener =
     object : BaseActivityEventListener() {
       override fun onActivityResult(
-        activity: Activity?,
+        activity: Activity,
         requestCode: Int,
         resultCode: Int,
         data: Intent?,
@@ -61,7 +61,7 @@ class QRCodeScannerModule(
       return
     }
 
-    val activity = currentActivity
+    val activity = reactContext.currentActivity
     if (activity == null) {
       promise.reject("activity_unavailable", "无法打开扫码页面。")
       return

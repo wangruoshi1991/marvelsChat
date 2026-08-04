@@ -35,7 +35,7 @@ class MiaoxunLocationModule(
       return
     }
 
-    val activity = currentActivity
+    val activity = reactContext.currentActivity
     if (activity == null) {
       promise.reject("activity_unavailable", "无法请求定位权限。")
       return
@@ -61,7 +61,7 @@ class MiaoxunLocationModule(
 
   override fun onRequestPermissionsResult(
     requestCode: Int,
-    permissions: Array<out String>,
+    permissions: Array<String>,
     grantResults: IntArray,
   ): Boolean {
     if (requestCode != LOCATION_PERMISSION_REQUEST) {

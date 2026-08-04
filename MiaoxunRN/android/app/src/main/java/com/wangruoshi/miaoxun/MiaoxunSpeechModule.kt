@@ -42,7 +42,7 @@ class MiaoxunSpeechModule(
       return
     }
 
-    val activity = currentActivity
+    val activity = reactContext.currentActivity
     if (activity == null) {
       promise.reject("activity_unavailable", "无法请求麦克风权限。")
       return
@@ -69,7 +69,7 @@ class MiaoxunSpeechModule(
 
   override fun onRequestPermissionsResult(
     requestCode: Int,
-    permissions: Array<out String>,
+    permissions: Array<String>,
     grantResults: IntArray,
   ): Boolean {
     if (requestCode != SPEECH_PERMISSION_REQUEST) {
