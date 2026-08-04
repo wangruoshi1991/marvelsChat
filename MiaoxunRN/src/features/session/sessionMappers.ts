@@ -53,7 +53,7 @@ export function mergeMessages(
   ]);
 }
 
-export function sortMessages(messages: ChatMessage[]) {
+function sortMessages(messages: ChatMessage[]) {
   return [...messages].sort((left, right) => {
     const leftTime = left.createdAt
       ? Date.parse(left.createdAt)

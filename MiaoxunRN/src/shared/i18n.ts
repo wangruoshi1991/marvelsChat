@@ -1,14 +1,8 @@
 import { Language } from '../features/session/useMiaoxunSession';
-import { PresenceMode, PublicPresenceStatus } from '../models/api';
+import { PublicPresenceStatus } from '../models/api';
 
 export const textFor = (language: Language, zh: string, en: string) =>
   language === 'en' ? en : zh;
-
-const presenceModeLabels: Record<PresenceMode, { zh: string; en: string }> = {
-  online: { zh: '在线', en: 'Online' },
-  offline: { zh: '离线', en: 'Offline' },
-  hidden: { zh: '隐藏', en: 'Hidden' },
-};
 
 const publicPresenceLabels: Record<
   PublicPresenceStatus,
@@ -16,14 +10,6 @@ const publicPresenceLabels: Record<
 > = {
   online: { zh: '在线', en: 'Online' },
   offline: { zh: '离线', en: 'Offline' },
-};
-
-export const presenceModeText = (
-  language: Language,
-  mode?: PresenceMode | null,
-) => {
-  const label = presenceModeLabels[mode || 'online'];
-  return textFor(language, label.zh, label.en);
 };
 
 export const publicPresenceText = (
@@ -47,7 +33,31 @@ export const appErrorText = (
       ? error
       : '';
   const value = rawMessage.toLowerCase();
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String(error.code || '')
+      : '';
   if (!value) {
+    return textFor(language, fallbackZh, fallbackEn);
+  }
+  if (code === 'SITE_BUILDER_UNAVAILABLE') {
+    return textFor(
+      language,
+      '建站 Agent 尚未配置，暂时无法生成。',
+      'The Station Builder Agent is not configured yet.',
+    );
+  }
+  if (
+    code === 'SITE_BUILDER_FAILED' ||
+    code === 'SITE_BUILDER_INVALID_RESPONSE'
+  ) {
+    return textFor(
+      language,
+      '建站 Agent 本次没有生成有效草稿，请稍后重试。',
+      'The Station Builder Agent did not return a valid draft. Try again later.',
+    );
+  }
+  if (value === 'internal server error') {
     return textFor(language, fallbackZh, fallbackEn);
   }
   if (value.includes('超过 1 分钟') || value.includes('over 1 minute')) {

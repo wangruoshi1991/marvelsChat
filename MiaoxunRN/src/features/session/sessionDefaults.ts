@@ -5,7 +5,6 @@ import {
 } from '../../models/api';
 import { RelationshipsState } from './sessionTypes';
 
-export const syncIntervalMs = 30000;
 export const realtimeReconnectDelaysMs = [1000, 2000, 5000, 10000];
 
 export const emptyProfile: ProfileDTO = {

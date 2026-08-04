@@ -8,6 +8,7 @@ final class QRCodeScannerViewController: UIViewController, AVCaptureMetadataOutp
   private var previewLayer: AVCaptureVideoPreviewLayer?
   private var didFinish = false
   private var hasAppeared = false
+  private var pendingResult: Result<String, Error>?
 
   init(completion: @escaping (Result<String, Error>) -> Void) {
     self.completion = completion
@@ -34,12 +35,20 @@ final class QRCodeScannerViewController: UIViewController, AVCaptureMetadataOutp
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
-    hasAppeared = true
     sessionQueue.async { [weak self] in
       guard let self, !self.session.isRunning else {
         return
       }
       self.session.startRunning()
+    }
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    hasAppeared = true
+    if let result = pendingResult {
+      pendingResult = nil
+      dismissAndComplete(result)
     }
   }
 
@@ -94,7 +103,6 @@ final class QRCodeScannerViewController: UIViewController, AVCaptureMetadataOutp
     closeButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
     closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.45)
     closeButton.layer.cornerRadius = 18
-    closeButton.contentEdgeInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
     closeButton.translatesAutoresizingMaskIntoConstraints = false
     closeButton.addTarget(self, action: #selector(cancel), for: .touchUpInside)
     view.addSubview(closeButton)
@@ -117,6 +125,8 @@ final class QRCodeScannerViewController: UIViewController, AVCaptureMetadataOutp
     NSLayoutConstraint.activate([
       closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 14),
       closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
+      closeButton.widthAnchor.constraint(equalToConstant: 64),
+      closeButton.heightAnchor.constraint(equalToConstant: 36),
       titleLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
       titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
       scanBox.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -157,10 +167,14 @@ final class QRCodeScannerViewController: UIViewController, AVCaptureMetadataOutp
     }
 
     guard hasAppeared, presentingViewController != nil else {
-      completion(result)
+      pendingResult = result
       return
     }
 
+    dismissAndComplete(result)
+  }
+
+  private func dismissAndComplete(_ result: Result<String, Error>) {
     dismiss(animated: true) { [completion] in
       completion(result)
     }

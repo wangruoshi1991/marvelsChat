@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { ChevronRight, Sparkles } from 'lucide-react-native';
+import { ChevronRight } from 'lucide-react-native';
 
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
@@ -109,78 +109,6 @@ export function ProfileRegionRow({
     );
   }
   return <View style={[styles.profileRegionRow, rowColors]}>{content}</View>;
-}
-
-export function ProfileDataRow({
-  title,
-  value,
-  palette,
-  onPress,
-}: {
-  title: string;
-  value: string;
-  palette: Palette;
-  onPress?: () => void;
-}) {
-  const content = (
-    <>
-      <Text style={[styles.profileDataTitle, { color: palette.secondaryText }]}>
-        {title}
-      </Text>
-      <Text
-        style={[styles.profileDataValue, { color: palette.text }]}
-        numberOfLines={1}
-      >
-        {value}
-      </Text>
-      {onPress ? (
-        <ChevronRight
-          color={palette.secondaryText}
-          size={16}
-          strokeWidth={2.6}
-        />
-      ) : null}
-    </>
-  );
-  if (onPress) {
-    return (
-      <Pressable
-        onPress={onPress}
-        style={[styles.profileDataRow, { backgroundColor: palette.soft }]}
-      >
-        {content}
-      </Pressable>
-    );
-  }
-  return (
-    <View style={[styles.profileDataRow, { backgroundColor: palette.soft }]}>
-      {content}
-    </View>
-  );
-}
-
-export function StationPlaceholder({
-  title,
-  message,
-  palette,
-}: {
-  title: string;
-  message: string;
-  palette: Palette;
-}) {
-  return (
-    <View
-      style={[styles.stationPlaceholder, { backgroundColor: palette.soft }]}
-    >
-      <Sparkles color={palette.mint} size={30} strokeWidth={2.5} />
-      <Text style={[styles.placeholderTitle, { color: palette.text }]}>
-        {title}
-      </Text>
-      <Text style={[styles.placeholderBody, { color: palette.secondaryText }]}>
-        {message}
-      </Text>
-    </View>
-  );
 }
 
 export function Stat({

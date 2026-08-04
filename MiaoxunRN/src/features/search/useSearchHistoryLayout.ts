@@ -6,7 +6,7 @@ import type { SearchHistoryDTO } from '../../models/api';
 const COLLAPSED_ROWS = 3;
 const DEFAULT_COLLAPSED_HEIGHT = 114;
 
-export type SearchHistoryItemLayout = {
+type SearchHistoryItemLayout = {
   height: number;
   y: number;
 };

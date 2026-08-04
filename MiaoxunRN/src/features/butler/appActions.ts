@@ -2,7 +2,7 @@ import { ButlerLocalActionResultPayload } from '../../models/api';
 import { Appearance } from '../../shared/theme';
 import { Language } from '../session/useMiaoxunSession';
 
-export type ButlerAppActionKey =
+type ButlerAppActionKey =
   | 'appearance.dark'
   | 'appearance.light'
   | 'language.en'

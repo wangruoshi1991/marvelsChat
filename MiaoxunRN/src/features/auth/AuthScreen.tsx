@@ -14,7 +14,7 @@ import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 
 type AuthMode = 'login' | 'register';
-export type RegisterContactType = 'phone' | 'email';
+type RegisterContactType = 'phone' | 'email';
 
 export function AuthScreen({
   palette,

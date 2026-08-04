@@ -31,7 +31,7 @@ export type UserDTO = {
 export type PresenceMode = 'online' | 'offline' | 'hidden';
 export type PublicPresenceStatus = 'online' | 'offline';
 
-export type SessionDTO = {
+type SessionDTO = {
   token: string;
   expiresAt: string;
 };
@@ -165,7 +165,7 @@ export type OwnedAgentDTO = {
   createdAt?: string | null;
 };
 
-export type AgentProviderStatusDTO = {
+type AgentProviderStatusDTO = {
   provider: string;
   configured: boolean;
   missing: string[];
@@ -415,7 +415,7 @@ export type StationSiteDraftDTO = {
   updatedAt?: string | null;
 };
 
-export type StationSiteDraftContentDTO = {
+type StationSiteDraftContentDTO = {
   version?: number;
   language?: 'zh' | 'en';
   title?: string;
@@ -504,14 +504,11 @@ export type Avatar3DJobDTO = {
   qualityPreset: Avatar3DQualityPresetId;
   generationMode: 'face_first_multiview';
   referenceSetId: string | null;
-  technicalRetryCount: number;
-  qualityStatus: string | null;
   status: Avatar3DJobStatus;
   progress: number;
   photoCount: number;
   acceptedCostVersion: string;
   estimatedCostFen: number;
-  stylePreviewId: string | null;
   modelId: string | null;
   errorCode: string | null;
   createdAt: string;
@@ -550,7 +547,7 @@ export type Avatar3DPhotoUploadDTO = {
   };
 };
 
-export type Avatar3DReferenceSetDTO = {
+type Avatar3DReferenceSetDTO = {
   id: string;
   jobId: string;
   status: string;
@@ -564,7 +561,7 @@ export type Avatar3DReferenceSetDTO = {
   updatedAt: string;
 };
 
-export type Avatar3DReferenceImageDTO = {
+type Avatar3DReferenceImageDTO = {
   id: string;
   referenceSetId: string;
   jobId: string;

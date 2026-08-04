@@ -10,12 +10,12 @@ import {
 
 import { messageIconAssets } from '../../assets/icons';
 
-export type ThreadIconSpec = {
+type ThreadIconSpec = {
   Icon?: LucideIcon;
   imageSource?: ImageSourcePropType;
 };
 
-export const agentThreadIcons: Record<string, ThreadIconSpec> = {
+const agentThreadIcons: Record<string, ThreadIconSpec> = {
   'miaoxun-butler': {
     imageSource: messageIconAssets.agentAvatars.butler,
   },

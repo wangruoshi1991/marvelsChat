@@ -102,7 +102,6 @@ export function StationCapabilityWorkspace({
         key="album-manager"
         palette={palette}
         language={language}
-        readiness={agentReadiness['album-manager']}
         onLoadSuggestions={onLoadAlbumSuggestions}
         onApplySuggestion={onApplyAlbumSuggestion}
         onActionMessage={onActionMessage}
@@ -114,7 +113,6 @@ export function StationCapabilityWorkspace({
         key="file-preprocessor"
         palette={palette}
         language={language}
-        readiness={agentReadiness['file-preprocessor']}
         fileAssets={stationContent.fileAssets || []}
         onCreateFileAsset={onCreateFileAsset}
         onPreprocessFileAsset={onPreprocessFileAsset}
@@ -127,7 +125,6 @@ export function StationCapabilityWorkspace({
         key="video-production"
         palette={palette}
         language={language}
-        readiness={agentReadiness['video-production']}
         stationContent={stationContent}
         onCreateVideoDraft={onCreateVideoDraft}
         onActionMessage={onActionMessage}

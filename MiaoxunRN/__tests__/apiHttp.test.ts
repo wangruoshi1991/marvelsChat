@@ -1,4 +1,6 @@
 import {
+  buildApiUrl,
+  buildRealtimeUrl,
   MiaoxunApiError,
   isAuthSessionError,
   request,
@@ -37,6 +39,15 @@ describe('API transport privacy and session handling', () => {
     globalThis.fetch = originalFetch;
     infoSpy.mockRestore();
     setAuthSessionExpiredHandler(null);
+  });
+
+  test('builds every API request from an explicit canonical path', () => {
+    expect(buildApiUrl('/api/health')).toBe('http://127.0.0.1:4390/api/health');
+    expect(buildRealtimeUrl('/api/realtime')).toBe(
+      'ws://127.0.0.1:4390/api/realtime',
+    );
+    expect(() => buildApiUrl('/health')).toThrow('must start with /api');
+    expect(() => buildApiUrl('api/map/style')).toThrow('must start with /api');
   });
 
   test('network logs contain structure but no user-authored text', async () => {
@@ -108,5 +119,51 @@ describe('API transport privacy and session handling', () => {
     expect(
       isAuthSessionError(new MiaoxunApiError('forbidden', { status: 403 })),
     ).toBe(false);
+  });
+
+  test('response body failures remain explicit network errors', async () => {
+    const failedResponse = response({ status: 200, body: { data: {} } });
+    failedResponse.text = jest.fn(async () => {
+      throw new TypeError('response stream failed');
+    });
+    globalThis.fetch = jest.fn(async () => failedResponse) as jest.Mock;
+
+    await expect(request('/api/health')).rejects.toMatchObject({
+      isNetworkError: true,
+      isTimeout: false,
+    });
+  });
+
+  test('request timeout covers reading the response body', async () => {
+    jest.useFakeTimers();
+    try {
+      globalThis.fetch = jest.fn(async (_url, options) => {
+        const signal = (options as RequestInit).signal as AbortSignal;
+        const stalledResponse = response({ status: 200, body: { data: {} } });
+        stalledResponse.text = jest.fn(
+          () =>
+            new Promise<string>((_resolve, reject) => {
+              signal.addEventListener('abort', () => {
+                const error = new Error('aborted');
+                error.name = 'AbortError';
+                reject(error);
+              });
+            }),
+        );
+        return stalledResponse;
+      }) as jest.Mock;
+
+      const pending = request('/api/health', { timeoutMs: 10 });
+      const observedResult = pending.catch((error: unknown) => error);
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(10);
+
+      await expect(observedResult).resolves.toMatchObject({
+        isNetworkError: true,
+        isTimeout: true,
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

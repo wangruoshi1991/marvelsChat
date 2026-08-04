@@ -1,11 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 
-import {
-  AgentReadinessDTO,
-  StationContentDTO,
-  StationVideoDraftDTO,
-} from '../../models/api';
+import { StationContentDTO, StationVideoDraftDTO } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
@@ -17,7 +13,6 @@ const defaultPrompt = '把我的相册和漫画日记整理成一支适合小站
 export function StationVideoAgentPanel({
   palette,
   language,
-  readiness,
   stationContent,
   onCreateVideoDraft,
   onActionMessage,
@@ -25,7 +20,6 @@ export function StationVideoAgentPanel({
 }: {
   palette: Palette;
   language: Language;
-  readiness?: AgentReadinessDTO;
   stationContent: StationContentDTO;
   onCreateVideoDraft: (payload: {
     prompt: string;
@@ -76,7 +70,7 @@ export function StationVideoAgentPanel({
         durationSeconds: 45,
       });
       onActionMessage(
-        textFor(language, '视频草稿已生成', 'Video draft created'),
+        textFor(language, '视频草稿已整理', 'Video draft prepared'),
       );
     } catch (error) {
       onActionError(error);
@@ -88,11 +82,11 @@ export function StationVideoAgentPanel({
   return (
     <StationModule
       palette={palette}
-      title={textFor(language, '视频制作 Agent', 'Video Production Agent')}
+      title={textFor(language, '视频草稿', 'Video Draft')}
       action={
         isCreating
-          ? textFor(language, '生成中', 'Creating')
-          : textFor(language, '生成', 'Create')
+          ? textFor(language, '整理中', 'Preparing')
+          : textFor(language, '整理', 'Prepare')
       }
       onAction={createDraft}
     >
@@ -115,17 +109,11 @@ export function StationVideoAgentPanel({
             <Text
               style={[styles.stationAgentLoopTitle, { color: palette.text }]}
             >
-              {readiness?.configured
-                ? textFor(
-                    language,
-                    '可生成脚本和镜头表',
-                    'Ready to draft scripts and shots',
-                  )
-                : textFor(
-                    language,
-                    '可生成草稿，成片渲染稍后开放',
-                    'Drafts ready; rendering will open later',
-                  )}
+              {textFor(
+                language,
+                '脚本草稿可整理，成片渲染待开放',
+                'Script drafts ready; rendering pending',
+              )}
             </Text>
           </View>
           <Text
@@ -134,9 +122,7 @@ export function StationVideoAgentPanel({
               { backgroundColor: palette.surface, color: palette.text },
             ]}
           >
-            {readiness?.configured
-              ? textFor(language, '可生成', 'Ready')
-              : textFor(language, '草稿可用', 'Drafts ready')}
+            {textFor(language, '草稿工具', 'Draft tool')}
           </Text>
         </View>
 

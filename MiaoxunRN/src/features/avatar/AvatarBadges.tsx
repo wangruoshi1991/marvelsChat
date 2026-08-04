@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 
-import { AgentIdentityDTO, AvatarConfigDTO } from '../../models/api';
+import { AvatarConfigDTO } from '../../models/api';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { avatarAccentColors, normalizeAvatarConfig } from './avatarConfig';
@@ -61,67 +61,6 @@ export function UserAvatar({
           *
         </Text>
       ) : null}
-    </View>
-  );
-}
-
-export function AgentAvatar({
-  identity,
-  palette,
-  small,
-}: {
-  identity: AgentIdentityDTO | null;
-  palette: Palette;
-  small?: boolean;
-}) {
-  const radius =
-    identity?.shape === 'circle'
-      ? 999
-      : identity?.shape === 'rounded'
-      ? 14
-      : 11;
-  const colors = identity?.colors || {
-    background: palette.rose,
-    foreground: '#ffffff',
-    accent: palette.sun,
-  };
-  const mark = identity?.mark || '!';
-  return (
-    <View
-      style={[
-        styles.agentAvatar,
-        small && styles.agentAvatarSmall,
-        {
-          backgroundColor: colors.background,
-          borderColor: palette.border,
-          borderRadius: radius,
-        },
-      ]}
-    >
-      <View
-        style={[
-          styles.agentAvatarCore,
-          small && styles.agentAvatarCoreSmall,
-          { borderColor: colors.accent },
-        ]}
-      >
-        <Text
-          style={[
-            styles.agentAvatarMark,
-            small && styles.agentAvatarMarkSmall,
-            { color: colors.foreground },
-          ]}
-        >
-          {mark.slice(0, 2)}
-        </Text>
-      </View>
-      <View
-        style={[
-          styles.agentAvatarSignal,
-          small && styles.agentAvatarSignalSmall,
-          { backgroundColor: colors.accent },
-        ]}
-      />
     </View>
   );
 }

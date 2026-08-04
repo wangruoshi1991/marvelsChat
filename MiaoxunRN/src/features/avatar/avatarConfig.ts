@@ -1,20 +1,13 @@
 import { AvatarConfigDTO } from '../../models/api';
 
-export type AvatarFace = NonNullable<AvatarConfigDTO['face']>;
-export type AvatarSkinTone = NonNullable<AvatarConfigDTO['skinTone']>;
-export type AvatarHairStyle = NonNullable<AvatarConfigDTO['hairStyle']>;
-export type AvatarHairColor = NonNullable<AvatarConfigDTO['hairColor']>;
-export type AvatarAccent = NonNullable<AvatarConfigDTO['accent']>;
-export type AvatarAccessory = NonNullable<AvatarConfigDTO['accessory']>;
-export type AvatarEyeStyle = NonNullable<AvatarConfigDTO['eyeStyle']>;
-export type AvatarBrowStyle = NonNullable<AvatarConfigDTO['browStyle']>;
-export type AvatarMouthStyle = NonNullable<AvatarConfigDTO['mouthStyle']>;
-export type AvatarTop = NonNullable<AvatarConfigDTO['top']>;
-export type AvatarBottom = NonNullable<AvatarConfigDTO['bottom']>;
-export type AvatarShoes = NonNullable<AvatarConfigDTO['shoes']>;
-export type AvatarAction = NonNullable<AvatarConfigDTO['action']>;
+type AvatarSkinTone = NonNullable<AvatarConfigDTO['skinTone']>;
+type AvatarHairColor = NonNullable<AvatarConfigDTO['hairColor']>;
+type AvatarAccent = NonNullable<AvatarConfigDTO['accent']>;
+type AvatarTop = NonNullable<AvatarConfigDTO['top']>;
+type AvatarBottom = NonNullable<AvatarConfigDTO['bottom']>;
+type AvatarShoes = NonNullable<AvatarConfigDTO['shoes']>;
 
-export const defaultAvatarConfig: Required<AvatarConfigDTO> = {
+const defaultAvatarConfig: Required<AvatarConfigDTO> = {
   version: 2,
   seed: 'miaoxun',
   body: 'standard',
@@ -97,65 +90,6 @@ export const avatarShoeColors: Record<
   boot: { primary: '#3c2f28', sole: '#1e1713', line: '#17110e' },
   canvas: { primary: '#243f75', sole: '#eef2f7', line: '#14264a' },
   runner: { primary: '#ffcf5a', sole: '#1a1f1c', line: '#735b12' },
-};
-
-const hexToFloat4 = (hex: string): [number, number, number, number] => {
-  const normalized = hex.replace('#', '');
-  const parse = (start: number) =>
-    parseInt(normalized.slice(start, start + 2), 16) / 255;
-  return [parse(0), parse(2), parse(4), 1];
-};
-
-export const avatarMaterialFor = (color: string, roughnessFactor = 0.5) => ({
-  index: 0,
-  parameters: {
-    baseColorFactor: hexToFloat4(color),
-    emissiveFactor: hexToFloat4(color).map((value, index) =>
-      index === 3 ? 1 : Math.min(1, value * 0.32),
-    ) as [number, number, number, number],
-    roughnessFactor,
-    metallicFactor: 0,
-    reflectance: 0.62,
-  },
-});
-
-export const avatarModelPoseFor = (action: AvatarAction) => {
-  switch (action) {
-    case 'wave':
-      return {
-        leftArm: {},
-        rightArm: {},
-      };
-    case 'cross-arms':
-      return {
-        leftArm: {},
-        rightArm: {},
-      };
-    case 'question':
-      return {
-        leftArm: {},
-        rightArm: {},
-      };
-    case 'soccer':
-      return {
-        leftArm: {},
-        rightArm: {},
-        leftLeg: {},
-        rightLeg: {},
-      };
-    case 'sit':
-      return {
-        leftArm: {},
-        rightArm: {},
-        leftLeg: {},
-        rightLeg: {},
-      };
-    default:
-      return {
-        leftArm: {},
-        rightArm: {},
-      };
-  }
 };
 
 export const normalizeAvatarConfig = (

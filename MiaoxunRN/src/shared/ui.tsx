@@ -26,36 +26,6 @@ import { Palette, palettes } from './theme';
 export type IconComponent = LucideIcon;
 export type RootTab = 'messages' | 'station';
 
-export function IconButton({
-  icon: Icon,
-  palette,
-  variant,
-  onPress,
-}: {
-  icon: IconComponent;
-  palette: Palette;
-  variant: 'soft' | 'surface';
-  onPress?: () => void;
-}) {
-  const buttonStyle =
-    variant === 'soft'
-      ? [
-          styles.iconButton,
-          styles.iconButtonBorderless,
-          { backgroundColor: palette.soft },
-        ]
-      : [
-          styles.iconButton,
-          { backgroundColor: palette.surface, borderColor: palette.border },
-        ];
-
-  return (
-    <Pressable onPress={onPress} style={buttonStyle}>
-      <Icon color={palette.text} size={19} strokeWidth={2.4} />
-    </Pressable>
-  );
-}
-
 export function SegmentedControl<T extends string>({
   fill,
   palette,

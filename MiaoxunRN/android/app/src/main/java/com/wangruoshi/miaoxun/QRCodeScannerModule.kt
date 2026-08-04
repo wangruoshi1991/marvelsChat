@@ -1,4 +1,4 @@
-package com.gary.miaoxun.rn
+package com.wangruoshi.miaoxun
 
 import android.app.Activity
 import android.content.Intent

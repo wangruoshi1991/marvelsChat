@@ -1,6 +1,6 @@
 import { NativeModules } from 'react-native';
 
-export type DeviceLocation = {
+type DeviceLocation = {
   latitude: number;
   longitude: number;
   horizontalAccuracy: number;

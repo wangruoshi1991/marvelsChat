@@ -1,4 +1,4 @@
-package com.gary.miaoxun.rn
+package com.wangruoshi.miaoxun
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

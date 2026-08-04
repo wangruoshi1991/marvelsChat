@@ -7,11 +7,6 @@ import {
 } from '../../models/api';
 import { request } from './http';
 
-export type MapTicketDTO = {
-  ticket: string;
-  expiresAt: string;
-};
-
 export const appApi = {
   deleteAccount(token: string, password: string) {
     return request<AccountDeletionDTO>('/api/account', {
@@ -38,12 +33,5 @@ export const appApi = {
       ? `?updatedAfter=${encodeURIComponent(updatedAfter)}`
       : '';
     return request<AppSyncDTO>(`/api/app/sync${query}`, { token });
-  },
-
-  mapTicket(token: string) {
-    return request<MapTicketDTO>('/api/map/ticket', {
-      method: 'POST',
-      token,
-    });
   },
 };

@@ -109,6 +109,7 @@ async function flushEffects() {
 
 describe('session synchronization', () => {
   beforeEach(() => {
+    jest.restoreAllMocks();
     jest.clearAllMocks();
     currentSession = null;
     MockWebSocket.instances = [];
@@ -152,6 +153,23 @@ describe('session synchronization', () => {
       'saved-token',
     );
     expect(MockWebSocket.instances).toHaveLength(1);
+
+    await ReactTestRenderer.act(() => {
+      renderer?.unmount();
+    });
+  });
+
+  test('authenticated sessions do not start a periodic sync timer', async () => {
+    const setIntervalSpy = jest.spyOn(globalThis, 'setInterval');
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+    expect(mockedApiClient.sync).not.toHaveBeenCalled();
 
     await ReactTestRenderer.act(() => {
       renderer?.unmount();

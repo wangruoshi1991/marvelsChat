@@ -40,16 +40,6 @@ jest.mock('react-native-webview', () => {
   };
 });
 
-jest.mock('@maplibre/maplibre-react-native', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  return {
-    Camera: () => null,
-    Map: ({ children }) =>
-      React.createElement(View, { testID: 'maplibre-map' }, children),
-  };
-});
-
 jest.mock('react-native-qrcode-svg', () => {
   const React = require('react');
   const { View } = require('react-native');

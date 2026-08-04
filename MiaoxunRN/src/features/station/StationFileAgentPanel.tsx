@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 
-import { AgentReadinessDTO, StationFileAssetDTO } from '../../models/api';
+import { StationFileAssetDTO } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
@@ -13,7 +13,6 @@ const defaultContent = '今天的照片、日记和视频草稿可以围绕同�
 export function StationFileAgentPanel({
   palette,
   language,
-  readiness,
   fileAssets,
   onCreateFileAsset,
   onPreprocessFileAsset,
@@ -22,7 +21,6 @@ export function StationFileAgentPanel({
 }: {
   palette: Palette;
   language: Language;
-  readiness?: AgentReadinessDTO;
   fileAssets: StationFileAssetDTO[];
   onCreateFileAsset: (payload: {
     originalFilename: string;
@@ -88,11 +86,7 @@ export function StationFileAgentPanel({
   return (
     <StationModule
       palette={palette}
-      title={textFor(
-        language,
-        '素材预处理 Agent',
-        'Material Preprocessing Agent',
-      )}
+      title={textFor(language, '素材预处理', 'Material Preprocessing')}
       action={
         isProcessing
           ? textFor(language, '整理中', 'Processing')
@@ -119,17 +113,11 @@ export function StationFileAgentPanel({
             <Text
               style={[styles.stationAgentLoopTitle, { color: palette.text }]}
             >
-              {readiness?.configured
-                ? textFor(
-                    language,
-                    '可整理文字素材并提取摘要',
-                    'Ready to summarize text material',
-                  )
-                : textFor(
-                    language,
-                    '真实文件上传稍后开放',
-                    'File upload will open later',
-                  )}
+              {textFor(
+                language,
+                '文字整理可用，文件上传待开放',
+                'Text processing ready; file upload pending',
+              )}
             </Text>
           </View>
           <Text
@@ -138,9 +126,7 @@ export function StationFileAgentPanel({
               { backgroundColor: palette.surface, color: palette.text },
             ]}
           >
-            {readiness?.configured
-              ? textFor(language, '可用', 'Ready')
-              : textFor(language, '待开放', 'Pending')}
+            {textFor(language, '文字', 'Text')}
           </Text>
         </View>
 

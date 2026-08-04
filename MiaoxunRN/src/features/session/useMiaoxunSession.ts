@@ -27,7 +27,6 @@ import {
   emptyProfile,
   emptyRelationships,
   emptyStationContent,
-  syncIntervalMs,
 } from './sessionDefaults';
 import {
   buildThreads,
@@ -45,13 +44,7 @@ import {
 import { useSocialActions } from './useSocialActions';
 import { useStationActions } from './useStationActions';
 
-export type {
-  ChatMessage,
-  ChatThread,
-  Language,
-  RealtimeStatus,
-  RestoreStatus,
-} from './sessionTypes';
+export type { ChatMessage, ChatThread, Language } from './sessionTypes';
 
 async function clearLocalSession() {
   await Promise.all([
@@ -383,17 +376,6 @@ export function useMiaoxunSession() {
       setNotices,
       setUnreadNoticeCount,
     });
-
-  useEffect(() => {
-    if (!token) {
-      return undefined;
-    }
-
-    const timer = setInterval(() => {
-      incrementalSync().catch(() => undefined);
-    }, syncIntervalMs);
-    return () => clearInterval(timer);
-  }, [incrementalSync, token]);
 
   const setActiveThreadId = useCallback((threadId: string | null) => {
     activeThreadIdRef.current = threadId;

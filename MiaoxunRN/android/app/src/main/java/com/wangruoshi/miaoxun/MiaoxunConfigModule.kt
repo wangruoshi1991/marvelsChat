@@ -1,4 +1,4 @@
-package com.gary.miaoxun.rn
+package com.wangruoshi.miaoxun
 
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule

@@ -41,18 +41,31 @@ export class MiaoxunApiError extends Error {
 export const isAuthSessionError = (error: unknown) =>
   error instanceof MiaoxunApiError && error.status === 401;
 
-export const API_BASE_URL =
+const API_BASE_URL =
   typeof nativeConfig?.apiBaseURL === 'string' ? nativeConfig.apiBaseURL : '';
 
 const normalizedApiBaseURL = (() => {
   const value = API_BASE_URL.trim().replace(/\/+$/, '');
-  if (!/^https?:\/\/[^/]+/.test(value)) {
-    throw new Error('Miaoxun API_BASE_URL must be an absolute HTTP(S) URL.');
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('Miaoxun API_BASE_URL must be an absolute HTTP(S) origin.');
   }
-  return value;
+  if (
+    !['http:', 'https:'].includes(url.protocol) ||
+    !url.hostname ||
+    url.username ||
+    url.password ||
+    (url.pathname && url.pathname !== '/') ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error('Miaoxun API_BASE_URL must be an absolute HTTP(S) origin.');
+  }
+  return url.origin;
 })();
 
-const stripApiPrefix = (path: string) => path.replace(/^\/api(?=\/|$)/, '');
 const sanitizeUrlForLog = (url: string) =>
   url
     .replace(
@@ -122,11 +135,10 @@ const logNetworkEvent = (
 };
 
 export const buildApiUrl = (path: string) => {
-  const rawPath = path.startsWith('/') ? path : `/${path}`;
-  const normalizedPath = normalizedApiBaseURL.endsWith('/api')
-    ? stripApiPrefix(rawPath)
-    : rawPath;
-  return `${normalizedApiBaseURL}${normalizedPath}`;
+  if (!/^\/api(?:[/?#]|$)/.test(path)) {
+    throw new Error('Miaoxun API paths must start with /api.');
+  }
+  return `${normalizedApiBaseURL}${path}`;
 };
 
 export const buildRealtimeUrl = (path: string) =>
@@ -201,6 +213,9 @@ export async function request<T>(
       body: hasBody ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
     });
+    if (response.status !== 204) {
+      responseText = await response.text();
+    }
   } catch (error) {
     logNetworkEvent('error', {
       method,
@@ -235,12 +250,23 @@ export async function request<T>(
     options.expireSessionOnUnauthorized !== false &&
     authSessionExpiredHandler
   ) {
-    await Promise.resolve(
-      authSessionExpiredHandler({
-        token: options.token,
+    try {
+      await Promise.resolve(
+        authSessionExpiredHandler({
+          token: options.token,
+          requestId: responseRequestId,
+        }),
+      );
+    } catch (error) {
+      logNetworkEvent('error', {
+        method,
+        url: sanitizeUrlForLog(finalUrl),
         requestId: responseRequestId,
-      }),
-    ).catch(() => undefined);
+        errorType:
+          error instanceof Error ? error.name : 'SessionExpiryHandlerError',
+        operation: 'expire-session',
+      });
+    }
   }
 
   if (response.status === 204) {
@@ -260,7 +286,6 @@ export async function request<T>(
     return undefined as T;
   }
 
-  responseText = await response.text().catch(() => '');
   const payload = (responseText ? parseJson(responseText) : null) as
     | APIEnvelope<T>
     | APIErrorEnvelope

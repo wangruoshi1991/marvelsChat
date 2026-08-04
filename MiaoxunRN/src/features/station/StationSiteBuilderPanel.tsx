@@ -54,7 +54,8 @@ export function StationSiteBuilderPanel({
   );
   const latestDrafts = sortedDrafts.slice(0, 3);
   const readinessText = readinessLabel(language, readiness);
-  const canCreate = prompt.trim().length > 0 && !isCreating;
+  const canCreate =
+    readiness?.configured === true && prompt.trim().length > 0 && !isCreating;
 
   const createDraft = async () => {
     if (!canCreate) {
@@ -120,10 +121,13 @@ export function StationSiteBuilderPanel({
         'Station Builder Agent',
       )}
       action={
-        isCreating
+        !readiness?.configured
+          ? textFor(language, '待配置', 'Pending')
+          : isCreating
           ? textFor(language, '生成中', 'Creating')
           : textFor(language, '生成', 'Create')
       }
+      actionDisabled={!canCreate}
       onAction={createDraft}
     >
       <View style={styles.stationAgentLoopStack}>

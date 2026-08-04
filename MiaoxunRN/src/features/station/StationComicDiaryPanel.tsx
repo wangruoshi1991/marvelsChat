@@ -71,8 +71,8 @@ export function StationComicDiaryPanel({
       });
       onActionMessage(
         relatedDrafts.length
-          ? textFor(language, '漫画分镜已重新生成', 'Storyboard regenerated')
-          : textFor(language, '漫画分镜已生成', 'Storyboard created'),
+          ? textFor(language, '漫画分镜已重新整理', 'Storyboard prepared again')
+          : textFor(language, '漫画分镜已整理', 'Storyboard prepared'),
       );
     } catch (error) {
       onActionError(error);
@@ -116,7 +116,7 @@ export function StationComicDiaryPanel({
 
   return (
     <SettingGroup
-      title={textFor(language, '漫画日记', 'Comic Diary')}
+      title={textFor(language, '漫画分镜', 'Comic Storyboard')}
       palette={palette}
     >
       <SettingsSegmentRow
