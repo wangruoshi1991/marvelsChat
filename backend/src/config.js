@@ -21,6 +21,15 @@ const parseNumber = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+export const parseTrustProxyHops = (value, fallback = 0) => {
+  if (value === undefined || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 10) {
+    throw new Error("TRUST_PROXY_HOPS must be an integer between 0 and 10.");
+  }
+  return parsed;
+};
+
 const avatarRealisticCostFen = parseNumber(
   process.env.AVATAR_3D_REALISTIC_ESTIMATED_COST_FEN,
   280,
@@ -67,7 +76,9 @@ if (defaultAdminEnabled && !defaultAdminPassword) {
 export const config = {
   env: nodeEnv,
   isProduction,
+  host: (process.env.HOST || "127.0.0.1").trim(),
   port: parseNumber(process.env.PORT, 4390),
+  trustProxyHops: parseTrustProxyHops(process.env.TRUST_PROXY_HOPS),
   corsOrigin: parseCorsOrigin(process.env.CORS_ORIGIN),
   adminEmails: listFromEnv(process.env.ADMIN_EMAILS),
   createFirstUserAsAdmin: parseBoolean(process.env.CREATE_FIRST_USER_AS_ADMIN, !isProduction),

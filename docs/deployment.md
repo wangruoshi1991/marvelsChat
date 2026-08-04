@@ -40,6 +40,8 @@ PolarDB 和 Redis 当前白名单只放行 ECS 私网 IP `172.25.210.107`。生�
 
 必须设置：
 
+- `HOST=0.0.0.0`：容器内监听地址；宿主机端口仍只绑定到 `127.0.0.1`。
+- `TRUST_PROXY_HOPS=1`：只信任最靠近后端的一层 Nginx 代理，以便登录限流和审计使用真实客户端 IP。
 - `POSTGRES_HOST`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DATABASE`：阿里云 PolarDB 连接信息。
 - `REDIS_URL`：阿里云 Tair / Redis 连接信息。当前代码未强依赖 Redis，但后续 session、缓存、队列和限流会使用。
 - `OSS_REGION`、`OSS_BUCKET`、`OSS_ENDPOINT`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`：OSS 文件能力。AccessKey 后续应使用程序专用 RAM 用户。
