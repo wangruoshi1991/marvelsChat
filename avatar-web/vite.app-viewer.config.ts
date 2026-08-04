@@ -1,5 +1,9 @@
 import { defineConfig, type Plugin } from "vite";
 
+const outputDirectory =
+  process.env.MIAOXUN_APP_VIEWER_OUT_DIR ||
+  "../MiaoxunRN/src/assets/avatar-viewer";
+
 const htmlDocument = (script: string) => `<!doctype html>
 <html lang="zh-CN">
   <head>
@@ -80,7 +84,7 @@ export default defineConfig({
       formats: ["iife"],
       name: "MiaoxunAvatarViewerBundle",
     },
-    outDir: "../MiaoxunRN/src/assets/avatar-viewer",
+    outDir: outputDirectory,
     sourcemap: false,
     target: ["safari15", "chrome100"],
   },

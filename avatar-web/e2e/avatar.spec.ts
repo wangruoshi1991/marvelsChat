@@ -54,7 +54,6 @@ const makeJob = (status: JobStatus, qualityPreset: "standard" | "ultra" = "ultra
   photoCount: 1,
   acceptedCostVersion: feature.costVersion,
   estimatedCostFen: qualityPreset === "standard" ? 280 : 420,
-  stylePreviewId: null,
   modelId: ["persisting", "succeeded"].includes(status) ? modelId : null,
   errorCode: null,
   createdAt: now,

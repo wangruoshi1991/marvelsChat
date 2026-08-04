@@ -1,4 +1,4 @@
-import { Check, CircleAlert, LoaderCircle, X } from "lucide-react";
+import { CircleAlert, LoaderCircle, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { AvatarApiError } from "../api";
 import type {
@@ -20,7 +20,6 @@ const terminal = new Set<AvatarJob["status"]>([
 ]);
 
 const confirmationStatuses = new Set<AvatarJob["status"]>([
-  "awaiting_style_confirmation",
   "awaiting_reference_confirmation",
 ]);
 
@@ -33,9 +32,6 @@ export const pollDelayForJob = (job: AvatarJob, now = Date.now()) => {
 };
 
 const statusContent: Record<AvatarJob["status"], { title: string; detail: string }> = {
-  queued_style: { title: "正在准备卡通参考图", detail: "任务已进入队列" },
-  processing_style: { title: "正在生成卡通参考图", detail: "完成后需要你确认" },
-  awaiting_style_confirmation: { title: "确认卡通参考图", detail: "确认后才会开始 3D 生成" },
   queued_references: { title: "正在准备四视图", detail: "任务已进入队列" },
   submitting_references: { title: "正在提交四视图任务", detail: "不会重复提交付费请求" },
   processing_references: { title: "正在生成四视图", detail: "可以关闭页面，任务会继续" },
@@ -63,9 +59,7 @@ interface TaskProgressProps {
   ) => Promise<AvatarReferenceConfirmationResult>;
   rejectReferences: (jobId: string, referenceSetId: string) => Promise<AvatarJob>;
   referenceImageUrl: (jobId: string, view: AvatarPhotoView) => string;
-  confirmStyle: (jobId: string) => Promise<AvatarJob>;
   cancelJob: (jobId: string) => Promise<AvatarJob>;
-  previewUrl: string;
   resultPreviewUrl: string;
   onJobChange: (job: AvatarJob) => void;
 }
@@ -78,9 +72,7 @@ export function TaskProgress({
   confirmReferences,
   rejectReferences,
   referenceImageUrl,
-  confirmStyle,
   cancelJob,
-  previewUrl,
   resultPreviewUrl,
   onJobChange,
 }: TaskProgressProps) {
@@ -188,6 +180,7 @@ export function TaskProgress({
   const hasResultPreview = currentJob.status === "persisting"
     && Boolean(currentJob.modelId)
     && Boolean(resultPreviewUrl);
+  const canCancel = currentJob.status === "queued_references" || currentJob.status === "queued_3d";
   const inReferenceStage = [
     "queued_references",
     "submitting_references",
@@ -217,18 +210,6 @@ export function TaskProgress({
         ) : (
           <div className="task-pulse"><LoaderCircle className="task-loader" size={34} /></div>
         )
-      ) : currentJob.status === "awaiting_style_confirmation" ? (
-        <div className="style-confirmation">
-          <img src={previewUrl} alt="卡通形象参考图" />
-          <div className="style-confirm-actions">
-            <button className="primary-command" type="button" disabled={pendingAction} onClick={() => void act(confirmStyle)}>
-              <Check size={18} />确认并生成 3D
-            </button>
-            <button className="secondary-command" type="button" disabled={pendingAction} onClick={() => void act(cancelJob)}>
-              <X size={18} />放弃本次
-            </button>
-          </div>
-        </div>
       ) : hasResultPreview ? (
         <div className="result-preview-stage">
           <img src={resultPreviewUrl} alt="3D 形象生成预览" />
@@ -249,6 +230,17 @@ export function TaskProgress({
           <strong>{currentJob.progress}%</strong>
         </div>
       )}
+
+      {canCancel ? (
+        <button
+          className="secondary-command"
+          type="button"
+          disabled={pendingAction}
+          onClick={() => void act(cancelJob)}
+        >
+          <X size={18} />取消任务
+        </button>
+      ) : null}
 
       {requestId ? <p className="request-reference">请求编号：{requestId}</p> : null}
       <footer className="task-meta">

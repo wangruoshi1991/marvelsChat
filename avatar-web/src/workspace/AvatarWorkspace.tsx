@@ -173,9 +173,7 @@ export function AvatarWorkspace({ initialBootstrap, api }: AvatarWorkspaceProps)
             confirmReferences={api.confirmReferences}
             rejectReferences={api.rejectReferences}
             referenceImageUrl={api.referenceImageUrl}
-            confirmStyle={api.confirmStyle}
             cancelJob={api.cancelJob}
-            previewUrl={activeJob.stylePreviewId ? api.stylePreviewUrl(activeJob.id) : ""}
             resultPreviewUrl={activeJob.status === "persisting" && activeJob.modelId
               ? api.modelThumbnailUrl(activeJob.modelId)
               : ""}

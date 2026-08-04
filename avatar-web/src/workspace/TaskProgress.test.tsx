@@ -17,7 +17,6 @@ const job = (status: AvatarJob["status"]): AvatarJob => ({
   photoCount: 1,
   acceptedCostVersion: "2026-07-21",
   estimatedCostFen: 420,
-  stylePreviewId: status === "awaiting_style_confirmation" ? "preview-1" : null,
   modelId: status === "succeeded" ? "model-1" : null,
   errorCode: null,
   createdAt: new Date().toISOString(),
@@ -76,7 +75,6 @@ const baseProps = () => ({
   confirmReferences: vi.fn(),
   rejectReferences: vi.fn(),
   referenceImageUrl: (jobId: string, view: string) => `/jobs/${jobId}/references/${view}`,
-  confirmStyle: vi.fn(),
   cancelJob: vi.fn(),
   previewUrl: "",
   resultPreviewUrl: "",
@@ -145,7 +143,6 @@ describe("TaskProgress", () => {
     }, Date.now())).toBe(8000);
     expect(shouldPollJob(job("processing_references"))).toBe(true);
     for (const status of [
-      "awaiting_style_confirmation",
       "awaiting_reference_confirmation",
       "succeeded",
       "failed",

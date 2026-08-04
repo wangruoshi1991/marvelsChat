@@ -146,7 +146,6 @@ export function createAvatarApi(fetcher: typeof fetch = globalThis.fetch) {
         requiresCsrf: true,
         headers: { "Idempotency-Key": idempotencyKey },
       }),
-    listJobs: (limit = 10) => request<AvatarJob[]>(`/api/avatar-3d/jobs?limit=${limit}`),
     getJob: (jobId: string) => request<AvatarJob>(
       `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}`,
     ),
@@ -172,10 +171,6 @@ export function createAvatarApi(fetcher: typeof fetch = globalThis.fetch) {
       `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}/references/reject`,
       { method: "POST", body: { referenceSetId }, requiresCsrf: true },
     ),
-    confirmStyle: (jobId: string) => request<AvatarJob>(
-      `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}/confirm-style`,
-      { method: "POST", body: { accepted: true }, requiresCsrf: true },
-    ),
     cancelJob: (jobId: string) => request<AvatarJob>(
       `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}/cancel`,
       { method: "POST", body: {}, requiresCsrf: true },
@@ -187,10 +182,6 @@ export function createAvatarApi(fetcher: typeof fetch = globalThis.fetch) {
       `/api/avatar-3d/models/${encodeURIComponent(modelId)}`,
       { method: "DELETE", requiresCsrf: true },
     ),
-    photoFileUrl: (photoId: string) =>
-      `/api/avatar-3d/photos/${encodeURIComponent(photoId)}/file`,
-    stylePreviewUrl: (jobId: string) =>
-      `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}/style-preview`,
     referenceImageUrl: (jobId: string, view: string) =>
       `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}/references/${encodeURIComponent(view)}/file`,
     modelFileUrl: (modelId: string) =>

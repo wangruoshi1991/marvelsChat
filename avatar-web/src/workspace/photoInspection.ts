@@ -1,11 +1,11 @@
-export type PhotoInspectionStatus = "checking" | "usable" | "advisory" | "invalid";
+type PhotoInspectionStatus = "checking" | "usable" | "advisory" | "invalid";
 
 export interface PhotoInspection {
   status: PhotoInspectionStatus;
   message: string;
 }
 
-export interface PhotoMetrics {
+interface PhotoMetrics {
   decoded: boolean;
   width: number;
   height: number;

@@ -1,17 +1,14 @@
-export type AvatarStyle = "realistic" | "cartoon";
+type AvatarStyle = "realistic";
 export type AvatarQualityPreset = "standard" | "ultra";
 
-export interface AvatarQualityOption {
+interface AvatarQualityOption {
   id: AvatarQualityPreset;
   label: string;
   description: string;
   estimatedCostFen: number;
 }
 
-export type AvatarJobStatus =
-  | "queued_style"
-  | "processing_style"
-  | "awaiting_style_confirmation"
+type AvatarJobStatus =
   | "queued_references"
   | "submitting_references"
   | "processing_references"
@@ -27,7 +24,7 @@ export type AvatarJobStatus =
   | "cancelled"
   | "submission_unknown";
 
-export interface AvatarUser {
+interface AvatarUser {
   id: string;
   displayName: string;
   email?: string | null;
@@ -51,7 +48,7 @@ export interface AvatarQuota {
   hasActiveJob: boolean;
 }
 
-export interface AvatarPhoto {
+interface AvatarPhoto {
   id: string;
   jobId: string | null;
   view: AvatarPhotoView | null;
@@ -78,14 +75,13 @@ export interface AvatarJob {
   userId: string;
   style: AvatarStyle;
   qualityPreset: AvatarQualityPreset;
-  generationMode: "legacy_photo_3d" | "face_first_multiview";
+  generationMode: "face_first_multiview";
   referenceSetId: string | null;
   status: AvatarJobStatus;
   progress: number;
   photoCount: number;
   acceptedCostVersion: string;
   estimatedCostFen: number;
-  stylePreviewId: string | null;
   modelId: string | null;
   errorCode: string | null;
   createdAt: string;
@@ -120,7 +116,7 @@ export interface AvatarSession {
   csrfToken: string;
 }
 
-export interface AvatarUpload {
+interface AvatarUpload {
   method: "PUT";
   url: string;
   headers: Record<string, string>;
@@ -146,7 +142,7 @@ export interface AvatarCreateJobInput {
   acceptedReferenceCostVersion: string;
 }
 
-export interface AvatarReferenceSet {
+interface AvatarReferenceSet {
   id: string;
   jobId: string;
   status: "queued" | "submitting" | "processing" | "persisting"
@@ -161,7 +157,7 @@ export interface AvatarReferenceSet {
   updatedAt: string;
 }
 
-export interface AvatarReferenceImage {
+interface AvatarReferenceImage {
   id: string;
   referenceSetId: string;
   jobId: string;

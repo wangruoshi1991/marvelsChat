@@ -122,9 +122,4 @@ export const createAvatarGlb = () => {
   return glb;
 };
 
-export const tinyPng = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-  "base64",
-);
-
 export const photoPng = createSolidPng(640, 800);

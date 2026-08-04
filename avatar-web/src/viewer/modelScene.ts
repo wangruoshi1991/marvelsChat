@@ -45,7 +45,7 @@ interface ModelSceneDependencies {
   devicePixelRatio?: () => number;
 }
 
-export interface FramingSnapshot {
+interface FramingSnapshot {
   radius: number;
   cameraDistance: number;
   aspect: number;
