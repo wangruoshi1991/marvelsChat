@@ -40,7 +40,7 @@ MiaoxunRN/src/
 - `src/features/station/`：我的小站、小站内容、Agent 能力入口和位置设置。
 - `src/features/session/`：登录后的会话状态、bootstrap 同步、消息/小站/社交动作。
 - `src/services/`：token、定位、语音、二维码和媒体上传服务。
-- `src/services/api/`：按领域拆分的 HTTP API 客户端，包含网络底座、认证、应用同步、社交、通知、消息、资料、小站内容和小站 Agent 能力；`src/services/apiClient.ts` 只保留兼容聚合出口。
+- `src/services/api/`：按领域拆分的 HTTP API 客户端，包含网络底座、认证、应用同步、社交、通知、消息、资料、小站内容和小站 Agent 能力；`src/services/apiClient.ts` 是面向调用方的领域 API facade 与聚合出口。
 - `src/models/api.ts`：前后端 DTO 类型边界。
 - `src/shared/`：主题、通用样式和 UI 基础组件；小站样式按 `src/shared/stationStyles/` 模块拆分，并由 `stationStyles.ts` 聚合导出。
 
@@ -201,9 +201,10 @@ PostgreSQL 表结构和迁移 SQL。
 
 ```text
 backend/scripts/db-migrate.js
+backend/scripts/admin-bootstrap.js
 ```
 
-数据库初始化/迁移脚本。在 `backend/` 目录执行 `npm run db:migrate` 会调用它。
+前者只执行迁移账本内的数据库变更；后者由 `npm run admin:bootstrap` 显式执行一次管理员初始化。两者不共享隐式数据修补副作用。
 
 ## agents/
 

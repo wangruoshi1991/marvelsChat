@@ -31,7 +31,7 @@
 
 ## 下一步上线任务
 
-- 配置正式 OSS AccessKey：当前代码链路已接入，服务器环境缺少 `OSS_ACCESS_KEY_ID` 和 `OSS_ACCESS_KEY_SECRET` 时会明确返回 503。
+- 验证正式 OSS AccessKey：当前代码链路已接入，发布预检必须确认服务器已设置 `OSS_ACCESS_KEY_ID` 和 `OSS_ACCESS_KEY_SECRET`；任一缺失时接口会明确返回 503。
 - 接媒体审核：上传后先进入待审核，审核通过后相册才公开展示。
 - 接 Agent 写入动作：日记生成、穿搭建议、形象方案必须写 `agent_runs`，并由用户确认后落表。
 - 接公开主页读取：按 `profile_visibility` 和内容可见范围返回他人可见的小站内容。

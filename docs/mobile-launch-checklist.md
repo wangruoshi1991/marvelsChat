@@ -17,11 +17,13 @@
 
 当前 iOS Bundle ID：`com.wangruoshi.miaoxun`
 
+当前 Android application ID：`com.wangruoshi.miaoxun`
+
 当前 API 配置：
 
 ```text
 iOS Debug:   http://127.0.0.1:4390
-iOS Release: http://8.153.167.11/api  # 临时 TestFlight；正式上线恢复 HTTPS 域名
+iOS Release: http://8.153.167.11  # 临时 TestFlight；正式上线恢复 HTTPS 域名
 ```
 
 说明：
@@ -33,12 +35,17 @@ iOS Release: http://8.153.167.11/api  # 临时 TestFlight；正式上线恢复 H
 当前后端入口：
 
 ```text
-正式域名: https://api.marvelschat.com/api
-临时测试: http://8.153.167.11/api
+正式 API origin: https://api.marvelschat.com
+临时 API origin: http://8.153.167.11
+业务路径前缀: /api
 管理后台: https://console.marvelschat.com/admin/
 ```
 
 正式包必须使用 HTTPS API 域名，不能使用裸 IP、`127.0.0.1` 或局域网地址。当前裸 IP 只用于内部 TestFlight 临时测试。
+
+2026-08-04 代码审查记录：域名仍在实名/注册审核中，正式 HTTPS、WSS 和移除 ATS
+例外继续列为发布阻塞项，本轮不修改。当前受控测试包保持
+`http://8.153.167.11`；代码、数据库迁移完整性和临时测试配置可继续独立验证。
 
 ## 功能分级
 
@@ -47,14 +54,14 @@ iOS Release: http://8.153.167.11/api  # 临时 TestFlight；正式上线恢复 H
 | 功能 | 当前状态 | 上线要求 |
 | --- | --- | --- |
 | 登录 / 注册 | 已接入真实后端 | 保持昵称唯一，登录失败、网络失败、会话过期提示清楚 |
-| 会话恢复 / 退出登录 | 已接入 Keychain 和后端 session | 网络失败不能误清 token，401/403 才退出 |
+| 会话恢复 / 退出登录 | 已接入 Keychain 和后端 session | 网络失败和 403 不能误清 token，只有 401 使会话失效 |
 | 聊天列表 / 妙讯管家 | 已接入真实会话和消息 | 不能展示假会话；模型未配置时要清楚记录和提示 |
 | 好友 direct 聊天 | 已接入真实线程、消息、WebSocket | 发送失败可重试，不能写入假送达 |
 | 语音转文字输入 | 已接入 iOS / Android 系统语音识别 | 识别结果只回填输入框，由用户确认发送；真机验证权限和识别可用性 |
 | 关注 / 好友申请 / 通知 | 已接入关注、申请、通过、拒绝、取消和通知闭环 | 操作中、成功、失败状态完整 |
 | 小站基础资料 | 已接入 profile | 修改资料必须走后端保存 |
 | 后端部署 | 已部署 ECS + PolarDB | 当前临时 HTTP 可测试，正式上线必须补 HTTPS、健康检查、日志和数据库迁移稳定性 |
-| iOS TestFlight | 已具备历史上传基础 | build 8 临时使用 ECS 公网 IP；正式包必须使用 HTTPS API |
+| iOS TestFlight | 已具备历史上传基础 | 当前源码临时使用 ECS 公网 IP；正式包必须使用 HTTPS API |
 | Android 基础构建 | 工程存在 Android 目录 | 上线前补签名、权限、真机回归 |
 
 ### 上线可选
@@ -62,20 +69,20 @@ iOS Release: http://8.153.167.11/api  # 临时 TestFlight；正式上线恢复 H
 | 功能 | 当前状态 | 决策 |
 | --- | --- | --- |
 | 扫码看主页 | 已接入 iOS / Android 原生桥接和后端解析 | 可作为早期亮点，但要真机验证相机权限和失败态 |
-| 定位 / 地图 | 代码已有链路，但服务方案未最终确定 | 暂不作为首版必需；正式做时先确定地图和地理编码供应商 |
+| 定位名称解析 | 已接系统定位和高德逆地理编码；无地图展示 | 暂不作为首版必需；上线前确认生产授权、配额和隐私披露 |
 | 管理后台 | 已部署静态后台 | 内部使用即可，不作为公开产品入口 |
-| 3D 小站形象 | 仅完成 GLB / Filament 渲染验证 | 当前低模人物不达上线标准；上线前必须替换为授权高质量角色模型、贴图和动作资产 |
+| 3D 小站形象 | 已接入私有照片、四视图确认、Tripo 任务和移动端 GLB | 上线前完成真实付费链路、内容审核、失败计费、保留策略和真机性能回归 |
 
 ### 暂缓正式上线
 
 | 功能 | 暂缓原因 |
 | --- | --- |
 | 个人日记 | 手写日记已入库；缺少 Agent 生成任务、漫画分镜、审核和公开读取策略 |
-| 相册 | 元数据、上传凭证、上传完成回写和 App 图片读取已接入；服务器缺少正式 OSS AccessKey，仍缺审核和公开读取策略 |
+| 相册 | 元数据、OSS 上传、上传完成回写和 App 图片读取已接入；仍缺媒体审核和公开读取策略，服务器凭据由发布预检确认 |
 | 音乐菜单 | 缺少版权/来源/播放能力 |
 | 文件 | 缺少 OSS 权限模型、上传下载审计 |
 | 语音消息 | 缺少录音、OSS 上传、媒体消息类型、播放、审核和清理策略 |
-| AI 建站 | 缺少完整 Agent 任务、内容生成、发布审核 |
+| AI 建站 | 已接模型生成草稿并拒绝规则假结果；仍缺正式发布托管、内容审核和域名方案 |
 | 复杂多 Agent 编排 | 需要后端权限、任务状态、审计和用户确认机制 |
 | 推送通知 | 需要 APNs / FCM、设备 token、通知偏好和隐私说明 |
 
@@ -105,7 +112,7 @@ Android 实现：
 上线前检查：
 
 - 网络失败不清除 token。
-- 401/403 清除本地 token 并回到登录页。
+- 只有 401 清除本地 token 并回到登录页；403 作为当前操作无权限处理。
 - 默认管理员密码不得暴露给普通用户。
 
 ### 2. 聊天与实时通道
@@ -225,9 +232,9 @@ iOS / Android 实现：
 - 公开主页必须按隐私开关过滤字段。
 - 未接入模块只显示待接入，不写假内容。
 
-### 7. 定位与地图
+### 7. 定位
 
-当前决策：暂不作为首版必需功能。
+当前决策：保留系统定位和真实社区/活动区域候选确认，首版不提供地图选点。
 
 正确实现链路：
 
@@ -245,33 +252,33 @@ App 请求系统定位权限
 - 不能在客户端写默认地址。
 - 不能为了模拟器或网络失败加假位置兜底。
 - 不能长期依赖公共免费接口作为生产服务。
-- 不能在地图服务、坐标系和授权未确认前把定位列为上线必需。
+- 不能在地理编码授权、配额和隐私披露未确认前把定位列为上线必需。
 
 正式做之前必须确认：
 
-- 使用高德、苹果地图、腾讯地图、自建 Nominatim，还是其他合规服务。
-- 地图瓦片和逆地理编码是否有商业授权。
+- 高德逆地理编码是否有生产授权和足够配额。
 - iOS / Android 权限说明是否符合应用实际用途。
-- WGS84 / GCJ-02 坐标转换由哪一层负责。
+- 高德供应商适配层的 WGS84 / GCJ-02 转换是否通过真机坐标抽样验证。
 
 ### 8. 3D 形象
 
 当前状态：
 
-- 已使用本地 GLB 和 `react-native-filament` 验证展示链路。
-- 已有依赖 patch 脚本处理 RN 0.86 / React 19 兼容问题。
+- App 已接入私有照片上传、参考图确认、Tripo 建模任务、任务状态和模型管理流程。
+- 小站主舞台使用内嵌 Three.js `0.180.0` 查看器加载 App 专用 GLB；移动端不嵌入伙伴 Web 工作台。
+- 原始高精 GLB 与移动端压缩 GLB 分开保存，移动端文件缺失时明确失败，不回退下载大体积原件。
 
 上线策略：
 
-- 只保留基础展示和渲染验证，不保留未达上线标准的编辑入口。
-- 不把当前低模验证资产宣传成完整商业级形象系统。
-- 上传图片生成、骨骼动画、服装素材库、动作系统暂缓正式上线。
+- 保留经过审核、计费和失败策略验证的照片生成与模型展示闭环。
+- 捏脸、骨骼动画、服装素材库和动作系统在具备真实资产与服务前不开放入口。
+- 不把参考图、缩略图或确定性预处理结果描述成最终 3D 模型。
 
 上线前检查：
 
-- iOS Release / TestFlight 真机不崩溃。
-- Android 真机同样完成渲染验证后再公开。
-- 第三方素材和生成能力必须有授权、审核和性能评估。
+- iOS Release / TestFlight 与 Android 真机完成生成、恢复、刷新、删除和弱网验证。
+- 确认付费任务扣费时点、失败/超时退款、并发限制、资产保留期限和人工处理流程。
+- 第三方素材与生成服务具备授权、内容审核、隐私告知和性能评估。
 
 ### 9. 管理后台
 
@@ -318,16 +325,20 @@ App 聊天
 发布前先运行：
 
 ```bash
+# 正式发布，域名、HTTPS 和 ATS 必须全部通过
 scripts/check-launch-readiness.sh
+
+# 域名审核期间的受控 IP TestFlight，只把域名项记录为 warning
+MIAOXUN_TEMP_IP_TESTFLIGHT=1 scripts/check-launch-readiness.sh
 ```
 
-该脚本会检查域名 `clientHold`、公网 DNS、HTTPS API、服务器后端健康、OSS 生产密钥、iOS Release API 地址、ATS 例外和 Android Gradle 所需 Java Runtime。存在 failure 时不上传 TestFlight。
+该脚本会检查域名 `clientHold`、公网 DNS、HTTPS API、服务器后端 liveness/readiness、生产安全开关、OSS 与 3D 供应商配置、iOS Release API 地址、ATS 例外和 Android Gradle 所需 Java Runtime。临时模式不会把尚未获批的域名伪装成已完成，只会将域名相关项降为 warning；其他 failure 仍应阻止上传测试包。正式模式始终严格拒绝 HTTP 和 ATS 公网例外。
 
 1. 域名实名和 DNS 生效。
 2. Nginx 配置 HTTPS，`api.marvelschat.com` 和 `console.marvelschat.com` 证书可自动续期。
 3. iOS Release `MIAOXUN_API_BASE_URL=https://api.marvelschat.com`。
 4. 删除 Release 不需要的 HTTP ATS 例外。
-5. `CURRENT_PROJECT_VERSION` 递增。
+5. `CURRENT_PROJECT_VERSION` 递增；build 30 已被 App Store Connect 占用，下一次上传使用 31。
 6. `npx tsc --noEmit` 通过。
 7. `npm test -- --runInBand` 通过。
 8. `npm run lint` 无 error；warning 可登记后续处理。
@@ -339,12 +350,12 @@ scripts/check-launch-readiness.sh
 
 ## Android 上线清单
 
-1. 明确 Android 包名，当前工程为 `com.gary.miaoxun.rn`，正式上线前需要确认是否改为项目正式包名。
+1. Android namespace 和 application ID 已统一为正式标识 `com.wangruoshi.miaoxun`；首次上架前在应用市场使用同一标识创建应用，之后不得更改。
 2. 准备正式 keystore，真实密码只放本机或 CI，不提交仓库。
 3. Release 构建传入 `MIAOXUN_API_BASE_URL=https://api.marvelschat.com`。
 4. 检查 Android 权限：相机、麦克风、定位、网络、通知。
 5. Android 真机验证登录、注册、聊天、扫码、语音转文字、小站资料。
-6. 如定位/地图进入上线范围，必须完成 Android 定位权限和地图服务合规说明。
+6. 如定位进入上线范围，必须完成 Android 定位权限、高德逆地理编码授权和隐私合规说明。
 7. 准备应用市场隐私政策、权限说明和测试账号。
 
 ## 当前不做的临时方案
@@ -364,5 +375,5 @@ scripts/check-launch-readiness.sh
 2. 确认 iOS Release 仍固定到正式 HTTPS 域名，且没有恢复临时 HTTP 例外。
 3. 跑一轮 iOS 模拟器和真机核心链路。
 4. 打新 TestFlight 包。
-5. 再启动 Android Release 准备：包名、签名、权限、真机。
-6. 定位、地图、推送、文件、相册等增强功能另开正式方案，不插入临时实现。
+5. 再启动 Android Release 准备：签名、权限、应用市场配置和真机回归。
+6. 定位、推送、文件、相册等增强功能另开正式方案，不插入临时实现。

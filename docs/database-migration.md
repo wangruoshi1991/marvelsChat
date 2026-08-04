@@ -26,8 +26,9 @@
 - `018_avatar_3d_quality_and_preview.sql` - 3D 质量档位与预览
 - `019_avatar_3d_face_first_pipeline.sql` - 单照片与四视图确认流程
 - `020_remove_station_3d_provider_defaults.sql` - 移除旧 Station 3D 默认供应商
-- `021_station_posts_compat.sql` - 动态兼容迁移
 - `022_avatar_3d_mobile_model.sql` - 保留原始 GLB，并登记 App 轻量 GLB
+- `023_require_model_site_drafts.sql` - 删除规则生成的建站草稿，并强制新草稿来自真实模型
+- `024_normalize_legacy_user_schema.sql` - 将旧库用户字段、AI ID、在线状态约束和重复索引收敛到迁移账本
 
 ## 迁移执行
 
@@ -37,21 +38,59 @@ cd backend
 npm run db:migrate
 ```
 
-### 2. 执行特定迁移
+### 2. 执行未应用迁移
 迁移脚本会自动按顺序执行所有未执行的迁移文件。
 
 迁移记录保存在数据库的 `schema_migrations` 表中。每个文件会记录 SHA-256
 校验和；已登记的历史迁移如果被修改或从仓库删除，命令会直接失败。不要通过
 修改账本绕过检查，应新增下一个顺序号的迁移文件。
 
-首次从旧版迁移脚本升级时，数据库还没有账本。命令会重新执行一次当前全部
-幂等迁移并登记基线；之后只执行新增文件。执行前仍需完成数据库备份。
+首次从旧版迁移脚本升级时，数据库还没有账本。命令会重新执行一次当前全部迁移并
+登记基线；之后只执行新增文件。当前迁移已通过真实 PostgreSQL 的旧库重放测试，
+包括线上已观测到的 `015` 结构缺失、重复在线状态约束、重复用户索引和旧 AI ID 场景。CI 使用
+`backend/scripts/check-migration-replay.sh` 重建无账本的 pre-023 数据库、模拟结构漂移、
+执行升级并确认第二次迁移为 no-op。该脚本只允许连接名称以 `_migration_test` 结尾的
+空数据库，不能用于生产。
 
 迁移命令使用 PostgreSQL advisory lock，避免两个发布进程并发修改 schema。
 每个新迁移与其账本记录在同一个事务中提交。
 
-### 3. 回滚迁移
+`npm run db:migrate` 不创建或提权管理员，也不在迁移账本外执行 schema 修补。
+管理员初始化必须在迁移完成后显式执行 `npm run admin:bootstrap`。
+
+后端 `/api/ready` 会使用同一份迁移文件清单核对 `schema_migrations`。
+账本缺失、存在待执行迁移、历史文件被修改或已登记文件从发布包中缺失时，
+readiness 都会返回 503；检查过程只读，不会自动创建账本或执行迁移。
+
+### 3. 当前生产升级基线
+
+2026-08-04 对 PolarDB 做了只读核查，没有创建账本或修改业务数据：
+
+- `schema_migrations` 尚不存在。
+- `station_posts`、3D 任务、参考图和 App 轻量模型等 016-022 结构已经存在。
+- `015_station_profile_metrics_points.sql` 中的 `user_profiles.likes_count` 和
+  `miao_point_ledger` 缺失；首次账本迁移会补齐它们。
+- 001-014 的历史修复项当前影响数均为 0，包括资料同步、重复昵称、搜索历史清理和
+  direct 消息发送者元数据修复。
+- `station_site_drafts` 共 8 行，全部为 `source='model'`；023 将删除 0 行草稿并清理
+  0 行用户配置。
+- AI ID 非 12 位记录为 0；024 仍会添加数据库约束并校准 sequence。
+- `users` 当前有两套在线状态检查约束和两个被唯一约束覆盖的普通索引；024 会分别合并和删除。
+
+PolarDB 当前每天 `20:00-21:00` 自动创建全量快照，数据备份和日志备份均保留 7 天；
+最近 7 个快照均显示“备份完成、有效”，控制台提供按备份集和按时间点恢复。正式迁移前
+仍需确认最新可恢复点，并额外导出 023 涉及的草稿和用户配置；自动备份不能替代变更前
+验证。
+
+### 4. 回滚迁移
 当前的迁移系统不支持回滚，如需回滚需要手动操作。
+
+`023_require_model_site_drafts.sql` 包含数据删除：它会移除所有
+`station_site_drafts.source <> 'model'` 的历史草稿，并清除引用这些草稿的
+`user_profiles.station_config.siteLayout/siteDraftId`。执行前必须单独导出
+`station_site_drafts` 和受影响的 `user_profiles` 行，不能只依赖应用代码回滚。
+如需回退到旧版本，先停止写入，恢复数据库备份，再恢复旧代码；仅恢复旧代码无法
+找回已经删除的规则草稿。新版本代码不会读取或创建非模型草稿。
 
 ## 数据类型说明
 
