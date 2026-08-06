@@ -25,8 +25,9 @@ const userRow = {
   created_at: "2026-07-17T00:00:00.000Z",
 };
 
-const request = ({ method = "POST", headers = {}, cookie = "" } = {}) => ({
+const request = ({ method = "POST", headers = {}, cookie = "", secure } = {}) => ({
   method,
+  ...(secure === undefined ? {} : { secure }),
   get(name) {
     const lower = name.toLowerCase();
     if (lower === "cookie") return cookie;
@@ -132,6 +133,10 @@ test("avatar Web authentication and login reject non-HTTPS requests", async () =
   assert.equal(await invoke(requireAvatarHttps, request({
     headers: { "x-forwarded-proto": "https" },
   })), null);
+  assert.equal((await invoke(requireAvatarHttps, request({
+    secure: false,
+    headers: { "x-forwarded-proto": "https" },
+  })))?.status, 426);
   assert.equal(await invoke(requireAvatarHttps, request({
     headers: { host: "127.0.0.1:4390" },
   })), null);

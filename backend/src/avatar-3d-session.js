@@ -71,10 +71,13 @@ const equalTokens = (left, right) => {
     && crypto.timingSafeEqual(leftBuffer, rightBuffer);
 };
 
-export const isAvatarHttpsRequest = (req) => (req.get("x-forwarded-proto") || "")
-  .split(",", 1)[0]
-  .trim()
-  .toLowerCase() === "https";
+export const isAvatarHttpsRequest = (req) => {
+  if (typeof req.secure === "boolean") return req.secure;
+  return (req.get("x-forwarded-proto") || "")
+    .split(",", 1)[0]
+    .trim()
+    .toLowerCase() === "https";
+};
 
 const requestHostname = (req) => {
   const host = String(req.get("host") || "").trim().toLowerCase();

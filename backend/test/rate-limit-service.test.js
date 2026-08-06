@@ -39,6 +39,28 @@ test("rate limiter keeps the anonymous bucket bounded", () => {
   assert.equal(limiter.check("").limited, true);
 });
 
+test("rate limiter evicts expired and oldest buckets at the configured bound", () => {
+  let now = 5_000;
+  const limiter = createInMemoryRateLimiter({
+    limit: 1,
+    windowMs: 10_000,
+    maxBuckets: 2,
+    now: () => now,
+  });
+
+  limiter.check("first");
+  limiter.check("second");
+  assert.equal(limiter.size(), 2);
+
+  limiter.check("third");
+  assert.equal(limiter.size(), 2);
+  assert.equal(limiter.check("first").limited, false);
+
+  now = 15_001;
+  limiter.check("expired");
+  assert.equal(limiter.size(), 1);
+});
+
 test("rate limit middleware supports custom subjects", () => {
   const limiter = createInMemoryRateLimiter({
     limit: 1,
