@@ -4,8 +4,8 @@ import { registerStationContentRoutes } from "./station-content-routes.js";
 import { registerStationDiaryRoutes } from "./station-diary-routes.js";
 import { registerStationFileRoutes } from "./station-file-routes.js";
 import { registerStationMediaRoutes } from "./station-media-routes.js";
-import { registerStationModelRoutes } from "./station-model-routes.js";
 import { registerStationOutfitRoutes } from "./station-outfit-routes.js";
+import { registerStationPostRoutes } from "./station-post-routes.js";
 import { registerStationProfileRoutes } from "./station-profile-routes.js";
 import { registerStationSiteRoutes } from "./station-site-routes.js";
 import { registerStationVideoRoutes } from "./station-video-routes.js";
@@ -13,7 +13,7 @@ import { registerStationVideoRoutes } from "./station-video-routes.js";
 export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   registerStationContentRoutes(app, { authenticate, asyncHandler });
   registerStationProfileRoutes(app, { authenticate, asyncHandler });
-  registerStationModelRoutes(app, { authenticate, asyncHandler });
+  registerStationPostRoutes(app, { authenticate, asyncHandler });
   registerStationSiteRoutes(app, { authenticate, asyncHandler });
   registerStationFileRoutes(app, { authenticate, asyncHandler });
   registerStationComicRoutes(app, { authenticate, asyncHandler });

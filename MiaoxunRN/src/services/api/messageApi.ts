@@ -55,17 +55,14 @@ export const messageApi = {
 
   updateThreadPreferences(
     threadId: string,
-    preferences: {muted: boolean},
+    preferences: { muted: boolean },
     token: string,
   ) {
-    return request<{muted: boolean}>(
-      `/api/threads/${threadId}/preferences`,
-      {
-        method: 'PATCH',
-        token,
-        body: preferences,
-      },
-    );
+    return request<{ muted: boolean }>(`/api/threads/${threadId}/preferences`, {
+      method: 'PATCH',
+      token,
+      body: preferences,
+    });
   },
 
   deleteMessage(threadId: string, messageId: string, token: string) {

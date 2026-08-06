@@ -1,220 +1,252 @@
-import React, { useRef } from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { ChevronDown, Copy, QrCode } from 'lucide-react-native';
+import React from 'react';
+import { Image, Pressable, Text, View } from 'react-native';
+import { QrCode } from 'lucide-react-native';
 
-import { PresenceMode } from '../../models/api';
-import { presenceModeText, textFor } from '../../shared/i18n';
+import { stationPostIconAssets } from '../../assets/icons';
+import { AvatarConfigDTO } from '../../models/api';
+import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
+import { UserAvatarRenderer } from '../messages/messageTypes';
 import { Language } from '../session/useMiaoxunSession';
-import { ProfileRegionRow } from './StationShared';
-import { PresenceMenuAnchor } from './stationTypes';
+import { ProfileRegionRow, Stat } from './StationShared';
+import { StationTab } from './stationTypes';
 
 export function StationProfileHeader({
   palette,
   language,
+  isDark,
   nickname,
   aiId,
-  presenceMode,
+  avatarText,
+  avatarConfig,
+  followingCount,
+  followersCount,
+  likesCount,
+  collectionsCount,
   miaoPoints,
   community,
   activityArea,
-  onTogglePresenceMenu,
+  renderUserAvatar,
   onCopyAIID,
   onShowQRCode,
+  onOpenSettings,
+  onOpenPoints,
   onOpenLocation,
+  onOpenSocial,
 }: {
   palette: Palette;
   language: Language;
+  isDark: boolean;
   nickname: string;
   aiId: string;
-  presenceMode: PresenceMode;
+  avatarText: string;
+  avatarConfig: AvatarConfigDTO;
+  followingCount: number;
+  followersCount: number;
+  likesCount: number;
+  collectionsCount: number;
   miaoPoints: number;
   community: string;
   activityArea: string;
-  onTogglePresenceMenu: (anchor: PresenceMenuAnchor) => void;
+  renderUserAvatar: UserAvatarRenderer;
   onCopyAIID: () => void;
   onShowQRCode: () => void;
+  onOpenSettings: () => void;
+  onOpenPoints: () => void;
   onOpenLocation: () => void;
+  onOpenSocial: () => void;
 }) {
-  const presenceButtonRef = useRef<View>(null);
-
-  const openPresenceMenu = () => {
-    presenceButtonRef.current?.measureInWindow((x, y, width, height) => {
-      onTogglePresenceMenu({ x, y, width, height });
-    });
-  };
+  const textColor = isDark ? palette.text : '#000000';
+  const secondaryTextColor = isDark
+    ? palette.secondaryText
+    : 'rgba(0,0,0,0.60)';
+  const accentColor = isDark ? palette.mint : '#2012D9';
+  const tagBackgroundColor = isDark ? palette.surface : '#F4F6FF';
+  const tagBorderColor = isDark ? palette.border : '#DBE2FF';
 
   return (
-    <View style={styles.profileCopy}>
-      <View>
-        <Pressable onPress={openPresenceMenu} style={styles.profileNameButton}>
-          <Text
-            style={[styles.profileName, { color: palette.text }]}
-            numberOfLines={1}
-          >
-            {nickname}
-          </Text>
-          <View ref={presenceButtonRef} style={styles.presenceAnchor}>
-            <View
-              style={[
-                styles.presencePill,
-                {
-                  backgroundColor:
-                    presenceMode === 'online'
-                      ? `${palette.mint}1f`
-                      : palette.soft,
-                  borderColor:
-                    presenceMode === 'online'
-                      ? `${palette.mint}55`
-                      : palette.border,
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.presenceDot,
-                  {
-                    backgroundColor:
-                      presenceMode === 'online'
-                        ? palette.mint
-                        : palette.secondaryText,
-                  },
-                ]}
-              />
-              <Text
-                style={[
-                  styles.presencePillText,
-                  {
-                    color:
-                      presenceMode === 'online'
-                        ? palette.mint
-                        : palette.secondaryText,
-                  },
-                ]}
-              >
-                {presenceModeText(language, presenceMode)}
-              </Text>
-              <ChevronDown
-                color={
-                  presenceMode === 'online'
-                    ? palette.mint
-                    : palette.secondaryText
-                }
-                size={13}
-                strokeWidth={2.6}
-              />
-            </View>
-          </View>
+    <View style={styles.stationProfileHeader}>
+      <View style={styles.stationProfileHeroRow}>
+        {renderUserAvatar({
+          text: avatarText,
+          config: avatarConfig,
+          size: 76,
+        })}
+        <View style={styles.stationProfileStatsRow}>
+          <Stat
+            value={followingCount}
+            label={textFor(language, '关注', 'Following')}
+            palette={palette}
+            textColor={textColor}
+            secondaryTextColor={secondaryTextColor}
+            onPress={onOpenSocial}
+          />
+          <Stat
+            value={followersCount}
+            label={textFor(language, '粉丝', 'Followers')}
+            palette={palette}
+            textColor={textColor}
+            secondaryTextColor={secondaryTextColor}
+            onPress={onOpenSocial}
+          />
+          <Stat
+            value={likesCount + collectionsCount}
+            label={textFor(language, '获赞与收藏', 'Likes & saves')}
+            palette={palette}
+            textColor={textColor}
+            secondaryTextColor={secondaryTextColor}
+          />
+        </View>
+        <Pressable
+          accessibilityLabel={textFor(language, '设置', 'Settings')}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onOpenSettings}
+          style={styles.stationSettingsButton}
+        >
+          <Image
+            resizeMode="contain"
+            source={stationPostIconAssets.more}
+            style={[
+              styles.stationSettingsIcon,
+              isDark && { tintColor: palette.text },
+            ]}
+          />
         </Pressable>
       </View>
-      <View style={styles.aiIdRow}>
-        <Text style={[styles.profileMeta, { color: palette.secondaryText }]}>
-          AI ID：
-        </Text>
-        <Text
-          style={[styles.profileMetaStrong, { color: palette.text }]}
-          numberOfLines={1}
+
+      <Text
+        numberOfLines={1}
+        style={[styles.profileName, { color: textColor }]}
+      >
+        {nickname}
+      </Text>
+
+      <View style={styles.stationAiIdRow}>
+        <Pressable
+          accessibilityLabel={textFor(language, '复制 AI ID', 'Copy AI ID')}
+          accessibilityRole="button"
+          onPress={onCopyAIID}
+          style={styles.stationAiIdPressable}
         >
-          {aiId}
-        </Text>
-        <View style={styles.aiIdActions}>
-          <Pressable onPress={onCopyAIID} style={styles.profileIconButton}>
-            <Copy color={palette.text} size={14} strokeWidth={2.5} />
-          </Pressable>
-          <Pressable onPress={onShowQRCode} style={styles.profileIconButton}>
-            <QrCode color={palette.text} size={14} strokeWidth={2.5} />
-          </Pressable>
-        </View>
+          <Text
+            numberOfLines={1}
+            style={[styles.profileMeta, { color: secondaryTextColor }]}
+          >
+            AI ID: {aiId}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel={textFor(language, '我的二维码', 'My QR code')}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onShowQRCode}
+          style={styles.stationQrButton}
+        >
+          <QrCode color={textColor} size={14} strokeWidth={2.1} />
+        </Pressable>
       </View>
-      <View
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={onOpenPoints}
         style={[
           styles.profilePointsPill,
-          { backgroundColor: palette.soft, borderColor: palette.border },
+          {
+            backgroundColor: tagBackgroundColor,
+            borderColor: tagBorderColor,
+          },
         ]}
       >
-        <Text style={[styles.profilePointsText, { color: palette.text }]}>
-          {textFor(language, `妙点 ${miaoPoints}`, `Points ${miaoPoints}`)}
+        <Text
+          style={[styles.profilePointsLabel, { color: secondaryTextColor }]}
+        >
+          {textFor(language, '妙点', 'Points')}
         </Text>
-        <Text style={[styles.profilePointsDetail, { color: palette.mint }]}>
+        <Text style={[styles.profilePointsText, { color: textColor }]}>
+          {miaoPoints}
+        </Text>
+        <Text style={[styles.profilePointsDetail, { color: accentColor }]}>
           {textFor(language, '明细', 'Details')}
         </Text>
-      </View>
+      </Pressable>
+
       <ProfileRegionRow
         title={textFor(language, '我的社区', 'Community')}
         value={community}
         palette={palette}
+        backgroundColor={tagBackgroundColor}
+        borderColor={tagBorderColor}
+        textColor={textColor}
+        secondaryTextColor={secondaryTextColor}
+        showChevron={false}
         onPress={onOpenLocation}
       />
       <ProfileRegionRow
         title={textFor(language, '我的活动区域', 'Activity Area')}
         value={activityArea}
         palette={palette}
+        backgroundColor={tagBackgroundColor}
+        borderColor={tagBorderColor}
+        textColor={textColor}
+        secondaryTextColor={secondaryTextColor}
+        showChevron={false}
         onPress={onOpenLocation}
       />
     </View>
   );
 }
 
-export function PresenceMenu({
+export function StationTabs({
   palette,
   language,
-  presenceMode,
-  isUpdatingPresence,
-  position,
-  onSelectPresence,
+  isDark,
+  value,
+  onChange,
 }: {
   palette: Palette;
   language: Language;
-  presenceMode: PresenceMode;
-  isUpdatingPresence: boolean;
-  position: { left: number; top: number };
-  onSelectPresence: (mode: PresenceMode) => void;
+  isDark: boolean;
+  value: StationTab;
+  onChange: (tab: StationTab) => void;
 }) {
+  const textColor = isDark ? palette.text : '#000000';
+  const secondaryTextColor = isDark
+    ? palette.secondaryText
+    : 'rgba(0,0,0,0.60)';
+  const tabs: Array<{ label: string; value: StationTab }> = [
+    { label: textFor(language, '我的小站', 'Station'), value: 'station' },
+    { label: textFor(language, '我的动态', 'Posts'), value: 'posts' },
+    { label: textFor(language, 'AI伙伴', 'AI Partners'), value: 'agents' },
+    { label: textFor(language, '社交网络', 'Social'), value: 'social' },
+  ];
+
   return (
-    <View
-      style={[
-        styles.presenceFloatingMenu,
-        {
-          backgroundColor: palette.surface,
-          borderColor: palette.border,
-          left: position.left,
-          shadowColor: palette.shadow,
-          top: position.top,
-        },
-      ]}
-    >
-      {(['online', 'offline', 'hidden'] as PresenceMode[]).map(mode => {
-        const isSelected = mode === presenceMode;
-        const menuItemBackgroundColor = isSelected
-          ? `${palette.mint}1f`
-          : 'transparent';
+    <View accessibilityRole="tablist" style={styles.stationTabs}>
+      {tabs.map(tab => {
+        const isSelected = tab.value === value;
         return (
           <Pressable
-            key={mode}
-            disabled={isUpdatingPresence}
-            onPress={() => onSelectPresence(mode)}
-            style={[
-              styles.presenceMenuItem,
-              { backgroundColor: menuItemBackgroundColor },
-            ]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: isSelected }}
+            key={tab.value}
+            onPress={() => onChange(tab.value)}
+            style={styles.stationTabButton}
           >
-            <View
+            <Text
+              numberOfLines={1}
               style={[
-                styles.presenceDot,
+                styles.stationTabText,
+                isSelected
+                  ? styles.stationTabTextActive
+                  : styles.stationTabTextInactive,
                 {
-                  backgroundColor:
-                    mode === 'online' ? palette.mint : palette.secondaryText,
+                  color: isSelected ? textColor : secondaryTextColor,
                 },
               ]}
-            />
-            <Text
-              style={[
-                styles.presenceMenuText,
-                { color: isSelected ? palette.mint : palette.text },
-              ]}
             >
-              {presenceModeText(language, mode)}
+              {tab.label}
             </Text>
           </Pressable>
         );

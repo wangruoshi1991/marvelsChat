@@ -1,11 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 
-import {
-  AgentReadinessDTO,
-  StationContentDTO,
-  StationVideoDraftDTO,
-} from '../../models/api';
+import { StationContentDTO, StationVideoDraftDTO } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
@@ -17,7 +13,6 @@ const defaultPrompt = '把我的相册和漫画日记整理成一支适合小站
 export function StationVideoAgentPanel({
   palette,
   language,
-  readiness,
   stationContent,
   onCreateVideoDraft,
   onActionMessage,
@@ -25,7 +20,6 @@ export function StationVideoAgentPanel({
 }: {
   palette: Palette;
   language: Language;
-  readiness?: AgentReadinessDTO;
   stationContent: StationContentDTO;
   onCreateVideoDraft: (payload: {
     prompt: string;
@@ -46,7 +40,9 @@ export function StationVideoAgentPanel({
     () =>
       [...(stationContent.videoDrafts || [])]
         .sort((left, right) =>
-          String(right.createdAt || '').localeCompare(String(left.createdAt || '')),
+          String(right.createdAt || '').localeCompare(
+            String(left.createdAt || ''),
+          ),
         )
         .slice(0, 3),
     [stationContent.videoDrafts],
@@ -63,13 +59,19 @@ export function StationVideoAgentPanel({
         prompt: safePrompt,
         diaryEntryId: stationContent.diaryEntries[0]?.id || null,
         comicDiaryId: stationContent.comicDiaries?.[0]?.id || null,
-        mediaAssetIds: stationContent.mediaAssets.slice(0, 8).map(asset => asset.id),
-        fileAssetIds: stationContent.fileAssets.slice(0, 3).map(asset => asset.id),
+        mediaAssetIds: stationContent.mediaAssets
+          .slice(0, 8)
+          .map(asset => asset.id),
+        fileAssetIds: stationContent.fileAssets
+          .slice(0, 3)
+          .map(asset => asset.id),
         format: 'short-clip',
         aspectRatio: '9:16',
         durationSeconds: 45,
       });
-      onActionMessage(textFor(language, '视频草稿已生成', 'Video draft created'));
+      onActionMessage(
+        textFor(language, '视频草稿已整理', 'Video draft prepared'),
+      );
     } catch (error) {
       onActionError(error);
     } finally {
@@ -80,8 +82,12 @@ export function StationVideoAgentPanel({
   return (
     <StationModule
       palette={palette}
-      title={textFor(language, '视频制作 Agent', 'Video Production Agent')}
-      action={isCreating ? textFor(language, '生成中', 'Creating') : textFor(language, '生成', 'Create')}
+      title={textFor(language, '视频草稿', 'Video Draft')}
+      action={
+        isCreating
+          ? textFor(language, '整理中', 'Preparing')
+          : textFor(language, '整理', 'Prepare')
+      }
       onAction={createDraft}
     >
       <View style={styles.stationAgentLoopStack}>
@@ -92,13 +98,22 @@ export function StationVideoAgentPanel({
           ]}
         >
           <View style={styles.stationAgentLoopStatusCopy}>
-            <Text style={[styles.stationAgentLoopEyebrow, { color: palette.secondaryText }]}>
+            <Text
+              style={[
+                styles.stationAgentLoopEyebrow,
+                { color: palette.secondaryText },
+              ]}
+            >
               {textFor(language, '视频草稿', 'Video Draft')}
             </Text>
-            <Text style={[styles.stationAgentLoopTitle, { color: palette.text }]}>
-              {readiness?.configured
-                ? textFor(language, '可生成脚本和镜头表', 'Ready to draft scripts and shots')
-                : textFor(language, '可生成草稿，成片渲染稍后开放', 'Drafts ready; rendering will open later')}
+            <Text
+              style={[styles.stationAgentLoopTitle, { color: palette.text }]}
+            >
+              {textFor(
+                language,
+                '脚本草稿可整理，成片渲染待开放',
+                'Script drafts ready; rendering pending',
+              )}
             </Text>
           </View>
           <Text
@@ -107,9 +122,7 @@ export function StationVideoAgentPanel({
               { backgroundColor: palette.surface, color: palette.text },
             ]}
           >
-            {readiness?.configured
-              ? textFor(language, '可生成', 'Ready')
-              : textFor(language, '草稿可用', 'Drafts ready')}
+            {textFor(language, '草稿工具', 'Draft tool')}
           </Text>
         </View>
 
@@ -118,7 +131,11 @@ export function StationVideoAgentPanel({
           onChangeText={setPrompt}
           multiline
           maxLength={1200}
-          placeholder={textFor(language, '描述要生成的视频草稿', 'Describe the video draft')}
+          placeholder={textFor(
+            language,
+            '描述要生成的视频草稿',
+            'Describe the video draft',
+          )}
           placeholderTextColor={palette.secondaryText}
           style={[
             styles.settingsInput,
@@ -137,16 +154,32 @@ export function StationVideoAgentPanel({
               key={draft.id}
               style={[
                 styles.stationAgentLoopCard,
-                { borderColor: palette.border, backgroundColor: palette.surface },
+                {
+                  borderColor: palette.border,
+                  backgroundColor: palette.surface,
+                },
               ]}
             >
-              <Text style={[styles.stationAgentLoopTitle, { color: palette.text }]}>
+              <Text
+                style={[styles.stationAgentLoopTitle, { color: palette.text }]}
+              >
                 {draft.title}
               </Text>
-              <Text style={[styles.stationAgentLoopMeta, { color: palette.secondaryText }]}>
-                {formatDuration(language, draft.durationSeconds)} · {statusText(language, draft.status)}
+              <Text
+                style={[
+                  styles.stationAgentLoopMeta,
+                  { color: palette.secondaryText },
+                ]}
+              >
+                {formatDuration(language, draft.durationSeconds)} ·{' '}
+                {statusText(language, draft.status)}
               </Text>
-              <Text style={[styles.stationAgentLoopBody, { color: palette.secondaryText }]}>
+              <Text
+                style={[
+                  styles.stationAgentLoopBody,
+                  { color: palette.secondaryText },
+                ]}
+              >
                 {draft.summary}
               </Text>
               <VideoScriptPreview
@@ -175,7 +208,9 @@ export function StationVideoAgentPanel({
             </View>
           ))
         ) : (
-          <Text style={[styles.relationshipEmpty, { color: palette.secondaryText }]}>
+          <Text
+            style={[styles.relationshipEmpty, { color: palette.secondaryText }]}
+          >
             {textFor(
               language,
               '生成后会展示脚本摘要、镜头表和字幕结构。',
@@ -221,8 +256,18 @@ function VideoScriptPreview({
   return (
     <View style={styles.stationVideoPreviewStack}>
       {scriptLines.length ? (
-        <View style={[styles.stationVideoPreviewBlock, { backgroundColor: palette.soft }]}>
-          <Text style={[styles.stationAgentLoopEyebrow, { color: palette.secondaryText }]}>
+        <View
+          style={[
+            styles.stationVideoPreviewBlock,
+            { backgroundColor: palette.soft },
+          ]}
+        >
+          <Text
+            style={[
+              styles.stationAgentLoopEyebrow,
+              { color: palette.secondaryText },
+            ]}
+          >
             {textFor(language, '脚本摘要', 'Script')}
           </Text>
           {scriptLines.map((line, index) => (
@@ -246,7 +291,9 @@ function VideoScriptPreview({
                 { backgroundColor: palette.soft, borderColor: palette.border },
               ]}
             >
-              <Text style={[styles.stationVideoShotIndex, { color: palette.mint }]}>
+              <Text
+                style={[styles.stationVideoShotIndex, { color: palette.mint }]}
+              >
                 {index + 1}
               </Text>
               <Text
@@ -272,13 +319,22 @@ function scriptPreviewLines(script: Record<string, unknown>) {
     script.caption,
   ];
   return candidates
-    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .filter(
+      (item): item is string =>
+        typeof item === 'string' && item.trim().length > 0,
+    )
     .map(item => item.trim())
     .slice(0, 3);
 }
 
 function shotPreviewText(shot: Record<string, unknown>, language: Language) {
-  const candidates = [shot.title, shot.scene, shot.visual, shot.caption, shot.description];
+  const candidates = [
+    shot.title,
+    shot.scene,
+    shot.visual,
+    shot.caption,
+    shot.description,
+  ];
   const text = candidates.find(
     item => typeof item === 'string' && item.trim().length > 0,
   );

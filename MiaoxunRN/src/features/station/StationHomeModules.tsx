@@ -19,12 +19,14 @@ export function StationModule({
   title,
   action,
   onAction,
+  actionDisabled = false,
   children,
 }: {
   palette: Palette;
   title: string;
   action: string;
   onAction: () => void;
+  actionDisabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -40,10 +42,12 @@ export function StationModule({
         </Text>
         <Pressable
           accessibilityRole="button"
+          disabled={actionDisabled}
           onPress={onAction}
           style={[
             styles.stationModuleAddButton,
             { backgroundColor: palette.soft },
+            actionDisabled && styles.disabledButton,
           ]}
         >
           <Text style={[styles.stationModuleAddText, { color: palette.text }]}>

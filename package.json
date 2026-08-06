@@ -1,0 +1,17 @@
+{
+  "name": "@miaoxun/repository",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared quality tooling for the Miaoxun repository.",
+  "scripts": {
+    "lint": "eslint \"backend/src/**/*.js\" \"backend/scripts/**/*.js\" \"backend/test/**/*.js\" \"agents/*.js\" \"agents/test/**/*.js\" \"admin/*.js\" \"admin/test/**/*.js\""
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.8.0",
+    "globals": "17.9.0"
+  },
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  }
+}

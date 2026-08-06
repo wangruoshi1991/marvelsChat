@@ -16,7 +16,6 @@ import { Palette } from '../../shared/theme';
 import { Language } from '../session/useMiaoxunSession';
 import { StationAlbumAgentPanel } from './StationAlbumAgentPanel';
 import { StationFileAgentPanel } from './StationFileAgentPanel';
-import { StationModel3DPanel } from './StationModel3DPanel';
 import { StationSiteBuilderPanel } from './StationSiteBuilderPanel';
 import { StationVideoAgentPanel } from './StationVideoAgentPanel';
 
@@ -29,8 +28,6 @@ export function StationCapabilityWorkspace({
   hasCapability,
   onCreateSiteDraft,
   onApplySiteDraft,
-  onCreateModelJob,
-  onSyncModelJob,
   onLoadAlbumSuggestions,
   onApplyAlbumSuggestion,
   onCreateFileAsset,
@@ -50,12 +47,6 @@ export function StationCapabilityWorkspace({
     apply?: boolean;
   }) => Promise<unknown>;
   onApplySiteDraft: (draftId: string) => Promise<unknown>;
-  onCreateModelJob: (payload: {
-    inputType: 'text';
-    prompt: string;
-    provider: 'meshy';
-  }) => Promise<unknown>;
-  onSyncModelJob: (jobId: string) => Promise<unknown>;
   onLoadAlbumSuggestions: () => Promise<StationAlbumSuggestionDTO[]>;
   onApplyAlbumSuggestion: (payload: {
     title: string;
@@ -106,25 +97,11 @@ export function StationCapabilityWorkspace({
         onActionError={onActionError}
       />
     ) : null,
-    hasCapability('model-3d') ? (
-      <StationModel3DPanel
-        key="model-3d"
-        palette={palette}
-        language={language}
-        readiness={agentReadiness['model-3d']}
-        modelJobs={stationContent.modelJobs || []}
-        onCreateJob={onCreateModelJob}
-        onSyncJob={onSyncModelJob}
-        onActionMessage={onActionMessage}
-        onActionError={onActionError}
-      />
-    ) : null,
     hasCapability('album-manager') ? (
       <StationAlbumAgentPanel
         key="album-manager"
         palette={palette}
         language={language}
-        readiness={agentReadiness['album-manager']}
         onLoadSuggestions={onLoadAlbumSuggestions}
         onApplySuggestion={onApplyAlbumSuggestion}
         onActionMessage={onActionMessage}
@@ -136,7 +113,6 @@ export function StationCapabilityWorkspace({
         key="file-preprocessor"
         palette={palette}
         language={language}
-        readiness={agentReadiness['file-preprocessor']}
         fileAssets={stationContent.fileAssets || []}
         onCreateFileAsset={onCreateFileAsset}
         onPreprocessFileAsset={onPreprocessFileAsset}
@@ -149,7 +125,6 @@ export function StationCapabilityWorkspace({
         key="video-production"
         palette={palette}
         language={language}
-        readiness={agentReadiness['video-production']}
         stationContent={stationContent}
         onCreateVideoDraft={onCreateVideoDraft}
         onActionMessage={onActionMessage}

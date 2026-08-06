@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 
-import { AgentDTO, OwnedAgentDTO } from '../../models/api';
+import {
+  AgentDTO,
+  Avatar3DBootstrapDTO,
+  OwnedAgentDTO,
+} from '../../models/api';
 import { Palette } from '../../shared/theme';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { StationAgentsPanel } from './StationAgentsPanel';
@@ -8,6 +12,7 @@ import { StationHome } from './StationHome';
 import { StationPostsPanel } from './StationPostsPanel';
 import { StationSocialPanel } from './StationSocialPanel';
 import { StationCreateKind, StationTab } from './stationTypes';
+import { Avatar3DLoadState } from './useAvatar3d';
 
 export function StationPanel({
   palette,
@@ -17,6 +22,9 @@ export function StationPanel({
   profile,
   relationships,
   stationContent,
+  avatar3d,
+  avatar3dStatus,
+  avatar3dError,
   agents,
   agentReadiness,
   ownedAgents,
@@ -29,10 +37,10 @@ export function StationPanel({
   onOpenCreateSheet,
   onOpenDiaryDetail,
   onOpenAlbumDetail,
+  onDeletePost,
   onCreateSiteDraft,
   onApplySiteDraft,
-  onCreateModelJob,
-  onSyncModelJob,
+  onOpenAvatar3d,
   onLoadAlbumSuggestions,
   onApplyAlbumSuggestion,
   onCreateFileAsset,
@@ -48,6 +56,9 @@ export function StationPanel({
   profile: ReturnType<typeof useMiaoxunSession>['profile'];
   relationships: ReturnType<typeof useMiaoxunSession>['relationships'];
   stationContent: ReturnType<typeof useMiaoxunSession>['stationContent'];
+  avatar3d: Avatar3DBootstrapDTO | null;
+  avatar3dStatus: Avatar3DLoadState;
+  avatar3dError: string;
   agents: AgentDTO[];
   agentReadiness: ReturnType<typeof useMiaoxunSession>['agentReadiness'];
   ownedAgents: OwnedAgentDTO[];
@@ -63,30 +74,43 @@ export function StationPanel({
   onOpenCreateSheet: (kind: StationCreateKind) => void;
   onOpenDiaryDetail: (entryId: string) => void;
   onOpenAlbumDetail: (albumId: string) => void;
-  onCreateSiteDraft: ReturnType<typeof useMiaoxunSession>['createStationSiteDraft'];
-  onApplySiteDraft: ReturnType<typeof useMiaoxunSession>['applyStationSiteDraft'];
-  onCreateModelJob: ReturnType<typeof useMiaoxunSession>['createStationModelJob'];
-  onSyncModelJob: ReturnType<typeof useMiaoxunSession>['syncStationModelJob'];
-  onLoadAlbumSuggestions: ReturnType<typeof useMiaoxunSession>['listStationAlbumSuggestions'];
-  onApplyAlbumSuggestion: ReturnType<typeof useMiaoxunSession>['applyStationAlbumSuggestion'];
-  onCreateFileAsset: ReturnType<typeof useMiaoxunSession>['createStationFileAsset'];
-  onPreprocessFileAsset: ReturnType<typeof useMiaoxunSession>['preprocessStationFileAsset'];
-  onCreateVideoDraft: ReturnType<typeof useMiaoxunSession>['createStationVideoDraft'];
+  onDeletePost: ReturnType<typeof useMiaoxunSession>['deleteStationPost'];
+  onCreateSiteDraft: ReturnType<
+    typeof useMiaoxunSession
+  >['createStationSiteDraft'];
+  onApplySiteDraft: ReturnType<
+    typeof useMiaoxunSession
+  >['applyStationSiteDraft'];
+  onOpenAvatar3d: () => void;
+  onLoadAlbumSuggestions: ReturnType<
+    typeof useMiaoxunSession
+  >['listStationAlbumSuggestions'];
+  onApplyAlbumSuggestion: ReturnType<
+    typeof useMiaoxunSession
+  >['applyStationAlbumSuggestion'];
+  onCreateFileAsset: ReturnType<
+    typeof useMiaoxunSession
+  >['createStationFileAsset'];
+  onPreprocessFileAsset: ReturnType<
+    typeof useMiaoxunSession
+  >['preprocessStationFileAsset'];
+  onCreateVideoDraft: ReturnType<
+    typeof useMiaoxunSession
+  >['createStationVideoDraft'];
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
-  const [stationAvatarRotation, setStationAvatarRotation] = useState(0);
-
   if (selectedTab === 'posts') {
     return (
       <StationPostsPanel
         palette={palette}
         language={language}
         stationContent={stationContent}
+        ownedAgents={ownedAgents}
         token={token}
-        onOpenCreateSheet={onOpenCreateSheet}
-        onOpenDiaryDetail={onOpenDiaryDetail}
-        onOpenAlbumDetail={onOpenAlbumDetail}
+        onDeletePost={onDeletePost}
+        onActionMessage={onActionMessage}
+        onActionError={onActionError}
       />
     );
   }
@@ -106,8 +130,6 @@ export function StationPanel({
         onSetAgentEnabled={onSetAgentEnabled}
         onCreateSiteDraft={onCreateSiteDraft}
         onApplySiteDraft={onApplySiteDraft}
-        onCreateModelJob={onCreateModelJob}
-        onSyncModelJob={onSyncModelJob}
         onLoadAlbumSuggestions={onLoadAlbumSuggestions}
         onApplyAlbumSuggestion={onApplyAlbumSuggestion}
         onCreateFileAsset={onCreateFileAsset}
@@ -139,11 +161,13 @@ export function StationPanel({
       token={token}
       profile={profile}
       stationContent={stationContent}
+      avatar3d={avatar3d}
+      avatar3dStatus={avatar3dStatus}
+      avatar3dError={avatar3dError}
       agents={agents}
       ownedAgents={ownedAgents}
       moduleStatus={moduleStatus}
-      avatarRotation={stationAvatarRotation}
-      onAvatarRotate={setStationAvatarRotation}
+      onOpenAvatar3d={onOpenAvatar3d}
       onSelectStationTab={onSelectStationTab}
       onOpenCreateSheet={onOpenCreateSheet}
       onOpenDiaryDetail={onOpenDiaryDetail}

@@ -26,36 +26,6 @@ import { Palette, palettes } from './theme';
 export type IconComponent = LucideIcon;
 export type RootTab = 'messages' | 'station';
 
-export function IconButton({
-  icon: Icon,
-  palette,
-  variant,
-  onPress,
-}: {
-  icon: IconComponent;
-  palette: Palette;
-  variant: 'soft' | 'surface';
-  onPress?: () => void;
-}) {
-  const buttonStyle =
-    variant === 'soft'
-      ? [
-          styles.iconButton,
-          styles.iconButtonBorderless,
-          { backgroundColor: palette.soft },
-        ]
-      : [
-          styles.iconButton,
-          { backgroundColor: palette.surface, borderColor: palette.border },
-        ];
-
-  return (
-    <Pressable onPress={onPress} style={buttonStyle}>
-      <Icon color={palette.text} size={19} strokeWidth={2.4} />
-    </Pressable>
-  );
-}
-
 export function SegmentedControl<T extends string>({
   fill,
   palette,
@@ -101,7 +71,12 @@ export function SegmentedControl<T extends string>({
                 {option.label}
               </Text>
               {option.badge && option.badge > 0 ? (
-                <View style={[styles.segmentBadge, { backgroundColor: palette.rose }]}>
+                <View
+                  style={[
+                    styles.segmentBadge,
+                    { backgroundColor: palette.rose },
+                  ]}
+                >
                   <Text style={styles.segmentBadgeText}>
                     {option.badge > 99 ? '99+' : option.badge}
                   </Text>
@@ -166,12 +141,8 @@ export function ChatHeader({
           <View style={styles.chatHeaderSubtitleRow}>
             {subtitleStatus ? (
               <Circle
-                color={
-                  subtitleStatus === 'online' ? '#34C759' : '#FF3B30'
-                }
-                fill={
-                  subtitleStatus === 'online' ? '#34C759' : '#FF3B30'
-                }
+                color={subtitleStatus === 'online' ? '#34C759' : '#FF3B30'}
+                fill={subtitleStatus === 'online' ? '#34C759' : '#FF3B30'}
                 size={7}
                 strokeWidth={0}
               />
@@ -264,16 +235,18 @@ export function BottomBar({
   language,
   selectedTab,
   onSelectTab,
+  onCreatePost,
 }: {
   palette: Palette;
   language: Language;
   selectedTab: RootTab;
   onSelectTab: (tab: RootTab) => void;
+  onCreatePost: () => void;
 }) {
   const isLightPalette = palette.text === palettes.light.text;
   const bottomBarColors = isLightPalette
-    ? {backgroundColor: '#FFFFFF', borderTopColor: '#F0EBFD'}
-    : {backgroundColor: palette.surface, borderTopColor: palette.border};
+    ? { backgroundColor: '#FFFFFF', borderTopColor: '#F0EBFD' }
+    : { backgroundColor: palette.surface, borderTopColor: palette.border };
 
   return (
     <View style={[styles.bottomBar, bottomBarColors]}>
@@ -288,6 +261,20 @@ export function BottomBar({
         palette={palette}
         onPress={() => onSelectTab('messages')}
       />
+      <View style={styles.bottomCreateSlot}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={textFor(language, '发布动态', 'New Post')}
+          onPress={onCreatePost}
+          style={styles.bottomCreateButton}
+        >
+          <Image
+            source={stationPostIconAssets.add}
+            resizeMode="contain"
+            style={styles.bottomCreateIcon}
+          />
+        </Pressable>
+      </View>
       <TabButton
         title={textFor(language, '小站', 'Station')}
         iconSource={
@@ -322,31 +309,22 @@ function TabButton({
       ? '#2A00FF'
       : '#CBC5DE'
     : selected
-      ? palette.mint
-      : palette.secondaryText;
+    ? palette.mint
+    : palette.secondaryText;
 
   return (
     <Pressable
       accessibilityRole="tab"
-      accessibilityState={{selected}}
+      accessibilityState={{ selected }}
       onPress={onPress}
-      style={styles.tabButton}>
+      style={styles.tabButton}
+    >
       <Image
         source={iconSource}
-        style={[
-          styles.tabIcon,
-          !isLightPalette && {tintColor: titleColor},
-        ]}
+        style={[styles.tabIcon, !isLightPalette && { tintColor: titleColor }]}
         resizeMode="contain"
       />
-      <Text
-        style={[
-          styles.tabTitle,
-          {color: titleColor},
-        ]}
-      >
-        {title}
-      </Text>
+      <Text style={[styles.tabTitle, { color: titleColor }]}>{title}</Text>
     </Pressable>
   );
 }

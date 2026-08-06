@@ -13,8 +13,8 @@ const encodeObjectKey = (key) =>
 const safeFilename = (filename = "") =>
   String(filename)
     .trim()
-    .replace(/[^\w.\-]+/g, "-")
-    .replace(/^[.\-]+|[.\-]+$/g, "")
+    .replace(/[^\w.-]+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "")
     .slice(0, 120) || "upload";
 
 const assertOssConfigured = () => {
@@ -35,7 +35,12 @@ export const buildStationMediaObjectKey = ({
 }) =>
   `users/${userId}/station-media/${assetId}/${safeFilename(originalFilename)}`;
 
-const createOssSignedUrl = ({ method, objectKey, contentType = "" }) => {
+const createOssSignedUrl = ({
+  method,
+  objectKey,
+  contentType = "",
+  useInternalEndpoint = false,
+}) => {
   assertOssConfigured();
 
   const expires = Math.floor(Date.now() / 1000) + uploadUrlTtlSeconds;
@@ -52,8 +57,11 @@ const createOssSignedUrl = ({ method, objectKey, contentType = "" }) => {
     .update(stringToSign)
     .digest("base64");
 
+  const endpoint = useInternalEndpoint && config.oss.internalEndpoint
+    ? config.oss.internalEndpoint
+    : config.oss.endpoint;
   const url = new URL(
-    `https://${config.oss.bucket}.${config.oss.endpoint}/${encodeObjectKey(objectKey)}`,
+    `https://${config.oss.bucket}.${endpoint}/${encodeObjectKey(objectKey)}`,
   );
   url.searchParams.set("OSSAccessKeyId", config.oss.accessKeyId);
   url.searchParams.set("Expires", String(expires));
@@ -61,12 +69,17 @@ const createOssSignedUrl = ({ method, objectKey, contentType = "" }) => {
   return { expires, url };
 };
 
-export function createOssPutSignedUrl({ objectKey, contentType }) {
+export function createOssPutSignedUrl({
+  objectKey,
+  contentType,
+  useInternalEndpoint = false,
+}) {
   const normalizedContentType = contentType || "application/octet-stream";
   const { expires, url } = createOssSignedUrl({
     method: "PUT",
     objectKey,
     contentType: normalizedContentType,
+    useInternalEndpoint,
   });
 
   return {
@@ -81,20 +94,28 @@ export function createOssPutSignedUrl({ objectKey, contentType }) {
   };
 }
 
-export function createOssGetSignedUrl({ objectKey }) {
-  const { url } = createOssSignedUrl({ method: "GET", objectKey });
+export function createOssGetSignedUrl({ objectKey, useInternalEndpoint = false }) {
+  const { url } = createOssSignedUrl({ method: "GET", objectKey, useInternalEndpoint });
   return url.toString();
 }
 
-export function createOssHeadSignedUrl({ objectKey }) {
-  const { url } = createOssSignedUrl({ method: "HEAD", objectKey });
+export function createOssHeadSignedUrl({ objectKey, useInternalEndpoint = false }) {
+  const { url } = createOssSignedUrl({ method: "HEAD", objectKey, useInternalEndpoint });
+  return url.toString();
+}
+
+function createOssDeleteSignedUrl({ objectKey, useInternalEndpoint = false }) {
+  const { url } = createOssSignedUrl({ method: "DELETE", objectKey, useInternalEndpoint });
   return url.toString();
 }
 
 export async function inspectOssObject({ objectKey, fetchImpl = fetch }) {
   let response;
   try {
-    response = await fetchImpl(createOssHeadSignedUrl({ objectKey }), {
+    response = await fetchImpl(createOssHeadSignedUrl({
+      objectKey,
+      useInternalEndpoint: true,
+    }), {
       method: "HEAD",
       signal: AbortSignal.timeout(config.oss.timeoutMs),
     });
@@ -133,7 +154,10 @@ export async function fetchOssObject({
   fetchImpl = fetch,
 }) {
   try {
-    const response = await fetchImpl(createOssGetSignedUrl({ objectKey }), {
+    const response = await fetchImpl(createOssGetSignedUrl({
+      objectKey,
+      useInternalEndpoint: true,
+    }), {
       headers: range ? { Range: range } : undefined,
       signal: AbortSignal.timeout(config.oss.timeoutMs),
     });
@@ -152,4 +176,57 @@ export async function fetchOssObject({
       reason: error instanceof Error ? error.message : "OSS request failed",
     });
   }
+}
+export async function putOssObject({
+  objectKey,
+  body,
+  contentType = "application/octet-stream",
+  fetchImpl = fetch,
+}) {
+  const signed = createOssPutSignedUrl({
+    objectKey,
+    contentType,
+    useInternalEndpoint: true,
+  });
+  let response;
+  try {
+    response = await fetchImpl(signed.url, {
+      method: "PUT",
+      headers: signed.headers,
+      body,
+      signal: AbortSignal.timeout(config.oss.timeoutMs),
+    });
+  } catch (error) {
+    throw new HttpError(502, "Media storage write failed.", {
+      reason: error instanceof Error ? error.message : "OSS request failed",
+    });
+  }
+  if (!response.ok) throw new HttpError(502, "Media storage write failed.");
+  return {
+    stored: true,
+    objectKey,
+    contentType,
+    byteSize: Buffer.isBuffer(body) ? body.length : null,
+  };
+}
+
+export async function deleteOssObject({ objectKey, fetchImpl = fetch }) {
+  let response;
+  try {
+    response = await fetchImpl(createOssDeleteSignedUrl({
+      objectKey,
+      useInternalEndpoint: true,
+    }), {
+      method: "DELETE",
+      signal: AbortSignal.timeout(config.oss.timeoutMs),
+    });
+  } catch (error) {
+    throw new HttpError(502, "Media storage deletion failed.", {
+      reason: error instanceof Error ? error.message : "OSS request failed",
+    });
+  }
+  if (!response.ok && response.status !== 404) {
+    throw new HttpError(502, "Media storage deletion failed.");
+  }
+  return { deleted: true };
 }

@@ -1,6 +1,6 @@
 import crypto from "crypto";
 
-export const avatarOptions = {
+const avatarOptions = {
   body: ["compact", "standard", "tall", "strong"],
   face: ["soft", "oval", "angular", "round"],
   skinTone: ["porcelain", "warm", "tan", "deep"],
@@ -74,11 +74,7 @@ export function normalizeAvatarConfig(config = {}, seed = "") {
     outfit: safeOption(avatarOptions.outfit, config.outfit, generated.outfit),
     accent: safeOption(avatarOptions.accent, config.accent || legacyPaletteToAccent[config.palette], generated.accent),
     expression: safeOption(avatarOptions.expression, config.expression, generated.expression),
-    accessory: safeOption(
-      avatarOptions.accessory,
-      config.accessory === "spark" || config.accessory === "cap" ? config.accessory : config.accessory,
-      generated.accessory,
-    ),
+    accessory: safeOption(avatarOptions.accessory, config.accessory, generated.accessory),
     pose: safeOption(avatarOptions.pose, config.pose, generated.pose),
     eyeStyle: safeOption(avatarOptions.eyeStyle, config.eyeStyle, generated.eyeStyle),
     browStyle: safeOption(avatarOptions.browStyle, config.browStyle, generated.browStyle),

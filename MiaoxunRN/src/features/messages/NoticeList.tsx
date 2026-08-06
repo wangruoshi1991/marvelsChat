@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -9,11 +9,11 @@ import {
   View,
 } from 'react-native';
 
-import {notificationIconAssets} from '../../assets/icons';
-import {Language, useMiaoxunSession} from '../session/useMiaoxunSession';
-import {displayText, textFor} from '../../shared/i18n';
-import {styles} from '../../shared/styles';
-import {Palette, palettes} from '../../shared/theme';
+import { notificationIconAssets } from '../../assets/icons';
+import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
+import { displayText, textFor } from '../../shared/i18n';
+import { styles } from '../../shared/styles';
+import { Palette, palettes } from '../../shared/theme';
 
 function resolveNoticeIcon(kind: string): ImageSourcePropType {
   if (kind.includes('collection') || kind.includes('favorite')) {
@@ -61,7 +61,12 @@ function NoticeRow({
     : palette.secondaryText;
 
   return (
-    <View style={[styles.noticeRow, {backgroundColor: palette.surface, borderColor: palette.border}]}>
+    <View
+      style={[
+        styles.noticeRow,
+        { backgroundColor: palette.surface, borderColor: palette.border },
+      ]}
+    >
       <View style={styles.noticeSymbol}>
         <Image
           source={iconSource}
@@ -73,14 +78,20 @@ function NoticeRow({
         <View style={styles.noticeTitleRow}>
           <Text
             numberOfLines={1}
-            style={[styles.noticeTitle, {color: titleColor}]}>
+            style={[styles.noticeTitle, { color: titleColor }]}
+          >
             {title}
           </Text>
-          <Text style={[styles.noticeStatus, {color: active ? palette.mint : palette.secondaryText}]}>
+          <Text
+            style={[
+              styles.noticeStatus,
+              { color: active ? palette.mint : palette.secondaryText },
+            ]}
+          >
             {status}
           </Text>
         </View>
-        <Text style={[styles.noticeMessage, {color: messageColor}]}>
+        <Text style={[styles.noticeMessage, { color: messageColor }]}>
           {message}
         </Text>
         {active || actionLabel || secondaryActionLabel ? (
@@ -89,25 +100,49 @@ function NoticeRow({
               <Pressable
                 disabled={isActionBusy || isSecondaryActionBusy}
                 onPress={onSecondaryAction}
-                style={[styles.noticeAction, styles.noticeSecondaryAction, {backgroundColor: palette.surface, borderColor: palette.border}, isSecondaryActionBusy && styles.disabledButton]}>
+                style={[
+                  styles.noticeAction,
+                  styles.noticeSecondaryAction,
+                  {
+                    backgroundColor: palette.surface,
+                    borderColor: palette.border,
+                  },
+                  isSecondaryActionBusy && styles.disabledButton,
+                ]}
+              >
                 {isSecondaryActionBusy ? (
                   <View style={styles.noticeActionContent}>
                     <ActivityIndicator color={palette.text} size="small" />
-                    <Text style={[styles.noticeActionText, {color: palette.text}]}>{textFor(language, '处理中', 'Processing')}</Text>
+                    <Text
+                      style={[styles.noticeActionText, { color: palette.text }]}
+                    >
+                      {textFor(language, '处理中', 'Processing')}
+                    </Text>
                   </View>
                 ) : (
-                  <Text style={[styles.noticeActionText, {color: palette.text}]}>{secondaryActionLabel}</Text>
+                  <Text
+                    style={[styles.noticeActionText, { color: palette.text }]}
+                  >
+                    {secondaryActionLabel}
+                  </Text>
                 )}
               </Pressable>
             ) : null}
             <Pressable
               disabled={isActionBusy || isSecondaryActionBusy}
               onPress={onAction}
-              style={[styles.noticeAction, {backgroundColor: palette.mint}, isActionBusy && styles.disabledButton]}>
+              style={[
+                styles.noticeAction,
+                { backgroundColor: palette.mint },
+                isActionBusy && styles.disabledButton,
+              ]}
+            >
               {isActionBusy ? (
                 <View style={styles.noticeActionContent}>
                   <ActivityIndicator color="#ffffff" size="small" />
-                  <Text style={styles.noticeActionText}>{textFor(language, '处理中', 'Processing')}</Text>
+                  <Text style={styles.noticeActionText}>
+                    {textFor(language, '处理中', 'Processing')}
+                  </Text>
                 </View>
               ) : (
                 <Text style={styles.noticeActionText}>
@@ -163,10 +198,15 @@ export function NoticeList({
   };
 
   return (
-    <ScrollView style={[styles.noticeScreen, {backgroundColor: palette.surface}]} contentContainerStyle={styles.noticeList}>
+    <ScrollView
+      style={[styles.noticeScreen, { backgroundColor: palette.surface }]}
+      contentContainerStyle={styles.noticeList}
+    >
       {notices.length ? (
         notices.map(notice => {
-          const friendRequestStatus = String(notice.payload?.friendRequestStatus || '');
+          const friendRequestStatus = String(
+            notice.payload?.friendRequestStatus || '',
+          );
           const canAcceptFriendRequest =
             notice.kind === 'friend.request' &&
             notice.targetId &&
@@ -179,17 +219,33 @@ export function NoticeList({
               iconSource={resolveNoticeIcon(notice.kind)}
               title={displayText(language, notice.title)}
               message={displayText(language, notice.body)}
-              status={notice.readAt ? textFor(language, '已读', 'Read') : textFor(language, '未读', 'Unread')}
+              status={
+                notice.readAt
+                  ? textFor(language, '已读', 'Read')
+                  : textFor(language, '未读', 'Unread')
+              }
               active={!notice.readAt}
-              actionLabel={canAcceptFriendRequest ? textFor(language, '通过', 'Accept') : undefined}
-              secondaryActionLabel={canAcceptFriendRequest ? textFor(language, '拒绝', 'Reject') : undefined}
+              actionLabel={
+                canAcceptFriendRequest
+                  ? textFor(language, '通过', 'Accept')
+                  : undefined
+              }
+              secondaryActionLabel={
+                canAcceptFriendRequest
+                  ? textFor(language, '拒绝', 'Reject')
+                  : undefined
+              }
               isActionBusy={pendingActionId === `${notice.id}:accept`}
               isSecondaryActionBusy={pendingActionId === `${notice.id}:reject`}
               onAction={() =>
                 runNoticeAction({
-                  busyId: canAcceptFriendRequest ? `${notice.id}:accept` : notice.id,
+                  busyId: canAcceptFriendRequest
+                    ? `${notice.id}:accept`
+                    : notice.id,
                   notificationId: notice.id,
-                  action: canAcceptFriendRequest ? () => onAcceptFriendRequest(notice.targetId || '') : undefined,
+                  action: canAcceptFriendRequest
+                    ? () => onAcceptFriendRequest(notice.targetId || '')
+                    : undefined,
                 })
               }
               onSecondaryAction={
@@ -198,7 +254,8 @@ export function NoticeList({
                       runNoticeAction({
                         busyId: `${notice.id}:reject`,
                         notificationId: notice.id,
-                        action: () => onRejectFriendRequest(notice.targetId || ''),
+                        action: () =>
+                          onRejectFriendRequest(notice.targetId || ''),
                       })
                   : undefined
               }
@@ -206,12 +263,23 @@ export function NoticeList({
           );
         })
       ) : (
-        <View style={[styles.stationPlaceholder, {backgroundColor: palette.surface, borderColor: palette.border}]}>
-          <Text style={[styles.placeholderTitle, {color: palette.text}]}>
+        <View
+          style={[
+            styles.stationPlaceholder,
+            { backgroundColor: palette.surface, borderColor: palette.border },
+          ]}
+        >
+          <Text style={[styles.placeholderTitle, { color: palette.text }]}>
             {textFor(language, '暂无通知', 'No notices')}
           </Text>
-          <Text style={[styles.placeholderBody, {color: palette.secondaryText}]}>
-            {textFor(language, '好友申请、关注和系统事件会出现在这里。', 'Friend requests, follows, and system events will appear here.')}
+          <Text
+            style={[styles.placeholderBody, { color: palette.secondaryText }]}
+          >
+            {textFor(
+              language,
+              '好友申请、关注和系统事件会出现在这里。',
+              'Friend requests, follows, and system events will appear here.',
+            )}
           </Text>
         </View>
       )}

@@ -17,8 +17,8 @@ export const messageStyles = {
     justifyContent: 'center',
     width: 38,
   },
-  messageHeaderAddIcon: {height: 22, width: 22},
-  messageHeaderSearchIcon: {height: 22, width: 30},
+  messageHeaderAddIcon: { height: 22, width: 22 },
+  messageHeaderSearchIcon: { height: 22, width: 30 },
   messageTabGroup: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -100,7 +100,6 @@ export const messageStyles = {
   threadTitle: { fontSize: 15, fontWeight: '900' },
   threadTime: { fontSize: 12 },
   threadPreview: { fontSize: 12, lineHeight: 18 },
-  threadStatus: { fontSize: 12, fontWeight: '700' },
   unread: {
     alignItems: 'center',
     borderRadius: 999,
@@ -322,7 +321,7 @@ export const messageStyles = {
     justifyContent: 'center',
     width: 45,
   },
-  noticeSymbolImage: {height: 45, width: 45},
+  noticeSymbolImage: { height: 45, width: 45 },
   noticeBody: { flex: 1, gap: 5 },
   noticeTitleRow: {
     alignItems: 'center',

@@ -1,0 +1,178 @@
+name: Repository Quality
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Five-project quality gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            package-lock.json
+            MiaoxunRN/package-lock.json
+            admin/package-lock.json
+            agents/package-lock.json
+            avatar-web/package-lock.json
+
+      - name: Install repository quality dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Install mobile dependencies
+        run: npm ci
+        working-directory: MiaoxunRN
+
+      - name: Install admin dependencies
+        run: npm ci
+        working-directory: admin
+
+      - name: Install Agent dependencies
+        run: npm ci
+        working-directory: agents
+
+      - name: Install avatar Web dependencies
+        run: npm ci
+        working-directory: avatar-web
+
+      - name: Run repository checks
+        run: ./scripts/check-repository.sh
+
+  backend-image:
+    name: Production backend image
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Build production image
+        run: docker build --file backend/Dockerfile --tag miaoxun-backend:quality .
+
+  migration-replay:
+    name: PostgreSQL migration replay
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: miaoxun
+          POSTGRES_PASSWORD: miaoxun
+          POSTGRES_DB: miaoxun_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U miaoxun -d miaoxun_migration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Replay the ledger-free production upgrade
+        run: ./backend/scripts/check-migration-replay.sh
+        env:
+          DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_migration_test
+
+  android-debug:
+    name: Android debug compile
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: MiaoxunRN/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
+
+      - name: Install mobile dependencies
+        run: npm ci
+        working-directory: MiaoxunRN
+
+      - name: Compile Android debug app
+        run: ./gradlew assembleDebug --no-daemon
+        working-directory: MiaoxunRN/android
+        env:
+          MIAOXUN_API_BASE_URL: http://10.0.2.2:4390
+
+  avatar-web-e2e:
+    name: Avatar Web end-to-end
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: avatar-web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: avatar-web
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: avatar-web
+
+      - name: Run Playwright tests
+        run: npm run test:e2e
+        working-directory: avatar-web

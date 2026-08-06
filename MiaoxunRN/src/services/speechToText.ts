@@ -1,6 +1,6 @@
-import {NativeModules} from 'react-native';
+import { NativeModules } from 'react-native';
 
-export type SpeechToTextResult = {
+type SpeechToTextResult = {
   text: string;
 };
 

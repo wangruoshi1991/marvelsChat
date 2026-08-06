@@ -8,14 +8,14 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 
-import {messageIconAssets} from '../../assets/icons';
+import { messageIconAssets } from '../../assets/icons';
 
-export type ThreadIconSpec = {
+type ThreadIconSpec = {
   Icon?: LucideIcon;
   imageSource?: ImageSourcePropType;
 };
 
-export const agentThreadIcons: Record<string, ThreadIconSpec> = {
+const agentThreadIcons: Record<string, ThreadIconSpec> = {
   'miaoxun-butler': {
     imageSource: messageIconAssets.agentAvatars.butler,
   },
@@ -50,5 +50,4 @@ export const resolveAgentThreadIcon = (
   category?: string | null,
 ): ThreadIconSpec =>
   agentThreadIcons[agentId] ||
-  categoryThreadIcons[String(category || '')] ||
-  { Icon: Sparkles };
+  categoryThreadIcons[String(category || '')] || { Icon: Sparkles };

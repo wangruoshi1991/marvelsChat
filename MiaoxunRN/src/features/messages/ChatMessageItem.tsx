@@ -1,13 +1,17 @@
 import React from 'react';
-import {GestureResponderEvent, Pressable, Text, View} from 'react-native';
+import { GestureResponderEvent, Pressable, Text, View } from 'react-native';
 
-import {AgentDTO} from '../../models/api';
-import {displayText, textFor} from '../../shared/i18n';
-import {styles} from '../../shared/styles';
-import {Palette} from '../../shared/theme';
-import {ChatMessage, ChatThread, Language} from '../session/useMiaoxunSession';
-import {UserAvatarRenderer} from './messageTypes';
-import {AgentIconAvatar} from './AgentIconAvatar';
+import { AgentDTO } from '../../models/api';
+import { displayText, textFor } from '../../shared/i18n';
+import { styles } from '../../shared/styles';
+import { Palette } from '../../shared/theme';
+import {
+  ChatMessage,
+  ChatThread,
+  Language,
+} from '../session/useMiaoxunSession';
+import { UserAvatarRenderer } from './messageTypes';
+import { AgentIconAvatar } from './AgentIconAvatar';
 import {
   messageTimeText,
   resolveAgentIdentity,
@@ -77,7 +81,11 @@ export function ChatMessageItem({
       <View style={styles.messageBlock}>
         <View style={styles.recalledMessageWrap}>
           <Text
-            style={[styles.recalledMessageText, {color: palette.secondaryText}]}>
+            style={[
+              styles.recalledMessageText,
+              { color: palette.secondaryText },
+            ]}
+          >
             {isMine
               ? textFor(language, '你撤回了一条消息', 'You recalled a message')
               : textFor(language, '对方撤回了一条消息', 'Message recalled')}
@@ -89,7 +97,7 @@ export function ChatMessageItem({
 
   const bubble = (
     <View style={[styles.bubbleWrap, isMine && styles.bubbleWrapMine]}>
-      <Text style={[styles.messageName, {color: palette.secondaryText}]}>
+      <Text style={[styles.messageName, { color: palette.secondaryText }]}>
         {isMine
           ? textFor(language, '我', 'Me')
           : displayText(language, item.senderName)}
@@ -98,7 +106,8 @@ export function ChatMessageItem({
         onLongPress={event => onOpenMessageMenu(item, isMine, event)}
         onPress={
           item.localStatus === 'failed' ? () => onRetrySend(item) : undefined
-        }>
+        }
+      >
         {replyTo ? (
           <View
             style={[
@@ -107,26 +116,25 @@ export function ChatMessageItem({
                 backgroundColor: palette.soft,
                 borderLeftColor: palette.mint,
               },
-            ]}>
+            ]}
+          >
             <Text
               style={[
                 styles.replyPreviewName,
-                {color: palette.secondaryText},
-              ]}>
+                { color: palette.secondaryText },
+              ]}
+            >
               {displayText(language, String(replyTo.senderName || ''))}
             </Text>
             <Text
               style={[
                 styles.replyPreviewContent,
-                {color: palette.secondaryText},
+                { color: palette.secondaryText },
               ]}
-              numberOfLines={1}>
+              numberOfLines={1}
+            >
               {replyTo.recalledAt
-                ? textFor(
-                    language,
-                    '原消息已撤回',
-                    'Original message recalled',
-                  )
+                ? textFor(language, '原消息已撤回', 'Original message recalled')
                 : displayText(language, String(replyTo.content || ''))}
             </Text>
           </View>
@@ -139,17 +147,21 @@ export function ChatMessageItem({
               : isDarkPalette
               ? styles.bubbleAgentDarkText
               : styles.bubbleAgentLightText,
-            {backgroundColor: isMine ? palette.mint : palette.surface},
+            { backgroundColor: isMine ? palette.mint : palette.surface },
             item.localStatus === 'failed' && styles.bubbleFailed,
-          ]}>
+          ]}
+        >
           {displayText(language, item.content)}
         </Text>
       </Pressable>
       {item.localStatus ? (
         <View
-          style={[styles.messageMetaRow, isMine && styles.messageMetaRowMine]}>
+          style={[styles.messageMetaRow, isMine && styles.messageMetaRowMine]}
+        >
           {item.localStatus === 'sending' ? (
-            <Text style={[styles.messageStatus, {color: palette.secondaryText}]}>
+            <Text
+              style={[styles.messageStatus, { color: palette.secondaryText }]}
+            >
               {textFor(language, '发送中', 'Sending')}
             </Text>
           ) : null}
@@ -175,24 +187,24 @@ export function ChatMessageItem({
     <View style={styles.messageRowMine}>{bubble}</View>
   ) : (
     <View style={styles.messageRowAgent}>
-      {shouldShowAgentIcon && thread.agentId
-        ? (
-            <AgentIconAvatar
-              agentId={thread.agentId}
-              category={threadAgent?.category}
-              identity={
-                threadAgent?.identity ||
-                resolveAgentIdentity(agents, thread.agentId)
-              }
-              palette={palette}
-              small
-            />
-          )
-        : renderUserAvatar({
-            text: item.senderName.slice(0, 1),
-            config: thread.avatarConfig || undefined,
-            small: true,
-          })}
+      {shouldShowAgentIcon && thread.agentId ? (
+        <AgentIconAvatar
+          agentId={thread.agentId}
+          category={threadAgent?.category}
+          identity={
+            threadAgent?.identity ||
+            resolveAgentIdentity(agents, thread.agentId)
+          }
+          palette={palette}
+          small
+        />
+      ) : (
+        renderUserAvatar({
+          text: item.senderName.slice(0, 1),
+          config: thread.avatarConfig || undefined,
+          small: true,
+        })
+      )}
       {bubble}
     </View>
   );
@@ -204,8 +216,9 @@ export function ChatMessageItem({
           <Text
             style={[
               styles.messageTimeSeparatorText,
-              {color: palette.secondaryText},
-            ]}>
+              { color: palette.secondaryText },
+            ]}
+          >
             {messageTimeText(item.createdAt)}
           </Text>
         </View>

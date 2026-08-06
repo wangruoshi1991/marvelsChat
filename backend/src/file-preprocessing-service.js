@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import path from "path";
 import { HttpError } from "./http-error.js";
+import { replaceControlCharacters } from "./text-sanitization.js";
 
 const maxInlineChars = 200_000;
 const supportedTextKinds = new Set(["text", "markdown", "json", "csv", "tsv"]);
@@ -54,11 +55,10 @@ const mimeKindMap = {
 };
 
 const stripUnsafeText = (value) =>
-  String(value || "")
+  replaceControlCharacters(value)
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -67,7 +67,7 @@ const baseTitle = (originalFilename) => {
   return (parsed.name || "未命名文件").slice(0, 120);
 };
 
-export function normalizeFileKind({ originalFilename = "", mimeType = "" } = {}) {
+function normalizeFileKind({ originalFilename = "", mimeType = "" } = {}) {
   const normalizedMime = String(mimeType || "").trim().toLowerCase().split(";")[0];
   if (mimeKindMap[normalizedMime]) return mimeKindMap[normalizedMime];
 
@@ -75,7 +75,7 @@ export function normalizeFileKind({ originalFilename = "", mimeType = "" } = {})
   return extensionKindMap[ext] || "unknown";
 }
 
-export const hashFileContent = (content) =>
+const hashFileContent = (content) =>
   crypto.createHash("sha256").update(String(content || ""), "utf8").digest("hex");
 
 function detectLanguage(text) {

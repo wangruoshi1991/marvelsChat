@@ -2,9 +2,17 @@
 
 ## 当前生产测试目标
 
-TestFlight 只负责把 iOS App 分发给测试用户；登录、聊天、扫码解析、妙讯管家、通知、在线状态、定位名称解析和地图都必须连接公网 HTTPS 后端。
+TestFlight 只负责把 iOS App 分发给测试用户；登录、聊天、扫码解析、妙讯管家、通知、在线状态和定位名称解析都必须连接公网 HTTPS 后端。
 
-当前后端要求 Node.js 20+ 和 PostgreSQL。团队新的阿里云生产测试环境使用 ECS 承载后端 Docker 服务，数据库、缓存和文件分别使用 PolarDB PostgreSQL、Tair / Redis 和 OSS。Docker 镜像固定使用 Node 20 slim，镜像构建上下文是仓库根目录，因为 `backend/src` 会按相对路径加载 `agents/registry.js`。
+当前后端要求 Node.js 22+ 和 PostgreSQL。阿里云生产测试环境由 ECS 上的
+systemd 服务 `marvels-chat-backend` 直接运行 Node.js，数据库、缓存和文件分别使用
+PolarDB PostgreSQL、Tair / Redis 和 OSS。2026-08-04 只读核查时，线上 Node.js 为
+`v22.22.1`，服务工作目录为 `/opt/projects/marvels-chat/app/backend`，环境文件为
+`/opt/projects/marvels-chat/app/deploy/miaoxun-prod.env`，服务用户为 `marvels`。
+
+仓库仍保留 `backend/Dockerfile` 和 `deploy/docker-compose.prod.yml`，CI 会构建镜像以
+验证容器化产物，但当前生产进程不是 Docker 容器。切换运行方式必须作为独立运维变更，
+不能在普通应用发布中混用两套命令。
 
 当前阿里云资源：
 
@@ -19,7 +27,7 @@ PolarDB 和 Redis 当前白名单只放行 ECS 私网 IP `172.25.210.107`。生�
 
 ## 服务器目录
 
-建议放在：
+当前目录为：
 
 ```text
 /opt/projects/marvels-chat
@@ -28,8 +36,11 @@ PolarDB 和 Redis 当前白名单只放行 ECS 私网 IP `172.25.210.107`。生�
 其中：
 
 ```text
-/opt/projects/marvels-chat/app      # 仓库代码或 rsync 后的发布文件
-/opt/projects/marvels-chat/deploy   # docker-compose.prod.yml 和 miaoxun-prod.env
+/opt/projects/marvels-chat/app          # 当前发布文件
+/opt/projects/marvels-chat/app/backend  # systemd WorkingDirectory
+/opt/projects/marvels-chat/app/agents   # 后端运行时 Agent 定义
+/opt/projects/marvels-chat/app/avatar-web/dist # 后端提供的 Avatar Web 静态产物
+/opt/projects/marvels-chat/app/deploy/miaoxun-prod.env # systemd EnvironmentFile
 ```
 
 真实 `miaoxun-prod.env` 只保存在服务器，不提交仓库。
@@ -40,40 +51,72 @@ PolarDB 和 Redis 当前白名单只放行 ECS 私网 IP `172.25.210.107`。生�
 
 必须设置：
 
+- `HOST=127.0.0.1`：当前 systemd 进程只监听本机，由 Nginx 反向代理；不要直接暴露 Node 端口。
+- `NODE_ENV=production`：启用生产错误隐藏和生产配置校验。
+- `TRUST_PROXY_HOPS=1`：只信任最靠近后端的一层 Nginx 代理，以便登录限流和审计使用真实客户端 IP。
+- `CORS_ORIGIN=https://console.marvelschat.com`：正式环境只允许明确的浏览器管理台 origin；不能设为 `true` 或多个 origin。临时 IP TestFlight 阶段使用 `http://8.153.167.11`，域名可用后必须切回 HTTPS 管理台域名。
 - `POSTGRES_HOST`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DATABASE`：阿里云 PolarDB 连接信息。
 - `REDIS_URL`：阿里云 Tair / Redis 连接信息。当前代码未强依赖 Redis，但后续 session、缓存、队列和限流会使用。
 - `OSS_REGION`、`OSS_BUCKET`、`OSS_ENDPOINT`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`：OSS 文件能力。AccessKey 后续应使用程序专用 RAM 用户。
-- `DEFAULT_ADMIN_PASSWORD`：正式管理员初始密码，不能使用示例值。
 - `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL`：妙讯管家 AI 调用。
-- `GEOCODING_REVERSE_URL`、`GEOCODING_USER_AGENT`：定位坐标解析社区和活动区域。
-- `MAP_TILE_URL_TEMPLATE`、`MAP_TILE_USER_AGENT`：地图瓦片代理。
+- `GEOCODING_PROVIDER=amap`、`AMAP_WEB_SERVICE_KEY`：定位坐标解析社区和活动区域。
 
-## 启动顺序
+## 发布与启动顺序
+
+生产发布必须在明确的维护窗口内执行。域名审核期间可以继续使用临时 IP 测试策略，
+但数据库备份、安全开关和 readiness 不得降级。不要直接覆盖当前目录后立即重启。
+
+1. 确认 PolarDB 最近自动快照有效，并在变更前再创建或验证一个可恢复点。
+2. 备份当前应用目录和环境文件；把新代码、依赖和 `avatar-web/dist` 完整暂存好。
+3. 将常驻环境改为 `TRUST_PROXY_HOPS=1`、`CREATE_FIRST_USER_AS_ADMIN=false`、
+   `ADMIN_EMAILS=`、`DEFAULT_ADMIN_ENABLED=false`，并清空默认管理员密码。
+4. 停止后端写入，加载同一份生产环境，执行 `npm run db:migrate`。
+5. 启动新后端，依次验证 `/api/health`、`/api/ready`、认证接口、OSS 媒体和 3D 模型读取。
+6. 任一关键检查失败时保持停写，恢复 PolarDB 到变更前时间点并恢复旧应用目录；仅恢复旧代码
+   不能撤销数据迁移。
+
+当前 systemd 运行方式的检查命令：
 
 ```sh
-cd /opt/projects/marvels-chat/app/deploy
-docker-compose -f docker-compose.prod.yml up -d --build
-docker-compose -f docker-compose.prod.yml exec backend npm run db:migrate
+sudo systemctl status marvels-chat-backend --no-pager
+sudo journalctl -u marvels-chat-backend -n 120 --no-pager
 curl http://127.0.0.1:4390/api/health
+curl --fail http://127.0.0.1:4390/api/ready
 ```
 
-服务器当前 Docker Compose 版本较旧，生产 compose 文件使用 `version: "2"` 并通过 `env_file` 注入环境变量，不依赖 `--env-file` 参数。
+systemd 单元应与 [deploy/marvels-chat-backend.service.example](../deploy/marvels-chat-backend.service.example)
+保持一致，尤其是 `KillSignal=SIGTERM` 和 `TimeoutStopSec=90s`。后端收到终止信号后会先停止
+HTTP/WebSocket 接入和 3D Job Runner，等待在途工作结束，再关闭数据库连接池；不要用 `SIGKILL`
+作为常规重启方式。Docker Compose 同样保留 90 秒停止窗口。
 
-如果 `up -d --build` 后立刻执行迁移时看到：
-
-```text
-ERROR: Container ... is restarting, wait until the container is running
-```
-
-先查看容器状态和后端日志：
+在维护窗口中执行迁移时，必须加载 systemd 使用的同一份环境文件：
 
 ```sh
-cd /opt/projects/marvels-chat/app/deploy
-docker-compose -p miaoxun -f docker-compose.prod.yml ps
-docker-compose -p miaoxun -f docker-compose.prod.yml logs --tail=120 backend
+sudo systemctl stop marvels-chat-backend
+cd /opt/projects/marvels-chat/app/backend
+set -a
+. ../deploy/miaoxun-prod.env
+set +a
+npm run db:migrate
+sudo systemctl start marvels-chat-backend
 ```
 
-必须等 `miaoxun_backend_1` 状态变成 `Up` 后再执行迁移。生产 compose 不再启动本地 PostgreSQL 容器；后端会直接连接阿里云 PolarDB。
+`/api/health` 只检查进程存活；`/api/ready` 还会核对数据库连接、迁移文件、迁移账本和
+历史校验和。账本缺失或存在待执行迁移时 readiness 返回 503 是预期行为，但完成迁移后
+必须恢复为 200 才能结束维护窗口。
+
+生产环境长期保持 `CREATE_FIRST_USER_AS_ADMIN=false`、空 `ADMIN_EMAILS` 和
+`DEFAULT_ADMIN_ENABLED=false`。不要把初始化密码留在常驻环境文件中；管理员初始化应通过
+单独、可审计的一次性流程完成。只有首次确实需要创建管理员时，才在迁移完成后临时注入
+强密码并执行：
+
+```sh
+DEFAULT_ADMIN_ENABLED=true \
+DEFAULT_ADMIN_PASSWORD='<至少 16 位的非占位强密码>' \
+npm run admin:bootstrap
+```
+
+命令成功后立即清除这两个临时值。`db:migrate` 不创建管理员，也不执行账本外的结构修补。
 
 ## 线上冒烟测试
 
@@ -81,7 +124,9 @@ docker-compose -p miaoxun -f docker-compose.prod.yml logs --tail=120 backend
 
 ```sh
 curl http://127.0.0.1:4390/api/health
-curl https://miaoxun-api.pizelife.com/api/health
+curl --fail http://127.0.0.1:4390/api/ready
+curl http://8.153.167.11/api/health # 仅域名审核期间的 TestFlight 临时入口
+curl https://api.marvelschat.com/api/health # 域名和 HTTPS 完成后
 ```
 
 2026-06-23 线上已验证：
@@ -93,29 +138,33 @@ curl https://miaoxun-api.pizelife.com/api/health
 
 本地 Mac 如果开启代理或使用 Fake-IP DNS，`miaoxun-api.pizelife.com` 可能被解析到 `198.18.x.x`，会出现 `SSL_ERROR_SYSCALL` 或间歇性握手失败。排查时先用 `dig +short miaoxun-api.pizelife.com` 确认解析结果，必要时用 `curl --noproxy '*' --resolve miaoxun-api.pizelife.com:443:1.15.135.238 https://miaoxun-api.pizelife.com/api/health` 绕过本地代理解析。
 
-2026-06-24 真机 TestFlight 发现首次打开或首次登录偶发网络超时；本机连续请求 `https://miaoxun-api.pizelife.com/api/health` 时也复现 TLS 握手阶段 `SSL_ERROR_SYSCALL`，成功请求约 0.1 秒返回，说明问题发生在 HTTPS 入口或本地/移动网络链路，而不是 `/api/app/bootstrap` 业务查询固定慢。客户端已调整启动恢复登录状态机：网络失败不清 Keychain token，只有 401/403 才判定 session 失效；服务器侧仍需持续检查 Nginx/证书/运营商链路，确保公网 443 连续握手稳定。
+2026-06-24 真机 TestFlight 发现首次打开或首次登录偶发网络超时；本机连续请求 `https://miaoxun-api.pizelife.com/api/health` 时也复现 TLS 握手阶段 `SSL_ERROR_SYSCALL`，成功请求约 0.1 秒返回，说明问题发生在 HTTPS 入口或本地/移动网络链路，而不是 `/api/app/bootstrap` 业务查询固定慢。客户端当时区分认证与网络失败；当前实现已进一步收紧为只有 401 才判定 session 失效，403 和网络错误都保留 Keychain token。服务器侧仍需持续检查 Nginx、证书和公网链路稳定性。
 
-2026-06-24 继续验证聊天实时体验时，再次连续请求线上 `/api/health`，5 次中 1 次在 TLS 握手阶段返回 `SSL_ERROR_SYSCALL`。客户端已把 WebSocket 生命周期收敛到登录 token，避免 presence 事件导致实时连接自重建；但如果 HTTPS/WSS 入口仍偶发握手失败，手机端仍会出现登录、聊天、定位解析和地图瓦片请求间歇变慢或超时。该问题必须从服务器 Nginx、证书链、反向代理和公网网络稳定性继续排查。
+2026-06-24 继续验证聊天实时体验时，再次连续请求线上 `/api/health`，5 次中 1 次在 TLS 握手阶段返回 `SSL_ERROR_SYSCALL`。客户端已把 WebSocket 生命周期收敛到登录 token，避免 presence 事件导致实时连接自重建；但如果 HTTPS/WSS 入口仍偶发握手失败，手机端仍会出现登录、聊天和定位解析请求间歇变慢或超时。该问题必须从服务器 Nginx、证书链、反向代理和公网网络稳定性继续排查。
 
 ## 当前线上配置状态
 
-2026-06-23 当前服务器 `/home/ubuntu/miaoxun/app/deploy/miaoxun-prod.env` 状态：
+2026-08-04 对服务器 `/opt/projects/marvels-chat/app/deploy/miaoxun-prod.env` 做脱敏只读检查后的状态：
 
 - `NEW_API_BASE_URL=https://api.z.ai/api/paas/v4`
 - `NEW_API_MODEL=glm-4.5-air`
 - `NEW_API_TIMEOUT_MS=30000`
 - `NEW_API_KEY` 当前服务器未配置；本地测试 Key 已返回额度不足，妙讯管家暂不可用。
-- `PUBLIC_API_BASE_URL=http://8.153.167.11` 为后端生成地图瓦片代理 URL 使用的临时站点根地址；`/api/map/style` 使用它生成 `/api/map/tiles/...` 地址，不能依赖 Nginx 反代协议推断。它不同于移动端内嵌的 `MIAOXUN_API_BASE_URL`。
-- 2026-07-09 当前 iOS TestFlight `1.0 (16)` 的移动端 API Base 为 `http://8.153.167.11/api`；客户端会自动处理业务 path 是否带 `/api`，避免漏 `/api` 或拼成 `/api/api`。
-- 当前服务器地理编码仍为 `GEOCODING_PROVIDER=nominatim`，地图瓦片为 OpenStreetMap 模板；2026-07-02 服务器访问 Nominatim 和 OSM 瓦片均超时，手机定位解析和地图加载会失败或不稳定。
-- 正式测试定位前需要切换到明确可用的地理编码和地图瓦片服务，例如配置高德 Web 服务 `AMAP_WEB_SERVICE_KEY` 并采购/确认合规瓦片服务；不能把公共 OpenStreetMap 当稳定生产依赖。
+- 当前源码要求 `MIAOXUN_API_BASE_URL` 只能是无路径的 HTTP(S) origin；临时 IP 配置为 `http://8.153.167.11`，业务调用必须显式使用 `/api/*`，非规范路径会直接报错。
+- `GEOCODING_PROVIDER=amap` 和 `AMAP_WEB_SERVICE_KEY` 已配置；正式上线前仍需确认高德逆地理编码的生产授权、配额和隐私披露。未被位置页调用的 MapLibre、地图票据和瓦片代理已从当前源码移除，服务器里的旧地图变量在下次部署时一并清理。
+- 当前常驻环境仍保留 `CREATE_FIRST_USER_AS_ADMIN=true`、`DEFAULT_ADMIN_ENABLED=true`，且没有显式 `TRUST_PROXY_HOPS=1`。下次部署新版后端前必须先关闭两个管理员初始化开关、清空 `ADMIN_EMAILS` 和默认管理员密码，并补齐代理层配置；新版生产配置校验会拒绝以不安全的初始化开关启动。
+- 当前线上后端尚未部署 `/api/ready`，请求返回 404。下次后端部署必须按“构建 -> 执行迁移 -> `/api/health` -> `/api/ready`”顺序验证，不能只用 liveness 判定可接流量。
 - 注册模型已改为昵称唯一：发布新 TestFlight 前必须执行最新数据库迁移，迁移会把历史重复昵称追加短后缀；迁移后注册和资料改名都会由后端与数据库共同拒绝重复昵称。
+- `marvels-chat-backend` 当前为 active，直接运行 Node.js，`NRestarts=0`；`/api/health` 返回 200，磁盘和内存余量充足。
+- PolarDB 每天自动全量备份，数据和日志保留 7 天，最近 7 个快照均有效并支持按时间点恢复。迁移前仍需确认最新恢复点和单独导出受影响行。
+- 生产数据库没有迁移账本，且 015 的 `likes_count` / `miao_point_ledger` 缺失；016-022 的主要结构已经存在。024 还会统一用户在线状态约束、删除重复用户索引并约束 12 位 AI ID。真实 PostgreSQL 重放测试已覆盖这些漂移，生产执行仍必须处于维护窗口。
+- ECS 当前标记“需要重启”，`/var/run/reboot-required.pkgs` 包含 `libc6`。系统升级和应用发布必须拆成两个维护窗口，分别验证和回滚。
 
-修改 `PUBLIC_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_TIMEOUT_MS`、`GEOCODING_PROVIDER`、`GEOCODING_REVERSE_URL`、`GEOCODING_TIMEOUT_MS`、`AMAP_WEB_SERVICE_KEY` 或 `AMAP_REVERSE_URL` 后需要只重启妙讯后端服务：
+修改 `NEW_API_KEY`、`NEW_API_TIMEOUT_MS`、`GEOCODING_PROVIDER`、`GEOCODING_REVERSE_URL`、`GEOCODING_TIMEOUT_MS`、`AMAP_WEB_SERVICE_KEY` 或 `AMAP_REVERSE_URL` 后需要只重启妙讯后端服务：
 
 ```sh
-cd /home/ubuntu/miaoxun/app/deploy
-docker-compose -p miaoxun -f docker-compose.prod.yml up -d backend
+sudo systemctl restart marvels-chat-backend
+sudo systemctl status marvels-chat-backend --no-pager
 ```
 
 ## HTTPS 和 TestFlight
@@ -126,7 +175,7 @@ iOS Release 正式上线目标 API 地址是：
 https://api.marvelschat.com
 ```
 
-2026-07-09 临时测试策略：正式域名实名和 HTTPS 完成前，iOS Release 临时使用 `http://8.153.167.11/api`，并在 iOS `Info.plist` 里只为该 IP 放开 HTTP ATS 例外，方便异地成员先通过 TestFlight 连接真实 ECS 后端、PolarDB 和 Redis 进行体验测试。该策略只用于内部测试，不作为上线配置。
+临时测试策略：正式域名实名和 HTTPS 完成前，iOS Release 临时使用 `http://8.153.167.11`，并在 iOS `Info.plist` 里只为该 IP 放开 HTTP ATS 例外，方便异地成员先通过 TestFlight 连接真实 ECS 后端、PolarDB 和 Redis 进行体验测试。该策略只用于内部测试，不作为上线配置。
 
 正式上线前必须恢复为 `https://api.marvelschat.com`，删除 Release 不需要的 HTTP ATS 例外，并确认 Nginx 443 证书、续期和 WebSocket `/api/realtime` 反向代理都正常。
 
@@ -303,3 +352,56 @@ MiaoxunAPIBaseURL = http://8.153.167.11/api
 2026-06-24 本地 iPhone 连接设备 `7501195F-00E2-58E2-88E4-F3D68C3CBD0A` 已成功构建 Debug 包，签名为 Apple Development: Rose Wang，API 指向 `https://miaoxun-api.pizelife.com`。安装时设备上已有 TestFlight 版妙讯，`devicectl` 返回同 Bundle ID 已存在 App Store 安装协调记录，USB Debug 包不能直接覆盖 TestFlight 版；需要先在手机 TestFlight 更新到当前可用最新构建，或用户确认卸载现有 TestFlight 版后再安装 Debug 包。
 
 正式上架 App Store 前，必须继续补 APNs 推送、隐私说明、账号找回/验证、内容审核和未接入模块的产品状态；当前阶段建议只走 TestFlight 给朋友测试。
+
+## 2026-07-28 App 3D 接入
+
+已在不修改伙伴建模核心的前提下，为妙讯 App 部署 Bearer 鉴权的 `/api/avatar-3d/app/*` 接口和私有 GLB 文件读取路由。线上 `avatar-3d-lifecycle-service.js`、Wan、Tripo、OSS 和多视图提示文件与 `origin/feat/avatar-3d-web-v1` 对应文件哈希一致；本次只新增 App 路由与公共路由辅助模块，并在服务器现有 `server.js` 中增加一次注册。
+
+部署前备份位于：
+
+```text
+/opt/projects/marvels-chat/app/deploy-backups/avatar-app-native-20260728-150831
+```
+
+服务器远端 `npm run check` 和 App 路由 4 项契约测试通过。重启后 `/api/health` 返回 200，未登录访问 `/api/avatar-3d/app/bootstrap` 返回预期 401，systemd 服务无重启。`AVATAR_3D_PROVIDER_CALLS_ENABLED` 已在单账号受限白名单下启用；DashScope 和 OSS 必需配置均存在，未在日志或仓库输出配置值。尚未发起真实付费生成，最终闭环需要测试账号在 App 内完成照片授权和四视图确认。
+
+回滚时恢复备份中的 `src/server.js` 和 `miaoxun-prod.env`，重启 `marvels-chat-backend` 后重新检查 health。新增但未注册的 `avatar-3d-app-routes.js` 和 `avatar-3d-route-support.js` 不影响旧运行路径。
+
+## 2026-07-29 App 3D 查看器修复
+
+App 内置查看器从 `file://` 页面读取私有 GLB，请求来源在 WebView 中表现为 `Origin: null`。后端仅对 `GET|HEAD|OPTIONS /api/avatar-3d/app/models/:uuid/file` 返回该来源的 CORS 授权，并且实际文件请求仍必须通过 Bearer 鉴权和模型归属校验；其他 API 继续使用 `CORS_ORIGIN`，不得全局允许 `null` 来源。
+
+线上增量部署前备份位于：
+
+```text
+/opt/projects/marvels-chat/backups/20260729-avatar-viewer-cors.tgz
+```
+
+部署后需同时验证模型路由预检返回 `Access-Control-Allow-Origin: null`，普通 `/api/app/bootstrap` 预检仍返回配置的站点来源。精细模型文件可能达到数十 MB，App 在下载和 Three.js 解析期间显示已生成缩略图；等待四视图人工确认时停止任务轮询，后台处理阶段按 Runner 节奏查询。
+
+iOS `1.0 (28)` 已完成 Release archive 并上传 App Store Connect，上传返回 `Uploaded MiaoxunRN` 和 `** EXPORT SUCCEEDED **`。MapLibre、React、ReactNativeDependencies 和 Hermes 的第三方 dSYM warning 仍存在，不阻止 TestFlight 分发。
+
+## 2026-07-30 App 媒体与 3D 加载优化
+
+生产后端已启用 OSS 内网读取、私有媒体长期缓存、3D 缩略图占位和 App 专用轻量 GLB。伙伴生成的原始 GLB 保持不变；新增 Worker 将 App 版本限制为最多 25 万三角面、最大 2048 像素纹理，并使用 `KHR_mesh_quantization`。App 模型接口不回退到原始大文件，轻量资产缺失时会明确返回错误，避免手机静默下载数十 MB 原件。
+
+部署前备份位于：
+
+```text
+/opt/projects/marvels-chat/app/deploy-backups/media-loading-20260730-140933
+/opt/projects/marvels-chat/app/deploy-backups/avatar-mobile-model-20260730-155317
+```
+
+已执行 `022_avatar_3d_mobile_model.sql` 和 `npm run avatar3d:backfill-mobile`。线上 4 个 active 模型均已生成轻量资产，原始文件总计 `198,908,508` bytes，App 文件总计 `25,736,428` bytes。当前测试账号模型从 `57,205,168` bytes 降至 `6,432,516` bytes，缩略图为 `11,418` bytes。鉴权 Range 冒烟测试返回 206，模型和缩略图均包含 `ETag`、`Vary: Authorization` 与 `Cache-Control: private, max-age=31536000, immutable`。重启后本机和公网 health 正常，systemd `NRestarts=0`。
+
+服务端轻量模型对现有客户端直接生效；WebView 缓存和加载中缩略图属于客户端变更，必须随下一次 TestFlight 构建发布。上传前先确认 App Store Connect 已占用的最高 build 号，再递增 `CURRENT_PROJECT_VERSION`，不能仅依赖本文中的历史编号。
+
+## 2026-08-04 仓库发布审查基线
+
+本轮只完成本地代码审查、修复、构建验证和线上只读核查，没有上传 TestFlight、部署后端或修改生产数据库。iOS Release workspace archive 使用当前工程 `1.0 (30)` 成功生成，归档内 API 为域名审核期间的受控地址 `http://8.153.167.11`，ATS 只允许该 IP，`NSAllowsArbitraryLoads=false`。
+
+App Store Connect 已有 `1.0 (30)`，上传时间为 2026-07-30 13:21，当前状态为“正在测试”，并已加入内部和外部 `YU yunzhi` 群组。因此下次上传必须先把工程号递增到 `1.0 (31)`；不能再次上传 30，也不能复用本轮验证归档。
+
+MapLibre、地图票据、地图瓦片代理及其 iOS / Android 依赖已经从当前源码和归档移除。早期 build 日志中的 MapLibre dSYM warning 仅描述当时的历史构建，不再代表当前依赖状态；本轮归档只保留 React、ReactNativeDependencies 和 Hermes framework。下次上传前仍需按 App Store Connect 的实际 build 状态递增编号并重新 archive，不能直接复用本轮 `/tmp` 验证归档。
+
+域名审核期间运行 `MIAOXUN_TEMP_IP_TESTFLIGHT=1 scripts/check-launch-readiness.sh`，域名、DNS 和 HTTPS 项按受控测试策略记录为 warning。其余发布检查保持严格：当前服务器仍需在下一次授权部署时上线 `/api/ready`，并设置 `TRUST_PROXY_HOPS=1`、`CREATE_FIRST_USER_AS_ADMIN=false`、`DEFAULT_ADMIN_ENABLED=false`；完成迁移后必须同时验证 `/api/health` 和 `/api/ready`。

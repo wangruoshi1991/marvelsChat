@@ -19,7 +19,7 @@ MiaoxunRN/admin -> backend -> PostgreSQL / agents / provider
 - `admin`：后台管理系统前端。当前为 Vite + 原生 JavaScript/CSS，调用 `/api/admin/*`，但不单独拥有后台后端服务。
 - `backend`：Node.js + Express API、鉴权、PostgreSQL、运营管理、Agent 编排、New API 中转。
 - `backend/database`：PostgreSQL schema，当前包含用户、资料、会话、消息、事件、Agent 运行记录、社交关系、好友申请、通知和搜索历史。
-- `agents`：每个 Agent 独立声明能力、权限、提示词计划和 fallback。
+- `agents`：每个 Agent 独立声明能力、权限和提示词计划；模型或外部能力未配置时必须明确不可用，不生成替代结果。
 - `python`：当前没有 Python 工程；后续如接入媒体生成、文件解析、模型处理或长任务队列，应作为独立 worker/service 引入，不混入 RN 或 Node API 进程。
 - `docs`：任何结构和接口变化都要同步记录。
 
@@ -56,7 +56,7 @@ iOS 使用 `AVFoundation`，Android 使用 CameraX + ML Kit bundled barcode-scan
 
 小站展示的码必须是标准 QR Code，本体不得使用随机形状、手绘模块或遮挡静区；视觉风格只能放在外框、贴纸、标题等不影响识别的位置。
 
-API 地址通过 `MiaoxunConfigModule.apiBaseURL` 统一暴露给 JS：iOS 从 `Info.plist` 的 `MiaoxunAPIBaseURL` 读取，Android 从 `BuildConfig.MIAOXUN_API_BASE_URL` 读取。配置缺失或格式错误必须直接失败，不允许回退到示例地址或本地默认地址。
+API 地址通过 `MiaoxunConfigModule.apiBaseURL` 统一暴露给 JS：iOS 从 `Info.plist` 的 `MiaoxunAPIBaseURL` 读取，Android 从 `BuildConfig.MIAOXUN_API_BASE_URL` 读取。配置值必须是无路径、查询或片段的 HTTP(S) origin，所有业务调用显式使用 `/api/*`；配置缺失、Base 带路径或调用路径不规范时直接失败。
 
 当前定位桥接：
 
@@ -66,7 +66,7 @@ src/services/location.ts
   -> Android MiaoxunLocationModule.currentLocation()
 ```
 
-定位桥接只返回 `latitude`、`longitude` 和 `horizontalAccuracy`。`POST /api/location/resolve` 在后端调用显式配置的 Nominatim-compatible 反向地理编码服务，提取社区和活动区域候选；后端写入和返回 `community`、`activity_area` 时会清洗 Nominatim 多语言分号别名，只保留一个正式展示标签。`GET /api/map/style` 返回 MapLibre 样式，`GET /api/map/tiles/:z/:x/:y.png` 由后端代理显式配置的地图瓦片服务。没有 `GEOCODING_REVERSE_URL`、`GEOCODING_USER_AGENT`、`MAP_TILE_URL_TEMPLATE`、`MAP_TILE_USER_AGENT` 或 `PUBLIC_API_BASE_URL` 时直接返回 503，不使用公共服务或本地默认值。地图样式里的瓦片 URL 必须由 `PUBLIC_API_BASE_URL` 生成，线上必须是 `https://api.marvelschat.com`，不能从反向代理请求协议推断，避免 iOS 真机拿到 `http` 瓦片地址。客户端位置入口在小站页，使用开源 `@maplibre/maplibre-react-native` 提供可拖动缩放地图，用户点选位置后重新解析该点，再从候选中选择社区和活动区域，点击保存后才写入 `user_profiles`。线上如果使用高德 Web 服务和高德瓦片，客户端必须明确处理 WGS84 与 GCJ-02 坐标转换：原生定位和后端解析使用 WGS84，地图展示和地图点选使用 GCJ-02。高德地图属于商业 SDK/服务，不是开源替代；如采用高德，必须补正式 Key、平台 SDK 配置和上线合规说明。
+定位桥接只返回 `latitude`、`longitude` 和 `horizontalAccuracy`。`POST /api/location/resolve` 在后端调用显式配置的 Nominatim-compatible 或高德逆地理编码服务，提取社区和活动区域候选；高德供应商适配层负责把系统返回的 WGS84 坐标转换为 GCJ-02。后端写入和返回 `community`、`activity_area` 时会清洗历史多语言分号别名，只保留一个正式展示标签。客户端位置入口只展示真实候选，用户点击保存后才写入资料；首版不提供地图选点、地图瓦片代理、手输位置或默认位置兜底。
 
 ## 后端技术栈
 
@@ -100,7 +100,7 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 
 数据库未配置、未迁移或连接失败时，后端返回明确错误。App 不展示原型账号、静态聊天、静态 Agent 或静态内容流作为真实数据；未登录时只进入登录/注册流程。
 
-启动动画只表达“AI 不只问答 / 找人，找东西 / 就上妙讯小站”。登录和注册页不展示未上线的忘记密码、短信或邮件验证说明；对应能力接入后再补真实入口，不在客户端放提前说明。`MiaoxunRN/scripts/patch-react-native-filament.js` 是 React Native 0.86 / React 19 下的依赖适配脚本：安装后移除 `react-native-filament` 的旧 `defaultProps` 写法，让 `FilamentView` 直接读取 Fabric public instance 的 `__nativeTag`、`_nativeTag` 或 `canonical.nativeTag`，把 `withCleanupScope` 的清理调度从已废弃的 `InteractionManager.runAfterInteractions` 改为 `requestIdleCallback`，并将原生 `PointerHolder::release()` 调整为幂等释放，避免 Release/TestFlight 生命周期里同一 Filament 资源被 JS cleanup 和原生 GC 重复释放时抛异常崩溃，不再触发 RN DevTools warning。App 不使用 `LogBox.ignoreLogs` 兜底隐藏 warning。
+启动动画只表达“AI 不只问答 / 找人，找东西 / 就上妙讯小站”。登录和注册页不展示未上线的忘记密码、短信或邮件验证说明；对应能力接入后再补真实入口，不在客户端放提前说明。App 不使用 `LogBox.ignoreLogs` 隐藏运行时 warning。3D 查看器源码位于 `avatar-web/src/app-viewer/`，构建产物内嵌到 `MiaoxunRN/src/assets/avatar-viewer/avatar-viewer.html`；仓库检查会验证两者一致，禁止手工维护两份实现。
 
 后台管理系统与 App 使用不同的本地登录态。后台可以创建账号、启用/停用用户、调整角色、编辑资料、管理 Agent 授权、撤销登录态、重置密码；这些动作会写入 `usage_events`。
 
@@ -120,6 +120,8 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 需要长任务、流式输出或多 Agent 协作时，优先扩展后端接口，例如：
 
 - `GET /api/agents`：注册 Agent 列表。
+- `GET /api/health`：仅表示进程存活，不探测或暴露依赖状态。
+- `GET /api/ready`：探测 PostgreSQL 连接，并核对发布包迁移文件与 `schema_migrations` 账本；未配置、未连接、迁移待执行、历史校验和不一致或已登记文件缺失时返回 503，供容器和负载均衡判断是否接流量。检查过程只读，不自动迁移。
 - `PATCH /api/admin/users/:userId/agents/:agentId`：授权管理。
 - `POST /api/threads/:threadId/messages`：当前消息入口。`agent_id` 线程触发 Agent runtime；`peer_user_id` direct 线程写入当前线程并镜像到对方线程。
 - `DELETE /api/threads/:threadId/messages/:messageId`：单侧删除当前用户线程里的消息，写入 `deleted_at`，不删除对方线程。
@@ -128,9 +130,6 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 - `PATCH /api/me/presence`：保存当前用户 `presenceMode`，只允许 `online / offline / hidden`。公开资料、搜索、好友/关注列表和 direct 线程只输出 `presenceStatus`，规则为 `presenceMode=online` 且当前 WebSocket 在线时显示 `online`，否则显示 `offline`；仅本人接口可看到自己的 `presenceMode`。后端在 WebSocket 首次连接、最后一个连接断开和本人切换在线模式时向好友、关注关系和 direct 聊天相关用户推送 `presence.changed`，客户端收到后重新读取真实 bootstrap 数据，保证列表和主页状态及时一致。
 - `PATCH /api/me/profile`：保存当前用户昵称、头像文字、简介、社区、活动区域和形象配置。
 - `POST /api/location/resolve`：按坐标调用配置好的 Nominatim-compatible 反向地理编码服务，返回附近社区候选和活动区域候选。
-- `POST /api/map/ticket`：登录用户用 Bearer token 换取短期地图访问票据，避免把主登录 token 放进 MapLibre 样式或瓦片 URL。
-- `GET /api/map/style`：返回 MapLibre 样式，样式中的瓦片 URL 由 `PUBLIC_API_BASE_URL` 指向后端代理并携带短期地图票据。
-- `GET /api/map/tiles/:z/:x/:y.png`：通过后端代理地图瓦片，客户端不直接依赖第三方瓦片域名，也不在瓦片 URL 中携带主登录 token。
 - `GET /api/realtime`：WebSocket 实时通道。登录用户通过 session token 建立连接，direct 消息写入对方线程后立即推送 `thread.message` 给在线对方；关注、好友申请、好友通过、通知已读会推送 `notification.changed`，关注关系和好友关系变化会推送 `relationships.changed`，在线状态变化会推送 `presence.changed`。客户端收到事件后只重新读取真实通知/增量同步或 bootstrap，不把通知、关系或在线状态复制成第二套状态。客户端按 token 生命周期保持连接，异常断开后只重连同一个 WebSocket 通道，并明确展示未连接/连接中状态，不做短轮询兜底。
 - 客户端发送状态是 UI 内存态，不是后端消息状态；只有 `POST /api/threads/:threadId/messages` 成功返回的 `chat_messages` 记录才表示真实已保存消息。后续如需已送达、已读、正在输入，必须新增后端字段或事件表并通过 API/WebSocket 发布。
 - `GET /api/app/sync`：按 `chat_threads.updated_at` 做增量同步。
@@ -140,16 +139,18 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 
 ## 未接入模块的处理
 
-动态、相册、文件、社交评分、长期记忆、收藏列表、签名动态码、好友拒绝/取消和内容级可见性当前没有完整数据表或业务 API，因此 App 保留模块入口和真实空状态，不填充客户端假数据。后续接入时先补 PostgreSQL schema 和 API，再把空状态替换为真实列表、内容和操作。
+动态、日记、相册、媒体资产、搜索历史、好友申请拒绝/取消、主页字段可见性和动态/日记/相册内容可见性已有 PostgreSQL 表与业务 API。真实文件二进制上传、社交评分、长期记忆、收藏列表、签名动态码、群聊、已读回执、正在输入和媒体聊天消息仍未形成完整闭环；对应入口只能展示明确的未开放状态，不能填充客户端假数据。后续接入时先补 schema、授权校验和 API，再接真实列表与操作。
 
-扫码主页、关注、好友申请、好友通过通知、好友 direct 聊天线程、通知未读、用户搜索、搜索历史、在线/离线/隐藏、主页展示开关、好友列表、关注列表、粉丝列表、用户资料编辑和地图点选定位已进入前后端闭环。公开主页是用户关系动作的统一入口，可由扫码、搜索、好友列表、关注列表、粉丝列表和好友聊天页进入；好友列表中头像/资料区域进入主页，消息图标进入聊天，聊天页右上角资料按钮进入同一公开主页。好友聊天已支持真实发送中、失败、重试、回复、复制、单侧删除、发送后 1 分钟内撤回和 WebSocket 在线接收；长按操作浮层由客户端贴近被选消息展示。真实用户和 Agent 聊天正文按发送时内容保存和展示，客户端不自动翻译历史消息；切换语言只影响 UI、状态、操作提示和本地妙讯管家动作结果。
+扫码主页、关注、好友申请及拒绝/取消、好友通过通知、好友 direct 聊天线程、通知未读、用户搜索、搜索历史、在线/离线/隐藏、主页展示开关、好友列表、关注列表、粉丝列表、用户资料编辑和位置解析确认已进入前后端闭环。公开主页是用户关系动作的统一入口，可由扫码、搜索、好友列表、关注列表、粉丝列表和好友聊天页进入；好友列表中头像/资料区域进入主页，消息图标进入聊天，聊天页右上角资料按钮进入同一公开主页。好友聊天已支持真实发送中、失败、重试、回复、复制、单侧删除、发送后 1 分钟内撤回和 WebSocket 在线接收；长按操作浮层由客户端贴近被选消息展示。真实用户和 Agent 聊天正文按发送时内容保存和展示，客户端不自动翻译历史消息；切换语言只影响 UI、状态、操作提示和本地妙讯管家动作结果。
 
-小站页承载位置、本人在线状态和 3D 形象展示，设置页不承载这些个人主页内容编辑。“我的小站”面板按原型结构保留 3D 形象舞台、个人日记、个人相册、喜欢的音乐菜单、可调用能力 Agent 和我的文件的位置；未接入内容模块只展示真实空状态，不展示示例列表、示例封面、示例数量或示例文件，补后端 schema/API 后再接真实列表。
+小站页承载位置、本人在线状态和 3D 形象展示，设置页不承载这些个人主页内容编辑。“我的小站”面板按原型结构保留 3D 形象舞台、个人日记、个人相册、喜欢的音乐菜单、确定性内容整理工具和我的文件入口；未接入内容模块只展示真实空状态或明确的未开放状态，不展示示例列表、示例封面、示例数量或示例文件。
 
-`avatar_config` 只用于人类用户的小站展示和用户小头像，当前不提供正式编辑入口。小站主舞台已接入 `react-native-filament@1.9.0` 渲染真实 GLB，iOS 使用 Metal，Android 后续使用同一 RN 渲染层，滑动时只旋转模型本体。本地模型资源为 `MiaoxunRN/src/assets/avatar/miaoxun-avatar.glb`，由 `MiaoxunRN/scripts/generate-miaoxun-avatar-glb.js` 通过 `npm run generate:avatar-model` 可复现生成；当前 GLB 为低模卡通人形验证资产，只用于验证模型加载、材质更新、舞台旋转、Skybox 背景和真机稳定性。主舞台使用不透明 `FilamentView`、固定色 `Skybox` 背景、正面方向光和点光校准亮度；`Skybox` 只用于填满背景像素，避免 iOS 真机透明 Metal 层露出未清屏缓冲，不接入环境贴图或 `EnvironmentalLight`。
+`avatar_config` 只用于人类用户的小站资料和用户小头像。小站 3D 主舞台使用 App 内置的 Three.js `0.180.0`、GLTFLoader 和 OrbitControls，通过 `react-native-webview` 的本地页面（iOS `WKWebView` / Android WebView）加载 Bearer 鉴权的 `/api/avatar-3d/app/models/:modelId/file`，不加载伙伴 Web 工作台页面。上传照片、四视图生成与确认、Tripo 建模、任务状态和费用控制仍由伙伴的后端生命周期负责；App 只是该流程的移动端产品界面。
 
-已删除未达上线标准的捏脸、装扮、动作和上传图片生成编辑器。当前脚本几何 GLB 不能作为最终 QQ 秀级形象方案；要达到完整人物、发型、服装褶皱和动作统一画风，必须接入完整授权角色模型/贴图/动作资产管线。升级商业素材库、骨骼动画或图片生成形象时需要新增模型/素材资源、生成服务、审核流程、模型压缩、跨平台性能验证和资源授权记录。Agent 头像由 Agent 注册 identity 决定，不允许复用用户可编辑形象。收藏列表、签名动态码、好友拒绝/取消、群聊、已读回执、正在输入、媒体消息和内容级可见性记录在 [社交关系流程](social-graph.md)，后续必须继续按后端校验优先实现。
+PostgreSQL 只保存任务、模型状态、字节数和 OSS object key，不保存 GLB、图片或视频二进制。每个成功模型在 OSS 中保留伙伴输出的原始高精 `model.glb`，同时由独立 Node Worker 生成 App 专用 `model-mobile.glb`：最多 25 万三角面、最大 2048px 纹理、`KHR_mesh_quantization` 顶点量化。App 路由只读取移动端资产，缺失时明确失败，不回退到 40-57MB 原件；伙伴 Web 路由继续读取原始资产。模型加载期间先显示已有缩略图，模型和媒体文件按资源 ID 使用带 `Vary: Authorization` 的私有不可变缓存。删除模型时必须同时删除原始 GLB、App GLB 和缩略图。
+
+当前没有捏脸、骨骼动作或任意换装编辑器。后续升级商业素材库或动画时，必须继续保留原始生成资产与平台派生资产的边界，并完成授权、审核、移动端性能和跨平台验证。Agent 头像由 Agent 注册 identity 决定，不允许复用用户可编辑形象。收藏列表、签名动态码、群聊、已读回执、正在输入和媒体聊天消息记录在 [社交关系流程](social-graph.md)，后续必须继续按后端校验优先实现。
 
 App 通知列表只读取 `notifications` 表；通知创建、标题正文、通知种类集中在后端 `backend/src/notification-service.js`，社交关系仓储只返回创建结果，接口层负责实时推送刷新信号。当前标准通知种类为 `friend.request`、`friend.accepted`、`follow.created`，后续关注的人发布动态、收藏板块更新、系统审核等通知必须先扩展 `notification-service` 枚举和模板，再接入对应业务事件。`usage_events` 和 `agent_runs` 保持为后台审计与运行记录，不进入用户通知流。客户端在妙讯页 `聊天 / 通知` 切换中显示通知未读数，进入通知列表不会自动清空，点击单条、通过好友申请或显式标记已读才更新 `read_at`。妙讯管家当前聊天页内的同步回复不计入会话未读，只有用户未打开的会话消息才应显示未读数字。
 
-2026-06-24 真机回归修复：登录流程必须在 `login` 和首屏 `bootstrap` 都成功后才写入本地 token 并进入主界面，避免网络超时时出现按钮持续刷新、二次点击后半同步进入的状态；登录页本地提交锁防止 React 状态尚未刷新时重复发起登录。小站在线/离线/隐藏菜单使用 RN `Modal` 透明浮层，按点击位置计算弹层坐标，不再放在滚动内容内部的固定 absolute 层，避免 iPhone 真机上被 AI ID 或资料区遮挡。小站 3D 舞台继续使用真实 GLB/Filament 渲染，但相机、灯光、场景参数和配饰缩放使用稳定引用，形象配置按内容 key 归一化，减少 profile/bootstrap 刷新导致的原生资源重复初始化；真机背景闪烁问题通过不透明 `FilamentView` 和固定色 `Skybox` 处理，不恢复 `EnvironmentalLight`，不改为 2D。好友聊天页不再展示“实时聊天未连接 / 正在连接实时聊天”顶部横幅，实时连接状态保留在 session 内部，用户只在具体发送失败或重试时看到操作结果。WebSocket 生命周期只绑定登录 token，presence 事件直接更新本地公开在线状态并触发增量同步，不能因本人 `presenceMode` 变化重建连接。妙讯页会话左滑进入聊天，聊天页左滑退出，动画位移必须跟手并按距离或速度完成。
+2026-06-24 真机回归修复：登录流程必须在 `login` 和首屏 `bootstrap` 都成功后才写入本地 token 并进入主界面，避免网络超时时出现按钮持续刷新、二次点击后半同步进入的状态；登录页本地提交锁防止 React 状态尚未刷新时重复发起登录。小站在线/离线/隐藏菜单使用 RN `Modal` 透明浮层，按点击位置计算弹层坐标，不再放在滚动内容内部的固定 absolute 层，避免 iPhone 真机上被 AI ID 或资料区遮挡。当前小站 3D 舞台使用内嵌 Three.js 查看器加载 App 专用 GLB，并以稳定的资源 ID、缩略图占位和私有缓存控制减少重复下载与空白等待；早期 Filament 真机问题仅保留在 iOS 历史记录中。好友聊天页不再展示“实时聊天未连接 / 正在连接实时聊天”顶部横幅，实时连接状态保留在 session 内部，用户只在具体发送失败或重试时看到操作结果。WebSocket 生命周期只绑定登录 token，presence 事件直接更新本地公开在线状态并触发增量同步，不能因本人 `presenceMode` 变化重建连接。妙讯页会话左滑进入聊天，聊天页左滑退出，动画位移必须跟手并按距离或速度完成。

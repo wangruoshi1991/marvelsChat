@@ -1,4 +1,4 @@
-import {Palette, palettes} from '../../shared/theme';
+import { Palette, palettes } from '../../shared/theme';
 
 const messageLightPalette: Partial<Palette> = {
   background: '#ffffff',

@@ -1,17 +1,17 @@
-import React, {useState} from 'react';
-import {Modal, View} from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import React, { useState } from 'react';
+import { Modal, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import {textFor} from '../../shared/i18n';
+import { textFor } from '../../shared/i18n';
 import {
   SettingGroup,
   SettingsActionButton,
   SettingsSwitchRow,
 } from '../../shared/settingsUi';
-import {styles} from '../../shared/styles';
-import {Palette} from '../../shared/theme';
-import {SheetHeader} from '../../shared/ui';
-import {Language} from '../session/useMiaoxunSession';
+import { styles } from '../../shared/styles';
+import { Palette } from '../../shared/theme';
+import { SheetHeader } from '../../shared/ui';
+import { Language } from '../session/useMiaoxunSession';
 
 export function ThreadSettingsSheet({
   visible,
@@ -60,9 +60,11 @@ export function ThreadSettingsSheet({
       animationType="slide"
       onRequestClose={onClose}
       presentationStyle="pageSheet"
-      visible={visible}>
+      visible={visible}
+    >
       <SafeAreaView
-        style={[styles.safeArea, {backgroundColor: palette.background}]}>
+        style={[styles.safeArea, { backgroundColor: palette.background }]}
+      >
         <View style={styles.threadSettingsScreen}>
           <SheetHeader
             title={textFor(language, '聊天设置', 'Chat settings')}
@@ -71,7 +73,8 @@ export function ThreadSettingsSheet({
           />
           <SettingGroup
             title={textFor(language, '消息', 'Messages')}
-            palette={palette}>
+            palette={palette}
+          >
             <SettingsSwitchRow
               title={textFor(language, '消息免打扰', 'Mute notifications')}
               value={muted}
@@ -83,7 +86,8 @@ export function ThreadSettingsSheet({
           {onOpenProfile ? (
             <SettingGroup
               title={textFor(language, '联系人', 'Contact')}
-              palette={palette}>
+              palette={palette}
+            >
               <SettingsActionButton
                 title={textFor(language, '查看主页', 'View profile')}
                 palette={palette}

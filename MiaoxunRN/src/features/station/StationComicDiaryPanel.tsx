@@ -1,10 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 
-import {
-  StationComicDiaryDTO,
-  StationDiaryEntryDTO,
-} from '../../models/api';
+import { StationComicDiaryDTO, StationDiaryEntryDTO } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import {
   SettingGroup,
@@ -41,7 +38,9 @@ export function StationComicDiaryPanel({
       comicDiaries
         .filter(draft => draft.sourceDiaryEntryId === diary.id)
         .sort((left, right) =>
-          String(right.createdAt || '').localeCompare(String(left.createdAt || '')),
+          String(right.createdAt || '').localeCompare(
+            String(left.createdAt || ''),
+          ),
         ),
     [comicDiaries, diary.id],
   );
@@ -72,8 +71,8 @@ export function StationComicDiaryPanel({
       });
       onActionMessage(
         relatedDrafts.length
-          ? textFor(language, '漫画分镜已重新生成', 'Storyboard regenerated')
-          : textFor(language, '漫画分镜已生成', 'Storyboard created'),
+          ? textFor(language, '漫画分镜已重新整理', 'Storyboard prepared again')
+          : textFor(language, '漫画分镜已整理', 'Storyboard prepared'),
       );
     } catch (error) {
       onActionError(error);
@@ -116,7 +115,10 @@ export function StationComicDiaryPanel({
   };
 
   return (
-    <SettingGroup title={textFor(language, '漫画日记', 'Comic Diary')} palette={palette}>
+    <SettingGroup
+      title={textFor(language, '漫画分镜', 'Comic Storyboard')}
+      palette={palette}
+    >
       <SettingsSegmentRow
         title={textFor(language, '漫画风格', 'Comic Style')}
         palette={palette}
@@ -145,7 +147,10 @@ export function StationComicDiaryPanel({
 
       <View style={styles.settingsInputWrap}>
         <Text
-          style={[styles.settingsSegmentTitle, { color: palette.secondaryText }]}
+          style={[
+            styles.settingsSegmentTitle,
+            { color: palette.secondaryText },
+          ]}
         >
           {textFor(language, '生成要求', 'Prompt')}
         </Text>
@@ -174,8 +179,8 @@ export function StationComicDiaryPanel({
             isCreating
               ? textFor(language, '生成中', 'Creating')
               : relatedDrafts.length
-                ? textFor(language, '重新生成', 'Regenerate')
-                : textFor(language, '生成分镜', 'Create Storyboard')
+              ? textFor(language, '重新生成', 'Regenerate')
+              : textFor(language, '生成分镜', 'Create Storyboard')
           }
           palette={palette}
           primary
@@ -197,7 +202,9 @@ export function StationComicDiaryPanel({
             />
           ))
         ) : (
-          <Text style={[styles.relationshipEmpty, { color: palette.secondaryText }]}>
+          <Text
+            style={[styles.relationshipEmpty, { color: palette.secondaryText }]}
+          >
             {textFor(
               language,
               '还没有漫画分镜草稿。生成后会保存在当前日记下方。',
@@ -264,12 +271,17 @@ function ComicDraftCard({
               { color: palette.rose },
             ]}
           >
-            {deleting ? textFor(language, '删除中', 'Deleting') : textFor(language, '删除', 'Delete')}
+            {deleting
+              ? textFor(language, '删除中', 'Deleting')
+              : textFor(language, '删除', 'Delete')}
           </Text>
         </Pressable>
       </View>
       <Text
-        style={[styles.stationComicDraftSummary, { color: palette.secondaryText }]}
+        style={[
+          styles.stationComicDraftSummary,
+          { color: palette.secondaryText },
+        ]}
         numberOfLines={3}
       >
         {draft.summary || draft.prompt}

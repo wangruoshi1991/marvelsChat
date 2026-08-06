@@ -6,5 +6,3 @@ export class HttpError extends Error {
     this.details = details;
   }
 }
-
-export const notFound = (message = "Not Found") => new HttpError(404, message);

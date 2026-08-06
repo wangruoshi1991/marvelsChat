@@ -4,9 +4,7 @@ import {
   StationAlbumSuggestionDTO,
   StationComicDiaryDTO,
   StationFileAssetDTO,
-  StationGenerationJobDTO,
   StationMediaAssetDTO,
-  StationModelAssetDTO,
   StationSiteDraftDTO,
   StationVideoDraftDTO,
   StationVisibility,
@@ -47,50 +45,6 @@ export const stationAgentApi = {
         token,
       },
     );
-  },
-
-  stationModelJobs(token: string, limit = 10) {
-    return request<StationGenerationJobDTO[]>(
-      `/api/station/model-jobs?limit=${limit}`,
-      { token },
-    );
-  },
-
-  createStationModelJob(
-    token: string,
-    payload: {
-      prompt: string;
-      inputType?: 'text' | 'image';
-      provider?: 'meshy';
-      imageUrl?: string | null;
-      sourceAssetId?: string | null;
-      targetFormats?: Array<'glb' | 'obj' | 'fbx' | 'stl' | 'usdz' | '3mf'>;
-      topology?: 'triangle' | 'quad';
-      poseMode?: '' | 'a-pose' | 't-pose';
-    },
-  ) {
-    return request<{
-      job: StationGenerationJobDTO;
-      provider: Record<string, unknown>;
-    }>('/api/station/model-jobs', {
-      method: 'POST',
-      token,
-      body: { provider: 'meshy', inputType: 'text', ...payload },
-      timeoutMs: longRequestTimeoutMs,
-    });
-  },
-
-  syncStationModelJob(token: string, jobId: string) {
-    return request<{
-      job: StationGenerationJobDTO;
-      provider: Record<string, unknown>;
-      storage?: Record<string, unknown>;
-      modelAsset?: StationModelAssetDTO;
-    }>(`/api/station/model-jobs/${jobId}/sync`, {
-      method: 'POST',
-      token,
-      timeoutMs: longRequestTimeoutMs,
-    });
   },
 
   stationFileAssets(token: string, limit = 10) {

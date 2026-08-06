@@ -9,16 +9,26 @@
     "test": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/*.test.js",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "db:migrate": "node scripts/db-migrate.js"
+    "db:migrate": "node scripts/db-migrate.js",
+    "admin:bootstrap": "node scripts/admin-bootstrap.js",
+    "avatar3d:backfill-mobile": "node scripts/avatar-3d-backfill-mobile-models.js"
   },
   "dependencies": {
+    "@gltf-transform/core": "^4.4.2",
+    "@gltf-transform/extensions": "^4.4.2",
+    "@gltf-transform/functions": "^4.4.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.19.2",
     "helmet": "^7.1.0",
+    "meshoptimizer": "^1.0.1",
     "pg": "^8.13.1",
+    "sharp": "^0.35.3",
     "ws": "^8.21.0",
     "zod": "^3.24.1"
+  },
+  "overrides": {
+    "sharp": "$sharp"
   },
   "engines": {
     "node": ">=20"

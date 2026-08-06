@@ -1,6 +1,7 @@
 import { resolveLocation } from "../location-service.js";
 import {
   getProfileVisibility,
+  listMiaoPointLedger,
   updateProfileVisibility,
   updateUserProfile,
   updateUserStationConfig,
@@ -8,12 +9,22 @@ import {
 import { createUsageEvent, hashRequestIp } from "../repositories.js";
 import {
   locationResolveSchema,
+  miaoPointLedgerQuerySchema,
   profileSelfSchema,
   profileVisibilitySchema,
   stationConfigSchema,
 } from "../schemas.js";
 
 export function registerStationProfileRoutes(app, { authenticate, asyncHandler }) {
+  app.get(
+    "/api/me/miao-points",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { limit } = miaoPointLedgerQuerySchema.parse(req.query);
+      res.json({ data: await listMiaoPointLedger(req.user.id, limit) });
+    }),
+  );
+
   app.patch(
     "/api/me/station-config",
     authenticate,

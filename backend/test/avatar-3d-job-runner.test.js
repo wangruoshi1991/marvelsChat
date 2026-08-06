@@ -1,0 +1,147 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
+
+const { createAvatar3dJobRunner } = await import("../src/avatar-3d-job-runner.js");
+const { HttpError } = await import("../src/http-error.js");
+
+test("overlapping runner calls do not overlap and processing jobs resume", async () => {
+  let resolveProcess;
+  let claims = 0;
+  const processed = [];
+  const runner = createAvatar3dJobRunner({
+    repository: {
+      claimNextStep: async () => {
+        claims += 1;
+        return claims === 1
+          ? { id: "job-1", status: "processing_3d", modelProviderTaskId: "task-1" }
+          : null;
+      },
+      listExpiredPrivateAssets: async () => [],
+    },
+    service: {
+      processJob: async (job) => {
+        processed.push(job);
+        await new Promise((resolve) => { resolveProcess = resolve; });
+      },
+    },
+    storage: { deleteAvatarObjects: async () => {} },
+    enabled: () => true,
+    now: () => new Date("2026-07-17T00:00:00.000Z"),
+  });
+
+  const first = runner.runOnce();
+  await new Promise((resolve) => setImmediate(resolve));
+  await runner.runOnce();
+  assert.equal(claims, 1);
+  resolveProcess();
+  await first;
+  assert.equal(processed[0].modelProviderTaskId, "task-1");
+});
+
+test("stop waits for the active job and prevents another claim", async () => {
+  let resolveProcess;
+  let claims = 0;
+  const runner = createAvatar3dJobRunner({
+    repository: {
+      claimNextStep: async () => {
+        claims += 1;
+        return claims === 1 ? { id: "job-1", status: "processing_3d" } : null;
+      },
+      listExpiredPrivateAssets: async () => [],
+    },
+    service: {
+      processJob: async () => new Promise((resolve) => { resolveProcess = resolve; }),
+    },
+    storage: { deleteAvatarObjects: async () => {} },
+    enabled: () => true,
+    now: () => new Date("2026-07-17T00:00:00.000Z"),
+  });
+
+  const activeRun = runner.runOnce();
+  await new Promise((resolve) => setImmediate(resolve));
+  let stopped = false;
+  const stopping = runner.stop().then(() => { stopped = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(stopped, false);
+  assert.deepEqual(await runner.runOnce(), { skipped: true });
+  assert.equal(claims, 1);
+
+  resolveProcess();
+  await Promise.all([activeRun, stopping]);
+  assert.equal(stopped, true);
+});
+
+test("cleanup deletes OSS first and leaves failed records retryable", async () => {
+  const calls = [];
+  let shouldFail = true;
+  const repository = {
+    claimNextStep: async () => null,
+    listExpiredPrivateAssets: async () => [{
+      asset_kind: "photo_source",
+      asset_id: "photo-1",
+      storage_key: "users/u/avatar-3d/photos/p/source.jpg",
+    }],
+    markPrivateAssetDeleted: async (input) => calls.push(["mark", input]),
+  };
+  const runner = createAvatar3dJobRunner({
+    repository,
+    service: { processJob: async () => {} },
+    storage: {
+      deleteAvatarObjects: async () => {
+        calls.push(["delete"]);
+        if (shouldFail) throw new Error("storage unavailable");
+      },
+    },
+    enabled: () => true,
+    now: () => new Date("2026-07-17T02:00:00.000Z"),
+    logger: { error: () => {} },
+  });
+
+  await runner.runOnce();
+  assert.deepEqual(calls, [["delete"]]);
+
+  shouldFail = false;
+  await runner.runCleanup();
+  assert.deepEqual(calls.map((call) => call[0]), ["delete", "delete", "mark"]);
+});
+
+test("runner logs a safe error code and job state without exposing error messages", async () => {
+  const entries = [];
+  let claimed = false;
+  const runner = createAvatar3dJobRunner({
+    repository: {
+      claimNextStep: async () => {
+        if (claimed) return null;
+        claimed = true;
+        return { id: "job-1", status: "persisting" };
+      },
+      listExpiredPrivateAssets: async () => [],
+      releaseJobClaim: async () => {},
+    },
+    service: {
+      processJob: async () => {
+        throw new HttpError(502, "private provider URL must not be logged", {
+          code: "PROVIDER_RESULT_DOWNLOAD_FAILED",
+        });
+      },
+    },
+    storage: { deleteAvatarObjects: async () => {} },
+    enabled: () => true,
+    logger: { error: (entry) => entries.push(entry) },
+    now: () => new Date("2026-07-17T02:00:00.000Z"),
+  });
+
+  await runner.runOnce();
+
+  assert.deepEqual(entries, [{
+    type: "avatar_3d_job_runner_error",
+    jobId: "job-1",
+    jobStatus: "persisting",
+    errorCode: "PROVIDER_RESULT_DOWNLOAD_FAILED",
+    errorName: "HttpError",
+  }]);
+  assert.equal(JSON.stringify(entries).includes("private provider URL"), false);
+});

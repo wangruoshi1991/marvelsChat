@@ -36,7 +36,7 @@ const parseJson = (value, fallback = null) => {
   }
 };
 
-export const mapNotification = (row) => ({
+const mapNotification = (row) => ({
   id: row.id,
   kind: row.kind,
   title: row.title,

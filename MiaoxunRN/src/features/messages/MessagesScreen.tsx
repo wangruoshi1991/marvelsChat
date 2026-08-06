@@ -17,27 +17,27 @@ import {
   View,
 } from 'react-native';
 
-import {AgentDTO} from '../../models/api';
+import { AgentDTO } from '../../models/api';
 import { recognizeSpeechOnce } from '../../services/speechToText';
 import { displayText, publicPresenceText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette, palettes } from '../../shared/theme';
-import {ChatHeader} from '../../shared/ui';
+import { ChatHeader } from '../../shared/ui';
 import {
   ChatMessage,
   ChatThread,
   Language,
 } from '../session/useMiaoxunSession';
-import {ThreadListScreen} from './ThreadListScreen';
-import {MessageTab, UserAvatarRenderer} from './messageTypes';
-import {ChatComposer} from './ChatComposer';
-import {ChatMessageItem} from './ChatMessageItem';
-import {ChatMessageMenu} from './ChatMessageMenu';
-import {resolveMessagePalette} from './messagePalette';
-import {ThreadSettingsSheet} from './ThreadSettingsSheet';
-import {isThreadOnline} from './messageUtils';
+import { ThreadListScreen } from './ThreadListScreen';
+import { MessageTab, UserAvatarRenderer } from './messageTypes';
+import { ChatComposer } from './ChatComposer';
+import { ChatMessageItem } from './ChatMessageItem';
+import { ChatMessageMenu } from './ChatMessageMenu';
+import { resolveMessagePalette } from './messagePalette';
+import { ThreadSettingsSheet } from './ThreadSettingsSheet';
+import { isThreadOnline } from './messageUtils';
 
-export type {MessageTab, UserAvatarRenderer};
+export type { MessageTab, UserAvatarRenderer };
 
 const recallWindowMs = 60 * 1000;
 const chatSwipeCloseThreshold = -84;
@@ -100,9 +100,10 @@ export function ChatScreen({
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const chatTranslateX = useRef(new Animated.Value(0)).current;
   const windowSize = useWindowDimensions();
-  const messagePalette = useMemo(() => resolveMessagePalette(palette), [
-    palette,
-  ]);
+  const messagePalette = useMemo(
+    () => resolveMessagePalette(palette),
+    [palette],
+  );
   const isDarkPalette = messagePalette.text === palettes.dark.text;
   const canConfigureThread =
     Boolean(thread.peerUserId) || thread.kind === 'group';
@@ -117,8 +118,8 @@ export function ChatScreen({
         threadOnline ? 'Online' : 'Offline',
       )
     : thread.peerUserId
-      ? publicPresenceText(language, thread.peerPresenceStatus)
-      : '';
+    ? publicPresenceText(language, thread.peerPresenceStatus)
+    : '';
   const isSelectedMessageMine =
     selectedMessage?.senderType === 'user' &&
     (typeof selectedMessage.metadata?.senderUserId !== 'string' ||
@@ -208,7 +209,13 @@ export function ChatScreen({
     const createdAt = Date.parse(selectedMessage.createdAt);
     return !Number.isNaN(createdAt) && Date.now() - createdAt <= recallWindowMs;
   })();
-  const renderMessage = ({item, index}: {item: ChatMessage; index: number}) => (
+  const renderMessage = ({
+    item,
+    index,
+  }: {
+    item: ChatMessage;
+    index: number;
+  }) => (
     <ChatMessageItem
       item={item}
       previousMessage={index > 0 ? thread.messages[index - 1] : null}
@@ -298,7 +305,10 @@ export function ChatScreen({
 
   return (
     <KeyboardAvoidingView
-      style={[styles.chatScreen, { backgroundColor: messagePalette.background }]}
+      style={[
+        styles.chatScreen,
+        { backgroundColor: messagePalette.background },
+      ]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <Animated.View
@@ -318,9 +328,7 @@ export function ChatScreen({
           }
           onBack={onBack}
           onOpenSettings={
-            canConfigureThread
-              ? () => setIsThreadSettingsOpen(true)
-              : undefined
+            canConfigureThread ? () => setIsThreadSettingsOpen(true) : undefined
           }
         />
         <FlatList

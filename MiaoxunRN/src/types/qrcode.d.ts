@@ -19,4 +19,3 @@ declare module 'qrcode/lib/core/qrcode' {
 
   export default QRCodeCore;
 }
-

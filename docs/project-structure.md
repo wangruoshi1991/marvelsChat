@@ -40,7 +40,7 @@ MiaoxunRN/src/
 - `src/features/station/`：我的小站、小站内容、Agent 能力入口和位置设置。
 - `src/features/session/`：登录后的会话状态、bootstrap 同步、消息/小站/社交动作。
 - `src/services/`：token、定位、语音、二维码和媒体上传服务。
-- `src/services/api/`：按领域拆分的 HTTP API 客户端，包含网络底座、认证、应用同步、社交、通知、消息、资料、小站内容和小站 Agent 能力；`src/services/apiClient.ts` 只保留兼容聚合出口。
+- `src/services/api/`：按领域拆分的 HTTP API 客户端，包含网络底座、认证、应用同步、社交、通知、消息、资料、小站内容和小站 Agent 能力；`src/services/apiClient.ts` 是面向调用方的领域 API facade 与聚合出口。
 - `src/models/api.ts`：前后端 DTO 类型边界。
 - `src/shared/`：主题、通用样式和 UI 基础组件；小站样式按 `src/shared/stationStyles/` 模块拆分，并由 `stationStyles.ts` 聚合导出。
 
@@ -150,7 +150,6 @@ backend/src/routes/station-routes.js
 backend/src/routes/station-content-routes.js
 backend/src/routes/station-profile-routes.js
 backend/src/routes/station-site-routes.js
-backend/src/routes/station-model-routes.js
 backend/src/routes/station-file-routes.js
 backend/src/routes/station-comic-routes.js
 backend/src/routes/station-video-routes.js
@@ -160,11 +159,20 @@ backend/src/routes/station-media-routes.js
 backend/src/routes/station-outfit-routes.js
 ```
 
-小站数据访问和 API 路由。`station-routes.js` 只负责注册小站子路由，不再承载具体业务实现；内容读取、资料/定位、建站 Agent、3D 模型 Agent、文件预处理、漫画日记、视频制作、日记、相册整理、媒体上传和穿搭都按领域拆到独立 route 模块。后续新增小站能力也应继续新增独立 route 模块，避免把业务代码重新堆回聚合入口。
+小站数据访问和 API 路由。`station-routes.js` 只负责注册小站子路由，不再承载具体业务实现；内容读取、资料/定位、建站 Agent、文件预处理、漫画日记、视频制作、日记、相册整理、媒体上传和穿搭都按领域拆到独立 route 模块。3D 形象不属于 Station Agent 路由，由下方独立领域负责。
+
+```text
+backend/src/avatar-3d-lifecycle-service.js
+backend/src/avatar-3d-repository.js
+backend/src/routes/avatar-3d-app-routes.js
+backend/src/routes/avatar-3d-routes.js
+backend/src/avatar-3d-web-service.js
+```
+
+3D 形象领域。App 使用 Bearer API 完成原生生成流程；`avatar-3d-routes.js` 和 `avatar-3d-web-service.js` 保留伙伴 Web 工具及 App 单模型 Three.js 查看器所需的 Cookie 会话。两套入口共享生命周期、私有存储、幂等和任务状态，不共享产品 UI。
 
 ```text
 backend/src/site-builder-service.js
-backend/src/model-generation-service.js
 backend/src/album-management-service.js
 backend/src/file-preprocessing-service.js
 backend/src/comic-diary-service.js
@@ -193,9 +201,10 @@ PostgreSQL 表结构和迁移 SQL。
 
 ```text
 backend/scripts/db-migrate.js
+backend/scripts/admin-bootstrap.js
 ```
 
-数据库初始化/迁移脚本。在 `backend/` 目录执行 `npm run db:migrate` 会调用它。
+前者只执行迁移账本内的数据库变更；后者由 `npm run admin:bootstrap` 显式执行一次管理员初始化。两者不共享隐式数据修补副作用。
 
 ## agents/
 

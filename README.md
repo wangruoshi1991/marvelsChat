@@ -1,17 +1,16 @@
 # marvelsChat / 妙讯
 
-这是妙讯的正式仓库基础，采用单仓库多目录独立工程结构。iOS 客户端、后台管理系统、后端和 Agent 各自维护边界，不使用根目录统一依赖包。
+这是妙讯的正式仓库基础，采用单仓库多目录独立工程结构。移动端、后台管理系统、后端、Agent 和 3D Web 工具各自维护业务依赖；根目录依赖只用于跨项目质量检查。
 
 ## 目录结构
 
 ```text
 marvelsChat/
-  MiaoxunRN/              # React Native 正式实现目录
+  MiaoxunRN/       # React Native 正式移动端
   admin/           # 后台管理系统前端
   backend/         # Node.js API，承接登录、数据库、管理、Agent 调用
-  backend/database # PostgreSQL schema
-  backend/scripts  # 数据库迁移等后端脚本
-  agents/          # 独立 Agent 注册目录，后续每个 Agent 一个文件
+  avatar-web/      # 3D 流程工具与 App 内嵌查看器源码
+  agents/          # 独立 Agent 注册目录
   docs/            # 架构、迁移计划、接口和 Agent 文档
 ```
 
@@ -28,7 +27,7 @@ React Native 是当前正式移动端主线，iOS 上线能力通过 `MiaoxunRN/
 ## 当前状态
 
 - React Native 正式实现目录为 `MiaoxunRN/`，旧 SwiftUI 原型目录已从主工程移除。
-- `MiaoxunRN` 通过自有原生配置桥接 `MiaoxunConfigModule` 显式读取 API 地址；iOS 来源是 `Info.plist` 的 `MiaoxunAPIBaseURL`，Android 来源是 `BuildConfig.MIAOXUN_API_BASE_URL`，缺失或格式错误会直接报错，不静默切换到示例地址。
+- `MiaoxunRN` 通过自有原生配置桥接 `MiaoxunConfigModule` 显式读取 API 地址；iOS 来源是 `Info.plist` 的 `MiaoxunAPIBaseURL`，Android 来源是 `BuildConfig.MIAOXUN_API_BASE_URL`。该值必须是无路径、查询或片段的 HTTP(S) origin，业务请求必须显式使用 `/api/*` 路径；配置缺失或格式错误会直接报错。
 - 未登录状态只展示登录/注册页，不展示原型账号、预览聊天或前端假会话。
 - 移动端注册使用唯一昵称作为用户名；用户可用昵称、手机号或邮箱登录。注册或改名时如果昵称已存在，后端返回“名称已使用”。
 - 消息页只展示数据库中的真实会话；不会为了贴近 Demo 继续补前端假聊天，也不再额外插入解释性统计卡。
@@ -37,15 +36,15 @@ React Native 是当前正式移动端主线，iOS 上线能力通过 `MiaoxunRN/
 - 后端已提供健康检查、认证、应用启动数据、消息、事件采集和后台管理 API。
 - 后台管理系统位于 `admin/`，用于创建账号、管理用户状态/角色/资料/登录态/Agent 授权、重置密码，并查看活跃、消息、事件和 Agent 调用记录。
 - 后台管理页使用独立登录态，不复用 App 本地登录缓存；App 登录页也不再提供后台跳转。
-- Agent 已独立成 `agents/`，当前包含妙讯管家和建站、3D、文件预处理、相册整理、漫画日记、视频制作等功能类 Agent 注册文件。
+- Agent 已独立成 `agents/`，当前包含妙讯管家和建站、文件预处理、相册整理、漫画日记、视频制作等功能类 Agent；3D 形象顾问只提供准备建议，不调用或控制 3D 生成流程。
 - `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL` 配置完整时，妙讯管家会走 OpenAI-compatible 模型接口；当前本地测试使用 Z.AI GLM。未配置时不会伪造 token 或假装已接入模型。
 - 扫码看主页、关注、好友申请、好友通过通知和通知未读已接入真实后端表与 API；扫码结果必须经后端解析 AI ID 后才打开用户主页。
 - 小站社交页已展示真实关注、粉丝和好友列表；搜索页已接入真实用户搜索和最近搜索记录；设置页已接入主页展示开关，公开主页会按后端可见性策略隐藏字段。
 - 动态、相册、搜索、好友申请拒绝/取消和主页展示开关已接入真实链路；音乐、文件、长期记忆、收藏列表和群组等尚未完整接入的模块保留入口，但不会填充假数据；后续按真实数据表和权限策略逐个完善。
 - 妙讯页左上角 `+` 菜单已改成手机壳级浮层，避免压住顶部内容；聊天抽屉也已按 demo 式头部 / 消息区 / 输入栏三段结构重排，头像和消息气泡保持固定网格。
 - 小站页的 AI ID 支持复制，并可打开按当前 AI ID 和两分钟有效期生成的标准 QR 动态码；二维码本体保持标准模块形态，外观装饰只允许放在二维码外框；“妙”中枢只在小站页显示，避免压到妙讯消息页底部导航。
-- 小站页已接入位置建议。定位坐标来自 iOS CoreLocation / Android LocationManager，社区和活动区域由后端显式配置的 Nominatim-compatible 或高德 Web 服务解析；当前线上高德地图瓦片使用 GCJ-02 坐标体系，客户端展示高德瓦片时会在 WGS84 定位坐标和 GCJ-02 地图坐标之间显式转换，点选后再转回 WGS84 交给后端解析，避免真机底图和定位点系统性偏移。用户在小站位置入口通过附近地图点选坐标，再从真实候选中选择保存。服务未配置或解析失败时提示明确错误，不写入默认位置，也不提供手输位置绕过。
-- 小站 3D 形象舞台只保留真实 GLB/Filament 渲染验证，并通过不透明舞台和固定色 Skybox 保证 TestFlight 真机背景稳定；当前低模人物和已删除的编辑器不作为上线级虚拟形象系统，正式形象必须后续接入授权模型、贴图、动作和素材审核流程。在线/离线/隐藏菜单锚定名称旁的状态按钮，并固定显示在该按钮下方居中，聊天页顶部不显示实时连接说明横幅。
+- 小站页已接入位置建议。定位坐标来自 iOS CoreLocation / Android LocationManager，社区和活动区域由后端显式配置的 Nominatim-compatible 或高德 Web 服务解析；当前线上使用高德逆地理编码，后端负责把 WGS84 定位坐标转换为高德需要的 GCJ-02 坐标。用户只从真实候选中确认保存，不提供地图选点、默认位置或手输位置绕过；服务未配置或解析失败时会显示明确错误。
+- 小站“我的模样”已接入独立的 App 原生 3D 形象流程：照片选择、质量检查、参数、授权、任务状态、四视图确认和模型管理均在 React Native 内完成；Web 工具不嵌入 App，只有 Three.js 单模型画布通过受限 WebView 展示私有 GLB。该流程不调用 Agent，也不保留旧 Meshy、`generation_jobs` 或 `station_model_assets` 兼容接口。
 - 妙讯页保留点击进入聊天，同时支持会话项左滑进入、聊天页左滑返回；聊天实时连接按登录 token 管理，增量游标保存在 ref 中，游标前进或在线状态事件都不会重建连接。`connection.ready` 只触发一次增量补偿，不再重新请求完整 bootstrap；在线状态变化通过 `presence.changed` 事件增量更新聊天列表和社交列表。
 - 登录/注册页和设置页已按独立移动端页面重排：账号面板、表单、偏好、权限、数据和账户操作分区展示。
 - 小站页的日记、相册、音乐、可调用 Agent 和文件区块只保留模块位置和真实空状态；未补 schema/API/权限/审核前不展示示例列表、示例封面或示例文件。
@@ -58,6 +57,7 @@ cp backend/.env.example backend/.env
 cd backend
 npm install
 npm run db:migrate
+DEFAULT_ADMIN_ENABLED=true npm run admin:bootstrap
 npm run dev
 ```
 
@@ -82,13 +82,14 @@ npm run dev:prod-api
 http://127.0.0.1:5175
 ```
 
-后端健康检查：
+后端存活与就绪检查：
 
 ```text
 http://127.0.0.1:4390/api/health
+http://127.0.0.1:4390/api/ready
 ```
 
-`MiaoxunRN` iOS API 地址来自 Xcode build setting，并通过 `MiaoxunConfigModule` 暴露给 JS。当前 Debug 和 Release 都指向线上服务，方便模拟器和 TestFlight 真机使用同一套账号、扫码、好友申请、通知和聊天数据：
+`MiaoxunRN` iOS API 地址来自 Xcode build setting，并通过 `MiaoxunConfigModule` 暴露给 JS。当前 Debug 指向本机后端，Release 在域名审批完成前临时指向 ECS HTTP origin；正式上线目标为：
 
 ```text
 MIAOXUN_API_BASE_URL=https://api.marvelschat.com
@@ -96,7 +97,7 @@ MIAOXUN_API_BASE_URL=https://api.marvelschat.com
 
 需要本地后端调试时，必须显式新建或修改 Debug 配置为 Mac 局域网 IP 或本机测试后端地址；不能让同一次扫码联调里一端连本地、一端连线上。
 
-移动端 API 请求有明确超时，当前为 15 秒；网络不可达或后端无响应时必须提示错误，不允许让页面无限等待。
+移动端普通 API 请求超时为 20 秒，生成类长请求为 45 秒；网络不可达或后端无响应时必须提示错误，不允许让页面无限等待。
 
 当前 iOS 真机调试使用 `MiaoxunRN/ios/MiaoxunRN.xcworkspace` 构建，项目已配置 Apple Development 自动签名；首次安装到个人设备后，需要在 iPhone 的“设置 -> 通用 -> VPN 与设备管理”中信任开发者证书，之后才能由 Mac 启动 App。真机命令和签名要求见 [iOS 客户端规划](docs/ios.md)。
 
@@ -106,7 +107,7 @@ Agent 注册列表：
 http://127.0.0.1:4390/api/agents
 ```
 
-默认情况下，数据库迁移会确保一个默认管理员账号存在：
+开发环境可通过显式的一次性命令创建管理员账号：
 
 ```text
 账号：admin
@@ -114,7 +115,7 @@ http://127.0.0.1:4390/api/agents
 显示名：妙讯管理员
 ```
 
-可通过 `backend/.env` 中的 `DEFAULT_ADMIN_*` 修改默认管理员，也可以用 `ADMIN_EMAILS=a@example.com,b@example.com` 指定普通注册邮箱为管理员。生产环境首次部署后必须使用强密码，或设置 `DEFAULT_ADMIN_ENABLED=false` 后使用自己的管理员初始化流程。
+生产环境禁止首个注册用户自动成为管理员，也禁止在邮箱尚未验证时通过 `ADMIN_EMAILS` 提权。首次部署先执行 `npm run db:migrate`，再临时设置 `DEFAULT_ADMIN_ENABLED=true` 和至少 16 位的非占位强密码执行 `npm run admin:bootstrap`。命令完成后立即恢复 `DEFAULT_ADMIN_ENABLED=false` 并清空密码；不要在常驻生产配置中保留初始化密码。
 
 妙讯管家模型配置：
 
@@ -137,29 +138,9 @@ GEOCODING_EMAIL=contact@example.com
 
 公共 `nominatim.openstreetmap.org` 有使用限制，不应作为 App 内置通用生产服务；上线应使用自建或明确采购的 Nominatim-compatible 服务。也可以切换 `GEOCODING_PROVIDER=amap`，并配置 `AMAP_WEB_SERVICE_KEY` 与可选 `AMAP_REVERSE_URL` 使用高德 Web 服务逆地理编码。
 
-地图样式还需要显式配置公共 API 基址：
-
-```text
-PUBLIC_API_BASE_URL=https://api.marvelschat.com
-MAP_TILE_URL_TEMPLATE=<licensed tile url template>
-MAP_TILE_USER_AGENT=marvelsChat/0.1 contact@example.com
-```
-
-`/api/map/style` 会使用 `PUBLIC_API_BASE_URL` 生成 HTTPS 瓦片代理地址，缺失时直接返回 503，不从 Nginx 反向代理请求协议里推断。使用高德瓦片时，客户端必须按 GCJ-02 展示地图、按 WGS84 调用后端定位解析。
-
-## 分支
-
-当前开发分支：
-
-```text
-feat/miaoxun-scaffold
-```
-
-这个分支用于你自由调整妙讯结构，不影响 `main`。
-
 ## 开发原则
 
-1. 前端、后端、Agent 分目录独立维护；根目录不放统一 `package.json`、`package-lock.json` 或 `node_modules`。
+1. 前端、后端、Agent 分目录独立维护；根目录 `package.json` 只承载跨项目质量工具，不承载业务运行依赖。
 2. `MiaoxunRN/` 是唯一正式移动端方向；历史原型不再保留在主工程。
 3. 关键业务数据必须来自 `backend` 和数据库；数据库不可用时 API 返回明确错误，不回退到前端假数据。
 4. 每次新增能力时，同步更新 `README.md` 和 `docs/`。

@@ -1,14 +1,18 @@
 import { z } from "zod";
+import {
+  avatar3dCostVersion,
+  avatar3dQualityPresetIds,
+} from "./avatar-3d-quality.js";
 
-export const phoneNumberSchema = z.string().trim().regex(/^1[3-9]\d{9}$/, "Phone number must be a valid mainland China mobile number");
+const phoneNumberSchema = z.string().trim().regex(/^1[3-9]\d{9}$/, "Phone number must be a valid mainland China mobile number");
 
-export const passwordSchema = z.string()
+const passwordSchema = z.string()
   .min(8)
   .max(128)
   .regex(/[A-Z]/, "Password must include one uppercase letter")
   .regex(/[a-z]/, "Password must include one lowercase letter");
 
-export const displayNameSchema = z.string().trim().min(1).max(40);
+const displayNameSchema = z.string().trim().min(1).max(40);
 
 export const registerSchema = z.object({
   contactType: z.enum(["email", "phone"]),
@@ -37,6 +41,11 @@ export const loginSchema = z.object({
 })).refine((value) => value.identifier.length > 0, {
   message: "Login identifier is required",
   path: ["identifier"],
+});
+
+export const accountDeletionSchema = z.object({
+  password: z.string().min(1).max(128),
+  confirmation: z.literal("DELETE"),
 });
 
 export const messageSchema = z.object({
@@ -71,11 +80,15 @@ export const stationConfigSchema = z.object({
   appearance: z.enum(["light", "dark"]).optional(),
 });
 
+export const miaoPointLedgerQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional().default(80),
+});
+
 export const presenceSchema = z.object({
   presenceMode: z.enum(["online", "offline", "hidden"]),
 });
 
-export const avatarConfigSchema = z.object({
+const avatarConfigSchema = z.object({
   version: z.literal(2).optional().default(2),
   seed: z.string().trim().max(40).optional(),
   body: z.enum(["compact", "standard", "tall", "strong"]).optional(),
@@ -108,7 +121,48 @@ export const profileSelfSchema = z.object({
   avatarConfig: avatarConfigSchema.optional().default({}),
 });
 
-export const stationVisibilitySchema = z.enum(["private", "friends", "public"]);
+const stationVisibilitySchema = z.enum(["private", "friends", "public"]);
+
+export const stationPostSchema = z
+  .object({
+    body: z.string().trim().max(5000).optional().default(""),
+    locationLabel: z.string().trim().max(120).optional().default(""),
+    visibility: stationVisibilitySchema.optional().default("public"),
+    agentCapabilities: z
+      .array(z.string().trim().min(1).max(80))
+      .max(8)
+      .optional()
+      .default([]),
+    mediaAssetIds: z.array(z.string().uuid()).max(9).optional().default([]),
+  })
+  .superRefine((value, context) => {
+    if (!value.body && !value.mediaAssetIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Post body or media is required.",
+      });
+    }
+    if (new Set(value.mediaAssetIds).size !== value.mediaAssetIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["mediaAssetIds"],
+        message: "Post media assets must be unique.",
+      });
+    }
+    if (
+      new Set(value.agentCapabilities).size !== value.agentCapabilities.length
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["agentCapabilities"],
+        message: "Post agent capabilities must be unique.",
+      });
+    }
+  });
+
+export const stationPostParamsSchema = z.object({
+  postId: z.string().uuid(),
+});
 
 export const stationDiarySchema = z.object({
   title: z.string().trim().min(1).max(120),
@@ -180,8 +234,6 @@ export const stationMediaAssetParamsSchema = z.object({
   mediaAssetId: z.string().uuid(),
 });
 
-export const stationMediaAssetRouteParamsSchema = stationMediaAssetParamsSchema;
-
 const stationMediaMimeTypes = new Set([
   "image/gif",
   "image/heic",
@@ -206,6 +258,7 @@ export const stationMediaUploadUrlSchema = z
       .string()
       .trim()
       .toLowerCase()
+      .transform((value) => (value === "image/jpg" ? "image/jpeg" : value))
       .refine((value) => stationMediaMimeTypes.has(value), {
         message: "Unsupported station media type.",
       }),
@@ -251,26 +304,52 @@ export const stationSiteDraftParamsSchema = z.object({
   draftId: z.string().uuid(),
 });
 
-export const stationModelJobRequestSchema = z.object({
-  inputType: z.enum(["text", "image"]).optional().default("text"),
-  prompt: z.string().trim().min(1).max(600),
-  imageUrl: z.string().trim().url().max(2000).optional().nullable(),
-  sourceAssetId: z.string().uuid().optional().nullable(),
-  provider: z.enum(["meshy"]).optional().default("meshy"),
-  targetFormats: z.array(z.enum(["glb", "obj", "fbx", "stl", "usdz", "3mf"])).min(1).max(3).optional().default(["glb"]),
-  topology: z.enum(["triangle", "quad"]).optional().default("triangle"),
-  poseMode: z.enum(["", "a-pose", "t-pose"]).optional().default(""),
-}).refine((value) => {
-  if (value.inputType === "text") return true;
-  return typeof value.imageUrl === "string" && value.imageUrl.startsWith("https://");
-}, {
-  message: "Image to 3D requires an HTTPS imageUrl",
-  path: ["imageUrl"],
-});
+const avatar3dPhotoUploadLimit = 10 * 1024 * 1024;
 
-export const generationJobParamsSchema = z.object({
+export const avatar3dPhotoUploadSchema = z.object({
+  originalFilename: z.string().trim().min(1).max(180),
+  mimeType: z.enum(["image/jpeg", "image/png"]),
+  byteSize: z.number().int().min(1).max(avatar3dPhotoUploadLimit),
+}).strict();
+
+export const avatar3dPhotoCompleteSchema = z.object({}).strict();
+
+export const avatar3dCreateJobSchema = z.object({
+  generationMode: z.literal("face_first_multiview"),
+  photoId: z.string().uuid(),
+  bodyShape: z.enum(["balanced", "slender", "athletic"]),
+  pose: z.literal("natural"),
+  outfit: z.enum(["business", "smart_casual", "casual", "sport", "formal"]),
+  userDescription: z.string().max(240).optional().default(""),
+  qualityPreset: z.enum(avatar3dQualityPresetIds),
+  acceptedPhotoRights: z.literal(true),
+  acceptedAdultSubject: z.literal(true),
+  acceptedFaceCompletion: z.literal(true),
+  acceptedReferenceCostVersion: z.literal(avatar3dCostVersion),
+}).strict();
+
+export const avatar3dIdempotencySchema = z.object({
+  idempotencyKey: z.string().uuid(),
+}).strict();
+
+export const avatar3dReferenceConfirmSchema = z.object({
+  referenceSetId: z.string().uuid(),
+  qualityPreset: z.enum(avatar3dQualityPresetIds),
+  accepted: z.literal(true),
+  acceptedCostVersion: z.literal(avatar3dCostVersion),
+}).strict();
+
+export const avatar3dReferenceRejectSchema = z.object({
+  referenceSetId: z.string().uuid(),
+}).strict();
+
+export const avatar3dPhotoParamsSchema = z.object({ photoId: z.string().uuid() }).strict();
+export const avatar3dJobParamsSchema = z.object({ jobId: z.string().uuid() }).strict();
+export const avatar3dReferenceImageParamsSchema = z.object({
   jobId: z.string().uuid(),
-});
+  view: z.enum(["front", "left", "back", "right"]),
+}).strict();
+export const avatar3dModelParamsSchema = z.object({ modelId: z.string().uuid() }).strict();
 
 export const stationFileAssetSchema = z.object({
   originalFilename: z.string().trim().min(1).max(180),
@@ -417,12 +496,6 @@ export const profileAdminSchema = z.object({
 
 export const agentAccessSchema = z.object({
   enabled: z.boolean(),
-  alias: z.string().trim().max(80).optional().default(""),
-  grantedScopes: z.array(z.string().trim().min(1).max(80)).optional().default([]),
-});
-
-export const selfAgentAccessSchema = z.object({
-  enabled: z.boolean().optional().default(true),
   alias: z.string().trim().max(80).optional().default(""),
   grantedScopes: z.array(z.string().trim().min(1).max(80)).optional().default([]),
 });

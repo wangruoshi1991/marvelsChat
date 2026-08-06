@@ -14,7 +14,12 @@ import {
   StationContentDTO,
   UserDTO,
 } from '../../models/api';
-import { apiClient, isAuthSessionError } from '../../services/apiClient';
+import {
+  apiClient,
+  isAuthSessionError,
+  setAuthSessionExpiredHandler,
+} from '../../services/apiClient';
+import { avatar3dAttemptStore } from '../../services/avatar3dAttemptStore';
 import { tokenStore } from '../../services/tokenStore';
 import { Appearance } from '../../shared/theme';
 import {
@@ -22,7 +27,6 @@ import {
   emptyProfile,
   emptyRelationships,
   emptyStationContent,
-  syncIntervalMs,
 } from './sessionDefaults';
 import {
   buildThreads,
@@ -40,13 +44,14 @@ import {
 import { useSocialActions } from './useSocialActions';
 import { useStationActions } from './useStationActions';
 
-export type {
-  ChatMessage,
-  ChatThread,
-  Language,
-  RealtimeStatus,
-  RestoreStatus,
-} from './sessionTypes';
+export type { ChatMessage, ChatThread, Language } from './sessionTypes';
+
+async function clearLocalSession() {
+  await Promise.all([
+    tokenStore.clear().catch(() => undefined),
+    avatar3dAttemptStore.clear().catch(() => undefined),
+  ]);
+}
 
 export function useMiaoxunSession() {
   const [token, setToken] = useState('');
@@ -80,11 +85,73 @@ export function useMiaoxunSession() {
   const lastSyncAtRef = useRef<string | null>(null);
   const bootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
+  const sessionExpiryPromiseRef = useRef<Promise<void> | null>(null);
+  const expiredTokenRef = useRef('');
 
   const updateToken = useCallback((nextToken: string) => {
+    if (nextToken) {
+      expiredTokenRef.current = '';
+    }
     tokenRef.current = nextToken;
     setToken(nextToken);
   }, []);
+
+  const resetAuthenticatedState = useCallback(() => {
+    setUser(null);
+    setProfile(emptyProfile);
+    setThreads([]);
+    setModules({});
+    setAgents([]);
+    setAgentReadiness({});
+    setOwnedAgents([]);
+    setNotices([]);
+    setUnreadNoticeCount(0);
+    setProfileVisibility(defaultProfileVisibility);
+    setSearchHistory([]);
+    setRelationships(emptyRelationships);
+    setStationContent(emptyStationContent);
+    lastSyncAtRef.current = null;
+    activeThreadIdRef.current = null;
+  }, []);
+
+  const expireSession = useCallback(
+    (expiredToken: string) => {
+      if (
+        expiredTokenRef.current === expiredToken &&
+        sessionExpiryPromiseRef.current
+      ) {
+        return sessionExpiryPromiseRef.current;
+      }
+      if (!expiredToken || tokenRef.current !== expiredToken) {
+        return Promise.resolve();
+      }
+
+      expiredTokenRef.current = expiredToken;
+      updateToken('');
+      const expiry = (async () => {
+        await clearLocalSession();
+        resetAuthenticatedState();
+        setErrorMessage('登录状态已失效，请重新登录。');
+        setRestoreStatus('signedOut');
+      })();
+      sessionExpiryPromiseRef.current = expiry;
+      expiry.finally(() => {
+        if (sessionExpiryPromiseRef.current === expiry) {
+          sessionExpiryPromiseRef.current = null;
+        }
+      });
+      return expiry;
+    },
+    [resetAuthenticatedState, updateToken],
+  );
+
+  useEffect(
+    () =>
+      setAuthSessionExpiredHandler(({ token: expiredToken }) =>
+        expireSession(expiredToken),
+      ),
+    [expireSession],
+  );
 
   const butlerThread = useMemo(
     () => threads.find(thread => thread.agentId === 'miaoxun-butler') || null,
@@ -169,7 +236,7 @@ export function useMiaoxunSession() {
         error instanceof Error ? error.message : '登录状态恢复失败。',
       );
       if (isAuthSessionError(error)) {
-        await tokenStore.clear().catch(() => undefined);
+        await clearLocalSession();
         updateToken('');
         setRestoreStatus('signedOut');
       } else {
@@ -196,7 +263,7 @@ export function useMiaoxunSession() {
         setRestoreStatus('authenticated');
       } catch (error) {
         if (isAuthSessionError(error)) {
-          await tokenStore.clear().catch(() => undefined);
+          await clearLocalSession();
           updateToken('');
           setRestoreStatus('signedOut');
         }
@@ -273,6 +340,10 @@ export function useMiaoxunSession() {
           }
           lastSyncAtRef.current = sync.serverTime;
         } catch (error) {
+          if (isAuthSessionError(error)) {
+            await expireSession(currentToken);
+            return;
+          }
           if (showError) {
             setErrorMessage(
               error instanceof Error ? error.message : '增量同步失败。',
@@ -296,7 +367,7 @@ export function useMiaoxunSession() {
       );
       return request;
     },
-    [],
+    [expireSession],
   );
 
   const { refreshNotifications, markNotificationsRead, markNotificationRead } =
@@ -305,17 +376,6 @@ export function useMiaoxunSession() {
       setNotices,
       setUnreadNoticeCount,
     });
-
-  useEffect(() => {
-    if (!token) {
-      return undefined;
-    }
-
-    const timer = setInterval(() => {
-      incrementalSync().catch(() => undefined);
-    }, syncIntervalMs);
-    return () => clearInterval(timer);
-  }, [incrementalSync, token]);
 
   const setActiveThreadId = useCallback((threadId: string | null) => {
     activeThreadIdRef.current = threadId;
@@ -425,27 +485,41 @@ export function useMiaoxunSession() {
   const signOut = useCallback(async () => {
     const currentToken = token;
     if (currentToken) {
-      await apiClient.logout(currentToken);
+      await apiClient.logout(currentToken).catch(() => undefined);
     }
-    await tokenStore.clear().catch(() => undefined);
+    await clearLocalSession();
     updateToken('');
-    setUser(null);
-    setProfile(emptyProfile);
-    setThreads([]);
-    setModules({});
-    setAgents([]);
-    setAgentReadiness({});
-    setNotices([]);
-    setUnreadNoticeCount(0);
-    setProfileVisibility(defaultProfileVisibility);
-    setSearchHistory([]);
-    setRelationships(emptyRelationships);
-    setStationContent(emptyStationContent);
-    lastSyncAtRef.current = null;
-    activeThreadIdRef.current = null;
+    resetAuthenticatedState();
     setErrorMessage(null);
     setRestoreStatus('signedOut');
-  }, [token, updateToken]);
+  }, [resetAuthenticatedState, token, updateToken]);
+
+  const deleteAccount = useCallback(
+    async (password: string) => {
+      const currentToken = tokenRef.current;
+      if (!currentToken) {
+        throw new Error('请先登录。');
+      }
+
+      setIsBusy(true);
+      setErrorMessage(null);
+      try {
+        await apiClient.deleteAccount(currentToken, password);
+        await clearLocalSession();
+        updateToken('');
+        resetAuthenticatedState();
+        setRestoreStatus('signedOut');
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : '账号注销失败。',
+        );
+        throw error;
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [resetAuthenticatedState, updateToken],
+  );
 
   const retryRestoreSession = useCallback(async () => {
     const savedToken = await tokenStore.read();
@@ -465,7 +539,7 @@ export function useMiaoxunSession() {
         error instanceof Error ? error.message : '登录状态恢复失败。',
       );
       if (isAuthSessionError(error)) {
-        await tokenStore.clear().catch(() => undefined);
+        await clearLocalSession();
         updateToken('');
         setRestoreStatus('signedOut');
       } else {
@@ -507,6 +581,9 @@ export function useMiaoxunSession() {
 
   const {
     refreshStationContent,
+    listMiaoPointLedger,
+    createStationPost,
+    deleteStationPost,
     createStationDiary,
     updateStationDiary,
     deleteStationDiary,
@@ -519,8 +596,6 @@ export function useMiaoxunSession() {
     createStationOutfit,
     createStationSiteDraft,
     applyStationSiteDraft,
-    createStationModelJob,
-    syncStationModelJob,
     createStationFileAsset,
     preprocessStationFileAsset,
     listStationAlbumSuggestions,
@@ -563,6 +638,7 @@ export function useMiaoxunSession() {
     signIn,
     signUp,
     signOut,
+    deleteAccount,
     retryRestoreSession,
     refreshBootstrap,
     incrementalSync,
@@ -595,6 +671,9 @@ export function useMiaoxunSession() {
     loadPublicProfileByAiId,
     updateProfile,
     refreshStationContent,
+    listMiaoPointLedger,
+    createStationPost,
+    deleteStationPost,
     createStationDiary,
     updateStationDiary,
     deleteStationDiary,
@@ -607,8 +686,6 @@ export function useMiaoxunSession() {
     createStationOutfit,
     createStationSiteDraft,
     applyStationSiteDraft,
-    createStationModelJob,
-    syncStationModelJob,
     createStationFileAsset,
     preprocessStationFileAsset,
     listStationAlbumSuggestions,

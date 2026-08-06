@@ -5,6 +5,11 @@ export type APIEnvelope<T> = {
 export type APIErrorEnvelope = {
   error?: {
     message?: string;
+    requestId?: string;
+    details?: {
+      code?: string;
+      [key: string]: unknown;
+    };
   };
 };
 
@@ -26,7 +31,7 @@ export type UserDTO = {
 export type PresenceMode = 'online' | 'offline' | 'hidden';
 export type PublicPresenceStatus = 'online' | 'offline';
 
-export type SessionDTO = {
+type SessionDTO = {
   token: string;
   expiresAt: string;
 };
@@ -42,6 +47,7 @@ export type ProfileDTO = {
   miaoPoints: number;
   followingCount: number;
   followersCount: number;
+  likesCount: number;
   collectionsCount: number;
   stationConfig: {
     language?: 'zh' | 'en';
@@ -159,7 +165,7 @@ export type OwnedAgentDTO = {
   createdAt?: string | null;
 };
 
-export type AgentProviderStatusDTO = {
+type AgentProviderStatusDTO = {
   provider: string;
   configured: boolean;
   missing: string[];
@@ -238,6 +244,7 @@ export type PublicProfileDTO = {
     miaoPoints: number;
     followingCount: number;
     followersCount: number;
+    likesCount: number;
     collectionsCount: number;
   };
   relation: {
@@ -266,6 +273,7 @@ export type RelationshipProfileDTO = {
     activityArea: string;
     followersCount: number;
     followingCount: number;
+    likesCount: number;
     collectionsCount: number;
   };
   relationType: string;
@@ -286,6 +294,19 @@ export type SearchHistoryDTO = {
 };
 
 export type StationVisibility = 'private' | 'friends' | 'public';
+
+export type MiaoPointLedgerEntryDTO = {
+  id: string;
+  userId: string;
+  amount: number;
+  balanceAfter?: number | null;
+  title: string;
+  description: string;
+  eventType: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  createdAt: string;
+};
 
 export type StationDiaryEntryDTO = {
   id: string;
@@ -328,6 +349,21 @@ export type StationMediaAssetDTO = {
   updatedAt?: string | null;
 };
 
+export type StationPostDTO = {
+  id: string;
+  userId: string;
+  body: string;
+  locationLabel: string;
+  visibility: StationVisibility;
+  agentCapabilities: string[];
+  likeCount: number;
+  commentCount: number;
+  favoriteCount: number;
+  media: StationMediaAssetDTO[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
 export type StationOutfitDTO = {
   id: string;
   userId: string;
@@ -342,13 +378,12 @@ export type StationOutfitDTO = {
 };
 
 export type StationContentDTO = {
+  posts: StationPostDTO[];
   diaryEntries: StationDiaryEntryDTO[];
   albums: StationAlbumDTO[];
   mediaAssets: StationMediaAssetDTO[];
   outfits: StationOutfitDTO[];
   siteDrafts: StationSiteDraftDTO[];
-  modelJobs: StationGenerationJobDTO[];
-  modelAssets: StationModelAssetDTO[];
   fileAssets: StationFileAssetDTO[];
   comicDiaries: StationComicDiaryDTO[];
   videoDrafts: StationVideoDraftDTO[];
@@ -380,7 +415,7 @@ export type StationSiteDraftDTO = {
   updatedAt?: string | null;
 };
 
-export type StationSiteDraftContentDTO = {
+type StationSiteDraftContentDTO = {
   version?: number;
   language?: 'zh' | 'en';
   title?: string;
@@ -403,39 +438,161 @@ export type StationSiteSectionDTO = {
   }>;
 };
 
-export type StationGenerationJobDTO = {
+export type Avatar3DQualityPresetId = 'standard' | 'ultra';
+
+export type Avatar3DJobStatus =
+  | 'queued_references'
+  | 'submitting_references'
+  | 'processing_references'
+  | 'persisting_references'
+  | 'awaiting_reference_confirmation'
+  | 'queued_3d'
+  | 'submitting_3d'
+  | 'processing_3d'
+  | 'persisting'
+  | 'succeeded'
+  | 'failed'
+  | 'quality_failed'
+  | 'cancelled'
+  | 'submission_unknown';
+
+export type Avatar3DModelDTO = {
   id: string;
-  userId?: string;
-  agentId: string;
-  kind: string;
-  inputType: string;
-  prompt: string;
-  sourceAssetId?: string | null;
-  provider: string;
-  providerTaskId?: string | null;
-  status: string;
-  progress: number;
-  requestPayload?: Record<string, unknown>;
-  resultPayload?: Record<string, unknown>;
-  errorMessage?: string | null;
-  createdAt?: string | null;
-  updatedAt?: string | null;
-  finishedAt?: string | null;
+  jobId: string;
+  title: string;
+  status: 'preparing' | 'active' | 'deleted';
+  modelProvider?: string;
+  qualityStatus?: string | null;
+  byteSize: number;
+  thumbnailAvailable: boolean;
+  interactiveAvailable: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
-export type StationModelAssetDTO = {
+export type Avatar3DBootstrapDTO = {
+  user: UserDTO;
+  feature: {
+    enabled: boolean;
+    generationAvailable: boolean;
+    dailyLimit: number;
+    retentionDays: number;
+    costVersion: string;
+    referenceGenerationEstimatedCostFen: number;
+    defaultQualityPreset: Avatar3DQualityPresetId;
+    qualityPresets: Array<{
+      id: Avatar3DQualityPresetId;
+      label: string;
+      description: string;
+      estimatedCostFen: number;
+    }>;
+  };
+  quota: {
+    dailyUsed: number;
+    dailyRemaining: number;
+    hasActiveJob: boolean;
+  };
+  jobs: Avatar3DJobDTO[];
+  activeJob: Avatar3DJobDTO | null;
+  models: Avatar3DModelDTO[];
+};
+
+export type Avatar3DJobDTO = {
   id: string;
   userId?: string;
-  generationJobId: string;
-  title: string;
-  provider: string;
-  providerTaskId?: string | null;
-  modelFiles?: Record<string, unknown>;
-  thumbnail?: Record<string, unknown> | null;
-  metadata?: Record<string, unknown>;
+  style: string;
+  qualityPreset: Avatar3DQualityPresetId;
+  generationMode: 'face_first_multiview';
+  referenceSetId: string | null;
+  status: Avatar3DJobStatus;
+  progress: number;
+  photoCount: number;
+  acceptedCostVersion: string;
+  estimatedCostFen: number;
+  modelId: string | null;
+  errorCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+};
+
+export type Avatar3DPhotoDTO = {
+  id: string;
+  jobId: string | null;
+  view: string | null;
+  originalFilename: string;
+  mimeType: 'image/jpeg' | 'image/png';
+  byteSize: number;
+  width: number | null;
+  height: number | null;
   status: string;
-  createdAt?: string | null;
-  updatedAt?: string | null;
+  purpose: string;
+  quality: {
+    level: 'good' | 'advisory';
+    canContinue: boolean;
+    suggestions: string[];
+  } | null;
+  errorCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Avatar3DPhotoUploadDTO = {
+  photo: Avatar3DPhotoDTO;
+  upload: {
+    method: 'PUT';
+    url: string;
+    headers: Record<string, string>;
+    expiresAt: string;
+  };
+};
+
+type Avatar3DReferenceSetDTO = {
+  id: string;
+  jobId: string;
+  status: string;
+  expectedImageCount: number;
+  actualImageCount: number;
+  usageImageCount: number;
+  costVersion: string | null;
+  estimatedCostFen: number;
+  confirmedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type Avatar3DReferenceImageDTO = {
+  id: string;
+  referenceSetId: string;
+  jobId: string;
+  view: 'front' | 'left' | 'back' | 'right';
+  sequenceIndex: number;
+  mimeType: string;
+  byteSize: number;
+  width: number;
+  height: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Avatar3DReferencesDTO = {
+  referenceSet: Avatar3DReferenceSetDTO;
+  images: Avatar3DReferenceImageDTO[];
+};
+
+export type Avatar3DCreateJobPayload = {
+  generationMode: 'face_first_multiview';
+  photoId: string;
+  bodyShape: 'balanced' | 'slender' | 'athletic';
+  pose: 'natural';
+  outfit: 'business' | 'smart_casual' | 'casual' | 'sport' | 'formal';
+  userDescription: string;
+  qualityPreset: Avatar3DQualityPresetId;
+  acceptedPhotoRights: true;
+  acceptedAdultSubject: true;
+  acceptedFaceCompletion: true;
+  acceptedReferenceCostVersion: string;
 };
 
 export type StationFileAssetDTO = {
@@ -567,4 +724,8 @@ export type SendMessageResponse = {
 export type AuthResponse = {
   user: UserDTO;
   session: SessionDTO;
+};
+
+export type AccountDeletionDTO = {
+  deleted: true;
 };

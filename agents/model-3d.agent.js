@@ -1,8 +1,8 @@
 export default {
   key: "model-3d",
-  name: "3D模型 Agent",
-  version: "0.1.0",
-  category: "generation",
+  name: "3D形象顾问 Agent",
+  version: "1.0.0",
+  category: "advisory",
   identity: {
     avatarKind: "agent-mark",
     mark: "3D",
@@ -13,18 +13,23 @@ export default {
       accent: "#38bdf8"
     }
   },
-  description: "把文字或授权图片转换成 3D 模型生成任务。",
-  capabilities: ["text-to-3d", "image-to-3d", "model-job-tracking"],
-  permissions: ["profile:read", "station:read", "station:write"],
+  description: "提供照片准备、形象设定和模型结果理解建议，不直接发起3D生成。",
+  capabilities: [
+    "avatar-planning",
+    "photo-readiness-guidance",
+    "model-result-guidance",
+  ],
+  permissions: ["profile:read", "station:read"],
 
   async plan({ input, user, appContext = null }) {
     const profile = appContext?.profile || null;
     return {
       system: [
-        "你是妙讯的 3D模型 Agent，负责把用户需求整理成可提交给 3D 生成服务的任务建议。",
-        "你不能声称已经生成模型、上传文件、扣费、调用外部服务或保存资产；实际生成由后端 /api/station/model-jobs 完成。",
-        "如果用户提供照片或相册素材，必须提醒需要用户明确授权后才能用于生成。",
-        "回答要短，优先给出可以直接提交的模型描述、风格、姿态和输出格式建议。",
+        "你是妙讯的3D形象顾问，只提供照片准备、形象设定和模型结果理解建议。",
+        "3D形象生成是妙讯 App 内的独立产品流程；你不能调用、控制或代替该流程，也不能声称已经上传照片、发起任务、扣费、保存或删除模型。",
+        "不要引导用户前往 Web 工作台。需要实际生成时，只说明可在小站的“我的模样”中操作。",
+        "涉及照片时，提醒用户仅使用本人或已获得明确授权的成年人物照片。",
+        "回答要短，不承诺生成质量、耗时或结果一定成功。",
       ].join("\n"),
       history: [],
       user: [

@@ -6,7 +6,7 @@
 http://127.0.0.1:5175
 ```
 
-后台管理系统前端位于独立的 `admin/` 工程。后台使用独立的本地登录态 `miaoxun.admin.auth.v1`，不复用 App 的 `miaoxun.auth.v1`。App 登录页不提供后台入口，后台也不提供返回 App 的入口。
+后台管理系统前端位于独立的 `admin/` 工程。后台 token 只保存在当前标签会话的 `sessionStorage` 中，不复用 App 的 Keychain 登录态；关闭标签后需要重新登录。App 登录页不提供后台入口，后台也不提供返回 App 的入口。
 
 后台管理系统的后端接口仍在 `backend/` 中，通过 `/api/admin/*` 提供；不单独拆一个后台后端，避免重复鉴权、数据库连接和审计逻辑。
 
@@ -22,11 +22,11 @@ MIAOXUN_ADMIN_API_TARGET=https://api.marvelschat.com npm run dev
 npm run dev:prod-api
 ```
 
-Vite 代理必须开启 `changeOrigin`，否则本地后台代理 HTTPS 线上域名时可能出现 502。后台页面里的“默认密码”只适用于开发默认配置；生产环境以服务器 `miaoxun-prod.env` 中的 `DEFAULT_ADMIN_PASSWORD` 为准。
+Vite 代理必须开启 `changeOrigin`，否则本地后台代理 HTTPS 线上域名时可能出现 502。默认管理员只用于开发或生产环境的一次性初始化，初始化密码不能常驻服务器环境文件。
 
-后台登录页会显示“当前连接”，用于确认正在管理本机后端还是线上后端。登录失败时需要区分三种情况：`账号不存在` 表示登录标识没有命中用户；`密码不正确` 表示账号存在但密码不匹配；`无法连接后台服务` 表示浏览器到当前 API 服务的网络链路失败。2026-06-24 本机验证发现 `https://api.marvelschat.com` 偶发 TLS 握手 `SSL_ERROR_SYSCALL`，同一账号密码重试可成功，说明该类失败属于 HTTPS 入口或网络链路问题，不应误判为账号失效。
+后台登录页会显示“当前连接”，用于确认正在管理本机后端还是线上后端。账号不存在和密码错误统一提示“账号或密码不正确”，避免泄露账号是否存在；网络失败单独提示“无法连接后台服务”。
 
-默认管理员：
+开发默认管理员：
 
 ```text
 账号：admin
@@ -34,7 +34,9 @@ Vite 代理必须开启 `changeOrigin`，否则本地后台代理 HTTPS 线上�
 显示名：妙讯管理员
 ```
 
-生产环境首次登录后必须使用强密码，或通过 `backend/.env` 中的 `DEFAULT_ADMIN_*` 改成自己的管理员配置。
+完成数据库迁移后执行 `DEFAULT_ADMIN_ENABLED=true npm run admin:bootstrap` 创建或更新该账号；`db:migrate` 不再隐式创建管理员。
+
+生产初始化流程见 [数据库说明](database.md#管理员)。生产环境禁止 `CREATE_FIRST_USER_AS_ADMIN=true` 和非空 `ADMIN_EMAILS`。
 
 ## 当前能力
 

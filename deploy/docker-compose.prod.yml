@@ -1,11 +1,13 @@
-version: "2"
-
 services:
   backend:
     build:
       context: ..
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    init: true
+    stop_grace_period: 90s
+    security_opt:
+      - no-new-privileges:true
     env_file:
       - ./miaoxun-prod.env
     ports:

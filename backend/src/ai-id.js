@@ -19,7 +19,7 @@ const contactSuffix = ({ email, phoneNumber }) => {
   return numericEmailSuffix(email);
 };
 
-export function formatAiId(sequenceValue, { email, phoneNumber }) {
+function formatAiId(sequenceValue, { email, phoneNumber }) {
   if (!Number.isInteger(sequenceValue) || sequenceValue < 1 || sequenceValue > AI_ID_SEQUENCE_LIMIT) {
     throw new Error("AI ID sequence is exhausted");
   }

@@ -32,8 +32,6 @@ export function StationAgentsPanel({
   onSetAgentEnabled,
   onCreateSiteDraft,
   onApplySiteDraft,
-  onCreateModelJob,
-  onSyncModelJob,
   onLoadAlbumSuggestions,
   onApplyAlbumSuggestion,
   onCreateFileAsset,
@@ -60,12 +58,6 @@ export function StationAgentsPanel({
     apply?: boolean;
   }) => Promise<unknown>;
   onApplySiteDraft: (draftId: string) => Promise<unknown>;
-  onCreateModelJob: (payload: {
-    inputType: 'text';
-    prompt: string;
-    provider: 'meshy';
-  }) => Promise<unknown>;
-  onSyncModelJob: (jobId: string) => Promise<unknown>;
   onLoadAlbumSuggestions: () => Promise<StationAlbumSuggestionDTO[]>;
   onApplyAlbumSuggestion: (payload: {
     title: string;
@@ -112,8 +104,8 @@ export function StationAgentsPanel({
       ...agent,
       identity: registeredByKey.get(agent.id)?.identity || null,
     }));
-  const displayedAssistants = ownedCards.filter(
-    agent => isAssistantAgent(agent.id, agent.category),
+  const displayedAssistants = ownedCards.filter(agent =>
+    isAssistantAgent(agent.id, agent.category),
   );
   const assistantKeys = new Set(displayedAssistants.map(agent => agent.id));
   const displayedCapabilities = ownedCards.filter(
@@ -361,8 +353,6 @@ export function StationAgentsPanel({
         hasCapability={hasCapability}
         onCreateSiteDraft={onCreateSiteDraft}
         onApplySiteDraft={onApplySiteDraft}
-        onCreateModelJob={onCreateModelJob}
-        onSyncModelJob={onSyncModelJob}
         onLoadAlbumSuggestions={onLoadAlbumSuggestions}
         onApplyAlbumSuggestion={onApplyAlbumSuggestion}
         onCreateFileAsset={onCreateFileAsset}
@@ -463,8 +453,8 @@ const agentModuleBindings: Record<string, { zh: string; en: string }> = {
     en: 'Station / My Look',
   },
   'model-3d': {
-    zh: '我的模样 / 3D 模型生成',
-    en: 'My Look / 3D Model Generation',
+    zh: '3D形象准备建议（不发起生成）',
+    en: '3D Avatar Guidance (No Generation)',
   },
   'site-builder': {
     zh: '个人主页 / 小站结构草稿',
@@ -489,7 +479,10 @@ const agentModuleBindings: Record<string, { zh: string; en: string }> = {
 };
 
 const assistantAgentIds = new Set(['miaoxun-butler', 'virtual-character']);
-const assistantAgentCategories = new Set(['orchestrator', 'character-management']);
+const assistantAgentCategories = new Set([
+  'orchestrator',
+  'character-management',
+]);
 
 const isAssistantAgent = (agentId: string, category: string) =>
   assistantAgentIds.has(agentId) || assistantAgentCategories.has(category);
@@ -507,11 +500,7 @@ const readinessSummary = (
   readiness?: AgentReadinessDTO,
 ) => {
   if (!readiness) {
-    return textFor(
-      language,
-      '能力准备中。',
-      'Capability is preparing.',
-    );
+    return textFor(language, '能力准备中。', 'Capability is preparing.');
   }
   if (readiness.configured) {
     return readiness.capabilityNeeds.length
@@ -522,11 +511,7 @@ const readinessSummary = (
         )
       : textFor(language, '基础能力可用。', 'Base capability ready.');
   }
-  return textFor(
-    language,
-    '生成服务待配置。',
-    'Generation service pending.',
-  );
+  return textFor(language, '生成服务待配置。', 'Generation service pending.');
 };
 
 type AgentCard = OwnedAgentDTO & {

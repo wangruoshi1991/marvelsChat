@@ -1,4 +1,5 @@
 import { getModelRuntimeStatus, runAgent } from "./agent-runtime.js";
+import { HttpError } from "./http-error.js";
 
 const allowedThemes = new Set(["clean", "warm", "gallery", "portfolio"]);
 const allowedLanguages = new Set(["zh", "en"]);
@@ -29,24 +30,10 @@ const normalizeActions = (actions = []) =>
     .filter((action) => action.label)
     .slice(0, 3);
 
-const inferTheme = (prompt) => {
-  const text = String(prompt || "").toLowerCase();
-  if (/摄影|照片|相册|photo|gallery|image/.test(text)) return "gallery";
-  if (/作品|项目|portfolio|简历|resume|case/.test(text)) return "portfolio";
-  if (/温暖|生活|治愈|warm|cozy|柔和/.test(text)) return "warm";
-  return "clean";
-};
-
 const displayName = (profile, fallback = "我的") =>
   sanitizeText(profile?.nickname || fallback || "我的", 80) || "我的";
 
-const profileLocation = (profile) =>
-  [profile?.community, profile?.activityArea]
-    .map((item) => sanitizeText(item, 80))
-    .filter(Boolean)
-    .join(" · ");
-
-export function normalizeSiteDraft(rawDraft, { prompt = "", profile = {}, stationContent = {} } = {}) {
+export function normalizeSiteDraft(rawDraft, { prompt = "", profile = {} } = {}) {
   const raw = rawDraft && typeof rawDraft === "object" ? rawDraft : {};
   const language = allowedLanguages.has(raw.language) ? raw.language : profile?.stationConfig?.language || "zh";
   const theme = allowedThemes.has(raw.theme) ? raw.theme : "clean";
@@ -70,13 +57,19 @@ export function normalizeSiteDraft(rawDraft, { prompt = "", profile = {}, statio
     .filter(Boolean)
     .slice(0, maxSections);
 
+  if (!sections.length) {
+    throw new HttpError(502, "Site builder returned no valid sections.", {
+      code: "SITE_BUILDER_INVALID_RESPONSE",
+    });
+  }
+
   return {
     version: 1,
     language,
     title,
     theme,
     summary,
-    sections: sections.length ? sections : createFallbackSiteDraft({ prompt, profile, stationContent }).sections,
+    sections,
   };
 }
 
@@ -88,78 +81,6 @@ function defaultSectionTitle(type) {
     diary: "日记",
     contact: "联系我",
   }[type] || "模块";
-}
-
-export function createFallbackSiteDraft({ prompt = "", profile = {}, stationContent = {} } = {}) {
-  const name = displayName(profile);
-  const location = profileLocation(profile);
-  const mediaAssets = (stationContent.mediaAssets || []).slice(0, 6);
-  const diaryEntries = (stationContent.diaryEntries || []).slice(0, 4);
-  const title = `${name}的小站`;
-  const aboutBody = [
-    sanitizeText(profile?.bio, 300),
-    location ? `常在 ${location} 活动。` : "",
-  ].filter(Boolean).join(" ");
-  const sections = [
-    {
-      type: "hero",
-      title,
-      subtitle: sanitizeText(prompt, 120) || "欢迎来到我的妙讯主页。",
-      body: aboutBody || "这里会展示我的资料、相册、日记和近期动态。",
-      assetIds: mediaAssets.slice(0, 1).map((asset) => asset.id),
-      diaryEntryIds: [],
-      actions: [{ label: "给我发消息", kind: "message", href: "" }],
-    },
-    {
-      type: "about",
-      title: "关于我",
-      subtitle: location,
-      body: aboutBody || "我正在完善自己的个人介绍。",
-      assetIds: [],
-      diaryEntryIds: [],
-      actions: [],
-    },
-    {
-      type: "gallery",
-      title: "精选相册",
-      subtitle: mediaAssets.length ? "从当前小站素材中挑选展示。" : "上传照片后这里会自动展示精选内容。",
-      body: "",
-      assetIds: mediaAssets.map((asset) => asset.id),
-      diaryEntryIds: [],
-      actions: [],
-    },
-  ];
-
-  if (diaryEntries.length) {
-    sections.push({
-      type: "diary",
-      title: "最近日记",
-      subtitle: "保留生活片段和灵感。",
-      body: "",
-      assetIds: [],
-      diaryEntryIds: diaryEntries.map((entry) => entry.id),
-      actions: [],
-    });
-  }
-
-  sections.push({
-    type: "contact",
-    title: "联系我",
-    subtitle: "通过妙讯继续交流。",
-    body: "如果你对我的小站内容感兴趣，可以直接给我发消息。",
-    assetIds: [],
-    diaryEntryIds: [],
-    actions: [{ label: "发起会话", kind: "message", href: "" }],
-  });
-
-  return normalizeSiteDraft({
-    version: 1,
-    language: profile?.stationConfig?.language || "zh",
-    title,
-    theme: inferTheme(prompt),
-    summary: sanitizeText(prompt, 180) || "根据当前资料生成的个人主页草稿。",
-    sections,
-  }, { prompt, profile, stationContent });
 }
 
 function parseJsonReply(reply) {
@@ -176,14 +97,6 @@ function parseJsonReply(reply) {
   return JSON.parse(candidate.slice(start, end + 1));
 }
 
-const fallbackModel = (status, error = null) => ({
-  configured: Boolean(status?.configured),
-  missing: Array.isArray(status?.missing) ? status.missing : [],
-  provider: status?.provider || "not-configured",
-  model: status?.model || "",
-  error: error ? sanitizeText(error.message || error, 240) : "",
-});
-
 export async function buildSiteDraftResponse({
   prompt,
   user,
@@ -193,11 +106,9 @@ export async function buildSiteDraftResponse({
   runAgent: runAgentFn = runAgent,
 } = {}) {
   if (!modelStatus.configured) {
-    return {
-      source: "fallback",
-      draft: createFallbackSiteDraft({ prompt, profile, stationContent }),
-      model: fallbackModel(modelStatus),
-    };
+    throw new HttpError(503, "Site builder is not configured.", {
+      code: "SITE_BUILDER_UNAVAILABLE",
+    });
   }
 
   try {
@@ -207,7 +118,10 @@ export async function buildSiteDraftResponse({
       user,
       appContext: { profile, stationContent },
     });
-    const draft = normalizeSiteDraft(parseJsonReply(result.reply), { prompt, profile, stationContent });
+    const draft = normalizeSiteDraft(parseJsonReply(result.reply), {
+      prompt,
+      profile,
+    });
 
     return {
       source: "model",
@@ -223,10 +137,9 @@ export async function buildSiteDraftResponse({
       },
     };
   } catch (error) {
-    return {
-      source: "fallback",
-      draft: createFallbackSiteDraft({ prompt, profile, stationContent }),
-      model: fallbackModel(modelStatus, error),
-    };
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(502, "Site builder could not create a valid draft.", {
+      code: "SITE_BUILDER_FAILED",
+    });
   }
 }

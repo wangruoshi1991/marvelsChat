@@ -1,20 +1,18 @@
 import React, { useMemo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 
-import { AgentReadinessDTO, StationFileAssetDTO } from '../../models/api';
+import { StationFileAssetDTO } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { Language } from '../session/useMiaoxunSession';
 import { StationModule } from './StationHomeModules';
 
-const defaultContent =
-  '今天的照片、日记和视频草稿可以围绕同一个生活片段联动。';
+const defaultContent = '今天的照片、日记和视频草稿可以围绕同一个生活片段联动。';
 
 export function StationFileAgentPanel({
   palette,
   language,
-  readiness,
   fileAssets,
   onCreateFileAsset,
   onPreprocessFileAsset,
@@ -23,7 +21,6 @@ export function StationFileAgentPanel({
 }: {
   palette: Palette;
   language: Language;
-  readiness?: AgentReadinessDTO;
   fileAssets: StationFileAssetDTO[];
   onCreateFileAsset: (payload: {
     originalFilename: string;
@@ -50,7 +47,9 @@ export function StationFileAgentPanel({
     () =>
       [...fileAssets]
         .sort((left, right) =>
-          String(right.createdAt || '').localeCompare(String(left.createdAt || '')),
+          String(right.createdAt || '').localeCompare(
+            String(left.createdAt || ''),
+          ),
         )
         .slice(0, 3),
     [fileAssets],
@@ -87,8 +86,12 @@ export function StationFileAgentPanel({
   return (
     <StationModule
       palette={palette}
-      title={textFor(language, '素材预处理 Agent', 'Material Preprocessing Agent')}
-      action={isProcessing ? textFor(language, '整理中', 'Processing') : textFor(language, '整理', 'Process')}
+      title={textFor(language, '素材预处理', 'Material Preprocessing')}
+      action={
+        isProcessing
+          ? textFor(language, '整理中', 'Processing')
+          : textFor(language, '整理', 'Process')
+      }
       onAction={processFile}
     >
       <View style={styles.stationAgentLoopStack}>
@@ -99,13 +102,22 @@ export function StationFileAgentPanel({
           ]}
         >
           <View style={styles.stationAgentLoopStatusCopy}>
-            <Text style={[styles.stationAgentLoopEyebrow, { color: palette.secondaryText }]}>
+            <Text
+              style={[
+                styles.stationAgentLoopEyebrow,
+                { color: palette.secondaryText },
+              ]}
+            >
               {textFor(language, '素材整理', 'Material Processing')}
             </Text>
-            <Text style={[styles.stationAgentLoopTitle, { color: palette.text }]}>
-              {readiness?.configured
-                ? textFor(language, '可整理文字素材并提取摘要', 'Ready to summarize text material')
-                : textFor(language, '真实文件上传稍后开放', 'File upload will open later')}
+            <Text
+              style={[styles.stationAgentLoopTitle, { color: palette.text }]}
+            >
+              {textFor(
+                language,
+                '文字整理可用，文件上传待开放',
+                'Text processing ready; file upload pending',
+              )}
             </Text>
           </View>
           <Text
@@ -114,9 +126,7 @@ export function StationFileAgentPanel({
               { backgroundColor: palette.surface, color: palette.text },
             ]}
           >
-            {readiness?.configured
-              ? textFor(language, '可用', 'Ready')
-              : textFor(language, '待开放', 'Pending')}
+            {textFor(language, '文字', 'Text')}
           </Text>
         </View>
 
@@ -128,7 +138,11 @@ export function StationFileAgentPanel({
           placeholderTextColor={palette.secondaryText}
           style={[
             styles.settingsInput,
-            { backgroundColor: palette.input, borderColor: palette.border, color: palette.text },
+            {
+              backgroundColor: palette.input,
+              borderColor: palette.border,
+              color: palette.text,
+            },
           ]}
         />
         <TextInput
@@ -136,12 +150,20 @@ export function StationFileAgentPanel({
           onChangeText={setContent}
           multiline
           maxLength={2000}
-          placeholder={textFor(language, '输入要整理的文字素材', 'Enter text material to process')}
+          placeholder={textFor(
+            language,
+            '输入要整理的文字素材',
+            'Enter text material to process',
+          )}
           placeholderTextColor={palette.secondaryText}
           style={[
             styles.settingsInput,
             styles.stationAgentLoopInput,
-            { backgroundColor: palette.input, borderColor: palette.border, color: palette.text },
+            {
+              backgroundColor: palette.input,
+              borderColor: palette.border,
+              color: palette.text,
+            },
           ]}
         />
 
@@ -151,15 +173,25 @@ export function StationFileAgentPanel({
               key={asset.id}
               style={[
                 styles.stationAgentLoopCard,
-                { borderColor: palette.border, backgroundColor: palette.surface },
+                {
+                  borderColor: palette.border,
+                  backgroundColor: palette.surface,
+                },
               ]}
             >
-              <Text style={[styles.stationAgentLoopTitle, { color: palette.text }]}>
+              <Text
+                style={[styles.stationAgentLoopTitle, { color: palette.text }]}
+              >
                 {asset.preprocessingResult?.title
                   ? String(asset.preprocessingResult.title)
                   : asset.originalFilename}
               </Text>
-              <Text style={[styles.stationAgentLoopBody, { color: palette.secondaryText }]}>
+              <Text
+                style={[
+                  styles.stationAgentLoopBody,
+                  { color: palette.secondaryText },
+                ]}
+              >
                 {asset.preprocessingResult?.summary
                   ? String(asset.preprocessingResult.summary)
                   : statusText(language, asset.status)}
@@ -185,7 +217,9 @@ export function StationFileAgentPanel({
             </View>
           ))
         ) : (
-          <Text style={[styles.relationshipEmpty, { color: palette.secondaryText }]}>
+          <Text
+            style={[styles.relationshipEmpty, { color: palette.secondaryText }]}
+          >
             {textFor(
               language,
               '暂无素材。整理后的摘要、标签和预览会显示在这里。',

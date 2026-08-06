@@ -6,7 +6,6 @@ import {
   StationContentDTO,
   StationComicDiaryDTO,
   StationFileAssetDTO,
-  StationGenerationJobDTO,
   StationSiteDraftDTO,
   StationVideoDraftDTO,
   StationVisibility,
@@ -47,6 +46,48 @@ export function useStationActions({
     setStationContent(content);
     return content;
   }, [setStationContent, token]);
+
+  const listMiaoPointLedger = useCallback(async () => {
+    if (!token) {
+      throw new Error('请先登录。');
+    }
+    return apiClient.listMiaoPointLedger(token);
+  }, [token]);
+
+  const createStationPost = useCallback(
+    async (payload: {
+      body?: string;
+      locationLabel?: string;
+      visibility?: StationVisibility;
+      agentCapabilities?: string[];
+      mediaAssetIds?: string[];
+    }) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      const post = await apiClient.createStationPost(token, payload);
+      setStationContent(current => ({
+        ...current,
+        posts: [post, ...(current.posts || [])],
+      }));
+      return post;
+    },
+    [setStationContent, token],
+  );
+
+  const deleteStationPost = useCallback(
+    async (postId: string) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      await apiClient.deleteStationPost(token, postId);
+      setStationContent(current => ({
+        ...current,
+        posts: (current.posts || []).filter(post => post.id !== postId),
+      }));
+    },
+    [setStationContent, token],
+  );
 
   const createStationDiary = useCallback(
     async (payload: {
@@ -191,18 +232,39 @@ export function useStationActions({
       if (!localMedia) {
         return asset;
       }
-      const uploadedAsset = await uploadStationMediaAsset({
-        token,
-        asset,
-        media: localMedia,
-      });
-      setStationContent(current => ({
-        ...current,
-        mediaAssets: current.mediaAssets.map(item =>
-          item.id === uploadedAsset.id ? uploadedAsset : item,
-        ),
-      }));
-      return uploadedAsset;
+      try {
+        const uploadedAsset = await uploadStationMediaAsset({
+          token,
+          asset,
+          media: localMedia,
+        });
+        setStationContent(current => ({
+          ...current,
+          mediaAssets: current.mediaAssets.map(item =>
+            item.id === uploadedAsset.id ? uploadedAsset : item,
+          ),
+        }));
+        return uploadedAsset;
+      } catch (error) {
+        await apiClient
+          .deleteStationMediaAsset(token, asset.id)
+          .catch(() => undefined);
+        setStationContent(current => ({
+          ...current,
+          mediaAssets: current.mediaAssets.filter(item => item.id !== asset.id),
+          albums: asset.albumId
+            ? current.albums.map(album =>
+                album.id === asset.albumId
+                  ? {
+                      ...album,
+                      mediaCount: Math.max(0, album.mediaCount - 1),
+                    }
+                  : album,
+              )
+            : current.albums,
+        }));
+        throw error;
+      }
     },
     [setStationContent, token],
   );
@@ -344,66 +406,15 @@ export function useStationActions({
           (item: StationSiteDraftDTO) =>
             item.id === result.siteDraft.id
               ? result.siteDraft
-              : { ...item, status: item.status === 'applied' ? 'draft' : item.status },
+              : {
+                  ...item,
+                  status: item.status === 'applied' ? 'draft' : item.status,
+                },
         ),
       }));
       return result;
     },
     [setProfile, setStationContent, token],
-  );
-
-  const createStationModelJob = useCallback(
-    async (payload: {
-      prompt: string;
-      inputType?: 'text' | 'image';
-      provider?: 'meshy';
-      imageUrl?: string | null;
-      sourceAssetId?: string | null;
-    }) => {
-      if (!token) {
-        throw new Error('请先登录。');
-      }
-      const result = await apiClient.createStationModelJob(token, payload);
-      setStationContent(current => ({
-        ...current,
-        modelJobs: [
-          result.job,
-          ...(current.modelJobs || []).filter(
-            (item: StationGenerationJobDTO) => item.id !== result.job.id,
-          ),
-        ],
-      }));
-      return result;
-    },
-    [setStationContent, token],
-  );
-
-  const syncStationModelJob = useCallback(
-    async (jobId: string) => {
-      if (!token) {
-        throw new Error('请先登录。');
-      }
-      const result = await apiClient.syncStationModelJob(token, jobId);
-      setStationContent(current => ({
-        ...current,
-        modelJobs: (current.modelJobs || []).map(
-          (item: StationGenerationJobDTO) =>
-            item.id === result.job.id ? result.job : item,
-        ),
-        modelAssets: result.modelAsset
-          ? [
-              result.modelAsset,
-              ...(current.modelAssets || []).filter(
-                asset =>
-                  asset.generationJobId !== result.job.id &&
-                  asset.id !== result.modelAsset?.id,
-              ),
-            ]
-          : current.modelAssets || [],
-      }));
-      return result;
-    },
-    [setStationContent, token],
   );
 
   const createStationFileAsset = useCallback(
@@ -558,6 +569,9 @@ export function useStationActions({
 
   return {
     refreshStationContent,
+    listMiaoPointLedger,
+    createStationPost,
+    deleteStationPost,
     createStationDiary,
     updateStationDiary,
     deleteStationDiary,
@@ -570,8 +584,6 @@ export function useStationActions({
     createStationOutfit,
     createStationSiteDraft,
     applyStationSiteDraft,
-    createStationModelJob,
-    syncStationModelJob,
     createStationFileAsset,
     preprocessStationFileAsset,
     listStationAlbumSuggestions,

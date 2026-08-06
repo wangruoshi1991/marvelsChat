@@ -1,10 +1,7 @@
-import {ChatMessage, ChatThread} from '../session/useMiaoxunSession';
-import {AgentDTO, AgentIdentityDTO} from '../../models/api';
+import { ChatMessage, ChatThread } from '../session/useMiaoxunSession';
+import { AgentDTO, AgentIdentityDTO } from '../../models/api';
 
-export const isThreadOnline = (
-  thread: ChatThread,
-  agent: AgentDTO | null,
-) => {
+export const isThreadOnline = (thread: ChatThread, agent: AgentDTO | null) => {
   if (!thread.agentId) {
     return thread.peerPresenceStatus === 'online';
   }

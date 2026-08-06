@@ -11,10 +11,34 @@ export function createInMemoryRateLimiter({
   limit = 20,
   windowMs = 60 * 60 * 1000,
   now = () => Date.now(),
+  maxBuckets = 10_000,
 } = {}) {
   const safeLimit = toPositiveInteger(limit, 20);
   const safeWindowMs = toPositiveInteger(windowMs, 60 * 60 * 1000);
+  const safeMaxBuckets = toPositiveInteger(maxBuckets, 10_000);
   const buckets = new Map();
+
+  const pruneExpired = (currentTime) => {
+    for (const [key, bucket] of buckets) {
+      if (currentTime >= bucket.resetAt) buckets.delete(key);
+    }
+  };
+
+  const makeRoom = (currentTime) => {
+    if (buckets.size < safeMaxBuckets) return;
+    pruneExpired(currentTime);
+    if (buckets.size < safeMaxBuckets) return;
+
+    let oldestKey;
+    let oldestResetAt = Number.POSITIVE_INFINITY;
+    for (const [key, bucket] of buckets) {
+      if (bucket.resetAt < oldestResetAt) {
+        oldestKey = key;
+        oldestResetAt = bucket.resetAt;
+      }
+    }
+    if (oldestKey !== undefined) buckets.delete(oldestKey);
+  };
 
   const check = (rawKey) => {
     const key = String(rawKey || defaultKey);
@@ -22,6 +46,7 @@ export function createInMemoryRateLimiter({
     let bucket = buckets.get(key);
 
     if (!bucket || currentTime >= bucket.resetAt) {
+      if (!bucket) makeRoom(currentTime);
       bucket = {
         count: 0,
         resetAt: currentTime + safeWindowMs,

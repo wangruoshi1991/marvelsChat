@@ -1,11 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import {
-  AgentReadinessDTO,
-  StationAlbumSuggestionDTO,
-  StationVisibility,
-} from '../../models/api';
+import { StationAlbumSuggestionDTO, StationVisibility } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
@@ -15,7 +11,6 @@ import { StationModule } from './StationHomeModules';
 export function StationAlbumAgentPanel({
   palette,
   language,
-  readiness,
   onLoadSuggestions,
   onApplySuggestion,
   onActionMessage,
@@ -23,7 +18,6 @@ export function StationAlbumAgentPanel({
 }: {
   palette: Palette;
   language: Language;
-  readiness?: AgentReadinessDTO;
   onLoadSuggestions: () => Promise<StationAlbumSuggestionDTO[]>;
   onApplySuggestion: (payload: {
     title: string;
@@ -34,7 +28,9 @@ export function StationAlbumAgentPanel({
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
-  const [suggestions, setSuggestions] = useState<StationAlbumSuggestionDTO[]>([]);
+  const [suggestions, setSuggestions] = useState<StationAlbumSuggestionDTO[]>(
+    [],
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [applyingTitle, setApplyingTitle] = useState<string | null>(null);
 
@@ -84,21 +80,24 @@ export function StationAlbumAgentPanel({
   return (
     <StationModule
       palette={palette}
-      title={textFor(language, '相册管理 Agent', 'Album Management Agent')}
-      action={isLoading ? textFor(language, '整理中', 'Organizing') : textFor(language, '整理', 'Organize')}
+      title={textFor(language, '相册整理', 'Album Organization')}
+      action={
+        isLoading
+          ? textFor(language, '整理中', 'Organizing')
+          : textFor(language, '整理', 'Organize')
+      }
       onAction={loadSuggestions}
     >
       <View style={styles.stationAgentLoopStack}>
-        <AgentStatus
+        <UtilityStatus
           palette={palette}
           language={language}
           title={textFor(language, '相册整理', 'Album Organization')}
-          configured={readiness?.configured}
-          body={
-            readiness?.configured
-              ? textFor(language, '可根据照片内容建议相册分类', 'Ready to suggest album groups')
-              : textFor(language, '暂无素材可整理', 'No media to organize yet')
-          }
+          body={textFor(
+            language,
+            '按已有标签、说明和文件名整理',
+            'Organizes existing tags, captions, and filenames',
+          )}
         />
 
         {suggestions.length ? (
@@ -107,15 +106,28 @@ export function StationAlbumAgentPanel({
               key={`${suggestion.title}-${suggestion.mediaAssetIds.join('-')}`}
               style={[
                 styles.stationAgentLoopCard,
-                { borderColor: palette.border, backgroundColor: palette.surface },
+                {
+                  borderColor: palette.border,
+                  backgroundColor: palette.surface,
+                },
               ]}
             >
               <View style={styles.stationAgentLoopCardHeader}>
                 <View style={styles.stationAgentLoopStatusCopy}>
-                  <Text style={[styles.stationAgentLoopTitle, { color: palette.text }]}>
+                  <Text
+                    style={[
+                      styles.stationAgentLoopTitle,
+                      { color: palette.text },
+                    ]}
+                  >
                     {suggestion.title}
                   </Text>
-                  <Text style={[styles.stationAgentLoopMeta, { color: palette.secondaryText }]}>
+                  <Text
+                    style={[
+                      styles.stationAgentLoopMeta,
+                      { color: palette.secondaryText },
+                    ]}
+                  >
                     {textFor(
                       language,
                       `${suggestion.mediaAssetIds.length} 张照片`,
@@ -129,13 +141,21 @@ export function StationAlbumAgentPanel({
                   onPress={() => applySuggestion(suggestion)}
                   style={[
                     styles.stationAgentLoopButton,
-                    { backgroundColor: applyingTitle ? palette.soft : palette.text },
+                    {
+                      backgroundColor: applyingTitle
+                        ? palette.soft
+                        : palette.text,
+                    },
                   ]}
                 >
                   <Text
                     style={[
                       styles.stationAgentLoopButtonText,
-                      { color: applyingTitle ? palette.secondaryText : palette.background },
+                      {
+                        color: applyingTitle
+                          ? palette.secondaryText
+                          : palette.background,
+                      },
                     ]}
                   >
                     {applyingTitle === suggestion.title
@@ -144,7 +164,12 @@ export function StationAlbumAgentPanel({
                   </Text>
                 </Pressable>
               </View>
-              <Text style={[styles.stationAgentLoopBody, { color: palette.secondaryText }]}>
+              <Text
+                style={[
+                  styles.stationAgentLoopBody,
+                  { color: palette.secondaryText },
+                ]}
+              >
                 {suggestion.reason || suggestion.description}
               </Text>
               <View style={styles.stationAgentLoopChipRow}>
@@ -164,7 +189,9 @@ export function StationAlbumAgentPanel({
             </View>
           ))
         ) : (
-          <Text style={[styles.relationshipEmpty, { color: palette.secondaryText }]}>
+          <Text
+            style={[styles.relationshipEmpty, { color: palette.secondaryText }]}
+          >
             {textFor(
               language,
               '暂无素材。上传照片后，可以一键整理成相册分类。',
@@ -177,17 +204,15 @@ export function StationAlbumAgentPanel({
   );
 }
 
-function AgentStatus({
+function UtilityStatus({
   palette,
   language,
   title,
-  configured,
   body,
 }: {
   palette: Palette;
   language: Language;
   title: string;
-  configured?: boolean;
   body: string;
 }) {
   return (
@@ -198,7 +223,12 @@ function AgentStatus({
       ]}
     >
       <View style={styles.stationAgentLoopStatusCopy}>
-        <Text style={[styles.stationAgentLoopEyebrow, { color: palette.secondaryText }]}>
+        <Text
+          style={[
+            styles.stationAgentLoopEyebrow,
+            { color: palette.secondaryText },
+          ]}
+        >
           {title}
         </Text>
         <Text style={[styles.stationAgentLoopTitle, { color: palette.text }]}>
@@ -211,9 +241,7 @@ function AgentStatus({
           { backgroundColor: palette.surface, color: palette.text },
         ]}
       >
-        {configured
-          ? textFor(language, '可用', 'Ready')
-          : textFor(language, '暂无素材', 'No media')}
+        {textFor(language, '元数据', 'Metadata')}
       </Text>
     </View>
   );

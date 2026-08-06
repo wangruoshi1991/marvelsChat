@@ -1,3 +1,5 @@
+import { replaceControlCharacters } from "./text-sanitization.js";
+
 const maxFrames = 8;
 const minFrames = 2;
 const cameraPlan = ["wide", "medium", "close-up", "detail", "over-shoulder", "top-down", "low-angle", "final-wide"];
@@ -10,13 +12,12 @@ const styleLabels = {
   storyboard: "分镜草稿",
 };
 
-export const sanitizeComicText = (value, max = 600) =>
-  String(value || "")
+const sanitizeComicText = (value, max = 600) =>
+  replaceControlCharacters(value)
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\b(script|iframe|javascript:|onerror|onload|alert)\b/gi, " ")
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, max);
@@ -87,7 +88,7 @@ function scoreMedia(asset, terms) {
   return score;
 }
 
-export function selectComicSourceMedia({ mediaAssets = [], query = "", limit = 6 } = {}) {
+function selectComicSourceMedia({ mediaAssets = [], query = "", limit = 6 } = {}) {
   const safeLimit = Math.min(Math.max(Number(limit) || 6, 1), 20);
   const terms = compactWords(query);
   return (Array.isArray(mediaAssets) ? mediaAssets : [])
@@ -162,7 +163,7 @@ export function buildComicDiaryDraft({
     version: 1,
     title,
     style: normalizedStyle,
-    source: "agent-rule",
+    source: "deterministic-storyboard",
     summary,
     frames,
     sourceRefs: {

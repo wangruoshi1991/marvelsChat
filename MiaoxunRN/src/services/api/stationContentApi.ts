@@ -6,6 +6,7 @@ import {
   StationMediaAssetDTO,
   StationMediaUploadDTO,
   StationOutfitDTO,
+  StationPostDTO,
   StationVisibility,
 } from '../../models/api';
 import { request } from './http';
@@ -13,6 +14,30 @@ import { request } from './http';
 export const stationContentApi = {
   stationContent(token: string) {
     return request<StationContentDTO>('/api/station/content', { token });
+  },
+
+  createStationPost(
+    token: string,
+    payload: {
+      body?: string;
+      locationLabel?: string;
+      visibility?: StationVisibility;
+      agentCapabilities?: string[];
+      mediaAssetIds?: string[];
+    },
+  ) {
+    return request<StationPostDTO>('/api/station/posts', {
+      method: 'POST',
+      token,
+      body: payload,
+    });
+  },
+
+  deleteStationPost(token: string, postId: string) {
+    return request<void>(`/api/station/posts/${postId}`, {
+      method: 'DELETE',
+      token,
+    });
   },
 
   createStationDiary(

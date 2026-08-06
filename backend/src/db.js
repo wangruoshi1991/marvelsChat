@@ -1,14 +1,15 @@
 import pg from "pg";
 import { config } from "./config.js";
 import { HttpError } from "./http-error.js";
+import { loadMigrationFiles } from "./migration-files.js";
+import { checkMigrationStatus } from "./migration-ledger.js";
 
 let pool;
+let expectedMigrationsPromise;
 
 const { Pool } = pg;
 
-export const isDatabaseConfigured = () => config.db.configured;
-
-export function prepareSql(sql) {
+function prepareSql(sql) {
   let index = 0;
   return String(sql).replace(/\?/g, () => `$${++index}`);
 }
@@ -57,6 +58,12 @@ export async function query(sql, params = []) {
   return normalizeRows(result);
 }
 
+export async function closeDatabase() {
+  const activePool = pool;
+  pool = undefined;
+  if (activePool) await activePool.end();
+}
+
 export async function withTransaction(work) {
   const db = await getPool();
   const client = await db.connect();
@@ -84,17 +91,35 @@ export async function checkDatabase() {
     };
   }
 
+  let db;
   try {
-    await query("SELECT 1 AS ok");
-    return {
-      configured: true,
-      connected: true,
-      database: config.db.database,
-    };
+    db = await getPool();
+    await db.query("SELECT 1 AS ok");
   } catch (error) {
     return {
       configured: true,
       connected: false,
+      database: config.db.database,
+      message: error.message,
+    };
+  }
+
+  try {
+    expectedMigrationsPromise ||= loadMigrationFiles();
+    const migrations = await expectedMigrationsPromise;
+    const migrationStatus = await checkMigrationStatus({ client: db, migrations });
+    return {
+      configured: true,
+      connected: true,
+      migrationsCurrent: migrationStatus.current,
+      database: config.db.database,
+      ...(!migrationStatus.current && { message: migrationStatus.message || "Database migrations are pending" }),
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      connected: true,
+      migrationsCurrent: false,
       database: config.db.database,
       message: error.message,
     };

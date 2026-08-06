@@ -294,6 +294,7 @@ export async function listRelationshipProfiles(userId, type = "friends", limit =
       p.activity_area,
       p.following_count,
       p.followers_count,
+      p.likes_count,
       p.collections_count,
       t.id AS thread_id
     FROM social_relationships r

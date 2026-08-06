@@ -14,7 +14,7 @@ iOS 客户端不直接连接 PostgreSQL，不直接调用模型供应商，不�
 
 - 未登录状态只展示登录/注册页面，不展示原型账号、静态会话或假用户数据。
 - 登录 token 使用 `react-native-keychain` 保存到 Keychain。
-- App 启动时仅通过 Keychain 中的真实 token 恢复账号；恢复失败会清除本机 token 并回到登录页。
+- App 启动时仅通过 Keychain 中的真实 token 恢复账号；只有后端明确返回 401 才清除本机 token 并回到登录页，403、超时和网络失败保留 token 并展示可重试错误。
 - 退出登录必须调用 `POST /api/auth/logout` 撤销服务端 session，成功后再清除本机 token。
 - 注册页面只要求昵称、手机号或邮箱、密码；昵称就是用户可见用户名，必须唯一。登录页支持昵称、手机号或邮箱，不再展示单独登录账号、用户名或妙讯号字段。后端注册和资料改名都会检查 `display_name` 唯一，数据库使用 `uniq_users_display_name_lower` 约束大小写不敏感唯一性；历史重复昵称在迁移中一次性追加短后缀清理。
 - 所有聊天、小站、Agent 和模块状态都来自 `backend` 与数据库；未建表模块只能展示真实空状态或待接入状态。
@@ -61,8 +61,8 @@ Android: android/app/src/main/java/com/gary/miaoxun/rn/MiaoxunLocationModule.kt
 - iOS 使用 CoreLocation 请求 When In Use 定位权限；Android 使用系统 LocationManager 请求粗略/精确定位权限。
 - 原生层只返回坐标和精度，不做社区/活动区域业务判断。
 - JS 将坐标提交给 `/api/location/resolve`，由后端调用显式配置的反向地理编码服务，并返回附近社区候选和活动区域候选。当前支持 `GEOCODING_PROVIDER=nominatim` 和 `GEOCODING_PROVIDER=amap`；高德模式使用 Web 服务逆地理编码 API，后端会将系统定位的 WGS84 坐标转换为 GCJ-02 后请求高德。
-- 小站页的“我的社区/我的活动区域”是位置入口；用户可以在 MapLibre 附近地图上拖动缩放并点选位置，App 重新解析所选坐标，用户从候选中选择并点击保存后，才更新 `user_profiles.community` 和 `user_profiles.activity_area`。后端写入和返回位置字段时会规范化 Nominatim 多语言分号别名，避免已有历史资料继续展示为别名串。iOS Podfile 必须在 `post_install` 中调用 `$MLRN.post_install(installer)`，由 MapLibre React Native 注入底层 MapLibre Swift Package；缺少该钩子会导致 `MapLibre/MapLibre.h` 编译失败。当前 iOS 底层 MapLibre 固定为官方 `maplibre-gl-native-distribution` 6.26.0 远程 Swift Package，不依赖开发者本机绝对路径。
-- 2026-06-24 线上验证：TestFlight 真机定位权限链路可进入后端，服务器已切换 `GEOCODING_PROVIDER=amap`，`/api/location/resolve` 返回 `provider=amap` 和真实社区/活动区域候选。地图底图通过后端 `/api/map/style` 和 `/api/map/tiles/:z/:x/:y.png` 代理加载，样式中的瓦片地址必须由当前 `PUBLIC_API_BASE_URL` 生成 HTTPS URL；当前线上高德瓦片模板可返回真实 PNG。正式上架前需要补齐高德地图 SDK/瓦片授权或采购/自建合规瓦片服务。
+- 小站页的“我的社区/我的活动区域”是位置入口；App 获取当前坐标并重新解析真实候选，用户点击保存后才更新 `user_profiles.community` 和 `user_profiles.activity_area`。后端写入和返回位置字段时会规范化 Nominatim 多语言分号别名，避免历史资料继续展示为别名串。首版不提供地图选点，也不保留 MapLibre 原生依赖和后端瓦片代理。
+- 2026-06-24 线上验证：TestFlight 真机定位权限链路可进入后端，服务器已切换 `GEOCODING_PROVIDER=amap`，`/api/location/resolve` 返回 `provider=amap` 和真实社区/活动区域候选。正式上架前仍需确认高德 Web 服务 Key、调用配额、隐私披露和生产授权。
 - 服务未配置、权限拒绝、定位关闭、设备不可用、反向地理编码失败都必须提示明确错误，不允许写入假社区或静默使用默认地址。
 
 ## API 地址配置
@@ -71,13 +71,13 @@ iOS 原生工程通过 `Info.plist` 的 `MiaoxunAPIBaseURL` 注入 API 地址，
 
 正式发布目标：Debug 默认指向本机后端，Release 必须指向 `https://api.marvelschat.com`。正常 Release 构建脚本会阻止 HTTP、裸 IP、localhost 和 loopback API URL。
 
-2026-07-09 域名实名和 HTTPS 完成前，允许上传临时 IP TestFlight 内测包：Release API 临时指向 `http://8.153.167.11/api`，只为该 IP 放开 iOS ATS HTTP 例外，并通过 `MIAOXUN_TEMP_IP_TESTFLIGHT=1` 明确标记。该配置仅用于内部/外部 TestFlight 测试，不能用于正式上架。
+域名实名和 HTTPS 完成前，允许上传临时 IP TestFlight 测试包：Release API origin 临时指向 `http://8.153.167.11`，只为该 IP 放开 iOS ATS HTTP 例外，并通过 `MIAOXUN_TEMP_IP_TESTFLIGHT=1` 明确标记。该配置仅用于内部/外部 TestFlight 测试，不能用于正式上架。
 
 当前配置：
 
 ```text
 Debug:   http://127.0.0.1:4390
-Release: http://8.153.167.11/api  # 临时 TestFlight；正式发布恢复 https://api.marvelschat.com/api
+Release: http://8.153.167.11  # 临时 TestFlight；正式发布恢复 https://api.marvelschat.com
 ```
 
 本地后端调试时，Debug 配置必须显式改为 Mac 局域网 IP 或可访问的本地测试后端地址，例如：
@@ -107,7 +107,7 @@ MIAOXUN_RELEASE_KEY_PASSWORD=...
 
 这些值可放在本机 `~/.gradle/gradle.properties`、CI 环境变量或临时 `-P` 参数中；不要提交真实 keystore 或密码。示例见 `MiaoxunRN/android/release-signing.properties.example`。
 
-移动端 API 请求当前超时时间为 15 秒；超时必须向用户暴露明确错误，不能让关注、加好友、扫码解析等操作一直处于提交状态。关注和好友申请按钮在提交期间需要显示操作中状态，失败后恢复可点击状态。
+移动端普通 API 请求超时时间为 20 秒，生成类长请求为 45 秒；超时必须向用户暴露明确错误，不能让关注、加好友、扫码解析等操作一直处于提交状态。关注和好友申请按钮在提交期间需要显示操作中状态，失败后恢复可点击状态。
 
 ## 真机调试
 
@@ -285,8 +285,6 @@ GET /api/search/history
 POST /api/search/history
 PATCH /api/me/profile
 POST /api/location/resolve
-GET /api/map/style
-GET /api/map/tiles/:z/:x/:y.png
 GET /api/me/profile-visibility
 PATCH /api/me/profile-visibility
 GET /api/threads/:threadId/messages
@@ -309,6 +307,8 @@ POST /api/events
 
 ## 2026-06-24 TestFlight 崩溃修复
 
+> 历史实现说明：本节记录早期 `react-native-filament` 方案的真机问题和当时的修复证据。当前小站 3D 舞台已经由内嵌 Three.js `WKWebView` 与 App 专用 GLB 取代；这些 Filament 补丁不是现行构建依赖，也不能作为当前 3D 故障的排查依据。
+
 真机 TestFlight 曾出现“妙讯已崩溃”，控制台日志显示 JS HostFunction 抛出 `Pointer RenderableManagerWrapper has already been manually released!`，崩溃点来自 `react-native-filament` 资源在 Release/TestFlight 生命周期里被 JS cleanup 和原生 GC 重复释放。
 
 已完成处理：
@@ -324,7 +324,7 @@ TestFlight 手机端必须安装包含本次原生补丁的新 build 后才能�
 - 小站 3D 舞台继续使用 `react-native-filament` 和本地 GLB，不改为 2D；RN 端稳定相机、灯光、场景参数和隐藏配饰缩放引用，形象配置按内容 key 归一化，减少 TestFlight 真机中 profile/bootstrap 刷新触发的原生资源重复初始化。
 - 在线/离线/隐藏菜单改为透明 `Modal` 浮层，避免 iPhone 真机上被 AI ID、资料区或滚动层遮挡；菜单必须锚定整个在线状态按钮的屏幕矩形，并在按钮下方居中显示，不能使用触摸事件的 `pageX/pageY`，避免点击文字、圆点或箭头时弹层位置不一致。
 - 登录流程必须在 `/api/auth/login` 和 `/api/app/bootstrap` 都成功后才保存 token 并进入主界面；登录页加本地提交锁，避免用户快速点击造成重复请求和半同步状态。
-- 启动恢复登录必须区分“认证失效”和“网络入口失败”：只有 `/api/app/bootstrap` 明确返回 401/403 时才清除 Keychain token；TLS 握手失败、请求超时或移动网络不可达时保留 token，展示“账号空间暂时无法同步”页面，并提供“重试同步 / 退出登录”两个明确动作。这样不会把服务器或网络抖动误判成账号不存在，也不会进入未完成 bootstrap 的主页。
+- 启动恢复登录必须区分“认证失效”和“网络入口失败”：只有 `/api/app/bootstrap` 明确返回 401 时才清除 Keychain token；403、TLS 握手失败、请求超时或移动网络不可达时保留 token 并显示对应错误。这样不会把权限错误、服务器或网络抖动误判成账号不存在，也不会进入未完成 bootstrap 的主页。
 - 后端新增 `presence.changed` WebSocket 事件，在线连接、最后断开和模式切换会通知相关好友、关注和 direct 聊天用户；客户端收到后刷新真实 bootstrap 数据，不在本地伪造在线状态。
 
 2026-06-24 TestFlight build 3 真机继续发现小站 3D 舞台背景出现重复块状噪点并闪烁，原因是 `FilamentView` 透明合成时未被模型覆盖的像素会透出底层渲染缓冲。处理要求如下：
@@ -338,7 +338,7 @@ TestFlight 手机端必须安装包含本次原生补丁的新 build 后才能�
 
 - `MiaoxunRN/ios/MiaoxunRN.xcworkspace` 是 iOS 原生工程入口。
 - 生产包必须使用 Release 配置，不允许保留本地 API 地址。
-- 域名实名完成前允许上传 TestFlight 临时测试包，但必须显式使用 `MIAOXUN_TEMP_IP_TESTFLIGHT=1`，API 只能指向 `http://8.153.167.11/api`。如果需要外部群组，`ExportOptions-AppStoreConnect.plist` 必须设置 `testFlightInternalTestingOnly=false`，并在 App Store Connect 完成 Beta App Review；该配置不能用于正式上架。
+- 域名实名完成前允许上传 TestFlight 临时测试包，但必须显式使用 `MIAOXUN_TEMP_IP_TESTFLIGHT=1`，API origin 只能指向 `http://8.153.167.11`。如果需要外部群组，`ExportOptions-AppStoreConnect.plist` 必须设置 `testFlightInternalTestingOnly=false`，并在 App Store Connect 完成 Beta App Review；该配置不能用于正式上架。
 - `Info.plist` 不能保留空白权限说明；新增相机、相册、文件、通知等能力时，必须同步填写对应用途说明并更新 `PrivacyInfo.xcprivacy`。
 - Android 新增系统能力时，必须同步更新 `AndroidManifest.xml` 权限、Gradle 依赖和本文件的桥接说明。
 - 每次新增或调整移动端能力，都要同步更新 `README.md`、`MiaoxunRN/README.md` 和相关 `docs/` 文档。
@@ -372,3 +372,9 @@ TestFlight 手机端必须安装包含本次原生补丁的新 build 后才能�
 - App Store Connect 已处理完成，`1.0 (23)` 状态为“正在测试”，已加入内部和外部 TestFlight 群组 `YU yunzhi`；公开链接保持 `https://testflight.apple.com/join/jKSqUnYU`。
 
 后端部分已经于 2026-07-10 部署并完成真实 OSS 闭环。真机最终验收需要安装 build 23，并使用测试账号登录后静置至少 2 分钟，确认不再出现每秒 bootstrap/sync 或 WebSocket 重建；随后验证日记编辑/删除、相册编辑/删除、照片上传、照片读取和删除。
+
+## 2026-08-04 当前构建基线
+
+当前 iOS 工程版本为 `1.0 (30)`。本轮仓库审查已使用 `MiaoxunRN.xcworkspace` 成功生成本地 Release archive，但没有上传新包；App Store Connect 中的 build 30 已于 2026-07-30 13:21 上传，当前为“正在测试”，并已加入内部和外部 `YU yunzhi` 群组。下次上传必须先把 `CURRENT_PROJECT_VERSION` 递增到 `31` 并重新 archive，不能复用 build 30 的验证归档。当前归档已移除 MapLibre，只包含 React、ReactNativeDependencies 和 Hermes framework；本文前面关于 MapLibre / Filament 的内容均为对应历史 build 的故障与发布记录。
+
+域名审核完成前，Release 仍通过 `MIAOXUN_TEMP_IP_TESTFLIGHT=1` 显式使用 `http://8.153.167.11`，并只为该 IP 保留 ATS 例外。该配置仅供 TestFlight 测试，正式上架必须改回 `https://api.marvelschat.com` 并删除公网 HTTP 例外。

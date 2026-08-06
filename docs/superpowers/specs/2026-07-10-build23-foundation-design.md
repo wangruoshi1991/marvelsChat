@@ -1,5 +1,7 @@
 # Build 23 Foundation Design
 
+> Status update (2026-08-04): the 30-second synchronization fallback described below was removed after the realtime channel became the authoritative update path. The current client performs one incremental catch-up on `connection.ready`, reacts to realtime events, and supports explicit refresh without a periodic timer.
+
 ## Context
 
 TestFlight build 22 points at `http://8.153.167.11/api`, but the installed app can still become unusable for two independent reasons:
@@ -14,7 +16,7 @@ TestFlight build 22 points at `http://8.153.167.11/api`, but the installed app c
 - Store the latest incremental cursor in a ref so cursor updates do not change callback identity.
 - Keep only one bootstrap and one incremental request in flight.
 - On realtime connection, run one incremental catch-up instead of a full bootstrap.
-- Keep the 30-second interval as a fallback without recreating it after every cursor update.
+- For Build 23, keep the 30-second interval as a fallback without recreating it after every cursor update. This historical decision is superseded by the status update above.
 - Add a regression test proving that a sync response does not create another WebSocket or bootstrap loop.
 
 ### Station content lifecycle
@@ -38,4 +40,3 @@ TestFlight build 22 points at `http://8.153.167.11/api`, but the installed app c
 - Backend syntax, route contract, validation, and OSS signing tests pass.
 - Agent registry tests pass.
 - Live server health, authentication, restored route existence, and an authenticated media lifecycle smoke test pass without exposing credentials.
-
