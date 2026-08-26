@@ -13,6 +13,19 @@ services:
     networks:
       - miaoxun
 
+  media-retrieval-worker:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    env_file:
+      - ./miaoxun-prod.env
+    command: ["node", "src/media-retrieval-worker.js"]
+    networks:
+      - miaoxun
+
 networks:
   miaoxun:
     driver: bridge
