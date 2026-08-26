@@ -87,3 +87,37 @@ test("admin media retrieval routes expose only overview, runs, and bounded contr
     "PATCH /api/admin/media-retrieval/controls",
   ]);
 });
+
+test("admin overview publishes the frozen minimum App build", async () => {
+  const routes = [];
+  const app = {
+    get: (path, ...handlers) => routes.push({ method: "GET", path, handlers }),
+    patch: () => {},
+  };
+  registerAdminMediaRetrievalRoutes(app, {
+    authenticate: () => {},
+    requireAdmin: () => () => {},
+    asyncHandler: (handler) => handler,
+    dependencies: {
+      getOverview: async () => ({
+        controls: {},
+        queue: {},
+        globalCost: {},
+        recentRuns: [],
+      }),
+      buildRuntimeStatus: async () => ({
+        publicAvailability: {
+          state: "temporarily-unavailable",
+          canStartRun: false,
+          reasonCodes: ["not-ready"],
+        },
+      }),
+    },
+  });
+
+  const overview = routes.find((route) => route.path === "/api/admin/media-retrieval/overview");
+  let responseBody;
+  await overview.handlers.at(-1)({}, { json: (body) => { responseBody = body; } });
+
+  assert.equal(responseBody.data.agentCard.minimumAppBuild, 26);
+});

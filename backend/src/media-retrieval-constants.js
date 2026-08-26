@@ -1,4 +1,5 @@
 export const MEDIA_RETRIEVAL_CONSENT_VERSION = "media-retrieval-consent-v1";
+export const MEDIA_RETRIEVAL_MINIMUM_APP_BUILD = 26;
 
 export const MEDIA_RETRIEVAL_LIFECYCLE_STATUSES = Object.freeze([
   "accepted",
