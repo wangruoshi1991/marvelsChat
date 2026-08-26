@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://miaoxun.local/schemas/media-retrieval-public-error.schema.json",
+  "title": "Media retrieval public error body",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "code",
+    "message",
+    "retryable"
+  ],
+  "properties": {
+    "code": {
+      "enum": [
+        "retrieval_not_enabled",
+        "retrieval_consent_required",
+        "retrieval_budget_exhausted",
+        "retrieval_service_unavailable",
+        "retrieval_request_invalid",
+        "asset_not_indexable",
+        "run_not_found",
+        "retrieval_policy_unverifiable",
+        "retrieval_provider_transport_unavailable",
+        "retrieval_purge_incomplete",
+        "retrieval_unknown_charge_no_retry",
+        "retrieval_temporary_cleanup_pending",
+        "retrieval_index_enqueue_failed",
+        "retrieval_repository_write_failed",
+        "retrieval_job_lease_lost",
+        "retrieval_staging_missing"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "retryable": {
+      "type": "boolean"
+    }
+  }
+}

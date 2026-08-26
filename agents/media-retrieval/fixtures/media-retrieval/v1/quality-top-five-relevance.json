@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0",
+  "id": "quality-top-five-relevance",
+  "operation": "search",
+  "requiresProvider": true,
+  "latencyMs": 27,
+  "mockProvider": { "calls": 2, "outcome": "succeeded" },
+  "evidence": {
+    "resultIds": ["asset-05", "asset-01", "asset-08", "asset-03", "asset-06"],
+    "expectedResultIds": ["asset-05", "asset-01", "asset-08", "asset-03", "asset-06"]
+  },
+  "checks": ["frozen-top-five"]
+}

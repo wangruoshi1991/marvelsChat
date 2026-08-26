@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "id": "image-description-call-cap",
+  "operation": "index-image",
+  "requiresProvider": true,
+  "latencyMs": 25,
+  "mockProvider": { "calls": 2, "outcome": "succeeded" },
+  "checks": ["provider-call-cap"]
+}

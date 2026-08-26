@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "id": "deletion-soft-deleted-source",
+  "operation": "search",
+  "latencyMs": 7,
+  "state": { "sourceDeleted": true },
+  "evidence": { "resultIds": [] },
+  "checks": ["soft-deleted-not-queryable"]
+}

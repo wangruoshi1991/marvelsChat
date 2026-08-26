@@ -1,0 +1,27 @@
+{
+  "searchSuccess": {
+    "agentRunId": "33333333-3333-4333-8333-333333333333",
+    "lifecycleStatus": "succeeded",
+    "method": "b7-product-baseline",
+    "results": [
+      {
+        "mediaAssetId": "asset-1",
+        "kind": "image",
+        "matchedFrameTimestampMs": null,
+        "summary": "yellow dress",
+        "matchReasons": [
+          "identity-caption-exact"
+        ],
+        "scoreBucket": "low"
+      }
+    ]
+  },
+  "publicError": {
+    "status": 422,
+    "body": {
+      "code": "retrieval_policy_unverifiable",
+      "message": "The retrieval request could not be safely verified.",
+      "retryable": false
+    }
+  }
+}

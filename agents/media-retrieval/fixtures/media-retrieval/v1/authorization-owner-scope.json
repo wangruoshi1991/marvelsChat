@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "id": "authorization-owner-scope",
+  "operation": "search",
+  "requiresProvider": true,
+  "latencyMs": 21,
+  "mockProvider": { "calls": 2, "outcome": "succeeded" },
+  "state": { "ownerId": "user-owner", "requesterId": "user-owner" },
+  "evidence": { "queryOwnerId": "user-owner", "resultOwners": ["user-owner"] },
+  "checks": ["owner-predicate", "only-owner-results"]
+}

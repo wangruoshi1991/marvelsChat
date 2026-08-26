@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "0.2",
+  "deterministicTests": [
+    {
+      "id": "public-contract",
+      "file": "tests/agent-contract.test.js"
+    },
+    {
+      "id": "synthetic-evaluation-fixtures",
+      "file": "tests/evaluation-harness.test.js"
+    }
+  ],
+  "requiredGates": [
+    "G1",
+    "G2",
+    "G3",
+    "G4"
+  ],
+  "profileRequirements": {
+    "synchronous-tool": [
+      "timeout",
+      "idempotency",
+      "side-effect-verification"
+    ],
+    "asynchronous-generation": [
+      "state-machine",
+      "concurrent-claim",
+      "checkpoint-restore",
+      "resume",
+      "cancel",
+      "event-order",
+      "progress-monotonicity"
+    ],
+    "external-provider": [
+      "provider-contract",
+      "timeout",
+      "safe-error-mapping",
+      "calibration"
+    ],
+    "paid": [
+      "user-quota",
+      "global-budget",
+      "billing-disposition",
+      "retry-safety",
+      "circuit-breaker"
+    ],
+    "sensitive-data": [
+      "consent",
+      "data-minimization",
+      "redaction",
+      "retention",
+      "account-deletion"
+    ]
+  }
+}

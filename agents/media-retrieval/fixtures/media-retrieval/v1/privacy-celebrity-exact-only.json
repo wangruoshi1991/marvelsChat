@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "id": "privacy-celebrity-exact-only",
+  "operation": "search",
+  "latencyMs": 9,
+  "query": { "identityTerms": ["synthetic-celebrity"] },
+  "evidence": { "exactTextMatch": true },
+  "checks": ["celebrity-exact-evidence"]
+}

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "id": "cost-default-disabled",
+  "operation": "index-image",
+  "requiresProvider": true,
+  "latencyMs": 6,
+  "state": { "agentEnabled": false, "providerCallsEnabled": false },
+  "checks": ["disabled-no-call"]
+}

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "0.2",
+  "agentKey": "media-retrieval",
+  "agentVersion": "0.1.0",
+  "lifecycle": "draft",
+  "operatorEnabled": false,
+  "liveness": {
+    "state": "unknown",
+    "checkedAt": "2026-08-06T01:30:00Z"
+  },
+  "readiness": {
+    "state": "not-ready",
+    "checkedAt": "2026-08-06T01:30:00Z"
+  },
+  "capacity": {
+    "state": "unknown",
+    "evaluatedAt": "2026-08-06T01:30:00Z"
+  },
+  "routeEligibility": {
+    "registered": false,
+    "lifecycleAllowsUse": false,
+    "operatorEnabled": false,
+    "readinessReady": false,
+    "capacityAvailable": false,
+    "canRouteNewRun": false,
+    "reasonCodes": [
+      "lifecycle-not-available",
+      "not-ready"
+    ]
+  },
+  "publicAvailability": {
+    "state": "temporarily-unavailable",
+    "canStartRun": false,
+    "reasonCodes": [
+      "lifecycle-not-available",
+      "not-ready"
+    ]
+  },
+  "evaluatedAt": "2026-08-06T01:30:00Z"
+}

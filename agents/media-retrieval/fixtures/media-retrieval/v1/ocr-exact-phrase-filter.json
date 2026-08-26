@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "id": "ocr-exact-phrase-filter",
+  "operation": "search",
+  "requiresProvider": true,
+  "latencyMs": 20,
+  "mockProvider": { "calls": 2, "outcome": "succeeded" },
+  "query": { "exactOcr": "project atlas" },
+  "evidence": { "ocrMatch": "project atlas" },
+  "checks": ["exact-ocr-evidence"]
+}

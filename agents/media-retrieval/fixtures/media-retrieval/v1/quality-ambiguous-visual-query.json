@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0",
+  "id": "quality-ambiguous-visual-query",
+  "operation": "search",
+  "requiresProvider": true,
+  "latencyMs": 23,
+  "mockProvider": { "calls": 2, "outcome": "succeeded" },
+  "evidence": {
+    "usedEvidence": ["color:yellow", "clothing:dress"],
+    "declaredVisualEvidence": ["color:yellow", "clothing:dress", "scene:studio"]
+  },
+  "checks": ["declared-visual-evidence"]
+}

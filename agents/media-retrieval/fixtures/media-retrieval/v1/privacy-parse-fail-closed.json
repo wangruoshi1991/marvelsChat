@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0",
+  "id": "privacy-parse-fail-closed",
+  "operation": "search",
+  "latencyMs": 9,
+  "query": { "parseConfidence": "low", "visualQuery": "" },
+  "checks": ["parse-fail-closed"]
+}

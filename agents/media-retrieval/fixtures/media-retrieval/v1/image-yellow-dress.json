@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "id": "image-yellow-dress",
+  "operation": "search",
+  "requiresProvider": true,
+  "latencyMs": 18,
+  "mockProvider": { "calls": 2, "outcome": "succeeded" },
+  "state": { "ownerId": "user-owner", "requesterId": "user-owner" },
+  "evidence": { "resultOwners": ["user-owner"], "usedEvidence": ["clothing:yellow dress"] },
+  "checks": ["only-owner-results"]
+}

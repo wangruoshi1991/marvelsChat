@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "id": "cost-unknown-charge-no-retry",
+  "operation": "index-image",
+  "requiresProvider": true,
+  "latencyMs": 18,
+  "mockProvider": { "calls": 1, "outcome": "unknown-charge" },
+  "evidence": { "retryScheduled": false },
+  "checks": ["unknown-charge-no-retry"]
+}

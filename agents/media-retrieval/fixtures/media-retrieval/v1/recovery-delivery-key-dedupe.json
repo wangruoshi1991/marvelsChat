@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0",
+  "id": "recovery-delivery-key-dedupe",
+  "operation": "deliver-event",
+  "latencyMs": 5,
+  "evidence": { "deliveryOccurrences": 2, "deliveredCount": 1 },
+  "checks": ["delivery-deduplicated"]
+}

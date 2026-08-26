@@ -1,0 +1,195 @@
+{
+  "schemaVersion": "0.2",
+  "key": "media-retrieval",
+  "name": "媒体检索 Agent",
+  "version": "0.1.0",
+  "owner": {
+    "team": "Jarson（个人负责）",
+    "agentOwner": "Jarson",
+    "capabilityOwner": "Jarson",
+    "clientOwner": "Jarson",
+    "securityReviewer": "Jarson",
+    "releaseOwner": "Jarson"
+  },
+  "lifecycle": "draft",
+  "profiles": [
+    "synchronous-tool",
+    "asynchronous-generation",
+    "external-provider",
+    "paid",
+    "sensitive-data"
+  ],
+  "description": "对用户已上传的私有图片和视频代表帧建立受控索引，并在该用户自己的素材范围内检索。",
+  "limitations": [
+    "只处理已上传到妙讯私有媒体库的图片和视频，不读取设备相册或第三方素材库。",
+    "不生成图片、视频、3D 模型或人物内容，也不恢复不存在的画面事实。",
+    "不进行人脸识别、人物身份、名人、年龄、性别或其他敏感属性推断。",
+    "视频最多处理六张代表帧，不转写音频。",
+    "当前为草稿状态，外部模型调用、预算和路由均保持关闭。"
+  ],
+  "entrypoints": [
+    "workspace",
+    "admin"
+  ],
+  "catalog": {
+    "shortDescription": "从你已上传的私有图片和视频中查找匹配素材。",
+    "capabilities": [
+      {
+        "key": "private-media-index",
+        "label": "私有媒体索引",
+        "description": "经用户同意后，为已上传的私有图片和视频代表帧建立受控检索索引。",
+        "inputSummary": "用户同意版本和其已有私有素材",
+        "outputSummary": "索引进度、数量和安全状态"
+      },
+      {
+        "key": "semantic-media-search",
+        "label": "自然语言找素材",
+        "description": "按颜色、服饰、场景、动作、物体或既有文字描述检索用户自己的素材。",
+        "inputSummary": "自然语言检索条件",
+        "outputSummary": "受控命中列表与匹配原因"
+      },
+      {
+        "key": "video-frame-retrieval",
+        "label": "视频代表帧检索",
+        "description": "在已索引视频的代表帧中定位可能匹配的时间点。",
+        "inputSummary": "自然语言检索条件",
+        "outputSummary": "视频素材与可能匹配的时间点"
+      }
+    ],
+    "whenToUse": [
+      "需要在自己已经上传的图片或视频中查找符合自然语言描述的素材时。",
+      "需要通过已有标题、标签或画面中的文字精确筛选自己的素材时。"
+    ],
+    "whenNotToUse": [
+      "不要用它生成新媒体、识别人物身份或搜索未上传到妙讯的素材。",
+      "不要把检索结果当作对人物、健康、身份或其他敏感属性的判断。"
+    ],
+    "interaction": {
+      "progress": "stage",
+      "requiresConfirmation": true,
+      "artifactAccess": false
+    }
+  },
+  "execution": {
+    "mode": "asynchronous",
+    "idempotencyRequired": true,
+    "timeoutSeconds": 900,
+    "cancellable": false,
+    "resumable": true,
+    "maxConcurrentRunsPerUser": 1,
+    "checkpoint": {
+      "schemaVersion": "1.0.0",
+      "stateSchema": "checkpoint.schema.json",
+      "maxAgeSeconds": 86400,
+      "recoveryPolicy": "restart-from-safe-boundary",
+      "compatibilityPolicy": "same-major-only"
+    },
+    "deduplicationWindowSeconds": null,
+    "maxDelegationDepth": null
+  },
+  "capabilities": [
+    "private-media-index",
+    "semantic-media-search",
+    "video-frame-retrieval"
+  ],
+  "permissions": [
+    "private-media:read",
+    "private-media-index:write",
+    "agent-runs:read"
+  ],
+  "contracts": {
+    "controlPlaneVersion": "0.2",
+    "inputSchema": "contracts/input.schema.json",
+    "outputSchema": "contracts/output.schema.json",
+    "publicErrorSchema": "contracts/public-error.schema.json",
+    "eventSchema": "agent-event.fixture.json",
+    "domainApiPrefix": "/api/station/media-retrieval"
+  },
+  "artifacts": [],
+  "risk": {
+    "level": "R2",
+    "dataClasses": [
+      "private",
+      "sensitive"
+    ],
+    "requiresUserConfirmation": true,
+    "requiresHumanReview": false,
+    "consentVersion": "media-retrieval-consent-v1"
+  },
+  "billing": {
+    "mode": "metered",
+    "currency": "CNY",
+    "providerCallsDefaultEnabled": false,
+    "confirmationRequired": true,
+    "userDailyLimit": 3,
+    "globalDailyBudgetFen": 1000,
+    "alertThresholdPercent": 80,
+    "retryOnUnknownBilling": false
+  },
+  "dependencies": {
+    "providers": [
+      "aliyun-model-studio"
+    ],
+    "runtimeCapabilities": [
+      "postgres-pgvector",
+      "private-object-storage",
+      "background-worker"
+    ],
+    "requiredEnvironmentNames": []
+  },
+  "audit": {
+    "eventTypes": [
+      "accepted",
+      "profile-enabled",
+      "queued",
+      "searching",
+      "completed",
+      "blocked",
+      "index-not-queued",
+      "aggregate-completed",
+      "recovery-queued",
+      "temporary-cleanup-queue-failed"
+    ],
+    "redactedFields": [
+      "authorization",
+      "apiKey",
+      "token",
+      "signedUrl",
+      "query",
+      "identityTerms",
+      "storageKey"
+    ],
+    "retentionDays": 180,
+    "tracePropagation": {
+      "required": true,
+      "format": "w3c-trace-context"
+    }
+  },
+  "evaluation": {
+    "suitePath": "media-retrieval/evaluation-suite.json",
+    "suiteVersion": "0.1.0",
+    "minimumPassingScore": 85,
+    "minimumCaseCount": 30,
+    "requiresHumanJudgement": false
+  },
+  "compatibility": {
+    "minimumAppBuild": 26,
+    "minimumBackendContract": "0.2",
+    "minimumAgentCardSchema": "0.2",
+    "replacesAgentVersion": null
+  },
+  "operations": {
+    "runbook": "docs/agents/media-retrieval/runbook.md",
+    "providerKillSwitch": "MEDIA_RETRIEVAL_PROVIDER_CALLS_ENABLED",
+    "newRunKillSwitch": "MEDIA_RETRIEVAL_ENABLED",
+    "deprecationPolicy": "Stop new runs, revoke queryability, then complete approved derived-index cleanup.",
+    "adminControls": {
+      "availability": true,
+      "recentRuns": true,
+      "metrics": true,
+      "cost": true,
+      "evaluation": true,
+      "killSwitches": true
+    }
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "0.2",
+  "agentKey": "media-retrieval",
+  "agentVersion": "0.1.0",
+  "displayName": "媒体检索 Agent",
+  "shortDescription": "从你已上传的私有图片和视频中查找匹配素材。",
+  "capabilities": [
+    {
+      "key": "private-media-index",
+      "label": "私有媒体索引",
+      "description": "经用户同意后，为已上传的私有图片和视频代表帧建立受控检索索引。",
+      "inputSummary": "用户同意版本和其已有私有素材",
+      "outputSummary": "索引进度、数量和安全状态"
+    },
+    {
+      "key": "semantic-media-search",
+      "label": "自然语言找素材",
+      "description": "按颜色、服饰、场景、动作、物体或既有文字描述检索用户自己的素材。",
+      "inputSummary": "自然语言检索条件",
+      "outputSummary": "受控命中列表与匹配原因"
+    },
+    {
+      "key": "video-frame-retrieval",
+      "label": "视频代表帧检索",
+      "description": "在已索引视频的代表帧中定位可能匹配的时间点。",
+      "inputSummary": "自然语言检索条件",
+      "outputSummary": "视频素材与可能匹配的时间点"
+    }
+  ],
+  "entrypoints": [
+    "workspace",
+    "admin"
+  ],
+  "whenToUse": [
+    "需要在自己已经上传的图片或视频中查找符合自然语言描述的素材时。",
+    "需要通过已有标题、标签或画面中的文字精确筛选自己的素材时。"
+  ],
+  "whenNotToUse": [
+    "不要用它生成新媒体、识别人物身份或搜索未上传到妙讯的素材。",
+    "不要把检索结果当作对人物、健康、身份或其他敏感属性的判断。"
+  ],
+  "limitations": [
+    "只处理已上传到妙讯私有媒体库的图片和视频，不读取设备相册或第三方素材库。",
+    "不生成图片、视频、3D 模型或人物内容，也不恢复不存在的画面事实。",
+    "不进行人脸识别、人物身份、名人、年龄、性别或其他敏感属性推断。",
+    "视频最多处理六张代表帧，不转写音频。",
+    "当前为草稿状态，外部模型调用、预算和路由均保持关闭。"
+  ],
+  "interaction": {
+    "runMode": "asynchronous",
+    "progress": "stage",
+    "requiresConfirmation": true,
+    "cancellable": false,
+    "resumable": true
+  },
+  "artifactSupport": [],
+  "minimumAppBuild": 26,
+  "availability": {
+    "state": "temporarily-unavailable",
+    "canStartRun": false,
+    "reasonCodes": [
+      "lifecycle-not-available",
+      "not-ready"
+    ]
+  },
+  "updatedAt": "2026-08-06T01:30:00Z"
+}
