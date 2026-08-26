@@ -189,6 +189,39 @@ export async function putObjectToOss({
   };
 }
 
+export async function putPrivateObjectToOss({
+  storageConfig = appConfig.oss,
+  key,
+  bytes,
+  contentType = "application/octet-stream",
+  fetchImpl = fetch,
+}) {
+  try {
+    const request = buildOssPutObjectRequest({ storageConfig, key, bytes, contentType });
+    const response = await fetchWithTimeout({
+      fetchImpl,
+      url: request.url,
+      timeoutMs: storageConfig.timeoutMs || 60000,
+      options: {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+      },
+    });
+    if (!response.ok) {
+      throw new HttpError(502, "Private media staging failed.");
+    }
+    return {
+      key,
+      contentType,
+      byteSize: Buffer.byteLength(request.body),
+    };
+  } catch (error) {
+    if (error instanceof HttpError && error.message === "Private media staging failed.") throw error;
+    throw new HttpError(502, "Private media staging failed.");
+  }
+}
+
 export async function persistProviderModelAssets({
   userId,
   job,

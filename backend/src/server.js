@@ -6,8 +6,14 @@ import { ZodError } from "zod";
 import { createLegacyApiCompatibilityMiddleware } from "./api-compat.js";
 import { authenticate, requireAdmin } from "./auth.js";
 import { config } from "./config.js";
+import {
+  getMediaRetrievalErrorContract,
+  isMediaRetrievalPublicError,
+  toPublicMediaRetrievalError,
+} from "./media-retrieval-errors.js";
 import { createRealtimeGateway } from "./realtime-gateway.js";
 import { registerAdminRoutes } from "./routes/admin-routes.js";
+import { registerAgentRunRoutes } from "./routes/agent-run-routes.js";
 import { registerAppRoutes } from "./routes/app-routes.js";
 import { registerAuthRoutes } from "./routes/auth-routes.js";
 import { registerEventRoutes } from "./routes/event-routes.js";
@@ -90,6 +96,8 @@ registerMessageRoutes(app, {
 
 registerStationRoutes(app, { authenticate, asyncHandler });
 
+registerAgentRunRoutes(app, { authenticate, asyncHandler });
+
 registerMapRoutes(app, { asyncHandler });
 
 registerEventRoutes(app, { authenticate, asyncHandler });
@@ -103,6 +111,7 @@ registerAdminRoutes(app, {
 app.use((error, _req, res, _next) => {
   const isValidationError = error instanceof ZodError;
   const isMissingTable = ["42P01", "3D000"].includes(error.code);
+  const isMediaRetrievalError = isMediaRetrievalPublicError(error);
   const status = isValidationError ? 400 : isMissingTable ? 503 : error.status || 500;
   const message = isValidationError
     ? "Invalid request payload"
@@ -110,10 +119,14 @@ app.use((error, _req, res, _next) => {
       ? "Database is not migrated. Run `cd backend && npm run db:migrate`."
       : error.message || "Internal Server Error";
 
-  res.status(status).json({
+  const publicMediaRetrievalError = isMediaRetrievalError ? toPublicMediaRetrievalError(error) : null;
+  const publicStatus = publicMediaRetrievalError
+    ? getMediaRetrievalErrorContract(error.code).status
+    : status;
+  res.status(publicStatus).json({
     error: {
-      message,
-      details: isValidationError ? error.flatten() : error.details,
+      ...(publicMediaRetrievalError || { message }),
+      ...(!publicMediaRetrievalError && { details: isValidationError ? error.flatten() : error.details }),
     },
   });
 });

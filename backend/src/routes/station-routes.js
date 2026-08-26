@@ -4,6 +4,7 @@ import { registerStationContentRoutes } from "./station-content-routes.js";
 import { registerStationDiaryRoutes } from "./station-diary-routes.js";
 import { registerStationFileRoutes } from "./station-file-routes.js";
 import { registerStationMediaRoutes } from "./station-media-routes.js";
+import { registerStationMediaRetrievalRoutes } from "./station-media-retrieval-routes.js";
 import { registerStationModelRoutes } from "./station-model-routes.js";
 import { registerStationOutfitRoutes } from "./station-outfit-routes.js";
 import { registerStationProfileRoutes } from "./station-profile-routes.js";
@@ -21,5 +22,6 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   registerStationDiaryRoutes(app, { authenticate, asyncHandler });
   registerStationAlbumRoutes(app, { authenticate, asyncHandler });
   registerStationMediaRoutes(app, { authenticate, asyncHandler });
+  registerStationMediaRetrievalRoutes(app, { authenticate, asyncHandler });
   registerStationOutfitRoutes(app, { authenticate, asyncHandler });
 }

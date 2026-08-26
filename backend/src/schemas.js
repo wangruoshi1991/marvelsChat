@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  MEDIA_RETRIEVAL_CONSENT_VERSION,
+  MEDIA_RETRIEVAL_RUNTIME_LIMITS,
+} from "./media-retrieval-constants.js";
 
 export const phoneNumberSchema = z.string().trim().regex(/^1[3-9]\d{9}$/, "Phone number must be a valid mainland China mobile number");
 
@@ -226,6 +230,50 @@ export const stationMediaUploadUrlSchema = z
 export const stationMediaUploadCompleteSchema = z.object({
   storageKey: z.string().trim().min(1).max(512),
 });
+
+export const mediaRetrievalIdempotencyKeySchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9._-]{8,160}$/, "Invalid Idempotency-Key header.");
+
+export const mediaRetrievalEnableSchema = z.object({
+  consentVersion: z.literal(MEDIA_RETRIEVAL_CONSENT_VERSION),
+});
+
+export const mediaRetrievalSearchSchema = z.object({
+  query: z.string().trim().min(1).max(240),
+  kind: z.enum(["image", "video"]).optional().nullable(),
+  albumId: z.string().uuid().optional().nullable(),
+  limit: z.coerce.number().int().min(1).max(20).optional().default(10),
+});
+
+export const mediaRetrievalReindexSchema = z.object({
+  scope: z.enum(["stale", "all"]).optional().default("all"),
+  mediaAssetIds: z.array(z.string().uuid()).max(100).optional().default([]),
+});
+
+export const mediaRetrievalRunParamsSchema = z.object({
+  runId: z.string().uuid(),
+});
+
+export const mediaRetrievalEventsQuerySchema = z.object({
+  afterSequence: z.coerce.number().int().min(0).optional().default(0),
+});
+
+export const mediaRetrievalAdminControlsSchema = z
+  .object({
+    operatorEnabled: z.boolean().optional(),
+    providerCallsEnabled: z.boolean().optional(),
+    queueEnabled: z.boolean().optional(),
+    userDailyRequestLimit: z.number().int().min(0).max(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxUserDailyRequestLimit).optional(),
+    userMonthlyBudgetFen: z.number().int().min(0).max(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxUserMonthlyBudgetFen).optional(),
+    globalDailyBudgetFen: z.number().int().min(0).max(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxGlobalDailyBudgetFen).optional(),
+    captionReserveFen: z.number().int().min(0).max(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxProviderCallReservationFen).optional(),
+    embeddingReserveFen: z.number().int().min(0).max(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxProviderCallReservationFen).optional(),
+    lifecycle: z.enum(["draft", "review", "sandbox", "limited_release", "available", "suspended", "deprecated", "removed"]).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, { message: "At least one control is required." });
 
 export const stationAlbumSuggestionApplySchema = z.object({
   title: z.string().trim().min(1).max(120),

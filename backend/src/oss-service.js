@@ -35,10 +35,16 @@ export const buildStationMediaObjectKey = ({
 }) =>
   `users/${userId}/station-media/${assetId}/${safeFilename(originalFilename)}`;
 
-const createOssSignedUrl = ({ method, objectKey, contentType = "" }) => {
+const normalizeTtlSeconds = (ttlSeconds) => {
+  const requested = Number(ttlSeconds);
+  if (!Number.isFinite(requested)) return uploadUrlTtlSeconds;
+  return Math.min(uploadUrlTtlSeconds, Math.max(1, Math.floor(requested)));
+};
+
+const createOssSignedUrl = ({ method, objectKey, contentType = "", ttlSeconds = uploadUrlTtlSeconds }) => {
   assertOssConfigured();
 
-  const expires = Math.floor(Date.now() / 1000) + uploadUrlTtlSeconds;
+  const expires = Math.floor(Date.now() / 1000) + normalizeTtlSeconds(ttlSeconds);
   const canonicalResource = `/${config.oss.bucket}/${objectKey}`;
   const stringToSign = [
     method,
@@ -81,8 +87,8 @@ export function createOssPutSignedUrl({ objectKey, contentType }) {
   };
 }
 
-export function createOssGetSignedUrl({ objectKey }) {
-  const { url } = createOssSignedUrl({ method: "GET", objectKey });
+export function createOssGetSignedUrl({ objectKey, ttlSeconds = uploadUrlTtlSeconds }) {
+  const { url } = createOssSignedUrl({ method: "GET", objectKey, ttlSeconds });
   return url.toString();
 }
 
@@ -151,5 +157,21 @@ export async function fetchOssObject({
     throw new HttpError(502, "Media asset storage read failed.", {
       reason: error instanceof Error ? error.message : "OSS request failed",
     });
+  }
+}
+
+export async function deleteOssObject({ objectKey, fetchImpl = fetch }) {
+  try {
+    const { url } = createOssSignedUrl({ method: "DELETE", objectKey });
+    const response = await fetchImpl(url, {
+      method: "DELETE",
+      signal: AbortSignal.timeout(config.oss.timeoutMs),
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new HttpError(502, "Media storage deletion failed.");
+    }
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(502, "Media storage deletion failed.");
   }
 }
