@@ -242,6 +242,7 @@ export async function adminAgentRuns({ limit = 80 } = {}) {
       u.email AS user_email
     FROM agent_runs r
     LEFT JOIN users u ON u.id = r.user_id
+    WHERE r.agent_id <> 'media-retrieval'
     ORDER BY r.created_at DESC
     LIMIT ${safeLimit}`,
   );

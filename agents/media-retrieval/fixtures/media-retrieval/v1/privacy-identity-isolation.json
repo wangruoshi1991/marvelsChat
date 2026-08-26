@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "id": "privacy-identity-isolation",
+  "operation": "search",
+  "requiresProvider": true,
+  "latencyMs": 22,
+  "mockProvider": { "calls": 2, "outcome": "succeeded" },
+  "query": { "identityTerms": ["synthetic-person"] },
+  "evidence": { "embeddingText": "yellow dress beside a doorway" },
+  "checks": ["identity-removed-before-embedding"]
+}

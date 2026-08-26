@@ -412,6 +412,7 @@ export async function getBootstrapForUser(user, registeredAgents, onlineUserIds 
     followers,
     friends,
     stationContent,
+    agentReadiness,
   ] = await Promise.all([
     getAgentContextForUser(user, registeredAgents),
     listThreadsForUser(user.id, onlineIds),
@@ -423,6 +424,7 @@ export async function getBootstrapForUser(user, registeredAgents, onlineUserIds 
     listRelationshipProfiles(user.id, "followers", 60, onlineIds),
     listRelationshipProfiles(user.id, "friends", 60, onlineIds),
     getStationContentForUser(user.id),
+    buildAgentReadiness(),
   ]);
   const messagesByThread = await listMessagesForThreads(
     user.id,
@@ -447,7 +449,7 @@ export async function getBootstrapForUser(user, registeredAgents, onlineUserIds 
     },
     stationContent,
     modules: context.modules,
-    agentReadiness: buildAgentReadiness(),
+    agentReadiness,
     agents: {
       registered: registeredAgents,
       owned: context.ownedAgents,

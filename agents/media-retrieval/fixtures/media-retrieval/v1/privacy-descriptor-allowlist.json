@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "id": "privacy-descriptor-allowlist",
+  "operation": "index-image",
+  "requiresProvider": true,
+  "latencyMs": 24,
+  "mockProvider": { "calls": 2, "outcome": "succeeded" },
+  "evidence": {
+    "persistedDescriptorKeys": ["summary", "clothing", "scene", "actions", "objects", "ocrText", "qualitySignals"]
+  },
+  "checks": ["descriptor-allowlist"]
+}

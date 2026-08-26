@@ -1,0 +1,158 @@
+{
+  "schemaVersion": "0.2",
+  "key": "example-image-agent",
+  "name": "示例图片 Agent",
+  "version": "0.1.0",
+  "owner": {
+    "team": "example-team",
+    "agentOwner": "role:agent-owner",
+    "capabilityOwner": "role:capability-owner",
+    "clientOwner": "role:client-owner",
+    "securityReviewer": "role:security-reviewer",
+    "releaseOwner": "role:release-owner"
+  },
+  "lifecycle": "draft",
+  "profiles": [
+    "asynchronous-generation",
+    "external-provider",
+    "artifact-producing",
+    "paid",
+    "sensitive-data"
+  ],
+  "description": "根据用户明确授权的私有图片生成一张仅本人可见的示例产物。",
+  "limitations": [
+    "不得处理未获得授权的人物图片",
+    "不得自动公开、外发或保证生成质量"
+  ],
+  "entrypoints": ["workspace"],
+  "catalog": {
+    "shortDescription": "根据用户明确授权的私有图片，生成仅本人可见的图片草稿。",
+    "capabilities": [
+      {
+        "key": "private-image-generation",
+        "label": "私有图片生成",
+        "description": "基于已授权素材生成一张私有图片草稿。",
+        "inputSummary": "授权素材和生成要求",
+        "outputSummary": "可查看、删除的私有图片产物"
+      }
+    ],
+    "whenToUse": [
+      "需要根据已授权的私有图片生成草稿时"
+    ],
+    "whenNotToUse": [
+      "没有获得图片中人物授权时",
+      "需要自动公开或外发结果时"
+    ],
+    "interaction": {
+      "progress": "percentage",
+      "requiresConfirmation": true,
+      "artifactAccess": true
+    }
+  },
+  "execution": {
+    "mode": "asynchronous",
+    "idempotencyRequired": true,
+    "timeoutSeconds": 900,
+    "cancellable": true,
+    "resumable": true,
+    "maxConcurrentRunsPerUser": 1,
+    "checkpoint": {
+      "schemaVersion": "1.0.0",
+      "stateSchema": "schemas/example-image-checkpoint-v1.json",
+      "maxAgeSeconds": 86400,
+      "recoveryPolicy": "resume-same-version-only",
+      "compatibilityPolicy": "same-major-only"
+    },
+    "deduplicationWindowSeconds": null,
+    "maxDelegationDepth": null
+  },
+  "capabilities": ["private-image-generation"],
+  "permissions": ["profile:read", "private-media:read", "private-artifact:write"],
+  "contracts": {
+    "controlPlaneVersion": "0.1",
+    "inputSchema": "schemas/example-image-input-v1.json",
+    "outputSchema": "schemas/example-image-output-v1.json",
+    "publicErrorSchema": "schemas/public-agent-error-v1.json",
+    "eventSchema": "schemas/agent-run-event-v1.json",
+    "domainApiPrefix": "/api/example-image"
+  },
+  "artifacts": [
+    {
+      "type": "generated-image",
+      "contentTypes": ["image/png", "image/jpeg"],
+      "defaultVisibility": "private",
+      "retentionDays": 30,
+      "deletable": true,
+      "integrityRequired": true,
+      "viewer": "native-image",
+      "minimumAppBuild": 1
+    }
+  ],
+  "risk": {
+    "level": "R2",
+    "dataClasses": ["private", "sensitive"],
+    "requiresUserConfirmation": true,
+    "requiresHumanReview": false,
+    "consentVersion": "example-image-consent-v1"
+  },
+  "billing": {
+    "mode": "metered",
+    "currency": "CNY",
+    "providerCallsDefaultEnabled": false,
+    "confirmationRequired": true,
+    "userDailyLimit": 3,
+    "globalDailyBudgetFen": 10000,
+    "alertThresholdPercent": 80,
+    "retryOnUnknownBilling": false
+  },
+  "dependencies": {
+    "providers": ["example-provider"],
+    "runtimeCapabilities": ["postgresql", "private-oss", "background-worker"],
+    "requiredEnvironmentNames": [
+      "EXAMPLE_PROVIDER_API_KEY",
+      "OSS_BUCKET",
+      "OSS_ENDPOINT"
+    ]
+  },
+  "audit": {
+    "eventTypes": [
+      "example-image.run.created",
+      "example-image.provider.submitted",
+      "example-image.artifact.created",
+      "example-image.artifact.deleted"
+    ],
+    "redactedFields": ["authorization", "apiKey", "sourceImage", "signedUrl"],
+    "retentionDays": 180,
+    "tracePropagation": {
+      "required": true,
+      "format": "w3c-trace-context"
+    }
+  },
+  "evaluation": {
+    "suitePath": "evaluations/example-image-agent-v1.json",
+    "suiteVersion": "1.0.0",
+    "minimumPassingScore": 85,
+    "minimumCaseCount": 8,
+    "requiresHumanJudgement": true
+  },
+  "compatibility": {
+    "minimumAppBuild": 1,
+    "minimumBackendContract": "0.2",
+    "minimumAgentCardSchema": "0.2",
+    "replacesAgentVersion": null
+  },
+  "operations": {
+    "runbook": "templates/08-runbook.md",
+    "providerKillSwitch": "EXAMPLE_IMAGE_PROVIDER_CALLS_ENABLED",
+    "newRunKillSwitch": "EXAMPLE_IMAGE_ENABLED",
+    "deprecationPolicy": "先暂停新任务，保留历史产物读取 30 天，再执行已审批的数据清理。",
+    "adminControls": {
+      "availability": true,
+      "recentRuns": true,
+      "metrics": true,
+      "cost": true,
+      "evaluation": true,
+      "killSwitches": true
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "0.2",
+  "agentKey": "example-image-agent",
+  "agentVersion": "0.1.0",
+  "displayName": "示例图片 Agent",
+  "shortDescription": "根据用户明确授权的私有图片生成一张私有图片草稿。",
+  "capabilities": [
+    {
+      "key": "private-image-generation",
+      "label": "私有图片生成",
+      "description": "基于已授权素材生成一张私有图片草稿。",
+      "inputSummary": "授权素材和生成要求",
+      "outputSummary": "可查看、删除的私有图片产物"
+    }
+  ],
+  "entrypoints": ["workspace"],
+  "whenToUse": ["需要根据已授权的私有图片生成草稿时"],
+  "whenNotToUse": ["没有获得图片中人物授权时", "需要自动公开或外发结果时"],
+  "limitations": ["不得处理未获得授权的人物图片", "不得自动公开、外发或保证生成质量"],
+  "interaction": {
+    "runMode": "asynchronous",
+    "progress": "percentage",
+    "requiresConfirmation": true,
+    "cancellable": true,
+    "resumable": true
+  },
+  "artifactSupport": [
+    {
+      "type": "generated-image",
+      "viewer": "native-image",
+      "contentTypes": ["image/png", "image/jpeg"]
+    }
+  ],
+  "minimumAppBuild": 1,
+  "availability": {
+    "state": "available",
+    "canStartRun": true,
+    "reasonCodes": []
+  },
+  "updatedAt": "2026-08-05T00:00:00Z"
+}

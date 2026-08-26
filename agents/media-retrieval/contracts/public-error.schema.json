@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://miaoxun.local/agents/media-retrieval/contracts/public-error.schema.json",
+  "$ref": "https://miaoxun.local/schemas/media-retrieval-public-error.schema.json"
+}

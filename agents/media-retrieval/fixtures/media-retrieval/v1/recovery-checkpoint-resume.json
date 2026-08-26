@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "id": "recovery-checkpoint-resume",
+  "operation": "index-image",
+  "requiresProvider": true,
+  "latencyMs": 28,
+  "mockProvider": { "calls": 2, "outcome": "succeeded" },
+  "evidence": { "resumedFromCheckpoint": "descriptor", "completedCheckpoints": true },
+  "checks": ["checkpoint-resume"]
+}

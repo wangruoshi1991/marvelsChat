@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "0.2",
+  "eventId": "evt-media-retrieval-0001",
+  "eventType": "agent.run.accepted",
+  "occurredAt": "2026-08-06T01:30:00Z",
+  "agentKey": "media-retrieval",
+  "agentRunId": "run-media-retrieval-0001",
+  "capabilityJobId": null,
+  "traceId": "0123456789abcdef0123456789abcdef",
+  "parentEventId": null,
+  "causationId": null,
+  "attempt": 1,
+  "sequence": 1,
+  "deliveryKey": "run-media-retrieval-0001:1:1",
+  "visibility": "client",
+  "stage": "accepted",
+  "progressPercent": 0,
+  "redactionApplied": true,
+  "data": {
+    "messageCode": "media-retrieval-run-accepted",
+    "agentVersion": "0.1.0"
+  }
+}

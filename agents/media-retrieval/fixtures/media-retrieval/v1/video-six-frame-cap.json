@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "id": "video-six-frame-cap",
+  "operation": "index-video",
+  "requiresProvider": true,
+  "latencyMs": 44,
+  "mockProvider": { "calls": 12, "outcome": "succeeded" },
+  "evidence": { "videoFrameCount": 6 },
+  "checks": ["video-frame-cap"]
+}

@@ -1,5 +1,6 @@
 import { listAgents } from "../../../agents/registry.js";
 import { buildAgentReadiness } from "../agent-readiness-service.js";
+import { registerAdminMediaRetrievalRoutes } from "./admin-media-retrieval-routes.js";
 import {
   adminAgentRuns,
   adminEvents,
@@ -38,6 +39,7 @@ import {
 } from "../schemas.js";
 
 export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAdmin }) {
+  registerAdminMediaRetrievalRoutes(app, { authenticate, asyncHandler, requireAdmin });
   app.get(
     "/api/admin/overview",
     authenticate,
@@ -337,16 +339,16 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
         adminAgentRuns({ limit: 500 }),
       ]);
       const runCounts = recentRuns.reduce((groups, run) => {
-        groups[run.agentId] ||= { total: 0, success: 0, error: 0 };
+        groups[run.agentId] ||= { total: 0, success: 0, error: 0, pending: 0 };
         groups[run.agentId].total += 1;
-        groups[run.agentId][run.status] += 1;
+        groups[run.agentId][run.status] = (groups[run.agentId][run.status] || 0) + 1;
         return groups;
       }, {});
 
       res.json({
         data: registered.map((agent) => ({
           ...agent,
-          runs: runCounts[agent.key] || { total: 0, success: 0, error: 0 },
+          runs: runCounts[agent.key] || { total: 0, success: 0, error: 0, pending: 0 },
         })),
       });
     }),
@@ -357,7 +359,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
     authenticate,
     requireAdmin("agents:manage"),
     asyncHandler(async (_req, res) => {
-      res.json({ data: buildAgentReadiness() });
+      res.json({ data: await buildAgentReadiness() });
     }),
   );
 

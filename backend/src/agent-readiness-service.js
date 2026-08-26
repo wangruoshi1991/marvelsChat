@@ -1,6 +1,7 @@
 import { getModelRuntimeStatus } from "./agent-runtime.js";
 import { getOssRuntimeStatus } from "./asset-storage-service.js";
 import { getMeshyRuntimeStatus } from "./model-generation-service.js";
+import { buildMediaRetrievalRuntimeStatus } from "./media-retrieval-runtime-status.js";
 
 const unique = (items = []) =>
   Array.from(new Set(items.map((item) => String(item || "").trim()).filter(Boolean)));
@@ -31,15 +32,17 @@ const readiness = ({
   providers,
 });
 
-export function buildAgentReadiness({
+export async function buildAgentReadiness({
   modelStatus = getModelRuntimeStatus(),
   meshyStatus = getMeshyRuntimeStatus(),
   ossStatus = getOssRuntimeStatus(),
+  mediaRetrievalStatus,
 } = {}) {
   const model = providerStatus(modelStatus, "new-api");
   const meshy = providerStatus(meshyStatus, "meshy");
   const oss = providerStatus(ossStatus, "oss");
   const ossRequired = ["OSS_BUCKET", "OSS_ENDPOINT", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET"];
+  const retrieval = mediaRetrievalStatus || await buildMediaRetrievalRuntimeStatus();
 
   return {
     "miaoxun-butler": readiness({
@@ -87,6 +90,10 @@ export function buildAgentReadiness({
       missingEnv: oss.missing,
       capabilityNeeds: ["video_generation_provider", "render_queue"],
       providers: { oss },
+    }),
+    "media-retrieval": readiness({
+      configured: retrieval.readiness.state === "ready",
+      capabilityNeeds: retrieval.routeEligibility.reasonCodes,
     }),
   };
 }

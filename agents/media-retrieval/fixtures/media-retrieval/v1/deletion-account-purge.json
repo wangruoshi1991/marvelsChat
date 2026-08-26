@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "id": "deletion-account-purge",
+  "operation": "purge-account",
+  "latencyMs": 9,
+  "state": { "accountDeleted": true },
+  "evidence": { "derivedIndexCount": 0 },
+  "checks": ["account-purge-derived-removed"]
+}

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "id": "cost-user-daily-limit",
+  "operation": "index-image",
+  "requiresProvider": true,
+  "latencyMs": 6,
+  "state": { "userRequestRemaining": 0 },
+  "checks": ["user-limit-blocks"]
+}

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://miaoxun.local/schemas/agent-event-v0.2.json",
+  "title": "Miaoxun Agent Event v0.2",
+  "description": "An append-only, redacted event for AgentRun progress and audit. sequence is monotonic within one run and attempt; deliveryKey is the idempotency key for subscribers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "eventType",
+    "occurredAt",
+    "agentKey",
+    "agentRunId",
+    "traceId",
+    "attempt",
+    "sequence",
+    "deliveryKey",
+    "visibility",
+    "stage",
+    "progressPercent",
+    "redactionApplied",
+    "data"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "0.2" },
+    "eventId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "eventType": {
+      "anyOf": [
+        {
+          "enum": [
+            "agent.run.accepted",
+            "agent.run.queued",
+            "agent.run.progress",
+            "agent.run.awaiting-confirmation",
+            "agent.run.awaiting-user",
+            "agent.run.succeeded",
+            "agent.run.failed",
+            "agent.run.cancelled"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^(capability\\.job|provider\\.call|artifact|billing|approval)\\.[a-z][a-z0-9-]*$"
+        }
+      ]
+    },
+    "occurredAt": { "$ref": "#/$defs/utcTimestamp" },
+    "agentKey": { "$ref": "#/$defs/slug" },
+    "agentRunId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "capabilityJobId": { "type": ["string", "null"], "maxLength": 128 },
+    "traceId": { "type": "string", "pattern": "^[a-f0-9]{16,64}$" },
+    "parentEventId": { "type": ["string", "null"], "maxLength": 128 },
+    "causationId": { "type": ["string", "null"], "maxLength": 128 },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "deliveryKey": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "visibility": { "enum": ["client", "operator"] },
+    "stage": {
+      "enum": [
+        "accepted",
+        "queued",
+        "preparing",
+        "waiting-provider",
+        "processing",
+        "validating",
+        "storing",
+        "awaiting-confirmation",
+        "awaiting-user",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "progressPercent": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+    "redactionApplied": { "const": true },
+    "data": {
+      "type": "object",
+      "maxProperties": 30,
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "slug": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", "maxLength": 80 },
+    "utcTimestamp": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" }
+  }
+}

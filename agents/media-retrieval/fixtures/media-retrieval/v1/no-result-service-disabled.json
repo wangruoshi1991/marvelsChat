@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "id": "no-result-service-disabled",
+  "operation": "search",
+  "requiresProvider": true,
+  "latencyMs": 6,
+  "state": { "agentEnabled": false, "providerCallsEnabled": false },
+  "evidence": { "fallbackSearchUsed": false },
+  "checks": ["unavailable-no-fallback"]
+}

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "id": "deletion-disabled-index",
+  "operation": "search",
+  "latencyMs": 7,
+  "state": { "indexEnabled": false },
+  "evidence": { "resultIds": [] },
+  "checks": ["disabled-index-empty"]
+}

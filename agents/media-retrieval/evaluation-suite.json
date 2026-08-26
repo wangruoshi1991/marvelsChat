@@ -1,0 +1,460 @@
+{
+  "schemaVersion": "0.2",
+  "agentKey": "media-retrieval",
+  "agentVersion": "0.1.0",
+  "suiteVersion": "0.1.0",
+  "fixturePolicy": {
+    "versioned": true,
+    "noProductionPersonalData": true,
+    "storageReference": "fixtures/media-retrieval/v1",
+    "evidenceScope": "synthetic-contract-only",
+    "empiricalQualityEvidence": false
+  },
+  "cases": [
+    {
+      "id": "image-yellow-dress",
+      "category": "success",
+      "fixtureRef": "fixtures/media-retrieval/v1/image-yellow-dress.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 2000, "maxCostFen": 0, "maxProviderCalls": 2 },
+      "review": { "automatedAssertions": ["returns only the owner image hit"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "image-scene-and-object",
+      "category": "success",
+      "fixtureRef": "fixtures/media-retrieval/v1/image-scene-and-object.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 2000, "maxCostFen": 0, "maxProviderCalls": 2 },
+      "review": { "automatedAssertions": ["matches scene and object evidence"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "image-description-call-cap",
+      "category": "boundary",
+      "fixtureRef": "fixtures/media-retrieval/v1/image-description-call-cap.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 2000, "maxCostFen": 0, "maxProviderCalls": 2 },
+      "review": { "automatedAssertions": ["uses one description and one embedding call for an image"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "video-six-frame-cap",
+      "category": "boundary",
+      "fixtureRef": "fixtures/media-retrieval/v1/video-six-frame-cap.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 5000, "maxCostFen": 0, "maxProviderCalls": 12 },
+      "review": { "automatedAssertions": ["extracts no more than six video frames"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "video-no-audio-transcription",
+      "category": "safety",
+      "fixtureRef": "fixtures/media-retrieval/v1/video-no-audio-transcription.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 5000, "maxCostFen": 0, "maxProviderCalls": 12 },
+      "review": { "automatedAssertions": ["does not create or store audio transcript data"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "video-frame-timestamp",
+      "category": "success",
+      "fixtureRef": "fixtures/media-retrieval/v1/video-frame-timestamp.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 5000, "maxCostFen": 0, "maxProviderCalls": 12 },
+      "review": { "automatedAssertions": ["returns an owner video hit with a non-negative frame timestamp"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "ocr-meeting-title",
+      "category": "success",
+      "fixtureRef": "fixtures/media-retrieval/v1/ocr-meeting-title.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 2000, "maxCostFen": 0, "maxProviderCalls": 2 },
+      "review": { "automatedAssertions": ["matches allowed OCR text exactly"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "ocr-exact-phrase-filter",
+      "category": "contract",
+      "fixtureRef": "fixtures/media-retrieval/v1/ocr-exact-phrase-filter.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 2000, "maxCostFen": 0, "maxProviderCalls": 2 },
+      "review": { "automatedAssertions": ["requires exact OCR phrase evidence before ranking"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "quality-top-five-relevance",
+      "category": "contract",
+      "fixtureRef": "fixtures/media-retrieval/v1/quality-top-five-relevance.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 2000, "maxCostFen": 0, "maxProviderCalls": 2 },
+      "review": { "automatedAssertions": ["preserves the synthetic expected top five order"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "quality-ambiguous-visual-query",
+      "category": "contract",
+      "fixtureRef": "fixtures/media-retrieval/v1/quality-ambiguous-visual-query.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 2000, "maxCostFen": 0, "maxProviderCalls": 2 },
+      "review": { "automatedAssertions": ["uses only declared visual evidence for ambiguous wording"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "authorization-owner-scope",
+      "category": "authorization",
+      "fixtureRef": "fixtures/media-retrieval/v1/authorization-owner-scope.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 2000, "maxCostFen": 0, "maxProviderCalls": 2 },
+      "review": { "automatedAssertions": ["every segment query has the authenticated owner predicate"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "authorization-cross-user-run",
+      "category": "authorization",
+      "fixtureRef": "fixtures/media-retrieval/v1/authorization-cross-user-run.json",
+      "expected": {
+        "terminalPublicStatus": "failed",
+        "publicErrorCode": "run_not_found",
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.failed"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["other users cannot read an AgentRun"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "authorization-cross-user-events",
+      "category": "authorization",
+      "fixtureRef": "fixtures/media-retrieval/v1/authorization-cross-user-events.json",
+      "expected": {
+        "terminalPublicStatus": "failed",
+        "publicErrorCode": "run_not_found",
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.failed"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["other users cannot replay events"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "deletion-soft-deleted-source",
+      "category": "safety",
+      "fixtureRef": "fixtures/media-retrieval/v1/deletion-soft-deleted-source.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["soft-deleted source segments are immediately non-queryable"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "deletion-disabled-index",
+      "category": "safety",
+      "fixtureRef": "fixtures/media-retrieval/v1/deletion-disabled-index.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["disabled user index returns no searchable segments"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "deletion-account-purge",
+      "category": "safety",
+      "fixtureRef": "fixtures/media-retrieval/v1/deletion-account-purge.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["account deletion removes derived descriptors and vectors"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "privacy-identity-isolation",
+      "category": "safety",
+      "fixtureRef": "fixtures/media-retrieval/v1/privacy-identity-isolation.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 2000, "maxCostFen": 0, "maxProviderCalls": 2 },
+      "review": { "automatedAssertions": ["identity terms never enter semantic embedding text"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "privacy-celebrity-exact-only",
+      "category": "safety",
+      "fixtureRef": "fixtures/media-retrieval/v1/privacy-celebrity-exact-only.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["celebrity wording uses only existing exact text evidence"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "privacy-parse-fail-closed",
+      "category": "safety",
+      "fixtureRef": "fixtures/media-retrieval/v1/privacy-parse-fail-closed.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["invalid query parsing falls back to safe exact text only"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "privacy-descriptor-allowlist",
+      "category": "safety",
+      "fixtureRef": "fixtures/media-retrieval/v1/privacy-descriptor-allowlist.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 2000, "maxCostFen": 0, "maxProviderCalls": 2 },
+      "review": { "automatedAssertions": ["unknown and identity fields are removed before persistence"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "cost-default-disabled",
+      "category": "cost",
+      "fixtureRef": "fixtures/media-retrieval/v1/cost-default-disabled.json",
+      "expected": {
+        "terminalPublicStatus": "failed",
+        "publicErrorCode": "retrieval_service_unavailable",
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.failed"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["disabled defaults make no external call"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "cost-user-daily-limit",
+      "category": "cost",
+      "fixtureRef": "fixtures/media-retrieval/v1/cost-user-daily-limit.json",
+      "expected": {
+        "terminalPublicStatus": "failed",
+        "publicErrorCode": "retrieval_budget_exhausted",
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.failed"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["fourth provider-bound action is blocked for one user"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "cost-global-budget",
+      "category": "cost",
+      "fixtureRef": "fixtures/media-retrieval/v1/cost-global-budget.json",
+      "expected": {
+        "terminalPublicStatus": "failed",
+        "publicErrorCode": "retrieval_budget_exhausted",
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.failed"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["global reservation blocks a call above the cap"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "cost-unknown-charge-no-retry",
+      "category": "cost",
+      "fixtureRef": "fixtures/media-retrieval/v1/cost-unknown-charge-no-retry.json",
+      "expected": {
+        "terminalPublicStatus": "failed",
+        "publicErrorCode": "retrieval_service_unavailable",
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.failed"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 2000, "maxCostFen": 0, "maxProviderCalls": 1 },
+      "review": { "automatedAssertions": ["unknown billing result does not schedule an automatic retry"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "recovery-checkpoint-resume",
+      "category": "recovery",
+      "fixtureRef": "fixtures/media-retrieval/v1/recovery-checkpoint-resume.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 5000, "maxCostFen": 0, "maxProviderCalls": 2 },
+      "review": { "automatedAssertions": ["resumes after the last committed safe boundary"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "recovery-delivery-key-dedupe",
+      "category": "idempotency",
+      "fixtureRef": "fixtures/media-retrieval/v1/recovery-delivery-key-dedupe.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["duplicate delivery key is observed once"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "recovery-out-of-order-events",
+      "category": "recovery",
+      "fixtureRef": "fixtures/media-retrieval/v1/recovery-out-of-order-events.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["event replay restores monotonic sequence order"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "no-result-empty-results",
+      "category": "boundary",
+      "fixtureRef": "fixtures/media-retrieval/v1/no-result-empty-results.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 2000, "maxCostFen": 0, "maxProviderCalls": 2 },
+      "review": { "automatedAssertions": ["returns an empty list rather than an invented near match"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "no-result-identity-only-exact",
+      "category": "boundary",
+      "fixtureRef": "fixtures/media-retrieval/v1/no-result-identity-only-exact.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.succeeded"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["identity-only text uses exact local matching and returns no semantic fallback"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    },
+    {
+      "id": "no-result-service-disabled",
+      "category": "failure",
+      "fixtureRef": "fixtures/media-retrieval/v1/no-result-service-disabled.json",
+      "expected": {
+        "terminalPublicStatus": "failed",
+        "publicErrorCode": "retrieval_service_unavailable",
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.failed"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": { "automatedAssertions": ["does not silently substitute lexical or cross-user results"], "requiresHumanJudgement": false, "qualityRubricRef": null }
+    }
+  ],
+  "scoring": {
+    "scope": "synthetic-contract-only",
+    "empiricalQualityEvidence": false,
+    "minimumPassingScore": 100,
+    "metrics": [
+      {
+        "key": "retrieval-contract",
+        "weight": 0.4,
+        "threshold": 100,
+        "direction": "higher-is-better"
+      },
+      {
+        "key": "privacy-authorization-contract",
+        "weight": 0.3,
+        "threshold": 100,
+        "direction": "higher-is-better"
+      },
+      {
+        "key": "cost-recovery-contract",
+        "weight": 0.3,
+        "threshold": 100,
+        "direction": "higher-is-better"
+      }
+    ]
+  }
+}

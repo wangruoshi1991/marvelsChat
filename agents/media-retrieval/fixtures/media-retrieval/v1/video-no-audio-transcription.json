@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "id": "video-no-audio-transcription",
+  "operation": "index-video",
+  "requiresProvider": true,
+  "latencyMs": 41,
+  "mockProvider": { "calls": 12, "outcome": "succeeded" },
+  "evidence": { "storedAudioTranscript": false },
+  "checks": ["no-audio-transcript"]
+}
