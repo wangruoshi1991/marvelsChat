@@ -3,6 +3,7 @@ import { query, withTransaction } from "../db.js";
 import { HttpError } from "../http-error.js";
 import { buildMediaRetrievalRuntimeStatus } from "../media-retrieval-runtime-status.js";
 import { createMediaRetrievalRepository } from "../media-retrieval-repository.js";
+import { MEDIA_RETRIEVAL_MINIMUM_APP_BUILD } from "../media-retrieval-constants.js";
 import { mediaRetrievalAdminControlsSchema } from "../schemas.js";
 
 const publicControls = (controls = {}) => ({
@@ -22,7 +23,7 @@ const agentCard = {
   displayName: "媒体检索 Agent",
   shortDescription: "从已上传的私有图片和视频中查找匹配素材。",
   artifactSupport: [],
-  minimumAppBuild: null,
+  minimumAppBuild: MEDIA_RETRIEVAL_MINIMUM_APP_BUILD,
 };
 
 const defaultDependencies = () => {
