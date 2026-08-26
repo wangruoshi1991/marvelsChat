@@ -303,6 +303,11 @@ export const mapAgentRun = (row) => ({
   costCents: row.cost_cents,
   errorMessage: row.error_message || "",
   provider: row.provider || "unknown",
+  runType: row.run_type || "chat",
+  lifecycleStatus: row.lifecycle_status || (row.status === "error" ? "failed" : "succeeded"),
+  traceId: row.trace_id || null,
+  attempt: Number(row.attempt || 1),
+  failureCode: row.failure_code || null,
   createdAt: toIso(row.created_at),
   finishedAt: toIso(row.finished_at),
 });
