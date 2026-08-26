@@ -8,7 +8,7 @@
 | 项目 | 冻结值 |
 | --- | --- |
 | GitHub 基线 | `origin/main@7d0a7f75bf1fba565844f7f471c3bc36d946c5fb` |
-| 产品代码提交 | `f490be38d6d15f2de03e3028a9b18538234a7f0d` |
+| 产品代码与测试冻结提交 | `9b89699c0a3911f19c81dc9a94a7f5b54dbdc036` |
 | 集成分支 | `feat/media-retrieval-product-integration` |
 | 本地 worktree | `/Users/I772673/Workspace/mx/marvelsChat/.worktrees/media-retrieval-product-integration` |
 | Agent key | `media-retrieval` |
