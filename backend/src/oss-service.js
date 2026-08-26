@@ -4,6 +4,12 @@ import { HttpError } from "./http-error.js";
 
 const uploadUrlTtlSeconds = 600;
 
+const normalizeTtlSeconds = (ttlSeconds) => {
+  const requested = Number(ttlSeconds);
+  if (!Number.isFinite(requested)) return uploadUrlTtlSeconds;
+  return Math.min(uploadUrlTtlSeconds, Math.max(1, Math.floor(requested)));
+};
+
 const encodeObjectKey = (key) =>
   key
     .split("/")
@@ -40,10 +46,11 @@ const createOssSignedUrl = ({
   objectKey,
   contentType = "",
   useInternalEndpoint = false,
+  ttlSeconds = uploadUrlTtlSeconds,
 }) => {
   assertOssConfigured();
 
-  const expires = Math.floor(Date.now() / 1000) + uploadUrlTtlSeconds;
+  const expires = Math.floor(Date.now() / 1000) + normalizeTtlSeconds(ttlSeconds);
   const canonicalResource = `/${config.oss.bucket}/${objectKey}`;
   const stringToSign = [
     method,
@@ -94,8 +101,17 @@ export function createOssPutSignedUrl({
   };
 }
 
-export function createOssGetSignedUrl({ objectKey, useInternalEndpoint = false }) {
-  const { url } = createOssSignedUrl({ method: "GET", objectKey, useInternalEndpoint });
+export function createOssGetSignedUrl({
+  objectKey,
+  useInternalEndpoint = false,
+  ttlSeconds = uploadUrlTtlSeconds,
+}) {
+  const { url } = createOssSignedUrl({
+    method: "GET",
+    objectKey,
+    useInternalEndpoint,
+    ttlSeconds,
+  });
   return url.toString();
 }
 

@@ -7,8 +7,12 @@
   "scripts": {
     "check": "node --check src/*.js src/routes/*.js scripts/*.js",
     "test": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/*.test.js",
+    "test:media-retrieval": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/media-retrieval-*.test.js",
+    "test:media-retrieval-migration": "RUN_MEDIA_RETRIEVAL_MIGRATION_INTEGRATION=1 NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/media-retrieval-migration.test.js",
+    "smoke:media-retrieval": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node scripts/media-retrieval-smoke.js",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
+    "worker:media-retrieval": "node src/media-retrieval-worker.js",
     "db:migrate": "node scripts/db-migrate.js",
     "admin:bootstrap": "node scripts/admin-bootstrap.js",
     "avatar3d:backfill-mobile": "node scripts/avatar-3d-backfill-mobile-models.js"
