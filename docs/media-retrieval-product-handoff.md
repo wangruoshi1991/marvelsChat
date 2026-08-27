@@ -1,14 +1,14 @@
 # AI 相册检索产品后端与 React Native 交接
 
-状态：本地集成冻结，尚未 push、merge 或部署
-更新日期：2026-08-26
+状态：产品分支已推送，尚未 merge 或部署
+更新日期：2026-08-27
 
 ## 1. 冻结基线
 
 | 项目 | 冻结值 |
 | --- | --- |
 | GitHub 基线 | `origin/main@7d0a7f75bf1fba565844f7f471c3bc36d946c5fb` |
-| 产品代码与测试冻结提交 | `9b89699c0a3911f19c81dc9a94a7f5b54dbdc036` |
+| 产品代码与测试冻结提交 | `93f9265745fbee78215b65e687242d1d491c503c` |
 | 集成分支 | `feat/media-retrieval-product-integration` |
 | 本地 worktree | `/Users/I772673/Workspace/mx/marvelsChat/.worktrees/media-retrieval-product-integration` |
 | Agent key | `media-retrieval` |
@@ -444,7 +444,7 @@ curl -i -X DELETE "$API_BASE/station/media-retrieval/index" \
 - 部署前运行 `cd backend && npm run db:migrate`，再启动 API 和 worker。
 - Provider 默认关闭；先配置 Admin 正额度和 `sandbox` 验证，再进入 `limited_release`。
 
-开发验证 Web 的目录是 `media-retrieval-web`。它只用于本地合同和状态验证，不应作为移动端发布物或对外产品入口。
+开发验证 Web 的目录是 `media-retrieval-web`。构建产物由后端同源 HTTPS 路径 `/media-retrieval` 提供，静态资源挂载在 `/media-retrieval-assets`；它只用于受限联调和状态验证，不应作为移动端发布物或对外产品入口。
 
 ## 15. 回滚和数据清理
 
