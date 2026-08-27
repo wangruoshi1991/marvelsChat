@@ -5,6 +5,7 @@ const apiTarget = process.env.MIAOXUN_MEDIA_RETRIEVAL_API_TARGET || "http://127.
 
 export default defineConfig({
   root: ".",
+  base: "/media-retrieval-assets/",
   define: {
     __MIAOXUN_MEDIA_RETRIEVAL_API_TARGET__: JSON.stringify(apiTarget),
   },

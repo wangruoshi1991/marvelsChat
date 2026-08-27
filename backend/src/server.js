@@ -11,6 +11,7 @@ import {
   isMediaRetrievalPublicError,
   toPublicMediaRetrievalError,
 } from "./media-retrieval-errors.js";
+import { registerMediaRetrievalWebRoutes } from "./media-retrieval-web-service.js";
 import { createRealtimeGateway } from "./realtime-gateway.js";
 import { registerAdminRoutes } from "./routes/admin-routes.js";
 import { registerAgentRunRoutes } from "./routes/agent-run-routes.js";
@@ -72,6 +73,8 @@ registerAppRoutes(app, {
 });
 
 registerAuthRoutes(app, { authenticate, asyncHandler });
+
+registerMediaRetrievalWebRoutes(app);
 
 registerSocialRoutes(app, {
   authenticate,
