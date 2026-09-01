@@ -16,3 +16,8 @@ tmp/
 MiaoxunApp/build/
 MiaoxunRN/ios/build/
 DerivedData/
+
+# Keep generated planning files and the local development Skill out of Git.
+superpowers/
+.superpowers/
+.agents/skills/miaoxun-agent-create/
