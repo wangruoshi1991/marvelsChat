@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "0.1.0",
+  "cases": [
+    {
+      "id": "normal-input",
+      "category": "normal",
+      "fixtureClass": "synthetic",
+      "inputSummary": "A valid synthetic request",
+      "expectedBehavior": "Returns output that satisfies the declared output contract",
+      "status": "not-run",
+      "environment": "not-run",
+      "evidence": []
+    },
+    {
+      "id": "empty-input",
+      "category": "empty",
+      "fixtureClass": "synthetic",
+      "inputSummary": "An empty request",
+      "expectedBehavior": "Returns a safe public input error without fabricating a result",
+      "status": "not-run",
+      "environment": "not-run",
+      "evidence": []
+    },
+    {
+      "id": "permission-denied",
+      "category": "permission",
+      "fixtureClass": "synthetic",
+      "inputSummary": "A request without required permission",
+      "expectedBehavior": "Stops before side effects and returns a safe non-secret error",
+      "status": "not-run",
+      "environment": "not-run",
+      "evidence": []
+    }
+  ]
+}

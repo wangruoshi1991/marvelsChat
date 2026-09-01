@@ -1,0 +1,14 @@
+{
+  "name": "@miaoxun/agent-creator-kit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-contained public creator kit for reviewable Miaoxun Agent submissions.",
+  "scripts": {
+    "check": "node --check scripts/*.mjs test/*.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

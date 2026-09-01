@@ -1,0 +1,71 @@
+{
+  "$schema": "./contracts/submission-manifest.schema.json",
+  "schemaVersion": "0.1.0",
+  "kitVersion": "0.1.0",
+  "agentKey": "meeting-actions",
+  "creatorStatus": "sealed-for-submission",
+  "isApproval": false,
+  "files": [
+    {
+      "path": "README.md",
+      "size": 253,
+      "sha256": "4136066b19c8639bc653baf09add82106dea319b445bea5dc10380f3cb86b3bd"
+    },
+    {
+      "path": "contracts/creator-spec.schema.json",
+      "size": 13318,
+      "sha256": "8ef2128224c0a0f049b0bbd54a99a9cea88edc918daa332a0963473852ed7b2d"
+    },
+    {
+      "path": "contracts/input.schema.json",
+      "size": 301,
+      "sha256": "dacdc8b0617440979f0539036ed2b6a5ce76724947fcb8fe529f8a292f05152f"
+    },
+    {
+      "path": "contracts/output.schema.json",
+      "size": 282,
+      "sha256": "cd25f9928e3d73c8838051a0c326243b53bc65693796598483c669a577fe2e17"
+    },
+    {
+      "path": "contracts/public-error.schema.json",
+      "size": 471,
+      "sha256": "f8828e468cfd00f07b95c11f6f3774899a94c28b8700f6b8bb978ae67ce1faa7"
+    },
+    {
+      "path": "contracts/submission-manifest.schema.json",
+      "size": 1805,
+      "sha256": "5a037f42b8289d11ce1f187ce7280f7e71a762fc4b4dad5015d404bb455bd2b7"
+    },
+    {
+      "path": "creator-spec.json",
+      "size": 1408,
+      "sha256": "9bafc605fc028e125e74220be0ef3c7b66c03b626a86487a2aafe5db7fa5013d"
+    },
+    {
+      "path": "handoff.md",
+      "size": 272,
+      "sha256": "12f9c3517ae7858d0e400c4a77f76d7922586e77b3bae94014c1ca5d75b70cdf"
+    },
+    {
+      "path": "instructions.md",
+      "size": 244,
+      "sha256": "03f5260d05e2ee4900f4a604c069fd609f6f2ab46cf61e38ae6d72c2e7741df6"
+    },
+    {
+      "path": "progress.md",
+      "size": 180,
+      "sha256": "774ea1bf83535fd49a66beb82fd1b1e85dd2ddb079a63f5bcfc7d18410eadd16"
+    },
+    {
+      "path": "tests/cases.json",
+      "size": 1034,
+      "sha256": "bf27d8d053f0a4a0bafe3b82c1e69cebc0cc4449ff7d71b6e07807a01ffe5cba"
+    }
+  ],
+  "packageDigest": "d53be8d728f0e85af0ac14e49111c1bb3ec1f124ba0117a4f1db01bc95674aa4",
+  "attestations": {
+    "ownsOrMaySubmitContent": true,
+    "containsNoCredentials": true,
+    "evidenceIsNotPlatformApproval": true
+  }
+}

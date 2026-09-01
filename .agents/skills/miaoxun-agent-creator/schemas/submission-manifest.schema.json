@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:miaoxun:creator:submission-manifest:0.1.0",
+  "title": "Miaoxun Creator Submission Manifest 0.1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schemaVersion", "kitVersion", "agentKey", "creatorStatus", "isApproval", "files", "packageDigest", "attestations"],
+  "properties": {
+    "$schema": { "const": "./contracts/submission-manifest.schema.json" },
+    "schemaVersion": { "const": "0.1.0" },
+    "kitVersion": { "const": "0.1.0" },
+    "agentKey": { "$ref": "#/$defs/slug" },
+    "creatorStatus": { "const": "sealed-for-submission" },
+    "isApproval": { "const": false },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "size", "sha256"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1, "maxLength": 300, "pattern": "^[A-Za-z0-9_./-]+$" },
+          "size": { "type": "integer", "minimum": 0, "maximum": 1048576 },
+          "sha256": { "$ref": "#/$defs/digest" }
+        }
+      }
+    },
+    "packageDigest": { "$ref": "#/$defs/digest" },
+    "attestations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ownsOrMaySubmitContent", "containsNoCredentials", "evidenceIsNotPlatformApproval"],
+      "properties": {
+        "ownsOrMaySubmitContent": { "const": true },
+        "containsNoCredentials": { "const": true },
+        "evidenceIsNotPlatformApproval": { "const": true }
+      }
+    }
+  },
+  "$defs": {
+    "slug": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", "maxLength": 80 },
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

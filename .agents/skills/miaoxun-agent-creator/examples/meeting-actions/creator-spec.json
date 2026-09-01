@@ -1,0 +1,61 @@
+{
+  "$schema": "./contracts/creator-spec.schema.json",
+  "schemaVersion": "0.1.0",
+  "agent": {
+    "key": "meeting-actions",
+    "name": "会议行动项",
+    "version": "0.1.0",
+    "description": "会议行动项 creator draft.",
+    "goal": "从会议文字中提取原文明示的行动项",
+    "nonGoals": [
+      "Do not perform actions outside the confirmed goal."
+    ],
+    "profiles": [
+      "synchronous-tool"
+    ],
+    "status": "draft"
+  },
+  "creator": {
+    "displayName": "示例创作者",
+    "team": null
+  },
+  "interaction": {
+    "runMode": "synchronous",
+    "progress": "none",
+    "confirmBeforeActions": []
+  },
+  "dataUse": {
+    "inputClasses": [
+      "user-provided-input"
+    ],
+    "externalRecipients": [],
+    "retentionDays": null,
+    "deletionSupported": false,
+    "consentRequired": false
+  },
+  "cost": {
+    "mode": "free",
+    "payer": "not-applicable",
+    "budgetCny": null,
+    "realProviderCallsApproved": false,
+    "retryOnUnknownBilling": false
+  },
+  "implementation": {
+    "kind": "instructions",
+    "entry": "instructions.md",
+    "testCommand": null
+  },
+  "integration": {
+    "status": "not-submitted",
+    "requestedCapabilities": [
+      "meeting-actions-capability"
+    ],
+    "requestedArtifactTypes": [],
+    "minimumClientBuild": null
+  },
+  "verification": {
+    "environment": "not-run",
+    "status": "not-run",
+    "evidence": []
+  }
+}

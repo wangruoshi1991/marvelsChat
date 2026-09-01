@@ -1,0 +1,12 @@
+{
+  "name": "miaoxun-agent-creator",
+  "version": "0.1.0",
+  "status": "public-trial",
+  "node": ">=20",
+  "normative": "references/SOP.md",
+  "guide": "references/GUIDE.md",
+  "integration": "references/INTEGRATION.md",
+  "validation": "references/VALIDATION.md",
+  "cli": "scripts/creator-kit.mjs",
+  "providerCalls": 0
+}

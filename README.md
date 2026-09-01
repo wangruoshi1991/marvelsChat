@@ -15,6 +15,11 @@ marvelsChat/
   docs/            # 架构、迁移计划、接口和 Agent 文档
 ```
 
+外部创作者从自包含的
+[`miaoxun-agent-creator`](.agents/skills/miaoxun-agent-creator/) 创作包开始。封存后的投稿放入
+[`agent-submissions/`](agent-submissions/) 并通过 Pull Request 接受人工审核；本地校验或合并
+投稿都不等于 Agent 已接入运行时或已经上架。
+
 ## 技术栈边界
 
 - 移动端：`MiaoxunRN/` 是唯一正式 App 主线，采用 React Native + TypeScript；钥匙串、推送、文件权限等系统能力通过 iOS / Android 薄原生层接入。
