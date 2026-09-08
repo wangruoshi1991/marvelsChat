@@ -62,3 +62,7 @@ export const stationPostIconAssets = {
   time: asset(require('./station/posts/time.png')),
   video: asset(require('./station/posts/video.png')),
 } as const;
+
+export const stationPartnerIconAssets = {
+  miaoxunButler: asset(require('./station/partners/miaoxun-assistant.png')),
+} as const;

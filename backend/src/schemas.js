@@ -88,29 +88,29 @@ export const presenceSchema = z.object({
   presenceMode: z.enum(["online", "offline", "hidden"]),
 });
 
-const avatarConfigSchema = z.object({
-  version: z.literal(2).optional().default(2),
-  seed: z.string().trim().max(40).optional(),
-  body: z.enum(["compact", "standard", "tall", "strong"]).optional(),
-  face: z.enum(["soft", "oval", "angular", "round"]).optional(),
-  skinTone: z.enum(["porcelain", "warm", "tan", "deep"]).optional(),
-  hairStyle: z.enum(["short", "bob", "wave", "curly", "undercut"]).optional(),
-  hairColor: z.enum(["black", "brown", "copper", "silver", "blue"]).optional(),
-  outfit: z.enum(["street", "campus", "tech", "artist", "sport"]).optional(),
-  accent: z.enum(["sunrise", "mint", "sky", "rose", "violet"]).optional(),
-  expression: z.enum(["calm", "smile", "focus"]).optional(),
-  accessory: z.enum(["none", "glasses", "cap", "headphones", "spark"]).optional(),
-  pose: z.enum(["casual", "hello", "ready"]).optional(),
-  eyeStyle: z.enum(["round", "bright", "calm", "sharp"]).optional(),
-  browStyle: z.enum(["soft", "straight", "bold", "tilt"]).optional(),
-  mouthStyle: z.enum(["smile", "calm", "confident", "cute"]).optional(),
-  top: z.enum(["hoodie", "shirt", "jacket", "sweater", "uniform"]).optional(),
-  bottom: z.enum(["cargo", "jeans", "shorts", "skirt", "track"]).optional(),
-  shoes: z.enum(["sneaker", "boot", "canvas", "runner"]).optional(),
-  action: z.enum(["stand", "cross-arms", "wave", "soccer", "question", "sit"]).optional(),
-  shape: z.enum(["circle", "rounded", "squircle"]).optional(),
-  palette: z.enum(["sunrise", "mint", "sky", "grape", "mono"]).optional(),
-});
+const avatarConfigSchema = z
+  .object({
+    version: z.literal(2).optional().default(2),
+    seed: z.string().trim().max(40).optional(),
+    body: z.enum(["compact", "standard", "tall", "strong"]).optional(),
+    face: z.enum(["soft", "oval", "angular", "round"]).optional(),
+    skinTone: z.enum(["porcelain", "warm", "tan", "deep"]).optional(),
+    hairStyle: z.enum(["short", "bob", "wave", "curly", "undercut"]).optional(),
+    hairColor: z.enum(["black", "brown", "copper", "silver", "blue"]).optional(),
+    outfit: z.enum(["street", "campus", "tech", "artist", "sport"]).optional(),
+    accent: z.enum(["sunrise", "mint", "sky", "rose", "violet"]).optional(),
+    expression: z.enum(["calm", "smile", "focus"]).optional(),
+    accessory: z.enum(["none", "glasses", "cap", "headphones", "spark"]).optional(),
+    pose: z.enum(["casual", "hello", "ready"]).optional(),
+    eyeStyle: z.enum(["round", "bright", "calm", "sharp"]).optional(),
+    browStyle: z.enum(["soft", "straight", "bold", "tilt"]).optional(),
+    mouthStyle: z.enum(["smile", "calm", "confident", "cute"]).optional(),
+    top: z.enum(["hoodie", "shirt", "jacket", "sweater", "uniform"]).optional(),
+    bottom: z.enum(["cargo", "jeans", "shorts", "skirt", "track"]).optional(),
+    shoes: z.enum(["sneaker", "boot", "canvas", "runner"]).optional(),
+    action: z.enum(["stand", "cross-arms", "wave", "soccer", "question", "sit"]).optional(),
+  })
+  .strict();
 
 export const profileSelfSchema = z.object({
   nickname: z.string().trim().min(1).max(80),
@@ -497,7 +497,7 @@ export const profileAdminSchema = z.object({
 export const agentAccessSchema = z.object({
   enabled: z.boolean(),
   alias: z.string().trim().max(80).optional().default(""),
-  grantedScopes: z.array(z.string().trim().min(1).max(80)).optional().default([]),
+  grantedScopes: z.array(z.string().trim().min(1).max(80)).optional(),
 });
 
 export const modelTestSchema = z.object({

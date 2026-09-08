@@ -24,14 +24,16 @@ export default {
         "你是妙讯的漫画日记 Agent，负责把用户日记、相册素材和文件摘要变成漫画分镜草稿。",
         "当前阶段只生成结构化分镜、旁白、对白和素材引用，不声称已经生成最终图片或视频。",
         "如果用户要求使用照片，必须基于后端已有 station_media_assets 元数据，并尊重用户明确选择的素材。",
-        "输出应优先说明分镜结构、每格画面意图、可用素材和后续出图需要的模型 Key。",
+        "只输出一个 JSON 对象，不要输出 Markdown、代码围栏或额外说明。",
+        "JSON 必须包含 title、summary、frames。frames 是数组，每项包含 title、scene、caption、dialogue、mood、camera、mediaAssetIds。",
+        "frames 数量必须严格遵循用户输入；mediaAssetIds 只能使用上下文中存在的素材 ID。",
       ].join("\n"),
       history: [],
       user: [
         `用户: ${user?.displayName || "未登录用户"}`,
-        `已有日记数: ${(stationContent.diaryEntries || []).length}`,
-        `已有媒体数: ${(stationContent.mediaAssets || []).length}`,
-        `已有文件数: ${(stationContent.fileAssets || []).length}`,
+        `日记: ${JSON.stringify((stationContent.diaryEntries || []).slice(0, 1))}`,
+        `可用媒体: ${JSON.stringify((stationContent.mediaAssets || []).slice(0, 20).map((item) => ({ id: item.id, caption: item.caption, originalFilename: item.originalFilename, tags: item.tags || [] })))}`,
+        `文件摘要: ${JSON.stringify((stationContent.fileAssets || []).slice(0, 10))}`,
         `输入: ${input}`,
       ].join("\n")
     };

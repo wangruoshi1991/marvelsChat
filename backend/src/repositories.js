@@ -131,7 +131,10 @@ export async function createUserWithDefaults({ email, phoneNumber = null, displa
       `INSERT INTO user_agents
         (user_id, agent_id, alias, enabled, granted_scopes)
       VALUES (?, 'miaoxun-butler', '妙讯管家', TRUE, ?::jsonb)`,
-      [userId, JSON.stringify(["profile:read", "messages:read"])],
+      [
+        userId,
+        JSON.stringify(["profile:read", "messages:read", "agents:invoke"]),
+      ],
     );
 
     await connection.execute(
@@ -283,9 +286,10 @@ export async function setUserAgentAccess({
   agent,
   enabled,
   alias = "",
-  grantedScopes = [],
+  grantedScopes,
 }) {
   const resolvedAlias = alias || agent.name || agent.key;
+  const resolvedScopes = resolveAgentGrantedScopes(agent, grantedScopes);
   await query(
     `INSERT INTO user_agents
       (user_id, agent_id, alias, enabled, granted_scopes)
@@ -295,7 +299,7 @@ export async function setUserAgentAccess({
       enabled = EXCLUDED.enabled,
       granted_scopes = EXCLUDED.granted_scopes,
       updated_at = CURRENT_TIMESTAMP`,
-    [userId, agent.key, resolvedAlias, enabled, JSON.stringify(grantedScopes)],
+    [userId, agent.key, resolvedAlias, enabled, JSON.stringify(resolvedScopes)],
   );
 
   if (enabled) {
@@ -342,6 +346,16 @@ export async function setUserAgentAccess({
   }
 
   return listAgentAccessForUser(userId, [agent]);
+}
+
+export function resolveAgentGrantedScopes(agent, requestedScopes) {
+  const declaredScopes = Array.isArray(agent?.permissions) ? agent.permissions : [];
+  const scopes = requestedScopes === undefined ? declaredScopes : requestedScopes;
+  const unknownScopes = scopes.filter((scope) => !declaredScopes.includes(scope));
+  if (unknownScopes.length) {
+    throw new HttpError(400, `Unsupported Agent scopes: ${unknownScopes.join(", ")}`);
+  }
+  return Array.from(new Set(scopes));
 }
 
 export async function createUsageEvent({
@@ -407,7 +421,6 @@ export async function getBootstrapForUser(user, registeredAgents, onlineUserIds 
     following,
     followers,
     friends,
-    stationContent,
   ] = await Promise.all([
     getAgentContextForUser(user, registeredAgents),
     listThreadsForUser(user.id, onlineIds),
@@ -418,7 +431,6 @@ export async function getBootstrapForUser(user, registeredAgents, onlineUserIds 
     listRelationshipProfiles(user.id, "following", 60, onlineIds),
     listRelationshipProfiles(user.id, "followers", 60, onlineIds),
     listRelationshipProfiles(user.id, "friends", 60, onlineIds),
-    getStationContentForUser(user.id),
   ]);
   const messagesByThread = await listMessagesForThreads(
     user.id,
@@ -441,7 +453,7 @@ export async function getBootstrapForUser(user, registeredAgents, onlineUserIds 
       followers,
       friends,
     },
-    stationContent,
+    stationContent: context.stationContent,
     modules: context.modules,
     agentReadiness: buildAgentReadiness(),
     agents: {
@@ -467,9 +479,10 @@ export async function updateUserPresenceMode(userId, presenceMode) {
 }
 
 export async function getAgentContextForUser(user, registeredAgents = []) {
-  const [profile, ownedAgents] = await Promise.all([
+  const [profile, ownedAgents, stationContent] = await Promise.all([
     getProfileForUser(user.id),
     listOwnedAgents(user.id, registeredAgents),
+    getStationContentForUser(user.id),
   ]);
 
   return {
@@ -477,6 +490,7 @@ export async function getAgentContextForUser(user, registeredAgents = []) {
     profile,
     ownedAgents,
     registeredAgents,
+    stationContent,
     modules: buildAppModules({ profile, ownedAgents, registeredAgents }),
   };
 }

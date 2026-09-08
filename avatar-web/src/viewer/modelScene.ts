@@ -49,11 +49,12 @@ interface FramingSnapshot {
   radius: number;
   cameraDistance: number;
   aspect: number;
+  cameraPosition: Vector3;
   target: Vector3;
 }
 
 const CAMERA_FRAME_MARGIN = 1.08;
-const CAMERA_HOME_DIRECTION = new Vector3(1.45, 0.45, 2.7).normalize();
+const CAMERA_HOME_DIRECTION = new Vector3(0, 0, 1);
 
 const disposeMaterial = (material: Material) => {
   for (const value of Object.values(material)) {
@@ -115,6 +116,7 @@ export function createModelScene(
   let currentModel: Object3D | null = null;
   let frameHandle = 0;
   let disposed = false;
+  let rendering = false;
   let loadVersion = 0;
   let radius = 0;
   let homePosition = new Vector3(0, 0, 3);
@@ -197,14 +199,27 @@ export function createModelScene(
   };
 
   const renderFrame: FrameRequestCallback = () => {
-    if (disposed) return;
+    if (disposed || !rendering) return;
     controls.update();
     renderer.render(scene, camera);
     frameHandle = requestFrame(renderFrame);
   };
 
   resize();
-  frameHandle = requestFrame(renderFrame);
+
+  const setActive = (active: boolean) => {
+    if (disposed || active === rendering) return;
+    rendering = active;
+    if (rendering) {
+      resize();
+      frameHandle = requestFrame(renderFrame);
+    } else {
+      cancelFrame(frameHandle);
+      frameHandle = 0;
+    }
+  };
+
+  setActive(true);
 
   const dispose = () => {
     if (disposed) return;
@@ -221,10 +236,11 @@ export function createModelScene(
     radius,
     cameraDistance: camera.position.distanceTo(controls.target),
     aspect: camera.aspect,
+    cameraPosition: camera.position.clone(),
     target: controls.target.clone(),
   });
 
-  return { load, resetCamera, resize, dispose, getFramingSnapshot };
+  return { load, resetCamera, resize, setActive, dispose, getFramingSnapshot };
 }
 
 export type ModelScene = ReturnType<typeof createModelScene>;

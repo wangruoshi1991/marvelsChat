@@ -419,6 +419,7 @@ function App(): React.JSX.Element {
                   />
                 ) : (
                   <StationScreen
+                    active
                     palette={palette}
                     language={session.language}
                     session={session}
@@ -431,6 +432,7 @@ function App(): React.JSX.Element {
                     onOpenQRCode={profileFlows.openQRCode}
                     onOpenFriendThread={openFriendThread}
                     onOpenAgentThread={openAgentThread}
+                    onOpenPostComposer={() => setIsPostComposerOpen(true)}
                     onOpenPublicProfileByAiId={
                       profileFlows.openPublicProfileByAiId
                     }
@@ -453,7 +455,6 @@ function App(): React.JSX.Element {
                   language={session.language}
                   selectedTab={selectedTab}
                   onSelectTab={setSelectedTab}
-                  onCreatePost={() => setIsPostComposerOpen(true)}
                 />
               </View>
             )

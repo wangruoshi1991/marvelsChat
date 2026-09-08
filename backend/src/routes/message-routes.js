@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { listAgents } from "../../../agents/registry.js";
 import { runAgent } from "../agent-runtime.js";
 import { HttpError } from "../http-error.js";
+import { createRateLimitMiddleware } from "../rate-limit-service.js";
 import {
   addMessageToThread,
   deleteMessageForUser,
@@ -32,9 +33,71 @@ import {
   threadPreferencesSchema,
 } from "../schemas.js";
 
+const defaultLogger = { error: (entry) => console.error(JSON.stringify(entry)) };
+export const agentRuntimeFailureCode = "AGENT_RUNTIME_FAILED";
+const hour = 60 * 60 * 1000;
+const agentMessageCreateLimit = createRateLimitMiddleware({
+  action: "agent.message.send",
+  limit: 120,
+  windowMs: hour,
+  message: "Agent 消息发送过于频繁，请稍后再试。",
+});
+
+function enforceAgentMessageCreateLimit(req, res) {
+  let nextError = null;
+  agentMessageCreateLimit(req, res, (error) => {
+    nextError = error || null;
+  });
+  if (nextError) throw nextError;
+}
+
+export function agentRuntimeFailureDiagnostic(error) {
+  const status = Number(error?.status);
+  return {
+    code: agentRuntimeFailureCode,
+    errorName:
+      typeof error?.name === "string" && error.name.trim()
+        ? error.name.trim().slice(0, 80)
+        : "Error",
+    status: Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500,
+  };
+}
+
+export function buildAgentAppContext(agentContext, access, clientContext, localActionResult) {
+  const scopes = new Set(access.grantedScopes);
+  return {
+    profile: scopes.has("profile:read") ? agentContext.profile : null,
+    modules: scopes.has("agents:invoke") ? agentContext.modules : {},
+    ownedAgents: scopes.has("agents:invoke") ? agentContext.ownedAgents : [],
+    stationContent: scopes.has("station:read") ? agentContext.stationContent : null,
+    client: clientContext || null,
+    localActionResult: scopes.has("agents:invoke") ? localActionResult || null : null,
+  };
+}
+
+export function assertAgentAvailable(agentContext, agentId) {
+  const agent = agentContext.registeredAgents.find((item) => item.key === agentId);
+  if (!agent) {
+    throw new HttpError(404, "Agent is not registered");
+  }
+  const access = agentContext.ownedAgents.find((item) => item.id === agentId && item.enabled);
+  if (!access) {
+    throw new HttpError(403, "Agent is not enabled for this account");
+  }
+  const declaredScopes = new Set(agent.permissions);
+  const grantedScopes = access.grantedScopes.filter((scope) => declaredScopes.has(scope));
+  return { agent, access, grantedScopes };
+}
+
 export function registerMessageRoutes(
   app,
-  { authenticate, asyncHandler, getOnlineUserIds, sendRealtimeToUser },
+  {
+    authenticate,
+    asyncHandler,
+    getOnlineUserIds,
+    sendRealtimeToUser,
+    logger = defaultLogger,
+  },
 ) {
   app.get(
     "/api/threads/:threadId/messages",
@@ -140,6 +203,14 @@ export function registerMessageRoutes(
       const body = messageSchema.parse(req.body);
       const thread = await getThreadForUser(req.user.id, req.params.threadId, getOnlineUserIds());
       if (!thread) throw new HttpError(404, "Thread not found");
+      const agentContext = thread.agentId
+        ? await getAgentContextForUser(req.user, await listAgents())
+        : null;
+      let agentAccess = null;
+      if (thread.agentId) {
+        agentAccess = assertAgentAvailable(agentContext, thread.agentId);
+        enforceAgentMessageCreateLimit(req, res);
+      }
       const clientMessageId = crypto.randomUUID();
       let replyTo = null;
       if (body.replyToMessageId) {
@@ -192,20 +263,20 @@ export function registerMessageRoutes(
       } else if (thread.agentId) {
         const startedAt = Date.now();
         try {
-          const agentContext = await getAgentContextForUser(req.user, await listAgents());
           const result = await runAgent({
             agentId: thread.agentId,
             input: body.content,
             user: req.user,
             thread,
-            messages: await listRecentMessagesForThread(req.user.id, thread.id, 12),
-            appContext: {
-              profile: agentContext.profile,
-              modules: agentContext.modules,
-              ownedAgents: agentContext.ownedAgents,
-              client: body.clientContext || null,
-              localActionResult: body.localActionResult || null,
-            },
+            messages: agentAccess.grantedScopes.includes("messages:read")
+              ? await listRecentMessagesForThread(req.user.id, thread.id, 12)
+              : [],
+            appContext: buildAgentAppContext(
+              agentContext,
+              agentAccess,
+              body.clientContext,
+              body.localActionResult,
+            ),
           });
           const agentMessage = await addMessageToThread({
             userId: req.user.id,
@@ -232,6 +303,14 @@ export function registerMessageRoutes(
           });
           responseMessages.push(agentMessage);
         } catch (error) {
+          const failure = agentRuntimeFailureDiagnostic(error);
+          logger.error({
+            type: "agent_runtime_failure",
+            ...failure,
+            agentId: thread.agentId,
+            requestId: req.requestId || null,
+            threadId: thread.id,
+          });
           agentRun = await createAgentRun({
             userId: req.user.id,
             agentId: thread.agentId,
@@ -240,7 +319,7 @@ export function registerMessageRoutes(
             status: "error",
             provider: "runtime-error",
             latencyMs: Date.now() - startedAt,
-            errorMessage: error.message,
+            errorMessage: failure.code,
           });
 
           const agentMessage = await addMessageToThread({
@@ -249,7 +328,10 @@ export function registerMessageRoutes(
             senderType: "agent",
             senderName: thread.title,
             content: "模型服务暂时没有返回。请稍后再试，或让管理员检查后端模型配置。",
-            metadata: { provider: "runtime-error", error: error.message },
+            metadata: {
+              provider: "runtime-error",
+              errorCode: failure.code,
+            },
             countUnread: false,
           });
           responseMessages.push(agentMessage);

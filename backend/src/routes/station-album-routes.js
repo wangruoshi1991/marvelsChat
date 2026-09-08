@@ -4,11 +4,11 @@ import { createRateLimitMiddleware } from "../rate-limit-service.js";
 import { createUsageEvent, hashRequestIp } from "../repositories.js";
 import {
   createStationAlbum,
-  deleteStationAlbum,
   listStationMediaAssetsForUser,
   moveMediaAssetsToAlbum,
   updateStationAlbum,
 } from "../station-repository.js";
+import { deleteOwnedStationAlbum } from "../station-media-deletion-service.js";
 import {
   stationAlbumParamsSchema,
   stationAlbumSchema,
@@ -79,7 +79,7 @@ export function registerStationAlbumRoutes(app, { authenticate, asyncHandler }) 
     authenticate,
     asyncHandler(async (req, res) => {
       const { albumId } = stationAlbumParamsSchema.parse(req.params);
-      const deleted = await deleteStationAlbum({
+      const deleted = await deleteOwnedStationAlbum({
         userId: req.user.id,
         albumId,
       });

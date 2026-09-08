@@ -235,13 +235,11 @@ export function BottomBar({
   language,
   selectedTab,
   onSelectTab,
-  onCreatePost,
 }: {
   palette: Palette;
   language: Language;
   selectedTab: RootTab;
   onSelectTab: (tab: RootTab) => void;
-  onCreatePost: () => void;
 }) {
   const isLightPalette = palette.text === palettes.light.text;
   const bottomBarColors = isLightPalette
@@ -261,20 +259,6 @@ export function BottomBar({
         palette={palette}
         onPress={() => onSelectTab('messages')}
       />
-      <View style={styles.bottomCreateSlot}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={textFor(language, '发布动态', 'New Post')}
-          onPress={onCreatePost}
-          style={styles.bottomCreateButton}
-        >
-          <Image
-            source={stationPostIconAssets.add}
-            resizeMode="contain"
-            style={styles.bottomCreateIcon}
-          />
-        </Pressable>
-      </View>
       <TabButton
         title={textFor(language, '小站', 'Station')}
         iconSource={

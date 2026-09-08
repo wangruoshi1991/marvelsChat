@@ -16,8 +16,16 @@ import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { Language } from '../session/useMiaoxunSession';
+import {
+  AgentMark,
+  AgentSection,
+  isAssistantAgent,
+  moduleBindingForAgent,
+} from './StationAgentCards';
 import { StationCapabilityWorkspace } from './StationCapabilityWorkspace';
 import { StationMetricBox } from './StationMetricBox';
+import { StationPageHeading } from './StationPageHeading';
+import { resolveStationColors } from './stationTheme';
 
 export function StationAgentsPanel({
   palette,
@@ -94,6 +102,7 @@ export function StationAgentsPanel({
   onActionError: (error: unknown) => void;
 }) {
   const [updatingAgentId, setUpdatingAgentId] = useState<string | null>(null);
+  const colors = resolveStationColors(palette);
   const registeredByKey = useMemo(
     () => new Map(agents.map(agent => [agent.key, agent])),
     [agents],
@@ -114,6 +123,9 @@ export function StationAgentsPanel({
   const ownedIds = new Set(ownedCards.map(agent => agent.id));
   const recommendedAgents = agents.filter(agent => !ownedIds.has(agent.key));
   const availableCount = recommendedAgents.length;
+  const connectionRate = agents.length
+    ? Math.round((ownedCards.length / agents.length) * 100)
+    : 0;
   const hasCapability = (agentId: string) => ownedIds.has(agentId);
 
   const updateAgent = (agentId: string, enabled: boolean) => {
@@ -141,67 +153,72 @@ export function StationAgentsPanel({
 
   return (
     <View style={styles.stationPanelStack}>
+      <StationPageHeading
+        detail={textFor(language, '能力与协作', 'Capabilities')}
+        palette={palette}
+        title={textFor(language, '我的生态', 'My Ecosystem')}
+        watermark="ECOSYSTEM"
+      />
       <View
         style={[
-          styles.stationPartnerStatusCard,
-          { backgroundColor: palette.surface, shadowColor: palette.shadow },
+          styles.stationEcosystemHero,
+          !colors.isLight && { backgroundColor: colors.soft },
         ]}
       >
-        <View style={styles.stationPartnerStatusHead}>
-          <View style={styles.stationPartnerStatusCopy}>
-            <Text
-              style={[
-                styles.stationPartnerEyebrow,
-                { color: palette.secondaryText },
-              ]}
-            >
-              {textFor(language, '运行状态', 'Status')}
-            </Text>
-            <Text style={[styles.stationPartnerTitle, { color: palette.text }]}>
-              {textFor(
-                language,
-                `已添加 ${ownedCards.length} 个 Agent`,
-                `${ownedCards.length} agents added`,
-              )}
-            </Text>
-            <Text
-              style={[
-                styles.stationPartnerStatusNote,
-                { color: palette.secondaryText },
-              ]}
-            >
-              {textFor(
-                language,
-                `能力库 ${agents.length} 个，可添加 ${availableCount} 个`,
-                `${agents.length} in library, ${availableCount} available`,
-              )}
-            </Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() =>
-              onActionMessage(
-                textFor(
-                  language,
-                  '这里展示已经接入小站的能力，具体使用会在对应模块里完成。',
-                  'This shows capabilities connected to your station. Use them from their modules.',
-                ),
-              )
-            }
+        <View style={styles.stationEcosystemScoreBlock}>
+          <Text
             style={[
-              styles.stationPartnerAuthButton,
-              { backgroundColor: palette.text },
+              styles.stationEcosystemEyebrow,
+              { color: colors.secondaryText },
             ]}
           >
-            <Text
+            {textFor(language, '能力接入率', 'Capability coverage')}
+          </Text>
+          <Text style={[styles.stationEcosystemScore, { color: colors.text }]}>
+            {connectionRate}%
+          </Text>
+          <Text
+            style={[
+              styles.stationEcosystemScoreLabel,
+              { color: colors.accent },
+            ]}
+          >
+            {status}
+          </Text>
+        </View>
+        <View style={styles.stationEcosystemProgressBlock}>
+          <Text
+            style={[
+              styles.stationEcosystemProgressTitle,
+              { color: colors.text },
+            ]}
+          >
+            {textFor(
+              language,
+              `已接入 ${ownedCards.length} / ${agents.length}`,
+              `${ownedCards.length} / ${agents.length} connected`,
+            )}
+          </Text>
+          <View style={styles.stationEcosystemProgressTrack}>
+            <View
               style={[
-                styles.stationPartnerAuthText,
-                { color: palette.background },
+                styles.stationEcosystemProgressFill,
+                { width: `${connectionRate}%` },
               ]}
-            >
-              {status}
-            </Text>
-          </Pressable>
+            />
+          </View>
+          <Text
+            style={[
+              styles.stationEcosystemProgressMeta,
+              { color: colors.secondaryText },
+            ]}
+          >
+            {textFor(
+              language,
+              `仍可添加 ${availableCount} 个 Agent`,
+              `${availableCount} agents available`,
+            )}
+          </Text>
         </View>
         <View style={styles.stationPartnerMetrics}>
           <StationMetricBox
@@ -222,122 +239,20 @@ export function StationAgentsPanel({
         </View>
       </View>
 
-      <View
-        style={[
-          styles.stationAgentWorkbench,
-          { backgroundColor: palette.surface, borderColor: palette.border },
-        ]}
-      >
-        <View style={styles.stationSectionTitleRow}>
-          <Text style={[styles.stationSectionTitle, { color: palette.text }]}>
-            {textFor(language, 'Agent 与模块', 'Agents and Modules')}
-          </Text>
-          <Text
-            style={[
-              styles.stationSectionDetail,
-              { color: palette.secondaryText },
-            ]}
-          >
-            {textFor(language, '小站能力总览', 'Station capabilities')}
-          </Text>
-        </View>
-        <View style={styles.stationCapabilityGrid}>
-          {agents.map(agent => {
-            const readiness = agentReadiness[agent.key];
-            const binding = moduleBindingForAgent(agent.key, language);
-            return (
-              <View
-                key={agent.key}
-                style={[
-                  styles.stationCapabilityCard,
-                  {
-                    backgroundColor: palette.soft,
-                    borderColor: palette.border,
-                  },
-                ]}
-              >
-                <View style={styles.stationCapabilityHead}>
-                  <Text
-                    style={[
-                      styles.stationCapabilityTitle,
-                      { color: palette.text },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {agent.name}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.stationCapabilityBadge,
-                      {
-                        backgroundColor: readiness?.configured
-                          ? `${palette.mint}1f`
-                          : `${palette.sun}30`,
-                        color: readiness?.configured
-                          ? palette.mint
-                          : palette.text,
-                      },
-                    ]}
-                  >
-                    {readiness?.configured
-                      ? textFor(language, '可用', 'Ready')
-                      : textFor(language, '待完善', 'Pending')}
-                  </Text>
-                </View>
-                <Text
-                  style={[
-                    styles.stationCapabilityMeta,
-                    { color: palette.secondaryText },
-                  ]}
-                  numberOfLines={2}
-                >
-                  {binding}
-                </Text>
-                <Text
-                  style={[
-                    styles.stationCapabilityResult,
-                    { color: palette.secondaryText },
-                  ]}
-                  numberOfLines={2}
-                >
-                  {readinessSummary(language, readiness)}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
-      </View>
-
       <AgentSection
         palette={palette}
         language={language}
-        title={textFor(language, '我的助理', 'My Assistants')}
+        title={textFor(language, 'AI Agent能力', 'AI Agent capabilities')}
         detail={textFor(
           language,
-          `${displayedAssistants.length} 个`,
-          `${displayedAssistants.length}`,
+          `${ownedCards.length} 个已接入`,
+          `${ownedCards.length} connected`,
         )}
-        agents={displayedAssistants}
-        empty={textFor(language, '暂无助理 Agent。', 'No assistant agent yet.')}
-        updatingAgentId={updatingAgentId}
-        onOpenAgentThread={onOpenAgentThread}
-        onRemoveAgent={agentId => updateAgent(agentId, false)}
-      />
-
-      <AgentSection
-        palette={palette}
-        language={language}
-        title={textFor(language, '我的能力', 'My Capabilities')}
-        detail={textFor(
-          language,
-          `${displayedCapabilities.length} 个`,
-          `${displayedCapabilities.length}`,
-        )}
-        agents={displayedCapabilities}
+        agents={ownedCards}
         empty={textFor(
           language,
-          '暂无能力 Agent。',
-          'No capability agents yet.',
+          '暂无已接入 Agent。',
+          'No connected agents yet.',
         )}
         updatingAgentId={updatingAgentId}
         onOpenAgentThread={onOpenAgentThread}
@@ -364,13 +279,13 @@ export function StationAgentsPanel({
 
       <View style={styles.stationRecommendAgents}>
         <View style={styles.stationSectionTitleRow}>
-          <Text style={[styles.stationSectionTitle, { color: palette.text }]}>
+          <Text style={[styles.stationSectionTitle, { color: colors.text }]}>
             {textFor(language, '推荐添加', 'Recommended')}
           </Text>
           <Text
             style={[
               styles.stationSectionDetail,
-              { color: palette.secondaryText },
+              { color: colors.secondaryText },
             ]}
           >
             {textFor(language, '为你的小站补充新能力', 'Add new capabilities')}
@@ -387,8 +302,8 @@ export function StationAgentsPanel({
                 style={[
                   styles.stationOwnedAgentCard,
                   {
-                    backgroundColor: palette.surface,
-                    borderColor: palette.border,
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
                   },
                   updatingAgentId === agent.key &&
                     styles.stationAgentCardDisabled,
@@ -399,7 +314,7 @@ export function StationAgentsPanel({
                   <Text
                     style={[
                       styles.stationOwnedAgentName,
-                      { color: palette.text },
+                      { color: colors.text },
                     ]}
                     numberOfLines={1}
                   >
@@ -408,7 +323,7 @@ export function StationAgentsPanel({
                   <Text
                     style={[
                       styles.stationOwnedAgentDesc,
-                      { color: palette.secondaryText },
+                      { color: colors.secondaryText },
                     ]}
                     numberOfLines={1}
                   >
@@ -419,8 +334,8 @@ export function StationAgentsPanel({
                   style={[
                     styles.stationOwnedAgentStatus,
                     {
-                      backgroundColor: palette.text,
-                      color: palette.background,
+                      backgroundColor: colors.accent,
+                      color: colors.surface,
                     },
                   ]}
                 >
@@ -433,232 +348,12 @@ export function StationAgentsPanel({
           </View>
         ) : (
           <Text
-            style={[styles.relationshipEmpty, { color: palette.secondaryText }]}
+            style={[styles.relationshipEmpty, { color: colors.secondaryText }]}
           >
             {textFor(language, '暂无可添加 Agent。', 'No more agents to add.')}
           </Text>
         )}
       </View>
-    </View>
-  );
-}
-
-const agentModuleBindings: Record<string, { zh: string; en: string }> = {
-  'miaoxun-butler': {
-    zh: '妙讯聊天 / 管家中枢',
-    en: 'Messages / Butler Orchestrator',
-  },
-  'virtual-character': {
-    zh: '我的小站 / 我的模样',
-    en: 'Station / My Look',
-  },
-  'model-3d': {
-    zh: '3D形象准备建议（不发起生成）',
-    en: '3D Avatar Guidance (No Generation)',
-  },
-  'site-builder': {
-    zh: '个人主页 / 小站结构草稿',
-    en: 'Profile Site / Station Drafts',
-  },
-  'album-manager': {
-    zh: '个人相册 / 素材整理',
-    en: 'Albums / Media Organization',
-  },
-  'file-preprocessor': {
-    zh: '文件素材 / 上传预处理',
-    en: 'Files / Upload Preprocessing',
-  },
-  'comic-diary': {
-    zh: '个人日记 / 漫画日记',
-    en: 'Diary / Comic Diary',
-  },
-  'video-production': {
-    zh: '我的动态 / 视频草稿',
-    en: 'Posts / Video Drafts',
-  },
-};
-
-const assistantAgentIds = new Set(['miaoxun-butler', 'virtual-character']);
-const assistantAgentCategories = new Set([
-  'orchestrator',
-  'character-management',
-]);
-
-const isAssistantAgent = (agentId: string, category: string) =>
-  assistantAgentIds.has(agentId) || assistantAgentCategories.has(category);
-
-const moduleBindingForAgent = (agentKey: string, language: Language) => {
-  const binding = agentModuleBindings[agentKey];
-  if (!binding) {
-    return textFor(language, '暂未绑定业务模块', 'No module binding yet');
-  }
-  return textFor(language, binding.zh, binding.en);
-};
-
-const readinessSummary = (
-  language: Language,
-  readiness?: AgentReadinessDTO,
-) => {
-  if (!readiness) {
-    return textFor(language, '能力准备中。', 'Capability is preparing.');
-  }
-  if (readiness.configured) {
-    return readiness.capabilityNeeds.length
-      ? textFor(
-          language,
-          '基础能力可用，部分生成能力稍后开放。',
-          'Base capability is ready; some generation features will open later.',
-        )
-      : textFor(language, '基础能力可用。', 'Base capability ready.');
-  }
-  return textFor(language, '生成服务待配置。', 'Generation service pending.');
-};
-
-type AgentCard = OwnedAgentDTO & {
-  identity?: AgentDTO['identity'];
-};
-
-function AgentSection({
-  palette,
-  language,
-  title,
-  detail,
-  agents,
-  empty,
-  updatingAgentId,
-  onOpenAgentThread,
-  onRemoveAgent,
-}: {
-  palette: Palette;
-  language: Language;
-  title: string;
-  detail: string;
-  agents: AgentCard[];
-  empty: string;
-  updatingAgentId: string | null;
-  onOpenAgentThread: (agentId: string) => void;
-  onRemoveAgent: (agentId: string) => void;
-}) {
-  return (
-    <View style={styles.stationAgentSection}>
-      <View style={styles.stationSectionTitleRow}>
-        <Text style={[styles.stationSectionTitle, { color: palette.text }]}>
-          {title}
-        </Text>
-        <Text
-          style={[
-            styles.stationSectionPill,
-            { backgroundColor: palette.soft, color: palette.secondaryText },
-          ]}
-        >
-          {detail}
-        </Text>
-      </View>
-      {agents.length ? (
-        <View style={styles.stationOwnedAgentGrid}>
-          {agents.map(agent => (
-            <Pressable
-              key={agent.id}
-              accessibilityRole="button"
-              onPress={() => onOpenAgentThread(agent.id)}
-              style={[
-                styles.stationOwnedAgentCard,
-                {
-                  backgroundColor: palette.surface,
-                  borderColor: palette.border,
-                },
-              ]}
-            >
-              <AgentMark palette={palette} agent={agent} />
-              <View style={styles.stationOwnedAgentCopy}>
-                <Text
-                  style={[
-                    styles.stationOwnedAgentName,
-                    { color: palette.text },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {agent.name}
-                </Text>
-                <Text
-                  style={[
-                    styles.stationOwnedAgentDesc,
-                    { color: palette.secondaryText },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {moduleBindingForAgent(agent.id, language)}
-                </Text>
-              </View>
-              <Text
-                style={[
-                  styles.stationOwnedAgentStatus,
-                  { backgroundColor: `${palette.mint}1f`, color: palette.mint },
-                ]}
-              >
-                {textFor(language, '进入对话', 'Chat')}
-              </Text>
-              {agent.id === 'miaoxun-butler' ? null : (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={updatingAgentId === agent.id}
-                  onPress={() => onRemoveAgent(agent.id)}
-                  style={[
-                    styles.stationOwnedAgentStatus,
-                    {
-                      backgroundColor: palette.soft,
-                    },
-                    updatingAgentId === agent.id &&
-                      styles.stationAgentCardDisabled,
-                  ]}
-                >
-                  <Text style={{ color: palette.secondaryText }}>
-                    {updatingAgentId === agent.id
-                      ? textFor(language, '处理中', 'Updating')
-                      : textFor(language, '移除', 'Remove')}
-                  </Text>
-                </Pressable>
-              )}
-            </Pressable>
-          ))}
-        </View>
-      ) : (
-        <Text
-          style={[styles.relationshipEmpty, { color: palette.secondaryText }]}
-        >
-          {empty}
-        </Text>
-      )}
-    </View>
-  );
-}
-
-function AgentMark({
-  palette,
-  agent,
-}: {
-  palette: Palette;
-  agent: Pick<AgentDTO, 'name' | 'identity'>;
-}) {
-  return (
-    <View
-      style={[
-        styles.stationAgentMark,
-        {
-          backgroundColor: agent.identity?.colors.background || palette.rose,
-        },
-      ]}
-    >
-      <Text
-        style={[
-          styles.stationAgentMarkText,
-          {
-            color: agent.identity?.colors.foreground || palette.background,
-          },
-        ]}
-      >
-        {agent.identity?.mark || agent.name.slice(0, 1)}
-      </Text>
     </View>
   );
 }

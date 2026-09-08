@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   miaoPointLedgerQuerySchema,
+  profileSelfSchema,
   stationAlbumParamsSchema,
   stationAlbumUpdateSchema,
   stationDiaryParamsSchema,
@@ -22,6 +23,28 @@ test("miao point ledger query applies a bounded limit", () => {
     limit: 20,
   });
   assert.throws(() => miaoPointLedgerQuerySchema.parse({ limit: 101 }));
+});
+
+test("profile avatar config accepts only the current v2 fields", () => {
+  assert.equal(
+    profileSelfSchema.parse({
+      nickname: "Tester",
+      avatarConfig: { accent: "violet" },
+    }).avatarConfig.accent,
+    "violet",
+  );
+  assert.throws(() =>
+    profileSelfSchema.parse({
+      nickname: "Tester",
+      avatarConfig: { palette: "grape" },
+    }),
+  );
+  assert.throws(() =>
+    profileSelfSchema.parse({
+      nickname: "Tester",
+      avatarConfig: { shape: "rounded" },
+    }),
+  );
 });
 
 test("station update schemas require at least one valid field", () => {

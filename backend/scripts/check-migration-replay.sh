@@ -54,6 +54,14 @@ VALUES
   ('00000000-0000-4000-8000-000000000003', 'email-legacy@example.com', NULL,
     'migration-test', 'Email Legacy User', 'legacy-email',
     '2020-01-03T00:00:00Z');
+
+INSERT INTO user_agents
+  (user_id, agent_id, alias, enabled, granted_scopes)
+VALUES
+  ('00000000-0000-4000-8000-000000000001', 'miaoxun-butler', '妙讯管家', TRUE,
+    '["profile:read", "messages:read"]'::jsonb),
+  ('00000000-0000-4000-8000-000000000001', 'album-manager', '相册管理 Agent', TRUE,
+    '["profile:read", "messages:read"]'::jsonb);
 SQL
 
 run_migrations() {
@@ -125,6 +133,18 @@ SELECT
     SELECT 1
     FROM pg_constraint
     WHERE conname = 'station_site_drafts_source_check'
+  )
+  AND (
+    SELECT granted_scopes = '["profile:read", "messages:read", "agents:invoke"]'::jsonb
+    FROM user_agents
+    WHERE user_id = '00000000-0000-4000-8000-000000000001'
+      AND agent_id = 'miaoxun-butler'
+  )
+  AND (
+    SELECT granted_scopes = '["album:read", "album:write", "station:read", "station:write"]'::jsonb
+    FROM user_agents
+    WHERE user_id = '00000000-0000-4000-8000-000000000001'
+      AND agent_id = 'album-manager'
   );
 SQL
 )"

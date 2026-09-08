@@ -242,15 +242,6 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
   },
   headerSpacer: { width: 38 },
-  statCell: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-    minWidth: 0,
-    paddingHorizontal: 2,
-  },
-  statValue: { fontSize: 18, fontWeight: '600' },
-  statLabel: { fontSize: 12, marginTop: 6, textAlign: 'center' },
   siteBuilderHero: {
     alignItems: 'center',
     borderRadius: spacing.cardRadius,
@@ -505,18 +496,6 @@ export const styles = StyleSheet.create({
     minHeight: spacing.bottomBarMinHeight,
     paddingVertical: 8,
   },
-  bottomCreateSlot: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 70,
-  },
-  bottomCreateButton: {
-    alignItems: 'center',
-    height: 44,
-    justifyContent: 'center',
-    width: 44,
-  },
-  bottomCreateIcon: { height: 34, width: 34 },
   tabButton: {
     alignItems: 'center',
     flex: 1,

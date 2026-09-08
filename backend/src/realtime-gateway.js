@@ -9,7 +9,21 @@ import { listPresenceAudienceUserIds } from "./social-repository.js";
 const publicPresenceStatusFor = (user, isConnected) =>
   user.presenceMode === "online" && isConnected ? "online" : "offline";
 
-export function createRealtimeGateway(server) {
+const defaultLogger = { error: (entry) => console.error(JSON.stringify(entry)) };
+
+export const reportPresenceBroadcastFailure = ({ error, logger, reason, userId }) => {
+  logger.error({
+    type: "presence_broadcast_failure",
+    errorName:
+      typeof error?.name === "string" && error.name.trim()
+        ? error.name.trim().slice(0, 80)
+        : "Error",
+    reason,
+    userId,
+  });
+};
+
+export function createRealtimeGateway(server, { logger = defaultLogger } = {}) {
   const realtimeServer = new WebSocketServer({ noServer: true });
   const realtimeClientsByUser = new Map();
   const offlineTimersByUser = new Map();
@@ -67,7 +81,9 @@ export function createRealtimeGateway(server) {
     clients.add(socket);
     realtimeClientsByUser.set(userId, clients);
     if (wasOffline) {
-      sendPresenceChanged(userId, "connected").catch(() => undefined);
+      sendPresenceChanged(userId, "connected").catch((error) =>
+        reportPresenceBroadcastFailure({ error, logger, reason: "connected", userId }),
+      );
     }
     socket.on("close", () => {
       clients.delete(socket);
@@ -77,7 +93,14 @@ export function createRealtimeGateway(server) {
         const timer = setTimeout(() => {
           offlineTimersByUser.delete(userId);
           if (!realtimeClientsByUser.has(userId)) {
-            sendPresenceChanged(userId, "disconnected").catch(() => undefined);
+            sendPresenceChanged(userId, "disconnected").catch((error) =>
+              reportPresenceBroadcastFailure({
+                error,
+                logger,
+                reason: "disconnected",
+                userId,
+              }),
+            );
           }
         }, offlineBroadcastDelayMs);
         offlineTimersByUser.set(userId, timer);

@@ -756,13 +756,18 @@ qs("#drawer-body").addEventListener("click", async (event) => {
   button.disabled = true;
   const agentId = button.dataset.agentToggle;
   const agent = currentAgents.find((item) => item.key === agentId);
+  if (!agent) {
+    setStatus("Agent 注册信息不存在，请刷新后重试。");
+    button.disabled = false;
+    return;
+  }
   try {
     await apiRequest(`/api/admin/users/${selectedUserId}/agents/${agentId}`, {
       method: "PATCH",
       body: JSON.stringify({
         enabled: button.dataset.enabled === "true",
-        alias: agent?.name || "",
-        grantedScopes: ["profile:read", "messages:read"],
+        alias: agent.name,
+        grantedScopes: agent.permissions,
       }),
     });
     await loadAdmin();

@@ -4,7 +4,6 @@ import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 import { StationComicDiaryDTO, StationDiaryEntryDTO } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import {
-  SettingGroup,
   SettingsActionButton,
   SettingsSegmentRow,
 } from '../../shared/settingsUi';
@@ -12,6 +11,7 @@ import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { SegmentedControl } from '../../shared/ui';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
+import { StationContentEditorSection } from './StationContentEditorUi';
 
 type ComicStyle = 'slice-of-life' | 'cute' | 'manga' | 'storyboard';
 type FrameCountValue = '2' | '4' | '6' | '8';
@@ -115,8 +115,8 @@ export function StationComicDiaryPanel({
   };
 
   return (
-    <SettingGroup
-      title={textFor(language, '漫画分镜', 'Comic Storyboard')}
+    <StationContentEditorSection
+      title={textFor(language, '漫画日记 Agent', 'Comic Diary Agent')}
       palette={palette}
     >
       <SettingsSegmentRow
@@ -180,7 +180,7 @@ export function StationComicDiaryPanel({
               ? textFor(language, '生成中', 'Creating')
               : relatedDrafts.length
               ? textFor(language, '重新生成', 'Regenerate')
-              : textFor(language, '生成分镜', 'Create Storyboard')
+              : textFor(language, '生成漫画分镜', 'Create Storyboard')
           }
           palette={palette}
           primary
@@ -213,7 +213,7 @@ export function StationComicDiaryPanel({
           </Text>
         )}
       </View>
-    </SettingGroup>
+    </StationContentEditorSection>
   );
 }
 

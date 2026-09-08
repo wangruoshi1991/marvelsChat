@@ -108,8 +108,10 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 
 `agents/` 与前后端分离。后端通过 `agents/registry.js` 注册 Agent，再由 `backend/src/agent-runtime.js` 调用。
 
-- 配置 `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL` 后，妙讯管家会走 OpenAI-compatible `/v1/chat/completions`。
-- 未配置模型服务时，后端仍保存消息和运行记录，但 `provider` 标记为 `not-configured`，不会伪造 token。
+- 配置 `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL` 后，所有已注册且已授权的 Agent 会话都通过统一模型运行时调用 OpenAI-compatible 或 Anthropic-compatible 接口。
+- Agent 会话在写入用户消息前校验 Agent 仍已注册且当前账号仍启用；聊天上下文按实际 scope 提供资料、模块、已授权 Agent 和当前小站内容，Agent 消息创建按账号限流且不影响好友 direct 消息。
+- Agent 注册声明的 `permissions` 是可授权上限，账号的 `granted_scopes` 是运行时实际权限；资料、历史消息、小站内容和 Agent 编排上下文均按实际 scope 注入。
+- 未配置模型服务或供应商调用失败时，后端保存用户消息、明确的失败提示和 `runtime-error` 运行记录，不记录伪造 token，也不向客户端暴露供应商原始错误。
 
 后续多 Agent 接入建议分三层推进：
 
@@ -123,7 +125,7 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 - `GET /api/health`：仅表示进程存活，不探测或暴露依赖状态。
 - `GET /api/ready`：探测 PostgreSQL 连接，并核对发布包迁移文件与 `schema_migrations` 账本；未配置、未连接、迁移待执行、历史校验和不一致或已登记文件缺失时返回 503，供容器和负载均衡判断是否接流量。检查过程只读，不自动迁移。
 - `PATCH /api/admin/users/:userId/agents/:agentId`：授权管理。
-- `POST /api/threads/:threadId/messages`：当前消息入口。`agent_id` 线程触发 Agent runtime；`peer_user_id` direct 线程写入当前线程并镜像到对方线程。
+- `POST /api/threads/:threadId/messages`：当前消息入口。`agent_id` 线程必须通过注册与授权校验后触发 Agent runtime，并执行按账号的模型调用限流；`peer_user_id` direct 线程写入当前线程并镜像到对方线程，不使用 Agent 模型限额。
 - `DELETE /api/threads/:threadId/messages/:messageId`：单侧删除当前用户线程里的消息，写入 `deleted_at`，不删除对方线程。
 - `POST /api/threads/:threadId/messages/:messageId/recall`：发送者在发送后 1 分钟内撤回消息；后端用 PostgreSQL `created_at` 和 `CURRENT_TIMESTAMP` 判断撤回窗口，再按 `client_message_id` 更新双方 direct 消息的 `recalled_at`，并通过 WebSocket 推送对方消息更新。历史消息缺少 `client_message_id` 或超过撤回窗口时直接返回明确错误。
 - `POST /api/social/friends/:friendUserId/thread`：校验双方为 active 好友后返回或创建 direct 好友线程。

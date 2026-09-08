@@ -1,7 +1,29 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import {
+  ChevronRight,
+  ImagePlus,
+  LockKeyhole,
+  Users,
+  Globe2,
+  X,
+} from 'lucide-react-native';
 
 import { StationVisibility } from '../../models/api';
+import {
+  PickedStationMedia,
+  pickStationImagesFromLibrary,
+} from '../../services/stationMediaPicker';
 import { textFor } from '../../shared/i18n';
 import {
   SettingGroup,
@@ -12,6 +34,7 @@ import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { SegmentedControl, SheetHeader } from '../../shared/ui';
 import { Language } from '../session/useMiaoxunSession';
+import { StationContentEditorHeader } from './StationContentEditorUi';
 import { StationCreateKind } from './stationTypes';
 
 type StationCreatePayload =
@@ -27,6 +50,7 @@ type StationCreatePayload =
       title: string;
       description: string;
       visibility: StationVisibility;
+      media: PickedStationMedia[];
     }
   | {
       kind: 'outfit';
@@ -40,8 +64,11 @@ type StationCreateSheetProps = {
   palette: Palette;
   language: Language;
   isSaving: boolean;
+  fullScreen?: boolean;
+  progressText?: string;
   onBack: () => void;
   onSubmit: (payload: StationCreatePayload) => void;
+  onActionError?: (error: unknown) => void;
 };
 
 const visibilityOptions = (language: Language) => [
@@ -55,7 +82,7 @@ const initialTitle = (kind: StationCreateKind, language: Language) => {
     return textFor(language, '今天的漫画日记', "Today's comic diary");
   }
   if (kind === 'album') {
-    return textFor(language, '新的相册', 'New album');
+    return '';
   }
   return textFor(language, '今日穿搭', "Today's outfit");
 };
@@ -95,17 +122,22 @@ export function StationCreateSheet({
   palette,
   language,
   isSaving,
+  fullScreen = false,
+  progressText = '',
   onBack,
   onSubmit,
+  onActionError,
 }: StationCreateSheetProps) {
   const [title, setTitle] = useState(initialTitle(kind, language));
   const [body, setBody] = useState('');
   const [visibility, setVisibility] = useState<StationVisibility>('private');
+  const [albumMedia, setAlbumMedia] = useState<PickedStationMedia[]>([]);
 
   useEffect(() => {
     setTitle(initialTitle(kind, language));
     setBody('');
     setVisibility('private');
+    setAlbumMedia([]);
   }, [kind, language]);
 
   const bodyLabel = useMemo(() => {
@@ -144,8 +176,61 @@ export function StationCreateSheet({
     kind === 'diary'
       ? body.trim().length > 0
       : kind === 'album'
-      ? title.trim().length > 0
+      ? title.trim().length > 0 && albumMedia.length > 0
       : true;
+
+  const openVisibilityMenu = () => {
+    Alert.alert(textFor(language, '谁可以看', 'Visibility'), undefined, [
+      {
+        text: textFor(language, '仅自己可见', 'Only Me'),
+        onPress: () => setVisibility('private'),
+      },
+      {
+        text: textFor(language, '好友可见', 'Friends'),
+        onPress: () => setVisibility('friends'),
+      },
+      {
+        text: textFor(language, '公开', 'Public'),
+        onPress: () => setVisibility('public'),
+      },
+      { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
+    ]);
+  };
+
+  const addAlbumImages = async () => {
+    const remaining = 9 - albumMedia.length;
+    if (remaining <= 0) {
+      Alert.alert(
+        textFor(language, '最多选择 9 张照片', 'Nine photos maximum'),
+      );
+      return;
+    }
+    try {
+      const picked = await pickStationImagesFromLibrary(remaining);
+      const valid = picked.filter(
+        item => item.byteSize === null || item.byteSize <= 25 * 1024 * 1024,
+      );
+      if (valid.length !== picked.length) {
+        Alert.alert(
+          textFor(language, '图片过大', 'Image Too Large'),
+          textFor(
+            language,
+            '单张图片不能超过 25 MB。',
+            'Each image must be 25 MB or smaller.',
+          ),
+        );
+      }
+      setAlbumMedia(current => {
+        const knownUris = new Set(current.map(item => item.uri));
+        return [
+          ...current,
+          ...valid.filter(item => !knownUris.has(item.uri)),
+        ].slice(0, 9);
+      });
+    } catch (error) {
+      onActionError?.(error);
+    }
+  };
 
   const submit = () => {
     if (!canSubmit || isSaving) {
@@ -169,6 +254,7 @@ export function StationCreateSheet({
         title: title.trim(),
         description: body.trim(),
         visibility,
+        media: albumMedia,
       });
       return;
     }
@@ -180,6 +266,211 @@ export function StationCreateSheet({
       visibility,
     });
   };
+
+  const requestClose = () => {
+    const hasDraft = isDiaryOrAlbumDraft(kind, title, body, albumMedia);
+    if (!hasDraft) {
+      onBack();
+      return;
+    }
+    Alert.alert(
+      textFor(language, '放弃此次编辑？', 'Discard this draft?'),
+      textFor(
+        language,
+        '已编辑的内容不会保留。',
+        'Your changes will not be saved.',
+      ),
+      [
+        {
+          text: textFor(language, '继续编辑', 'Keep Editing'),
+          style: 'cancel',
+        },
+        {
+          text: textFor(language, '放弃', 'Discard'),
+          style: 'destructive',
+          onPress: onBack,
+        },
+      ],
+    );
+  };
+
+  if (fullScreen && (kind === 'diary' || kind === 'album')) {
+    const isDiary = kind === 'diary';
+    return (
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={[
+          styles.stationEditorKeyboard,
+          { backgroundColor: palette.background },
+        ]}
+      >
+        <StationContentEditorHeader
+          action={
+            isSaving
+              ? progressText || textFor(language, '保存中', 'Saving')
+              : textFor(language, '保存', 'Save')
+          }
+          actionDisabled={!canSubmit || isSaving}
+          onAction={submit}
+          onBack={requestClose}
+          palette={palette}
+          title={sheetTitle(kind, language)}
+        />
+        <ScrollView
+          contentContainerStyle={styles.stationEditorBody}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View
+            style={[
+              styles.stationCreateComposer,
+              { backgroundColor: palette.surface },
+            ]}
+          >
+            {isDiary ? (
+              <TextInput
+                autoFocus
+                maxLength={6000}
+                multiline
+                onChangeText={setBody}
+                placeholder={bodyPlaceholder}
+                placeholderTextColor={palette.secondaryText}
+                style={[
+                  styles.stationCreateDiaryInput,
+                  { color: palette.text },
+                ]}
+                textAlignVertical="top"
+                value={body}
+              />
+            ) : (
+              <>
+                <TextInput
+                  maxLength={80}
+                  onChangeText={setTitle}
+                  placeholder={textFor(
+                    language,
+                    '给相册起个名字',
+                    'Album name',
+                  )}
+                  placeholderTextColor={palette.secondaryText}
+                  style={[
+                    styles.stationCreateAlbumTitleInput,
+                    { color: palette.text },
+                  ]}
+                  value={title}
+                />
+                <TextInput
+                  maxLength={1000}
+                  multiline
+                  onChangeText={setBody}
+                  placeholder={textFor(
+                    language,
+                    '写下相册说明',
+                    'Describe this album',
+                  )}
+                  placeholderTextColor={palette.secondaryText}
+                  style={[
+                    styles.stationCreateAlbumDescriptionInput,
+                    { color: palette.text },
+                  ]}
+                  value={body}
+                />
+                <View style={styles.stationCreateMediaGrid}>
+                  {albumMedia.map(item => (
+                    <View key={item.uri} style={styles.stationCreateMediaItem}>
+                      <Image
+                        source={{ uri: item.uri }}
+                        style={styles.stationCreateMediaImage}
+                      />
+                      <Pressable
+                        accessibilityLabel={textFor(
+                          language,
+                          '移除照片',
+                          'Remove photo',
+                        )}
+                        disabled={isSaving}
+                        onPress={() =>
+                          setAlbumMedia(current =>
+                            current.filter(media => media.uri !== item.uri),
+                          )
+                        }
+                        style={styles.stationCreateMediaRemove}
+                      >
+                        <X color="#FFFFFF" size={14} strokeWidth={2.2} />
+                      </Pressable>
+                    </View>
+                  ))}
+                  {albumMedia.length < 9 ? (
+                    <Pressable
+                      accessibilityLabel={textFor(
+                        language,
+                        '添加照片',
+                        'Add photos',
+                      )}
+                      disabled={isSaving}
+                      onPress={addAlbumImages}
+                      style={[
+                        styles.stationCreateMediaAdd,
+                        { borderColor: palette.secondaryText },
+                      ]}
+                    >
+                      <ImagePlus
+                        color={palette.secondaryText}
+                        size={25}
+                        strokeWidth={1.7}
+                      />
+                      <Text
+                        style={[
+                          styles.stationCreateMediaAddText,
+                          { color: palette.secondaryText },
+                        ]}
+                      >
+                        {albumMedia.length}/9
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </>
+            )}
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            disabled={isSaving}
+            onPress={openVisibilityMenu}
+            style={[
+              styles.stationCreateVisibilityRow,
+              { backgroundColor: palette.surface },
+            ]}
+          >
+            <VisibilityIcon
+              color={palette.secondaryText}
+              visibility={visibility}
+            />
+            <Text
+              style={[
+                styles.stationCreateVisibilityTitle,
+                { color: palette.text },
+              ]}
+            >
+              {textFor(language, '谁可以看', 'Visibility')}
+            </Text>
+            <Text
+              style={[
+                styles.stationCreateVisibilityValue,
+                { color: palette.secondaryText },
+              ]}
+            >
+              {visibilityLabel(visibility, language)}
+            </Text>
+            <ChevronRight
+              color={palette.secondaryText}
+              size={17}
+              strokeWidth={1.8}
+            />
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
 
   return (
     <ScrollView
@@ -271,3 +562,36 @@ export function StationCreateSheet({
 }
 
 export type { StationCreatePayload };
+
+function VisibilityIcon({
+  color,
+  visibility,
+}: {
+  color: string;
+  visibility: StationVisibility;
+}) {
+  if (visibility === 'public')
+    return <Globe2 color={color} size={18} strokeWidth={1.9} />;
+  if (visibility === 'friends')
+    return <Users color={color} size={18} strokeWidth={1.9} />;
+  return <LockKeyhole color={color} size={18} strokeWidth={1.9} />;
+}
+
+const visibilityLabel = (visibility: StationVisibility, language: Language) =>
+  ({
+    private: textFor(language, '仅自己', 'Only Me'),
+    friends: textFor(language, '好友可见', 'Friends'),
+    public: textFor(language, '公开', 'Public'),
+  }[visibility]);
+
+const isDiaryOrAlbumDraft = (
+  kind: StationCreateKind,
+  title: string,
+  body: string,
+  media: PickedStationMedia[],
+) =>
+  kind === 'diary'
+    ? Boolean(body.trim())
+    : kind === 'album'
+    ? Boolean(title.trim() || body.trim() || media.length)
+    : false;

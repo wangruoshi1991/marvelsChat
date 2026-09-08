@@ -1,3 +1,4 @@
+import { Bot, MoreHorizontal, Plus } from 'lucide-react-native';
 import React from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 
@@ -13,6 +14,7 @@ import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { Language } from '../session/useMiaoxunSession';
+import { resolveStationColors } from './stationTheme';
 
 export function StationModule({
   palette,
@@ -20,40 +22,102 @@ export function StationModule({
   action,
   onAction,
   actionDisabled = false,
+  agentAction,
+  agentAvailable = true,
+  onAgentAction,
+  onMore,
+  moreLabel = '更多',
   children,
 }: {
   palette: Palette;
   title: string;
-  action: string;
-  onAction: () => void;
+  action?: string;
+  onAction?: () => void;
   actionDisabled?: boolean;
+  agentAction?: string;
+  agentAvailable?: boolean;
+  onAgentAction?: () => void;
+  onMore?: () => void;
+  moreLabel?: string;
   children: React.ReactNode;
 }) {
+  const colors = resolveStationColors(palette);
+
   return (
     <View
       style={[
         styles.stationModuleCard,
-        { backgroundColor: palette.surface, shadowColor: palette.shadow },
+        { backgroundColor: colors.surface, shadowColor: palette.shadow },
       ]}
     >
       <View style={styles.stationModuleTitleRow}>
-        <Text style={[styles.stationModuleTitle, { color: palette.text }]}>
+        <Text style={[styles.stationModuleTitle, { color: colors.text }]}>
           {title}
         </Text>
-        <Pressable
-          accessibilityRole="button"
-          disabled={actionDisabled}
-          onPress={onAction}
-          style={[
-            styles.stationModuleAddButton,
-            { backgroundColor: palette.soft },
-            actionDisabled && styles.disabledButton,
-          ]}
-        >
-          <Text style={[styles.stationModuleAddText, { color: palette.text }]}>
-            {action}
-          </Text>
-        </Pressable>
+        <View style={styles.stationModuleActions}>
+          {agentAction && onAgentAction ? (
+            <Pressable
+              accessibilityLabel={agentAction}
+              accessibilityRole="button"
+              onPress={onAgentAction}
+              style={[
+                styles.stationModuleAgentButton,
+                { backgroundColor: colors.soft },
+                !agentAvailable && styles.stationModuleAgentButtonPending,
+              ]}
+            >
+              <Bot color={colors.accent} size={15} strokeWidth={2.2} />
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.stationModuleAgentText,
+                  { color: colors.accent },
+                ]}
+              >
+                {agentAction}
+              </Text>
+            </Pressable>
+          ) : null}
+          {action && onAction ? (
+            <Pressable
+              accessibilityLabel={action}
+              accessibilityRole="button"
+              disabled={actionDisabled}
+              onPress={onAction}
+              style={[
+                styles.stationModuleAddButton,
+                action !== '添加' &&
+                  action !== 'Add' &&
+                  styles.stationModuleTextButton,
+                { backgroundColor: colors.soft },
+                actionDisabled && styles.disabledButton,
+              ]}
+            >
+              {action === '添加' || action === 'Add' ? (
+                <Plus color={colors.text} size={17} strokeWidth={2.4} />
+              ) : (
+                <Text
+                  style={[styles.stationModuleAddText, { color: colors.text }]}
+                >
+                  {action}
+                </Text>
+              )}
+            </Pressable>
+          ) : null}
+          {onMore ? (
+            <Pressable
+              accessibilityLabel={moreLabel}
+              accessibilityRole="button"
+              onPress={onMore}
+              style={[
+                styles.stationModuleMoreButton,
+                { backgroundColor: colors.soft },
+              ]}
+            >
+              <MoreHorizontal color={colors.text} size={18} strokeWidth={2.4} />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
       {children}
     </View>
@@ -62,17 +126,30 @@ export function StationModule({
 
 export function DiaryComicGrid({
   palette,
+  language,
   entries,
   onOpenEntry,
 }: {
   palette: Palette;
+  language: Language;
   entries: StationDiaryEntryDTO[];
   onOpenEntry: (entryId: string) => void;
 }) {
   const latestEntries = entries.slice(0, 4);
-  const emptySlots = Array.from({
-    length: Math.max(0, 4 - latestEntries.length),
-  });
+
+  if (!latestEntries.length) {
+    return (
+      <EmptyModuleState
+        palette={palette}
+        title={textFor(language, '暂无日记', 'No Diaries Yet')}
+        body={textFor(
+          language,
+          '记录第一篇日记后，会在这里展示。',
+          'Your first diary will appear here after it is saved.',
+        )}
+      />
+    );
+  }
 
   return (
     <View style={styles.stationModuleStack}>
@@ -86,9 +163,6 @@ export function DiaryComicGrid({
             onPress={() => onOpenEntry(entry.id)}
           />
         ))}
-        {emptySlots.map((_, index) => (
-          <EmptyComicSlot key={`empty-diary-${index}`} palette={palette} />
-        ))}
       </View>
     </View>
   );
@@ -99,14 +173,14 @@ function ComicCoverCard({
   title,
   body,
   onPress,
-  muted = false,
 }: {
   palette: Palette;
   title: string;
   body: string;
   onPress?: () => void;
-  muted?: boolean;
 }) {
+  const colors = resolveStationColors(palette);
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -114,11 +188,7 @@ function ComicCoverCard({
       onPress={onPress}
       style={[
         styles.stationComicCoverCard,
-        { backgroundColor: palette.surface },
-        muted && {
-          borderColor: palette.border,
-        },
-        muted && styles.stationComicCoverMuted,
+        { backgroundColor: colors.surface },
       ]}
     >
       <View style={styles.stationComicPreview}>
@@ -132,68 +202,18 @@ function ComicCoverCard({
         <View style={[styles.stationMiniPanel, styles.stationMiniPanelNight]} />
       </View>
       <Text
-        style={[styles.stationComicTitle, { color: palette.text }]}
+        style={[styles.stationComicTitle, { color: colors.text }]}
         numberOfLines={1}
       >
         {title}
       </Text>
       <Text
-        style={[styles.stationComicBody, { color: palette.secondaryText }]}
+        style={[styles.stationComicBody, { color: colors.secondaryText }]}
         numberOfLines={2}
       >
         {body}
       </Text>
     </Pressable>
-  );
-}
-
-function EmptyComicSlot({ palette }: { palette: Palette }) {
-  return (
-    <View
-      style={[
-        styles.stationComicCoverCard,
-        styles.stationComicCoverMuted,
-        {
-          backgroundColor: palette.surface,
-          borderColor: palette.border,
-        },
-      ]}
-    >
-      <View
-        style={[
-          styles.stationComicPreview,
-          {
-            backgroundColor: palette.soft,
-            borderColor: palette.border,
-          },
-        ]}
-      >
-        <View
-          style={[
-            styles.stationMiniPanel,
-            { backgroundColor: palette.surface },
-          ]}
-        />
-        <View
-          style={[
-            styles.stationMiniPanel,
-            { backgroundColor: palette.surface },
-          ]}
-        />
-        <View
-          style={[
-            styles.stationMiniPanel,
-            { backgroundColor: palette.surface },
-          ]}
-        />
-        <View
-          style={[
-            styles.stationMiniPanel,
-            { backgroundColor: palette.surface },
-          ]}
-        />
-      </View>
-    </View>
   );
 }
 
@@ -212,6 +232,8 @@ export function AlbumGrid({
   token: string;
   onOpenAlbum: (albumId: string) => void;
 }) {
+  const colors = resolveStationColors(palette);
+
   if (!albums.length) {
     return (
       <EmptyModuleState
@@ -249,7 +271,7 @@ export function AlbumGrid({
                 onPress={() => onOpenAlbum(album.id)}
                 style={[
                   styles.stationAlbumCover,
-                  { backgroundColor: palette.soft },
+                  { backgroundColor: colors.soft },
                 ]}
               >
                 {uploadedCover ? (
@@ -265,7 +287,7 @@ export function AlbumGrid({
                   <Text
                     style={[
                       styles.stationAlbumCoverText,
-                      { color: palette.secondaryText },
+                      { color: colors.secondaryText },
                     ]}
                   >
                     {pendingCount
@@ -275,7 +297,7 @@ export function AlbumGrid({
                 )}
               </Pressable>
               <Text
-                style={[styles.stationAlbumTitle, { color: palette.text }]}
+                style={[styles.stationAlbumTitle, { color: colors.text }]}
                 numberOfLines={1}
               >
                 {album.title}
@@ -283,7 +305,7 @@ export function AlbumGrid({
               <Text
                 style={[
                   styles.stationAlbumCount,
-                  { color: palette.secondaryText },
+                  { color: colors.secondaryText },
                 ]}
               >
                 {textFor(
@@ -350,7 +372,7 @@ function dateTimeValue(value: string | null | undefined) {
   return Number.isNaN(time) ? 0 : time;
 }
 
-export function CallableAgentList({
+export function AIPartnerGrid({
   palette,
   language,
   agents,
@@ -363,6 +385,7 @@ export function CallableAgentList({
   ownedAgents: OwnedAgentDTO[];
   onOpenAgentThread: (agentId: string) => void;
 }) {
+  const colors = resolveStationColors(palette);
   const registeredByKey = new Map(agents.map(agent => [agent.key, agent]));
   const enabledAgents = ownedAgents
     .filter(agent => agent.enabled)
@@ -375,24 +398,27 @@ export function CallableAgentList({
     return (
       <EmptyModuleState
         palette={palette}
-        title={textFor(language, '暂无可调用 Agent', 'No Callable Agents Yet')}
+        title={textFor(language, '暂无AI伙伴', 'No AI Partners Yet')}
         body={textFor(
           language,
-          '配置授权和调用范围后，访客可从这里调用你的能力。',
-          'Visitors can call your capabilities here after authorization and scope are configured.',
+          '添加并启用AI伙伴后，会在这里展示。',
+          'Added and enabled AI partners appear here.',
         )}
       />
     );
   }
 
   return (
-    <View style={styles.stationCallableAgentList}>
-      {enabledAgents.slice(0, 3).map(agent => (
-        <View
+    <View style={styles.stationAIPartnerGrid}>
+      {enabledAgents.slice(0, 6).map(agent => (
+        <Pressable
+          accessibilityLabel={agent.name}
+          accessibilityRole="button"
           key={agent.id}
+          onPress={() => onOpenAgentThread(agent.id)}
           style={[
-            styles.stationCallableAgentRow,
-            { backgroundColor: palette.soft },
+            styles.stationAIPartnerTile,
+            { backgroundColor: colors.soft },
           ]}
         >
           <View
@@ -413,41 +439,24 @@ export function CallableAgentList({
               {agent.identity?.mark || agent.name.slice(0, 1)}
             </Text>
           </View>
-          <View style={styles.stationCallableAgentCopy}>
+          <View style={styles.stationAIPartnerCopy}>
             <Text
-              style={[styles.stationCallableAgentName, { color: palette.text }]}
+              style={[styles.stationAIPartnerName, { color: colors.text }]}
               numberOfLines={1}
             >
               {agent.name}
             </Text>
             <Text
               style={[
-                styles.stationCallableAgentDesc,
-                { color: palette.secondaryText },
+                styles.stationAIPartnerDesc,
+                { color: colors.secondaryText },
               ]}
               numberOfLines={2}
             >
               {agent.description}
             </Text>
           </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => onOpenAgentThread(agent.id)}
-            style={[
-              styles.stationCallableButton,
-              { backgroundColor: palette.text },
-            ]}
-          >
-            <Text
-              style={[
-                styles.stationCallableButtonText,
-                { color: palette.background },
-              ]}
-            >
-              {textFor(language, '调用', 'Call')}
-            </Text>
-          </Pressable>
-        </View>
+        </Pressable>
       ))}
     </View>
   );
@@ -464,28 +473,25 @@ export function EmptyModuleState({
   body: string;
   meta?: string;
 }) {
+  const colors = resolveStationColors(palette);
+
   return (
-    <View
-      style={[styles.stationModuleEmpty, { backgroundColor: palette.soft }]}
-    >
+    <View style={[styles.stationModuleEmpty, { backgroundColor: colors.soft }]}>
       {meta ? (
         <Text
           style={[
             styles.stationModuleEmptyMeta,
-            { color: palette.secondaryText },
+            { color: colors.secondaryText },
           ]}
         >
           {meta}
         </Text>
       ) : null}
-      <Text style={[styles.stationModuleEmptyTitle, { color: palette.text }]}>
+      <Text style={[styles.stationModuleEmptyTitle, { color: colors.text }]}>
         {title}
       </Text>
       <Text
-        style={[
-          styles.stationModuleEmptyBody,
-          { color: palette.secondaryText },
-        ]}
+        style={[styles.stationModuleEmptyBody, { color: colors.secondaryText }]}
       >
         {body}
       </Text>

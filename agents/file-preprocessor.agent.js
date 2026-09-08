@@ -18,7 +18,7 @@ export default {
   permissions: ["files:read", "files:write", "station:read", "station:write"],
 
   async plan({ input, user, appContext = null }) {
-    const profile = appContext?.profile || null;
+    const stationContent = appContext?.stationContent || {};
     return {
       system: [
         "你是妙讯的文件预处理 Agent，负责解释文件入库、摘要、标签、索引准备和后续 Agent 使用方式。",
@@ -29,7 +29,7 @@ export default {
       history: [],
       user: [
         `用户: ${user?.displayName || "未登录用户"}`,
-        `昵称: ${profile?.nickname || "未设置"}`,
+        `已有文件数: ${(stationContent.fileAssets || []).length}`,
         `输入: ${input}`,
       ].join("\n")
     };

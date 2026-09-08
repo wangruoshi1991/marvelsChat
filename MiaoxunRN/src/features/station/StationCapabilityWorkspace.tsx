@@ -90,7 +90,7 @@ export function StationCapabilityWorkspace({
         language={language}
         profile={profile}
         readiness={agentReadiness['site-builder']}
-        siteDrafts={stationContent.siteDrafts || []}
+        siteDrafts={stationContent.siteDrafts}
         onCreateDraft={onCreateSiteDraft}
         onApplyDraft={onApplySiteDraft}
         onActionMessage={onActionMessage}
@@ -113,7 +113,7 @@ export function StationCapabilityWorkspace({
         key="file-preprocessor"
         palette={palette}
         language={language}
-        fileAssets={stationContent.fileAssets || []}
+        fileAssets={stationContent.fileAssets}
         onCreateFileAsset={onCreateFileAsset}
         onPreprocessFileAsset={onPreprocessFileAsset}
         onActionMessage={onActionMessage}

@@ -12,52 +12,114 @@ import { MapPin, Play } from 'lucide-react-native';
 import { stationPostIconAssets } from '../../assets/icons';
 import {
   OwnedAgentDTO,
+  ProfileDTO,
   StationContentDTO,
   StationPostDTO,
 } from '../../models/api';
 import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
-import { Palette, palettes } from '../../shared/theme';
+import { Palette } from '../../shared/theme';
 import { Language } from '../session/useMiaoxunSession';
+import { UserAvatarRenderer } from '../messages/messageTypes';
+import { StationPageHeading } from './StationPageHeading';
+import { resolveStationColors } from './stationTheme';
 
 export function StationPostsPanel({
   palette,
   language,
   stationContent,
+  profile,
+  renderUserAvatar,
   ownedAgents,
   token,
   onDeletePost,
   onActionMessage,
   onActionError,
+  onOpenPostComposer,
 }: {
   palette: Palette;
   language: Language;
   stationContent: StationContentDTO;
+  profile: ProfileDTO;
+  renderUserAvatar: UserAvatarRenderer;
   ownedAgents: OwnedAgentDTO[];
   token: string;
   onDeletePost: (postId: string) => Promise<void>;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
+  onOpenPostComposer: () => void;
 }) {
-  const posts = stationContent.posts || [];
-  const surfaceColor =
-    palette.text === palettes.light.text ? '#FFFFFF' : palette.surface;
+  const posts = stationContent.posts;
+  const colors = resolveStationColors(palette);
+
+  const composer = (
+    <View
+      style={[styles.stationLifeComposer, { backgroundColor: colors.surface }]}
+    >
+      <View style={styles.stationLifeComposerAvatar}>
+        {renderUserAvatar({
+          text: profile.avatarText,
+          config: profile.avatarConfig,
+          size: 46,
+        })}
+      </View>
+      <View style={styles.stationLifeComposerCopy}>
+        <Text style={[styles.stationLifeComposerTitle, { color: colors.text }]}>
+          {textFor(language, '正在发生', 'Happening now')}
+        </Text>
+        <Text
+          style={[
+            styles.stationLifeComposerSubtitle,
+            { color: colors.secondaryText },
+          ]}
+        >
+          {textFor(language, '分享此刻的生活', 'Share what is happening')}
+        </Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={textFor(language, '发布动态', 'New Post')}
+        onPress={onOpenPostComposer}
+        style={styles.stationLifeComposerButton}
+      >
+        <Image
+          source={stationPostIconAssets.add}
+          resizeMode="contain"
+          style={styles.stationLifeComposerIcon}
+        />
+      </Pressable>
+    </View>
+  );
+  const heading = (
+    <StationPageHeading
+      detail={textFor(language, '私人时间线', 'Private timeline')}
+      palette={palette}
+      title={textFor(language, '我的生活', 'My Life')}
+      watermark="LIFE STREAM"
+    />
+  );
 
   if (!posts.length) {
     return (
-      <View
-        style={[styles.stationFeedEmpty, { backgroundColor: surfaceColor }]}
-      >
-        <Text style={[styles.stationFeedEmptyTitle, { color: palette.text }]}>
-          {textFor(language, '还没有动态', 'No posts yet')}
-        </Text>
+      <View style={styles.stationFeedStack}>
+        {heading}
+        {composer}
+        <View
+          style={[styles.stationFeedEmpty, { backgroundColor: colors.surface }]}
+        >
+          <Text style={[styles.stationFeedEmptyTitle, { color: colors.text }]}>
+            {textFor(language, '还没有动态', 'No posts yet')}
+          </Text>
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.stationFeedStack}>
+      {heading}
+      {composer}
       {posts.map(post => (
         <StationPostCard
           key={post.id}
@@ -101,9 +163,7 @@ function StationPostCard({
       return agent ? { id: agent.id, name: agent.name } : null;
     })
     .filter((agent): agent is { id: string; name: string } => Boolean(agent));
-  const isLight = palette.text === palettes.light.text;
-  const softColor = isLight ? '#F4F6FF' : palette.soft;
-  const surfaceColor = isLight ? '#FFFFFF' : palette.surface;
+  const colors = resolveStationColors(palette);
   const previewMedia = post.media.slice(0, 3);
 
   const deletePost = () => {
@@ -135,25 +195,25 @@ function StationPostCard({
   };
 
   return (
-    <View style={[styles.stationFeedCard, { backgroundColor: surfaceColor }]}>
+    <View style={[styles.stationFeedCard, { backgroundColor: colors.surface }]}>
       <View style={styles.stationFeedHeader}>
         <View style={styles.stationFeedDateCopy}>
           <Text
             numberOfLines={1}
-            style={[styles.stationFeedDay, { color: palette.text }]}
+            style={[styles.stationFeedDay, { color: colors.text }]}
           >
             {formatPostDay(post.createdAt, language)}
           </Text>
           <View style={styles.stationFeedMetaRow}>
             <View style={styles.stationFeedMetaItem}>
               <PostMetaIcon
-                color={palette.secondaryText}
+                color={colors.secondaryText}
                 source={stationPostIconAssets.time}
               />
               <Text
                 style={[
                   styles.stationFeedMetaText,
-                  { color: palette.secondaryText },
+                  { color: colors.secondaryText },
                 ]}
               >
                 {formatPostClock(post.createdAt, language)}
@@ -161,13 +221,13 @@ function StationPostCard({
             </View>
             <View style={styles.stationFeedMetaItem}>
               <PostKindIcon
-                color={palette.secondaryText}
+                color={colors.secondaryText}
                 kind={post.media[0]?.kind || 'text'}
               />
               <Text
                 style={[
                   styles.stationFeedMetaText,
-                  { color: palette.secondaryText },
+                  { color: colors.secondaryText },
                 ]}
               >
                 {postKindLabel(post, language)}
@@ -177,7 +237,7 @@ function StationPostCard({
               <Text
                 style={[
                   styles.stationFeedMetaText,
-                  { color: palette.secondaryText },
+                  { color: colors.secondaryText },
                 ]}
               >
                 {visibilityLabel(post, language)}
@@ -201,19 +261,19 @@ function StationPostCard({
       </View>
 
       {post.body ? (
-        <Text style={[styles.stationFeedBody, { color: palette.text }]}>
+        <Text style={[styles.stationFeedBody, { color: colors.text }]}>
           {post.body}
         </Text>
       ) : null}
 
       {post.locationLabel ? (
         <View style={styles.stationFeedLocation}>
-          <MapPin color={palette.secondaryText} size={13} strokeWidth={2} />
+          <MapPin color={colors.secondaryText} size={13} strokeWidth={2} />
           <Text
             numberOfLines={1}
             style={[
               styles.stationFeedLocationText,
-              { color: palette.secondaryText },
+              { color: colors.secondaryText },
             ]}
           >
             {post.locationLabel}
@@ -230,7 +290,7 @@ function StationPostCard({
                 styles.stationFeedMediaItem,
                 post.media.length === 1 && styles.stationFeedMediaItemSingle,
                 post.media.length === 2 && styles.stationFeedMediaItemDouble,
-                { backgroundColor: softColor },
+                { backgroundColor: colors.soft },
               ]}
             >
               {asset.kind === 'image' ? (
@@ -251,7 +311,7 @@ function StationPostCard({
                     numberOfLines={1}
                     style={[
                       styles.stationFeedVideoText,
-                      { color: palette.secondaryText },
+                      { color: colors.secondaryText },
                     ]}
                   >
                     {textFor(language, '视频', 'Video')}
@@ -277,11 +337,11 @@ function StationPostCard({
               key={agent.id}
               style={[
                 styles.stationFeedAgentChip,
-                { backgroundColor: softColor },
+                { backgroundColor: colors.soft },
               ]}
             >
               <Text
-                style={[styles.stationFeedAgentText, { color: palette.text }]}
+                style={[styles.stationFeedAgentText, { color: colors.text }]}
               >
                 {agent.name}
               </Text>
@@ -320,6 +380,8 @@ function PostMetric({
   palette: Palette;
   value: number;
 }) {
+  const colors = resolveStationColors(palette);
+
   return (
     <View style={styles.stationFeedAction}>
       <Image
@@ -328,7 +390,7 @@ function PostMetric({
         style={styles.stationFeedActionIcon}
       />
       <Text
-        style={[styles.stationFeedActionText, { color: palette.secondaryText }]}
+        style={[styles.stationFeedActionText, { color: colors.secondaryText }]}
       >
         {value || ''}
       </Text>

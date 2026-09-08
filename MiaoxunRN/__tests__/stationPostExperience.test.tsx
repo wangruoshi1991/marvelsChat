@@ -5,8 +5,13 @@ import ReactTestRenderer from 'react-test-renderer';
 import { stationPostIconAssets } from '../src/assets/icons';
 import { StationPostComposerScreen } from '../src/features/station/StationPostComposerScreen';
 import { StationPostsPanel } from '../src/features/station/StationPostsPanel';
+import { StationTabs } from '../src/features/station/StationHeader';
+import { StationOutcomesPanel } from '../src/features/station/StationOutcomesPanel';
 import { StationMediaAssetDTO, StationPostDTO } from '../src/models/api';
-import { emptyStationContent } from '../src/features/session/sessionDefaults';
+import {
+  emptyProfile,
+  emptyStationContent,
+} from '../src/features/session/sessionDefaults';
 import { palettes } from '../src/shared/theme';
 
 jest.mock('react-native/Libraries/Modal/Modal', () => {
@@ -62,8 +67,108 @@ const post: StationPostDTO = {
   updatedAt: new Date().toISOString(),
 };
 
+const renderUserAvatar = () => <Text>头像</Text>;
+
 describe('Station post experience', () => {
+  it('maps the five station tabs to the new information architecture', () => {
+    const onChange = jest.fn();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <StationTabs
+          language="zh"
+          palette={palettes.light}
+          value="station"
+          onChange={onChange}
+          onOpenSettings={jest.fn()}
+        />,
+      );
+    });
+
+    const tabValues = ['station', 'posts', 'outcomes', 'agents', 'social'];
+    const tabs = tabValues.map(value =>
+      renderer!.root
+        .findAllByProps({ testID: `station-tab-${value}` })
+        .find(tab => typeof tab.props.onPress === 'function'),
+    );
+    const labels = renderer!.root
+      .findAllByType(Text)
+      .map(node => node.props.children);
+    expect(labels).toEqual(
+      expect.arrayContaining(['第一面', '生活', '成果', '生态', '其他']),
+    );
+
+    ReactTestRenderer.act(() => {
+      tabs.forEach(tab => tab!.props.onPress());
+    });
+    expect(onChange.mock.calls.map(([value]) => value)).toEqual([
+      'station',
+      'posts',
+      'outcomes',
+      'agents',
+      'social',
+    ]);
+  });
+
+  it('counts only real station content in the outcomes overview', () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    const stationContent = {
+      ...emptyStationContent,
+      posts: [post],
+      comicDiaries: [
+        {
+          id: 'comic-1',
+          title: '漫画成果',
+          prompt: '',
+          summary: '',
+          createdAt: null,
+        } as never,
+      ],
+      siteDrafts: [
+        { id: 'site-1', prompt: '', draft: {}, createdAt: null } as never,
+        { id: 'site-2', prompt: '', draft: {}, createdAt: null } as never,
+      ],
+      videoDrafts: [
+        {
+          id: 'video-1',
+          title: '视频成果',
+          prompt: '',
+          summary: '',
+          createdAt: null,
+        } as never,
+      ],
+      outfits: [
+        { id: 'outfit-1', title: '穿搭 1', note: '' } as never,
+        { id: 'outfit-2', title: '穿搭 2', note: '' } as never,
+        { id: 'outfit-3', title: '穿搭 3', note: '' } as never,
+      ],
+    };
+
+    ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <StationOutcomesPanel
+          language="zh"
+          palette={palettes.light}
+          stationContent={stationContent}
+        />,
+      );
+    });
+
+    const textValues = renderer!.root
+      .findAllByType(Text)
+      .map(node => node.props.children);
+    expect(textValues).toContain('我的成果');
+    expect(textValues).toContain('生活动态');
+    expect(textValues).toContain('AI 产出');
+    expect(textValues).toContain('形象穿搭');
+    expect(textValues).toContain(1);
+    expect(textValues).toContain(4);
+    expect(textValues).toContain(3);
+  });
+
   it('matches the compact design and caps the image preview at three items', () => {
+    const onOpenPostComposer = jest.fn();
     let renderer: ReactTestRenderer.ReactTestRenderer;
     ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(
@@ -71,14 +176,24 @@ describe('Station post experience', () => {
           language="zh"
           ownedAgents={[]}
           palette={palettes.light}
+          profile={emptyProfile}
+          renderUserAvatar={renderUserAvatar}
           stationContent={{ ...emptyStationContent, posts: [post] }}
           token="token"
           onActionError={jest.fn()}
           onActionMessage={jest.fn()}
           onDeletePost={jest.fn(async () => undefined)}
+          onOpenPostComposer={onOpenPostComposer}
         />,
       );
     });
+
+    ReactTestRenderer.act(() => {
+      renderer!.root
+        .findByProps({ accessibilityLabel: '发布动态' })
+        .props.onPress();
+    });
+    expect(onOpenPostComposer).toHaveBeenCalledTimes(1);
 
     const remoteImages = renderer!.root
       .findAllByType(Image)
@@ -104,6 +219,37 @@ describe('Station post experience', () => {
     expect(textValues).toContain(8);
     expect(imageSources).toContain(stationPostIconAssets.time);
     expect(imageSources).toContain(stationPostIconAssets.photo);
+  });
+
+  it('keeps the life composer available when there are no posts', () => {
+    const onOpenPostComposer = jest.fn();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <StationPostsPanel
+          language="zh"
+          ownedAgents={[]}
+          palette={palettes.light}
+          profile={emptyProfile}
+          renderUserAvatar={renderUserAvatar}
+          stationContent={emptyStationContent}
+          token="token"
+          onActionError={jest.fn()}
+          onActionMessage={jest.fn()}
+          onDeletePost={jest.fn(async () => undefined)}
+          onOpenPostComposer={onOpenPostComposer}
+        />,
+      );
+    });
+
+    expect(renderer!.root.findByProps({ children: '正在发生' })).toBeTruthy();
+    ReactTestRenderer.act(() => {
+      renderer!.root
+        .findByProps({ accessibilityLabel: '发布动态' })
+        .props.onPress();
+    });
+    expect(onOpenPostComposer).toHaveBeenCalledTimes(1);
   });
 
   it('shows publish errors inside the full-screen composer', async () => {

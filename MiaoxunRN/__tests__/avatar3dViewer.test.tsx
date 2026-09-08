@@ -84,7 +84,25 @@ describe('Avatar3DViewer', () => {
         nativeEvent: { data: JSON.stringify({ type: 'ready' }) },
       });
     });
-    expect(webView.props.injectJavaScript).not.toHaveBeenCalled();
+    expect(webView.props.injectJavaScript).toHaveBeenCalledWith(
+      'window.MiaoxunAvatarViewer?.setActive(true); true;',
+    );
+
+    ReactTestRenderer.act(() => {
+      renderer!.update(
+        <Avatar3DViewer
+          active={false}
+          modelId="model-1"
+          onError={onError}
+          thumbnailAvailable
+          token="private-token"
+        />,
+      );
+    });
+    expect(webView.props.injectJavaScript).toHaveBeenCalledWith(
+      'window.MiaoxunAvatarViewer?.setActive(false); true;',
+    );
+    expect(webView.props.source).toBeDefined();
 
     ReactTestRenderer.act(() => {
       webView.props.onLoadEnd({
@@ -93,7 +111,7 @@ describe('Avatar3DViewer', () => {
         },
       });
     });
-    expect(webView.props.injectJavaScript).toHaveBeenCalledWith(
+    expect(webView.props.injectJavaScript).not.toHaveBeenCalledWith(
       expect.stringContaining('/api/avatar-3d/app/models/model-1/file'),
     );
 
@@ -126,5 +144,7 @@ describe('Avatar3DViewer', () => {
       });
     });
     expect(onError).toHaveBeenCalledWith('3D形象页面加载失败');
+
+    ReactTestRenderer.act(() => renderer!.unmount());
   });
 });

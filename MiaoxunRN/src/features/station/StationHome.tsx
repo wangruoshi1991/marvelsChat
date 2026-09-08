@@ -15,15 +15,21 @@ import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { StationAvatarSpace } from './StationAvatarSpace';
 import {
   AlbumGrid,
-  CallableAgentList,
+  AIPartnerGrid,
   DiaryComicGrid,
   EmptyModuleState,
   StationModule,
 } from './StationHomeModules';
-import { StationCreateKind, StationTab } from './stationTypes';
+import type {
+  StationContentListKind,
+  StationCreateKind,
+  StationTab,
+} from './stationTypes';
+import { StationPageHeading } from './StationPageHeading';
 import { Avatar3DLoadState } from './useAvatar3d';
 
 type StationHomeProps = {
+  active: boolean;
   palette: Palette;
   language: Language;
   token: string;
@@ -41,10 +47,12 @@ type StationHomeProps = {
   onOpenDiaryDetail: (entryId: string) => void;
   onOpenAlbumDetail: (albumId: string) => void;
   onOpenAgentThread: (agentId: string) => void;
+  onOpenContentList: (kind: StationContentListKind) => void;
   onActionMessage: (message: string) => void;
 };
 
 export function StationHome({
+  active,
   palette,
   language,
   token,
@@ -62,6 +70,7 @@ export function StationHome({
   onOpenDiaryDetail,
   onOpenAlbumDetail,
   onOpenAgentThread,
+  onOpenContentList,
   onActionMessage,
 }: StationHomeProps) {
   const openDiaryFlow = () => onOpenCreateSheet('diary');
@@ -75,6 +84,15 @@ export function StationHome({
       ),
     );
   const openAgentFlow = () => onSelectStationTab('agents');
+  const hasEnabledAgent = (agentId: string) =>
+    ownedAgents.some(agent => agent.id === agentId && agent.enabled);
+  const openModuleAgent = (agentId: string) => {
+    if (hasEnabledAgent(agentId)) {
+      onOpenAgentThread(agentId);
+      return;
+    }
+    openAgentFlow();
+  };
   const openCallableFlow = () => {
     onActionMessage(
       textFor(
@@ -95,10 +113,16 @@ export function StationHome({
         palette={palette}
         title={textFor(language, '个人日记', 'Personal Diary')}
         action={textFor(language, '添加', 'Add')}
+        agentAction={textFor(language, '漫画日记 Agent', 'Comic Diary Agent')}
+        agentAvailable={hasEnabledAgent('comic-diary')}
+        onAgentAction={() => openModuleAgent('comic-diary')}
+        onMore={() => onOpenContentList('diary')}
+        moreLabel={textFor(language, '更多日记', 'More diaries')}
         onAction={openDiaryFlow}
       >
         <DiaryComicGrid
           palette={palette}
+          language={language}
           entries={stationContent.diaryEntries}
           onOpenEntry={onOpenDiaryDetail}
         />
@@ -110,6 +134,11 @@ export function StationHome({
         palette={palette}
         title={textFor(language, '个人相册', 'Albums')}
         action={textFor(language, '添加', 'Add')}
+        agentAction={textFor(language, '相册管理 Agent', 'Album Manager Agent')}
+        agentAvailable={hasEnabledAgent('album-manager')}
+        onAgentAction={() => openModuleAgent('album-manager')}
+        onMore={() => onOpenContentList('album')}
+        moreLabel={textFor(language, '更多相册', 'More albums')}
         onAction={openAlbumFlow}
       >
         <AlbumGrid
@@ -146,11 +175,11 @@ export function StationHome({
       <StationModule
         key="agents"
         palette={palette}
-        title={textFor(language, '可调用能力 Agent', 'Callable Agents')}
-        action={textFor(language, '添加', 'Add')}
-        onAction={openAgentFlow}
+        title={textFor(language, 'AI伙伴', 'AI Partners')}
+        onMore={openAgentFlow}
+        moreLabel={textFor(language, '管理AI伙伴', 'Manage AI partners')}
       >
-        <CallableAgentList
+        <AIPartnerGrid
           palette={palette}
           language={language}
           agents={agents}
@@ -163,7 +192,14 @@ export function StationHome({
 
   return (
     <View style={styles.stationPanelStack}>
+      <StationPageHeading
+        detail={textFor(language, '个人形象记录', 'Personal archive')}
+        palette={palette}
+        title={textFor(language, '形象档案', 'Visual Archive')}
+        watermark="VISUAL ARCHIVE"
+      />
       <StationAvatarSpace
+        active={active}
         palette={palette}
         language={language}
         token={token}
@@ -171,6 +207,7 @@ export function StationHome({
         avatar3dStatus={avatar3dStatus}
         avatar3dError={avatar3dError}
         onOpenGenerator={onOpenAvatar3d}
+        onOpenCoreAgent={() => onOpenAgentThread('model-3d')}
         onOpenOotd={() => onOpenCreateSheet('outfit')}
         onOpenDiary={openDiaryFlow}
         onOpenAgents={openAgentFlow}

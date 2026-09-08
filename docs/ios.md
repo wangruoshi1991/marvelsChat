@@ -378,3 +378,9 @@ TestFlight 手机端必须安装包含本次原生补丁的新 build 后才能�
 当前 iOS 工程版本为 `1.0 (30)`。本轮仓库审查已使用 `MiaoxunRN.xcworkspace` 成功生成本地 Release archive，但没有上传新包；App Store Connect 中的 build 30 已于 2026-07-30 13:21 上传，当前为“正在测试”，并已加入内部和外部 `YU yunzhi` 群组。下次上传必须先把 `CURRENT_PROJECT_VERSION` 递增到 `31` 并重新 archive，不能复用 build 30 的验证归档。当前归档已移除 MapLibre，只包含 React、ReactNativeDependencies 和 Hermes framework；本文前面关于 MapLibre / Filament 的内容均为对应历史 build 的故障与发布记录。
 
 域名审核完成前，Release 仍通过 `MIAOXUN_TEMP_IP_TESTFLIGHT=1` 显式使用 `http://8.153.167.11`，并只为该 IP 保留 ATS 例外。该配置仅供 TestFlight 测试，正式上架必须改回 `https://api.marvelschat.com` 并删除公网 HTTP 例外。
+
+## 2026-08-31 Build 42 小站崩溃定位
+
+Build 41 与 Build 42 的 App Store Connect 真机报告均通过 `RCTExceptionsManager.reportFatal` 终止，根因是线上 bootstrap 的 `stationContent` 缺少移动端必填的 `posts` 数组。Build 41 在打开“生活”时首次读取该字段，Build 42 因五个小站页签同时挂载而在进入“小站”时立即读取，因此两版表现不同但属于同一个接口契约错误。
+
+生产后端现已返回真实 `posts`，并通过生产数据库级响应检查。移动端源码改为只挂载当前页签，同时在 bootstrap 和小站刷新边界验证全部必需数组；缺字段会进入明确的同步错误状态，不再在页面渲染期崩溃。本轮没有生成、归档或上传新的 iOS build，工程 `CURRENT_PROJECT_VERSION` 仍为 `42`；不得把本次服务器修复记录成新的 TestFlight 发布。

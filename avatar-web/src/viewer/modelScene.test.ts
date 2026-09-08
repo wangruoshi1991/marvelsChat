@@ -57,6 +57,9 @@ describe("createModelScene", () => {
     expect(firstFrame.cameraDistance).toBeGreaterThan(firstFrame.radius);
     const minimumVerticalDistance = firstFrame.radius / Math.sin((34 * Math.PI / 180) / 2);
     expect(firstFrame.cameraDistance).toBeGreaterThanOrEqual(minimumVerticalDistance * 1.08);
+    expect(firstFrame.cameraPosition.x).toBeCloseTo(0);
+    expect(firstFrame.cameraPosition.y).toBeCloseTo(0);
+    expect(firstFrame.cameraPosition.z).toBeGreaterThan(0);
     expect(firstFrame.target.toArray()).toEqual([0, 0, 0]);
 
     await scene.load("/model-2.glb");

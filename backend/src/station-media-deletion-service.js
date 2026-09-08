@@ -2,6 +2,8 @@ import { HttpError } from "./http-error.js";
 import {
   deleteStationMediaAsset,
   getStationMediaAssetForUser,
+  listStationAlbumMediaAssetsForUser,
+  deleteStationAlbum,
 } from "./station-repository.js";
 import { deletePrivateStorageObject } from "./storage-deletion-service.js";
 
@@ -35,3 +37,19 @@ export function createStationMediaDeletionService({
 
 export const deleteOwnedStationMediaAsset =
   createStationMediaDeletionService();
+
+export function createStationAlbumDeletionService({
+  listAssets = listStationAlbumMediaAssetsForUser,
+  deleteStorageObject = deleteStationMediaStorageObject,
+  deleteAlbum = deleteStationAlbum,
+} = {}) {
+  return async ({ userId, albumId }) => {
+    const assets = await listAssets({ userId, albumId });
+    for (const asset of assets) {
+      await deleteStorageObject(asset);
+    }
+    return deleteAlbum({ userId, albumId });
+  };
+}
+
+export const deleteOwnedStationAlbum = createStationAlbumDeletionService();

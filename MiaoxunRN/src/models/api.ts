@@ -75,8 +75,6 @@ export type AvatarConfigDTO = {
   bottom?: 'cargo' | 'jeans' | 'shorts' | 'skirt' | 'track';
   shoes?: 'sneaker' | 'boot' | 'canvas' | 'runner';
   action?: 'stand' | 'cross-arms' | 'wave' | 'soccer' | 'question' | 'sit';
-  shape?: 'circle' | 'rounded' | 'squircle';
-  palette?: 'sunrise' | 'mint' | 'sky' | 'grape' | 'mono';
   expression?: 'calm' | 'smile' | 'focus';
   accessory?: 'none' | 'spark' | 'cap' | 'glasses' | 'headphones';
 };
@@ -658,34 +656,34 @@ export type StationVideoDraftDTO = {
 };
 
 export type BootstrapDTO = {
-  serverTime?: string | null;
+  serverTime: string;
   user: UserDTO;
   profile: ProfileDTO;
   threads: ThreadDTO[];
   messagesByThread: Record<string, MessageDTO[]>;
-  notices?: NoticeDTO[];
-  unreadNoticeCount?: number;
-  profileVisibility?: ProfileVisibilityDTO;
-  searchHistory?: SearchHistoryDTO[];
-  relationships?: {
+  notices: NoticeDTO[];
+  unreadNoticeCount: number;
+  profileVisibility: ProfileVisibilityDTO;
+  searchHistory: SearchHistoryDTO[];
+  relationships: {
     following: RelationshipProfileDTO[];
     followers: RelationshipProfileDTO[];
     friends: RelationshipProfileDTO[];
   };
-  stationContent?: StationContentDTO;
+  stationContent: StationContentDTO;
   agents: {
     registered: AgentDTO[];
     owned: OwnedAgentDTO[];
   };
-  agentReadiness?: Record<string, AgentReadinessDTO>;
+  agentReadiness: Record<string, AgentReadinessDTO>;
   modules: Record<string, ModuleDTO>;
 };
 
 export type AppSyncDTO = {
   threads: ThreadDTO[];
   messagesByThread: Record<string, MessageDTO[]>;
-  notices?: NoticeDTO[];
-  unreadNoticeCount?: number;
+  notices: NoticeDTO[];
+  unreadNoticeCount: number;
   serverTime: string;
 };
 

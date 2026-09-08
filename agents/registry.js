@@ -4,6 +4,33 @@ import { fileURLToPath, pathToFileURL } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+async function loadAgentDefinitions() {
+  const files = (await fs.readdir(__dirname))
+    .filter((file) => file.endsWith(".agent.js"))
+    .sort();
+  const definitions = await Promise.all(
+    files.map(async (file) => {
+      const module = await import(pathToFileURL(path.join(__dirname, file)).href);
+      const agent = module.default;
+      if (!agent || typeof agent.key !== "string" || !agent.key.trim()) {
+        throw new Error(`Agent file ${file} must export a non-empty key`);
+      }
+      if (file !== `${agent.key}.agent.js`) {
+        throw new Error(`Agent file ${file} must match key ${agent.key}`);
+      }
+      validateAgentIdentity(agent);
+      validateAgentPermissions(agent);
+      return agent;
+    })
+  );
+  const keys = new Set();
+  for (const agent of definitions) {
+    if (keys.has(agent.key)) throw new Error(`Duplicate Agent key: ${agent.key}`);
+    keys.add(agent.key);
+  }
+  return definitions;
+}
+
 function validateAgentIdentity(agent) {
   const identity = agent.identity;
   const colors = identity?.colors;
@@ -21,14 +48,25 @@ function validateAgentIdentity(agent) {
   return identity;
 }
 
+export function validateAgentPermissions(agent) {
+  const permissions = agent?.permissions;
+  if (
+    !Array.isArray(permissions) ||
+    !permissions.length ||
+    permissions.some(
+      (scope) =>
+        typeof scope !== "string" ||
+        !/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/.test(scope),
+    ) ||
+    new Set(permissions).size !== permissions.length
+  ) {
+    throw new Error(`Agent ${agent?.key || "unknown"} must declare unique valid permissions`);
+  }
+  return permissions;
+}
+
 export async function listAgents() {
-  const files = (await fs.readdir(__dirname)).filter((file) => file.endsWith(".agent.js"));
-  const agents = await Promise.all(
-    files.map(async (file) => {
-      const module = await import(pathToFileURL(path.join(__dirname, file)).href);
-      return module.default;
-    })
-  );
+  const agents = await loadAgentDefinitions();
 
   return agents.map((agent) => ({
     key: agent.key,
@@ -38,27 +76,12 @@ export async function listAgents() {
     description: agent.description,
     capabilities: agent.capabilities,
     permissions: agent.permissions,
-    identity: validateAgentIdentity(agent),
+    identity: agent.identity,
     status: "registered"
   }));
 }
 
 export async function getAgent(key) {
-  const agents = await listAgents();
-  const match = agents.find((agent) => agent.key === key);
-  if (!match) return null;
-
-  const file = `${key}.agent.js`;
-  try {
-    const module = await import(pathToFileURL(path.join(__dirname, file)).href);
-    return module.default;
-  } catch {
-    const files = (await fs.readdir(__dirname)).filter((item) => item.endsWith(".agent.js"));
-    for (const candidate of files) {
-      const module = await import(pathToFileURL(path.join(__dirname, candidate)).href);
-      if (module.default?.key === key) return module.default;
-    }
-  }
-
-  return null;
+  const agents = await loadAgentDefinitions();
+  return agents.find((agent) => agent.key === key) || null;
 }

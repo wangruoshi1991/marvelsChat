@@ -92,7 +92,38 @@ const bootstrap: BootstrapDTO = {
   },
   threads: [],
   messagesByThread: {},
+  notices: [],
+  unreadNoticeCount: 0,
+  profileVisibility: {
+    showBio: true,
+    showAiId: true,
+    showCounts: true,
+    showCommunity: true,
+    showActivityArea: true,
+    showCollections: true,
+    showPosts: true,
+    showAlbum: true,
+    showDiary: true,
+    showMusic: true,
+    showFiles: false,
+    showFollowingList: false,
+    showFollowersList: false,
+  },
+  searchHistory: [],
+  relationships: { following: [], followers: [], friends: [] },
+  stationContent: {
+    posts: [],
+    diaryEntries: [],
+    albums: [],
+    mediaAssets: [],
+    outfits: [],
+    siteDrafts: [],
+    fileAssets: [],
+    comicDiaries: [],
+    videoDrafts: [],
+  },
   agents: { registered: [], owned: [] },
+  agentReadiness: {},
   modules: {},
 };
 
@@ -127,6 +158,8 @@ describe('session synchronization', () => {
     mockedApiClient.sync.mockResolvedValue({
       threads: [],
       messagesByThread: {},
+      notices: [],
+      unreadNoticeCount: 0,
       serverTime: '2026-07-10T06:00:01.000Z',
     });
   });
@@ -258,6 +291,29 @@ describe('session synchronization', () => {
     expect(mockedAvatar3dAttemptStore.clear).toHaveBeenCalledTimes(1);
     expect(currentSession?.token).toBe('');
     expect(currentSession?.user).toBeNull();
+
+    await ReactTestRenderer.act(() => {
+      renderer?.unmount();
+    });
+  });
+
+  test('logout does not report success when the local credential remains', async () => {
+    mockedTokenStore.clear.mockRejectedValueOnce(new Error('keychain failed'));
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+
+    await expect(
+      ReactTestRenderer.act(async () => {
+        await currentSession?.signOut();
+      }),
+    ).rejects.toThrow('无法清除本机登录凭证');
+
+    expect(mockedApiClient.logout).toHaveBeenCalledWith('saved-token');
+    expect(currentSession?.token).toBe('saved-token');
 
     await ReactTestRenderer.act(() => {
       renderer?.unmount();

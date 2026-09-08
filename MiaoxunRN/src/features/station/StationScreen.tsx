@@ -13,18 +13,25 @@ import { UserAvatarRenderer } from '../messages/messageTypes';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { MiaoPointsScreen } from './MiaoPointsScreen';
 import { Avatar3DCreateScreen } from './Avatar3DCreateScreen';
-import {
-  StationContentManageSheet,
-  StationManageTarget,
-} from './StationContentManageSheet';
-import { StationCreatePayload, StationCreateSheet } from './StationCreateSheet';
+import { StationContentManageSheet } from './StationContentManageSheet';
+import { StationContentListScreen } from './StationContentListScreen';
+import { StationCreateSheet } from './StationCreateSheet';
+import type { StationCreatePayload } from './StationCreateSheet';
 import { StationProfileHeader, StationTabs } from './StationHeader';
+import { StationPageHeading } from './StationPageHeading';
 import { StationPanel } from './StationPanels';
 import { stationModuleStatusText } from './stationModuleStatus';
-import { StationCreateKind, StationTab } from './stationTypes';
+import { resolveStationColors } from './stationTheme';
+import type {
+  StationContentListKind,
+  StationCreateKind,
+  StationManageTarget,
+  StationTab,
+} from './stationTypes';
 import { useAvatar3d } from './useAvatar3d';
 
 export function StationScreen({
+  active,
   palette,
   language,
   session,
@@ -37,10 +44,12 @@ export function StationScreen({
   onOpenQRCode,
   onOpenFriendThread,
   onOpenAgentThread,
+  onOpenPostComposer,
   onOpenPublicProfileByAiId,
   onActionMessage,
   onActionError,
 }: {
+  active: boolean;
   palette: Palette;
   language: Language;
   session: ReturnType<typeof useMiaoxunSession>;
@@ -53,6 +62,7 @@ export function StationScreen({
   onOpenQRCode: () => void;
   onOpenFriendThread: (friendUserId: string) => void;
   onOpenAgentThread: (agentId: string) => void;
+  onOpenPostComposer: () => void;
   onOpenPublicProfileByAiId: (aiId: string) => void;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
@@ -60,11 +70,30 @@ export function StationScreen({
   const [isPointsOpen, setIsPointsOpen] = useState(false);
   const [isAvatar3dOpen, setIsAvatar3dOpen] = useState(false);
   const [createKind, setCreateKind] = useState<StationCreateKind | null>(null);
-  const [manageTarget, setManageTarget] = useState<StationManageTarget | null>(
-    null,
-  );
+  const [contentListKind, setContentListKind] =
+    useState<StationContentListKind | null>(null);
+  const [contentListDetail, setContentListDetail] = useState<
+    | {
+        type: 'create';
+        kind: StationCreateKind;
+        returnTo: 'home' | 'list';
+      }
+    | {
+        type: 'detail';
+        target: StationManageTarget;
+        returnTo: 'home' | 'list';
+      }
+    | {
+        type: 'edit';
+        target: StationManageTarget;
+        returnTo: 'home' | 'list';
+        backTo: 'detail' | 'list';
+      }
+    | null
+  >(null);
   const [isCreatingStationContent, setIsCreatingStationContent] =
     useState(false);
+  const [createProgressText, setCreateProgressText] = useState('');
   const avatar3d = useAvatar3d(session.token, !isAvatar3dOpen);
   const refreshAvatar3d = avatar3d.refresh;
 
@@ -107,11 +136,30 @@ export function StationScreen({
         });
         onActionMessage(textFor(language, '日记已保存', 'Diary saved'));
       } else if (payload.kind === 'album') {
-        await session.createStationAlbum({
+        const album = await session.createStationAlbum({
           title: payload.title,
           description: payload.description,
           visibility: payload.visibility,
         });
+        try {
+          for (let index = 0; index < payload.media.length; index += 1) {
+            const media = payload.media[index];
+            setCreateProgressText(`${index + 1}/${payload.media.length}`);
+            await session.createStationMediaAsset({
+              albumId: album.id,
+              kind: 'image',
+              originalFilename: media.originalFilename,
+              mimeType: media.mimeType,
+              byteSize: media.byteSize,
+              width: media.width,
+              height: media.height,
+              localMedia: media,
+            });
+          }
+        } catch (error) {
+          await session.deleteStationAlbum(album.id);
+          throw error;
+        }
         onActionMessage(textFor(language, '相册已创建', 'Album created'));
       } else {
         await session.createStationOutfit({
@@ -123,10 +171,13 @@ export function StationScreen({
       }
       onSelectStationTab('station');
       setCreateKind(null);
+      return true;
     } catch (error) {
       onActionError(error);
+      return false;
     } finally {
       setIsCreatingStationContent(false);
+      setCreateProgressText('');
     }
   };
 
@@ -180,89 +231,160 @@ export function StationScreen({
     );
   };
 
+  const openStationCreate = (kind: StationCreateKind) => {
+    if (kind === 'outfit') {
+      setCreateKind(kind);
+      return;
+    }
+    setContentListKind(kind);
+    setContentListDetail({ type: 'create', kind, returnTo: 'home' });
+  };
+
   const openDiaryDetail = (entryId: string) => {
-    setManageTarget({ kind: 'diary', id: entryId });
+    setContentListKind('diary');
+    setContentListDetail({
+      type: 'detail',
+      target: { kind: 'diary', id: entryId },
+      returnTo: 'home',
+    });
   };
 
   const openAlbumDetail = (albumId: string) => {
-    setManageTarget({ kind: 'album', id: albumId });
+    setContentListKind('album');
+    setContentListDetail({
+      type: 'detail',
+      target: { kind: 'album', id: albumId },
+      returnTo: 'home',
+    });
+  };
+
+  const closeContentDetail = () => {
+    if (!contentListDetail) {
+      setContentListKind(null);
+      return;
+    }
+    if (contentListDetail.type === 'edit') {
+      setContentListDetail(
+        contentListDetail.backTo === 'detail'
+          ? {
+              type: 'detail',
+              target: contentListDetail.target,
+              returnTo: contentListDetail.returnTo,
+            }
+          : null,
+      );
+      return;
+    }
+    if (contentListDetail.returnTo === 'home') {
+      setContentListDetail(null);
+      setContentListKind(null);
+      return;
+    }
+    setContentListDetail(null);
+  };
+
+  const closeDeletedContent = () => {
+    if (contentListDetail?.returnTo === 'home') {
+      setContentListKind(null);
+    }
+    setContentListDetail(null);
   };
 
   const isDark = session.appearance === 'dark';
-  const stationBackgroundColor = isDark ? palette.background : '#F8F7FD';
-  const stationSurfaceColor = isDark ? palette.surface : '#FFFFFF';
-  const stationBorderColor = isDark ? palette.border : '#F0EBFD';
+  const stationColors = resolveStationColors(palette);
+  const unsetLocationText = textFor(language, '未设置', 'Not set');
+  const communityText = displayLocationText(
+    language,
+    session.profile.community,
+  );
+  const activityAreaText = displayLocationText(
+    language,
+    session.profile.activityArea,
+  );
 
   // Presence stays in the session model; its station entry awaits a final design location.
 
   return (
-    <View style={[styles.screen, { backgroundColor: stationBackgroundColor }]}>
-      <ScrollView
-        stickyHeaderIndices={[1]}
-        contentContainerStyle={styles.stationScrollContent}
+    <View
+      style={[styles.screen, { backgroundColor: stationColors.background }]}
+    >
+      <View
+        style={[
+          styles.stationTabHeader,
+          {
+            backgroundColor: stationColors.surface,
+            borderBottomColor: stationColors.border,
+          },
+        ]}
       >
-        <View
-          style={[
-            styles.stationTopContent,
-            { backgroundColor: stationSurfaceColor },
-          ]}
-        >
-          <StationProfileHeader
-            palette={palette}
-            language={language}
-            isDark={isDark}
-            nickname={displayText(language, session.profile.nickname)}
-            aiId={session.user?.aiId || '--'}
-            avatarText={session.profile.avatarText}
-            avatarConfig={session.profile.avatarConfig}
-            followingCount={session.profile.followingCount}
-            followersCount={session.profile.followersCount}
-            likesCount={session.profile.likesCount}
-            collectionsCount={session.profile.collectionsCount}
-            miaoPoints={session.profile.miaoPoints}
-            community={
-              displayLocationText(language, session.profile.community) ||
-              textFor(language, '未设置', 'Not set')
-            }
-            activityArea={
-              displayLocationText(language, session.profile.activityArea) ||
-              textFor(language, '未设置', 'Not set')
-            }
-            renderUserAvatar={renderUserAvatar}
-            onCopyAIID={onCopyAIID}
-            onShowQRCode={onOpenQRCode}
-            onOpenSettings={onOpenSettings}
-            onOpenPoints={() => setIsPointsOpen(true)}
-            onOpenLocation={onOpenLocation}
-            onOpenSocial={() => onSelectStationTab('social')}
-          />
-        </View>
+        <StationTabs
+          palette={palette}
+          language={language}
+          value={selectedStationTab}
+          onChange={onSelectStationTab}
+          onOpenSettings={onOpenSettings}
+        />
+      </View>
 
-        <View
-          style={[
-            styles.stationTabHeader,
-            {
-              backgroundColor: stationSurfaceColor,
-              borderBottomColor: stationBorderColor,
-            },
-          ]}
-        >
-          <StationTabs
-            palette={palette}
-            language={language}
-            isDark={isDark}
-            value={selectedStationTab}
-            onChange={onSelectStationTab}
-          />
-        </View>
+      <ScrollView
+        contentContainerStyle={styles.stationScrollContent}
+        style={styles.stationPanelScroll}
+        testID={`station-panel-scroll-${selectedStationTab}`}
+      >
+        {selectedStationTab === 'station' ? (
+          <View
+            style={[
+              styles.stationTopContent,
+              { backgroundColor: stationColors.background },
+            ]}
+          >
+            <StationPageHeading
+              detail={textFor(language, '个人数字名片', 'Digital profile')}
+              palette={palette}
+              title={textFor(language, '第一面', 'Front')}
+              watermark="PERSONA"
+            />
+            <StationProfileHeader
+              palette={palette}
+              language={language}
+              nickname={displayText(language, session.profile.nickname)}
+              aiId={session.user?.aiId || '--'}
+              avatarText={session.profile.avatarText}
+              avatarConfig={session.profile.avatarConfig}
+              bio={displayText(language, session.profile.bio)}
+              presenceStatus={
+                session.user?.presenceMode === 'online' ? 'online' : 'offline'
+              }
+              followingCount={session.profile.followingCount}
+              followersCount={session.profile.followersCount}
+              likesCount={session.profile.likesCount}
+              collectionsCount={session.profile.collectionsCount}
+              miaoPoints={session.profile.miaoPoints}
+              community={
+                communityText === unsetLocationText ? '' : communityText
+              }
+              activityArea={
+                activityAreaText === unsetLocationText ? '' : activityAreaText
+              }
+              renderUserAvatar={renderUserAvatar}
+              onCopyAIID={onCopyAIID}
+              onShowQRCode={onOpenQRCode}
+              onOpenPoints={() => setIsPointsOpen(true)}
+              onOpenLocation={onOpenLocation}
+              onOpenSocial={() => onSelectStationTab('social')}
+            />
+          </View>
+        ) : null}
 
-        <View style={styles.stationPanelWrap}>
+        <View collapsable={false} style={styles.stationPanelWrap}>
           <StationPanel
+            active={active}
             palette={palette}
             language={language}
             selectedTab={selectedStationTab}
             token={session.token}
             profile={session.profile}
+            renderUserAvatar={renderUserAvatar}
             relationships={session.relationships}
             stationContent={session.stationContent}
             avatar3d={avatar3d.bootstrap}
@@ -276,10 +398,12 @@ export function StationScreen({
             }
             onOpenFriendThread={onOpenFriendThread}
             onOpenAgentThread={onOpenAgentThread}
+            onOpenPostComposer={onOpenPostComposer}
+            onOpenContentList={setContentListKind}
             onSetAgentEnabled={session.setAgentEnabled}
             onOpenPublicProfileByAiId={onOpenPublicProfileByAiId}
             onSelectStationTab={onSelectStationTab}
-            onOpenCreateSheet={setCreateKind}
+            onOpenCreateSheet={openStationCreate}
             onOpenDiaryDetail={openDiaryDetail}
             onOpenAlbumDetail={openAlbumDetail}
             onDeletePost={session.deleteStationPost}
@@ -308,7 +432,7 @@ export function StationScreen({
               edges={['top', 'bottom']}
               style={[
                 styles.safeArea,
-                { backgroundColor: stationSurfaceColor },
+                { backgroundColor: stationColors.surface },
               ]}
             >
               <Avatar3DCreateScreen
@@ -332,7 +456,10 @@ export function StationScreen({
         <SafeAreaProvider>
           <SafeAreaView
             edges={['top', 'bottom']}
-            style={[styles.safeArea, { backgroundColor: stationSurfaceColor }]}
+            style={[
+              styles.safeArea,
+              { backgroundColor: stationColors.surface },
+            ]}
           >
             <MiaoPointsScreen
               palette={palette}
@@ -342,6 +469,110 @@ export function StationScreen({
               onBack={() => setIsPointsOpen(false)}
               onLoadEntries={session.listMiaoPointLedger}
             />
+          </SafeAreaView>
+        </SafeAreaProvider>
+      </Modal>
+      <Modal
+        animationType="fade"
+        presentationStyle="fullScreen"
+        visible={contentListKind !== null}
+        onRequestClose={closeContentDetail}
+      >
+        <SafeAreaProvider>
+          <SafeAreaView
+            edges={['top', 'bottom']}
+            style={[
+              styles.safeArea,
+              { backgroundColor: stationColors.surface },
+            ]}
+          >
+            {contentListDetail?.type === 'create' ? (
+              <StationCreateSheet
+                kind={contentListDetail.kind}
+                fullScreen
+                palette={palette}
+                language={language}
+                isSaving={isCreatingStationContent}
+                progressText={createProgressText}
+                onBack={closeContentDetail}
+                onActionError={onActionError}
+                onSubmit={async payload => {
+                  if (await createStationContent(payload)) {
+                    closeContentDetail();
+                  }
+                }}
+              />
+            ) : contentListDetail?.type === 'edit' ? (
+              <StationContentManageSheet
+                target={contentListDetail.target}
+                palette={palette}
+                language={language}
+                token={session.token}
+                stationContent={session.stationContent}
+                session={session}
+                onAddAlbumMedia={openAlbumMediaPicker}
+                mode="edit"
+                onBack={closeContentDetail}
+                onDeleted={closeDeletedContent}
+                onActionMessage={onActionMessage}
+                onActionError={onActionError}
+              />
+            ) : contentListDetail?.type === 'detail' ? (
+              <StationContentManageSheet
+                target={contentListDetail.target}
+                palette={palette}
+                language={language}
+                token={session.token}
+                stationContent={session.stationContent}
+                session={session}
+                onAddAlbumMedia={openAlbumMediaPicker}
+                mode="detail"
+                onEdit={() =>
+                  setContentListDetail({
+                    ...contentListDetail,
+                    type: 'edit',
+                    backTo: 'detail',
+                  })
+                }
+                onBack={closeContentDetail}
+                onDeleted={closeDeletedContent}
+                onActionMessage={onActionMessage}
+                onActionError={onActionError}
+              />
+            ) : contentListKind ? (
+              <StationContentListScreen
+                kind={contentListKind}
+                albums={session.stationContent.albums}
+                diaryEntries={session.stationContent.diaryEntries}
+                language={language}
+                mediaAssets={session.stationContent.mediaAssets}
+                onBack={() => setContentListKind(null)}
+                onCreate={() => {
+                  setContentListDetail({
+                    type: 'create',
+                    kind: contentListKind === 'diary' ? 'diary' : 'album',
+                    returnTo: 'list',
+                  });
+                }}
+                onOpen={target => {
+                  setContentListDetail({
+                    type: 'detail',
+                    target,
+                    returnTo: 'list',
+                  });
+                }}
+                onEdit={target => {
+                  setContentListDetail({
+                    type: 'edit',
+                    target,
+                    returnTo: 'list',
+                    backTo: 'list',
+                  });
+                }}
+                palette={palette}
+                token={session.token}
+              />
+            ) : null}
           </SafeAreaView>
         </SafeAreaProvider>
       </Modal>
@@ -362,31 +593,6 @@ export function StationScreen({
               isSaving={isCreatingStationContent}
               onBack={() => setCreateKind(null)}
               onSubmit={createStationContent}
-            />
-          ) : null}
-        </SafeAreaView>
-      </Modal>
-      <Modal
-        animationType="slide"
-        presentationStyle="pageSheet"
-        visible={manageTarget !== null}
-        onRequestClose={() => setManageTarget(null)}
-      >
-        <SafeAreaView
-          style={[styles.safeArea, { backgroundColor: palette.background }]}
-        >
-          {manageTarget ? (
-            <StationContentManageSheet
-              target={manageTarget}
-              palette={palette}
-              language={language}
-              token={session.token}
-              stationContent={session.stationContent}
-              session={session}
-              onAddAlbumMedia={openAlbumMediaPicker}
-              onBack={() => setManageTarget(null)}
-              onActionMessage={onActionMessage}
-              onActionError={onActionError}
             />
           ) : null}
         </SafeAreaView>

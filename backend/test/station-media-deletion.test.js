@@ -2,9 +2,44 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createStationAlbumDeletionService,
   createStationMediaDeletionService,
   deleteStationMediaStorageObject,
 } from "../src/station-media-deletion-service.js";
+
+test("station album deletion removes every stored object before database rows", async () => {
+  const calls = [];
+  const deleteAlbum = createStationAlbumDeletionService({
+    listAssets: async () => [
+      { id: "asset-1", storageKey: "one.jpg" },
+      { id: "asset-2", storageKey: "two.jpg" },
+    ],
+    deleteStorageObject: async (asset) => calls.push(`storage:${asset.id}`),
+    deleteAlbum: async () => {
+      calls.push("database:album");
+      return true;
+    },
+  });
+
+  assert.equal(await deleteAlbum({ userId: "user-1", albumId: "album-1" }), true);
+  assert.deepEqual(calls, ["storage:asset-1", "storage:asset-2", "database:album"]);
+});
+
+test("station album remains retryable when one stored object cannot be deleted", async () => {
+  let databaseDeleted = false;
+  const deleteAlbum = createStationAlbumDeletionService({
+    listAssets: async () => [{ id: "asset-1", storageKey: "one.jpg" }],
+    deleteStorageObject: async () => {
+      throw new Error("storage unavailable");
+    },
+    deleteAlbum: async () => {
+      databaseDeleted = true;
+    },
+  });
+
+  await assert.rejects(() => deleteAlbum({ userId: "user-1", albumId: "album-1" }));
+  assert.equal(databaseDeleted, false);
+});
 
 test("station media deletion removes storage before the database record", async () => {
   const calls = [];

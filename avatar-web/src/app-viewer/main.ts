@@ -8,7 +8,10 @@ type ViewerConfig = {
 type ViewerBridge = {
   load(config: ViewerConfig): Promise<void>;
   resetCamera(): void;
+  setActive(active: boolean): void;
 };
+
+type AssistGesturePhase = "activate" | "move" | "release" | "cancel";
 
 declare global {
   interface Window {
@@ -29,6 +32,7 @@ if (!canvas || !loading) {
 let loadRevision = 0;
 let activeRequest: AbortController | null = null;
 let scene: ReturnType<typeof createModelScene> | null = null;
+let viewerActive = true;
 
 const notify = (message: {
   type: "ready" | "downloading" | "parsing" | "loaded" | "error";
@@ -41,6 +45,77 @@ const setLoading = (value: boolean) => {
   loading.hidden = !value;
 };
 
+const notifyAssistGesture = (
+  phase: AssistGesturePhase,
+  event: PointerEvent,
+) => {
+  window.ReactNativeWebView?.postMessage(JSON.stringify({
+    type: "assist-gesture",
+    phase,
+    x: event.clientX,
+    y: event.clientY,
+  }));
+};
+
+const installAssistGesture = () => {
+  const activationDelayMs = 420;
+  const movementTolerance = 8;
+  let pointerId: number | null = null;
+  let origin = { x: 0, y: 0 };
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let active = false;
+
+  const clearTimer = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+  const reset = () => {
+    clearTimer();
+    pointerId = null;
+    active = false;
+  };
+
+  canvas.addEventListener("pointerdown", (event) => {
+    if (!event.isPrimary || event.pointerType !== "touch") return;
+    reset();
+    pointerId = event.pointerId;
+    origin = { x: event.clientX, y: event.clientY };
+    timer = setTimeout(() => {
+      if (pointerId !== event.pointerId) return;
+      active = true;
+      canvas.setPointerCapture?.(event.pointerId);
+      notifyAssistGesture("activate", event);
+    }, activationDelayMs);
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (event.pointerId !== pointerId) return;
+    if (!active) {
+      if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > movementTolerance) {
+        clearTimer();
+      }
+      return;
+    }
+    event.stopImmediatePropagation();
+    notifyAssistGesture("move", event);
+  });
+  canvas.addEventListener("pointerup", (event) => {
+    if (event.pointerId !== pointerId) return;
+    clearTimer();
+    if (active) {
+      notifyAssistGesture("release", event);
+    }
+    reset();
+  });
+  canvas.addEventListener("pointercancel", (event) => {
+    if (event.pointerId !== pointerId) return;
+    clearTimer();
+    if (active) {
+      notifyAssistGesture("cancel", event);
+    }
+    reset();
+  });
+};
+
 const assertModelUrl = (value: string) => {
   const parsed = new URL(value);
   if (!new Set(["http:", "https:"]).has(parsed.protocol)) {
@@ -48,6 +123,8 @@ const assertModelUrl = (value: string) => {
   }
   return parsed.toString();
 };
+
+installAssistGesture();
 
 const load = async ({ modelUrl, token }: ViewerConfig) => {
   if (!String(token || "").trim()) {
@@ -78,6 +155,7 @@ const load = async ({ modelUrl, token }: ViewerConfig) => {
       phase = "parsing";
       notify({ type: "parsing" });
       scene ||= createModelScene(canvas, { backgroundColor: "#F7F8FC" });
+      scene.setActive(viewerActive);
       await scene.load(objectUrl);
     } finally {
       URL.revokeObjectURL(objectUrl);
@@ -111,5 +189,10 @@ window.addEventListener("pagehide", () => {
 window.MiaoxunAvatarViewer = Object.freeze({
   load,
   resetCamera: () => scene?.resetCamera(),
+  setActive: (active: boolean) => {
+    viewerActive = active;
+    scene?.setActive(active);
+    if (active) resize();
+  },
 });
 notify({ type: "ready" });

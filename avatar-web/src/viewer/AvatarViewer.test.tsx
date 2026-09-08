@@ -38,6 +38,7 @@ describe("AvatarViewer", () => {
       load: vi.fn(() => new Promise<void>((resolve) => { resolveLoad = resolve; })),
       resetCamera: vi.fn(),
       resize: vi.fn(),
+      setActive: vi.fn(),
       dispose: vi.fn(),
       getFramingSnapshot: vi.fn(),
     };

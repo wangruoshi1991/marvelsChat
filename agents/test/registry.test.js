@@ -1,6 +1,28 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getAgent, listAgents } from "../registry.js";
+import {
+  getAgent,
+  listAgents,
+  validateAgentPermissions,
+} from "../registry.js";
+
+test("Agent permissions must be unique valid scopes", () => {
+  assert.throws(
+    () =>
+      validateAgentPermissions({
+        key: "invalid-agent",
+        permissions: ["station:read", "station:read"],
+      }),
+    /unique valid permissions/,
+  );
+  assert.deepEqual(
+    validateAgentPermissions({
+      key: "valid-agent",
+      permissions: ["station:read", "agents:invoke"],
+    }),
+    ["station:read", "agents:invoke"],
+  );
+});
 
 test("site-builder agent is registered with station drafting capabilities", async () => {
   const agents = await listAgents();
@@ -11,6 +33,10 @@ test("site-builder agent is registered with station drafting capabilities", asyn
   assert.equal(siteBuilder.category, "station-builder");
   assert.ok(siteBuilder.capabilities.includes("station-site-draft"));
   assert.ok(siteBuilder.permissions.includes("profile:read"));
+});
+
+test("unknown Agent keys do not fall back to another definition", async () => {
+  assert.equal(await getAgent("missing-agent"), null);
 });
 
 test("site-builder agent plan asks for structured JSON only", async () => {
@@ -71,6 +97,15 @@ test("file-preprocessor agent is registered for file preprocessing", async () =>
   assert.ok(fileAgent.capabilities.includes("file-summary"));
   assert.ok(fileAgent.capabilities.includes("metadata-tagging"));
   assert.ok(fileAgent.permissions.includes("files:write"));
+
+  const fullAgent = await getAgent("file-preprocessor");
+  const plan = await fullAgent.plan({
+    input: "整理我的文件",
+    user: { displayName: "测试用户" },
+    appContext: { stationContent: { fileAssets: [{ id: "file-1" }] } },
+  });
+  assert.match(plan.user, /已有文件数: 1/);
+  assert.doesNotMatch(plan.user, /昵称:/);
 });
 
 test("album-manager agent is registered for album organization", async () => {

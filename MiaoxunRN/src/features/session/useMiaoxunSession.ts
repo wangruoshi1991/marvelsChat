@@ -46,11 +46,23 @@ import { useStationActions } from './useStationActions';
 
 export type { ChatMessage, ChatThread, Language } from './sessionTypes';
 
-async function clearLocalSession() {
-  await Promise.all([
-    tokenStore.clear().catch(() => undefined),
-    avatar3dAttemptStore.clear().catch(() => undefined),
+async function clearLocalSession({ requireTokenClear = false } = {}) {
+  const [tokenResult, avatarAttemptResult] = await Promise.allSettled([
+    tokenStore.clear(),
+    avatar3dAttemptStore.clear(),
   ]);
+
+  if (avatarAttemptResult.status === 'rejected') {
+    console.warn(
+      '[MiaoxunSession] Failed to clear pending 3D submission state.',
+    );
+  }
+  if (tokenResult.status === 'rejected') {
+    if (requireTokenClear) {
+      throw new Error('无法清除本机登录凭证，请重试退出登录。');
+    }
+    console.warn('[MiaoxunSession] Failed to clear the local auth credential.');
+  }
 }
 
 export function useMiaoxunSession() {
@@ -164,19 +176,17 @@ export function useMiaoxunSession() {
     setThreads(buildThreads(bootstrap));
     setModules(bootstrap.modules);
     setAgents(bootstrap.agents.registered);
-    setAgentReadiness(bootstrap.agentReadiness || {});
+    setAgentReadiness(bootstrap.agentReadiness);
     setOwnedAgents(bootstrap.agents.owned);
-    setNotices(bootstrap.notices || []);
-    setUnreadNoticeCount(bootstrap.unreadNoticeCount || 0);
-    setProfileVisibility(
-      bootstrap.profileVisibility || defaultProfileVisibility,
-    );
-    setSearchHistory(bootstrap.searchHistory || []);
-    setRelationships(bootstrap.relationships || emptyRelationships);
-    setStationContent(bootstrap.stationContent || emptyStationContent);
+    setNotices(bootstrap.notices);
+    setUnreadNoticeCount(bootstrap.unreadNoticeCount);
+    setProfileVisibility(bootstrap.profileVisibility);
+    setSearchHistory(bootstrap.searchHistory);
+    setRelationships(bootstrap.relationships);
+    setStationContent(bootstrap.stationContent);
     setLanguage(bootstrap.profile.stationConfig.language || 'zh');
     setAppearance(bootstrap.profile.stationConfig.appearance || 'light');
-    lastSyncAtRef.current = bootstrap.serverTime || new Date().toISOString();
+    lastSyncAtRef.current = bootstrap.serverTime;
   }, []);
 
   const refreshBootstrap = useCallback(
@@ -332,12 +342,8 @@ export function useMiaoxunSession() {
               buildThreadsFromSync(sync.threads, sync.messagesByThread),
             ),
           );
-          if (sync.notices) {
-            setNotices(sync.notices);
-          }
-          if (typeof sync.unreadNoticeCount === 'number') {
-            setUnreadNoticeCount(sync.unreadNoticeCount);
-          }
+          setNotices(sync.notices);
+          setUnreadNoticeCount(sync.unreadNoticeCount);
           lastSyncAtRef.current = sync.serverTime;
         } catch (error) {
           if (isAuthSessionError(error)) {
@@ -487,7 +493,7 @@ export function useMiaoxunSession() {
     if (currentToken) {
       await apiClient.logout(currentToken).catch(() => undefined);
     }
-    await clearLocalSession();
+    await clearLocalSession({ requireTokenClear: true });
     updateToken('');
     resetAuthenticatedState();
     setErrorMessage(null);

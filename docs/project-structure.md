@@ -37,7 +37,7 @@ MiaoxunRN/src/
 
 当前移动端采用功能分层：
 
-- `src/features/station/`：我的小站、小站内容、Agent 能力入口和位置设置。
+- `src/features/station/`：我的小站、小站内容、Agent 能力入口和位置设置。内容管理容器负责数据状态和副作用，详情/编辑视图负责展示，共享导航目标放在 `stationTypes.ts`。
 - `src/features/session/`：登录后的会话状态、bootstrap 同步、消息/小站/社交动作。
 - `src/services/`：token、定位、语音、二维码和媒体上传服务。
 - `src/services/api/`：按领域拆分的 HTTP API 客户端，包含网络底座、认证、应用同步、社交、通知、消息、资料、小站内容和小站 Agent 能力；`src/services/apiClient.ts` 是面向调用方的领域 API facade 与聚合出口。

@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AgentDTO } from '../../models/api';
 import { recognizeSpeechOnce } from '../../services/speechToText';
@@ -63,6 +64,8 @@ export function ChatScreen({
   onSetMuted,
   onActionError,
   onOpenPeerProfile,
+  initialDraft,
+  onInitialDraftConsumed,
 }: {
   palette: Palette;
   language: Language;
@@ -82,10 +85,14 @@ export function ChatScreen({
   onSetMuted: (muted: boolean) => Promise<void>;
   onActionError: (message: string) => void;
   onOpenPeerProfile?: () => void;
+  initialDraft?: string;
+  onInitialDraftConsumed?: () => void;
 }) {
   const [draft, setDraft] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isRecognizingSpeech, setIsRecognizingSpeech] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  const safeAreaInsets = useSafeAreaInsets();
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(
     null,
   );
@@ -246,22 +253,44 @@ export function ChatScreen({
   }, [thread.id, thread.messages.length]);
 
   useEffect(() => {
-    const showSubscription = Keyboard.addListener('keyboardDidShow', () => {
+    if (!initialDraft) {
+      return;
+    }
+    setDraft(initialDraft);
+    onInitialDraftConsumed?.();
+  }, [initialDraft, onInitialDraftConsumed]);
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', event => {
+      if (Platform.OS === 'ios') {
+        setKeyboardInset(
+          Math.max(0, event.endCoordinates.height - safeAreaInsets.bottom),
+        );
+      }
       scrollToBottom(true);
       setTimeout(() => scrollToBottom(true), 80);
     });
     const frameSubscription = Keyboard.addListener(
       'keyboardDidChangeFrame',
-      () => {
+      event => {
+        if (Platform.OS === 'ios') {
+          setKeyboardInset(
+            Math.max(0, event.endCoordinates.height - safeAreaInsets.bottom),
+          );
+        }
         scrollToBottom(true);
       },
     );
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardInset(0);
+    });
 
     return () => {
       showSubscription.remove();
       frameSubscription.remove();
+      hideSubscription.remove();
     };
-  }, []);
+  }, [safeAreaInsets.bottom]);
 
   const send = () => {
     const content = draft.trim();
@@ -309,13 +338,16 @@ export function ChatScreen({
         styles.chatScreen,
         { backgroundColor: messagePalette.background },
       ]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      enabled={false}
     >
       <Animated.View
         {...closeSwipeResponder.panHandlers}
         style={[
           styles.chatSwipeSurface,
-          { transform: [{ translateX: chatTranslateX }] },
+          {
+            marginBottom: keyboardInset,
+            transform: [{ translateX: chatTranslateX }],
+          },
         ]}
       >
         <ChatHeader

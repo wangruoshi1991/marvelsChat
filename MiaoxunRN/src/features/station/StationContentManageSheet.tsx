@@ -1,31 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Alert,
-  Image,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert } from 'react-native';
 
 import { StationContentDTO, StationVisibility } from '../../models/api';
-import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
 import { textFor } from '../../shared/i18n';
-import {
-  SettingGroup,
-  SettingsActionButton,
-  SettingsSegmentRow,
-} from '../../shared/settingsUi';
-import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
-import { SegmentedControl, SheetHeader } from '../../shared/ui';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
-import { StationComicDiaryPanel } from './StationComicDiaryPanel';
-
-export type StationManageTarget =
-  | { kind: 'diary'; id: string }
-  | { kind: 'album'; id: string };
+import {
+  StationContentDetailView,
+  StationContentEditView,
+} from './StationContentManageViews';
+import type { StationManageTarget } from './stationTypes';
 
 type StationContentManageSheetProps = {
   target: StationManageTarget;
@@ -35,16 +19,13 @@ type StationContentManageSheetProps = {
   stationContent: StationContentDTO;
   session: ReturnType<typeof useMiaoxunSession>;
   onAddAlbumMedia: (albumId: string) => void;
+  mode: 'detail' | 'edit';
+  onEdit?: () => void;
   onBack: () => void;
+  onDeleted: () => void;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 };
-
-const visibilityOptions = (language: Language) => [
-  { label: textFor(language, '仅自己', 'Private'), value: 'private' as const },
-  { label: textFor(language, '好友', 'Friends'), value: 'friends' as const },
-  { label: textFor(language, '公开', 'Public'), value: 'public' as const },
-];
 
 export function StationContentManageSheet({
   target,
@@ -54,7 +35,10 @@ export function StationContentManageSheet({
   stationContent,
   session,
   onAddAlbumMedia,
+  mode,
+  onEdit,
   onBack,
+  onDeleted,
   onActionMessage,
   onActionError,
 }: StationContentManageSheetProps) {
@@ -138,6 +122,24 @@ export function StationContentManageSheet({
     }
   };
 
+  const openVisibilityMenu = () => {
+    Alert.alert(textFor(language, '谁可以看', 'Visibility'), undefined, [
+      {
+        text: textFor(language, '仅自己可见', 'Only Me'),
+        onPress: () => setVisibility('private'),
+      },
+      {
+        text: textFor(language, '好友可见', 'Friends'),
+        onPress: () => setVisibility('friends'),
+      },
+      {
+        text: textFor(language, '公开', 'Public'),
+        onPress: () => setVisibility('public'),
+      },
+      { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
+    ]);
+  };
+
   const deleteContent = () => {
     if (missing || isDeleting) {
       return;
@@ -175,7 +177,7 @@ export function StationContentManageSheet({
                     ? textFor(language, '日记已删除', 'Diary deleted')
                     : textFor(language, '相册已删除', 'Album deleted'),
                 );
-                onBack();
+                onDeleted();
               })
               .catch(onActionError)
               .finally(() => setIsDeleting(false));
@@ -218,252 +220,56 @@ export function StationContentManageSheet({
     );
   };
 
-  return (
-    <ScrollView
-      style={{ backgroundColor: palette.background }}
-      contentContainerStyle={styles.settingsContent}
-    >
-      <SheetHeader
-        title={
-          target.kind === 'diary'
-            ? textFor(language, '日记详情', 'Diary Detail')
-            : textFor(language, '相册详情', 'Album Detail')
-        }
-        palette={palette}
+  if (mode === 'detail') {
+    return (
+      <StationContentDetailView
+        album={album}
+        albumMedia={albumMedia}
+        comicDiaries={stationContent.comicDiaries}
+        diary={diary}
+        language={language}
+        missing={missing}
+        onActionError={onActionError}
+        onActionMessage={onActionMessage}
         onBack={onBack}
+        onEdit={onEdit}
+        palette={palette}
+        session={session}
+        target={target}
+        token={token}
       />
+    );
+  }
 
-      {missing ? (
-        <SettingGroup
-          title={textFor(language, '内容不存在', 'Content Missing')}
-          palette={palette}
-        >
-          <Text
-            style={[styles.relationshipEmpty, { color: palette.secondaryText }]}
-          >
-            {textFor(
-              language,
-              '这条内容已经被删除或不属于当前账号。',
-              'This item was deleted or does not belong to this account.',
-            )}
-          </Text>
-        </SettingGroup>
-      ) : (
-        <>
-          <SettingGroup
-            title={
-              target.kind === 'diary'
-                ? textFor(language, '日记内容', 'Diary Content')
-                : textFor(language, '相册信息', 'Album Info')
-            }
-            palette={palette}
-          >
-            <View style={styles.settingsInputWrap}>
-              <Text
-                style={[
-                  styles.settingsSegmentTitle,
-                  { color: palette.secondaryText },
-                ]}
-              >
-                {textFor(language, '标题', 'Title')}
-              </Text>
-              <TextInput
-                value={title}
-                onChangeText={setTitle}
-                maxLength={120}
-                placeholderTextColor={palette.secondaryText}
-                style={[
-                  styles.settingsInput,
-                  {
-                    backgroundColor: palette.surface,
-                    borderColor: palette.border,
-                    color: palette.text,
-                  },
-                ]}
-              />
-            </View>
-            <View style={styles.settingsInputWrap}>
-              <Text
-                style={[
-                  styles.settingsSegmentTitle,
-                  { color: palette.secondaryText },
-                ]}
-              >
-                {target.kind === 'diary'
-                  ? textFor(language, '正文', 'Body')
-                  : textFor(language, '描述', 'Description')}
-              </Text>
-              <TextInput
-                value={body}
-                onChangeText={setBody}
-                multiline
-                maxLength={target.kind === 'diary' ? 6000 : 1000}
-                placeholderTextColor={palette.secondaryText}
-                style={[
-                  styles.settingsInput,
-                  styles.settingsInputMultiline,
-                  styles.stationManageTextArea,
-                  {
-                    backgroundColor: palette.surface,
-                    borderColor: palette.border,
-                    color: palette.text,
-                  },
-                ]}
-              />
-            </View>
-          </SettingGroup>
-
-          <SettingGroup
-            title={textFor(language, '可见范围', 'Visibility')}
-            palette={palette}
-          >
-            <SettingsSegmentRow
-              title={textFor(language, '谁可以看', 'Audience')}
-              palette={palette}
-            >
-              <SegmentedControl
-                fill
-                palette={palette}
-                value={visibility}
-                options={visibilityOptions(language)}
-                onChange={setVisibility}
-              />
-            </SettingsSegmentRow>
-          </SettingGroup>
-
-          {diary ? (
-            <StationComicDiaryPanel
-              diary={diary}
-              comicDiaries={stationContent.comicDiaries || []}
-              palette={palette}
-              language={language}
-              session={session}
-              onActionMessage={onActionMessage}
-              onActionError={onActionError}
-            />
-          ) : null}
-
-          {album ? (
-            <SettingGroup
-              title={textFor(language, '照片', 'Photos')}
-              palette={palette}
-            >
-              <View style={styles.stationManagePhotoHeader}>
-                <Text
-                  style={[
-                    styles.relationshipEmpty,
-                    { color: palette.secondaryText },
-                  ]}
-                >
-                  {textFor(
-                    language,
-                    `${albumMedia.length} 张照片`,
-                    `${albumMedia.length} photos`,
-                  )}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => onAddAlbumMedia(album.id)}
-                  style={[
-                    styles.stationManageSmallButton,
-                    { backgroundColor: palette.text },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.stationManageSmallButtonText,
-                      { color: palette.background },
-                    ]}
-                  >
-                    {textFor(language, '添加照片', 'Add')}
-                  </Text>
-                </Pressable>
-              </View>
-              {albumMedia.length ? (
-                <View style={styles.stationManageMediaGrid}>
-                  {albumMedia.map(asset => (
-                    <View
-                      key={asset.id}
-                      style={[
-                        styles.stationManageMediaItem,
-                        { backgroundColor: palette.soft },
-                      ]}
-                    >
-                      {asset.status === 'uploaded' && asset.kind === 'image' ? (
-                        <Image
-                          resizeMode="cover"
-                          source={{
-                            uri: buildStationMediaFileUrl(asset.id),
-                            headers: { Authorization: `Bearer ${token}` },
-                          }}
-                          style={styles.stationManageMediaImage}
-                        />
-                      ) : (
-                        <Text
-                          style={[
-                            styles.stationAlbumCoverText,
-                            { color: palette.secondaryText },
-                          ]}
-                        >
-                          {textFor(language, '上传中', 'Uploading')}
-                        </Text>
-                      )}
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={deletingAssetId === asset.id}
-                        onPress={() => deleteMediaAsset(asset.id)}
-                        style={[
-                          styles.stationManageMediaDelete,
-                          { backgroundColor: palette.surface },
-                          deletingAssetId === asset.id && styles.disabledButton,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.stationManageMediaDeleteText,
-                            { color: palette.rose },
-                          ]}
-                        >
-                          {textFor(language, '删除', 'Delete')}
-                        </Text>
-                      </Pressable>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text
-                  style={[
-                    styles.relationshipEmpty,
-                    { color: palette.secondaryText },
-                  ]}
-                >
-                  {textFor(language, '暂无照片', 'No photos yet')}
-                </Text>
-              )}
-            </SettingGroup>
-          ) : null}
-
-          <View style={styles.settingsActionRow}>
-            <SettingsActionButton
-              title={textFor(language, '删除', 'Delete')}
-              palette={palette}
-              disabled={isSaving || isDeleting}
-              onPress={deleteContent}
-            />
-            <SettingsActionButton
-              title={
-                isSaving
-                  ? textFor(language, '保存中', 'Saving')
-                  : textFor(language, '保存', 'Save')
-              }
-              palette={palette}
-              primary
-              disabled={!canSave || isSaving || isDeleting}
-              onPress={save}
-            />
-          </View>
-        </>
-      )}
-    </ScrollView>
+  return (
+    <StationContentEditView
+      album={album}
+      albumMedia={albumMedia}
+      body={body}
+      canSave={canSave}
+      comicDiaries={stationContent.comicDiaries}
+      deletingAssetId={deletingAssetId}
+      diary={diary}
+      isDeleting={isDeleting}
+      isSaving={isSaving}
+      language={language}
+      missing={missing}
+      onActionError={onActionError}
+      onActionMessage={onActionMessage}
+      onAddAlbumMedia={onAddAlbumMedia}
+      onBack={onBack}
+      onBodyChange={setBody}
+      onDeleteContent={deleteContent}
+      onDeleteMediaAsset={deleteMediaAsset}
+      onOpenVisibilityMenu={openVisibilityMenu}
+      onSave={save}
+      onTitleChange={setTitle}
+      palette={palette}
+      session={session}
+      target={target}
+      title={title}
+      token={token}
+      visibility={visibility}
+    />
   );
 }

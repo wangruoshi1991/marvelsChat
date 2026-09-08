@@ -10,10 +10,15 @@ import {
   StationVisibility,
 } from '../../models/api';
 import { request } from './http';
+import { assertStationContentContract } from './stationContentContract';
 
 export const stationContentApi = {
-  stationContent(token: string) {
-    return request<StationContentDTO>('/api/station/content', { token });
+  async stationContent(token: string) {
+    const content = await request<StationContentDTO>('/api/station/content', {
+      token,
+    });
+    assertStationContentContract(content, '/api/station/content');
+    return content;
   },
 
   createStationPost(

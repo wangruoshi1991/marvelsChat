@@ -18,8 +18,6 @@ const defaultAvatarConfig: Required<AvatarConfigDTO> = {
   outfit: 'street',
   accent: 'mint',
   pose: 'casual',
-  shape: 'circle',
-  palette: 'sunrise',
   expression: 'smile',
   accessory: 'none',
   eyeStyle: 'bright',
@@ -94,55 +92,55 @@ export const avatarShoeColors: Record<
 
 export const normalizeAvatarConfig = (
   config?: AvatarConfigDTO | null,
-): Required<AvatarConfigDTO> => ({
-  ...defaultAvatarConfig,
-  ...(config || {}),
-  version: 2,
-  accent:
-    config?.accent ||
-    (config?.palette === 'grape'
-      ? 'violet'
-      : config?.palette === 'mono'
-      ? 'mint'
-      : config?.palette) ||
-    defaultAvatarConfig.accent,
-  accessory:
-    config?.accessory === 'cap' ||
-    config?.accessory === 'spark' ||
-    config?.accessory === 'glasses' ||
-    config?.accessory === 'headphones'
-      ? config.accessory
-      : defaultAvatarConfig.accessory,
-  mouthStyle:
-    config?.mouthStyle ||
-    (config?.expression === 'focus'
-      ? 'confident'
-      : config?.expression === 'calm'
-      ? 'calm'
-      : defaultAvatarConfig.mouthStyle),
-  top:
-    config?.top ||
-    (config?.outfit === 'campus'
-      ? 'uniform'
-      : config?.outfit === 'tech'
-      ? 'jacket'
-      : config?.outfit === 'artist'
-      ? 'shirt'
-      : config?.outfit === 'sport'
-      ? 'sweater'
-      : defaultAvatarConfig.top),
-  bottom:
-    config?.bottom ||
-    (config?.outfit === 'sport'
-      ? 'track'
-      : config?.outfit === 'artist'
-      ? 'shorts'
-      : defaultAvatarConfig.bottom),
-  action:
-    config?.action ||
-    (config?.pose === 'hello'
-      ? 'wave'
-      : config?.pose === 'ready'
-      ? 'cross-arms'
-      : defaultAvatarConfig.action),
-});
+): Required<AvatarConfigDTO> => {
+  const source = config || {};
+  return {
+    version: 2,
+    seed: source.seed || defaultAvatarConfig.seed,
+    body: source.body || defaultAvatarConfig.body,
+    face: source.face || defaultAvatarConfig.face,
+    skinTone: source.skinTone || defaultAvatarConfig.skinTone,
+    hairStyle: source.hairStyle || defaultAvatarConfig.hairStyle,
+    hairColor: source.hairColor || defaultAvatarConfig.hairColor,
+    outfit: source.outfit || defaultAvatarConfig.outfit,
+    accent: source.accent || defaultAvatarConfig.accent,
+    pose: source.pose || defaultAvatarConfig.pose,
+    expression: source.expression || defaultAvatarConfig.expression,
+    accessory: source.accessory || defaultAvatarConfig.accessory,
+    eyeStyle: source.eyeStyle || defaultAvatarConfig.eyeStyle,
+    browStyle: source.browStyle || defaultAvatarConfig.browStyle,
+    mouthStyle:
+      source.mouthStyle ||
+      (source.expression === 'focus'
+        ? 'confident'
+        : source.expression === 'calm'
+        ? 'calm'
+        : defaultAvatarConfig.mouthStyle),
+    top:
+      source.top ||
+      (source.outfit === 'campus'
+        ? 'uniform'
+        : source.outfit === 'tech'
+        ? 'jacket'
+        : source.outfit === 'artist'
+        ? 'shirt'
+        : source.outfit === 'sport'
+        ? 'sweater'
+        : defaultAvatarConfig.top),
+    bottom:
+      source.bottom ||
+      (source.outfit === 'sport'
+        ? 'track'
+        : source.outfit === 'artist'
+        ? 'shorts'
+        : defaultAvatarConfig.bottom),
+    shoes: source.shoes || defaultAvatarConfig.shoes,
+    action:
+      source.action ||
+      (source.pose === 'hello'
+        ? 'wave'
+        : source.pose === 'ready'
+        ? 'cross-arms'
+        : defaultAvatarConfig.action),
+  };
+};

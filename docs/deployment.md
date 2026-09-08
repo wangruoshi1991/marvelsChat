@@ -405,3 +405,17 @@ App Store Connect 已有 `1.0 (30)`，上传时间为 2026-07-30 13:21，当前�
 MapLibre、地图票据、地图瓦片代理及其 iOS / Android 依赖已经从当前源码和归档移除。早期 build 日志中的 MapLibre dSYM warning 仅描述当时的历史构建，不再代表当前依赖状态；本轮归档只保留 React、ReactNativeDependencies 和 Hermes framework。下次上传前仍需按 App Store Connect 的实际 build 状态递增编号并重新 archive，不能直接复用本轮 `/tmp` 验证归档。
 
 域名审核期间运行 `MIAOXUN_TEMP_IP_TESTFLIGHT=1 scripts/check-launch-readiness.sh`，域名、DNS 和 HTTPS 项按受控测试策略记录为 warning。其余发布检查保持严格：当前服务器仍需在下一次授权部署时上线 `/api/ready`，并设置 `TRUST_PROXY_HOPS=1`、`CREATE_FIRST_USER_AS_ADMIN=false`、`DEFAULT_ADMIN_ENABLED=false`；完成迁移后必须同时验证 `/api/health` 和 `/api/ready`。
+
+## 2026-08-31 Build 42 小站崩溃修复
+
+App Store Connect 的 Build 41 与 Build 42 真机报告均显示 `RCTExceptionsManager.reportFatal`，确认是 JavaScript 致命异常，不是 3D WebView 或 SVG 原生释放异常。线上 `/api/app/bootstrap` 的 `stationContent` 未返回 `posts`，而移动端生活页直接读取 `posts.length` 与 `posts.map`；Build 42 又同时挂载五个小站页签，因此故障从“切换生活时崩溃”扩大为“进入小站即崩溃”。
+
+生产后端已复用现有 `station-post-repository.js` 的 `listStationPostsForUser()`，把真实动态列表接入 `getStationContentForUser()`。变更前文件备份位于：
+
+```text
+/opt/projects/marvels-chat/app/deploy-backups/build42-station-contract-20260831-1523/station-repository.js
+```
+
+线上 `npm run check` 通过；服务按 `User=marvels`、`Restart=always` 与 `KillSignal=SIGTERM` 的既有 systemd 策略平滑重启，主进程从 `427140` 切换到 `446437`。重启后 `/api/health` 返回 200，生产数据库级冒烟确认 `posts` 为数组，且移动端要求的九个小站字段全部为数组。
+
+移动端源码同时恢复为只挂载当前选中的小站面板，不再同时保留五棵原生视图树；`/api/app/bootstrap` 与 `/api/station/content` 增加严格运行时契约校验。缺少 `posts` 等字段时明确报告服务端版本不匹配，不再让 `undefined` 进入页面后触发致命异常。本轮未上传新的 TestFlight build；Build 42 需完全退出并重新打开，重新获取线上 bootstrap 后再验证现有包。

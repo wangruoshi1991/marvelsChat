@@ -9,7 +9,6 @@ import {
 } from '../src/models/api';
 import { Avatar3DCreateScreen } from '../src/features/station/Avatar3DCreateScreen';
 import { StationAvatarSpace } from '../src/features/station/StationAvatarSpace';
-import { Stat } from '../src/features/station/StationShared';
 import { useAvatar3dWorkflow } from '../src/features/station/useAvatar3dWorkflow';
 import { palettes } from '../src/shared/theme';
 
@@ -417,24 +416,6 @@ describe('station avatar layout', () => {
     expect(renderer!.root.findByType(Image).props.source.uri).toContain(
       '/models/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/thumbnail',
     );
-
-    await ReactTestRenderer.act(() => renderer!.unmount());
-  });
-
-  it('renders zero for a non-finite station statistic', async () => {
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-
-    await ReactTestRenderer.act(() => {
-      renderer = ReactTestRenderer.create(
-        <Stat label="Likes" palette={palettes.light} value={Number.NaN} />,
-      );
-    });
-
-    const values = renderer!.root
-      .findAllByType(Text)
-      .map(node => node.props.children);
-    expect(values).toContain(0);
-    expect(values).not.toContain(Number.NaN);
 
     await ReactTestRenderer.act(() => renderer!.unmount());
   });

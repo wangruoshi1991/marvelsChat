@@ -20,14 +20,6 @@ const avatarOptions = {
   action: ["stand", "cross-arms", "wave", "soccer", "question", "sit"],
 };
 
-const legacyPaletteToAccent = {
-  sunrise: "sunrise",
-  mint: "mint",
-  sky: "sky",
-  grape: "violet",
-  mono: "mint",
-};
-
 const pick = (items, byte) => items[byte % items.length];
 
 const hashSeed = (seed) =>
@@ -72,7 +64,7 @@ export function normalizeAvatarConfig(config = {}, seed = "") {
     hairStyle: safeOption(avatarOptions.hairStyle, config.hairStyle, generated.hairStyle),
     hairColor: safeOption(avatarOptions.hairColor, config.hairColor, generated.hairColor),
     outfit: safeOption(avatarOptions.outfit, config.outfit, generated.outfit),
-    accent: safeOption(avatarOptions.accent, config.accent || legacyPaletteToAccent[config.palette], generated.accent),
+    accent: safeOption(avatarOptions.accent, config.accent, generated.accent),
     expression: safeOption(avatarOptions.expression, config.expression, generated.expression),
     accessory: safeOption(avatarOptions.accessory, config.accessory, generated.accessory),
     pose: safeOption(avatarOptions.pose, config.pose, generated.pose),

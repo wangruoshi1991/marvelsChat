@@ -23,12 +23,22 @@ import {
 type ViewerMessage = {
   type?: unknown;
   message?: unknown;
+  phase?: unknown;
+  x?: unknown;
+  y?: unknown;
+};
+
+export type Avatar3DAssistGesture = {
+  phase: 'activate' | 'move' | 'release' | 'cancel';
+  point: { x: number; y: number };
 };
 
 type ViewerStatus = 'booting' | 'loading' | 'parsing' | 'loaded' | 'error';
 
 const serializeViewerConfig = (value: object) =>
   JSON.stringify(value).replace(/</g, '\\u003c');
+
+const VIEWER_BACKGROUND_COLOR = '#F7F8FC';
 
 export const isAvatar3DViewerDocumentUrl = (value: string) => {
   if (value === 'about:blank') return true;
@@ -62,20 +72,25 @@ export function buildAvatar3DViewerScript({
 }
 
 export function Avatar3DViewer({
+  active = true,
   modelId,
   token,
   thumbnailAvailable = false,
   onError,
+  onAssistGesture,
   style,
 }: {
+  active?: boolean;
   modelId: string;
   token: string;
   thumbnailAvailable?: boolean;
   onError?: (message: string) => void;
+  onAssistGesture?: (gesture: Avatar3DAssistGesture) => void;
   style?: StyleProp<ViewStyle>;
 }) {
   const webViewRef = useRef<WebView<object>>(null);
   const loadRequestedRef = useRef(false);
+  const viewerReadyRef = useRef(false);
   const [status, setStatus] = useState<ViewerStatus>('booting');
   const modelUrl = useMemo(() => avatar3dModelFileUrl(modelId), [modelId]);
   const thumbnailUrl = useMemo(
@@ -96,11 +111,36 @@ export function Avatar3DViewer({
 
   useEffect(() => {
     loadRequestedRef.current = false;
+    viewerReadyRef.current = false;
     setStatus('booting');
   }, [modelId, token]);
 
   useEffect(() => {
-    if (status === 'loaded' || status === 'error') return undefined;
+    if (!active) {
+      webViewRef.current?.stopLoading?.();
+      if (viewerReadyRef.current) {
+        webViewRef.current?.injectJavaScript(
+          'window.MiaoxunAvatarViewer?.setActive(false); true;',
+        );
+      }
+      return;
+    }
+    if (!viewerReadyRef.current) return;
+    if (!loadRequestedRef.current) {
+      loadRequestedRef.current = true;
+      setStatus('loading');
+      webViewRef.current?.injectJavaScript(loadScript);
+      return;
+    }
+    webViewRef.current?.injectJavaScript(
+      'window.MiaoxunAvatarViewer?.setActive(true); true;',
+    );
+  }, [active, loadScript]);
+
+  useEffect(() => {
+    if (!active || status === 'loaded' || status === 'error') {
+      return undefined;
+    }
     const timeoutMs =
       status === 'booting' ? 15_000 : status === 'parsing' ? 60_000 : 120_000;
     const message =
@@ -111,7 +151,7 @@ export function Avatar3DViewer({
         : '3D模型下载超时';
     const timeout = setTimeout(() => failViewer(message), timeoutMs);
     return () => clearTimeout(timeout);
-  }, [failViewer, status]);
+  }, [active, failViewer, status]);
 
   const handleViewerDocumentLoaded = useCallback(
     (event: { nativeEvent: { url: string } }) => {
@@ -121,6 +161,11 @@ export function Avatar3DViewer({
         !isAvatar3DViewerDocumentUrl(documentUrl) ||
         loadRequestedRef.current
       ) {
+        return;
+      }
+
+      viewerReadyRef.current = true;
+      if (!active) {
         return;
       }
 
@@ -138,13 +183,34 @@ export function Avatar3DViewer({
         failViewer('3D查看器初始化失败');
       }
     },
-    [failViewer, loadScript],
+    [active, failViewer, loadScript],
   );
 
   const handleMessage = (event: WebViewMessageEvent) => {
     try {
       const message = JSON.parse(event.nativeEvent.data) as ViewerMessage;
+      if (
+        message.type === 'assist-gesture' &&
+        (message.phase === 'activate' ||
+          message.phase === 'move' ||
+          message.phase === 'release' ||
+          message.phase === 'cancel') &&
+        typeof message.x === 'number' &&
+        typeof message.y === 'number'
+      ) {
+        onAssistGesture?.({
+          phase: message.phase,
+          point: { x: message.x, y: message.y },
+        });
+        return;
+      }
       if (message.type === 'ready') {
+        viewerReadyRef.current = true;
+        webViewRef.current?.injectJavaScript(
+          active
+            ? 'window.MiaoxunAvatarViewer?.setActive(true); true;'
+            : 'window.MiaoxunAvatarViewer?.setActive(false); true;',
+        );
         return;
       }
       if (message.type === 'downloading') {
@@ -179,6 +245,7 @@ export function Avatar3DViewer({
         allowUniversalAccessFromFileURLs
         bounces={false}
         cacheEnabled
+        containerStyle={localStyles.webView}
         domStorageEnabled={false}
         javaScriptCanOpenWindowsAutomatically={false}
         javaScriptEnabled
@@ -197,6 +264,7 @@ export function Avatar3DViewer({
         setSupportMultipleWindows={false}
         sharedCookiesEnabled={false}
         source={require('../../assets/avatar-viewer/avatar-viewer.html')}
+        style={localStyles.webView}
         thirdPartyCookiesEnabled={false}
       />
       {status !== 'loaded' && status !== 'error' ? (
@@ -237,7 +305,11 @@ export function Avatar3DViewer({
 }
 
 const localStyles = StyleSheet.create({
-  container: { flex: 1, overflow: 'hidden' },
+  container: {
+    backgroundColor: VIEWER_BACKGROUND_COLOR,
+    flex: 1,
+    overflow: 'hidden',
+  },
   loadingIndicator: {
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.88)',
@@ -251,7 +323,7 @@ const localStyles = StyleSheet.create({
   },
   preview: {
     alignItems: 'center',
-    backgroundColor: '#F7F8FC',
+    backgroundColor: VIEWER_BACKGROUND_COLOR,
     bottom: 0,
     justifyContent: 'center',
     left: 0,
@@ -276,4 +348,5 @@ const localStyles = StyleSheet.create({
     top: 0,
     width: '100%',
   },
+  webView: { backgroundColor: VIEWER_BACKGROUND_COLOR },
 });

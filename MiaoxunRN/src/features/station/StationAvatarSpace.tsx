@@ -1,5 +1,12 @@
-import { Box, RotateCcw } from 'lucide-react-native';
-import React, { useEffect, useMemo, useState } from 'react';
+import {
+  BookOpen,
+  Bot,
+  Box,
+  Shirt,
+  Users,
+  RotateCcw,
+} from 'lucide-react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -13,12 +20,19 @@ import { Avatar3DBootstrapDTO } from '../../models/api';
 import { avatar3dModelThumbnailUrl } from '../../services/api/avatar3dApi';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
-import { Palette, palettes } from '../../shared/theme';
+import { Palette } from '../../shared/theme';
+import {
+  AIAssistGestureHandle,
+  AIAssistGestureSurface,
+} from '../assist/AIAssistGestureSurface';
+import { AIAssistAction } from '../assist/aiAssistTypes';
 import { Language } from '../session/useMiaoxunSession';
 import { Avatar3DViewer } from './Avatar3DViewer';
+import { resolveStationColors } from './stationTheme';
 import { Avatar3DLoadState } from './useAvatar3d';
 
 export function StationAvatarSpace({
+  active = true,
   palette,
   language,
   token,
@@ -26,11 +40,13 @@ export function StationAvatarSpace({
   avatar3dStatus,
   avatar3dError,
   onOpenGenerator,
+  onOpenCoreAgent,
   onOpenAgents,
   onOpenCallable,
   onOpenDiary,
   onOpenOotd,
 }: {
+  active?: boolean;
   palette: Palette;
   language: Language;
   token: string;
@@ -38,6 +54,7 @@ export function StationAvatarSpace({
   avatar3dStatus: Avatar3DLoadState;
   avatar3dError: string;
   onOpenGenerator: () => void;
+  onOpenCoreAgent?: () => void;
   onOpenAgents?: () => void;
   onOpenCallable?: () => void;
   onOpenDiary?: () => void;
@@ -45,8 +62,10 @@ export function StationAvatarSpace({
 }) {
   const [viewerError, setViewerError] = useState('');
   const [viewerRevision, setViewerRevision] = useState(0);
-  const isDarkPalette = palette.text === palettes.dark.text;
-  const stageBackgroundColor = isDarkPalette ? '#F5F6FA' : '#F7F8FC';
+  const [assistActive, setAssistActive] = useState(false);
+  const assistGestureRef = useRef<AIAssistGestureHandle>(null);
+  const colors = resolveStationColors(palette);
+  const stageBackgroundColor = '#F7F8FC';
   const latestModel = useMemo(
     () =>
       avatar3d?.models.find(
@@ -65,6 +84,57 @@ export function StationAvatarSpace({
   }, [latestModelId]);
 
   const canOpenGenerator = avatar3dStatus === 'ready';
+  const assistObject = useMemo(
+    () => ({
+      kind: 'avatar-3d' as const,
+      id: latestModel?.id || activeJob?.id || null,
+      title: textFor(language, '我的3D形象', 'My 3D avatar'),
+      metadata: {
+        modelId: latestModel?.id || null,
+        activeJobId: activeJob?.id || null,
+        serviceStatus: avatar3dStatus,
+      },
+    }),
+    [activeJob?.id, avatar3dStatus, language, latestModel?.id],
+  );
+  const assistActions = useMemo<AIAssistAction[]>(
+    () => [
+      {
+        direction: 'right',
+        eyebrow: textFor(language, '核心', 'Core'),
+        label: textFor(language, '3D Agent', '3D Agent'),
+        Icon: Bot,
+        accent: '#2012D9',
+        available: Boolean(onOpenCoreAgent),
+        onSelect: () => onOpenCoreAgent?.(),
+      },
+      {
+        direction: 'up',
+        label: textFor(language, '今日穿搭', 'OOTD'),
+        Icon: Shirt,
+        accent: '#E46845',
+        available: Boolean(onOpenOotd),
+        onSelect: () => onOpenOotd?.(),
+      },
+      {
+        direction: 'left',
+        label: textFor(language, 'AI伙伴', 'AI partners'),
+        Icon: Users,
+        accent: '#147D6C',
+        available: Boolean(onOpenAgents),
+        onSelect: () => onOpenAgents?.(),
+      },
+      {
+        direction: 'down',
+        label: textFor(language, '漫画日记', 'Comic diary'),
+        Icon: BookOpen,
+        accent: '#C94668',
+        available: Boolean(onOpenDiary),
+        onSelect: () => onOpenDiary?.(),
+      },
+    ],
+    [language, onOpenAgents, onOpenCoreAgent, onOpenDiary, onOpenOotd],
+  );
   const floatingTags = [
     { label: textFor(language, '今日穿搭', 'OOTD'), onPress: onOpenOotd },
     {
@@ -92,8 +162,8 @@ export function StationAvatarSpace({
       style={[
         styles.avatarSpace,
         {
-          backgroundColor: palette.surface,
-          borderColor: palette.border,
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
           shadowColor: palette.shadow,
         },
       ]}
@@ -106,105 +176,129 @@ export function StationAvatarSpace({
         ]}
         testID="avatar3d-stage"
       >
-        {latestModel && !viewerError ? (
-          <Avatar3DViewer
-            key={`${latestModel.id}:${viewerRevision}`}
-            modelId={latestModel.id}
-            onError={setViewerError}
-            style={styles.avatar3dStageWebView}
-            thumbnailAvailable={latestModel.thumbnailAvailable}
-            token={token}
-          />
-        ) : (
-          <View style={styles.avatar3dEmptyState} testID="avatar3d-empty-state">
-            {preparingModelId ? (
-              <>
-                <Image
-                  accessibilityLabel="3D形象预览"
-                  resizeMode="contain"
-                  source={{
-                    headers: { Authorization: `Bearer ${token}` },
-                    uri: avatar3dModelThumbnailUrl(preparingModelId),
-                  }}
-                  style={localStyles.preparingPreview}
-                />
-                <View style={localStyles.preparingScrim} />
-              </>
-            ) : null}
-            {avatar3dStatus === 'loading' || activeJob ? (
-              <ActivityIndicator color="#2012D9" />
-            ) : (
-              <Box color={palette.secondaryText} size={28} strokeWidth={1.8} />
-            )}
-            <Text style={[styles.avatar3dEmptyTitle, { color: palette.text }]}>
-              {activeJob
-                ? activeJobStageCopy(language, activeJob.status).title
-                : emptyStateTitle(
-                    language,
-                    avatar3dStatus,
-                    Boolean(viewerError),
-                  )}
-            </Text>
-            <Text
-              style={[
-                styles.avatar3dEmptyBody,
-                { color: palette.secondaryText },
-              ]}
-            >
-              {viewerError ||
-                avatar3dError ||
-                (activeJob
-                  ? activeJobStageCopy(language, activeJob.status).body
-                  : emptyStateBody(language, avatar3dStatus))}
-            </Text>
-            {viewerError && latestModel ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  setViewerError('');
-                  setViewerRevision(current => current + 1);
-                }}
-                style={styles.avatar3dRetryButton}
-              >
-                <RotateCcw color="#2012D9" size={15} strokeWidth={2} />
-                <Text style={styles.avatar3dRetryButtonText}>
-                  {textFor(language, '重新加载', 'Reload')}
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
-        )}
-
-        <View pointerEvents="box-none" style={styles.avatarFloatingTags}>
-          {floatingTags.map((item, index) => (
-            <FloatingTag
-              key={item.label}
-              active={index === 3}
-              label={item.label}
-              onPress={item.onPress}
-              palette={palette}
-              positionStyle={floatingTagPositions[index]}
+        <AIAssistGestureSurface
+          actions={assistActions}
+          object={assistObject}
+          onActiveChange={setAssistActive}
+          palette={palette}
+          ref={assistGestureRef}
+          testID="avatar3d-ai-assist"
+        >
+          {latestModel && !viewerError ? (
+            <Avatar3DViewer
+              active={active}
+              key={`${latestModel.id}:${viewerRevision}`}
+              modelId={latestModel.id}
+              onAssistGesture={gesture => {
+                if (gesture.phase === 'activate') {
+                  assistGestureRef.current?.activateAt(gesture.point);
+                } else if (gesture.phase === 'move') {
+                  assistGestureRef.current?.moveTo(gesture.point);
+                } else if (gesture.phase === 'release') {
+                  assistGestureRef.current?.releaseAt(gesture.point);
+                } else {
+                  assistGestureRef.current?.cancel();
+                }
+              }}
+              onError={setViewerError}
+              style={styles.avatar3dStageWebView}
+              thumbnailAvailable={latestModel.thumbnailAvailable}
+              token={token}
             />
-          ))}
-        </View>
+          ) : (
+            <View
+              style={styles.avatar3dEmptyState}
+              testID="avatar3d-empty-state"
+            >
+              {preparingModelId ? (
+                <>
+                  <Image
+                    accessibilityLabel="3D形象预览"
+                    resizeMode="contain"
+                    source={{
+                      headers: { Authorization: `Bearer ${token}` },
+                      uri: avatar3dModelThumbnailUrl(preparingModelId),
+                    }}
+                    style={localStyles.preparingPreview}
+                  />
+                  <View style={localStyles.preparingScrim} />
+                </>
+              ) : null}
+              {avatar3dStatus === 'loading' || activeJob ? (
+                <ActivityIndicator color="#2012D9" />
+              ) : (
+                <Box color={colors.secondaryText} size={28} strokeWidth={1.8} />
+              )}
+              <Text style={[styles.avatar3dEmptyTitle, { color: colors.text }]}>
+                {activeJob
+                  ? activeJobStageCopy(language, activeJob.status).title
+                  : emptyStateTitle(
+                      language,
+                      avatar3dStatus,
+                      Boolean(viewerError),
+                    )}
+              </Text>
+              <Text
+                style={[
+                  styles.avatar3dEmptyBody,
+                  { color: colors.secondaryText },
+                ]}
+              >
+                {viewerError ||
+                  avatar3dError ||
+                  (activeJob
+                    ? activeJobStageCopy(language, activeJob.status).body
+                    : emptyStateBody(language, avatar3dStatus))}
+              </Text>
+              {viewerError && latestModel ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setViewerError('');
+                    setViewerRevision(current => current + 1);
+                  }}
+                  style={styles.avatar3dRetryButton}
+                >
+                  <RotateCcw color="#2012D9" size={15} strokeWidth={2} />
+                  <Text style={styles.avatar3dRetryButtonText}>
+                    {textFor(language, '重新加载', 'Reload')}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          )}
+
+          {!assistActive ? (
+            <View pointerEvents="box-none" style={styles.avatarFloatingTags}>
+              {floatingTags.map((item, index) => (
+                <FloatingTag
+                  key={item.label}
+                  active={index === 3}
+                  label={item.label}
+                  onPress={item.onPress}
+                  palette={palette}
+                  positionStyle={floatingTagPositions[index]}
+                />
+              ))}
+            </View>
+          ) : null}
+        </AIAssistGestureSurface>
       </View>
 
       <View style={styles.avatarSpaceCopy}>
         <View style={styles.avatarSpaceTitleRow}>
           <View style={styles.avatarSpaceTitleCopy}>
-            <Text style={[styles.avatarSpaceEyebrow, { color: palette.sun }]}>
+            <Text style={[styles.avatarSpaceEyebrow, { color: colors.accent }]}>
               {latestModel
                 ? textFor(language, '拖拽换视角', 'Drag to rotate')
                 : textFor(language, '3D个人形象', '3D avatar')}
             </Text>
-            <Text style={[styles.avatarSpaceTitle, { color: palette.text }]}>
+            <Text style={[styles.avatarSpaceTitle, { color: colors.text }]}>
               {textFor(language, '我的模样', 'My Look')}
             </Text>
           </View>
         </View>
-        <Text
-          style={[styles.avatarSpaceBody, { color: palette.secondaryText }]}
-        >
+        <Text style={[styles.avatarSpaceBody, { color: colors.secondaryText }]}>
           {textFor(
             language,
             '让我的形象与穿搭、日记和个人能力一起呈现在小站中。',
@@ -218,15 +312,15 @@ export function StationAvatarSpace({
             onPress={onOpenGenerator}
             style={[
               styles.avatar3dGenerateButton,
-              { backgroundColor: palette.text },
+              { backgroundColor: colors.text },
               !canOpenGenerator && styles.avatar3dGenerateButtonDisabled,
             ]}
           >
-            <Box color={palette.background} size={15} strokeWidth={2.2} />
+            <Box color={colors.surface} size={15} strokeWidth={2.2} />
             <Text
               style={[
                 styles.avatar3dGenerateButtonText,
-                { color: palette.background },
+                { color: colors.surface },
               ]}
             >
               {latestModel
@@ -338,8 +432,9 @@ function FloatingTag({
   active: boolean;
   palette: Palette;
 }) {
-  const backgroundColor = active ? palette.rose : palette.surface;
-  const textColor = active ? palette.background : palette.text;
+  const colors = resolveStationColors(palette);
+  const backgroundColor = active ? colors.accent : colors.surface;
+  const textColor = active ? colors.surface : colors.text;
 
   return (
     <Pressable

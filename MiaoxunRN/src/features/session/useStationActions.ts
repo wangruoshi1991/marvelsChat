@@ -68,7 +68,7 @@ export function useStationActions({
       const post = await apiClient.createStationPost(token, payload);
       setStationContent(current => ({
         ...current,
-        posts: [post, ...(current.posts || [])],
+        posts: [post, ...current.posts],
       }));
       return post;
     },
@@ -83,7 +83,7 @@ export function useStationActions({
       await apiClient.deleteStationPost(token, postId);
       setStationContent(current => ({
         ...current,
-        posts: (current.posts || []).filter(post => post.id !== postId),
+        posts: current.posts.filter(post => post.id !== postId),
       }));
     },
     [setStationContent, token],
@@ -363,7 +363,7 @@ export function useStationActions({
       const draft = await apiClient.createStationComicDiary(token, payload);
       setStationContent(current => ({
         ...current,
-        comicDiaries: [draft, ...(current.comicDiaries || [])],
+        comicDiaries: [draft, ...current.comicDiaries],
       }));
       return draft;
     },
@@ -380,7 +380,7 @@ export function useStationActions({
         ...current,
         siteDrafts: [
           result.siteDraft,
-          ...(current.siteDrafts || []).filter(
+          ...current.siteDrafts.filter(
             (item: StationSiteDraftDTO) => item.id !== result.siteDraft.id,
           ),
         ],
@@ -402,14 +402,13 @@ export function useStationActions({
       setProfile(result.profile);
       setStationContent(current => ({
         ...current,
-        siteDrafts: (current.siteDrafts || []).map(
-          (item: StationSiteDraftDTO) =>
-            item.id === result.siteDraft.id
-              ? result.siteDraft
-              : {
-                  ...item,
-                  status: item.status === 'applied' ? 'draft' : item.status,
-                },
+        siteDrafts: current.siteDrafts.map((item: StationSiteDraftDTO) =>
+          item.id === result.siteDraft.id
+            ? result.siteDraft
+            : {
+                ...item,
+                status: item.status === 'applied' ? 'draft' : item.status,
+              },
         ),
       }));
       return result;
@@ -433,7 +432,7 @@ export function useStationActions({
         ...current,
         fileAssets: [
           asset,
-          ...(current.fileAssets || []).filter(
+          ...current.fileAssets.filter(
             (item: StationFileAssetDTO) => item.id !== asset.id,
           ),
         ],
@@ -464,8 +463,8 @@ export function useStationActions({
       );
       setStationContent(current => ({
         ...current,
-        fileAssets: (current.fileAssets || []).map(
-          (item: StationFileAssetDTO) => (item.id === asset.id ? asset : item),
+        fileAssets: current.fileAssets.map((item: StationFileAssetDTO) =>
+          item.id === asset.id ? asset : item,
         ),
       }));
       return asset;
@@ -531,7 +530,7 @@ export function useStationActions({
         ...current,
         videoDrafts: [
           draft,
-          ...(current.videoDrafts || []).filter(
+          ...current.videoDrafts.filter(
             (item: StationVideoDraftDTO) => item.id !== draft.id,
           ),
         ],
@@ -549,7 +548,7 @@ export function useStationActions({
       await apiClient.deleteStationComicDiary(token, comicDiaryId);
       setStationContent(current => ({
         ...current,
-        comicDiaries: (current.comicDiaries || []).filter(
+        comicDiaries: current.comicDiaries.filter(
           (item: StationComicDiaryDTO) => item.id !== comicDiaryId,
         ),
       }));

@@ -59,9 +59,9 @@ POSTGRES_CONNECTION_LIMIT=10
 
 - `users`：注册用户、角色、状态、AI ID、最近登录时间。
 - `schema_migrations`：已执行迁移文件、SHA-256 校验和与执行时间。
-- `user_profiles`：小站资料。昵称、头像文字、`avatar_config`、简介、社区、活动区域、`miao_points`、关注/粉丝/收藏计数保存在这里；关注和粉丝计数由社交关系写入后刷新。
+- `user_profiles`：小站资料。昵称、头像文字、`avatar_config`、简介、社区、活动区域、`miao_points`、关注/粉丝/收藏计数保存在这里；关注和粉丝计数由社交关系写入后刷新。`avatar_config` 只接受 v2 字段，迁移 `025_avatar_config_v2.sql` 会将旧 `palette` 映射到 `accent`，并从资料和穿搭快照中移除旧 `palette`、`shape` 键。
 - `auth_sessions`：登录 token 的哈希值、过期时间和最近使用时间。
-- `user_agents`：用户已启用的 Agent 和授权范围。
+- `user_agents`：用户已启用的 Agent 和授权范围。迁移 `026_agent_granted_scopes.sql` 将历史固定授权修正为各注册 Agent 的明确 scope 集合；后续授权只能是注册声明的子集。
 - `chat_threads`：妙讯会话，支持绑定 `agent_id`；好友 direct 聊天通过 `peer_user_id` 指向对方用户，并约束同一用户到同一好友只保留一个 direct 线程。
 - `chat_messages`：真实聊天消息。
 - `usage_events`：客户端行为、登录、发送消息等事件。

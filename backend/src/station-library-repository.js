@@ -140,6 +140,17 @@ export async function deleteStationAlbum({ userId, albumId }) {
   });
 }
 
+export async function listStationAlbumMediaAssetsForUser({ userId, albumId }) {
+  const rows = await query(
+    `SELECT *
+    FROM station_media_assets
+    WHERE album_id = ? AND user_id = ? AND deleted_at IS NULL
+    ORDER BY created_at ASC`,
+    [albumId, userId],
+  );
+  return rows.map(mapStationMediaAsset);
+}
+
 export async function createStationMediaAsset({
   userId,
   albumId = null,

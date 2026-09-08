@@ -98,7 +98,6 @@ export const appErrorText = (
     return textFor(language, '用户不存在', 'User not found');
   }
   if (
-    value.includes('meshy_api_key') ||
     value.includes('new_api_key') ||
     value.includes('oss_access_key') ||
     value.includes('provider missing') ||

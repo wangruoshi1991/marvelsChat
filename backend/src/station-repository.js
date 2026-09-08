@@ -34,6 +34,7 @@ export {
   getStationDiaryEntryForUser,
   getStationMediaAssetForUser,
   listStationMediaAssetsByIdsForUser,
+  listStationAlbumMediaAssetsForUser,
   listStationMediaAssetsForUser,
   markStationMediaAssetUploaded,
   moveMediaAssetsToAlbum,

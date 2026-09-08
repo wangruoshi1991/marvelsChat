@@ -1,5 +1,4 @@
 import React from 'react';
-
 import {
   AgentDTO,
   Avatar3DBootstrapDTO,
@@ -7,19 +6,27 @@ import {
 } from '../../models/api';
 import { Palette } from '../../shared/theme';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
+import { UserAvatarRenderer } from '../messages/messageTypes';
 import { StationAgentsPanel } from './StationAgentsPanel';
 import { StationHome } from './StationHome';
+import { StationOutcomesPanel } from './StationOutcomesPanel';
 import { StationPostsPanel } from './StationPostsPanel';
 import { StationSocialPanel } from './StationSocialPanel';
-import { StationCreateKind, StationTab } from './stationTypes';
+import type {
+  StationContentListKind,
+  StationCreateKind,
+  StationTab,
+} from './stationTypes';
 import { Avatar3DLoadState } from './useAvatar3d';
 
 export function StationPanel({
+  active,
   palette,
   language,
   selectedTab,
   token,
   profile,
+  renderUserAvatar,
   relationships,
   stationContent,
   avatar3d,
@@ -31,6 +38,8 @@ export function StationPanel({
   moduleStatus,
   onOpenFriendThread,
   onOpenAgentThread,
+  onOpenPostComposer,
+  onOpenContentList,
   onSetAgentEnabled,
   onOpenPublicProfileByAiId,
   onSelectStationTab,
@@ -49,11 +58,13 @@ export function StationPanel({
   onActionMessage,
   onActionError,
 }: {
+  active: boolean;
   palette: Palette;
   language: Language;
   selectedTab: StationTab;
   token: string;
   profile: ReturnType<typeof useMiaoxunSession>['profile'];
+  renderUserAvatar: UserAvatarRenderer;
   relationships: ReturnType<typeof useMiaoxunSession>['relationships'];
   stationContent: ReturnType<typeof useMiaoxunSession>['stationContent'];
   avatar3d: Avatar3DBootstrapDTO | null;
@@ -65,6 +76,8 @@ export function StationPanel({
   moduleStatus: (key: string) => string;
   onOpenFriendThread: (friendUserId: string) => void;
   onOpenAgentThread: (agentId: string) => void;
+  onOpenPostComposer: () => void;
+  onOpenContentList: (kind: StationContentListKind) => void;
   onSetAgentEnabled: (
     agentId: string,
     enabled: boolean,
@@ -106,11 +119,14 @@ export function StationPanel({
         palette={palette}
         language={language}
         stationContent={stationContent}
+        profile={profile}
+        renderUserAvatar={renderUserAvatar}
         ownedAgents={ownedAgents}
         token={token}
         onDeletePost={onDeletePost}
         onActionMessage={onActionMessage}
         onActionError={onActionError}
+        onOpenPostComposer={onOpenPostComposer}
       />
     );
   }
@@ -141,6 +157,16 @@ export function StationPanel({
     );
   }
 
+  if (selectedTab === 'outcomes') {
+    return (
+      <StationOutcomesPanel
+        language={language}
+        palette={palette}
+        stationContent={stationContent}
+      />
+    );
+  }
+
   if (selectedTab === 'social') {
     return (
       <StationSocialPanel
@@ -156,6 +182,7 @@ export function StationPanel({
 
   return (
     <StationHome
+      active={active}
       palette={palette}
       language={language}
       token={token}
@@ -173,6 +200,7 @@ export function StationPanel({
       onOpenDiaryDetail={onOpenDiaryDetail}
       onOpenAlbumDetail={onOpenAlbumDetail}
       onOpenAgentThread={onOpenAgentThread}
+      onOpenContentList={onOpenContentList}
       onActionMessage={onActionMessage}
     />
   );

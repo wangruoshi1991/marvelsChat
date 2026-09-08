@@ -10,6 +10,8 @@ import { UserAvatar } from '../avatar/AvatarBadges';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { StationCard } from './StationShared';
 import { StationMetricBox } from './StationMetricBox';
+import { StationPageHeading } from './StationPageHeading';
+import { resolveStationColors } from './stationTheme';
 
 export function StationSocialPanel({
   palette,
@@ -26,22 +28,30 @@ export function StationSocialPanel({
   onOpenFriendThread: (friendUserId: string) => void;
   onOpenPublicProfileByAiId: (aiId: string) => void;
 }) {
+  const colors = resolveStationColors(palette);
+
   return (
     <View style={styles.stationPanelStack}>
+      <StationPageHeading
+        detail={textFor(language, '关系与连接', 'Relationships')}
+        palette={palette}
+        title={textFor(language, '其他', 'More')}
+        watermark="CONNECTIONS"
+      />
       <View
         style={[
           styles.stationRadarCard,
-          { backgroundColor: palette.surface, borderColor: palette.border },
+          { backgroundColor: colors.surface, borderColor: colors.border },
         ]}
       >
         <View style={styles.stationSectionTitleRow}>
-          <Text style={[styles.stationSectionTitle, { color: palette.text }]}>
+          <Text style={[styles.stationSectionTitle, { color: colors.text }]}>
             {textFor(language, '关系概览', 'Relationship Overview')}
           </Text>
           <Text
             style={[
               styles.stationSectionDetail,
-              { color: palette.secondaryText },
+              { color: colors.secondaryText },
             ]}
           >
             {status}
@@ -125,12 +135,14 @@ function RelationshipSection({
   onItemPress: (item: RelationshipProfileDTO) => void;
   onChatPress?: (item: RelationshipProfileDTO) => void;
 }) {
+  const colors = resolveStationColors(palette);
+
   return (
     <View style={styles.relationshipSection}>
       <Text
         style={[
           styles.relationshipSectionTitle,
-          { color: palette.secondaryText },
+          { color: colors.secondaryText },
         ]}
       >
         {title}
@@ -139,7 +151,7 @@ function RelationshipSection({
         items.map(item => (
           <View
             key={`${title}-${item.user.id}`}
-            style={[styles.relationshipRow, { backgroundColor: palette.soft }]}
+            style={[styles.relationshipRow, { backgroundColor: colors.soft }]}
           >
             <Pressable
               accessibilityRole="button"
@@ -159,7 +171,7 @@ function RelationshipSection({
               />
               <View style={styles.relationshipCopy}>
                 <Text
-                  style={[styles.relationshipName, { color: palette.text }]}
+                  style={[styles.relationshipName, { color: colors.text }]}
                   numberOfLines={1}
                 >
                   {displayText(language, item.profile.nickname)}
@@ -167,7 +179,7 @@ function RelationshipSection({
                 <Text
                   style={[
                     styles.relationshipMeta,
-                    { color: palette.secondaryText },
+                    { color: colors.secondaryText },
                   ]}
                   numberOfLines={1}
                 >
@@ -187,14 +199,14 @@ function RelationshipSection({
                 style={styles.relationshipChatButton}
               >
                 <MessageCircle
-                  color={palette.mint}
+                  color={colors.accent}
                   size={18}
                   strokeWidth={2.5}
                 />
               </Pressable>
             ) : (
               <ChevronRight
-                color={palette.secondaryText}
+                color={colors.secondaryText}
                 size={17}
                 strokeWidth={2.6}
               />
@@ -203,7 +215,7 @@ function RelationshipSection({
         ))
       ) : (
         <Text
-          style={[styles.relationshipEmpty, { color: palette.secondaryText }]}
+          style={[styles.relationshipEmpty, { color: colors.secondaryText }]}
         >
           {empty}
         </Text>

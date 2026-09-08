@@ -38,7 +38,7 @@ export function StationVideoAgentPanel({
   const [isCreating, setIsCreating] = useState(false);
   const latestDrafts = useMemo(
     () =>
-      [...(stationContent.videoDrafts || [])]
+      [...stationContent.videoDrafts]
         .sort((left, right) =>
           String(right.createdAt || '').localeCompare(
             String(left.createdAt || ''),
@@ -58,7 +58,7 @@ export function StationVideoAgentPanel({
       await onCreateVideoDraft({
         prompt: safePrompt,
         diaryEntryId: stationContent.diaryEntries[0]?.id || null,
-        comicDiaryId: stationContent.comicDiaries?.[0]?.id || null,
+        comicDiaryId: stationContent.comicDiaries[0]?.id || null,
         mediaAssetIds: stationContent.mediaAssets
           .slice(0, 8)
           .map(asset => asset.id),

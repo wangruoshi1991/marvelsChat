@@ -1,6 +1,6 @@
-import { buildComicDiaryDraft } from "../comic-diary-service.js";
+import { buildComicDiaryAgentResponse } from "../comic-diary-service.js";
 import { createRateLimitMiddleware } from "../rate-limit-service.js";
-import { createUsageEvent, hashRequestIp } from "../repositories.js";
+import { createAgentRun, createUsageEvent, hashRequestIp } from "../repositories.js";
 import {
   createStationComicDiary,
   deleteStationComicDiaryForUser,
@@ -68,14 +68,46 @@ export function registerStationComicRoutes(app, { authenticate, asyncHandler }) 
         return;
       }
 
-      const draft = buildComicDiaryDraft({
-        prompt: body.prompt,
-        diaryEntry,
-        mediaAssets,
-        fileAssets,
-        style: body.style,
-        frameCount: body.frameCount,
-      });
+      const startedAt = Date.now();
+      let generation;
+      try {
+        generation = await buildComicDiaryAgentResponse({
+          prompt: body.prompt,
+          user: req.user,
+          diaryEntry,
+          mediaAssets,
+          fileAssets,
+          style: body.style,
+          frameCount: body.frameCount,
+        });
+        await createAgentRun({
+          userId: req.user.id,
+          agentId: "comic-diary",
+          threadId: null,
+          inputMessageId: null,
+          outputMessageId: null,
+          status: "success",
+          provider: generation.model.provider,
+          latencyMs: generation.model.latencyMs,
+          tokenPrompt: generation.model.tokenUsage?.prompt ?? null,
+          tokenCompletion: generation.model.tokenUsage?.completion ?? null,
+          tokenTotal: generation.model.tokenUsage?.total ?? null,
+        });
+      } catch (error) {
+        await createAgentRun({
+          userId: req.user.id,
+          agentId: "comic-diary",
+          threadId: null,
+          inputMessageId: null,
+          outputMessageId: null,
+          status: "error",
+          provider: "runtime-error",
+          latencyMs: Date.now() - startedAt,
+          errorMessage: error instanceof Error ? error.message : "Comic diary Agent failed",
+        });
+        throw error;
+      }
+      const draft = generation.draft;
       const comicDiary = await createStationComicDiary({
         userId: req.user.id,
         title: draft.title,
@@ -92,6 +124,7 @@ export function registerStationComicRoutes(app, { authenticate, asyncHandler }) 
           frameCount: draft.frames.length,
           requestedMediaAssetIds: uniqueMediaIds,
           requestedFileAssetIds: uniqueFileIds,
+          model: generation.model,
         },
       });
 
