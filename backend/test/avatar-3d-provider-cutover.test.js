@@ -6,10 +6,14 @@ process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 
 const { buildAgentReadiness } = await import("../src/agent-readiness-service.js");
 
-test("3D advisor readiness is independent from the paid avatar pipeline", () => {
-  const readiness = buildAgentReadiness({
+test("3D advisor readiness is independent from the paid avatar pipeline", async () => {
+  const readiness = await buildAgentReadiness({
     ossStatus: { provider: "oss", configured: true, missing: [] },
     modelStatus: { provider: "new-api", configured: true, missing: [] },
+    mediaRetrievalStatus: {
+      readiness: { state: "not-ready" },
+      routeEligibility: { reasonCodes: ["not-ready"] },
+    },
   });
   const model3d = readiness["model-3d"];
 

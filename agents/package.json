@@ -5,13 +5,25 @@
   "type": "module",
   "description": "Miaoxun Agent definitions and registry.",
   "scripts": {
-    "check": "node --check registry.js *.agent.js",
-    "test": "node --test test/*.test.js"
+    "check": "node --check registry.js *.agent.js scripts/*.js scripts/lib/*.js",
+    "test": "node --test test/*.test.js",
+    "agent:new": "node scripts/agent-new.js",
+    "agent:check": "node scripts/agent-check.js",
+    "agent:test": "node scripts/agent-test.js",
+    "agent:eval": "node scripts/agent-eval.js",
+    "agent:smoke": "node scripts/agent-smoke.js",
+    "agent:release": "node scripts/agent-release.js"
   },
   "exports": {
     "./registry": "./registry.js"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0"
+  },
+  "overrides": {
+    "fast-uri": "3.1.6"
   }
 }

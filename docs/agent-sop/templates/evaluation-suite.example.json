@@ -1,0 +1,165 @@
+{
+  "schemaVersion": "0.2",
+  "agentKey": "example-image-agent",
+  "agentVersion": "0.1.0",
+  "suiteVersion": "1.0.0",
+  "fixturePolicy": {
+    "versioned": true,
+    "noProductionPersonalData": true,
+    "storageReference": "fixtures/example-image-agent/v1"
+  },
+  "cases": [
+    {
+      "id": "authorized-success",
+      "category": "success",
+      "fixtureRef": "fixtures/example-image-agent/v1/authorized-input.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.accepted", "agent.run.progress", "agent.run.succeeded"],
+        "artifactAssertions": ["private ownership", "sha256 digest", "native viewer supported"],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 30000, "maxCostFen": 0, "maxProviderCalls": 1 },
+      "review": {
+        "automatedAssertions": ["output schema valid", "artifact is private"],
+        "requiresHumanJudgement": true,
+        "qualityRubricRef": "rubrics/example-image-v1.md"
+      }
+    },
+    {
+      "id": "quality-threshold",
+      "category": "quality",
+      "fixtureRef": "fixtures/example-image-agent/v1/quality-input.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.succeeded"],
+        "artifactAssertions": ["quality rubric score is recorded"],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 30000, "maxCostFen": 0, "maxProviderCalls": 1 },
+      "review": {
+        "automatedAssertions": ["quality score is present"],
+        "requiresHumanJudgement": true,
+        "qualityRubricRef": "rubrics/example-image-v1.md"
+      }
+    },
+    {
+      "id": "invalid-input",
+      "category": "failure",
+      "fixtureRef": "fixtures/example-image-agent/v1/invalid-input.json",
+      "expected": {
+        "terminalPublicStatus": "failed",
+        "publicErrorCode": "invalid-input",
+        "requiredEventTypes": ["agent.run.failed"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": {
+        "automatedAssertions": ["public error is stable", "provider not called"],
+        "requiresHumanJudgement": false,
+        "qualityRubricRef": null
+      }
+    },
+    {
+      "id": "timeout-mapping",
+      "category": "timeout",
+      "fixtureRef": "fixtures/example-image-agent/v1/timeout-input.json",
+      "expected": {
+        "terminalPublicStatus": "failed",
+        "publicErrorCode": "provider-timeout",
+        "requiredEventTypes": ["agent.run.failed"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 5000, "maxCostFen": 0, "maxProviderCalls": 1 },
+      "review": {
+        "automatedAssertions": ["raw provider error is absent", "retry policy respected"],
+        "requiresHumanJudgement": false,
+        "qualityRubricRef": null
+      }
+    },
+    {
+      "id": "user-cancel",
+      "category": "cancel",
+      "fixtureRef": "fixtures/example-image-agent/v1/cancel-input.json",
+      "expected": {
+        "terminalPublicStatus": "cancelled",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.cancelled"],
+        "artifactAssertions": [],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 5000, "maxCostFen": 0, "maxProviderCalls": 1 },
+      "review": {
+        "automatedAssertions": ["new work is stopped", "cancel is idempotent"],
+        "requiresHumanJudgement": false,
+        "qualityRubricRef": null
+      }
+    },
+    {
+      "id": "duplicate-request",
+      "category": "idempotency",
+      "fixtureRef": "fixtures/example-image-agent/v1/idempotent-input.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.succeeded"],
+        "artifactAssertions": ["exactly one artifact record"],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 30000, "maxCostFen": 0, "maxProviderCalls": 1 },
+      "review": {
+        "automatedAssertions": ["same idempotency key resolves to one run"],
+        "requiresHumanJudgement": false,
+        "qualityRubricRef": null
+      }
+    },
+    {
+      "id": "restart-from-checkpoint",
+      "category": "recovery",
+      "fixtureRef": "fixtures/example-image-agent/v1/recovery-input.json",
+      "expected": {
+        "terminalPublicStatus": "succeeded",
+        "publicErrorCode": null,
+        "requiredEventTypes": ["agent.run.progress", "agent.run.succeeded"],
+        "artifactAssertions": ["one final artifact record"],
+        "providerInteraction": "mock-only"
+      },
+      "limits": { "maxLatencyMs": 30000, "maxCostFen": 0, "maxProviderCalls": 1 },
+      "review": {
+        "automatedAssertions": ["checkpoint version is validated", "sequence is monotonic"],
+        "requiresHumanJudgement": false,
+        "qualityRubricRef": null
+      }
+    },
+    {
+      "id": "cross-user-denied",
+      "category": "authorization",
+      "fixtureRef": "fixtures/example-image-agent/v1/cross-user-input.json",
+      "expected": {
+        "terminalPublicStatus": "failed",
+        "publicErrorCode": "not-authorized",
+        "requiredEventTypes": ["agent.run.failed"],
+        "artifactAssertions": [],
+        "providerInteraction": "none"
+      },
+      "limits": { "maxLatencyMs": 1000, "maxCostFen": 0, "maxProviderCalls": 0 },
+      "review": {
+        "automatedAssertions": ["artifact is not disclosed", "provider not called"],
+        "requiresHumanJudgement": false,
+        "qualityRubricRef": null
+      }
+    }
+  ],
+  "scoring": {
+    "minimumPassingScore": 85,
+    "metrics": [
+      { "key": "contract-correctness", "weight": 0.4, "threshold": 100, "direction": "higher-is-better" },
+      { "key": "quality-rubric", "weight": 0.4, "threshold": 85, "direction": "higher-is-better" },
+      { "key": "latency", "weight": 0.2, "threshold": 30000, "direction": "lower-is-better" }
+    ]
+  }
+}

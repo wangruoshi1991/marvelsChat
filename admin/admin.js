@@ -29,6 +29,7 @@ let currentAgents = [];
 let currentAgentReadiness = {};
 let selectedUserId = "";
 let currentModelStatus = null;
+let currentMediaRetrievalOverview = null;
 
 const qs = (selector) => document.querySelector(selector);
 const qsa = (selector) => [...document.querySelectorAll(selector)];
@@ -62,6 +63,16 @@ const roleLabel = (role) => (role === "admin" ? "管理员" : "普通用户");
 const statusLabel = (status) => (status === "active" ? "启用" : "停用");
 const modelStateLabel = (status) => (status?.configured ? "已配置" : "未配置");
 const readinessStateLabel = (readiness) => (readiness?.configured ? "可用" : "待配置");
+const availabilityStateLabel = (availability) => (availability?.state === "available" ? "可用" : "暂不可用");
+const formatFen = (value) => `¥${(Number(value || 0) / 100).toFixed(2)}`;
+const formatAge = (value) => {
+  if (!value) return "未上报";
+  const milliseconds = Date.now() - new Date(value).getTime();
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return "刚刚";
+  if (milliseconds < 60_000) return `${Math.floor(milliseconds / 1000)} 秒前`;
+  if (milliseconds < 3_600_000) return `${Math.floor(milliseconds / 60_000)} 分钟前`;
+  return `${Math.floor(milliseconds / 3_600_000)} 小时前`;
+};
 const adminPermissionOptions = [
   ["users:read", "查看账号"],
   ["users:write", "管理账号"],
@@ -115,6 +126,11 @@ const agentModuleBindings = {
     module: "我的动态 / 视频草稿",
     owner: "Agent 模块负责",
     endpoint: "/api/station/video-drafts",
+  },
+  "media-retrieval": {
+    module: "个人相册 / 私有媒体检索",
+    owner: "Jarson（个人负责）",
+    endpoint: "/api/station/media-retrieval",
   },
 };
 
@@ -262,6 +278,101 @@ const renderAgentReadiness = (readiness = currentAgentReadiness, agents = curren
         `;
       })
       .join("") || "<article><strong>暂无 Agent</strong><p>agents/ 目录中还没有注册文件。</p></article>";
+};
+
+const renderMediaRetrievalOverview = (overview = null) => {
+  currentMediaRetrievalOverview = overview;
+  const content = qs("#media-retrieval-content");
+  const state = qs("#media-retrieval-state");
+  if (!overview) {
+    state.textContent = "未检测";
+    state.classList.remove("error");
+    content.innerHTML = "<p class=\"empty-note\">暂时无法读取媒体检索 Agent 状态。</p>";
+    return;
+  }
+  const runtime = overview.runtimeStatus || {};
+  const availability = runtime.publicAvailability || {};
+  const controls = overview.controls || {};
+  const queue = overview.queue || {};
+  const cost = overview.cost || {};
+  const reasonCodes = availability.reasonCodes?.length ? availability.reasonCodes.join("、") : "无";
+  const recentRuns = overview.recentRuns || [];
+  state.textContent = availabilityStateLabel(availability);
+  state.classList.toggle("error", availability.state !== "available");
+  content.innerHTML = `
+    <section class="media-retrieval-summary" aria-label="媒体检索运行状态">
+      <div><span>生命周期</span><strong>${escapeHtml(runtime.lifecycle || controls.lifecycle || "draft")}</strong></div>
+      <div><span>运行状态</span><strong>${escapeHtml(availabilityStateLabel(availability))}</strong></div>
+      <div><span>Worker 心跳</span><strong>${escapeHtml(formatAge(runtime.liveness?.lastSeenAt))}</strong></div>
+      <div><span>容量</span><strong>${escapeHtml(runtime.capacity?.state || "unknown")}</strong></div>
+    </section>
+    <section class="media-retrieval-details">
+      <dl>
+        <div><dt>不可用原因</dt><dd>${escapeHtml(reasonCodes)}</dd></div>
+        <div><dt>队列</dt><dd>排队 ${Number(queue.queued || 0)} / 执行 ${Number(queue.running || 0)} / 阻塞 ${Number(queue.blocked || 0)}</dd></div>
+        <div><dt>已索引分段</dt><dd>${Number(overview.readySegments || 0).toLocaleString("zh-CN")}</dd></div>
+        <div><dt>今日已预留</dt><dd>${formatFen(cost.reservedFen)}</dd></div>
+        <div><dt>今日已估算</dt><dd>${formatFen(cost.estimatedFen)}</dd></div>
+        <div><dt>未知费用</dt><dd>${formatFen(cost.unknownFen)}</dd></div>
+      </dl>
+    </section>
+    <form class="media-retrieval-controls" id="media-retrieval-controls-form">
+      <div class="media-retrieval-controls-heading">
+        <strong>受限运行控制</strong>
+        <span>所有更改将记入审计事件。</span>
+      </div>
+      <label class="checkbox-row"><input id="media-retrieval-operator" type="checkbox" ${controls.operatorEnabled ? "checked" : ""} /><span>启用 Agent</span></label>
+      <label class="checkbox-row"><input id="media-retrieval-provider" type="checkbox" ${controls.providerCallsEnabled ? "checked" : ""} /><span>允许 Provider 调用</span></label>
+      <label class="checkbox-row"><input id="media-retrieval-queue" type="checkbox" ${controls.queueEnabled ? "checked" : ""} /><span>允许创建索引任务</span></label>
+      <label>每用户每日请求上限<input id="media-retrieval-user-daily-limit" type="number" min="0" max="1000" step="1" value="${Number(controls.userDailyRequestLimit || 0)}" /></label>
+      <label>每用户每月预算（分）<input id="media-retrieval-user-monthly-budget" type="number" min="0" max="1000000" step="1" value="${Number(controls.userMonthlyBudgetFen || 0)}" /></label>
+      <label>全局每日预算（分）<input id="media-retrieval-budget" type="number" min="0" max="10000000" step="1" value="${Number(controls.globalDailyBudgetFen || 0)}" /></label>
+      <label>描述调用预留（分）<input id="media-retrieval-caption-reserve" type="number" min="0" max="1000000" step="1" value="${Number(controls.captionReserveFen || 0)}" /></label>
+      <label>向量调用预留（分）<input id="media-retrieval-embedding-reserve" type="number" min="0" max="1000000" step="1" value="${Number(controls.embeddingReserveFen || 0)}" /></label>
+      <label>生命周期
+        <select id="media-retrieval-lifecycle">
+          ${["draft", "review", "sandbox", "limited_release", "available", "suspended", "deprecated", "removed"]
+            .map((value) => `<option value="${value}" ${controls.lifecycle === value ? "selected" : ""}>${value}</option>`)
+            .join("")}
+        </select>
+      </label>
+      <button type="submit">保存控制</button>
+    </form>
+    <section class="media-retrieval-runs">
+      <header><strong>最近运行</strong><span>${recentRuns.length}</span></header>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>类型</th><th>状态</th><th>失败代码</th><th>时间</th></tr></thead>
+          <tbody>
+            ${recentRuns.map((run) => `
+              <tr>
+                <td>${escapeHtml(run.runType || "--")}</td>
+                <td>${escapeHtml(run.lifecycleStatus || "--")}</td>
+                <td>${escapeHtml(run.failureCode || "--")}</td>
+                <td>${formatTime(run.createdAt)}</td>
+              </tr>
+            `).join("") || "<tr><td colspan=\"4\">暂无运行记录</td></tr>"}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+  syncMediaRetrievalControlState();
+};
+
+const syncMediaRetrievalControlState = () => {
+  const budgetInputs = [
+    qs("#media-retrieval-user-daily-limit"),
+    qs("#media-retrieval-user-monthly-budget"),
+    qs("#media-retrieval-budget"),
+    qs("#media-retrieval-caption-reserve"),
+    qs("#media-retrieval-embedding-reserve"),
+  ];
+  const provider = qs("#media-retrieval-provider");
+  if (budgetInputs.some((input) => !input) || !provider) return;
+  const missingCapacity = budgetInputs.some((input) => Number(input.value || 0) <= 0);
+  if (missingCapacity) provider.checked = false;
+  provider.disabled = missingCapacity;
 };
 
 const renderModelStatus = (status, testResult = null) => {
@@ -522,6 +633,13 @@ async function loadAdmin() {
     }
 
     try {
+      renderMediaRetrievalOverview(await apiRequest("/api/admin/media-retrieval/overview"));
+    } catch (error) {
+      renderMediaRetrievalOverview(null);
+      setStatus(friendlyErrorMessage(error, "媒体检索 Agent 状态读取失败。"));
+    }
+
+    try {
       renderModelStatus(await apiRequest("/api/admin/model-status"));
     } catch (error) {
       renderModelError(error);
@@ -577,6 +695,7 @@ qs("#admin-logout").addEventListener("click", async () => {
     qs("#agents-list").innerHTML = "";
     qs("#agent-readiness-count").textContent = "0";
     qs("#agent-readiness-list").innerHTML = "<article><strong>未检测</strong><p>登录后会显示每个 Agent 对应的 App 模块和上游配置状态。</p></article>";
+    renderMediaRetrievalOverview(null);
     qs("#model-status-label").textContent = "未检测";
     qs("#model-panel").innerHTML = "<p>登录后会显示当前后端模型配置。</p>";
     setStatus("已退出后台。");
@@ -603,6 +722,58 @@ qs("#model-test").addEventListener("click", async () => {
     setStatus(friendlyErrorMessage(error, "模型连通测试失败。"));
   } finally {
     button.disabled = !auth.token || !currentModelStatus?.configured;
+  }
+});
+
+qs("#media-retrieval-refresh").addEventListener("click", async () => {
+  if (!auth.token) return;
+  setStatus("正在刷新媒体检索 Agent 状态...");
+  try {
+    renderMediaRetrievalOverview(await apiRequest("/api/admin/media-retrieval/overview"));
+    setStatus("媒体检索 Agent 状态已同步。");
+  } catch (error) {
+    setStatus(friendlyErrorMessage(error, "媒体检索 Agent 状态读取失败。"));
+  }
+});
+
+qs("#media-retrieval-content").addEventListener("input", (event) => {
+  if (event.target.id.startsWith("media-retrieval-") && event.target.type === "number") syncMediaRetrievalControlState();
+});
+
+qs("#media-retrieval-content").addEventListener("submit", async (event) => {
+  if (event.target.id !== "media-retrieval-controls-form") return;
+  event.preventDefault();
+  const current = currentMediaRetrievalOverview?.controls || {};
+  const next = {
+    operatorEnabled: qs("#media-retrieval-operator").checked,
+    providerCallsEnabled: qs("#media-retrieval-provider").checked,
+    queueEnabled: qs("#media-retrieval-queue").checked,
+    userDailyRequestLimit: Number(qs("#media-retrieval-user-daily-limit").value || 0),
+    userMonthlyBudgetFen: Number(qs("#media-retrieval-user-monthly-budget").value || 0),
+    globalDailyBudgetFen: Number(qs("#media-retrieval-budget").value || 0),
+    captionReserveFen: Number(qs("#media-retrieval-caption-reserve").value || 0),
+    embeddingReserveFen: Number(qs("#media-retrieval-embedding-reserve").value || 0),
+    lifecycle: qs("#media-retrieval-lifecycle").value,
+  };
+  const changes = Object.fromEntries(Object.entries(next).filter(([key, value]) => current[key] !== value));
+  if (!Object.keys(changes).length) {
+    setStatus("没有需要保存的控制更改。");
+    return;
+  }
+  const submit = event.target.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  setStatus("正在保存媒体检索运行控制...");
+  try {
+    await apiRequest("/api/admin/media-retrieval/controls", {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    });
+    renderMediaRetrievalOverview(await apiRequest("/api/admin/media-retrieval/overview"));
+    setStatus("媒体检索运行控制已保存。");
+  } catch (error) {
+    setStatus(friendlyErrorMessage(error, "媒体检索运行控制保存失败。"));
+  } finally {
+    submit.disabled = false;
   }
 });
 

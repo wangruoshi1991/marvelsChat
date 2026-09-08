@@ -1,0 +1,20 @@
+[Unit]
+Description=Miaoxun media retrieval worker
+After=network-online.target marvels-chat-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=marvels
+WorkingDirectory=/opt/projects/marvels-chat/app/backend
+EnvironmentFile=/opt/projects/marvels-chat/app/deploy/miaoxun-prod.env
+ExecStart=/usr/bin/npm run worker:media-retrieval
+Restart=always
+RestartSec=5s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

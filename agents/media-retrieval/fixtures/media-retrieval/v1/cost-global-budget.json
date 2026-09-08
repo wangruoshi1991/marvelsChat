@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "id": "cost-global-budget",
+  "operation": "index-image",
+  "requiresProvider": true,
+  "latencyMs": 6,
+  "state": { "globalBudgetRemainingFen": 0 },
+  "checks": ["global-budget-blocks"]
+}

@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "0.2",
+  "documentId": "MX-AGENT-SOP-INDEX",
+  "sopVersion": "0.2.0",
+  "status": "trial",
+  "scope": "miaoxun-internal-agents",
+  "humanEntryPoint": "README.md",
+  "normativeFiles": [
+    "README.md",
+    "command-contract.md",
+    "quality-gates.json",
+    "schemas/agent-manifest.schema.json",
+    "schemas/agent-card.schema.json",
+    "schemas/runtime-status.schema.json",
+    "schemas/agent-event.schema.json",
+    "schemas/evaluation-suite.schema.json"
+  ],
+  "machineContracts": {
+    "manifestSchema": "schemas/agent-manifest.schema.json",
+    "agentCardSchema": "schemas/agent-card.schema.json",
+    "runtimeStatusSchema": "schemas/runtime-status.schema.json",
+    "agentEventSchema": "schemas/agent-event.schema.json",
+    "evaluationSuiteSchema": "schemas/evaluation-suite.schema.json",
+    "qualityGates": "quality-gates.json",
+    "manifestExample": "templates/agent-manifest.example.json",
+    "agentCardExample": "templates/agent-card.example.json",
+    "runtimeStatusExample": "templates/runtime-status.example.json",
+    "agentEventExample": "templates/agent-event.example.json",
+    "evaluationSuiteExample": "templates/evaluation-suite.example.json"
+  },
+  "templates": [
+    "templates/01-proposal.md",
+    "templates/02-risk-assessment.md",
+    "templates/03-api-artifact-contract.md",
+    "templates/04-threat-model.md",
+    "templates/05-test-matrix.md",
+    "templates/06-calibration-record.md",
+    "templates/07-release-evidence.md",
+    "templates/08-runbook.md",
+    "templates/09-retrospective.md",
+    "templates/10-checkpoint-and-progress.md",
+    "templates/11-evaluation-suite.md",
+    "templates/12-agent-card-and-catalog.md"
+  ],
+  "lifecycleStages": ["S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10"],
+  "qualityGates": ["G0", "G1", "G2", "G3", "G4", "G5", "G6", "G7"],
+  "supportedProfiles": [
+    "conversational",
+    "synchronous-tool",
+    "asynchronous-generation",
+    "orchestrator",
+    "event-driven",
+    "external-provider",
+    "artifact-producing",
+    "paid",
+    "sensitive-data",
+    "high-risk-action"
+  ],
+  "commands": {
+    "agent:new": { "status": "specified-not-implemented" },
+    "agent:check": { "status": "specified-not-implemented" },
+    "agent:test": { "status": "specified-not-implemented" },
+    "agent:eval": { "status": "specified-not-implemented" },
+    "agent:smoke": { "status": "specified-not-implemented" },
+    "agent:release": { "status": "specified-not-implemented" }
+  },
+  "executionRules": {
+    "allApplicableGatesAreBlocking": true,
+    "realPaidCallsRequireExplicitHumanApproval": true,
+    "productionReleaseRequiresExplicitHumanApproval": true,
+    "secretsInArgumentsLogsOrEvidenceAreForbidden": true,
+    "missingDecisionMustNotBeInferred": true
+  },
+  "trialReview": {
+    "required": true,
+    "trigger": "after-one-complete-non-3d-agent-pilot",
+    "template": "templates/09-retrospective.md"
+  },
+  "storagePolicy": {
+    "location": "docs/agent-sop",
+    "commitToRepository": true,
+    "repositoryHistoryIsTheVersionRecord": true
+  }
+}

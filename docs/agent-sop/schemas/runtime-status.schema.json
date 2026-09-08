@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://miaoxun.local/schemas/runtime-status-v0.2.json",
+  "title": "Miaoxun Agent Runtime Status v0.2",
+  "description": "A control-plane status record. App and Web receive only the publicAvailability projection; provider configuration, environment values, and raw probe output must not appear here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "agentKey",
+    "agentVersion",
+    "lifecycle",
+    "operatorEnabled",
+    "liveness",
+    "readiness",
+    "capacity",
+    "routeEligibility",
+    "publicAvailability",
+    "evaluatedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "0.2" },
+    "agentKey": { "$ref": "#/$defs/slug" },
+    "agentVersion": { "$ref": "#/$defs/semver" },
+    "lifecycle": {
+      "enum": ["draft", "review", "sandbox", "limited_release", "available", "suspended", "deprecated", "removed"]
+    },
+    "operatorEnabled": { "type": "boolean" },
+    "liveness": { "$ref": "#/$defs/livenessProbe" },
+    "readiness": { "$ref": "#/$defs/readinessProbe" },
+    "capacity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "evaluatedAt"],
+      "properties": {
+        "state": { "enum": ["available", "limited", "exhausted", "unknown"] },
+        "evaluatedAt": { "$ref": "#/$defs/utcTimestamp" }
+      }
+    },
+    "routeEligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registered",
+        "lifecycleAllowsUse",
+        "operatorEnabled",
+        "readinessReady",
+        "capacityAvailable",
+        "canRouteNewRun",
+        "reasonCodes"
+      ],
+      "properties": {
+        "registered": { "type": "boolean" },
+        "lifecycleAllowsUse": { "type": "boolean" },
+        "operatorEnabled": { "type": "boolean" },
+        "readinessReady": { "type": "boolean" },
+        "capacityAvailable": { "type": "boolean" },
+        "canRouteNewRun": { "type": "boolean" },
+        "reasonCodes": { "$ref": "#/$defs/reasonCodes" }
+      }
+    },
+    "publicAvailability": { "$ref": "#/$defs/publicAvailability" },
+    "evaluatedAt": { "$ref": "#/$defs/utcTimestamp" }
+  },
+  "$defs": {
+    "slug": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", "maxLength": 80 },
+    "semver": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" },
+    "utcTimestamp": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" },
+    "livenessProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "checkedAt"],
+      "properties": {
+        "state": { "enum": ["healthy", "unhealthy", "unknown"] },
+        "checkedAt": { "$ref": "#/$defs/utcTimestamp" }
+      }
+    },
+    "readinessProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "checkedAt"],
+      "properties": {
+        "state": { "enum": ["ready", "not-ready", "unknown"] },
+        "checkedAt": { "$ref": "#/$defs/utcTimestamp" }
+      }
+    },
+    "reasonCodes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "lifecycle-not-available",
+          "operator-disabled",
+          "not-ready",
+          "capacity-limited",
+          "app-version-too-old",
+          "not-authorized"
+        ]
+      }
+    },
+    "publicAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "canStartRun", "reasonCodes"],
+      "properties": {
+        "state": {
+          "enum": [
+            "available",
+            "temporarily-unavailable",
+            "maintenance",
+            "requires-update",
+            "not-authorized"
+          ]
+        },
+        "canStartRun": { "type": "boolean" },
+        "reasonCodes": { "$ref": "#/$defs/reasonCodes" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "routeEligibility": {
+            "type": "object",
+            "properties": { "canRouteNewRun": { "const": true } },
+            "required": ["canRouteNewRun"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "lifecycle": { "enum": ["limited_release", "available"] },
+          "operatorEnabled": { "const": true },
+          "readiness": {
+            "type": "object",
+            "properties": { "state": { "const": "ready" } }
+          },
+          "capacity": {
+            "type": "object",
+            "properties": { "state": { "enum": ["available", "limited"] } }
+          },
+          "routeEligibility": {
+            "type": "object",
+            "properties": {
+              "registered": { "const": true },
+              "lifecycleAllowsUse": { "const": true },
+              "operatorEnabled": { "const": true },
+              "readinessReady": { "const": true },
+              "capacityAvailable": { "const": true },
+              "reasonCodes": { "type": "array", "maxItems": 0 }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

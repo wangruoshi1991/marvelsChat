@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0",
+  "id": "authorization-cross-user-run",
+  "operation": "get-run",
+  "latencyMs": 8,
+  "state": { "ownerId": "user-owner", "requesterId": "user-other" },
+  "checks": ["cross-user-not-found"]
+}

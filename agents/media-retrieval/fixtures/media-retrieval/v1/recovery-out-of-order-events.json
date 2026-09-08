@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0",
+  "id": "recovery-out-of-order-events",
+  "operation": "replay-events",
+  "latencyMs": 5,
+  "evidence": { "eventSequence": [1, 2, 3, 4] },
+  "checks": ["monotonic-events"]
+}

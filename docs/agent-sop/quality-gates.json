@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "0.2",
+  "documentId": "MX-AGENT-QUALITY-GATES",
+  "sopVersion": "0.2.0",
+  "status": "trial",
+  "gates": [
+    {
+      "id": "G0",
+      "name": "manifest-and-static",
+      "blocking": true,
+      "command": "agent:check",
+      "evidence": ["manifest-validation.json", "agent-card-validation.json", "static-checks.json"]
+    },
+    {
+      "id": "G1",
+      "name": "unit",
+      "blocking": true,
+      "command": "agent:test",
+      "evidence": ["unit-tests.json", "evaluation-report.json"]
+    },
+    {
+      "id": "G2",
+      "name": "contracts",
+      "blocking": true,
+      "command": "agent:test",
+      "evidence": ["contract-tests.json", "agent-card-projection.json", "event-contract.json", "compatibility-matrix.json"]
+    },
+    {
+      "id": "G3",
+      "name": "security-privacy-cost",
+      "blocking": true,
+      "command": "agent:test",
+      "evidence": ["threat-model.md", "security-tests.json", "risk-approval.json"]
+    },
+    {
+      "id": "G4",
+      "name": "integration",
+      "blocking": true,
+      "command": "agent:test",
+      "evidence": ["integration-tests.json", "checkpoint-restore.json", "event-replay.json", "migration-replay.json"]
+    },
+    {
+      "id": "G5",
+      "name": "miaoxun-sandbox-e2e",
+      "blocking": true,
+      "command": "agent:smoke",
+      "evidence": ["sandbox-smoke.json", "catalog-routing-e2e.json", "artifact-verification.json"]
+    },
+    {
+      "id": "G6",
+      "name": "real-provider-calibration",
+      "blocking": "when-applicable",
+      "command": "agent:smoke --allow-approved-paid-calibration",
+      "evidence": ["calibration-record.md", "billing-evidence.json", "quality-evidence.json", "evaluation-report.json"]
+    },
+    {
+      "id": "G7",
+      "name": "release-and-operations",
+      "blocking": true,
+      "command": "agent:release",
+      "evidence": ["release-evidence.md", "agent-card-snapshot.json", "runtime-status.json", "rollback-verification.json"]
+    }
+  ],
+  "baselineRequirements": [
+    "agent-card-projection",
+    "runtime-status-routing",
+    "trace-propagation",
+    "event-redaction",
+    "evaluation-suite"
+  ],
+  "profileRequirements": {
+    "conversational": ["prompt-evaluation", "context-boundary", "permission-refusal"],
+    "synchronous-tool": ["timeout", "idempotency", "side-effect-verification"],
+    "asynchronous-generation": ["state-machine", "concurrent-claim", "checkpoint-restore", "resume", "cancel", "event-order", "progress-monotonicity"],
+    "orchestrator": ["child-permissions", "loop-limit", "compensation", "call-tree-audit"],
+    "event-driven": ["deduplication", "out-of-order", "replay", "checkpoint-restore", "pause", "dead-letter"],
+    "external-provider": ["provider-contract", "timeout", "safe-error-mapping", "calibration"],
+    "artifact-producing": ["ownership", "format-validation", "viewer", "retention", "deletion"],
+    "paid": ["user-quota", "global-budget", "billing-disposition", "retry-safety", "circuit-breaker"],
+    "sensitive-data": ["consent", "data-minimization", "redaction", "retention", "account-deletion"],
+    "high-risk-action": ["second-confirmation", "human-or-admin-approval", "reversal-or-compensation"]
+  }
+}

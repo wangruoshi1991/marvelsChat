@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "id": "no-result-identity-only-exact",
+  "operation": "search",
+  "latencyMs": 8,
+  "query": { "identityTerms": ["synthetic-person"] },
+  "evidence": { "exactTextMatch": false, "resultIds": [] },
+  "checks": ["identity-no-semantic-fallback"]
+}

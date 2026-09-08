@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "0.2",
+  "eventId": "evt-example-image-0001",
+  "eventType": "agent.run.progress",
+  "occurredAt": "2026-08-05T00:00:00Z",
+  "agentKey": "example-image-agent",
+  "agentRunId": "run-example-image-0001",
+  "capabilityJobId": "job-example-image-0001",
+  "traceId": "0af7651916cd43dd8448eb211c80319c",
+  "parentEventId": null,
+  "causationId": "run-example-image-0001",
+  "attempt": 1,
+  "sequence": 3,
+  "deliveryKey": "run-example-image-0001:1:3",
+  "visibility": "client",
+  "stage": "processing",
+  "progressPercent": 45,
+  "redactionApplied": true,
+  "data": {
+    "messageCode": "generation-in-progress",
+    "estimatedRemainingSeconds": 90
+  }
+}

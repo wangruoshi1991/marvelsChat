@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "id": "video-frame-timestamp",
+  "operation": "search",
+  "requiresProvider": true,
+  "latencyMs": 39,
+  "mockProvider": { "calls": 12, "outcome": "succeeded" },
+  "evidence": { "timestampSeconds": 9.5 },
+  "checks": ["video-timestamp"]
+}

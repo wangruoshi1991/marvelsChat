@@ -1,6 +1,11 @@
 import crypto from "crypto";
 import { ZodError } from "zod";
 import { config } from "./config.js";
+import {
+  getMediaRetrievalErrorContract,
+  isMediaRetrievalPublicError,
+  toPublicMediaRetrievalError,
+} from "./media-retrieval-errors.js";
 
 const defaultLogger = {
   info: (entry) => console.log(JSON.stringify(entry)),
@@ -52,11 +57,16 @@ export function createSafeErrorResponse(error, {
   const isValidationError = error instanceof ZodError;
   const isInvalidJson = error?.type === "entity.parse.failed";
   const isMissingDatabase = ["42P01", "3D000"].includes(error?.code);
-  const status = isValidationError || isInvalidJson
-    ? 400
-    : isMissingDatabase
-      ? 503
-      : normalizeStatus(error?.status);
+  const mediaRetrievalError = isMediaRetrievalPublicError(error)
+    ? toPublicMediaRetrievalError(error)
+    : null;
+  const status = mediaRetrievalError
+    ? getMediaRetrievalErrorContract(error?.code).status
+    : isValidationError || isInvalidJson
+      ? 400
+      : isMissingDatabase
+        ? 503
+        : normalizeStatus(error?.status);
   const hideInternalError = production && status >= 500;
   const code = publicErrorCode(error);
   const message = isValidationError
@@ -78,8 +88,10 @@ export function createSafeErrorResponse(error, {
     status,
     body: {
       error: {
-        message,
-        ...(details === undefined ? {} : { details }),
+        ...(mediaRetrievalError || {
+          message,
+          ...(details === undefined ? {} : { details }),
+        }),
         requestId,
       },
     },

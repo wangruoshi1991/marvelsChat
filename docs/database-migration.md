@@ -26,9 +26,15 @@
 - `018_avatar_3d_quality_and_preview.sql` - 3D 质量档位与预览
 - `019_avatar_3d_face_first_pipeline.sql` - 单照片与四视图确认流程
 - `020_remove_station_3d_provider_defaults.sql` - 移除旧 Station 3D 默认供应商
+- `021_station_posts_compat.sql` - 将旧动态表结构收敛到当前小站动态合同
 - `022_avatar_3d_mobile_model.sql` - 保留原始 GLB，并登记 App 轻量 GLB
 - `023_require_model_site_drafts.sql` - 删除规则生成的建站草稿，并强制新草稿来自真实模型
 - `024_normalize_legacy_user_schema.sql` - 将旧库用户字段、AI ID、在线状态约束和重复索引收敛到迁移账本
+- `025_avatar_config_v2.sql` - 将用户 3D 形象配置收敛到 v2 合同
+- `026_agent_granted_scopes.sql` - 持久化并规范 Agent 授权范围
+- `027_media_retrieval_agent.sql` - 创建媒体检索 Agent、任务、事件、向量和成本结构
+- `028_media_retrieval_lifecycle_hardening.sql` - 增加租约、epoch、staging 和清理任务约束
+- `029_media_retrieval_embedding_provenance.sql` - 持久化描述与向量模型空间来源
 
 ## 迁移执行
 
@@ -51,6 +57,13 @@ npm run db:migrate
 `backend/scripts/check-migration-replay.sh` 重建无账本的 pre-023 数据库、模拟结构漂移、
 执行升级并确认第二次迁移为 no-op。该脚本只允许连接名称以 `_migration_test` 结尾的
 空数据库，不能用于生产。
+
+媒体检索的真实 pgvector 门禁默认使用一次性 Docker 数据库。Docker 不可用时，可显式设置
+`MEDIA_RETRIEVAL_MIGRATION_DATABASE_URL`；测试会先验证目标库名以 `_migration_test` 结尾且
+`public` schema 为空，否则拒绝执行。
+
+生产迁移以 PostgreSQL 14 为最低兼容版本。媒体检索的可空 run 引用使用 PostgreSQL 14
+支持的单列 `ON DELETE SET NULL`，并由数据库触发器继续校验 run 与派生记录属于同一用户。
 
 迁移命令使用 PostgreSQL advisory lock，避免两个发布进程并发修改 schema。
 每个新迁移与其账本记录在同一个事务中提交。

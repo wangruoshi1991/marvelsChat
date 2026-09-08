@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "0.2",
+  "agentKey": "example-image-agent",
+  "agentVersion": "0.1.0",
+  "lifecycle": "limited_release",
+  "operatorEnabled": true,
+  "liveness": {
+    "state": "healthy",
+    "checkedAt": "2026-08-05T00:00:00Z"
+  },
+  "readiness": {
+    "state": "ready",
+    "checkedAt": "2026-08-05T00:00:00Z"
+  },
+  "capacity": {
+    "state": "available",
+    "evaluatedAt": "2026-08-05T00:00:00Z"
+  },
+  "routeEligibility": {
+    "registered": true,
+    "lifecycleAllowsUse": true,
+    "operatorEnabled": true,
+    "readinessReady": true,
+    "capacityAvailable": true,
+    "canRouteNewRun": true,
+    "reasonCodes": []
+  },
+  "publicAvailability": {
+    "state": "available",
+    "canStartRun": true,
+    "reasonCodes": []
+  },
+  "evaluatedAt": "2026-08-05T00:00:00Z"
+}

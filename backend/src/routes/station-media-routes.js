@@ -1,6 +1,7 @@
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { config } from "../config.js";
+import { query, withTransaction } from "../db.js";
 import { HttpError } from "../http-error.js";
 import {
   fetchLocalMediaObject,
@@ -12,6 +13,10 @@ import {
   normalizeMediaTags,
   suggestTagsForMediaAsset,
 } from "../album-management-service.js";
+import { createMediaRetrievalProvider } from "../media-retrieval-provider.js";
+import { createMediaRetrievalRepository } from "../media-retrieval-repository.js";
+import { buildMediaRetrievalRuntimeStatus } from "../media-retrieval-runtime-status.js";
+import { createMediaRetrievalUserService } from "../media-retrieval-user-service.js";
 import {
   buildStationMediaObjectKey,
   createOssPutSignedUrl,
@@ -85,7 +90,21 @@ const createStationMediaUpload = ({ asset, objectKey, contentType }) => {
   };
 };
 
-export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) {
+const createMediaRetrievalService = () =>
+  createMediaRetrievalUserService({
+    repository: createMediaRetrievalRepository({ query, withTransaction }),
+    provider: createMediaRetrievalProvider({ config }),
+    getRuntimeStatus: buildMediaRetrievalRuntimeStatus,
+  });
+
+export function registerStationMediaRoutes(
+  app,
+  {
+    authenticate,
+    asyncHandler,
+    mediaRetrievalService = createMediaRetrievalService(),
+  },
+) {
   app.post(
     "/api/station/media-assets",
     authenticate,
@@ -293,6 +312,10 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
         throw new HttpError(409, "Media upload key does not match");
       }
       if (asset.status === "uploaded") {
+        await mediaRetrievalService.enqueueUploadedMediaAsset({
+          userId: req.user.id,
+          mediaAssetId: asset.id,
+        });
         res.json({ data: asset });
         return;
       }
@@ -362,6 +385,25 @@ export function registerStationMediaRoutes(app, { authenticate, asyncHandler }) 
         ipHash: hashRequestIp(req.ip),
         userAgent: req.get("user-agent") || "",
       });
+      const indexingOutcome =
+        await mediaRetrievalService.enqueueUploadedMediaAsset({
+          userId: req.user.id,
+          mediaAssetId: uploadedAsset.id,
+        });
+      if (!indexingOutcome?.queued) {
+        await createUsageEvent({
+          userId: req.user.id,
+          eventType: "station.media.retrieval_index_not_queued",
+          targetType: "station_media_asset",
+          targetId: uploadedAsset.id,
+          payload: {
+            reasonCode:
+              indexingOutcome?.reasonCode || "retrieval_index_enqueue_failed",
+          },
+          ipHash: hashRequestIp(req.ip),
+          userAgent: req.get("user-agent") || "",
+        });
+      }
       res.json({ data: uploadedAsset });
     }),
   );

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Media retrieval index checkpoint",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "stage",
+    "processedAssets",
+    "skippedAssets"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "stage": {
+      "enum": [
+        "enumerating",
+        "reading-asset",
+        "extracting-frames",
+        "describing",
+        "embedding",
+        "committing",
+        "purging"
+      ]
+    },
+    "cursor": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 256
+    },
+    "processedAssets": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "skippedAssets": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "lastCompletedMediaAssetId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 128
+    },
+    "processingVersion": {
+      "type": "string",
+      "maxLength": 40
+    }
+  }
+}
