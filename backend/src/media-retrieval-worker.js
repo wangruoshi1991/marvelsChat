@@ -63,6 +63,23 @@ export async function runMediaRetrievalWorker({
   if (!repository || !provider || !media) {
     throw new TypeError("Media retrieval worker requires repository, provider, and media dependencies.");
   }
+  const requiredRepositoryMethods = [
+    "heartbeatMediaRetrievalWorker",
+    "runMediaRetrievalRetentionSweep",
+    "reclaimExpiredMediaRetrievalJobs",
+    "claimMediaRetrievalTemporaryCleanup",
+    "completeMediaRetrievalTemporaryCleanup",
+    "retryMediaRetrievalTemporaryCleanup",
+    "claimMediaRetrievalLifecycleOutbox",
+    "createAssetPurgeRunAndJob",
+    "claimNextMediaRetrievalJob",
+  ];
+  if (requiredRepositoryMethods.some((name) => typeof repository[name] !== "function")) {
+    throw new TypeError("Media retrieval worker repository contract is incomplete.");
+  }
+  if (typeof media.deleteEphemeralProviderObject !== "function") {
+    throw new TypeError("Media retrieval worker media contract is incomplete.");
+  }
   let lastRetentionAt = 0;
   await repository.heartbeatMediaRetrievalWorker({ workerId, state: "starting" });
   while (!signal?.aborted) {
@@ -72,16 +89,13 @@ export async function runMediaRetrievalWorker({
       lastRetentionAt = now();
     }
     await repository.reclaimExpiredMediaRetrievalJobs();
-    const cleanupTask = typeof repository.claimMediaRetrievalTemporaryCleanup === "function"
-      ? await repository.claimMediaRetrievalTemporaryCleanup({ workerId })
-      : null;
+    const cleanupTask = await repository.claimMediaRetrievalTemporaryCleanup({ workerId });
     if (cleanupTask) {
       try {
-        if (typeof media.deleteEphemeralProviderObject !== "function") throw new Error("cleanup dependency unavailable");
         await media.deleteEphemeralProviderObject({ objectKey: cleanupTask.objectKey || cleanupTask.object_key });
         await repository.completeMediaRetrievalTemporaryCleanup({ cleanupTaskId: cleanupTask.id, workerId });
       } catch {
-        await repository.retryMediaRetrievalTemporaryCleanup?.({ cleanupTaskId: cleanupTask.id, workerId });
+        await repository.retryMediaRetrievalTemporaryCleanup({ cleanupTaskId: cleanupTask.id, workerId });
       }
       continue;
     }
@@ -106,7 +120,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
   const dependencies = createMediaRetrievalWorkerDependencies();
-  runMediaRetrievalWorker({ ...dependencies, signal: controller.signal }).catch((error) => {
+  runMediaRetrievalWorker({ ...dependencies, signal: controller.signal }).catch(() => {
     console.error("Media retrieval worker stopped unexpectedly.");
     process.exitCode = 1;
   });

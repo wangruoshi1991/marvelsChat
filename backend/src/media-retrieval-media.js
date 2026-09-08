@@ -86,7 +86,7 @@ export async function loadOwnedMediaBytes({ asset, fetchOssObject }) {
   }
 }
 
-export async function normalizeImageForProvider({ bytes, mimeType }) {
+export async function normalizeImageForProvider({ bytes }) {
   const source = asBuffer(bytes);
   if (!source.length || source.length > MEDIA_RETRIEVAL_LIMITS.sourceImageMaxBytes) {
     throw new MediaRetrievalMediaError("asset_not_indexable");

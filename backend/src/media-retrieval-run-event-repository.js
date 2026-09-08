@@ -1,6 +1,5 @@
 import {
   CLIENT_EVENT_VISIBILITY,
-  MEDIA_RETRIEVAL_AGENT_KEY,
   TERMINAL_LIFECYCLE_STATUSES,
   isSafeLifecycleStatus,
   mapEvent,
@@ -15,7 +14,6 @@ import { MediaRetrievalRepositoryError } from "./media-retrieval-errors.js";
 export function createMediaRetrievalRunEventRepository({
   query,
   withTransaction,
-  now = () => new Date(),
   idFactory,
   traceIdFactory,
 } = {}) {

@@ -3,11 +3,27 @@ import test from "node:test";
 
 process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 
-const { createMediaRetrievalUserService, MediaRetrievalServiceError } = await import("../src/media-retrieval-user-service.js");
+const {
+  createMediaRetrievalUserService: createUserService,
+  MediaRetrievalServiceError,
+} = await import("../src/media-retrieval-user-service.js");
 const { toPublicMediaRetrievalError } = await import("../src/media-retrieval-errors.js");
+const { createEmbeddingProvenance } = await import("../src/media-retrieval-provenance.js");
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const VECTOR = Array.from({ length: 1024 }, () => 0.1);
+const TEST_EMBEDDING_PROVENANCE = createEmbeddingProvenance({
+  modelId: "synthetic-test-embedding",
+  modelVersion: "1",
+  dimension: 1024,
+  normalization: "synthetic-test-normalization",
+  configuration: { fixture: "media-retrieval-search-boundary" },
+});
+const getTestIndexingProvenance = () => ({ embeddingProvenance: TEST_EMBEDDING_PROVENANCE });
+const createMediaRetrievalUserService = (input) => createUserService({
+  getRuntimeStatus: async () => ({ routeEligibility: { canRouteNewRun: true } }),
+  ...input,
+});
 
 const enabledProfile = () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1" });
 
@@ -38,6 +54,7 @@ test("B7 service serializes only fully covered typed visual input and blocks par
   const service = createMediaRetrievalUserService({
     provider: {
       getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
+      getIndexingProvenance: getTestIndexingProvenance,
       parseRetrievalQuery: async ({ query }) => {
         parseCalls += 1;
         return {
@@ -220,6 +237,7 @@ test("actual service sends only the controlled beach serialization when the pars
   const service = createMediaRetrievalUserService({
     provider: {
       getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
+      getIndexingProvenance: getTestIndexingProvenance,
       parseRetrievalQuery: async () => {
         parseCalls += 1;
         return {

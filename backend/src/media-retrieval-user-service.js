@@ -1,7 +1,6 @@
 import { MEDIA_RETRIEVAL_CONSENT_VERSION } from "./media-retrieval-constants.js";
 import {
   B7_PRODUCT_BASELINE_METHOD,
-  normalizeB7ProductBaselineQuery,
 } from "./media-retrieval-b7-baseline.js";
 import { retrieveB7ProductBaseline } from "./media-retrieval-b7-service.js";
 import { getMediaRetrievalErrorContract } from "./media-retrieval-errors.js";
@@ -12,7 +11,6 @@ import {
 } from "./media-retrieval-embedding-input.js";
 import {
   assertEmbeddingProvenance,
-  createEmbeddingProvenance,
 } from "./media-retrieval-provenance.js";
 import {
   MEDIA_RETRIEVAL_ERROR_CONTRACTS,
@@ -77,7 +75,7 @@ const canonicalProviderFailureCode = (value) =>
     ? value
     : "retrieval_service_unavailable";
 
-const reserveAndCall = async ({ repository, provider, run, operation, countUserAction, invoke }) => {
+const reserveAndCall = async ({ repository, run, operation, countUserAction, invoke }) => {
   const reservation = await repository.reserveProviderBudget({
     userId: run.userId,
     agentRunId: run.id,
@@ -115,22 +113,17 @@ const asB7NormalizedQuery = (embeddingInput) => ({
 });
 
 const createProductEmbeddingBinding = ({ provider, input, vector }) => {
-  const status = provider?.getRuntimeStatus?.() || {};
-  const declared = provider?.getIndexingProvenance?.()?.embeddingProvenance;
-  // The production provider declares its actual index space. The fallback is
-  // retained only for isolated contract doubles that do not create segments.
-  const embeddingProvenance = declared
-    ? assertEmbeddingProvenance(declared)
-    : createEmbeddingProvenance({
-      modelId: String(status.embeddingModel || "media-retrieval-runtime").slice(0, 160),
-      modelVersion: String(status.embeddingModelVersion || `dimension-${Number(status.embeddingDimension) || 1024}`).slice(0, 160),
-      dimension: Number(status.embeddingDimension) || 1024,
-      normalization: String(status.embeddingNormalization || "provider-native-dense-v1").slice(0, 80),
-      configuration: {
-        provider: "runtime-status-contract-double-v1",
-        inputPolicyVersion: input.policyVersion,
-      },
-    });
+  let embeddingProvenance;
+  try {
+    if (typeof provider?.getIndexingProvenance !== "function") {
+      throw new TypeError("Media retrieval provider does not declare indexing provenance.");
+    }
+    embeddingProvenance = assertEmbeddingProvenance(
+      provider.getIndexingProvenance()?.embeddingProvenance,
+    );
+  } catch {
+    throw new MediaRetrievalServiceError("retrieval_service_unavailable");
+  }
   return createVisualEmbeddingBinding({
     input,
     vector,
@@ -146,13 +139,16 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
   if (!repository) throw new TypeError("Media retrieval user service requires a repository.");
 
   const ensureRouteEligible = async () => {
+    if (typeof getRuntimeStatus !== "function") {
+      throw new MediaRetrievalServiceError("retrieval_service_unavailable");
+    }
     let status;
     try {
       status = await getRuntimeStatus?.();
     } catch {
       throw new MediaRetrievalServiceError("retrieval_service_unavailable");
     }
-    if (status && !status?.routeEligibility?.canRouteNewRun) {
+    if (status?.routeEligibility?.canRouteNewRun !== true) {
       throw new MediaRetrievalServiceError("retrieval_service_unavailable");
     }
   };
@@ -195,10 +191,15 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
   };
 
   const getMediaRetrievalStatus = async ({ userId }) => {
-    const [status, runtime] = await Promise.all([
-      repository.getMediaRetrievalStatusForUser({ userId }),
-      getRuntimeStatus ? getRuntimeStatus().catch(() => null) : Promise.resolve(null),
-    ]);
+    const status = await repository.getMediaRetrievalStatusForUser({ userId });
+    let runtime = null;
+    if (typeof getRuntimeStatus === "function") {
+      try {
+        runtime = await getRuntimeStatus();
+      } catch {
+        runtime = null;
+      }
+    }
     const currentBackfill = status.recentRuns.find((run) => run.runType === "media-index") || null;
     return {
       enabled: status.profile?.indexState === "enabled",
@@ -251,7 +252,7 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
     };
 
     // A raw query is never assumed to be a safe visual query. It can only
-    // produce an exact-only fallback after deterministic identity inspection.
+    // use the exact-only path after deterministic identity inspection.
     let embeddingInput = buildVisualEmbeddingInput({
       rawQuery: query,
       candidate: { visualQuery: "", identityTerms: [], parseConfidence: "low" },
@@ -264,7 +265,6 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
     if (providerCanSearch(provider) && !rawIdentityExactOnly) {
       const parsed = await reserveAndCall({
         repository,
-        provider,
         run,
         operation: "query-parse",
         countUserAction: true,
@@ -282,7 +282,6 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
       if (embeddingInput.mode === "visual") {
         const embedded = await reserveAndCall({
           repository,
-          provider,
           run,
           operation: "query-embedding",
           countUserAction: false,
@@ -384,9 +383,7 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
       return { queued: false, reasonCode: error?.code || "retrieval_service_unavailable" };
     }
     if (!providerCanSearch(provider)) return { queued: false, reasonCode: "retrieval_not_enabled" };
-    const dispatch = typeof repository.getMediaRetrievalDispatchState === "function"
-      ? await repository.getMediaRetrievalDispatchState({ userId })
-      : { canDispatch: await repository.canEnqueueMediaRetrievalForUser({ userId }) };
+    const dispatch = await repository.getMediaRetrievalDispatchState({ userId });
     if (!dispatch?.canDispatch) {
       return { queued: false, reasonCode: dispatch?.reasonCode || "retrieval_not_enabled" };
     }

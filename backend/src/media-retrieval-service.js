@@ -8,6 +8,7 @@ const PROVIDER_DISPATCH_FAILURES = new Set([
   "retrieval_not_enabled",
   "retrieval_job_lease_lost",
   "retrieval_temporary_cleanup_pending",
+  "retrieval_budget_exhausted",
 ]);
 
 class MediaRetrievalDispatchError extends Error {
@@ -27,7 +28,7 @@ const safeFailureCode = (error) => {
 };
 
 const stage = async (repository, job, eventType, payload = {}, workerId = null) => {
-  if (workerId && typeof repository.heartbeatMediaRetrievalJob === "function") {
+  if (workerId) {
     const heartbeat = await repository.heartbeatMediaRetrievalJob({ jobId: job.id, workerId });
     if (!heartbeat) throw new MediaRetrievalDispatchError("retrieval_job_lease_lost");
   }
@@ -43,7 +44,6 @@ const stage = async (repository, job, eventType, payload = {}, workerId = null) 
 };
 
 const verifyDispatch = async ({ repository, job, workerId, asset = null }) => {
-  if (typeof repository.verifyMediaRetrievalJobDispatch !== "function") return;
   const verified = await repository.verifyMediaRetrievalJobDispatch({
     jobId: job.id,
     workerId,
@@ -90,7 +90,7 @@ const invokeProvider = async ({ repository, job, workerId, asset, invoke }) => {
 const cleanupQueuePersistenceFailure = async ({ repository, job }) => {
   // The failed job state below is still durable even if the supplemental run
   // event cannot be written, so this path never presents as cleanup-pending.
-  if (job.agentRunId && typeof repository.appendAgentRunEvent === "function") {
+  if (job.agentRunId) {
     try {
       await repository.appendAgentRunEvent({
         userId: job.userId,
@@ -110,7 +110,7 @@ const cleanupQueuePersistenceFailure = async ({ repository, job }) => {
 };
 
 const queueTemporaryCleanup = async ({ repository, job, objectKey }) => {
-  if (!objectKey || typeof repository.enqueueMediaRetrievalTemporaryCleanup !== "function") {
+  if (!objectKey) {
     throw await cleanupQueuePersistenceFailure({ repository, job });
   }
   let queued;
@@ -171,7 +171,7 @@ const assertResumedStagingProvenance = ({ persistedStaging, indexingProvenance }
   }
 };
 
-const processIndexAsset = async ({ job, asset, media, provider, repository, workerId }) => {
+const processIndexAsset = async ({ job, asset, media, repository, workerId }) => {
   await stage(repository, job, "reading-asset", {}, workerId);
   const source = await media.loadOwnedMediaBytes({ asset });
   if (asset.kind === "image") {
@@ -199,7 +199,6 @@ export async function processMediaRetrievalJob({ job, repository, provider, medi
     const purge = await repository.purgeMediaRetrievalArtifacts({
       userId: job.userId,
       mediaAssetId: job.jobType === "purge-asset" ? job.mediaAssetId : null,
-      jobId: job.id,
     });
     if (!purge || Number(purge.residueCount) !== 0) {
       await repository.failMediaRetrievalJob({
@@ -250,17 +249,15 @@ export async function processMediaRetrievalJob({ job, repository, provider, medi
   let reservation = null;
   try {
     await verifyDispatch({ repository, job, workerId, asset });
-    const preparedFrames = await processIndexAsset({ job, asset, media, provider, repository, workerId });
-    const persistedStaging = typeof repository.listMediaRetrievalStagedSegments === "function"
-      ? await repository.listMediaRetrievalStagedSegments({
-        userId: job.userId,
-        jobId: job.id,
-        workerId,
-        contentFingerprint: job.contentFingerprint,
-        processingVersion: job.processingVersion,
-        profileEpoch: job.profileEpoch,
-      })
-      : [];
+    const preparedFrames = await processIndexAsset({ job, asset, media, repository, workerId });
+    const persistedStaging = await repository.listMediaRetrievalStagedSegments({
+      userId: job.userId,
+      jobId: job.id,
+      workerId,
+      contentFingerprint: job.contentFingerprint,
+      processingVersion: job.processingVersion,
+      profileEpoch: job.profileEpoch,
+    });
     assertResumedStagingProvenance({ persistedStaging, indexingProvenance });
     const segmentsByIndex = new Map(
       (Array.isArray(persistedStaging) ? persistedStaging : [])
@@ -278,6 +275,7 @@ export async function processMediaRetrievalJob({ job, repository, provider, medi
         bytes: frame.bytes,
         mimeType: frame.mimeType,
       });
+      let processingError = null;
       try {
         await stage(repository, job, "describing", { segmentIndex }, workerId);
         reservation = await reserve({
@@ -289,7 +287,7 @@ export async function processMediaRetrievalJob({ job, repository, provider, medi
           countUserAction: segmentIndex === 0,
         });
         if (!reservation) {
-          return blockJob({ repository, job, workerId, failureCode: "retrieval_budget_exhausted" });
+          throw new MediaRetrievalDispatchError("retrieval_budget_exhausted");
         }
         const descriptor = await invokeProvider({
           repository,
@@ -315,7 +313,7 @@ export async function processMediaRetrievalJob({ job, repository, provider, medi
           countUserAction: false,
         });
         if (!reservation) {
-          return blockJob({ repository, job, workerId, failureCode: "retrieval_budget_exhausted" });
+          throw new MediaRetrievalDispatchError("retrieval_budget_exhausted");
         }
         const embedding = await invokeProvider({
           repository,
@@ -338,43 +336,33 @@ export async function processMediaRetrievalJob({ job, repository, provider, medi
           embedding,
           ...indexingProvenance,
         };
-        if (typeof repository.stageMediaRetrievalSegment === "function") {
-          const staged = await repository.stageMediaRetrievalSegment({
-            userId: job.userId,
-            agentRunId: job.agentRunId,
-            jobId: job.id,
-            workerId,
-            mediaAssetId: job.mediaAssetId,
-            contentFingerprint: job.contentFingerprint,
-            processingVersion: job.processingVersion,
-            profileEpoch: job.profileEpoch,
-            segment,
-          });
-          if (!staged) throw new MediaRetrievalDispatchError("retrieval_job_lease_lost");
-        } else if (typeof repository.checkpointMediaRetrievalJob === "function") {
-          const checkpointed = await repository.checkpointMediaRetrievalJob({
-            jobId: job.id,
-            workerId,
-            checkpoint: {
-              completedSegmentIndexes: [...segmentsByIndex.keys(), segmentIndex],
-              lastFrameTimestampMs: frame.frameTimestampMs ?? null,
-            },
-          });
-          if (!checkpointed) throw new MediaRetrievalDispatchError("retrieval_job_lease_lost");
-        }
+        const staged = await repository.stageMediaRetrievalSegment({
+          userId: job.userId,
+          agentRunId: job.agentRunId,
+          jobId: job.id,
+          workerId,
+          mediaAssetId: job.mediaAssetId,
+          contentFingerprint: job.contentFingerprint,
+          processingVersion: job.processingVersion,
+          profileEpoch: job.profileEpoch,
+          segment,
+        });
+        if (!staged) throw new MediaRetrievalDispatchError("retrieval_job_lease_lost");
         segmentsByIndex.set(segmentIndex, segment);
-      } finally {
-        try {
-          await temporary.cleanup();
-        } catch (error) {
-          await queueTemporaryCleanup({
-            repository,
-            job,
-            objectKey: error?.cleanupObjectKey || temporary.objectKey,
-          });
-          throw new MediaRetrievalDispatchError("retrieval_temporary_cleanup_pending");
-        }
+      } catch (error) {
+        processingError = error;
       }
+      try {
+        await temporary.cleanup();
+      } catch (error) {
+        await queueTemporaryCleanup({
+          repository,
+          job,
+          objectKey: error?.cleanupObjectKey || temporary.objectKey,
+        });
+        throw new MediaRetrievalDispatchError("retrieval_temporary_cleanup_pending");
+      }
+      if (processingError) throw processingError;
     }
     const segments = [...segmentsByIndex.values()].sort((left, right) => left.segmentIndex - right.segmentIndex);
     await stage(repository, job, "committing", { jobType: job.jobType }, workerId);
@@ -387,7 +375,7 @@ export async function processMediaRetrievalJob({ job, repository, provider, medi
       processingVersion: job.processingVersion,
       contentFingerprint: job.contentFingerprint,
       segments,
-      stagingRequired: typeof repository.stageMediaRetrievalSegment === "function",
+      stagingRequired: true,
       workerId,
     });
     if (persisted?.status === "invalidated") {

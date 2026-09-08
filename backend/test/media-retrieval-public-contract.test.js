@@ -11,7 +11,7 @@ import {
   MEDIA_RETRIEVAL_ERROR_CONTRACTS,
 } from "../../shared/media-retrieval-public-contract.js";
 import {
-  createMediaRetrievalUserService,
+  createMediaRetrievalUserService as createUserService,
   MediaRetrievalServiceError,
 } from "../src/media-retrieval-user-service.js";
 import { toPublicMediaRetrievalError } from "../src/media-retrieval-errors.js";
@@ -25,6 +25,10 @@ const fixturePath = path.join(worktree, "shared", "media-retrieval-public-contra
 const outputSchemaPath = path.join(worktree, "shared", "media-retrieval-search-response.schema.json");
 const publicErrorSchemaPath = path.join(worktree, "shared", "media-retrieval-public-error.schema.json");
 const USER_ID = "11111111-1111-4111-8111-111111111111";
+const createMediaRetrievalUserService = (input) => createUserService({
+  getRuntimeStatus: async () => ({ routeEligibility: { canRouteNewRun: true } }),
+  ...input,
+});
 
 const readJson = async (file) => JSON.parse(await fs.readFile(file, "utf8"));
 

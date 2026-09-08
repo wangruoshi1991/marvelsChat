@@ -5,14 +5,14 @@ import path from "node:path";
 import test, { after, before } from "node:test";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { prepareSql } from "../src/db.js";
+import { createConnectionAdapter } from "../src/db.js";
 import { createMediaRetrievalRepository } from "../src/media-retrieval-repository.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const backendDir = path.resolve(__dirname, "..");
-const migrationPath = path.join(backendDir, "database", "025_media_retrieval_agent.sql");
-const lifecycleMigrationPath = path.join(backendDir, "database", "026_media_retrieval_lifecycle_hardening.sql");
-const provenanceMigrationPath = path.join(backendDir, "database", "027_media_retrieval_embedding_provenance.sql");
+const migrationPath = path.join(backendDir, "database", "027_media_retrieval_agent.sql");
+const lifecycleMigrationPath = path.join(backendDir, "database", "028_media_retrieval_lifecycle_hardening.sql");
+const provenanceMigrationPath = path.join(backendDir, "database", "029_media_retrieval_embedding_provenance.sql");
 const composePath = path.join(backendDir, "docker-compose.test.yml");
 const integrationEnabled = process.env.RUN_MEDIA_RETRIEVAL_MIGRATION_INTEGRATION === "1";
 const composeProject = `media-retrieval-product-${process.pid}`;
@@ -39,7 +39,7 @@ const runCompose = (args) => {
     ).trim();
   } catch (error) {
     const detail = String(error.stderr || error.stdout || error.message || "").trim();
-    throw new Error(`Disposable pgvector database failed: ${detail}`);
+    throw new Error(`Disposable pgvector database failed: ${detail}`, { cause: error });
   }
 };
 
@@ -58,7 +58,7 @@ const runAllMigrations = () => {
     });
   } catch (error) {
     const detail = String(error.stderr || error.stdout || error.message || "").trim();
-    throw new Error(`Migration run failed: ${detail}`);
+    throw new Error(`Migration run failed: ${detail}`, { cause: error });
   }
 };
 
@@ -92,10 +92,9 @@ const insertReadySegment = async ({ id, userId, assetId, fingerprint, vectorValu
 };
 
 const createRepository = () => {
-  const execute = async (sql, params = []) => (await client.query(prepareSql(sql), params)).rows;
-  const connection = { query: execute, execute: async (sql, params = []) => [await execute(sql, params)] };
+  const connection = createConnectionAdapter(client);
   return createMediaRetrievalRepository({
-    query: execute,
+    query: connection.query,
     withTransaction: async (work) => {
       await client.query("BEGIN");
       try {
@@ -110,7 +109,7 @@ const createRepository = () => {
   });
 };
 
-test("product migrations use the reserved 025-027 range and contain no PrivSearch schema", async () => {
+test("product migrations use the reserved 027-029 range and contain no PrivSearch schema", async () => {
   const [core, lifecycle, provenance] = await Promise.all([
     readFile(migrationPath, "utf8"),
     readFile(lifecycleMigrationPath, "utf8"),

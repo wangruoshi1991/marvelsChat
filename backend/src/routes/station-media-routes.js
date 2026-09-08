@@ -15,6 +15,7 @@ import {
 } from "../album-management-service.js";
 import { createMediaRetrievalProvider } from "../media-retrieval-provider.js";
 import { createMediaRetrievalRepository } from "../media-retrieval-repository.js";
+import { buildMediaRetrievalRuntimeStatus } from "../media-retrieval-runtime-status.js";
 import { createMediaRetrievalUserService } from "../media-retrieval-user-service.js";
 import {
   buildStationMediaObjectKey,
@@ -93,6 +94,7 @@ const createMediaRetrievalService = () =>
   createMediaRetrievalUserService({
     repository: createMediaRetrievalRepository({ query, withTransaction }),
     provider: createMediaRetrievalProvider({ config }),
+    getRuntimeStatus: buildMediaRetrievalRuntimeStatus,
   });
 
 export function registerStationMediaRoutes(

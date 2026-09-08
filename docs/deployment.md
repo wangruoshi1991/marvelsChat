@@ -70,16 +70,18 @@ PolarDB 和 Redis 当前白名单只放行 ECS 私网 IP `172.25.210.107`。生�
 2. 备份当前应用目录和环境文件；把新代码、依赖和 `avatar-web/dist` 完整暂存好。
 3. 将常驻环境改为 `TRUST_PROXY_HOPS=1`、`CREATE_FIRST_USER_AS_ADMIN=false`、
    `ADMIN_EMAILS=`、`DEFAULT_ADMIN_ENABLED=false`，并清空默认管理员密码。
-4. 停止后端写入，加载同一份生产环境，执行 `npm run db:migrate`。
-5. 启动新后端，依次验证 `/api/health`、`/api/ready`、认证接口、OSS 媒体和 3D 模型读取。
-6. 任一关键检查失败时保持停写，恢复 PolarDB 到变更前时间点并恢复旧应用目录；仅恢复旧代码
+4. 停止后端和媒体检索 worker，加载同一份生产环境，执行 `npm run db:migrate`。
+5. 启动新后端和独立 `marvels-chat-media-retrieval-worker`，依次验证 `/api/health`、`/api/ready`、worker 心跳、认证接口、OSS 媒体和 3D 模型读取。
+6. 任一关键检查失败时保持停写，停止新 worker，恢复 PolarDB 到变更前时间点并恢复旧应用目录；仅恢复旧代码
    不能撤销数据迁移。
 
 当前 systemd 运行方式的检查命令：
 
 ```sh
 sudo systemctl status marvels-chat-backend --no-pager
+sudo systemctl status marvels-chat-media-retrieval-worker --no-pager
 sudo journalctl -u marvels-chat-backend -n 120 --no-pager
+sudo journalctl -u marvels-chat-media-retrieval-worker -n 120 --no-pager
 curl http://127.0.0.1:4390/api/health
 curl --fail http://127.0.0.1:4390/api/ready
 ```
@@ -92,13 +94,14 @@ HTTP/WebSocket 接入和 3D Job Runner，等待在途工作结束，再关闭数
 在维护窗口中执行迁移时，必须加载 systemd 使用的同一份环境文件：
 
 ```sh
-sudo systemctl stop marvels-chat-backend
+sudo systemctl stop marvels-chat-media-retrieval-worker marvels-chat-backend
 cd /opt/projects/marvels-chat/app/backend
 set -a
 . ../deploy/miaoxun-prod.env
 set +a
 npm run db:migrate
 sudo systemctl start marvels-chat-backend
+sudo systemctl start marvels-chat-media-retrieval-worker
 ```
 
 `/api/health` 只检查进程存活；`/api/ready` 还会核对数据库连接、迁移文件、迁移账本和

@@ -427,11 +427,11 @@ curl -i -X DELETE "$API_BASE/station/media-retrieval/index" \
 
 | dirty worktree 旧编号 | 产品编号 | 文件 |
 | --- | --- | --- |
-| `014` | `025` | `025_media_retrieval_agent.sql` |
-| `015` | `026` | `026_media_retrieval_lifecycle_hardening.sql` |
-| `016` | `027` | `027_media_retrieval_embedding_provenance.sql` |
+| `014` | `027` | `027_media_retrieval_agent.sql` |
+| `015` | `028` | `028_media_retrieval_lifecycle_hardening.sql` |
+| `016` | `029` | `029_media_retrieval_embedding_provenance.sql` |
 
-集成按要求保留 `014..024`，不修改任何可能已应用的主线 migration。实际 fetch 到的 `origin/main` Git tree 当前可见 migration 最大编号是 `013`；保留区仍不可复用。
+集成保留主线现有的 `014..026`，不修改任何可能已经执行的历史 migration。媒体检索只使用连续的新编号 `027..029`。
 
 运行要求：
 
@@ -451,7 +451,7 @@ curl -i -X DELETE "$API_BASE/station/media-retrieval/index" \
 1. 先在 Admin 将 provider calls、queue 和 operator 关闭，并将 lifecycle 设为 `suspended`。
 2. 设置 `MEDIA_RETRIEVAL_PROVIDER_CALLS_ENABLED=false`；必要时再设置 `MEDIA_RETRIEVAL_ENABLED=false`。
 3. 等待在途 lease 结束或被安全回收后停止 worker；不要在调用结果未知时自动重试。
-4. 回滚 API/worker 镜像，但保留 025-027 schema。迁移没有 destructive down migration。
+4. 回滚 API/worker 发布物，但保留 `027..029` schema。迁移没有 destructive down migration。
 5. 用户级数据清理必须走认证的 `DELETE /api/station/media-retrieval/index` 并轮询到 succeeded。
 6. 清理验收必须确认该用户 staging segment、ready/superseded segment 和 embedding residue 均为 0，且旧 epoch job 不能复活。
 7. 全局批量清理没有公共 HTTP 接口；只能按经批准的运维流程执行并保留审计记录。

@@ -7,8 +7,7 @@ import {
 import { createMediaRetrievalRetrievalRepository } from "./media-retrieval-retrieval-repository.js";
 import { createMediaRetrievalRunEventRepository } from "./media-retrieval-run-event-repository.js";
 
-// Compatibility facade: callers retain one repository while each persistence
-// concern has an independently testable implementation module.
+// Compose independently testable persistence concerns behind one repository.
 export function createMediaRetrievalRepository({
   query,
   withTransaction,
@@ -23,7 +22,6 @@ export function createMediaRetrievalRepository({
   const runEvents = createMediaRetrievalRunEventRepository({
     query,
     withTransaction,
-    now,
     idFactory,
     traceIdFactory,
   });
@@ -36,7 +34,6 @@ export function createMediaRetrievalRepository({
   const indexLifecycle = createMediaRetrievalIndexLifecycleRepository({
     query,
     withTransaction,
-    now,
     idFactory,
     appendAgentRunEvent: runEvents.appendAgentRunEvent,
     appendEventWithConnection,

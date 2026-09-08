@@ -3,14 +3,20 @@ import test from "node:test";
 
 import { buildAgentReadiness } from "../src/agent-readiness-service.js";
 
-test("model-backed Agents are unavailable until every model setting exists", () => {
-  const readiness = buildAgentReadiness({
+const mediaRetrievalStatus = {
+  readiness: { state: "not-ready" },
+  routeEligibility: { reasonCodes: ["not-ready"] },
+};
+
+test("model-backed Agents are unavailable until every model setting exists", async () => {
+  const readiness = await buildAgentReadiness({
     modelStatus: {
       provider: "not-configured",
       configured: false,
       missing: ["NEW_API_KEY"],
     },
     ossStatus: { provider: "oss", configured: true, missing: [] },
+    mediaRetrievalStatus,
   });
 
   for (const agentId of [
@@ -28,14 +34,15 @@ test("model-backed Agents are unavailable until every model setting exists", () 
   }
 });
 
-test("model-backed Agents become ready only with a configured provider", () => {
-  const readiness = buildAgentReadiness({
+test("model-backed Agents become ready only with a configured provider", async () => {
+  const readiness = await buildAgentReadiness({
     modelStatus: {
       provider: "test-provider",
       configured: true,
       missing: [],
     },
     ossStatus: { provider: "oss", configured: true, missing: [] },
+    mediaRetrievalStatus,
   });
 
   for (const agentId of [

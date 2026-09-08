@@ -22,7 +22,6 @@ const requireReturnedRow = (rows, operation) => {
 export function createMediaRetrievalIndexLifecycleRepository({
   query,
   withTransaction,
-  now = () => new Date(),
   idFactory,
   appendAgentRunEvent,
   appendEventWithConnection,
@@ -929,7 +928,7 @@ export function createMediaRetrievalIndexLifecycleRepository({
     }));
   };
 
-  const purgeMediaRetrievalArtifacts = async ({ userId, mediaAssetId = null, jobId = null }) =>
+  const purgeMediaRetrievalArtifacts = async ({ userId, mediaAssetId = null }) =>
     withTransaction(async (connection) => {
       const assetPredicate = mediaAssetId ? " AND media_asset_id = ?" : "";
       const assetParams = mediaAssetId ? [mediaAssetId] : [];

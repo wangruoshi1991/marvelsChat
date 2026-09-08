@@ -13,6 +13,29 @@ const {
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const RUN_ID = "22222222-2222-4222-8222-222222222222";
 
+const PROCESS_REPOSITORY_CONTRACT = {
+  heartbeatMediaRetrievalJob: async () => true,
+  verifyMediaRetrievalJobDispatch: async () => ({ allowed: true }),
+  listMediaRetrievalStagedSegments: async () => [],
+  stageMediaRetrievalSegment: async () => true,
+};
+
+const WORKER_REPOSITORY_CONTRACT = {
+  heartbeatMediaRetrievalWorker: async () => null,
+  runMediaRetrievalRetentionSweep: async () => null,
+  reclaimExpiredMediaRetrievalJobs: async () => null,
+  claimMediaRetrievalTemporaryCleanup: async () => null,
+  completeMediaRetrievalTemporaryCleanup: async () => true,
+  retryMediaRetrievalTemporaryCleanup: async () => true,
+  claimMediaRetrievalLifecycleOutbox: async () => null,
+  createAssetPurgeRunAndJob: async () => null,
+  claimNextMediaRetrievalJob: async () => null,
+};
+
+const WORKER_MEDIA_CONTRACT = {
+  deleteEphemeralProviderObject: async () => null,
+};
+
 function vector() {
   return Array.from({ length: 1024 }, () => 0.1);
 }
@@ -39,6 +62,7 @@ test("an image indexing job produces one descriptor and one vector segment", asy
   const persisted = [];
   const providerCalls = [];
   const repository = {
+    ...PROCESS_REPOSITORY_CONTRACT,
     getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1" }),
     getMediaRetrievalDispatchState: async () => ({ canDispatch: true }),
     getIndexableMediaAsset: async () => ({
@@ -101,6 +125,7 @@ test("a disabled index or deleted source blocks before a provider call", async (
   let called = false;
   const failure = [];
   const repository = {
+    ...PROCESS_REPOSITORY_CONTRACT,
     getMediaRetrievalProfile: async () => ({ indexState: "disabled" }),
     appendAgentRunEvent: async () => null,
     failMediaRetrievalJob: async (input) => failure.push(input),
@@ -122,6 +147,7 @@ test("an operator-disabled job stops before reading private media or creating a 
   let mediaRead = false;
   let temporaryUrlCreated = false;
   const repository = {
+    ...PROCESS_REPOSITORY_CONTRACT,
     getMediaRetrievalProfile: async () => ({ indexState: "enabled" }),
     getMediaRetrievalDispatchState: async () => ({ canDispatch: false, reasonCode: "retrieval_not_enabled" }),
     appendAgentRunEvent: async () => null,
@@ -152,6 +178,7 @@ test("the worker prioritizes deletion outbox work before index jobs and stops cl
   let retentionRuns = 0;
   let indexClaimed = false;
   const repository = {
+    ...WORKER_REPOSITORY_CONTRACT,
     heartbeatMediaRetrievalWorker: async ({ state }) => states.push(state),
     runMediaRetrievalRetentionSweep: async () => { retentionRuns += 1; },
     reclaimExpiredMediaRetrievalJobs: async () => lifecycleCalls.push("reclaim"),
@@ -166,7 +193,7 @@ test("the worker prioritizes deletion outbox work before index jobs and stops cl
   await runMediaRetrievalWorker({
     repository,
     provider: {},
-    media: {},
+    media: WORKER_MEDIA_CONTRACT,
     signal: controller.signal,
     workerId: "worker-test",
     now: () => 24 * 60 * 60 * 1000,
@@ -183,6 +210,7 @@ test("the worker claims and retries durable temporary-object cleanup before new 
   const controller = new AbortController();
   const calls = [];
   const repository = {
+    ...WORKER_REPOSITORY_CONTRACT,
     heartbeatMediaRetrievalWorker: async ({ state }) => calls.push(`heartbeat:${state}`),
     runMediaRetrievalRetentionSweep: async () => null,
     reclaimExpiredMediaRetrievalJobs: async () => null,
@@ -204,6 +232,7 @@ test("the worker claims and retries durable temporary-object cleanup before new 
     repository,
     provider: {},
     media: {
+      ...WORKER_MEDIA_CONTRACT,
       deleteEphemeralProviderObject: async ({ objectKey }) => calls.push(`delete:${objectKey}`),
     },
     signal: controller.signal,
@@ -224,6 +253,7 @@ test("the worker claims and retries durable temporary-object cleanup before new 
 test("a purge job only succeeds after physical derived-artifact deletion reports zero residue", async () => {
   const calls = [];
   const repository = {
+    ...PROCESS_REPOSITORY_CONTRACT,
     appendAgentRunEvent: async (event) => calls.push({ type: "event", event }),
     purgeMediaRetrievalArtifacts: async (input) => {
       calls.push({ type: "purge", input });
@@ -250,6 +280,7 @@ test("a purge job only succeeds after physical derived-artifact deletion reports
 test("a purge job fails closed when the repository cannot prove zero derived-artifact residue", async () => {
   const calls = [];
   const repository = {
+    ...PROCESS_REPOSITORY_CONTRACT,
     appendAgentRunEvent: async () => null,
     purgeMediaRetrievalArtifacts: async () => ({ deletedSegments: 0, residueCount: 1 }),
     completeMediaRetrievalJob: async () => calls.push("complete"),
@@ -277,6 +308,7 @@ test("an invalidated final segment commit cannot resurrect an asset after deleti
   const completed = [];
   const failures = [];
   const repository = {
+    ...PROCESS_REPOSITORY_CONTRACT,
     getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1" }),
     getMediaRetrievalDispatchState: async () => ({ canDispatch: true }),
     getIndexableMediaAsset: async () => ({
@@ -328,9 +360,10 @@ test("an invalidated final segment commit cannot resurrect an asset after deleti
   assert.equal(failures[0].failureCode, "asset_not_indexable");
 });
 
-test("video indexing records a per-frame checkpoint after each completed segment", async () => {
-  const checkpoints = [];
+test("video indexing stages each completed frame before final persistence", async () => {
+  const stagedSegments = [];
   const repository = {
+    ...PROCESS_REPOSITORY_CONTRACT,
     getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1" }),
     getMediaRetrievalDispatchState: async () => ({ canDispatch: true }),
     getIndexableMediaAsset: async () => ({
@@ -344,7 +377,10 @@ test("video indexing records a per-frame checkpoint after each completed segment
     appendAgentRunEvent: async () => null,
     reserveProviderBudget: async () => ({ reserved: true, reservationId: "reservation" }),
     settleProviderBudget: async () => null,
-    checkpointMediaRetrievalJob: async (input) => checkpoints.push(input),
+    stageMediaRetrievalSegment: async (input) => {
+      stagedSegments.push(input);
+      return true;
+    },
     persistMediaRetrievalSegments: async () => ({ status: "persisted", persistedCount: 2 }),
     completeMediaRetrievalJob: async () => null,
     failMediaRetrievalJob: async (input) => { throw new Error(`unexpected failure ${input.failureCode}`); },
@@ -382,8 +418,8 @@ test("video indexing records a per-frame checkpoint after each completed segment
   });
 
   assert.deepEqual(
-    checkpoints.map((checkpoint) => checkpoint.checkpoint.completedSegmentIndexes),
-    [[0], [0, 1]],
+    stagedSegments.map((staged) => staged.segment.segmentIndex),
+    [0, 1],
   );
 });
 
@@ -396,6 +432,7 @@ test("consent revocation after a video frame prevents every later provider call,
   let temporaryCleaned = 0;
   const failures = [];
   const repository = {
+    ...PROCESS_REPOSITORY_CONTRACT,
     getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1" }),
     getMediaRetrievalDispatchState: async () => ({ canDispatch: true }),
     getIndexableMediaAsset: async () => ({
@@ -412,9 +449,9 @@ test("consent revocation after a video frame prevents every later provider call,
     appendAgentRunEvent: async () => null,
     reserveProviderBudget: async () => ({ reserved: true, reservationId: "reservation" }),
     settleProviderBudget: async () => null,
-    checkpointMediaRetrievalJob: async () => {
+    stageMediaRetrievalSegment: async () => {
       revoked = true;
-      return { id: "video-job" };
+      return true;
     },
     persistMediaRetrievalSegments: async () => { persistedCalls += 1; return { status: "persisted", persistedCount: 2 }; },
     completeMediaRetrievalJob: async () => null,
@@ -476,6 +513,7 @@ test("a temporary-object cleanup failure is durably queued and blocks commit unt
   const failures = [];
   let persisted = false;
   const repository = {
+    ...PROCESS_REPOSITORY_CONTRACT,
     getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1" }),
     getMediaRetrievalDispatchState: async () => ({ canDispatch: true }),
     getIndexableMediaAsset: async () => ({
@@ -544,6 +582,7 @@ test("a cleanup task persistence failure becomes an auditable repository failure
   const events = [];
   let persisted = false;
   const repository = {
+    ...PROCESS_REPOSITORY_CONTRACT,
     getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1" }),
     getMediaRetrievalDispatchState: async () => ({ canDispatch: true }),
     getIndexableMediaAsset: async () => ({

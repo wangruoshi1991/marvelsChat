@@ -5,12 +5,16 @@ process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 
 const { createMediaRetrievalProvider } = await import("../src/media-retrieval-provider.js");
 const {
-  createMediaRetrievalUserService,
+  createMediaRetrievalUserService: createUserService,
   MediaRetrievalServiceError,
 } = await import("../src/media-retrieval-user-service.js");
 const { toPublicMediaRetrievalError } = await import("../src/media-retrieval-errors.js");
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
+const createMediaRetrievalUserService = (input) => createUserService({
+  getRuntimeStatus: async () => ({ routeEligibility: { canRouteNewRun: true } }),
+  ...input,
+});
 const configuredRuntime = {
   mediaRetrieval: {
     enabled: true,

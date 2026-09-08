@@ -108,7 +108,7 @@ const allChineseLexemes = [...new Set([...chineseSyntax, ...visualTerms.keys()].
 
 const hash = (value) => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const isHan = (value) => /\p{Script=Han}/u.test(value);
-const punctuationOrWhitespace = (value) => /[\s,，。！？!?；;、:：()（）\[\]{}"'“”‘’/\\-]/u.test(value);
+const punctuationOrWhitespace = (value) => /[\s,，。！？!?；;、:：()（）[\]{}"'“”‘’/\\-]/u.test(value);
 
 export const normalizeVisualRawQuery = (value) =>
   String(value || "")

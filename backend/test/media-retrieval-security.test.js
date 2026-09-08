@@ -4,10 +4,15 @@ import test from "node:test";
 process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 
 const {
-  createMediaRetrievalUserService,
+  createMediaRetrievalUserService: createUserService,
   MediaRetrievalServiceError,
 } = await import("../src/media-retrieval-user-service.js");
 const { toPublicMediaRetrievalError } = await import("../src/media-retrieval-errors.js");
+
+const createMediaRetrievalUserService = (input) => createUserService({
+  getRuntimeStatus: async () => ({ routeEligibility: { canRouteNewRun: true } }),
+  ...input,
+});
 
 test("media retrieval public errors always expose only code, message, and retryable", () => {
   const error = new MediaRetrievalServiceError("retrieval_service_unavailable");
