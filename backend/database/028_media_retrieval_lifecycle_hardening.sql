@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS media_retrieval_segment_staging (
   CONSTRAINT fk_media_retrieval_staging_user
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_media_retrieval_staging_run_owner
-    FOREIGN KEY (agent_run_id, user_id) REFERENCES agent_runs(id, user_id) ON DELETE SET NULL (agent_run_id),
+    FOREIGN KEY (agent_run_id) REFERENCES agent_runs(id) ON DELETE SET NULL,
   CONSTRAINT fk_media_retrieval_staging_job
     FOREIGN KEY (job_id) REFERENCES media_retrieval_jobs(id) ON DELETE CASCADE,
   CONSTRAINT fk_media_retrieval_staging_asset_owner
@@ -136,8 +136,28 @@ CREATE TABLE IF NOT EXISTS media_retrieval_segment_staging (
   CONSTRAINT uniq_media_retrieval_staging_job_segment UNIQUE (job_id, segment_index)
 );
 
+ALTER TABLE media_retrieval_segment_staging
+  DROP CONSTRAINT IF EXISTS fk_media_retrieval_staging_run_owner;
+
+ALTER TABLE media_retrieval_segment_staging
+  ADD CONSTRAINT fk_media_retrieval_staging_run_owner
+  FOREIGN KEY (agent_run_id)
+  REFERENCES agent_runs (id)
+  ON DELETE SET NULL;
+
 CREATE INDEX IF NOT EXISTS idx_media_retrieval_staging_job
   ON media_retrieval_segment_staging (job_id, segment_index);
+
+CREATE INDEX IF NOT EXISTS idx_media_retrieval_staging_run
+  ON media_retrieval_segment_staging (agent_run_id)
+  WHERE agent_run_id IS NOT NULL;
+
+DROP TRIGGER IF EXISTS trg_media_retrieval_staging_assert_run_owner
+  ON media_retrieval_segment_staging;
+CREATE TRIGGER trg_media_retrieval_staging_assert_run_owner
+BEFORE INSERT OR UPDATE OF agent_run_id, user_id
+ON media_retrieval_segment_staging
+FOR EACH ROW EXECUTE FUNCTION media_retrieval_assert_run_owner();
 
 DROP TRIGGER IF EXISTS trg_media_retrieval_staging_touch_updated_at
   ON media_retrieval_segment_staging;

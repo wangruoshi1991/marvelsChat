@@ -62,6 +62,9 @@ npm run db:migrate
 `MEDIA_RETRIEVAL_MIGRATION_DATABASE_URL`；测试会先验证目标库名以 `_migration_test` 结尾且
 `public` schema 为空，否则拒绝执行。
 
+生产迁移以 PostgreSQL 14 为最低兼容版本。媒体检索的可空 run 引用使用 PostgreSQL 14
+支持的单列 `ON DELETE SET NULL`，并由数据库触发器继续校验 run 与派生记录属于同一用户。
+
 迁移命令使用 PostgreSQL advisory lock，避免两个发布进程并发修改 schema。
 每个新迁移与其账本记录在同一个事务中提交。
 

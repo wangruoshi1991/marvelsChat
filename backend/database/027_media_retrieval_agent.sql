@@ -286,9 +286,9 @@ CREATE TABLE IF NOT EXISTS media_retrieval_segments (
     REFERENCES station_media_assets (id, user_id)
     ON DELETE CASCADE,
   CONSTRAINT fk_media_retrieval_segments_run_owner
-    FOREIGN KEY (agent_run_id, user_id)
-    REFERENCES agent_runs (id, user_id)
-    ON DELETE SET NULL (agent_run_id),
+    FOREIGN KEY (agent_run_id)
+    REFERENCES agent_runs (id)
+    ON DELETE SET NULL,
   CONSTRAINT fk_media_retrieval_segments_job FOREIGN KEY (job_id) REFERENCES media_retrieval_jobs(id) ON DELETE SET NULL,
   CONSTRAINT chk_media_retrieval_segments_source
     CHECK (
@@ -301,15 +301,57 @@ CREATE TABLE IF NOT EXISTS media_retrieval_segments (
     CHECK (embedding IS NULL OR vector_dims(embedding) = 1024)
 );
 
+ALTER TABLE media_retrieval_segments
+  DROP CONSTRAINT IF EXISTS fk_media_retrieval_segments_run_owner;
+
+ALTER TABLE media_retrieval_segments
+  ADD CONSTRAINT fk_media_retrieval_segments_run_owner
+  FOREIGN KEY (agent_run_id)
+  REFERENCES agent_runs (id)
+  ON DELETE SET NULL;
+
 CREATE INDEX IF NOT EXISTS idx_media_retrieval_segments_user_state
   ON media_retrieval_segments (user_id, state, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_media_retrieval_segments_asset_state
   ON media_retrieval_segments (media_asset_id, state);
 
+CREATE INDEX IF NOT EXISTS idx_media_retrieval_segments_run
+  ON media_retrieval_segments (agent_run_id)
+  WHERE agent_run_id IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_media_retrieval_segments_embedding_cosine
   ON media_retrieval_segments USING hnsw (embedding vector_cosine_ops)
   WHERE state = 'ready' AND embedding IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION media_retrieval_assert_run_owner()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.agent_run_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  PERFORM 1
+  FROM agent_runs
+  WHERE id = NEW.agent_run_id
+    AND user_id = NEW.user_id
+  FOR KEY SHARE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'media retrieval run ownership mismatch'
+      USING ERRCODE = '23503';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_media_retrieval_segments_assert_run_owner
+  ON media_retrieval_segments;
+CREATE TRIGGER trg_media_retrieval_segments_assert_run_owner
+BEFORE INSERT OR UPDATE OF agent_run_id, user_id
+ON media_retrieval_segments
+FOR EACH ROW EXECUTE FUNCTION media_retrieval_assert_run_owner();
 
 DROP TRIGGER IF EXISTS trg_media_retrieval_segments_touch_updated_at ON media_retrieval_segments;
 CREATE TRIGGER trg_media_retrieval_segments_touch_updated_at

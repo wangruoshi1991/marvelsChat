@@ -114,6 +114,15 @@ const insertReadySegment = async ({ id, userId, assetId, fingerprint, vectorValu
   );
 };
 
+const insertAgentRun = async ({ id, userId }) => {
+  await client.query(
+    `INSERT INTO agent_runs
+      (id, user_id, agent_id, status, lifecycle_status, run_type)
+    VALUES ($1, $2, 'media-retrieval', 'success', 'succeeded', 'index')`,
+    [id, userId],
+  );
+};
+
 const createRepository = () => {
   const connection = createConnectionAdapter(client);
   return createMediaRetrievalRepository({
@@ -149,6 +158,8 @@ test("product migrations use the reserved 027-029 range and contain no PrivSearc
   assert.match(lifecycle, /CREATE TABLE IF NOT EXISTS media_retrieval_segment_staging/i);
   assert.match(provenance, /descriptor_provenance JSONB/i);
   assert.match(provenance, /embedding_provenance JSONB/i);
+  assert.match(core, /CREATE OR REPLACE FUNCTION media_retrieval_assert_run_owner/i);
+  assert.doesNotMatch(`${core}\n${lifecycle}`, /ON DELETE SET NULL\s*\(/i);
   assert.doesNotMatch(`${core}\n${lifecycle}\n${provenance}`, /privsearch/i);
 });
 
@@ -200,6 +211,72 @@ if (integrationEnabled) {
               to_regclass('public.privsearch_snapshot_content') AS content`,
     );
     assert.deepEqual(researchTables.rows, [{ manifests: null, content: null }]);
+  });
+
+  test("run ownership remains enforced while run deletion preserves derived media", async () => {
+    const userA = "88888888-8888-4888-8888-888888888888";
+    const userB = "99999999-9999-4999-8999-999999999999";
+    const assetA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const assetB = "abababab-abab-4bab-8bab-abababababab";
+    const runA = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const jobA = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+    await insertUser({ id: userA, email: "run-owner-a@example.test", displayName: "Run Owner A", aiId: "000003000003" });
+    await insertUser({ id: userB, email: "run-owner-b@example.test", displayName: "Run Owner B", aiId: "000004000004" });
+    await insertAsset({ id: assetA, userId: userA, caption: "run ownership" });
+    await insertAsset({ id: assetB, userId: userB, caption: "run ownership mismatch" });
+    await insertAgentRun({ id: runA, userId: userA });
+    await client.query(
+      `INSERT INTO media_retrieval_jobs
+        (id, user_id, media_asset_id, job_type, status, content_fingerprint)
+      VALUES ($1, $2, $3, 'index', 'running', $4)`,
+      [jobA, userA, assetA, "d".repeat(64)],
+    );
+
+    await assert.rejects(
+      client.query(
+        `INSERT INTO media_retrieval_segments
+          (id, user_id, media_asset_id, agent_run_id, segment_index, source_kind,
+           descriptor, state, processing_version, content_fingerprint)
+        VALUES ($1, $2, $3, $4, 0, 'image', '{}'::jsonb, 'ready', 'product-v1', $5)`,
+        ["dddddddd-dddd-4ddd-8ddd-dddddddddddd", userB, assetB, runA, "e".repeat(64)],
+      ),
+      (error) => error?.code === "23503",
+    );
+
+    await client.query(
+      `INSERT INTO media_retrieval_segments
+        (id, user_id, media_asset_id, agent_run_id, segment_index, source_kind,
+         descriptor, state, processing_version, content_fingerprint)
+      VALUES ($1, $2, $3, $4, 0, 'image', '{}'::jsonb, 'ready', 'product-v1', $5)`,
+      ["eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", userA, assetA, runA, "f".repeat(64)],
+    );
+    await client.query(
+      `INSERT INTO media_retrieval_segment_staging
+        (id, user_id, agent_run_id, job_id, media_asset_id, profile_epoch,
+         segment_index, source_kind, descriptor, embedding, processing_version,
+         content_fingerprint)
+      VALUES ($1, $2, $3, $4, $5, 1, 0, 'image', '{}'::jsonb, $6::vector,
+        'product-v1', $7)`,
+      ["ffffffff-ffff-4fff-8fff-ffffffffffff", userA, runA, jobA, assetA, vectorLiteral(0.4), "d".repeat(64)],
+    );
+
+    await client.query("DELETE FROM agent_runs WHERE id = $1", [runA]);
+    const retained = await client.query(
+      `SELECT 'ready' AS source, user_id, agent_run_id
+       FROM media_retrieval_segments WHERE id = $1
+       UNION ALL
+       SELECT 'staging' AS source, user_id, agent_run_id
+       FROM media_retrieval_segment_staging WHERE id = $2
+       ORDER BY source`,
+      ["eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "ffffffff-ffff-4fff-8fff-ffffffffffff"],
+    );
+    assert.deepEqual(retained.rows, [
+      { source: "ready", user_id: userA, agent_run_id: null },
+      { source: "staging", user_id: userA, agent_run_id: null },
+    ]);
+
+    await client.query("DELETE FROM users WHERE id = ANY($1::char(36)[])", [[userA, userB]]);
   });
 
   test("real pgvector retrieval is owner-scoped and product purge leaves zero derived residue", async () => {

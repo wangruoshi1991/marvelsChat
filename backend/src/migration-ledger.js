@@ -75,7 +75,14 @@ const applyMigration = async (client, migration) => {
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
-    throw error;
+    const detail = error instanceof Error ? error.message : String(error);
+    const wrapped = new Error(`Migration ${migration.filename} failed: ${detail}`, {
+      cause: error,
+    });
+    if (error && typeof error === "object" && "code" in error) {
+      wrapped.code = error.code;
+    }
+    throw wrapped;
   }
 };
 

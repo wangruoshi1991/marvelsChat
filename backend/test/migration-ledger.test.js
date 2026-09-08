@@ -112,7 +112,7 @@ test("failed migration rolls back and always releases the advisory lock", async 
       client,
       migrations: [migration("001_broken.sql", "SELECT 'broken'")],
     }),
-    /migration failed/,
+    /Migration 001_broken\.sql failed: migration failed/,
   );
 
   assert.equal(client.calls.some((call) => call.sql === "ROLLBACK"), true);
