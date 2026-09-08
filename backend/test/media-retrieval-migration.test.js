@@ -15,6 +15,7 @@ const lifecycleMigrationPath = path.join(backendDir, "database", "028_media_retr
 const provenanceMigrationPath = path.join(backendDir, "database", "029_media_retrieval_embedding_provenance.sql");
 const composePath = path.join(backendDir, "docker-compose.test.yml");
 const integrationEnabled = process.env.RUN_MEDIA_RETRIEVAL_MIGRATION_INTEGRATION === "1";
+const externalDatabaseUrl = String(process.env.MEDIA_RETRIEVAL_MIGRATION_DATABASE_URL || "").trim();
 const composeProject = `media-retrieval-product-${process.pid}`;
 
 let databaseUrl = "";
@@ -59,6 +60,28 @@ const runAllMigrations = () => {
   } catch (error) {
     const detail = String(error.stderr || error.stdout || error.message || "").trim();
     throw new Error(`Migration run failed: ${detail}`, { cause: error });
+  }
+};
+
+const assertDisposableExternalDatabase = async () => {
+  const probe = new pg.Client({ connectionString: externalDatabaseUrl });
+  let connected = false;
+  try {
+    await probe.connect();
+    connected = true;
+    const result = await probe.query(
+      `SELECT current_database() AS database_name,
+              (SELECT COUNT(*)::int FROM pg_tables WHERE schemaname = 'public') AS public_table_count`,
+    );
+    const databaseName = String(result.rows[0]?.database_name || "");
+    if (!databaseName.endsWith("_migration_test")) {
+      throw new Error("External migration database name must end with _migration_test.");
+    }
+    if (Number(result.rows[0]?.public_table_count) !== 0) {
+      throw new Error("External migration database must have an empty public schema.");
+    }
+  } finally {
+    if (connected) await probe.end();
   }
 };
 
@@ -131,13 +154,18 @@ test("product migrations use the reserved 027-029 range and contain no PrivSearc
 
 if (integrationEnabled) {
   before(async () => {
-    if (!dockerAvailable()) throw new Error("Docker is required for the pgvector integration gate.");
-    runCompose(["up", "--wait", "--quiet-pull"]);
-    composeStarted = true;
-    const published = runCompose(["port", "postgres", "5432"]);
-    const port = Number(published.match(/:(\d+)\s*$/m)?.[1]);
-    if (!port) throw new Error("Disposable pgvector database did not publish a port.");
-    databaseUrl = `postgresql://postgres:postgres@127.0.0.1:${port}/marvels_chat_test`;
+    if (externalDatabaseUrl) {
+      await assertDisposableExternalDatabase();
+      databaseUrl = externalDatabaseUrl;
+    } else {
+      if (!dockerAvailable()) throw new Error("Docker is required for the pgvector integration gate.");
+      runCompose(["up", "--wait", "--quiet-pull"]);
+      composeStarted = true;
+      const published = runCompose(["port", "postgres", "5432"]);
+      const port = Number(published.match(/:(\d+)\s*$/m)?.[1]);
+      if (!port) throw new Error("Disposable pgvector database did not publish a port.");
+      databaseUrl = `postgresql://postgres:postgres@127.0.0.1:${port}/marvels_chat_test`;
+    }
     runAllMigrations();
     runAllMigrations();
     client = new pg.Client({ connectionString: databaseUrl });
@@ -245,5 +273,7 @@ if (integrationEnabled) {
     assert.equal(afterDelete.rows[0].total, 0);
   });
 } else {
-  test("pgvector product migration integration requires explicit opt-in", { skip: "set RUN_MEDIA_RETRIEVAL_MIGRATION_INTEGRATION=1" }, () => {});
+  test("pgvector product migration integration requires explicit opt-in", {
+    skip: "set RUN_MEDIA_RETRIEVAL_MIGRATION_INTEGRATION=1; optionally provide MEDIA_RETRIEVAL_MIGRATION_DATABASE_URL",
+  }, () => {});
 }

@@ -86,71 +86,82 @@ if [ "$applied_count" != "$expected_count" ]; then
   exit 1
 fi
 
-schema_repaired="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align <<'SQL'
-SELECT
-  to_regclass('public.miao_point_ledger') IS NOT NULL
-  AND EXISTS (
-    SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = 'user_profiles'
-      AND column_name = 'likes_count'
-  )
-  AND (
-    SELECT ai_id = '000027654321'
-    FROM users
-    WHERE id = '00000000-0000-4000-8000-000000000001'
-  )
-  AND (
-    SELECT ai_id = '000028138000'
-    FROM users
-    WHERE id = '00000000-0000-4000-8000-000000000002'
-  )
-  AND (
-    SELECT ai_id = '000029032333'
-    FROM users
-    WHERE id = '00000000-0000-4000-8000-000000000003'
-  )
-  AND (
-    SELECT count(*) = 1
-    FROM pg_constraint
-    WHERE conrelid = 'users'::regclass
-      AND pg_get_constraintdef(oid) ILIKE '%presence_mode%'
-  )
-  AND NOT EXISTS (
-    SELECT 1
-    FROM pg_indexes
-    WHERE schemaname = 'public'
-      AND tablename = 'users'
-      AND indexname IN ('idx_users_login_name', 'idx_users_phone_number')
-  )
-  AND EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'chk_users_ai_id_format'
-  )
-  AND EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'station_site_drafts_source_check'
-  )
-  AND (
-    SELECT granted_scopes = '["profile:read", "messages:read", "agents:invoke"]'::jsonb
-    FROM user_agents
-    WHERE user_id = '00000000-0000-4000-8000-000000000001'
-      AND agent_id = 'miaoxun-butler'
-  )
-  AND (
-    SELECT granted_scopes = '["album:read", "album:write", "station:read", "station:write"]'::jsonb
-    FROM user_agents
-    WHERE user_id = '00000000-0000-4000-8000-000000000001'
-      AND agent_id = 'album-manager'
-  );
+failed_checks="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align <<'SQL'
+WITH checks(check_name, passed) AS (
+  VALUES
+    ('miao_point_ledger exists', to_regclass('public.miao_point_ledger') IS NOT NULL),
+    ('user_profiles.likes_count exists', EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'user_profiles'
+        AND column_name = 'likes_count'
+    )),
+    ('stable AI ID is preserved', (
+      SELECT ai_id = '000027654321'
+      FROM users
+      WHERE id = '00000000-0000-4000-8000-000000000001'
+    )),
+    ('phone-derived AI ID is repaired', (
+      SELECT ai_id = '000028138000'
+      FROM users
+      WHERE id = '00000000-0000-4000-8000-000000000002'
+    )),
+    ('email-derived AI ID is repaired', (
+      SELECT ai_id = '000029032333'
+      FROM users
+      WHERE id = '00000000-0000-4000-8000-000000000003'
+    )),
+    ('presence mode check constraint exists', EXISTS (
+      SELECT 1
+      FROM pg_constraint
+      WHERE conrelid = 'users'::regclass
+        AND conname = 'chk_users_presence_mode'
+        AND contype = 'c'
+    )),
+    ('legacy user indexes are removed', NOT EXISTS (
+      SELECT 1
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND tablename = 'users'
+        AND indexname IN ('idx_users_login_name', 'idx_users_phone_number')
+    )),
+    ('AI ID format constraint exists', EXISTS (
+      SELECT 1
+      FROM pg_constraint
+      WHERE conrelid = 'users'::regclass
+        AND conname = 'chk_users_ai_id_format'
+        AND contype = 'c'
+    )),
+    ('station draft source constraint exists', EXISTS (
+      SELECT 1
+      FROM pg_constraint
+      WHERE conrelid = 'station_site_drafts'::regclass
+        AND conname = 'station_site_drafts_source_check'
+        AND contype = 'c'
+    )),
+    ('butler scopes are repaired', (
+      SELECT granted_scopes = '["profile:read", "messages:read", "agents:invoke"]'::jsonb
+      FROM user_agents
+      WHERE user_id = '00000000-0000-4000-8000-000000000001'
+        AND agent_id = 'miaoxun-butler'
+    )),
+    ('album manager scopes are repaired', (
+      SELECT granted_scopes = '["album:read", "album:write", "station:read", "station:write"]'::jsonb
+      FROM user_agents
+      WHERE user_id = '00000000-0000-4000-8000-000000000001'
+        AND agent_id = 'album-manager'
+    ))
+)
+SELECT check_name
+FROM checks
+WHERE passed IS DISTINCT FROM TRUE
+ORDER BY check_name;
 SQL
 )"
 
-if [ "$schema_repaired" != "t" ]; then
-  printf 'Migration replay did not repair the expected production schema drift.\n' >&2
+if [ -n "$failed_checks" ]; then
+  printf 'Migration replay did not repair:\n%s\n' "$failed_checks" >&2
   exit 1
 fi
 

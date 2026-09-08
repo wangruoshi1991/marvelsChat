@@ -58,6 +58,10 @@ npm run db:migrate
 执行升级并确认第二次迁移为 no-op。该脚本只允许连接名称以 `_migration_test` 结尾的
 空数据库，不能用于生产。
 
+媒体检索的真实 pgvector 门禁默认使用一次性 Docker 数据库。Docker 不可用时，可显式设置
+`MEDIA_RETRIEVAL_MIGRATION_DATABASE_URL`；测试会先验证目标库名以 `_migration_test` 结尾且
+`public` schema 为空，否则拒绝执行。
+
 迁移命令使用 PostgreSQL advisory lock，避免两个发布进程并发修改 schema。
 每个新迁移与其账本记录在同一个事务中提交。
 
