@@ -15,7 +15,6 @@ import { QRCodeSheet } from '../features/qr/QRCodeSheet';
 import { SearchScreen } from '../features/search/SearchScreen';
 import { DeleteAccountSheet } from '../features/settings/DeleteAccountSheet';
 import { SettingsScreen } from '../features/settings/SettingsScreen';
-import { SiteBuilderScreen } from '../features/site/SiteBuilderScreen';
 import { StationLocationScreen } from '../features/station/StationLocationScreen';
 import { AvatarConfigDTO } from '../models/api';
 import { textFor } from '../shared/i18n';
@@ -77,22 +76,6 @@ export function AppModals({
 
   return (
     <>
-      <Modal
-        visible={modalRoute === 'site-builder'}
-        animationType="slide"
-        presentationStyle="pageSheet"
-      >
-        <SafeAreaView
-          style={[styles.safeArea, { backgroundColor: palette.background }]}
-        >
-          <SiteBuilderScreen
-            palette={palette}
-            language={session.language}
-            onBack={onCloseModal}
-          />
-        </SafeAreaView>
-      </Modal>
-
       <Modal
         visible={modalRoute === 'qr-code'}
         animationType="slide"

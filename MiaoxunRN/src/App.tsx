@@ -168,6 +168,7 @@ function App(): React.JSX.Element {
     session,
     setSelectedTab,
     setSelectedMessageTab,
+    setSelectedStationTab,
     setModalRoute,
     setSearchQuery,
     openQRCode: profileFlows.openQRCode,

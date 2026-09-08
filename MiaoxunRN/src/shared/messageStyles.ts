@@ -304,7 +304,6 @@ export const messageStyles = {
   },
   actionSheetCopy: { flex: 1, gap: 4 },
   actionSheetRowTitle: { fontSize: 13, fontWeight: '900' },
-  actionSheetRowDetail: { fontSize: 12, lineHeight: 18 },
   noticeScreen: { flex: 1 },
   noticeList: { gap: 10, padding: 14 },
   noticeRow: {

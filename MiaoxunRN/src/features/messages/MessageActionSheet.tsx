@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Plus, QrCode, UserCircle } from 'lucide-react-native';
+import { QrCode } from 'lucide-react-native';
 
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
@@ -44,18 +44,6 @@ export function MessageActionSheet({
           ]}
         />
         <ActionSheetRow
-          disabled
-          icon={UserCircle}
-          palette={palette}
-          title={textFor(language, '创建群', 'Create group')}
-        />
-        <ActionSheetRow
-          disabled
-          icon={Plus}
-          palette={palette}
-          title={textFor(language, '添加好友', 'Add friend')}
-        />
-        <ActionSheetRow
           icon={QrCode}
           palette={palette}
           title={textFor(language, '扫码', 'Scan')}
@@ -70,25 +58,19 @@ function ActionSheetRow({
   icon: Icon,
   palette,
   title,
-  detail,
-  disabled,
   onPress,
 }: {
   icon: IconComponent;
   palette: Palette;
   title: string;
-  detail?: string;
-  disabled?: boolean;
   onPress?: () => void;
 }) {
   return (
     <Pressable
-      disabled={disabled}
       onPress={onPress}
       style={[
         styles.actionSheetRow,
         { backgroundColor: palette.surface, borderColor: palette.border },
-        disabled && styles.disabledButton,
       ]}
     >
       <View
@@ -103,16 +85,6 @@ function ActionSheetRow({
         <Text style={[styles.actionSheetRowTitle, { color: palette.text }]}>
           {title}
         </Text>
-        {detail ? (
-          <Text
-            style={[
-              styles.actionSheetRowDetail,
-              { color: palette.secondaryText },
-            ]}
-          >
-            {detail}
-          </Text>
-        ) : null}
       </View>
     </Pressable>
   );

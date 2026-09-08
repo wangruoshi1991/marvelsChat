@@ -203,8 +203,6 @@ export const displayText = (language: Language, rawValue?: string | null) => {
       'I will handle your messages, account, and station abilities.',
     '欢迎来到妙讯。我会先承接你的消息、账号和小站能力。':
       'Welcome to Miaoxun. I will first handle your messages, account, and station abilities.',
-    '动态、文件和长期记忆模块等待数据库接入。':
-      'Posts, files, and long-term memory are waiting for database integration.',
     '这个人还没有填写小站简介。': 'No station bio yet.',
     '后端健康检查和 PostgreSQL 连接正常。':
       'Backend health check and PostgreSQL connection are normal.',

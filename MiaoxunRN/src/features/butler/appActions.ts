@@ -235,7 +235,7 @@ export function planButlerAppAction(
     };
   }
 
-  if (intent.includesAny(['加号', '新建', '添加好友', '扫码', '创建群'])) {
+  if (intent.includesAny(['添加好友', '扫码'])) {
     return {
       key: 'navigation.messageActions',
       result: {
@@ -243,8 +243,8 @@ export function planButlerAppAction(
         status: 'applied',
         message: actionMessage(
           language,
-          '妙讯新建菜单已准备打开。',
-          'The Miaoxun create menu is ready to open.',
+          '妙讯扫码入口已准备打开。',
+          'The Miaoxun scanner is ready to open.',
         ),
       },
     };

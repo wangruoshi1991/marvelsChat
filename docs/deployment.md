@@ -56,7 +56,7 @@ PolarDB 和 Redis 当前白名单只放行 ECS 私网 IP `172.25.210.107`。生�
 - `TRUST_PROXY_HOPS=1`：只信任最靠近后端的一层 Nginx 代理，以便登录限流和审计使用真实客户端 IP。
 - `CORS_ORIGIN=https://console.marvelschat.com`：正式环境只允许明确的浏览器管理台 origin；不能设为 `true` 或多个 origin。临时 IP TestFlight 阶段使用 `http://8.153.167.11`，域名可用后必须切回 HTTPS 管理台域名。
 - `POSTGRES_HOST`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DATABASE`：阿里云 PolarDB 连接信息。
-- `REDIS_URL`：阿里云 Tair / Redis 连接信息。当前代码未强依赖 Redis，但后续 session、缓存、队列和限流会使用。
+- Tair / Redis 已作为预留基础设施开通，但当前代码没有运行时消费者，因此不写入应用环境变量；待 session、缓存、队列或限流正式接入后再补充明确配置。
 - `OSS_REGION`、`OSS_BUCKET`、`OSS_ENDPOINT`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`：OSS 文件能力。AccessKey 后续应使用程序专用 RAM 用户。
 - `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL`：妙讯管家 AI 调用。
 - `GEOCODING_PROVIDER=amap`、`AMAP_WEB_SERVICE_KEY`：定位坐标解析社区和活动区域。
@@ -175,7 +175,7 @@ iOS Release 正式上线目标 API 地址是：
 https://api.marvelschat.com
 ```
 
-临时测试策略：正式域名实名和 HTTPS 完成前，iOS Release 临时使用 `http://8.153.167.11`，并在 iOS `Info.plist` 里只为该 IP 放开 HTTP ATS 例外，方便异地成员先通过 TestFlight 连接真实 ECS 后端、PolarDB 和 Redis 进行体验测试。该策略只用于内部测试，不作为上线配置。
+临时测试策略：正式域名实名和 HTTPS 完成前，iOS Release 临时使用 `http://8.153.167.11`，并在 iOS `Info.plist` 里只为该 IP 放开 HTTP ATS 例外，方便异地成员先通过 TestFlight 连接真实 ECS 后端、PolarDB 和 OSS 进行体验测试。该策略只用于内部测试，不作为上线配置。
 
 正式上线前必须恢复为 `https://api.marvelschat.com`，删除 Release 不需要的 HTTP ATS 例外，并确认 Nginx 443 证书、续期和 WebSocket `/api/realtime` 反向代理都正常。
 
@@ -419,3 +419,11 @@ App Store Connect 的 Build 41 与 Build 42 真机报告均显示 `RCTExceptions
 线上 `npm run check` 通过；服务按 `User=marvels`、`Restart=always` 与 `KillSignal=SIGTERM` 的既有 systemd 策略平滑重启，主进程从 `427140` 切换到 `446437`。重启后 `/api/health` 返回 200，生产数据库级冒烟确认 `posts` 为数组，且移动端要求的九个小站字段全部为数组。
 
 移动端源码同时恢复为只挂载当前选中的小站面板，不再同时保留五棵原生视图树；`/api/app/bootstrap` 与 `/api/station/content` 增加严格运行时契约校验。缺少 `posts` 等字段时明确报告服务端版本不匹配，不再让 `undefined` 进入页面后触发致命异常。本轮未上传新的 TestFlight build；Build 42 需完全退出并重新打开，重新获取线上 bootstrap 后再验证现有包。
+
+## 2026-09-08 代码与依赖审查
+
+本轮删除了已被小站真实建站 Agent 工作区替代的移动端占位建站页，妙讯管家的建站动作改为直接打开小站 `Agent` 页签；消息新建菜单不再展示尚未实现的创建群和独立添加好友入口。未被运行时消费的 `REDIS_URL` 已从后端配置与环境示例移除，Tair 只保留为尚未接入的基础设施记录。
+
+后端通过固定 `qs@6.16.0` 消除了 Express 4 依赖链中的已知 DoS 告警，`npm audit` 为 0。移动端 RN CLI 已从 `20.1.0` 升级到同系列 `20.2.0`，并更新现有 semver 范围内的间接依赖；剩余 4 条高危审计项均来自 React Native 0.86 的 Metro / `image-size` 构建链，当前 npm 解析没有可应用修复。该链路不进入 App 运行时 bundle，但 CI 只应处理仓库内受信任的图片资源；待 React Native 提供兼容修复后单独升级并重新验证 iOS、Android 和 TestFlight。
+
+本轮只修改本地仓库，没有部署服务器。线上仍未包含 `/api/ready`，并且常驻环境需要在下一次授权部署前设置 `TRUST_PROXY_HOPS=1`、`CREATE_FIRST_USER_AS_ADMIN=false`、`DEFAULT_ADMIN_ENABLED=false`。域名实名审核、公共 DNS 和 HTTPS 继续作为正式上架前置条件。

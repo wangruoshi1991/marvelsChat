@@ -4,6 +4,7 @@ import {
   planButlerAppAction,
 } from '../features/butler/appActions';
 import { Language } from '../features/session/useMiaoxunSession';
+import { StationTab } from '../features/station/stationTypes';
 import { Appearance } from '../shared/theme';
 import { RootTab } from '../shared/ui';
 import { ModalRoute } from './appTypes';
@@ -25,6 +26,7 @@ type UseButlerActionsOptions = {
   session: ButlerSessionActions;
   setSelectedTab: (tab: RootTab) => void;
   setSelectedMessageTab: (tab: 'chat' | 'notice') => void;
+  setSelectedStationTab: (tab: StationTab) => void;
   setModalRoute: (route: ModalRoute) => void;
   setSearchQuery: (query: string) => void;
   openQRCode: () => void;
@@ -34,6 +36,7 @@ export function useButlerActions({
   session,
   setSelectedTab,
   setSelectedMessageTab,
+  setSelectedStationTab,
   setModalRoute,
   setSearchQuery,
   openQRCode,
@@ -74,7 +77,9 @@ export function useButlerActions({
           setModalRoute('message-actions');
           return;
         case 'navigation.siteBuilder':
-          setModalRoute('site-builder');
+          setSelectedTab('station');
+          setSelectedStationTab('agents');
+          setModalRoute(null);
           return;
         case 'navigation.notices':
           setSelectedTab('messages');
@@ -99,6 +104,7 @@ export function useButlerActions({
       setModalRoute,
       setSearchQuery,
       setSelectedMessageTab,
+      setSelectedStationTab,
       setSelectedTab,
     ],
   );

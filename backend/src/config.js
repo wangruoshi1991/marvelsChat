@@ -218,9 +218,6 @@ export const config = {
     amapKey: (process.env.AMAP_WEB_SERVICE_KEY || "").trim(),
     amapReverseUrl: (process.env.AMAP_REVERSE_URL || "https://restapi.amap.com/v3/geocode/regeo").trim(),
   },
-  redis: {
-    url: (process.env.REDIS_URL || "").trim(),
-  },
   oss: {
     region: (process.env.OSS_REGION || "").trim(),
     bucket: (process.env.OSS_BUCKET || "").trim(),

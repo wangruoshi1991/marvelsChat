@@ -1,7 +1,6 @@
 export type ModalRoute =
   | 'chat'
   | 'butler'
-  | 'site-builder'
   | 'settings'
   | 'delete-account'
   | 'qr-code'
