@@ -26,6 +26,34 @@ const sleep = (milliseconds, signal) =>
     }, { once: true });
   });
 
+const WORKER_FAILURE_MESSAGES = Object.freeze({
+  ENOTFOUND: "Dependency DNS lookup failed.",
+  EAI_AGAIN: "Dependency DNS lookup is temporarily unavailable.",
+  ECONNREFUSED: "Dependency connection was refused.",
+  ETIMEDOUT: "Dependency connection timed out.",
+  ENETUNREACH: "Dependency network is unreachable.",
+  "28P01": "Database authentication was rejected.",
+  "3D000": "Configured database does not exist.",
+  "57P03": "Database is not accepting connections.",
+});
+
+const safeDiagnosticValue = (value, fallback) => {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim();
+  return /^[A-Za-z0-9_.-]{1,64}$/.test(normalized) ? normalized : fallback;
+};
+
+export function createMediaRetrievalWorkerFailureLog(error) {
+  const errorCode = safeDiagnosticValue(error?.code, "UNKNOWN");
+  return {
+    type: "media_retrieval_worker_failure",
+    errorName: safeDiagnosticValue(error?.name, "Error"),
+    errorCode,
+    errorMessage:
+      WORKER_FAILURE_MESSAGES[errorCode] || "Media retrieval worker stopped unexpectedly.",
+  };
+}
+
 export function createMediaRetrievalWorkerDependencies({
   repository = createMediaRetrievalRepository({ query, withTransaction }),
   provider = createMediaRetrievalProvider({ config }),
@@ -120,8 +148,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
   const dependencies = createMediaRetrievalWorkerDependencies();
-  runMediaRetrievalWorker({ ...dependencies, signal: controller.signal }).catch(() => {
-    console.error("Media retrieval worker stopped unexpectedly.");
+  runMediaRetrievalWorker({ ...dependencies, signal: controller.signal }).catch((error) => {
+    console.error(JSON.stringify(createMediaRetrievalWorkerFailureLog(error)));
     process.exitCode = 1;
   });
 }

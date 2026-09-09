@@ -4,7 +4,10 @@ import test from "node:test";
 process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 
 const { processMediaRetrievalJob } = await import("../src/media-retrieval-service.js");
-const { runMediaRetrievalWorker } = await import("../src/media-retrieval-worker.js");
+const {
+  createMediaRetrievalWorkerFailureLog,
+  runMediaRetrievalWorker,
+} = await import("../src/media-retrieval-worker.js");
 const {
   createDescriptorProvenance,
   createEmbeddingProvenance,
@@ -35,6 +38,38 @@ const WORKER_REPOSITORY_CONTRACT = {
 const WORKER_MEDIA_CONTRACT = {
   deleteEphemeralProviderObject: async () => null,
 };
+
+test("worker startup failures expose a useful category without leaking connection details", () => {
+  const error = new Error(
+    "getaddrinfo ENOTFOUND postgres://database-user:database-password@removed.internal/app",
+  );
+  error.code = "ENOTFOUND";
+
+  const diagnostic = createMediaRetrievalWorkerFailureLog(error);
+
+  assert.deepEqual(diagnostic, {
+    type: "media_retrieval_worker_failure",
+    errorName: "Error",
+    errorCode: "ENOTFOUND",
+    errorMessage: "Dependency DNS lookup failed.",
+  });
+  const serialized = JSON.stringify(diagnostic);
+  assert.equal(serialized.includes("database-password"), false);
+  assert.equal(serialized.includes("removed.internal"), false);
+});
+
+test("worker startup failures do not copy unknown messages or unsafe codes into logs", () => {
+  const error = new Error("token=secret-value");
+  error.name = "Unsafe Error Name: secret-value";
+  error.code = "postgres://user:password@host/database";
+
+  assert.deepEqual(createMediaRetrievalWorkerFailureLog(error), {
+    type: "media_retrieval_worker_failure",
+    errorName: "Error",
+    errorCode: "UNKNOWN",
+    errorMessage: "Media retrieval worker stopped unexpectedly.",
+  });
+});
 
 function vector() {
   return Array.from({ length: 1024 }, () => 0.1);

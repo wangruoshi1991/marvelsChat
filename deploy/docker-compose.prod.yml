@@ -19,7 +19,7 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile
-    restart: unless-stopped
+    restart: "on-failure:5"
     init: true
     stop_grace_period: 30s
     env_file:

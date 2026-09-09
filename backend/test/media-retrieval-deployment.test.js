@@ -30,6 +30,11 @@ test("deployment keeps the product worker independent and Provider dispatch disa
   assert.match(compose, /stop_grace_period: 30s/);
   assert.match(workerService, /ExecStart=\/usr\/bin\/npm run worker:media-retrieval/);
   assert.match(workerService, /EnvironmentFile=.*miaoxun-prod\.env/);
+  assert.match(workerService, /^StartLimitIntervalSec=300$/m);
+  assert.match(workerService, /^StartLimitBurst=5$/m);
+  assert.match(workerService, /^Restart=on-failure$/m);
+  assert.doesNotMatch(workerService, /^Restart=always$/m);
+  assert.match(compose, /media-retrieval-worker:[\s\S]*restart: ["']on-failure:5["']/);
 
   for (const envFile of [backendEnv, productionEnv]) {
     assert.match(envFile, /^MEDIA_RETRIEVAL_ENABLED=$/m);
