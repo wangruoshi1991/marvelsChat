@@ -72,6 +72,10 @@ test("production restore requires downtime and an approved dump checksum", async
   assert.match(script, /systemctl is-active --quiet "\$service"/);
   assert.match(script, /actual_sha256=.*sha256sum/);
   assert.match(script, /actual_sha256.*expected_sha256/);
+  assert.match(
+    script,
+    /install -o postgres -g postgres -m 0600 "\$dump_path" "\$restore_input"/,
+  );
   assert.match(script, /TABLE DATA public schema_migrations/);
   assert.match(script, /EXTENSION - vector/);
   assert.match(script, /DROP DATABASE IF EXISTS/);
@@ -80,5 +84,10 @@ test("production restore requires downtime and an approved dump checksum", async
   assert.match(script, /--exclude-schema=polar_catalog/);
   assert.match(script, /--role="\$POSTGRES_USER"/);
   assert.match(script, /--exit-on-error/);
+  assert.match(script, /chown postgres:postgres "\$restore_list"/);
+  assert.match(script, /"\$restore_input"/);
+  assert.match(script, /validation_result/);
+  assert.match(script, /"0\|t\|t"/);
+  assert.doesNotMatch(script, /1 \/ 0/);
   assert.doesNotMatch(script, /rm -rf|DROP ROLE|DROP TABLE/);
 });
