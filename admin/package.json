@@ -8,7 +8,7 @@
     "check": "node --check *.js test/*.js",
     "test": "node --test test/*.test.js",
     "dev": "vite --host 127.0.0.1",
-    "dev:prod-api": "MIAOXUN_ADMIN_API_TARGET=https://api.marvelschat.com vite --host 127.0.0.1",
+    "dev:prod-api": "MIAOXUN_ADMIN_API_TARGET=https://8.153.167.11 vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1"
   },

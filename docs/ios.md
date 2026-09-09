@@ -69,15 +69,13 @@ Android: android/app/src/main/java/com/gary/miaoxun/rn/MiaoxunLocationModule.kt
 
 iOS 原生工程通过 `Info.plist` 的 `MiaoxunAPIBaseURL` 注入 API 地址，值来自 Xcode build setting `MIAOXUN_API_BASE_URL`。React Native 业务代码不直接读取 `SettingsManager`，而是通过项目自有原生桥接 `MiaoxunConfigModule.apiBaseURL` 获取配置，避免依赖 React Native 内部设置模块是否导出自定义 `Info.plist` 字段。
 
-正式发布目标：Debug 默认指向本机后端，Release 必须指向 `https://api.marvelschat.com`。正常 Release 构建脚本会阻止 HTTP、裸 IP、localhost 和 loopback API URL。
-
-域名实名和 HTTPS 完成前，允许上传临时 IP TestFlight 测试包：Release API origin 临时指向 `http://8.153.167.11`，只为该 IP 放开 iOS ATS HTTP 例外，并通过 `MIAOXUN_TEMP_IP_TESTFLIGHT=1` 明确标记。该配置仅用于内部/外部 TestFlight 测试，不能用于正式上架。
+正式发布目标：Debug 默认指向本机后端，Release 指向证书有效的公网 HTTPS origin。当前 Let's Encrypt 证书的 SAN 覆盖 `8.153.167.11`，因此可以直接使用 IP HTTPS；构建脚本会阻止 HTTP、localhost 和 loopback API URL。
 
 当前配置：
 
 ```text
 Debug:   http://127.0.0.1:4390
-Release: http://8.153.167.11  # 临时 TestFlight；正式发布恢复 https://api.marvelschat.com
+Release: https://8.153.167.11
 ```
 
 本地后端调试时，Debug 配置必须显式改为 Mac 局域网 IP 或可访问的本地测试后端地址，例如：
@@ -338,7 +336,7 @@ TestFlight 手机端必须安装包含本次原生补丁的新 build 后才能�
 
 - `MiaoxunRN/ios/MiaoxunRN.xcworkspace` 是 iOS 原生工程入口。
 - 生产包必须使用 Release 配置，不允许保留本地 API 地址。
-- 域名实名完成前允许上传 TestFlight 临时测试包，但必须显式使用 `MIAOXUN_TEMP_IP_TESTFLIGHT=1`，API origin 只能指向 `http://8.153.167.11`。如果需要外部群组，`ExportOptions-AppStoreConnect.plist` 必须设置 `testFlightInternalTestingOnly=false`，并在 App Store Connect 完成 Beta App Review；该配置不能用于正式上架。
+- Release 必须使用证书有效的公网 HTTPS origin，且不得包含公网 HTTP ATS 例外。如果需要外部 TestFlight 群组，`ExportOptions-AppStoreConnect.plist` 必须设置 `testFlightInternalTestingOnly=false`，并在 App Store Connect 完成 Beta App Review。
 - `Info.plist` 不能保留空白权限说明；新增相机、相册、文件、通知等能力时，必须同步填写对应用途说明并更新 `PrivacyInfo.xcprivacy`。
 - Android 新增系统能力时，必须同步更新 `AndroidManifest.xml` 权限、Gradle 依赖和本文件的桥接说明。
 - 每次新增或调整移动端能力，都要同步更新 `README.md`、`MiaoxunRN/README.md` 和相关 `docs/` 文档。
@@ -377,10 +375,14 @@ TestFlight 手机端必须安装包含本次原生补丁的新 build 后才能�
 
 2026-07-30 的 iOS 工程版本为 `1.0 (30)`。当时的仓库审查已使用 `MiaoxunRN.xcworkspace` 成功生成本地 Release archive，但没有上传新包；App Store Connect 中的 build 30 已于 2026-07-30 13:21 上传，当时为“正在测试”，并已加入内部和外部 `YU yunzhi` 群组。该段只保留为历史发布记录，后续构建号以 Xcode 工程当前设置和本文最新发布记录为准。该归档已移除 MapLibre，只包含 React、ReactNativeDependencies 和 Hermes framework；本文前面关于 MapLibre / Filament 的内容均为对应历史 build 的故障与发布记录。
 
-域名审核完成前，Release 仍通过 `MIAOXUN_TEMP_IP_TESTFLIGHT=1` 显式使用 `http://8.153.167.11`，并只为该 IP 保留 ATS 例外。该配置仅供 TestFlight 测试，正式上架必须改回 `https://api.marvelschat.com` 并删除公网 HTTP 例外。
+该 2026-08-04 基线中的 HTTP IP 策略已于 2026-09-09 被 IP HTTPS 正式配置取代；当前 Release 不再使用临时标记或公网 HTTP ATS 例外。
 
 ## 2026-08-31 Build 42 小站崩溃定位
 
 Build 41 与 Build 42 的 App Store Connect 真机报告均通过 `RCTExceptionsManager.reportFatal` 终止，根因是线上 bootstrap 的 `stationContent` 缺少移动端必填的 `posts` 数组。Build 41 在打开“生活”时首次读取该字段，Build 42 因五个小站页签同时挂载而在进入“小站”时立即读取，因此两版表现不同但属于同一个接口契约错误。
 
 生产后端现已返回真实 `posts`，并通过生产数据库级响应检查。移动端源码改为只挂载当前页签，同时在 bootstrap 和小站刷新边界验证全部必需数组；缺字段会进入明确的同步错误状态，不再在页面渲染期崩溃。本轮没有生成、归档或上传新的 iOS build，工程 `CURRENT_PROJECT_VERSION` 仍为 `42`；不得把本次服务器修复记录成新的 TestFlight 发布。
+
+## 2026-09-09 IP HTTPS 正式发布配置
+
+外部 `curl` 证书校验和 macOS `nscurl --ats-diagnostics` 均确认 `https://8.153.167.11` 可通过；证书 SAN 直接包含该 IP。iOS Release 已切换到该 HTTPS origin，移除 `MIAOXUN_TEMP_IP_TESTFLIGHT` 和对应 HTTP ATS 例外。域名状态只作为后续可读性和迁移便利性事项，不再作为 App Store 的技术阻断项。IP 变化会要求发布新版 App，因此服务器公网 IP 必须保持固定，证书自动续期也必须持续监控。

@@ -6,7 +6,7 @@
 
 1. 核心业务数据必须来自后端和数据库，客户端只负责展示、交互和系统能力桥接。
 2. React Native 承担跨平台业务逻辑，iOS / Android 原生层只做系统能力薄桥接。
-3. Release 包必须使用正式 HTTPS API，不能使用裸 IP、`127.0.0.1` 或局域网地址。
+3. Release 包必须使用证书有效的公网 HTTPS API，不能使用 `127.0.0.1`、localhost 或局域网地址；受信任证书覆盖的固定公网 IP 可以作为正式 origin。
 4. 配置缺失、权限拒绝、网络失败、后端错误都必须给出明确错误状态，不静默切换到示例数据。
 5. 未正式接入的功能只展示待接入状态或暂不入口，不填充假列表、假聊天、假地址或假文件。
 6. 涉及费用、平台审核、隐私权限和第三方服务的能力，先确认供应商和合规方案，再进入上线清单。
@@ -23,29 +23,27 @@
 
 ```text
 iOS Debug:   http://127.0.0.1:4390
-iOS Release: http://8.153.167.11  # 临时 TestFlight；正式上线恢复 HTTPS 域名
+iOS Release: https://8.153.167.11
 ```
 
 说明：
 
-- Debug 默认用于本机后端联调；正式 Release 已加构建校验，只允许 HTTPS 域名，不能使用裸 IP、localhost 或 loopback URL。域名审核完成前，TestFlight 可通过 `MIAOXUN_TEMP_IP_TESTFLIGHT=1` 显式启用临时 IP 测试配置。
+- Debug 默认用于本机后端联调；正式 Release 已加构建校验，只允许公网 HTTPS origin，不能使用 localhost 或 loopback URL。
 - 如需本地后端调试，必须显式改为 Mac 局域网地址或单独建 Debug 配置；同一次扫码联调不能混用两套后端。
 - Android 构建必须显式传入 `MIAOXUN_API_BASE_URL`。正式上线 Release 必须使用 HTTPS API。
 
 当前后端入口：
 
 ```text
-正式 API origin: https://api.marvelschat.com
-临时 API origin: http://8.153.167.11
+正式 API origin: https://8.153.167.11
+可选域名 origin: https://api.marvelschat.com
 业务路径前缀: /api
-管理后台: https://console.marvelschat.com/admin/
+管理后台: https://8.153.167.11/admin/
 ```
 
-正式包必须使用 HTTPS API 域名，不能使用裸 IP、`127.0.0.1` 或局域网地址。当前裸 IP 只用于内部 TestFlight 临时测试。
+正式包必须使用受信任的 HTTPS API，不能使用 `127.0.0.1` 或局域网地址。当前 Let's Encrypt 证书的 SAN 直接覆盖固定公网 IP；域名完成后可切换 origin，但不是 App Store 上架的技术前置条件。
 
-2026-08-04 代码审查记录：域名仍在实名/注册审核中，正式 HTTPS、WSS 和移除 ATS
-例外继续列为发布阻塞项，本轮不修改。当前受控测试包保持
-`http://8.153.167.11`；代码、数据库迁移完整性和临时测试配置可继续独立验证。
+2026-09-09 发布检查确认：`https://8.153.167.11` 的证书链、IP SAN、外部健康检查和 Apple ATS 均通过；Release 已切换到该 HTTPS origin 并删除 HTTP ATS 例外。域名审核继续单独跟踪，不再阻断移动端发布。
 
 ## 功能分级
 
@@ -325,20 +323,17 @@ App 聊天
 发布前先运行：
 
 ```bash
-# 正式发布，域名、HTTPS 和 ATS 必须全部通过
+# 正式发布，HTTPS、ATS、后端和生产依赖必须全部通过
 scripts/check-launch-readiness.sh
-
-# 域名审核期间的受控 IP TestFlight，只把域名项记录为 warning
-MIAOXUN_TEMP_IP_TESTFLIGHT=1 scripts/check-launch-readiness.sh
 ```
 
-该脚本会检查域名 `clientHold`、公网 DNS、HTTPS API、服务器后端 liveness/readiness、生产安全开关、OSS 与 3D 供应商配置、iOS Release API 地址、ATS 例外和 Android Gradle 所需 Java Runtime。临时模式不会把尚未获批的域名伪装成已完成，只会将域名相关项降为 warning；其他 failure 仍应阻止上传测试包。正式模式始终严格拒绝 HTTP 和 ATS 公网例外。
+该脚本会检查当前 Release HTTPS origin、域名状态、服务器后端 liveness/readiness、生产安全开关、OSS 与 3D 供应商配置、iOS Release API 地址、ATS 例外和 Android Gradle 所需 Java Runtime。域名状态单独记录为 warning；HTTPS、服务或配置 failure 仍应阻止上传。
 
-1. 域名实名和 DNS 生效。
-2. Nginx 配置 HTTPS，`api.marvelschat.com` 和 `console.marvelschat.com` 证书可自动续期。
-3. iOS Release `MIAOXUN_API_BASE_URL=https://api.marvelschat.com`。
-4. 删除 Release 不需要的 HTTP ATS 例外。
-5. `CURRENT_PROJECT_VERSION` 递增；build 30 已被 App Store Connect 占用，下一次上传使用 31。
+1. Nginx 的 IP HTTPS 证书有效且自动续期任务成功。
+2. ECS 公网 IP 保持固定；IP 变化会导致现有 App 无法连接并需要发布新版本。
+3. iOS Release `MIAOXUN_API_BASE_URL=https://8.153.167.11`。
+4. Release 不包含 HTTP ATS 例外。
+5. `CURRENT_PROJECT_VERSION` 递增；当前工程为 42，下一次上传不得复用已存在的构建号。
 6. `npx tsc --noEmit` 通过。
 7. `npm test -- --runInBand` 通过。
 8. `npm run lint` 无 error；warning 可登记后续处理。
@@ -352,7 +347,7 @@ MIAOXUN_TEMP_IP_TESTFLIGHT=1 scripts/check-launch-readiness.sh
 
 1. Android namespace 和 application ID 已统一为正式标识 `com.wangruoshi.miaoxun`；首次上架前在应用市场使用同一标识创建应用，之后不得更改。
 2. 准备正式 keystore，真实密码只放本机或 CI，不提交仓库。
-3. Release 构建传入 `MIAOXUN_API_BASE_URL=https://api.marvelschat.com`。
+3. Release 构建传入 `MIAOXUN_API_BASE_URL=https://8.153.167.11`。
 4. 检查 Android 权限：相机、麦克风、定位、网络、通知。
 5. Android 真机验证登录、注册、聊天、扫码、语音转文字、小站资料。
 6. 如定位进入上线范围，必须完成 Android 定位权限、高德逆地理编码授权和隐私合规说明。
@@ -365,15 +360,15 @@ MIAOXUN_TEMP_IP_TESTFLIGHT=1 scripts/check-launch-readiness.sh
 - 不为未接入模块填假内容。
 - 不在客户端保存模型 Key。
 - 不让 App 直接连接数据库。
-- 不为了 TestFlight 临时放宽数据库、Redis、OSS 或后台权限；build 8 的 HTTP IP 只作为域名实名前的受控测试例外。
+- 不为发布放宽数据库、Redis、OSS 或后台权限，也不恢复历史 HTTP IP 例外。
 
 ## 下一步建议
 
 优先顺序：
 
-1. 等 `marvelschat.com` 实名和 DNS 生效，完成 HTTPS。
-2. 确认 iOS Release 仍固定到正式 HTTPS 域名，且没有恢复临时 HTTP 例外。
-3. 跑一轮 iOS 模拟器和真机核心链路。
-4. 打新 TestFlight 包。
-5. 再启动 Android Release 准备：签名、权限、应用市场配置和真机回归。
+1. 确认 IP 证书续期、iOS Release HTTPS origin 和无 ATS 例外持续通过发布检查。
+2. 跑一轮 iOS 模拟器和真机核心链路。
+3. 打新 TestFlight 包。
+4. 再启动 Android Release 准备：签名、权限、应用市场配置和真机回归。
+5. 域名审核完成后评估切换 origin；切换不涉及数据库迁移。
 6. 定位、推送、文件、相册等增强功能另开正式方案，不插入临时实现。

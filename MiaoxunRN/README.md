@@ -77,10 +77,10 @@ iOS API 地址由 Xcode build setting `MIAOXUN_API_BASE_URL` 注入：
 
 ```text
 Debug: http://127.0.0.1:4390
-Release: http://8.153.167.11  # 临时 TestFlight；正式上线恢复 HTTPS 域名
+Release: https://8.153.167.11
 ```
 
-Debug 默认连接本机后端。正式 Release 构建必须使用 HTTPS 域名，不能使用裸 IP、localhost 或 loopback URL；域名审核完成前，TestFlight 可通过 `MIAOXUN_TEMP_IP_TESTFLIGHT=1` 显式启用临时 IP 测试配置。同一次扫码联调不能混用两套后端。
+Debug 默认连接本机后端。正式 Release 构建必须使用受信任的公网 HTTPS origin，不能使用 localhost 或 loopback URL；当前 IP 证书的 SAN 包含 `8.153.167.11`，不需要 ATS HTTP 例外。同一次扫码联调不能混用两套后端。
 
 当前 iOS Debug 工程会通过 `AppDelegate.swift` 强制读取内置 `main.jsbundle`，不是直接从 Metro 拉取最新 JS。修改 `src/` 后如模拟器没有变化，需要重新执行 `npx react-native run-ios --udid <simulator-id>` 生成并安装新的内置 bundle；单纯重启模拟器或 Metro 不会让已安装 App 自动更新。
 
@@ -146,7 +146,7 @@ Android 构建必须显式提供 API 地址：
 ./gradlew assembleDebug -PMIAOXUN_API_BASE_URL=http://<MAC_LAN_IP>:4390
 ```
 
-Android Release 构建还必须提供正式签名参数，并且 `MIAOXUN_API_BASE_URL` 必须是 HTTPS 域名，不能使用裸 IP、localhost 或 loopback URL。可参考：
+Android Release 构建还必须提供正式签名参数，并且 `MIAOXUN_API_BASE_URL` 必须是公网 HTTPS origin，不能使用 localhost 或 loopback URL。可参考：
 
 ```text
 android/release-signing.properties.example

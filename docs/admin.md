@@ -13,7 +13,7 @@ http://127.0.0.1:5175
 本地开发默认代理到 `http://127.0.0.1:4390`。如果需要管理 TestFlight 正在使用的线上后端，启动后台时显式指定：
 
 ```sh
-MIAOXUN_ADMIN_API_TARGET=https://api.marvelschat.com npm run dev
+MIAOXUN_ADMIN_API_TARGET=https://8.153.167.11 npm run dev
 ```
 
 也可以直接使用固定脚本：

@@ -228,7 +228,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n  if [ \"$MIAOXUN_TEMP_IP_TESTFLIGHT\" = \"1\" ]; then\n    case \"$MIAOXUN_API_BASE_URL\" in\n      http://8.153.167.11) ;;\n      *)\n        echo \"error: Temporary IP TestFlight builds must target http://8.153.167.11 when MIAOXUN_TEMP_IP_TESTFLIGHT=1. Current value: $MIAOXUN_API_BASE_URL\" >&2\n        exit 1\n        ;;\n    esac\n    exit 0\n  fi\n\n  if ! echo \"$MIAOXUN_API_BASE_URL\" | grep -Eq '^https://[^/?#]+/?$'; then\n    echo \"error: Release builds require MIAOXUN_API_BASE_URL to be an HTTPS origin without a path. Current value: $MIAOXUN_API_BASE_URL\" >&2\n    exit 1\n  fi\n\n  if echo \"$MIAOXUN_API_BASE_URL\" | grep -Eiq '^https://([0-9]{1,3}\\.){3}[0-9]{1,3}(:|/|$)|localhost|127\\.0\\.0\\.1'; then\n    echo \"error: Release builds must not target a bare IP, localhost, or loopback API URL. Current value: $MIAOXUN_API_BASE_URL\" >&2\n    exit 1\n  fi\nfi\n";
+			shellScript = "set -e\n\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n  if ! echo \"$MIAOXUN_API_BASE_URL\" | grep -Eq '^https://[^/?#]+/?$'; then\n    echo \"error: Release builds require MIAOXUN_API_BASE_URL to be an HTTPS origin without a path. Current value: $MIAOXUN_API_BASE_URL\" >&2\n    exit 1\n  fi\n\n  if echo \"$MIAOXUN_API_BASE_URL\" | grep -Eiq '^https://(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0)(:|/|$)|^https://\\[?::1\\]?(:|/|$)'; then\n    echo \"error: Release builds must not target localhost or a loopback API URL. Current value: $MIAOXUN_API_BASE_URL\" >&2\n    exit 1\n  fi\nfi\n";
 		};
 		C38B50BA6285516D6DCD4F65 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -335,8 +335,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				MIAOXUN_API_BASE_URL = "http://8.153.167.11";
-				MIAOXUN_TEMP_IP_TESTFLIGHT = 1;
+				MIAOXUN_API_BASE_URL = "https://8.153.167.11";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",

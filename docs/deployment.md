@@ -55,7 +55,7 @@ PostgreSQL 只监听 ECS 回环地址，不开放安全组或公网端口。Redi
 - `HOST=127.0.0.1`：当前 systemd 进程只监听本机，由 Nginx 反向代理；不要直接暴露 Node 端口。
 - `NODE_ENV=production`：启用生产错误隐藏和生产配置校验。
 - `TRUST_PROXY_HOPS=1`：只信任最靠近后端的一层 Nginx 代理，以便登录限流和审计使用真实客户端 IP。
-- `CORS_ORIGIN=https://console.marvelschat.com`：正式环境只允许明确的浏览器管理台 origin；不能设为 `true` 或多个 origin。临时 IP TestFlight 阶段使用 `http://8.153.167.11`，域名可用后必须切回 HTTPS 管理台域名。
+- `CORS_ORIGIN=https://8.153.167.11`：当前正式环境只允许 IP HTTPS 管理台 origin；不能设为 `true` 或多个 origin。域名可用后可显式切换为 `https://console.marvelschat.com`。
 - `POSTGRES_HOST=127.0.0.1`、`POSTGRES_PORT=5432`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DATABASE`：ECS 自建 PostgreSQL 连接信息。数据库只监听回环地址，密码不得写入仓库。
 - Tair / Redis 已作为预留基础设施开通，但当前代码没有运行时消费者，因此不写入应用环境变量；待 session、缓存、队列或限流正式接入后再补充明确配置。
 - `OSS_REGION`、`OSS_BUCKET`、`OSS_ENDPOINT`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`：OSS 文件能力。AccessKey 后续应使用程序专用 RAM 用户。
@@ -64,8 +64,7 @@ PostgreSQL 只监听 ECS 回环地址，不开放安全组或公网端口。Redi
 
 ## 发布与启动顺序
 
-生产发布必须在明确的维护窗口内执行。域名审核期间可以继续使用临时 IP 测试策略，
-但数据库备份、安全开关和 readiness 不得降级。不要直接覆盖当前目录后立即重启。
+生产发布必须在明确的维护窗口内执行。移动端和管理台使用 IP HTTPS；数据库备份、安全开关、证书续期和 readiness 不得降级。不要直接覆盖当前目录后立即重启。
 
 1. 确认最新 custom dump、SHA-256 和恢复演练有效，并在变更前再创建一个可恢复点。
 2. 备份当前应用目录和环境文件；把新代码、依赖和 `avatar-web/dist` 完整暂存好。
@@ -138,8 +137,8 @@ npm run admin:bootstrap
 ```sh
 curl http://127.0.0.1:4390/api/health
 curl --fail http://127.0.0.1:4390/api/ready
-curl http://8.153.167.11/api/health # 仅域名审核期间的 TestFlight 临时入口
-curl https://api.marvelschat.com/api/health # 域名和 HTTPS 完成后
+curl --fail https://8.153.167.11/api/health
+curl --fail https://8.153.167.11/api/ready
 ```
 
 2026-06-23 线上已验证：
@@ -180,17 +179,15 @@ sudo systemctl restart marvels-chat-backend
 sudo systemctl status marvels-chat-backend --no-pager
 ```
 
-## HTTPS 和 TestFlight
+## HTTPS 和移动端发布
 
-iOS Release 正式上线目标 API 地址是：
+iOS Release 当前正式 API 地址是：
 
 ```text
-https://api.marvelschat.com
+https://8.153.167.11
 ```
 
-临时测试策略：正式域名实名和 HTTPS 完成前，iOS Release 临时使用 `http://8.153.167.11`，并在 iOS `Info.plist` 里只为该 IP 放开 HTTP ATS 例外，方便异地成员先通过 TestFlight 连接真实 ECS 后端、PolarDB 和 OSS 进行体验测试。该策略只用于内部测试，不作为上线配置。
-
-正式上线前必须恢复为 `https://api.marvelschat.com`，删除 Release 不需要的 HTTP ATS 例外，并确认 Nginx 443 证书、续期和 WebSocket `/api/realtime` 反向代理都正常。
+Let's Encrypt 证书的 SAN 直接包含该公网 IP，外部 TLS 校验和 Apple ATS 均通过。Release 不包含 HTTP ATS 例外；Nginx 443、证书自动续期和 WebSocket `/api/realtime` 反向代理必须持续正常。域名审核完成后可把 API origin 切换为 `https://api.marvelschat.com`，但这不是当前上架的技术前置条件，也不涉及数据库迁移。
 
 2026-06-23 已在本机完成 iOS Release 未签名 archive 构建验证：
 
@@ -440,3 +437,11 @@ App Store Connect 的 Build 41 与 Build 42 真机报告均显示 `RCTExceptions
 后端通过固定 `qs@6.16.0` 消除了 Express 4 依赖链中的已知 DoS 告警，`npm audit` 为 0。移动端 RN CLI 已从 `20.1.0` 升级到同系列 `20.2.0`，并更新现有 semver 范围内的间接依赖；剩余 4 条高危审计项均来自 React Native 0.86 的 Metro / `image-size` 构建链，当前 npm 解析没有可应用修复。该链路不进入 App 运行时 bundle，但 CI 只应处理仓库内受信任的图片资源；待 React Native 提供兼容修复后单独升级并重新验证 iOS、Android 和 TestFlight。
 
 本轮只修改本地仓库，没有部署服务器。线上仍未包含 `/api/ready`，并且常驻环境需要在下一次授权部署前设置 `TRUST_PROXY_HOPS=1`、`CREATE_FIRST_USER_AS_ADMIN=false`、`DEFAULT_ADMIN_ENABLED=false`。域名实名审核、公共 DNS 和 HTTPS 继续作为正式上架前置条件。
+
+## 2026-09-09 自建数据库与 IP HTTPS
+
+生产数据已从 PolarDB 恢复到同一 ECS 上由 systemd 管理的 PostgreSQL 18，并限制为 `127.0.0.1:5432`。移动端不直接连接数据库；公网请求通过 `https://8.153.167.11` 到 Nginx，再转发到本机后端。`/api/health`、`/api/ready`、29 个迁移、媒体检索 worker 和数据库备份任务均已验证。
+
+IP HTTPS 证书使用 Let's Encrypt short-lived profile，自定义 `miaoxun-ip-cert-renew.timer` 每日两次检查并在续期后 reload Nginx。系统自带 `certbot.timer` 不具备该 IP 证书运行环境，不能与自定义任务并行启用。发布检查以当前 HTTPS origin 为硬门槛，域名 `clientHold` 只记录 warning。
+
+Navicat 只允许通过 SSH 隧道查看生产库：SSH 连接 ECS 的 `22` 端口，数据库端填写 `127.0.0.1:5432`、数据库 `marvels_chat`、角色 `pize`。该角色默认只读、最多 3 个连接，并限制长查询；密码和 SSH 私钥不得写入仓库或共享文档。应用服务继续使用独立的 `marvels_chat` 数据库角色，不复用人工查看账号。
