@@ -5,8 +5,8 @@
 TestFlight 只负责把 iOS App 分发给测试用户；登录、聊天、扫码解析、妙讯管家、通知、在线状态和定位名称解析都必须连接公网 HTTPS 后端。
 
 当前后端要求 Node.js 22+ 和 PostgreSQL。阿里云生产测试环境由 ECS 上的
-systemd 服务 `marvels-chat-backend` 直接运行 Node.js，数据库、缓存和文件分别使用
-PolarDB PostgreSQL、Tair / Redis 和 OSS。2026-08-04 只读核查时，线上 Node.js 为
+systemd 服务 `marvels-chat-backend` 直接运行 Node.js，数据库改为 ECS 本机 PostgreSQL，
+缓存和文件分别使用 Tair / Redis 和 OSS。2026-08-04 只读核查时，线上 Node.js 为
 `v22.22.1`，服务工作目录为 `/opt/projects/marvels-chat/app/backend`，环境文件为
 `/opt/projects/marvels-chat/app/deploy/miaoxun-prod.env`，服务用户为 `marvels`。
 
@@ -18,12 +18,13 @@ PolarDB PostgreSQL、Tair / Redis 和 OSS。2026-08-04 只读核查时，线上 
 
 ```text
 ECS：i-uf6ikxhmdl3az4qls99c，公网 IP 8.153.167.11，私网 IP 172.25.210.107
-PolarDB：pc-uf64w91ivxd2160iu，数据库 marvels_chat，账号 marvels_chat
+PostgreSQL：ECS 本机 127.0.0.1:5432，数据库 marvels_chat
 Redis：r-uf6fvbi3bbux1cjwer.redis.rds.aliyuncs.com:6379
 OSS Bucket：marvels-chat
 ```
 
-PolarDB 和 Redis 当前白名单只放行 ECS 私网 IP `172.25.210.107`。生产服务部署在 ECS 上后，通过阿里云内网地址连接数据库和缓存，不需要在本地电脑或同学家庭网络上频繁配置公网白名单。
+PostgreSQL 只监听 ECS 回环地址，不开放安全组或公网端口。Redis 白名单只放行 ECS 私网 IP
+`172.25.210.107`；当前应用尚未接入 Redis 运行时。
 
 ## 服务器目录
 
@@ -55,7 +56,7 @@ PolarDB 和 Redis 当前白名单只放行 ECS 私网 IP `172.25.210.107`。生�
 - `NODE_ENV=production`：启用生产错误隐藏和生产配置校验。
 - `TRUST_PROXY_HOPS=1`：只信任最靠近后端的一层 Nginx 代理，以便登录限流和审计使用真实客户端 IP。
 - `CORS_ORIGIN=https://console.marvelschat.com`：正式环境只允许明确的浏览器管理台 origin；不能设为 `true` 或多个 origin。临时 IP TestFlight 阶段使用 `http://8.153.167.11`，域名可用后必须切回 HTTPS 管理台域名。
-- `POSTGRES_HOST`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DATABASE`：阿里云 PolarDB 连接信息。
+- `POSTGRES_HOST=127.0.0.1`、`POSTGRES_PORT=5432`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DATABASE`：ECS 自建 PostgreSQL 连接信息。数据库只监听回环地址，密码不得写入仓库。
 - Tair / Redis 已作为预留基础设施开通，但当前代码没有运行时消费者，因此不写入应用环境变量；待 session、缓存、队列或限流正式接入后再补充明确配置。
 - `OSS_REGION`、`OSS_BUCKET`、`OSS_ENDPOINT`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`：OSS 文件能力。AccessKey 后续应使用程序专用 RAM 用户。
 - `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL`：妙讯管家 AI 调用。
@@ -66,20 +67,22 @@ PolarDB 和 Redis 当前白名单只放行 ECS 私网 IP `172.25.210.107`。生�
 生产发布必须在明确的维护窗口内执行。域名审核期间可以继续使用临时 IP 测试策略，
 但数据库备份、安全开关和 readiness 不得降级。不要直接覆盖当前目录后立即重启。
 
-1. 确认 PolarDB 最近自动快照有效，并在变更前再创建或验证一个可恢复点。
+1. 确认最新 custom dump、SHA-256 和恢复演练有效，并在变更前再创建一个可恢复点。
 2. 备份当前应用目录和环境文件；把新代码、依赖和 `avatar-web/dist` 完整暂存好。
 3. 将常驻环境改为 `TRUST_PROXY_HOPS=1`、`CREATE_FIRST_USER_AS_ADMIN=false`、
    `ADMIN_EMAILS=`、`DEFAULT_ADMIN_ENABLED=false`，并清空默认管理员密码。
-4. 停止后端和媒体检索 worker，加载同一份生产环境，执行 `npm run db:migrate`。
-5. 启动新后端和独立 `marvels-chat-media-retrieval-worker`，依次验证 `/api/health`、`/api/ready`、worker 心跳、认证接口、OSS 媒体和 3D 模型读取。
-6. 任一关键检查失败时保持停写，停止新 worker，恢复 PolarDB 到变更前时间点并恢复旧应用目录；仅恢复旧代码
+4. 启动 `postgresql@18-main` 并确认本机连接正常，再停止后端和媒体检索 worker，加载同一份生产环境，执行 `npm run db:migrate`。
+5. 启动新后端、备份 timer 和独立 `marvels-chat-media-retrieval-worker`，依次验证 `/api/health`、`/api/ready`、worker 心跳、认证接口、OSS 媒体、3D 模型读取和一次手动备份。
+6. 任一关键检查失败时保持停写，停止新 worker，恢复变更前 custom dump 并恢复旧应用目录；仅恢复旧代码
    不能撤销数据迁移。
 
 当前 systemd 运行方式的检查命令：
 
 ```sh
 sudo systemctl status marvels-chat-backend --no-pager
+sudo systemctl status postgresql@18-main --no-pager
 sudo systemctl status marvels-chat-media-retrieval-worker --no-pager
+sudo systemctl status marvels-chat-database-backup.timer --no-pager
 sudo journalctl -u marvels-chat-backend -n 120 --no-pager
 sudo journalctl -u marvels-chat-media-retrieval-worker -n 120 --no-pager
 curl http://127.0.0.1:4390/api/health
@@ -100,6 +103,7 @@ HTTP/WebSocket 接入和 3D Job Runner，等待在途工作结束，再关闭数
 
 ```sh
 sudo systemctl stop marvels-chat-media-retrieval-worker marvels-chat-backend
+sudo systemctl start postgresql@18-main
 cd /opt/projects/marvels-chat/app/backend
 set -a
 . ../deploy/miaoxun-prod.env
@@ -107,6 +111,7 @@ set +a
 npm run db:migrate
 sudo systemctl start marvels-chat-backend
 sudo systemctl start marvels-chat-media-retrieval-worker
+sudo systemctl enable --now marvels-chat-database-backup.timer
 ```
 
 `/api/health` 只检查进程存活；`/api/ready` 还会核对数据库连接、迁移文件、迁移账本和

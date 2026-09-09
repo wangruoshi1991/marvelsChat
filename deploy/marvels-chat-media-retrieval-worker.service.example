@@ -1,6 +1,7 @@
 [Unit]
 Description=Miaoxun media retrieval worker
-After=network-online.target marvels-chat-backend.service
+Requires=postgresql@18-main.service
+After=network-online.target postgresql@18-main.service marvels-chat-backend.service
 Wants=network-online.target
 StartLimitIntervalSec=300
 StartLimitBurst=5

@@ -1,0 +1,14 @@
+[Unit]
+Description=Back up the Miaoxun PostgreSQL database
+Requires=postgresql@18-main.service
+After=postgresql@18-main.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/projects/marvels-chat/app/scripts/backup-production-database.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+NoNewPrivileges=true
