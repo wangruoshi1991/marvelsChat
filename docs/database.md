@@ -49,7 +49,8 @@ DATABASE_URL=postgres://miaoxun:<local-password>@127.0.0.1:5432/marvels_chat
 生产 ECS 使用 Ubuntu 官方包 PostgreSQL 18.6 和 pgvector 0.8.1，由
 [scripts/setup-production-database.sh](../scripts/setup-production-database.sh) 配置。数据库只监听
 `127.0.0.1:5432`，不得开放公网 5432，也不得把密码写入代码或文档。数据保存在系统 PostgreSQL
-数据目录，应用继续通过受限的 `deploy/miaoxun-prod.env` 提供明确的 `POSTGRES_*` 配置。
+数据目录；运行参数由 `deploy/miaoxun-postgresql.conf` 安装到 PostgreSQL 的 `conf.d`，应用继续
+通过受限的 `deploy/miaoxun-prod.env` 提供明确的 `POSTGRES_*` 配置。
 
 自建数据库不产生独立 PolarDB 实例费用，但故障处理、容量、补丁和备份由项目自行负责。
 生产备份每六小时执行一次，先验证 custom dump 的迁移账本和 vector 扩展，再写入 SHA-256，

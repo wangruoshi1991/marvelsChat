@@ -4,6 +4,7 @@ set -euo pipefail
 app_dir="${MIAOXUN_APP_DIR:-/opt/projects/marvels-chat/app}"
 env_file="$app_dir/deploy/miaoxun-prod.env"
 hba_file="$app_dir/deploy/miaoxun-postgresql.pg_hba.conf"
+settings_file="$app_dir/deploy/miaoxun-postgresql.conf"
 postgres_version="18"
 cluster_name="main"
 
@@ -11,7 +12,7 @@ if (( EUID != 0 )); then
   printf 'Run this command as root.\n' >&2
   exit 1
 fi
-for required_file in "$env_file" "$hba_file"; do
+for required_file in "$env_file" "$hba_file" "$settings_file"; do
   if [[ ! -f "$required_file" ]]; then
     printf 'Required database deployment file is missing: %s\n' "$required_file" >&2
     exit 1
@@ -45,13 +46,21 @@ apt-get install --yes \
   "postgresql-client-$postgres_version" \
   "postgresql-$postgres_version-pgvector"
 
-pg_conftool "$postgres_version" "$cluster_name" set listen_addresses "'127.0.0.1'"
-pg_conftool "$postgres_version" "$cluster_name" set port 5432
-pg_conftool "$postgres_version" "$cluster_name" set max_connections 100
-pg_conftool "$postgres_version" "$cluster_name" set shared_buffers 512MB
-pg_conftool "$postgres_version" "$cluster_name" set effective_cache_size 4GB
-pg_conftool "$postgres_version" "$cluster_name" set maintenance_work_mem 128MB
-pg_conftool "$postgres_version" "$cluster_name" set password_encryption scram-sha-256
+for setting in \
+  listen_addresses \
+  port \
+  max_connections \
+  shared_buffers \
+  effective_cache_size \
+  maintenance_work_mem \
+  password_encryption; do
+  pg_conftool "$postgres_version" "$cluster_name" remove "$setting"
+done
+install -d -o postgres -g postgres -m 0750 \
+  "/etc/postgresql/$postgres_version/$cluster_name/conf.d"
+install -o postgres -g postgres -m 0640 \
+  "$settings_file" \
+  "/etc/postgresql/$postgres_version/$cluster_name/conf.d/miaoxun.conf"
 install -o postgres -g postgres -m 0640 \
   "$hba_file" "/etc/postgresql/$postgres_version/$cluster_name/pg_hba.conf"
 
