@@ -8,17 +8,20 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const readRepoFile = (relativePath) => readFile(path.join(repoRoot, relativePath), "utf8");
 
 test("self-hosted production PostgreSQL is installed with pgvector and restricted to localhost", async () => {
-  const [setup, hba, productionEnv] = await Promise.all([
+  const [setup, settings, hba, productionEnv] = await Promise.all([
     readRepoFile("scripts/setup-production-database.sh"),
+    readRepoFile("deploy/miaoxun-postgresql.conf"),
     readRepoFile("deploy/miaoxun-postgresql.pg_hba.conf"),
     readRepoFile("deploy/miaoxun-prod.env.example"),
   ]);
 
   assert.match(setup, /postgres_version="18"/);
   assert.match(setup, /postgresql-\$postgres_version-pgvector/);
-  assert.match(setup, /set listen_addresses "'127\.0\.0\.1'"/);
-  assert.doesNotMatch(setup, /set listen_addresses 127\.0\.0\.1/);
-  assert.match(setup, /password_encryption scram-sha-256/);
+  assert.match(setup, /pg_conftool[\s\S]*remove "\$setting"/);
+  assert.match(setup, /conf\.d\/miaoxun\.conf/);
+  assert.doesNotMatch(setup, /set listen_addresses/);
+  assert.match(settings, /^listen_addresses = '127\.0\.0\.1'$/m);
+  assert.match(settings, /^password_encryption = 'scram-sha-256'$/m);
   assert.match(setup, /CREATE EXTENSION IF NOT EXISTS vector/);
   assert.doesNotMatch(setup, /docker|0\.0\.0\.0:5432/);
   assert.match(hba, /host\s+all\s+all\s+127\.0\.0\.1\/32\s+scram-sha-256/);
