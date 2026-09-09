@@ -16,7 +16,8 @@ test("self-hosted production PostgreSQL is installed with pgvector and restricte
 
   assert.match(setup, /postgres_version="18"/);
   assert.match(setup, /postgresql-\$postgres_version-pgvector/);
-  assert.match(setup, /listen_addresses 127\.0\.0\.1/);
+  assert.match(setup, /set listen_addresses "'127\.0\.0\.1'"/);
+  assert.doesNotMatch(setup, /set listen_addresses 127\.0\.0\.1/);
   assert.match(setup, /password_encryption scram-sha-256/);
   assert.match(setup, /CREATE EXTENSION IF NOT EXISTS vector/);
   assert.doesNotMatch(setup, /docker|0\.0\.0\.0:5432/);
