@@ -2,6 +2,8 @@
 Description=Miaoxun media retrieval worker
 After=network-online.target marvels-chat-backend.service
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -9,7 +11,7 @@ User=marvels
 WorkingDirectory=/opt/projects/marvels-chat/app/backend
 EnvironmentFile=/opt/projects/marvels-chat/app/deploy/miaoxun-prod.env
 ExecStart=/usr/bin/npm run worker:media-retrieval
-Restart=always
+Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=30s
 KillSignal=SIGTERM

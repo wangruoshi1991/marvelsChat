@@ -91,6 +91,11 @@ systemd 单元应与 [deploy/marvels-chat-backend.service.example](../deploy/mar
 HTTP/WebSocket 接入和 3D Job Runner，等待在途工作结束，再关闭数据库连接池；不要用 `SIGKILL`
 作为常规重启方式。Docker Compose 同样保留 90 秒停止窗口。
 
+媒体检索 worker 单元必须使用 `Restart=on-failure`、`StartLimitIntervalSec=300` 和
+`StartLimitBurst=5`；Compose 使用 `on-failure:5`。达到限制后检查结构化日志中的
+`errorCode`，修复数据库、DNS 或对象存储等明确依赖故障，再执行 `systemctl reset-failed`
+和手动启动。不得通过提高重启上限掩盖持续故障，日志也不得输出连接地址或凭据。
+
 在维护窗口中执行迁移时，必须加载 systemd 使用的同一份环境文件：
 
 ```sh
