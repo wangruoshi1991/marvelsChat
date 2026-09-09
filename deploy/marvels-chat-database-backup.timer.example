@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Miaoxun PostgreSQL backup every six hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:15:00
+RandomizedDelaySec=10m
+Persistent=true
+Unit=marvels-chat-database-backup.service
+
+[Install]
+WantedBy=timers.target

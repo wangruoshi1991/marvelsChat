@@ -16,7 +16,7 @@ docker run --name miaoxun-postgres \
   -e POSTGRES_PASSWORD=miaoxun_dev \
   -e POSTGRES_DB=marvels_chat \
   -p 5432:5432 \
-  -d postgres:16
+  -d pgvector/pgvector:0.8.1-pg14
 ```
 
 如果容器已经存在但未运行：
@@ -43,6 +43,23 @@ DATABASE_URL=postgres://miaoxun:<local-password>@127.0.0.1:5432/marvels_chat
 ```
 
 `DATABASE_URL` 存在时优先使用它，不再读取单独的 `POSTGRES_HOST`、`POSTGRES_USER` 等字段。
+
+## 生产自建数据库
+
+生产 ECS 使用 Ubuntu 官方包 PostgreSQL 18.6 和 pgvector 0.8.1，由
+[scripts/setup-production-database.sh](../scripts/setup-production-database.sh) 配置。数据库只监听
+`127.0.0.1:5432`，不得开放公网 5432，也不得把密码写入代码或文档。数据保存在系统 PostgreSQL
+数据目录，应用继续通过受限的 `deploy/miaoxun-prod.env` 提供明确的 `POSTGRES_*` 配置。
+
+自建数据库不产生独立 PolarDB 实例费用，但故障处理、容量、补丁和备份由项目自行负责。
+生产备份每六小时执行一次，先验证 custom dump 的迁移账本和 vector 扩展，再写入 SHA-256，
+默认保留 30 天。服务器本机备份不能抵御整台 ECS 或系统盘丢失；上线前仍应增加加密的
+异机备份或云盘快照，并完成定期恢复演练。
+
+恢复必须使用 `scripts/restore-production-database.sh <dump> <approved-sha256>`。脚本只接受
+PostgreSQL custom dump，在后端和 worker 均停止时才会重建目标数据库；它不会复制 PolarDB
+专有 `polar_catalog`，而是在本机预装 pgvector，并验证业务对象归应用账号所有。恢复完成后
+仍必须运行后端 `npm run db:migrate`，以迁移账本 checksum 和 `/api/ready` 为最终标准。
 
 ## 环境变量
 
