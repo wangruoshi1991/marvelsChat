@@ -45,7 +45,7 @@ apt-get install --yes \
   "postgresql-client-$postgres_version" \
   "postgresql-$postgres_version-pgvector"
 
-pg_conftool "$postgres_version" "$cluster_name" set listen_addresses 127.0.0.1
+pg_conftool "$postgres_version" "$cluster_name" set listen_addresses "'127.0.0.1'"
 pg_conftool "$postgres_version" "$cluster_name" set port 5432
 pg_conftool "$postgres_version" "$cluster_name" set max_connections 100
 pg_conftool "$postgres_version" "$cluster_name" set shared_buffers 512MB
