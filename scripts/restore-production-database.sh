@@ -57,7 +57,9 @@ fi
 
 dump_list="$(mktemp)"
 restore_list="$(mktemp)"
-trap 'rm -f "$dump_list" "$restore_list"' EXIT
+restore_input="$(mktemp)"
+trap 'rm -f "$dump_list" "$restore_list" "$restore_input"' EXIT
+install -o postgres -g postgres -m 0600 "$dump_path" "$restore_input"
 pg_restore --list "$dump_path" >"$dump_list"
 if ! grep -q 'TABLE DATA public schema_migrations' "$dump_list"; then
   printf 'Restore refused: schema_migrations data is missing.\n' >&2
@@ -77,6 +79,8 @@ awk '
   / COMMENT - EXTENSION vector / { print ";" $0; next }
   { print }
 ' "$dump_list" >"$restore_list"
+chown postgres:postgres "$restore_list"
+chmod 0600 "$restore_list"
 
 runuser -u postgres -- env \
   MIAOXUN_DB_USER="$POSTGRES_USER" \
@@ -102,28 +106,30 @@ runuser -u postgres -- pg_restore \
   --exit-on-error \
   --exclude-schema=polar_catalog \
   --use-list="$restore_list" \
-  "$dump_path"
+  "$restore_input"
 
-runuser -u postgres -- env \
+validation_result="$(runuser -u postgres -- env \
   MIAOXUN_DB_USER="$POSTGRES_USER" \
   psql --no-psqlrc --set=ON_ERROR_STOP=1 --tuples-only --no-align \
   --dbname="$POSTGRES_DATABASE" <<'SQL'
 \getenv app_user MIAOXUN_DB_USER
-SELECT CASE WHEN EXISTS (
-  SELECT 1
-  FROM pg_class AS relation
-  JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
-  JOIN pg_roles AS owner ON owner.oid = relation.relowner
-  WHERE namespace.nspname = 'public'
-    AND relation.relkind IN ('r', 'p', 'S', 'v', 'm')
-    AND owner.rolname <> :'app_user'
-) THEN 1 / 0 ELSE 1 END;
-SELECT CASE WHEN EXISTS (
-  SELECT 1 FROM pg_extension WHERE extname = 'vector'
-) THEN 1 ELSE 1 / 0 END;
-SELECT CASE WHEN EXISTS (
-  SELECT 1 FROM schema_migrations
-) THEN 1 ELSE 1 / 0 END;
+SELECT
+  (
+    SELECT count(*)
+    FROM pg_class AS relation
+    JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+    JOIN pg_roles AS owner ON owner.oid = relation.relowner
+    WHERE namespace.nspname = 'public'
+      AND relation.relkind IN ('r', 'p', 'S', 'v', 'm')
+      AND owner.rolname <> :'app_user'
+  ),
+  EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector'),
+  EXISTS (SELECT 1 FROM schema_migrations);
 SQL
+)"
+if [[ "$validation_result" != "0|t|t" ]]; then
+  printf 'Database restore structural validation failed.\n' >&2
+  exit 1
+fi
 
 printf 'Miaoxun database restore completed and passed structural checks.\n'
