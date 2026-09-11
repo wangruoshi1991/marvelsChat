@@ -122,7 +122,10 @@ test("production release hardening leaves only the explicit data directory writa
 });
 
 test("offsite recovery verifies, decrypts, and validates before publishing a dump", async () => {
-  const script = await readRepoFile("scripts/decrypt-production-database-backup.sh");
+  const [script, gitignore] = await Promise.all([
+    readRepoFile("scripts/decrypt-production-database-backup.sh"),
+    readRepoFile(".gitignore"),
+  ]);
 
   assert.match(script, /verify-offsite-database-backup\.mjs/);
   assert.match(script, /openssl cms -decrypt/);
@@ -133,6 +136,16 @@ test("offsite recovery verifies, decrypts, and validates before publishing a dum
   assert.match(script, /EXTENSION - vector/);
   assert.match(script, /Refusing to overwrite/);
   assert.doesNotMatch(script, /rm -rf|--clean|DROP DATABASE/);
+  for (const recoveryArtifact of [
+    "*.pem",
+    "*.key",
+    "*.dump",
+    "*.dump.sha256",
+    "*.dump.cms",
+    "*.dump.cms.manifest.json",
+  ]) {
+    assert.match(gitignore, new RegExp(`^${recoveryArtifact.replaceAll(".", "\\.").replaceAll("*", "\\*")}$`, "m"));
+  }
 });
 
 test("production restore requires downtime and an approved dump checksum", async () => {

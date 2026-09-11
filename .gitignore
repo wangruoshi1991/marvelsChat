@@ -11,6 +11,12 @@ dist/
 *.keystore
 *.mobileprovision
 *.p12
+*.pem
+*.key
+*.dump
+*.dump.sha256
+*.dump.cms
+*.dump.cms.manifest.json
 *.xcarchive/
 .local-backups/
 .playwright-cli/
