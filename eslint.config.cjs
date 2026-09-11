@@ -79,4 +79,29 @@ module.exports = [
       },
     },
   },
+  {
+    files: ["media-retrieval-web/src/**/*.js"],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...webApiGlobals,
+        __MIAOXUN_MEDIA_RETRIEVAL_API_TARGET__: "readonly",
+      },
+    },
+  },
+  {
+    files: ["media-retrieval-web/vite.config.js"],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
+    files: ["media-retrieval-web/test/**/*.js"],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...webApiGlobals,
+      },
+    },
+  },
 ];

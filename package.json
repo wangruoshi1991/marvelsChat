@@ -4,7 +4,7 @@
   "private": true,
   "description": "Shared quality tooling for the Miaoxun repository.",
   "scripts": {
-    "lint": "eslint \"backend/src/**/*.js\" \"backend/scripts/**/*.js\" \"backend/test/**/*.js\" \"agents/*.js\" \"agents/test/**/*.js\" \"admin/*.js\" \"admin/test/**/*.js\""
+    "lint": "eslint \"backend/src/**/*.js\" \"backend/scripts/**/*.js\" \"backend/test/**/*.js\" \"agents/*.js\" \"agents/test/**/*.js\" \"admin/*.js\" \"admin/test/**/*.js\" \"shared/*.js\" \"media-retrieval-web/src/**/*.js\" \"media-retrieval-web/test/**/*.js\" \"media-retrieval-web/vite.config.js\""
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

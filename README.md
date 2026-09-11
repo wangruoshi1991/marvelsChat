@@ -89,11 +89,13 @@ http://127.0.0.1:4390/api/health
 http://127.0.0.1:4390/api/ready
 ```
 
-`MiaoxunRN` iOS API 地址来自 Xcode build setting，并通过 `MiaoxunConfigModule` 暴露给 JS。当前 Debug 指向本机后端，Release 在域名审批完成前临时指向 ECS HTTP origin；正式上线目标为：
+`MiaoxunRN` iOS API 地址来自 Xcode build setting，并通过 `MiaoxunConfigModule` 暴露给 JS。当前 Debug 指向本机后端，Release 使用 ECS 的受信任 IP HTTPS origin：
 
 ```text
-MIAOXUN_API_BASE_URL=https://api.marvelschat.com
+MIAOXUN_API_BASE_URL=https://8.153.167.11
 ```
+
+正式发布要求是公网 HTTPS、有效证书和稳定 API，不强制使用域名。域名审核完成后可把 origin 切换为 `https://api.marvelschat.com`，数据库和业务路径不需要迁移。
 
 需要本地后端调试时，必须显式新建或修改 Debug 配置为 Mac 局域网 IP 或本机测试后端地址；不能让同一次扫码联调里一端连本地、一端连线上。
 

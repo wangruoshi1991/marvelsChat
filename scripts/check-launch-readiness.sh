@@ -8,7 +8,8 @@ CONSOLE_DOMAIN="${CONSOLE_DOMAIN:-console.marvelschat.com}"
 EXPECTED_IP="${EXPECTED_IP:-8.153.167.11}"
 REMOTE_HOST="${REMOTE_HOST:-marvels-chat}"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TEMP_IP_TESTFLIGHT="${MIAOXUN_TEMP_IP_TESTFLIGHT:-0}"
+API_ORIGIN="${MIAOXUN_RELEASE_API_ORIGIN:-https://${EXPECTED_IP}}"
+CONSOLE_ORIGIN="${MIAOXUN_CONSOLE_ORIGIN:-https://${EXPECTED_IP}}"
 
 failures=0
 warnings=0
@@ -27,14 +28,6 @@ fail() {
   printf 'FAIL %s\n' "$1"
 }
 
-domain_issue() {
-  if [ "$TEMP_IP_TESTFLIGHT" = "1" ]; then
-    warn "$1"
-  else
-    fail "$1"
-  fi
-}
-
 has_command() {
   command -v "$1" >/dev/null 2>&1
 }
@@ -46,31 +39,26 @@ check_domain_equals() {
   if [ "$actual" = "$expected" ]; then
     pass "$label = $expected"
   else
-    domain_issue "$label expected $expected, got ${actual:-<empty>}"
+    warn "$label expected $expected, got ${actual:-<empty>}"
   fi
 }
 
-case "$TEMP_IP_TESTFLIGHT" in
-  0)
-    release_profile="production"
-    expected_cors_origin="https://${CONSOLE_DOMAIN}"
-    ;;
-  1)
-    release_profile="temporary-ip-testflight"
-    expected_cors_origin="http://${EXPECTED_IP}"
-    ;;
-  *)
-    printf 'FAIL MIAOXUN_TEMP_IP_TESTFLIGHT must be 0 or 1.\n' >&2
+for origin in "$API_ORIGIN" "$CONSOLE_ORIGIN"; do
+  if ! printf '%s' "$origin" | grep -Eq '^https://[^/?#]+/?$'; then
+    printf 'FAIL release origins must be HTTPS origins without paths: %s\n' "$origin" >&2
     exit 2
-    ;;
-esac
+  fi
+done
+
+release_profile="production-https"
+expected_cors_origin="$CONSOLE_ORIGIN"
 
 printf 'Launch readiness for %s (%s)\n\n' "$DOMAIN" "$release_profile"
 
 if has_command curl; then
   rdap_status="$(curl -sS --max-time 15 "https://rdap.verisign.com/com/v1/domain/${DOMAIN}" || true)"
   if printf '%s' "$rdap_status" | grep -qi '"client hold"'; then
-    domain_issue "$DOMAIN is clientHold; complete real-name verification before production release."
+    warn "$DOMAIN is clientHold; the current release uses $API_ORIGIN instead."
   elif printf '%s' "$rdap_status" | grep -qi '"ldhName"'; then
     pass "$DOMAIN RDAP lookup has no clientHold."
   else
@@ -103,10 +91,10 @@ else
 fi
 
 if has_command curl; then
-  if curl -fsS --max-time 10 "https://${API_DOMAIN}/api/health" >/dev/null 2>&1; then
-    pass "HTTPS API health is reachable."
+  if curl -fsS --max-time 10 "${API_ORIGIN%/}/api/health" >/dev/null 2>&1; then
+    pass "HTTPS API health is reachable at $API_ORIGIN."
   else
-    domain_issue "HTTPS API health is not reachable at https://${API_DOMAIN}/api/health."
+    fail "HTTPS API health is not reachable at ${API_ORIGIN%/}/api/health."
   fi
 fi
 
@@ -127,6 +115,22 @@ if has_command ssh; then
       fail "server /api/ready is not deployed."
     else
       fail "server backend readiness returned HTTP ${readiness_status:-<empty>}; verify PostgreSQL and schema migrations."
+    fi
+
+    certificate_state="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$REMOTE_HOST" "
+      if systemctl is-active --quiet miaoxun-ip-cert-renew.timer &&
+        systemctl is-enabled --quiet miaoxun-ip-cert-renew.timer &&
+        openssl x509 -checkend 172800 -noout -in /etc/letsencrypt/live/${EXPECTED_IP}/fullchain.pem >/dev/null 2>&1 &&
+        openssl x509 -noout -ext subjectAltName -in /etc/letsencrypt/live/${EXPECTED_IP}/fullchain.pem 2>/dev/null | grep -Fq 'IP Address:${EXPECTED_IP}'; then
+        printf ready
+      else
+        printf invalid
+      fi
+    " 2>/dev/null || true)"
+    if [ "$certificate_state" = "ready" ]; then
+      pass "server IP certificate covers $EXPECTED_IP, remains valid for 48 hours, and has an active renewal timer."
+    else
+      fail "server IP certificate or miaoxun-ip-cert-renew.timer is not release-ready."
     fi
 
     production_state="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$REMOTE_HOST" "awk -F= '/^NODE_ENV=|^TRUST_PROXY_HOPS=|^CORS_ORIGIN=|^CREATE_FIRST_USER_AS_ADMIN=|^ADMIN_EMAILS=|^DEFAULT_ADMIN_ENABLED=/ {value=substr(\$0,index(\$0,\"=\")+1); gsub(/^[[:space:]\"]+|[[:space:]\"]+$/, \"\", value); print \$1 \"=\" (length(value)>0 ? value : \"empty\")}' /opt/projects/marvels-chat/app/deploy/miaoxun-prod.env" 2>/dev/null || true)"
@@ -192,24 +196,13 @@ if has_command plutil && [ -f "$ios_plist" ]; then
   fi
 fi
 
-ats_exception="$(/usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity:NSExceptionDomains:${EXPECTED_IP}:NSExceptionAllowsInsecureHTTPLoads" "$ios_plist" 2>/dev/null || true)"
 ats_arbitrary="$(/usr/libexec/PlistBuddy -c 'Print :NSAppTransportSecurity:NSAllowsArbitraryLoads' "$ios_plist" 2>/dev/null || true)"
-if [ "$TEMP_IP_TESTFLIGHT" = "1" ]; then
-  if [ "$ats_exception" = "true" ]; then
-    pass "iOS ATS exception is limited to temporary IP $EXPECTED_IP."
-  else
-    fail "temporary IP TestFlight requires the exact $EXPECTED_IP ATS exception."
-  fi
-  if [ "$ats_arbitrary" = "false" ]; then
-    pass "iOS arbitrary HTTP loads remain disabled."
-  else
-    fail "iOS NSAllowsArbitraryLoads must remain false."
-  fi
-elif grep -q 'NSExceptionDomains' "$ios_plist" 2>/dev/null ||
-  grep -q "$EXPECTED_IP" "$ios_plist" 2>/dev/null; then
+if [ "$ats_arbitrary" != "false" ]; then
+  fail "iOS NSAllowsArbitraryLoads must remain false."
+elif grep -q 'NSExceptionDomains' "$ios_plist" 2>/dev/null; then
   fail "iOS Info.plist still contains HTTP ATS exception settings."
 else
-  pass "iOS Info.plist has no public HTTP ATS exception."
+  pass "iOS ATS allows no arbitrary or exception-domain HTTP loads."
 fi
 
 if has_command xcodebuild && [ -d "$ios_project" ]; then
@@ -218,18 +211,10 @@ if has_command xcodebuild && [ -d "$ios_project" ]; then
       xcodebuild -showBuildSettings -project ios/MiaoxunRN.xcodeproj -scheme MiaoxunRN -configuration Release 2>/dev/null
   )"
   release_api="$(printf '%s\n' "$release_settings" | awk -F= '/MIAOXUN_API_BASE_URL/ {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}')"
-  release_temp_flag="$(printf '%s\n' "$release_settings" | awk -F= '/MIAOXUN_TEMP_IP_TESTFLIGHT/ {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}')"
-  if [ "$TEMP_IP_TESTFLIGHT" = "1" ] &&
-    [ "$release_api" = "http://${EXPECTED_IP}" ] &&
-    [ "$release_temp_flag" = "1" ]; then
-    pass "iOS Release is explicitly configured for temporary IP TestFlight."
-  elif [ "$TEMP_IP_TESTFLIGHT" = "1" ]; then
-    fail "temporary IP TestFlight requires MIAOXUN_API_BASE_URL=http://${EXPECTED_IP} and MIAOXUN_TEMP_IP_TESTFLIGHT=1."
-  elif printf '%s' "$release_api" | grep -Eq '^https://[^/?#]+/?$' &&
-    [ "$release_temp_flag" != "1" ]; then
+  if [ "$release_api" = "$API_ORIGIN" ]; then
     pass "iOS Release API base URL is $release_api."
   else
-    fail "iOS production Release must use an HTTPS origin and disable the temporary IP flag: ${release_api:-<empty>}."
+    fail "iOS Release must use $API_ORIGIN; got ${release_api:-<empty>}."
   fi
 else
   warn "xcodebuild is unavailable; skipped iOS Release build setting check."
