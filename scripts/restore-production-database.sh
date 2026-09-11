@@ -23,6 +23,12 @@ if [[ ! -f "$env_file" ]]; then
   printf 'Production environment file is missing: %s\n' "$env_file" >&2
   exit 1
 fi
+env_owner="$(stat -c '%u' "$env_file")"
+env_mode="$(stat -c '%a' "$env_file")"
+if [[ "$env_owner" != "0" ]] || (( (8#$env_mode & 022) != 0 )); then
+  printf 'Root database restore refuses a writable production environment file.\n' >&2
+  exit 1
+fi
 for service in marvels-chat-backend marvels-chat-media-retrieval-worker; do
   if systemctl is-active --quiet "$service"; then
     printf '%s must be stopped before a database restore.\n' "$service" >&2

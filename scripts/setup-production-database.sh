@@ -17,6 +17,12 @@ for required_file in "$env_file" "$hba_file" "$settings_file"; do
     printf 'Required database deployment file is missing: %s\n' "$required_file" >&2
     exit 1
   fi
+  file_owner="$(stat -c '%u' "$required_file")"
+  file_mode="$(stat -c '%a' "$required_file")"
+  if [[ "$file_owner" != "0" ]] || (( (8#$file_mode & 022) != 0 )); then
+    printf 'Root database setup refuses a writable deployment file: %s\n' "$required_file" >&2
+    exit 1
+  fi
 done
 
 set -a

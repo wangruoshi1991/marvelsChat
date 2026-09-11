@@ -17,6 +17,9 @@ run_in() {
 
 git -C "$root_dir" diff --check
 
+printf '\n==> repository: Bash syntax\n'
+bash -n "$root_dir"/scripts/*.sh
+
 printf '\n==> repository: npm run lint\n'
 npm --prefix "$root_dir" run lint
 

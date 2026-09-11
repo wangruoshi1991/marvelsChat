@@ -8,7 +8,9 @@ TestFlight 只负责把 iOS App 分发给测试用户；登录、聊天、扫码
 systemd 服务 `marvels-chat-backend` 直接运行 Node.js，数据库改为 ECS 本机 PostgreSQL，
 缓存和文件分别使用 Tair / Redis 和 OSS。2026-08-04 只读核查时，线上 Node.js 为
 `v22.22.1`，服务工作目录为 `/opt/projects/marvels-chat/app/backend`，环境文件为
-`/opt/projects/marvels-chat/app/deploy/miaoxun-prod.env`，服务用户为 `marvels`。
+`/opt/projects/marvels-chat/app/deploy/miaoxun-prod.env`，服务用户为 `marvels`。当前 release 的
+代码和环境文件必须由 root 管理并对 `marvels` 只读；唯一允许应用用户写入的 release 子目录是
+明确的数据目录 `backend/storage`。root 级 systemd 任务不得执行 `marvels` 可写的脚本。
 
 仓库仍保留 `backend/Dockerfile` 和 `deploy/docker-compose.prod.yml`，CI 会构建镜像以
 验证容器化产物，但当前生产进程不是 Docker 容器。切换运行方式必须作为独立运维变更，
@@ -68,11 +70,13 @@ PostgreSQL 只监听 ECS 回环地址，不开放安全组或公网端口。Redi
 
 1. 确认最新 custom dump、SHA-256 和恢复演练有效，并在变更前再创建一个可恢复点。
 2. 备份当前应用目录和环境文件；把新代码、依赖和 `avatar-web/dist` 完整暂存好。
-3. 将常驻环境改为 `TRUST_PROXY_HOPS=1`、`CREATE_FIRST_USER_AS_ADMIN=false`、
+3. 切换 `app` symlink 后先运行 `sudo scripts/harden-production-release.sh`，确认代码为 root 只读、
+   环境文件为 `root:marvels 0640`，且只有 `backend/storage` 由应用用户写入。
+4. 将常驻环境改为 `TRUST_PROXY_HOPS=1`、`CREATE_FIRST_USER_AS_ADMIN=false`、
    `ADMIN_EMAILS=`、`DEFAULT_ADMIN_ENABLED=false`，并清空默认管理员密码。
-4. 启动 `postgresql@18-main` 并确认本机连接正常，再停止后端和媒体检索 worker，加载同一份生产环境，执行 `npm run db:migrate`。
-5. 启动新后端、备份 timer 和独立 `marvels-chat-media-retrieval-worker`，依次验证 `/api/health`、`/api/ready`、worker 心跳、认证接口、OSS 媒体、3D 模型读取和一次手动备份。
-6. 任一关键检查失败时保持停写，停止新 worker，恢复变更前 custom dump 并恢复旧应用目录；仅恢复旧代码
+5. 启动 `postgresql@18-main` 并确认本机连接正常，再停止后端和媒体检索 worker，加载同一份生产环境，执行 `npm run db:migrate`。
+6. 启动新后端、备份 timer 和独立 `marvels-chat-media-retrieval-worker`，依次验证 `/api/health`、`/api/ready`、worker 心跳、认证接口、OSS 媒体、3D 模型读取和一次手动备份。
+7. 任一关键检查失败时保持停写，停止新 worker，恢复变更前 custom dump 并恢复旧应用目录；仅恢复旧代码
    不能撤销数据迁移。
 
 当前 systemd 运行方式的检查命令：
@@ -87,6 +91,10 @@ sudo journalctl -u marvels-chat-media-retrieval-worker -n 120 --no-pager
 curl http://127.0.0.1:4390/api/health
 curl --fail http://127.0.0.1:4390/api/ready
 ```
+
+数据库备份 timer 必须同时具备 `/etc/marvels-chat/database-backup.env`、服务器公钥证书和
+独立私有 OSS Bucket。它不复用业务 OSS 凭据；配置、部署、远端保留与恢复演练按
+[生产数据库备份与恢复](database-backup.md) 执行。
 
 systemd 单元应与 [deploy/marvels-chat-backend.service.example](../deploy/marvels-chat-backend.service.example)
 保持一致，尤其是 `KillSignal=SIGTERM` 和 `TimeoutStopSec=90s`。后端收到终止信号后会先停止
@@ -452,4 +460,11 @@ Navicat 只允许通过 SSH 隧道查看生产库：SSH 连接 ECS 的 `22` 端�
 
 本轮验证通过全仓格式、ESLint、类型检查、453 项测试（另有 1 项显式 opt-in 数据库集成测试）、所有前端生产构建，以及 Avatar Web 在 desktop、iPhone SE 和 iPhone Pro Max 配置下的 21 项 Playwright 测试。此次改动不涉及后端运行时代码、数据库迁移或生产部署。
 
-同日只读生产复核确认当前 release 为 `042c023`，后端、PostgreSQL、媒体检索 worker 和 Nginx 均运行且未发生服务重启；`/api/health`、`/api/ready`、001-029 迁移账本、worker 心跳、最新数据库备份校验和近 48 小时错误日志均正常。数据库 dump 仍与 PostgreSQL 位于同一 ECS 系统盘，正式上线前必须另行配置加密异机备份或云盘快照并完成恢复演练。
+同日只读生产复核确认当前 release 为 `042c023`，后端、PostgreSQL、媒体检索 worker 和 Nginx 均运行且未发生服务重启；`/api/health`、`/api/ready`、001-029 迁移账本、worker 心跳、最新数据库备份校验和近 48 小时错误日志均正常。数据库 dump 仍与 PostgreSQL 位于同一 ECS 系统盘。仓库随后补齐了加密 OSS 异地备份实现与恢复手册，但专用 Bucket、RAM 身份、离线私钥和生产恢复演练必须在实际配置并验证后才能标记为完成。
+
+同日进一步发现旧备份 timer 以 root 执行 release 中由 `marvels` 管理的脚本，形成不必要的
+提权边界。当前 release 已在不重启服务的情况下改为代码 `root:root` 只读、生产环境文件
+`root:marvels 0640`，仅 `backend/storage` 保持 `marvels` 可写；后端、worker、PostgreSQL、timer、
+`/api/health` 和 `/api/ready` 随后均验证正常。仓库的新备份单元进一步改用独立
+`marvels-backup` 用户和 root 管理的 `/usr/local/libexec/marvels-chat`，但在专用 OSS 与恢复密钥
+准备完成前尚未替换线上 timer。

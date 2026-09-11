@@ -54,8 +54,9 @@ DATABASE_URL=postgres://miaoxun:<local-password>@127.0.0.1:5432/marvels_chat
 
 自建数据库不产生独立 PolarDB 实例费用，但故障处理、容量、补丁和备份由项目自行负责。
 生产备份每六小时执行一次，先验证 custom dump 的迁移账本和 vector 扩展，再写入 SHA-256，
-默认保留 30 天。服务器本机备份不能抵御整台 ECS 或系统盘丢失；上线前仍应增加加密的
-异机备份或云盘快照，并完成定期恢复演练。
+默认在 ECS 保留 30 天。上线配置还要求使用离线公钥执行 CMS/AES-256-GCM 加密，并把密文与
+manifest 上传到独立私有 OSS Bucket；完整配置、最小权限和恢复演练流程见
+[生产数据库备份与恢复](database-backup.md)。
 
 恢复必须使用 `scripts/restore-production-database.sh <dump> <approved-sha256>`。脚本只接受
 PostgreSQL custom dump，在后端和 worker 均停止时才会重建目标数据库；它不会复制 PolarDB

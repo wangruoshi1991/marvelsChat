@@ -1,14 +1,34 @@
 [Unit]
 Description=Back up the Miaoxun PostgreSQL database
 Requires=postgresql@18-main.service
-After=postgresql@18-main.service
+Wants=network-online.target
+After=postgresql@18-main.service network-online.target
 
 [Service]
 Type=oneshot
-User=root
-ExecStart=/opt/projects/marvels-chat/app/scripts/backup-production-database.sh
+User=marvels-backup
+Group=marvels-backup
+EnvironmentFile=/etc/marvels-chat/database-backup.env
+ExecStart=/usr/local/libexec/marvels-chat/backup-production-database.sh
+TimeoutStartSec=30min
+UMask=0077
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 PrivateTmp=true
+PrivateDevices=true
+RuntimeDirectory=marvels-chat-database-backup
+RuntimeDirectoryMode=0700
 NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+ReadWritePaths=/opt/projects/marvels-chat/database/backups

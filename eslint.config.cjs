@@ -26,7 +26,7 @@ module.exports = [
   },
   js.configs.recommended,
   {
-    files: ["**/*.js"],
+    files: ["**/*.js", "scripts/**/*.mjs"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
@@ -47,7 +47,7 @@ module.exports = [
     },
   },
   {
-    files: ["backend/**/*.js", "agents/**/*.js", "scripts/**/*.js"],
+    files: ["backend/**/*.js", "agents/**/*.js", "scripts/**/*.js", "scripts/**/*.mjs"],
     languageOptions: {
       globals: {
         ...globals.node,
