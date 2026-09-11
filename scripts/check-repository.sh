@@ -42,6 +42,10 @@ cmp \
   "$viewer_output_dir/avatar-viewer.html" \
   "$root_dir/MiaoxunRN/src/assets/avatar-viewer/avatar-viewer.html"
 
+run_in media-retrieval-web npm run check
+run_in media-retrieval-web npm test
+run_in media-retrieval-web npm run build
+
 run_in MiaoxunRN npm run format:check
 run_in MiaoxunRN npm run lint -- --max-warnings=0
 run_in MiaoxunRN npm run typecheck

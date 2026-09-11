@@ -58,8 +58,8 @@ iOS Release: https://8.153.167.11
 | 语音转文字输入 | 已接入 iOS / Android 系统语音识别 | 识别结果只回填输入框，由用户确认发送；真机验证权限和识别可用性 |
 | 关注 / 好友申请 / 通知 | 已接入关注、申请、通过、拒绝、取消和通知闭环 | 操作中、成功、失败状态完整 |
 | 小站基础资料 | 已接入 profile | 修改资料必须走后端保存 |
-| 后端部署 | 已部署 ECS + PolarDB | 当前临时 HTTP 可测试，正式上线必须补 HTTPS、健康检查、日志和数据库迁移稳定性 |
-| iOS TestFlight | 已具备历史上传基础 | 当前源码临时使用 ECS 公网 IP；正式包必须使用 HTTPS API |
+| 后端部署 | 已部署 ECS + 本机 PostgreSQL 18 | 保持 IP HTTPS、健康与 readiness、日志、迁移账本、worker 和备份任务稳定 |
+| iOS TestFlight | 已具备历史上传基础 | Release 使用证书覆盖的固定公网 IP HTTPS；上传前必须递增 build 并完成真机回归 |
 | Android 基础构建 | 工程存在 Android 目录 | 上线前补签名、权限、真机回归 |
 
 ### 上线可选

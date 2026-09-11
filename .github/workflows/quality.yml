@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   quality:
-    name: Five-project quality gate
+    name: Repository quality gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -32,6 +32,7 @@ jobs:
             admin/package-lock.json
             agents/package-lock.json
             avatar-web/package-lock.json
+            media-retrieval-web/package-lock.json
 
       - name: Install repository quality dependencies
         run: npm ci
@@ -55,6 +56,10 @@ jobs:
       - name: Install avatar Web dependencies
         run: npm ci
         working-directory: avatar-web
+
+      - name: Install media retrieval Web dependencies
+        run: npm ci
+        working-directory: media-retrieval-web
 
       - name: Run repository checks
         run: ./scripts/check-repository.sh

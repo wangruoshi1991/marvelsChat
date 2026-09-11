@@ -445,3 +445,11 @@ App Store Connect 的 Build 41 与 Build 42 真机报告均显示 `RCTExceptions
 IP HTTPS 证书使用 Let's Encrypt short-lived profile，自定义 `miaoxun-ip-cert-renew.timer` 每日两次检查并在续期后 reload Nginx。系统自带 `certbot.timer` 不具备该 IP 证书运行环境，不能与自定义任务并行启用。发布检查以当前 HTTPS origin 为硬门槛，域名 `clientHold` 只记录 warning。
 
 Navicat 只允许通过 SSH 隧道查看生产库：SSH 连接 ECS 的 `22` 端口，数据库端填写 `127.0.0.1:5432`、数据库 `marvels_chat`、角色 `pize`。该角色默认只读、最多 3 个连接，并限制长查询；密码和 SSH 私钥不得写入仓库或共享文档。应用服务继续使用独立的 `marvels_chat` 数据库角色，不复用人工查看账号。
+
+## 2026-09-11 仓库质量门禁补齐
+
+`media-retrieval-web` 已纳入根 ESLint、`scripts/check-repository.sh` 和 GitHub Actions，CI 会安装其锁定依赖并执行语法检查、测试和生产构建。`avatar-web` 的 Vitest 已从 `4.1.10` 升级到修复安全公告的 `4.1.11`；完整依赖审计不再报告漏洞。
+
+本轮验证通过全仓格式、ESLint、类型检查、453 项测试（另有 1 项显式 opt-in 数据库集成测试）、所有前端生产构建，以及 Avatar Web 在 desktop、iPhone SE 和 iPhone Pro Max 配置下的 21 项 Playwright 测试。此次改动不涉及后端运行时代码、数据库迁移或生产部署。
+
+同日只读生产复核确认当前 release 为 `042c023`，后端、PostgreSQL、媒体检索 worker 和 Nginx 均运行且未发生服务重启；`/api/health`、`/api/ready`、001-029 迁移账本、worker 心跳、最新数据库备份校验和近 48 小时错误日志均正常。数据库 dump 仍与 PostgreSQL 位于同一 ECS 系统盘，正式上线前必须另行配置加密异机备份或云盘快照并完成恢复演练。
