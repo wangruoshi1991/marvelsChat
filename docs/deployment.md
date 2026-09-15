@@ -490,3 +490,11 @@ AccessKey CSV 和 ECS 部署暂存文件已在验证后精确删除。
 systemd 任务以新账号和新路径再次完成异地备份，timer 为 enabled/active 且无待 reload 配置。
 PostgreSQL、后端、媒体检索 worker、Nginx、本机 `/api/ready` 和公网 HTTPS `/api/health` 均在
 切换后验证正常。
+
+## 2026-09-15 GitHub Android SDK 初始化修复
+
+Repository Quality 运行 `34931311492` 的 Android 任务在 `Set up Android SDK` 步骤失败，
+日志为 `Warning: Failed to find package 'tools'`。`android-actions/setup-android@v3` 默认安装
+`tools platform-tools`，但远端 SDK 仓库已无法提供旧的 `tools` 包；此次任务尚未进入 App 编译。
+工作流现显式设置 `packages: platform-tools`，后续仍安装项目指定的 Android 36、Build Tools
+36.0.0 和 NDK 27.1.12297006，并执行原有 `assembleDebug`。其余质量检查与失败退出规则保持开启。
