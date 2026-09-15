@@ -12,11 +12,13 @@ service_group="marvels-backup"
 program_dir="/usr/local/libexec/marvels-chat"
 config_dir="/etc/marvels-chat"
 backup_dir="/opt/projects/marvels-chat/database/backups"
+database_dir="$(dirname -- "$backup_dir")"
 environment_file="$config_dir/database-backup.env"
 recipient_certificate="$config_dir/database-backup-recipient.pem"
 
 for required_file in \
   "$repo_dir/scripts/backup-production-database.sh" \
+  "$repo_dir/scripts/download-production-database-backup.mjs" \
   "$repo_dir/scripts/upload-production-database-backup.mjs" \
   "$repo_dir/deploy/marvels-chat-database-backup.service.example" \
   "$repo_dir/deploy/marvels-chat-database-backup.timer.example" \
@@ -30,6 +32,7 @@ done
 for managed_path in \
   "$program_dir" \
   "$config_dir" \
+  "$database_dir" \
   "$backup_dir" \
   "$environment_file" \
   "$recipient_certificate" \
@@ -118,8 +121,12 @@ install -o root -g root -m 0755 \
   "$repo_dir/scripts/backup-production-database.sh" \
   "$program_dir/backup-production-database.sh"
 install -o root -g root -m 0755 \
+  "$repo_dir/scripts/download-production-database-backup.mjs" \
+  "$program_dir/download-production-database-backup.mjs"
+install -o root -g root -m 0755 \
   "$repo_dir/scripts/upload-production-database-backup.mjs" \
   "$program_dir/upload-production-database-backup.mjs"
+install -d -o root -g "$service_group" -m 0710 "$database_dir"
 install -d -o "$service_user" -g "$service_group" -m 0700 "$backup_dir"
 find "$backup_dir" -maxdepth 1 -type f \
   \( -name 'marvels_chat-*.dump' -o -name 'marvels_chat-*.dump.sha256' \) \
@@ -133,5 +140,4 @@ install -o root -g root -m 0644 \
   "$repo_dir/deploy/marvels-chat-database-backup.timer.example" \
   /etc/systemd/system/marvels-chat-database-backup.timer
 
-systemctl daemon-reload
-printf 'Miaoxun database backup programs and units installed; timer state was not changed.\n'
+printf 'Miaoxun database backup programs and units installed; systemd was not reloaded and timer state was not changed.\n'

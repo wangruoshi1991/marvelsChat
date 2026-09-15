@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 5 ]]; then
-  printf 'Usage: %s <archive.cms> <manifest.json> <recipient-cert.pem> <private-key.pem> <output.dump>\n' "$0" >&2
+if [[ $# -ne 6 ]]; then
+  printf 'Usage: %s <archive.cms> <manifest.json> <recipient-cert.pem> <private-key.pem> <private-key-passphrase-file> <output.dump>\n' "$0" >&2
   exit 2
 fi
 
@@ -10,7 +10,8 @@ archive_path="$1"
 manifest_path="$2"
 recipient_certificate="$3"
 private_key="$4"
-output_path="$5"
+private_key_passphrase_file="$5"
+output_path="$6"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 for required_file in "$archive_path" "$manifest_path" "$recipient_certificate" "$private_key"; do
@@ -19,29 +20,35 @@ for required_file in "$archive_path" "$manifest_path" "$recipient_certificate" "
     exit 1
   fi
 done
+if [[ ! -s "$private_key_passphrase_file" ]]; then
+  printf 'The private key passphrase file must be a non-empty regular file.\n' >&2
+  exit 1
+fi
 if [[ -e "$output_path" ]]; then
   printf 'Refusing to overwrite the recovery output: %s\n' "$output_path" >&2
   exit 1
 fi
-for command_name in node openssl pg_restore; do
+for command_name in node openssl pg_restore sha256sum awk grep mktemp mv; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     printf 'Required recovery command is unavailable: %s\n' "$command_name" >&2
     exit 1
   fi
 done
-private_key_permissions="$(
-  node -e '
-    const fs = require("node:fs");
-    const stats = fs.statSync(process.argv[1]);
-    process.stdout.write(`${stats.uid} ${stats.mode & 0o777}`);
-  ' "$private_key"
-)"
-private_key_owner="${private_key_permissions%% *}"
-private_key_mode="${private_key_permissions##* }"
-if [[ "$private_key_owner" != "$EUID" ]] || (( (private_key_mode & 077) != 0 )); then
-  printf 'The recovery private key must be owned by the current user without group/world access.\n' >&2
-  exit 1
-fi
+for protected_file in "$private_key" "$private_key_passphrase_file"; do
+  protected_file_permissions="$(
+    node -e '
+      const fs = require("node:fs");
+      const stats = fs.statSync(process.argv[1]);
+      process.stdout.write(`${stats.uid} ${stats.mode & 0o777}`);
+    ' "$protected_file"
+  )"
+  protected_file_owner="${protected_file_permissions%% *}"
+  protected_file_mode="${protected_file_permissions##* }"
+  if [[ "$protected_file_owner" != "$EUID" ]] || (( (protected_file_mode & 077) != 0 )); then
+    printf 'The recovery private key and passphrase file must be owned by the current user without group/world access.\n' >&2
+    exit 1
+  fi
+done
 
 output_dir="$(dirname -- "$output_path")"
 if [[ ! -d "$output_dir" ]]; then
@@ -68,6 +75,7 @@ openssl cms -decrypt \
   -in "$archive_path" \
   -recip "$recipient_certificate" \
   -inkey "$private_key" \
+  -passin "file:$private_key_passphrase_file" \
   -out "$temporary_output"
 
 actual_sha256="$(sha256sum "$temporary_output" | awk '{print $1}')"

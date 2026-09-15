@@ -10,6 +10,7 @@ import {
   createOssAuthorization,
   readOssBackupConfig,
 } from "../../scripts/upload-production-database-backup.mjs";
+import { createOssDownloadRequest } from "../../scripts/download-production-database-backup.mjs";
 import {
   validateOffsiteBackupManifest,
   verifyOffsiteDatabaseBackup,
@@ -95,6 +96,41 @@ test("OSS authorization canonicalizes metadata deterministically", () => {
       canonicalResource: "/bucket/postgresql/v1/file.cms",
     }),
     "OSS test-id:SsaknXFVU9NY7x6vhCNJo/PZId4=",
+  );
+});
+
+test("offsite downloads are restricted to versioned backup artifacts", () => {
+  const request = createOssDownloadRequest({
+    objectName: "marvels_chat-20260911T060000Z.dump.cms",
+    environment: validEnvironment,
+    now: new Date("2026-09-11T06:05:00.000Z"),
+  });
+
+  assert.equal(request.objectKey, "postgresql/v1/marvels_chat-20260911T060000Z.dump.cms");
+  assert.equal(
+    request.requestOptions.hostname,
+    "miaoxun-database-backups.oss-cn-shanghai-internal.aliyuncs.com",
+  );
+  assert.equal(
+    request.requestOptions.path,
+    "/postgresql/v1/marvels_chat-20260911T060000Z.dump.cms",
+  );
+  assert.equal(request.requestOptions.method, "GET");
+  assert.match(request.requestOptions.headers.Authorization, /^OSS backup-access-key:/);
+  assert.equal(
+    createOssDownloadRequest({
+      objectName: "marvels_chat-20260911T060000Z.dump.cms.manifest.json",
+      environment: validEnvironment,
+    }).maxBytes,
+    64 * 1024,
+  );
+  assert.throws(
+    () =>
+      createOssDownloadRequest({
+        objectName: "../miaoxun-prod.env",
+        environment: validEnvironment,
+      }),
+    /not a supported Miaoxun backup artifact/,
   );
 });
 

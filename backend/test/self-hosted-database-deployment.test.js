@@ -92,20 +92,36 @@ test("production backup validates content before publishing and prunes only Miao
 });
 
 test("backup installer isolates executable code and credentials from the application user", async () => {
-  const script = await readRepoFile("scripts/install-production-database-backup.sh");
+  const [script, configureScript] = await Promise.all([
+    readRepoFile("scripts/install-production-database-backup.sh"),
+    readRepoFile("scripts/configure-production-database-backup.sh"),
+  ]);
 
   assert.match(script, /service_user="marvels-backup"/);
   assert.match(script, /useradd[\s\S]*--system[\s\S]*--shell \/usr\/sbin\/nologin/);
   assert.match(script, /program_dir="\/usr\/local\/libexec\/marvels-chat"/);
+  assert.match(script, /database_dir="\$\(dirname -- "\$backup_dir"\)"/);
   assert.match(script, /install -o root -g root -m 0755/);
+  assert.match(script, /download-production-database-backup\.mjs/);
+  assert.match(script, /install -d -o root -g "\$service_group" -m 0710 "\$database_dir"/);
+  assert.match(script, /install -d -o "\$service_user" -g "\$service_group" -m 0700 "\$backup_dir"/);
   assert.match(script, /environment_file="\$config_dir\/database-backup\.env"/);
   assert.match(script, /backup environment must be root-owned with mode 0600/);
   assert.match(script, /MIAOXUN_DATABASE_BACKUP_OSS_ACCESS_KEY_SECRET/);
   assert.match(script, /MIAOXUN_DATABASE_BACKUP_POSTGRES_PASSWORD/);
   assert.match(script, /certificate_group=.*stat -c '%g'/);
   assert.match(script, /\[\[ "\$certificate_mode" != "644" \]\]/);
-  assert.match(script, /timer state was not changed/);
-  assert.doesNotMatch(script, /systemctl enable|systemctl start|systemctl restart/);
+  assert.match(script, /systemd was not reloaded and timer state was not changed/);
+  assert.doesNotMatch(script, /systemctl/);
+  assert.match(configureScript, /^if \(\( EUID != 0 \)\); then/m);
+  assert.match(configureScript, /Refusing to overwrite the existing backup environment/);
+  assert.match(configureScript, /openssl rand -hex 32/);
+  assert.match(configureScript, /CREATE ROLE \$database_role LOGIN INHERIT NOSUPERUSER/);
+  assert.match(configureScript, /GRANT pg_read_all_data TO \$database_role/);
+  assert.match(configureScript, /PGPASSFILE="\$pgpass_file" pg_dump/);
+  assert.match(configureScript, /oss-cn-shanghai-internal\.aliyuncs\.com/);
+  assert.match(configureScript, /chmod 0600 "\$environment_temporary"/);
+  assert.doesNotMatch(configureScript, /systemctl|docker|0\.0\.0\.0/);
 });
 
 test("production release hardening leaves only the explicit data directory writable", async () => {
@@ -122,20 +138,36 @@ test("production release hardening leaves only the explicit data directory writa
 });
 
 test("offsite recovery verifies, decrypts, and validates before publishing a dump", async () => {
-  const [script, gitignore] = await Promise.all([
+  const [script, macosHelper, keyCreationHelper, gitignore] = await Promise.all([
     readRepoFile("scripts/decrypt-production-database-backup.sh"),
+    readRepoFile("scripts/recover-offsite-database-backup-macos.sh"),
+    readRepoFile("scripts/create-database-backup-recovery-key-macos.sh"),
     readRepoFile(".gitignore"),
   ]);
 
   assert.match(script, /verify-offsite-database-backup\.mjs/);
   assert.match(script, /openssl cms -decrypt/);
-  assert.match(script, /recovery private key must be owned by the current user/);
+  assert.match(script, /private key passphrase file must be a non-empty regular file/);
+  assert.match(script, /recovery private key and passphrase file must be owned by the current user/);
+  assert.match(script, /-passin "file:\$private_key_passphrase_file"/);
+  assert.match(script, /sha256sum awk grep mktemp mv/);
   assert.match(script, /actual_sha256.*expected_sha256/);
   assert.match(script, /pg_restore --list/);
   assert.match(script, /TABLE DATA public schema_migrations/);
   assert.match(script, /EXTENSION - vector/);
   assert.match(script, /Refusing to overwrite/);
   assert.doesNotMatch(script, /rm -rf|--clean|DROP DATABASE/);
+  assert.match(macosHelper, /security find-generic-password/);
+  assert.match(macosHelper, /com\.miaoxun\.database-backup\.recovery/);
+  assert.match(macosHelper, /decrypt-production-database-backup\.sh/);
+  assert.match(macosHelper, /trap cleanup EXIT/);
+  assert.doesNotMatch(macosHelper, /add-generic-password|delete-generic-password/);
+  assert.match(keyCreationHelper, /openssl rand -base64 48/);
+  assert.match(keyCreationHelper, /security add-generic-password/);
+  assert.match(keyCreationHelper, /-w <"\$passphrase_file"/);
+  assert.match(keyCreationHelper, /cmp -s "\$passphrase_file" "\$verified_passphrase_file"/);
+  assert.match(keyCreationHelper, /Refusing to overwrite an existing recovery file/);
+  assert.doesNotMatch(keyCreationHelper, /-pass pass:|-w "\$passphrase/);
   for (const recoveryArtifact of [
     "*.pem",
     "*.key",

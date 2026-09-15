@@ -468,3 +468,25 @@ Navicat 只允许通过 SSH 隧道查看生产库：SSH 连接 ECS 的 `22` 端�
 `/api/health` 和 `/api/ready` 随后均验证正常。仓库的新备份单元进一步改用独立
 `marvels-backup` 用户和 root 管理的 `/usr/local/libexec/marvels-chat`，但在专用 OSS 与恢复密钥
 准备完成前尚未替换线上 timer。
+
+## 2026-09-15 加密异地数据库备份上线
+
+生产数据库备份已从旧 root 任务切换为 `marvels-backup` 无登录系统账号，执行程序由 root 管理在
+`/usr/local/libexec/marvels-chat`，配置为 `/etc/marvels-chat/database-backup.env` 的
+`root:root 0600` 文件。PostgreSQL 使用独立 `marvels_chat_backup` 角色；该角色具备完整只读导出
+所需的 `pg_read_all_data` 和 `BYPASSRLS`，但不具备超级用户、建库、建角色、复制或业务写入权限。
+实际写入探针已确认被数据库拒绝。
+
+加密副本使用专用 RAM 机器账号写入私有 Bucket `miaoxun-chats` 的 `postgresql/v1/` 前缀。
+首次真实任务完成 custom dump 校验、AES-256-GCM CMS 加密、OSS `PUT + HEAD` 校验和 manifest
+发布；随后使用同一账号的 `GetObject` 权限取回同一归档与 manifest，在受控 macOS 运维机通过
+登录钥匙串解锁离线私钥。解密后的 dump 恢复到仅开放本机 Unix socket 的临时 PostgreSQL
+18.4：29 个迁移全部匹配、pgvector 0.8.6 可用、50 张 public 表恢复，用户、聊天线程、消息、
+3D 模型、小站动态和媒体检索任务等关键表均存在且可读。临时数据库、明文 dump、下载副本、
+AccessKey CSV 和 ECS 部署暂存文件已在验证后精确删除。
+
+安装验证期间发现备份父目录原为 `root:root 0700`，导致隔离账号无法穿过；安装脚本已固定为
+父目录 `root:marvels-backup 0710`、备份目录 `marvels-backup:marvels-backup 0700`。切换后的正式
+systemd 任务以新账号和新路径再次完成异地备份，timer 为 enabled/active 且无待 reload 配置。
+PostgreSQL、后端、媒体检索 worker、Nginx、本机 `/api/ready` 和公网 HTTPS `/api/health` 均在
+切换后验证正常。
