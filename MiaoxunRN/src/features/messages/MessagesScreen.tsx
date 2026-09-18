@@ -8,7 +8,6 @@ import React, {
 import {
   Animated,
   FlatList,
-  GestureResponderEvent,
   Keyboard,
   KeyboardAvoidingView,
   PanResponder,
@@ -18,12 +17,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AgentDTO } from '../../models/api';
+import { AgentDTO, AvatarConfigDTO } from '../../models/api';
 import { recognizeSpeechOnce } from '../../services/speechToText';
 import { displayText, publicPresenceText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette, palettes } from '../../shared/theme';
 import { ChatHeader } from '../../shared/ui';
+import { useAIAssist } from '../assist/AIAssistProvider';
+import { AIAssistPoint } from '../assist/aiAssistTypes';
 import {
   ChatMessage,
   ChatThread,
@@ -54,6 +55,7 @@ export function ChatScreen({
   language,
   currentUserId,
   currentUserName,
+  currentUserAvatarConfig,
   thread,
   agents,
   renderUserAvatar,
@@ -71,6 +73,7 @@ export function ChatScreen({
   language: Language;
   currentUserId: string;
   currentUserName: string;
+  currentUserAvatarConfig?: AvatarConfigDTO;
   thread: ChatThread;
   agents: AgentDTO[];
   renderUserAvatar: UserAvatarRenderer;
@@ -88,6 +91,7 @@ export function ChatScreen({
   initialDraft?: string;
   onInitialDraftConsumed?: () => void;
 }) {
+  const assist = useAIAssist();
   const [draft, setDraft] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isRecognizingSpeech, setIsRecognizingSpeech] = useState(false);
@@ -104,6 +108,9 @@ export function ChatScreen({
   const messageInlineMenuArrowLeft = messageMenuPosition?.isMine ? 232 : 34;
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [isThreadSettingsOpen, setIsThreadSettingsOpen] = useState(false);
+  const isChatInteractionBlocked = assist.isActive || Boolean(selectedMessage);
+  const interactionBlockedRef = useRef(isChatInteractionBlocked);
+  interactionBlockedRef.current = isChatInteractionBlocked;
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const chatTranslateX = useRef(new Animated.Value(0)).current;
   const windowSize = useWindowDimensions();
@@ -127,12 +134,12 @@ export function ChatScreen({
     : thread.peerUserId
     ? publicPresenceText(language, thread.peerPresenceStatus)
     : '';
-  const isSelectedMessageMine =
-    selectedMessage?.senderType === 'user' &&
-    (typeof selectedMessage.metadata?.senderUserId !== 'string' ||
-      selectedMessage.metadata.senderUserId === currentUserId);
+  const isSelectedMessageMine = Boolean(messageMenuPosition?.isMine);
   const scrollToBottom = (animated: boolean) => {
     requestAnimationFrame(() => {
+      if (interactionBlockedRef.current) {
+        return;
+      }
       listRef.current?.scrollToEnd({ animated });
     });
   };
@@ -164,8 +171,13 @@ export function ChatScreen({
     () =>
       PanResponder.create({
         onMoveShouldSetPanResponder: (_event, gesture) =>
-          gesture.dx < -8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
+          !interactionBlockedRef.current &&
+          gesture.dx < -8 &&
+          Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
         onPanResponderMove: (_event, gesture) => {
+          if (interactionBlockedRef.current) {
+            return;
+          }
           chatTranslateX.setValue(
             Math.max(
               Math.min(gesture.dx, 0),
@@ -174,6 +186,10 @@ export function ChatScreen({
           );
         },
         onPanResponderRelease: (_event, gesture) => {
+          if (interactionBlockedRef.current) {
+            resetChatSwipe();
+            return;
+          }
           if (
             (gesture.dx <= chatSwipeCloseThreshold || gesture.vx <= -0.55) &&
             Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25
@@ -190,17 +206,17 @@ export function ChatScreen({
   const openMessageMenu = (
     item: ChatMessage,
     isMine: boolean,
-    event: GestureResponderEvent,
+    point: AIAssistPoint,
   ) => {
     const menuWidth = isMine ? 284 : 220;
     const left = Math.min(
-      Math.max(event.nativeEvent.pageX - (isMine ? menuWidth - 42 : 42), 12),
+      Math.max(point.x - (isMine ? menuWidth - 42 : 42), 12),
       Math.max(12, windowSize.width - menuWidth - 12),
     );
     setSelectedMessage(item);
     setMessageMenuPosition({
       x: left,
-      y: Math.max(78, event.nativeEvent.pageY - 78),
+      y: Math.max(78, point.y - 78),
       isMine,
     });
   };
@@ -230,11 +246,13 @@ export function ChatScreen({
       language={language}
       currentUserId={currentUserId}
       currentUserName={currentUserName}
+      currentUserAvatarConfig={currentUserAvatarConfig}
       thread={thread}
       agents={agents}
       isDarkPalette={isDarkPalette}
       renderUserAvatar={renderUserAvatar}
       onOpenMessageMenu={openMessageMenu}
+      onActionMessage={onActionError}
       onRetrySend={message => {
         if (message.localStatus !== 'failed') {
           return;
@@ -245,6 +263,13 @@ export function ChatScreen({
       }}
     />
   );
+
+  useEffect(() => {
+    if (assist.isActive) {
+      closeMessageMenu();
+      resetChatSwipe();
+    }
+  }, [assist.isActive, closeMessageMenu, resetChatSwipe]);
 
   useEffect(() => {
     scrollToBottom(false);
@@ -371,6 +396,7 @@ export function ChatScreen({
           initialNumToRender={Math.max(thread.messages.length, 12)}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
+          scrollEnabled={!isChatInteractionBlocked}
           ListFooterComponent={<View style={styles.messageFooterSpacer} />}
           onLayout={() => scrollToBottom(false)}
           renderItem={renderMessage}
@@ -394,6 +420,7 @@ export function ChatScreen({
           palette={messagePalette}
           language={language}
           threadTitle={thread.title}
+          threadId={thread.id}
           draft={draft}
           isSending={isSending}
           isRecognizingSpeech={isRecognizingSpeech}
@@ -401,11 +428,14 @@ export function ChatScreen({
           onChangeDraft={setDraft}
           onClearReplyTarget={() => setReplyTarget(null)}
           onFocusInput={() => {
+            assist.dismiss();
+            closeMessageMenu();
             scrollToBottom(true);
             setTimeout(() => scrollToBottom(true), 80);
           }}
           onRecognizeSpeech={recognizeSpeech}
           onSend={send}
+          onActionMessage={onActionError}
         />
       </Animated.View>
       <ThreadSettingsSheet

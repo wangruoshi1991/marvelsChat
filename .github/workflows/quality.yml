@@ -76,6 +76,9 @@ jobs:
       - name: Build production image
         run: docker build --file backend/Dockerfile --tag miaoxun-backend:quality .
 
+      - name: Verify backend image startup
+        run: ./scripts/check-backend-image.sh miaoxun-backend:quality
+
   migration-replay:
     name: PostgreSQL migration replay
     needs: quality
@@ -112,6 +115,12 @@ jobs:
 
       - name: Replay the ledger-free production upgrade
         run: ./backend/scripts/check-migration-replay.sh
+        env:
+          DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_migration_test
+
+      - name: Verify API flows against PostgreSQL
+        run: npm run test:api-integration
+        working-directory: backend
         env:
           DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_migration_test
 
@@ -155,6 +164,7 @@ jobs:
         working-directory: MiaoxunRN/android
         env:
           MIAOXUN_API_BASE_URL: http://10.0.2.2:4390
+          MIAOXUN_VERSION_CODE: 43
 
   avatar-web-e2e:
     name: Avatar Web end-to-end

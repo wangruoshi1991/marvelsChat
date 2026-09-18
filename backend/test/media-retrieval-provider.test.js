@@ -3,7 +3,8 @@ import test from "node:test";
 
 process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 
-const { createMediaRetrievalProvider } = await import("../src/media-retrieval-provider.js");
+const { createMediaRetrievalProvider: createProvider } = await import("../src/media-retrieval-provider.js");
+const createMediaRetrievalProvider = (input) => createProvider({ recordDiagnostic: async () => {}, ...input });
 const { buildVisualEmbeddingInput } = await import("../src/media-retrieval-embedding-input.js");
 
 const configuredRuntime = {
@@ -24,11 +25,7 @@ const configuredRuntime = {
 const approvedReservation = { reserved: true, reservationId: "reservation-123" };
 
 function responseJson(payload, ok = true, status = 200) {
-  return {
-    ok,
-    status,
-    json: async () => payload,
-  };
+  return new Response(JSON.stringify(payload), { status: ok ? status : Math.max(400, status) });
 }
 
 test("provider uses documented Model Studio endpoints and never adds identity text to an embedding request", async () => {
@@ -148,4 +145,24 @@ test("provider remains unavailable without an explicit enabled configuration and
   const status = provider.getRuntimeStatus();
   assert.equal(JSON.stringify(status).includes("test-key-not-for-network"), false);
   assert.equal(JSON.stringify(status).includes("workspace.cn-beijing"), false);
+});
+
+test("provider rejects declared and streamed responses above the hard byte limit", async () => {
+  const oversized = "x".repeat(512 * 1024 + 1);
+  for (const response of [
+    new Response("{}", { headers: { "Content-Length": String(512 * 1024 + 1) } }),
+    new Response(oversized),
+  ]) {
+    const provider = createMediaRetrievalProvider({
+      config: configuredRuntime,
+      fetchImpl: async () => response,
+    });
+    await assert.rejects(
+      () => provider.parseRetrievalQuery({ query: "yellow dress", reservation: approvedReservation }),
+      (error) =>
+        error.code === "retrieval_service_unavailable" &&
+        error.diagnostic?.stage === "response-json" &&
+        error.diagnostic?.schemaPaths?.includes("response"),
+    );
+  }
 });

@@ -1,7 +1,6 @@
 import crypto from "crypto";
-import {
-  MEDIA_RETRIEVAL_LIFECYCLE_STATUSES,
-} from "./media-retrieval-constants.js";
+import { assertMediaRetrievalSearchResponse } from "../../shared/media-retrieval-public-contract.js";
+import { MEDIA_RETRIEVAL_LIFECYCLE_STATUSES } from "./media-retrieval-constants.js";
 import { parseJson, toIso } from "./repository-mappers.js";
 
 export const MEDIA_RETRIEVAL_AGENT_KEY = "media-retrieval";
@@ -128,6 +127,9 @@ export const redactInputSummary = (input = {}) => {
       summary[key] = value;
     }
   }
+  if (typeof input.requestHash === "string" && /^[a-f0-9]{64}$/.test(input.requestHash)) {
+    summary.requestHash = input.requestHash;
+  }
   return summary;
 };
 
@@ -147,6 +149,8 @@ export const safeEventPayload = (payload = {}) => {
     "unknownFen",
     "reasonCode",
     "jobType",
+    "enqueued",
+    "reused",
   ]) {
     const value = payload[key];
     if (typeof value === "number" && Number.isFinite(value)) {
@@ -154,6 +158,9 @@ export const safeEventPayload = (payload = {}) => {
     } else if (typeof value === "string" && /^[a-z0-9._-]{1,100}$/i.test(value)) {
       safe[key] = value;
     }
+  }
+  if (Object.hasOwn(payload, "searchResponse")) {
+    safe.searchResponse = assertMediaRetrievalSearchResponse(payload.searchResponse);
   }
   return safe;
 };

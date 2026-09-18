@@ -2,6 +2,12 @@
 
 妙讯正式 iOS App 当前以 `MiaoxunRN/` 为唯一移动端主线，采用 React Native 承接上线实现。旧 SwiftUI 原型已从主工程移除。
 
+2026-09-16：`1.0 (43)` 已用标准自动签名归档并上传 App Store Connect，正式 API 为
+`https://8.153.167.11`。包含资料精简/定位、全局内容操作、小站交互和私有素材检索界面；
+检索运营开关仍关闭。正式模拟器保留原账号数据，已验证定位候选/取消草稿/键盘顶栏。
+详细构建、签名、上传与分发结果见[本次发布记录](reviews/2026-09-16-production-and-testflight-43.md)。
+旧章节“0台设备导致自动签名不可用”是历史问题，不能套用于当前；本次标准签名归档成功。
+
 ## 客户端边界
 
 - `MiaoxunRN/`：正式 iOS App 主线，包含 React Native 业务代码和 iOS 原生工程。
@@ -89,7 +95,9 @@ Release 构建脚本会阻止 HTTP、裸 IP、localhost 和 loopback API URL。�
 Android 使用同名构建参数生成 `BuildConfig.MIAOXUN_API_BASE_URL`，并通过同一个 `MiaoxunConfigModule.apiBaseURL` 暴露给 JS。Android 构建时必须显式传入：
 
 ```sh
-./gradlew assembleDebug -PMIAOXUN_API_BASE_URL=http://<MAC_LAN_IP>:4390
+./gradlew assembleDebug \
+  -PMIAOXUN_API_BASE_URL=http://<MAC_LAN_IP>:4390 \
+  -PMIAOXUN_VERSION_CODE=43
 ```
 
 未提供 `MIAOXUN_API_BASE_URL` 时 Android 构建会直接失败，避免生成无法访问后端的包。
@@ -386,3 +394,13 @@ Build 41 与 Build 42 的 App Store Connect 真机报告均通过 `RCTExceptions
 ## 2026-09-09 IP HTTPS 正式发布配置
 
 外部 `curl` 证书校验和 macOS `nscurl --ats-diagnostics` 均确认 `https://8.153.167.11` 可通过；证书 SAN 直接包含该 IP。iOS Release 已切换到该 HTTPS origin，移除 `MIAOXUN_TEMP_IP_TESTFLIGHT` 和对应 HTTP ATS 例外。域名状态只作为后续可读性和迁移便利性事项，不再作为 App Store 的技术阻断项。IP 变化会要求发布新版 App，因此服务器公网 IP 必须保持固定，证书自动续期也必须持续监控。
+
+## 2026-09-16 真机物理长按与 TestFlight 验证路径
+
+内容级长按的计时、方向拖动和 WebView 手势竞争必须在真实触摸屏上验证；模拟器的辅助功能触发只能验证菜单状态和动作契约，不能替代按住后拖动的验收。
+
+本地 USB Debug 验证使用 `xcrun devicectl`。设备必须在线、已配对并开启开发者模式；若手机安装了同 Bundle ID 的 TestFlight 包，iOS 不允许 Debug 包直接覆盖，需先卸载 TestFlight 包，或改用 TestFlight 更新链路。Debug 构建和安装命令见上文“真机连接正式 API”一节，构建时必须显式传入 `MIAOXUN_API_BASE_URL=https://8.153.167.11`，不得把本地地址带入真机验收。
+
+若要在保留 TestFlight 安装的前提下验证，必须以 Release 重新归档、递增 `CURRENT_PROJECT_VERSION`，使用 App Store Connect 分发签名导出并上传新 build；上传和处理完成后，手机在 TestFlight 中更新到该 build，再进行物理长按验收。上传需要具备 App Store Connect 权限和有效分发签名，本地未签名 archive 只能证明编译和打包通过，不能安装到真机或提交 TestFlight。
+
+真机验收至少覆盖：3D 舞台按住后向四个方向拖动、聊天消息、动态、日记和相册卡片；松手取消、菜单外点击取消、切换页签/进入后台取消；选择“妙讯管家”只生成待发送草稿；3D WebView 不弹系统文本选择或复制菜单；菜单动作触控区域不遮挡原内容，滚动和返回手势不被长按误触发。发现崩溃或手势竞争时，记录设备型号、iOS 版本、build 号、触点方向和复现步骤后再修复并生成下一 build。

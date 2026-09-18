@@ -50,6 +50,7 @@ AccessKey 会直接进入 root-only 配置，不需要负责人记录或输入�
 - 部署与服务状态：[部署说明](deployment.md)
 - 数据库结构、连接与 Navicat：[数据库说明](database.md)
 - 备份、监控、轮换与恢复：[生产数据库备份与恢复](database-backup.md)
+- 负责人手机保管与灾难恢复：[数据库恢复与手机保管手册](database-recovery-owner-guide.md)
 - 上线门禁：[移动端上线功能实施清单](mobile-launch-checklist.md)
 
 在当前受控 macOS 运维机上，下载同一恢复点的 `.cms` 和 `.manifest.json` 后，只运行：

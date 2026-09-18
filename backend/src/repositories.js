@@ -410,6 +410,7 @@ export async function createAgentRun(run) {
 }
 
 export async function getBootstrapForUser(user, registeredAgents, onlineUserIds = []) {
+  const serverTime = new Date().toISOString();
   const onlineIds = normalizeOnlineUserIds(onlineUserIds);
   const [
     context,
@@ -441,7 +442,7 @@ export async function getBootstrapForUser(user, registeredAgents, onlineUserIds 
 
   return {
     source: "postgresql",
-    serverTime: new Date().toISOString(),
+    serverTime,
     user,
     profile: context.profile,
     threads,

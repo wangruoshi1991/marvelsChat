@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, StatusBar, Text, View } from 'react-native';
+import { Platform, StatusBar, StyleSheet, Text, View } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AppModals } from './app/AppModals';
@@ -28,6 +28,8 @@ import { appErrorText, textFor } from './shared/i18n';
 import { styles } from './shared/styles';
 import { palettes } from './shared/theme';
 import { BottomBar, RootTab } from './shared/ui';
+import { AIAssistProvider } from './features/assist/AIAssistProvider';
+import { AIAssistObjectReference } from './features/assist/aiAssistTypes';
 
 function App(): React.JSX.Element {
   const session = useMiaoxunSession();
@@ -39,12 +41,30 @@ function App(): React.JSX.Element {
   const [isPostComposerOpen, setIsPostComposerOpen] = useState(false);
   const [modalRoute, setModalRoute] = useState<ModalRoute>(null);
   const [activeThread, setActiveThread] = useState<ChatThread | null>(null);
+  const [activeThreadOwner, setActiveThreadOwner] = useState<string | null>(
+    null,
+  );
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showLaunchAnimation, setShowLaunchAnimation] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMessageTab, setSelectedMessageTab] =
     useState<MessageTab>('chat');
   const [pendingScanRequest, setPendingScanRequest] = useState(false);
+  const [stationVisited, setStationVisited] = useState(false);
+  const [butlerDraft, setButlerDraft] = useState('');
+  useEffect(() => {
+    if (selectedTab === 'station') setStationVisited(true);
+  }, [selectedTab]);
+  useEffect(() => {
+    setStationVisited(false);
+    setButlerDraft('');
+    setActiveThread(null);
+    setActiveThreadOwner(null);
+    setModalRoute(null);
+    setIsPostComposerOpen(false);
+    setPendingScanRequest(false);
+    setSearchQuery('');
+  }, [session.user?.id]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -54,14 +74,14 @@ function App(): React.JSX.Element {
   }, []);
 
   const openedThread = useMemo(() => {
-    if (!activeThread) {
+    if (!activeThread || activeThreadOwner !== session.user?.id) {
       return null;
     }
     return (
       session.threads.find(thread => thread.id === activeThread.id) ||
       activeThread
     );
-  }, [activeThread, session.threads]);
+  }, [activeThread, activeThreadOwner, session.threads, session.user?.id]);
   const renderUserAvatar = useCallback(
     ({
       text,
@@ -87,6 +107,7 @@ function App(): React.JSX.Element {
   const openThread = useCallback(
     (thread: ChatThread) => {
       setActiveThread(thread);
+      setActiveThreadOwner(session.user?.id || null);
       session.setActiveThreadId(thread.id);
       session.markThreadRead(thread.id);
       setModalRoute(thread.agentId === 'miaoxun-butler' ? 'butler' : 'chat');
@@ -174,6 +195,50 @@ function App(): React.JSX.Element {
     openQRCode: profileFlows.openQRCode,
   });
 
+  const askButler = useCallback(
+    (object: AIAssistObjectReference) => {
+      const thread = session.threads.find(
+        item => item.agentId === 'miaoxun-butler',
+      );
+      if (!thread) {
+        showToast(
+          textFor(
+            session.language,
+            '妙管家会话不可用，请先添加妙管家。',
+            'Add the butler before opening its chat.',
+          ),
+        );
+        return;
+      }
+      const content =
+        typeof object.metadata?.content === 'string'
+          ? object.metadata.content
+          : '';
+      setButlerDraft(
+        [
+          textFor(
+            session.language,
+            `请帮我分析「${object.title}」：`,
+            `Help me with “${object.title}”:`,
+          ),
+          content,
+          object.id ? `${object.kind}: ${object.id}` : '',
+          object.kind === 'avatar-3d'
+            ? textFor(
+                session.language,
+                '这是一条形象记录引用，请先给我建议，不要直接生成或修改。',
+                'This is an avatar reference. Suggest next steps before generating or changing anything.',
+              )
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      );
+      openThread(thread);
+    },
+    [openThread, session.language, session.threads, showToast],
+  );
+
   useEffect(() => {
     if (
       !openedThread ||
@@ -253,286 +318,341 @@ function App(): React.JSX.Element {
           edges={['bottom']}
           style={[styles.safeArea, { backgroundColor: bottomSafeAreaColor }]}
         >
-          <StatusBar
-            barStyle={
-              session.appearance === 'dark' ? 'light-content' : 'dark-content'
-            }
-            backgroundColor={topSafeAreaColor}
-          />
-          {session.isRestoring ? null : session.restoreStatus ===
-            'networkError' ? (
-            <RestoreErrorScreen
-              palette={palette}
-              language={session.language}
-              message={session.errorMessage}
-              isBusy={session.isBusy}
-              onRetry={() => {
-                session.retryRestoreSession().catch(error => {
-                  showToast(
-                    appErrorText(
-                      session.language,
-                      error,
-                      '同步失败',
-                      'Sync failed',
-                    ),
-                  );
-                });
-              }}
-              onSignOut={() => {
-                session.signOut().catch(error => {
-                  showToast(
-                    appErrorText(
-                      session.language,
-                      error,
-                      '退出登录失败',
-                      'Logout failed',
-                    ),
-                  );
-                });
-              }}
+          <AIAssistProvider
+            onAskButler={askButler}
+            routeKey={`${
+              session.user?.id || ''
+            }:${selectedTab}:${selectedStationTab}:${
+              modalRoute || ''
+            }:${isPostComposerOpen}`}
+          >
+            <StatusBar
+              barStyle={
+                session.appearance === 'dark' ? 'light-content' : 'dark-content'
+              }
+              backgroundColor={topSafeAreaColor}
             />
-          ) : session.token ? (
-            openedThread &&
-            (modalRoute === 'butler' || modalRoute === 'chat') ? (
-              <ChatScreen
+            {session.isRestoring ? null : session.restoreStatus ===
+              'networkError' ? (
+              <RestoreErrorScreen
                 palette={palette}
                 language={session.language}
-                currentUserId={session.user?.id || ''}
-                currentUserName={session.user?.displayName || ''}
-                thread={openedThread}
-                agents={session.agents}
-                renderUserAvatar={renderUserAvatar}
-                onBack={closeThread}
-                onSend={
-                  openedThread.agentId === 'miaoxun-butler'
-                    ? (content, retryMessageId, replyToMessageId) =>
-                        sendButlerMessage(
-                          openedThread.id,
-                          content,
-                          retryMessageId,
-                          replyToMessageId,
-                        )
-                    : (content, retryMessageId, replyToMessageId) =>
-                        session.sendMessage(
-                          openedThread.id,
-                          content,
-                          undefined,
-                          retryMessageId,
-                          replyToMessageId,
-                        )
-                }
-                onDeleteMessage={messageId =>
-                  session.deleteMessage(openedThread.id, messageId)
-                }
-                onRecallMessage={messageId =>
-                  session.recallMessage(openedThread.id, messageId)
-                }
-                onSetMuted={muted =>
-                  session.setThreadMuted(openedThread.id, muted)
-                }
-                onActionError={message =>
-                  showToast(
-                    appErrorText(
-                      session.language,
-                      message,
-                      '操作失败',
-                      'Action failed',
-                    ),
-                  )
-                }
-                onOpenPeerProfile={
-                  openedThread.peerAiId
-                    ? () => {
-                        closeThread();
-                        profileFlows
-                          .openPublicProfileByAiId(openedThread.peerAiId || '')
-                          .catch(() => undefined);
-                      }
-                    : undefined
-                }
+                message={session.errorMessage}
+                isBusy={session.isBusy}
+                onRetry={() => {
+                  session.retryRestoreSession().catch(error => {
+                    showToast(
+                      appErrorText(
+                        session.language,
+                        error,
+                        '同步失败',
+                        'Sync failed',
+                      ),
+                    );
+                  });
+                }}
+                onSignOut={() => {
+                  session.signOut().catch(error => {
+                    showToast(
+                      appErrorText(
+                        session.language,
+                        error,
+                        '退出登录失败',
+                        'Logout failed',
+                      ),
+                    );
+                  });
+                }}
               />
-            ) : (
-              <View style={styles.shell}>
-                {selectedTab === 'messages' ? (
-                  <MessagesScreen
+            ) : session.token ? (
+              <>
+                {openedThread &&
+                (modalRoute === 'butler' || modalRoute === 'chat') ? (
+                  <ChatScreen
+                    key={openedThread.id}
+                    initialDraft={
+                      openedThread.agentId === 'miaoxun-butler'
+                        ? butlerDraft
+                        : undefined
+                    }
+                    onInitialDraftConsumed={() => setButlerDraft('')}
                     palette={palette}
                     language={session.language}
-                    threads={session.threads}
+                    currentUserId={session.user?.id || ''}
+                    currentUserName={session.user?.displayName || ''}
+                    currentUserAvatarConfig={session.profile.avatarConfig}
+                    thread={openedThread}
                     agents={session.agents}
-                    notices={session.notices}
-                    unreadNoticeCount={session.unreadNoticeCount}
-                    selectedMessageTab={selectedMessageTab}
                     renderUserAvatar={renderUserAvatar}
-                    onOpenThread={openThread}
-                    onOpenMessageActions={() =>
-                      setModalRoute('message-actions')
+                    onBack={closeThread}
+                    onSend={
+                      openedThread.agentId === 'miaoxun-butler'
+                        ? (content, retryMessageId, replyToMessageId) =>
+                            sendButlerMessage(
+                              openedThread.id,
+                              content,
+                              retryMessageId,
+                              replyToMessageId,
+                            )
+                        : (content, retryMessageId, replyToMessageId) =>
+                            session.sendMessage(
+                              openedThread.id,
+                              content,
+                              undefined,
+                              retryMessageId,
+                              replyToMessageId,
+                            )
                     }
-                    onOpenSearch={() => {
-                      setSearchQuery('');
-                      setModalRoute('search');
-                    }}
-                    onSelectMessageTab={setSelectedMessageTab}
-                    onMarkNotificationRead={session.markNotificationRead}
-                    onAcceptFriendRequest={async requestId => {
-                      try {
-                        await session.acceptFriendRequest(requestId);
-                        await session.refreshBootstrap(undefined, false);
-                        showToast(
-                          textFor(
-                            session.language,
-                            '已通过好友申请',
-                            'Friend request accepted',
-                          ),
-                        );
-                      } catch (error) {
-                        showToast(
-                          appErrorText(
-                            session.language,
-                            error,
-                            '操作失败',
-                            'Action failed',
-                          ),
-                        );
-                      }
-                    }}
-                    onRejectFriendRequest={async requestId => {
-                      try {
-                        await session.rejectFriendRequest(requestId);
-                        await session.refreshNotifications();
-                        showToast(
-                          textFor(
-                            session.language,
-                            '已拒绝好友申请',
-                            'Friend request rejected',
-                          ),
-                        );
-                      } catch (error) {
-                        showToast(
-                          appErrorText(
-                            session.language,
-                            error,
-                            '操作失败',
-                            'Action failed',
-                          ),
-                        );
-                      }
-                    }}
-                  />
-                ) : (
-                  <StationScreen
-                    active
-                    palette={palette}
-                    language={session.language}
-                    session={session}
-                    selectedStationTab={selectedStationTab}
-                    onSelectStationTab={setSelectedStationTab}
-                    renderUserAvatar={renderUserAvatar}
-                    onOpenSettings={() => setModalRoute('settings')}
-                    onOpenLocation={() => setModalRoute('station-location')}
-                    onCopyAIID={copyAIID}
-                    onOpenQRCode={profileFlows.openQRCode}
-                    onOpenFriendThread={openFriendThread}
-                    onOpenAgentThread={openAgentThread}
-                    onOpenPostComposer={() => setIsPostComposerOpen(true)}
-                    onOpenPublicProfileByAiId={
-                      profileFlows.openPublicProfileByAiId
+                    onDeleteMessage={messageId =>
+                      session.deleteMessage(openedThread.id, messageId)
                     }
-                    onActionMessage={showToast}
-                    onActionError={error =>
+                    onRecallMessage={messageId =>
+                      session.recallMessage(openedThread.id, messageId)
+                    }
+                    onSetMuted={muted =>
+                      session.setThreadMuted(openedThread.id, muted)
+                    }
+                    onActionError={message =>
                       showToast(
                         appErrorText(
                           session.language,
-                          error,
+                          message,
                           '操作失败',
                           'Action failed',
                         ),
                       )
                     }
+                    onOpenPeerProfile={
+                      openedThread.peerAiId
+                        ? () => {
+                            closeThread();
+                            profileFlows
+                              .openPublicProfileByAiId(
+                                openedThread.peerAiId || '',
+                              )
+                              .catch(() => undefined);
+                          }
+                        : undefined
+                    }
                   />
-                )}
+                ) : null}
+                <View
+                  style={[styles.shell, isChatRoute && appStyles.hidden]}
+                  pointerEvents={isChatRoute ? 'none' : 'auto'}
+                  accessibilityElementsHidden={isChatRoute}
+                  importantForAccessibility={
+                    isChatRoute ? 'no-hide-descendants' : 'auto'
+                  }
+                >
+                  {selectedTab === 'messages' ? (
+                    <MessagesScreen
+                      palette={palette}
+                      language={session.language}
+                      threads={session.threads}
+                      agents={session.agents}
+                      notices={session.notices}
+                      unreadNoticeCount={session.unreadNoticeCount}
+                      selectedMessageTab={selectedMessageTab}
+                      renderUserAvatar={renderUserAvatar}
+                      onOpenThread={openThread}
+                      onOpenMessageActions={() =>
+                        setModalRoute('message-actions')
+                      }
+                      onOpenSearch={() => {
+                        setSearchQuery('');
+                        setModalRoute('search');
+                      }}
+                      onSelectMessageTab={setSelectedMessageTab}
+                      onMarkNotificationRead={session.markNotificationRead}
+                      onAcceptFriendRequest={async requestId => {
+                        try {
+                          await session.acceptFriendRequest(requestId);
+                          await session.refreshBootstrap(undefined, false);
+                          showToast(
+                            textFor(
+                              session.language,
+                              '已通过好友申请',
+                              'Friend request accepted',
+                            ),
+                          );
+                        } catch (error) {
+                          showToast(
+                            appErrorText(
+                              session.language,
+                              error,
+                              '操作失败',
+                              'Action failed',
+                            ),
+                          );
+                        }
+                      }}
+                      onRejectFriendRequest={async requestId => {
+                        try {
+                          await session.rejectFriendRequest(requestId);
+                          await session.refreshNotifications();
+                          showToast(
+                            textFor(
+                              session.language,
+                              '已拒绝好友申请',
+                              'Friend request rejected',
+                            ),
+                          );
+                        } catch (error) {
+                          showToast(
+                            appErrorText(
+                              session.language,
+                              error,
+                              '操作失败',
+                              'Action failed',
+                            ),
+                          );
+                        }
+                      }}
+                    />
+                  ) : null}
+                  {stationVisited || selectedTab === 'station' ? (
+                    <View
+                      style={[
+                        appStyles.retained,
+                        selectedTab !== 'station' && appStyles.hidden,
+                      ]}
+                      pointerEvents={
+                        selectedTab === 'station' ? 'auto' : 'none'
+                      }
+                      accessibilityElementsHidden={selectedTab !== 'station'}
+                      importantForAccessibility={
+                        selectedTab === 'station'
+                          ? 'auto'
+                          : 'no-hide-descendants'
+                      }
+                    >
+                      <StationScreen
+                        key={session.user?.id}
+                        active={
+                          selectedTab === 'station' &&
+                          !isChatRoute &&
+                          !modalRoute &&
+                          !isPostComposerOpen
+                        }
+                        palette={palette}
+                        language={session.language}
+                        session={session}
+                        selectedStationTab={selectedStationTab}
+                        onSelectStationTab={setSelectedStationTab}
+                        renderUserAvatar={renderUserAvatar}
+                        onOpenSettings={() => setModalRoute('settings')}
+                        onOpenLocation={() => setModalRoute('station-location')}
+                        onOpenProfileEdit={() =>
+                          setModalRoute('station-profile-edit')
+                        }
+                        onCopyAIID={copyAIID}
+                        onOpenQRCode={profileFlows.openQRCode}
+                        onOpenFriendThread={openFriendThread}
+                        onOpenAgentThread={openAgentThread}
+                        onOpenPostComposer={() => setIsPostComposerOpen(true)}
+                        onOpenPublicProfileByAiId={
+                          profileFlows.openPublicProfileByAiId
+                        }
+                        onActionMessage={showToast}
+                        onActionError={error =>
+                          showToast(
+                            appErrorText(
+                              session.language,
+                              error,
+                              '操作失败',
+                              'Action failed',
+                            ),
+                          )
+                        }
+                      />
+                    </View>
+                  ) : null}
 
-                <BottomBar
-                  palette={palette}
-                  language={session.language}
-                  selectedTab={selectedTab}
-                  onSelectTab={setSelectedTab}
-                />
-              </View>
-            )
-          ) : (
-            <AuthScreen
-              palette={palette}
-              language={session.language}
-              isBusy={session.isBusy}
-              errorMessage={session.errorMessage}
-              onSignIn={session.signIn}
-              onSignUp={async (...args) => {
-                await session.signUp(...args);
-                showToast(
-                  textFor(
-                    session.language,
-                    '注册成功，已登录妙讯',
-                    'Account created and signed in',
-                  ),
-                );
-              }}
-            />
-          )}
+                  <BottomBar
+                    palette={palette}
+                    language={session.language}
+                    selectedTab={selectedTab}
+                    onSelectTab={setSelectedTab}
+                  />
+                </View>
+              </>
+            ) : (
+              <AuthScreen
+                palette={palette}
+                language={session.language}
+                isBusy={session.isBusy}
+                errorMessage={session.errorMessage}
+                onSignIn={session.signIn}
+                onSignUp={async (...args) => {
+                  await session.signUp(...args);
+                  showToast(
+                    textFor(
+                      session.language,
+                      '注册成功，已登录妙讯',
+                      'Account created and signed in',
+                    ),
+                  );
+                }}
+              />
+            )}
 
-          <AppModals
-            modalRoute={modalRoute}
-            palette={palette}
-            session={session}
-            profileFlows={profileFlows}
-            searchQuery={searchQuery}
-            renderUserAvatar={renderUserAvatar}
-            onCloseModal={() => setModalRoute(null)}
-            onNavigateModal={setModalRoute}
-            onOpenThread={openThread}
-            onSearchQueryChange={setSearchQuery}
-            onOpenFriendThread={openFriendThread}
-            onRequestMessageQRCodeScan={requestMessageQRCodeScan}
-            onConsumePendingScanRequest={consumePendingScanRequest}
-            onToast={showToast}
-          />
-          {isPostComposerOpen ? (
-            <StationPostComposerScreen
+            <AppModals
+              modalRoute={modalRoute}
               palette={palette}
-              language={session.language}
               session={session}
-              onClose={() => setIsPostComposerOpen(false)}
-              onPublished={() => {
-                setIsPostComposerOpen(false);
-                setSelectedTab('station');
-                setSelectedStationTab('posts');
-                showToast(
-                  textFor(session.language, '动态已发布', 'Post published'),
-                );
-              }}
-              onActionError={error =>
-                showToast(
-                  appErrorText(
-                    session.language,
-                    error,
-                    '发布失败，请稍后重试',
-                    'Could not publish. Try again.',
-                  ),
-                )
-              }
+              profileFlows={profileFlows}
+              searchQuery={searchQuery}
+              renderUserAvatar={renderUserAvatar}
+              onCloseModal={() => setModalRoute(null)}
+              onNavigateModal={setModalRoute}
+              onOpenThread={openThread}
+              onSearchQueryChange={setSearchQuery}
+              onOpenFriendThread={openFriendThread}
+              onRequestMessageQRCodeScan={requestMessageQRCodeScan}
+              onConsumePendingScanRequest={consumePendingScanRequest}
+              onToast={showToast}
             />
-          ) : null}
-          {toastMessage ? (
-            <View style={[styles.toastWrap, styles.pointerEventsNone]}>
-              <View style={[styles.toast, { backgroundColor: palette.text }]}>
-                <Text style={[styles.toastText, { color: palette.background }]}>
-                  {toastMessage}
-                </Text>
+            {session.token && session.user && isPostComposerOpen ? (
+              <StationPostComposerScreen
+                palette={palette}
+                language={session.language}
+                session={session}
+                onClose={() => setIsPostComposerOpen(false)}
+                onPublished={() => {
+                  setIsPostComposerOpen(false);
+                  setSelectedTab('station');
+                  setSelectedStationTab('posts');
+                  showToast(
+                    textFor(session.language, '动态已发布', 'Post published'),
+                  );
+                }}
+                onActionError={error =>
+                  showToast(
+                    appErrorText(
+                      session.language,
+                      error,
+                      '发布失败，请稍后重试',
+                      'Could not publish. Try again.',
+                    ),
+                  )
+                }
+              />
+            ) : null}
+            {toastMessage ? (
+              <View style={[styles.toastWrap, styles.pointerEventsNone]}>
+                <View style={[styles.toast, { backgroundColor: palette.text }]}>
+                  <Text
+                    style={[styles.toastText, { color: palette.background }]}
+                  >
+                    {toastMessage}
+                  </Text>
+                </View>
               </View>
-            </View>
-          ) : null}
-          {showLaunchAnimation ? (
-            <LaunchAnimation palette={palette} language={session.language} />
-          ) : null}
+            ) : null}
+            {showLaunchAnimation ? (
+              <LaunchAnimation palette={palette} language={session.language} />
+            ) : null}
+          </AIAssistProvider>
         </SafeAreaView>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -540,3 +660,8 @@ function App(): React.JSX.Element {
 }
 
 export default App;
+
+const appStyles = StyleSheet.create({
+  hidden: { display: 'none' },
+  retained: { flex: 1 },
+});

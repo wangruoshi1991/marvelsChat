@@ -20,6 +20,7 @@ export const MEDIA_RETRIEVAL_ERROR_CONTRACTS = Object.freeze({
   retrieval_budget_exhausted: { status: 503, message: "Media retrieval budget is unavailable.", retryable: true },
   retrieval_service_unavailable: { status: 503, message: "Media retrieval is temporarily unavailable.", retryable: true },
   retrieval_request_invalid: { status: 400, message: "The media retrieval request is invalid.", retryable: false },
+  retrieval_request_in_progress: { status: 409, message: "The media retrieval request is still processing.", retryable: true },
   asset_not_indexable: { status: 409, message: "The selected media is not available for retrieval.", retryable: false },
   run_not_found: { status: 404, message: "Agent run not found.", retryable: false },
   retrieval_policy_unverifiable: { status: 422, message: "The retrieval request could not be safely verified.", retryable: false },

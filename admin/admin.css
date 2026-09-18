@@ -13,6 +13,10 @@
   --shadow: 0 30px 90px rgba(0, 0, 0, 0.32);
 }
 
+[hidden] {
+  display: none !important;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -716,6 +720,50 @@ th {
   gap: 9px;
   color: var(--ink);
   font-size: 13px;
+}
+
+.detail-form .field-note {
+  margin: -3px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.profile-languages {
+  min-width: 0;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.profile-languages legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.profile-language-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+}
+
+.profile-form-status {
+  margin: 0;
+  color: var(--mint);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.profile-form-status.error {
+  color: var(--rose);
+}
+
+#profile-admin-form :is(input, textarea, button):focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 3px;
 }
 
 .checkbox-row input {

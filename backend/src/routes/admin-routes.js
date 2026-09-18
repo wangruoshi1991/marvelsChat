@@ -14,7 +14,7 @@ import {
   updateUserStatus,
 } from "../admin-repository.js";
 import { getModelRuntimeStatus, testModelRuntime } from "../agent-runtime.js";
-import { hashPassword } from "../auth.js";
+import { assertAdminAccountMutationAllowed, hasAdminPermission, hashPassword } from "../auth.js";
 import { HttpError } from "../http-error.js";
 import {
   createManagedUser,
@@ -65,6 +65,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
     requireAdmin("users:write"),
     asyncHandler(async (req, res) => {
       const body = createAdminUserSchema.parse(req.body);
+      assertAdminAccountMutationAllowed(req.user, { requestedRole: body.role });
       const existed = await findUserByEmail(body.email);
       if (existed) throw new HttpError(409, "Email already registered");
       const existedName = await findUserByDisplayName(body.displayName);
@@ -96,7 +97,14 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
     authenticate,
     requireAdmin("users:read"),
     asyncHandler(async (req, res) => {
-      const detail = await adminUserDetail(req.params.userId, await listAgents());
+      const includeAgents = hasAdminPermission(req.user, "agents:manage");
+      const includeAudit = hasAdminPermission(req.user, "audit:read");
+      const detail = await adminUserDetail({
+        userId: req.params.userId,
+        registeredAgents: includeAgents ? await listAgents() : [],
+        includeAgents,
+        includeAudit,
+      });
       if (!detail) throw new HttpError(404, "User not found");
       res.json({ data: detail });
     }),
@@ -110,6 +118,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       const { status } = userStatusSchema.parse(req.body);
       const target = await getRawUserById(req.params.userId);
       if (!target) throw new HttpError(404, "User not found");
+      assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
       if (target.id === req.user.id && status !== "active") {
         throw new HttpError(400, "You cannot disable your own admin account");
       }
@@ -137,6 +146,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       const { role } = userRoleSchema.parse(req.body);
       const target = await getRawUserById(req.params.userId);
       if (!target) throw new HttpError(404, "User not found");
+      assertAdminAccountMutationAllowed(req.user, { targetRole: target.role, requestedRole: role });
       if (target.id === req.user.id && role !== "admin") {
         throw new HttpError(400, "You cannot remove your own admin permission");
       }
@@ -164,6 +174,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       const { permissions } = adminPermissionsSchema.parse(req.body);
       const target = await getRawUserById(req.params.userId);
       if (!target) throw new HttpError(404, "User not found");
+      assertAdminAccountMutationAllowed(req.user, { targetRole: "admin" });
       if (target.role !== "admin") {
         throw new HttpError(400, "Only admin users can receive admin permissions");
       }
@@ -198,6 +209,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       const body = profileAdminSchema.parse(req.body);
       const target = await getRawUserById(req.params.userId);
       if (!target) throw new HttpError(404, "User not found");
+      assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
 
       const profile = await updateUserProfileAdmin({ userId: target.id, ...body });
       await createUsageEvent({
@@ -225,6 +237,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
     asyncHandler(async (req, res) => {
       const target = await getRawUserById(req.params.userId);
       if (!target) throw new HttpError(404, "User not found");
+      assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
       if (target.id === req.user.id) {
         throw new HttpError(400, "Use logout to revoke your current admin session");
       }
@@ -252,6 +265,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       const body = agentAccessSchema.parse(req.body);
       const target = await getRawUserById(req.params.userId);
       if (!target) throw new HttpError(404, "User not found");
+      assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
 
       const agent = (await listAgents()).find((item) => item.key === req.params.agentId);
       if (!agent) throw new HttpError(404, "Agent not found");
@@ -290,6 +304,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       const { password } = resetPasswordSchema.parse(req.body);
       const target = await getRawUserById(req.params.userId);
       if (!target) throw new HttpError(404, "User not found");
+      assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
       if (target.id === req.user.id) {
         throw new HttpError(400, "Use account settings to change your own password");
       }

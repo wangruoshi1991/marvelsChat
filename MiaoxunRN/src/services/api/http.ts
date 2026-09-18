@@ -11,6 +11,7 @@ export const longRequestTimeoutMs = 45000;
 export class MiaoxunApiError extends Error {
   status?: number;
   code?: string;
+  retryable?: boolean;
   details?: Record<string, unknown>;
   requestId?: string;
   isNetworkError: boolean;
@@ -21,6 +22,7 @@ export class MiaoxunApiError extends Error {
     options: {
       status?: number;
       code?: string;
+      retryable?: boolean;
       details?: Record<string, unknown>;
       requestId?: string;
       isNetworkError?: boolean;
@@ -31,6 +33,7 @@ export class MiaoxunApiError extends Error {
     this.name = 'MiaoxunApiError';
     this.status = options.status;
     this.code = options.code;
+    this.retryable = options.retryable;
     this.details = options.details;
     this.requestId = options.requestId;
     this.isNetworkError = options.isNetworkError || false;
@@ -182,13 +185,13 @@ export async function request<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
+  const finalUrl = buildApiUrl(path);
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
     options.timeoutMs || defaultRequestTimeoutMs,
   );
   const method = options.method || 'GET';
-  const finalUrl = buildApiUrl(path);
   const clientRequestId = createRequestId();
   const hasBody = options.body !== undefined;
   let response: Response;
@@ -286,10 +289,11 @@ export async function request<T>(
     return undefined as T;
   }
 
-  const payload = (responseText ? parseJson(responseText) : null) as
-    | APIEnvelope<T>
-    | APIErrorEnvelope
-    | null;
+  const parsed: unknown = responseText ? parseJson(responseText) : null;
+  const payload =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as APIEnvelope<T> | APIErrorEnvelope)
+      : null;
 
   logNetworkEvent('response', {
     method,
@@ -312,7 +316,12 @@ export async function request<T>(
       payload && 'error' in payload ? payload.error?.details : undefined;
     throw new MiaoxunApiError(message, {
       status: response.status,
-      code: details?.code,
+      code:
+        payload && 'error' in payload
+          ? payload.error?.code ?? details?.code
+          : undefined,
+      retryable:
+        payload && 'error' in payload ? payload.error?.retryable : undefined,
       details,
       requestId:
         (payload && 'error' in payload && payload.error?.requestId) ||

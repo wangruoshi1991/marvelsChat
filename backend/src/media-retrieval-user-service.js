@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { MEDIA_RETRIEVAL_CONSENT_VERSION } from "./media-retrieval-constants.js";
 import {
   B7_PRODUCT_BASELINE_METHOD,
@@ -62,6 +63,12 @@ const providerCanSearch = (provider) => {
       status.providerCallsEnabled,
   );
 };
+
+const operationRequestHash = (input) =>
+  crypto
+    .createHash("sha256")
+    .update(JSON.stringify(input))
+    .digest("hex");
 
 const MAX_PROVIDER_FAILURE_CODE_LENGTH = 120;
 
@@ -163,7 +170,10 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
       runType: "media-index",
       idempotencyKey,
       confirmed: true,
-      inputSummary: { operation: "enable" },
+      inputSummary: {
+        operation: "enable",
+        requestHash: operationRequestHash({ operation: "enable", consentVersion }),
+      },
     });
     if (created.reused) {
       return { agentRunId: created.run.id, lifecycleStatus: created.run.lifecycleStatus, reused: true };
@@ -174,17 +184,17 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
       agentRunId: created.run.id,
     });
     const backfill = await repository.enqueueBackfillJobs({ userId, agentRunId: created.run.id });
-    await repository.appendAgentRunEvent({
+    const lifecycleStatus = backfill.enqueued > 0 ? "queued" : "succeeded";
+    await repository.transitionMediaRetrievalRun({
       userId,
       agentRunId: created.run.id,
-      lifecycleStatus: "queued",
-      eventType: "queued",
-      deliveryKey: `queued:${created.run.id}`,
+      lifecycleStatus,
+      eventType: lifecycleStatus === "queued" ? "queued" : "completed",
       payload: backfill,
     });
     return {
       agentRunId: created.run.id,
-      lifecycleStatus: "queued",
+      lifecycleStatus,
       backfill,
       reused: false,
     };
@@ -224,14 +234,48 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
     };
   };
 
-  const searchMediaRetrieval = async ({ userId, query, kind = null, albumId = null, limit = 10 }) => {
+  const searchMediaRetrieval = async ({
+    userId,
+    query,
+    kind = null,
+    albumId = null,
+    limit = 10,
+    idempotencyKey,
+  }) => {
     await ensureRouteEligible();
     await enabledProfile(repository, userId);
     const created = await repository.createOrGetMediaRetrievalRun({
       userId,
       runType: "media-search",
-      inputSummary: { operation: "search", kind: kind || "all" },
+      idempotencyKey,
+      inputSummary: {
+        operation: "search",
+        kind: kind || "all",
+        requestHash: operationRequestHash({
+          operation: "search",
+          query: String(query || "").trim(),
+          kind: kind || null,
+          albumId: albumId || null,
+          limit: Number(limit),
+        }),
+      },
     });
+    if (created.reused) {
+      const replay = await repository.getMediaRetrievalSearchResponse({
+        userId,
+        agentRunId: created.run.id,
+      });
+      if (replay) return replay;
+      if (["failed", "blocked", "cancelled"].includes(created.run.lifecycleStatus)) {
+        throw new MediaRetrievalServiceError(
+          canonicalProviderFailureCode(created.run.failureCode),
+        );
+      }
+      if (created.run.lifecycleStatus === "succeeded") {
+        throw new MediaRetrievalServiceError("retrieval_repository_write_failed");
+      }
+      throw new MediaRetrievalServiceError("retrieval_request_in_progress");
+    }
     const run = { ...created.run, userId };
     await repository.transitionMediaRetrievalRun({
       userId,
@@ -313,19 +357,21 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
       limit,
       allowLocalLexical: embeddingInput.mode === "visual",
     });
+    const response = projectMediaRetrievalSearchResponse({
+      agentRunId: run.id,
+      lifecycleStatus: "succeeded",
+      method: B7_PRODUCT_BASELINE_METHOD,
+      results: toPublicResults(baseline.results),
+    });
     await repository.transitionMediaRetrievalRun({
       userId,
       agentRunId: run.id,
       lifecycleStatus: "succeeded",
       failureCode: null,
       eventType: "completed",
+      payload: { searchResponse: response },
     });
-    return projectMediaRetrievalSearchResponse({
-      agentRunId: run.id,
-      lifecycleStatus: "succeeded",
-      method: B7_PRODUCT_BASELINE_METHOD,
-      results: toPublicResults(baseline.results),
-    });
+    return response;
   };
 
   const requestMediaRetrievalReindex = async ({ userId, scope, mediaAssetIds, idempotencyKey }) => {
@@ -336,21 +382,30 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
       runType: "media-reindex",
       idempotencyKey,
       confirmed: true,
-      inputSummary: { operation: "reindex", scope, requestedAssetCount: mediaAssetIds.length },
+      inputSummary: {
+        operation: "reindex",
+        scope,
+        requestedAssetCount: mediaAssetIds.length,
+        requestHash: operationRequestHash({
+          operation: "reindex",
+          scope,
+          mediaAssetIds: [...new Set(mediaAssetIds)].sort(),
+        }),
+      },
     });
     if (created.reused) {
       return { agentRunId: created.run.id, lifecycleStatus: created.run.lifecycleStatus, reused: true };
     }
     const jobs = await repository.enqueueReindexJobs({ userId, agentRunId: created.run.id, scope, mediaAssetIds });
-    await repository.appendAgentRunEvent({
+    const lifecycleStatus = jobs.enqueued > 0 ? "queued" : "succeeded";
+    await repository.transitionMediaRetrievalRun({
       userId,
       agentRunId: created.run.id,
-      lifecycleStatus: "queued",
-      eventType: "queued",
-      deliveryKey: `queued:${created.run.id}`,
+      lifecycleStatus,
+      eventType: lifecycleStatus === "queued" ? "queued" : "completed",
       payload: jobs,
     });
-    return { agentRunId: created.run.id, lifecycleStatus: "queued", jobs, reused: false };
+    return { agentRunId: created.run.id, lifecycleStatus, jobs, reused: false };
   };
 
   const deleteMediaRetrievalIndex = async ({ userId, idempotencyKey }) => {
@@ -359,7 +414,10 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
       runType: "media-purge",
       idempotencyKey,
       confirmed: true,
-      inputSummary: { operation: "delete-index" },
+      inputSummary: {
+        operation: "delete-index",
+        requestHash: operationRequestHash({ operation: "delete-index" }),
+      },
     });
     if (created.reused) {
       return { agentRunId: created.run.id, lifecycleStatus: created.run.lifecycleStatus, reused: true };

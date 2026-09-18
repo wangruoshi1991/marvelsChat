@@ -116,6 +116,16 @@ const avatarConfigSchema = z
   })
   .strict();
 
+const profileIdentityFields = {
+  headline: z.string().trim().max(80).optional(),
+  publicLocation: z.string().trim().max(120).optional(),
+  experienceYears: z.number().int().min(0).max(80).nullable().optional(),
+  languages: z.array(z.enum(["zh", "en", "ja", "ko", "fr", "de", "es", "pt", "ru", "ar"]))
+    .max(10)
+    .refine((codes) => new Set(codes).size === codes.length, "Languages must be unique")
+    .optional(),
+};
+
 export const profileSelfSchema = z.object({
   nickname: z.string().trim().min(1).max(80),
   avatarText: z.string().trim().min(1).max(8).optional(),
@@ -123,7 +133,8 @@ export const profileSelfSchema = z.object({
   community: z.string().trim().max(120).optional().default(""),
   activityArea: z.string().trim().max(120).optional().default(""),
   avatarConfig: avatarConfigSchema.optional().default({}),
-});
+  ...profileIdentityFields,
+}).strict();
 
 const stationVisibilitySchema = z.enum(["private", "friends", "public"]);
 
@@ -166,6 +177,11 @@ export const stationPostSchema = z
 
 export const stationPostParamsSchema = z.object({
   postId: z.string().uuid(),
+});
+
+export const stationPostInteractionSchema = z.object({
+  interactionType: z.enum(["like", "favorite"]),
+  active: z.boolean(),
 });
 
 export const stationDiarySchema = z.object({
@@ -578,7 +594,8 @@ export const profileAdminSchema = z.object({
   bio: z.string().trim().max(500).optional().default(""),
   community: z.string().trim().max(120).optional().default(""),
   activityArea: z.string().trim().max(120).optional().default(""),
-});
+  ...profileIdentityFields,
+}).strict();
 
 export const agentAccessSchema = z.object({
   enabled: z.boolean(),

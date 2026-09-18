@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import {
   AgentDTO,
   Avatar3DBootstrapDTO,
@@ -47,6 +48,7 @@ export function StationPanel({
   onOpenDiaryDetail,
   onOpenAlbumDetail,
   onDeletePost,
+  onSetStationPostInteraction,
   onCreateSiteDraft,
   onApplySiteDraft,
   onOpenAvatar3d,
@@ -57,6 +59,8 @@ export function StationPanel({
   onCreateVideoDraft,
   onActionMessage,
   onActionError,
+  onOpenPoints,
+  onOpenLocation,
 }: {
   active: boolean;
   palette: Palette;
@@ -88,6 +92,9 @@ export function StationPanel({
   onOpenDiaryDetail: (entryId: string) => void;
   onOpenAlbumDetail: (albumId: string) => void;
   onDeletePost: ReturnType<typeof useMiaoxunSession>['deleteStationPost'];
+  onSetStationPostInteraction: ReturnType<
+    typeof useMiaoxunSession
+  >['setStationPostInteraction'];
   onCreateSiteDraft: ReturnType<
     typeof useMiaoxunSession
   >['createStationSiteDraft'];
@@ -112,96 +119,133 @@ export function StationPanel({
   >['createStationVideoDraft'];
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
+  onOpenPoints: () => void;
+  onOpenLocation: () => void;
 }) {
-  if (selectedTab === 'posts') {
-    return (
-      <StationPostsPanel
-        palette={palette}
-        language={language}
-        stationContent={stationContent}
-        profile={profile}
-        renderUserAvatar={renderUserAvatar}
-        ownedAgents={ownedAgents}
-        token={token}
-        onDeletePost={onDeletePost}
-        onActionMessage={onActionMessage}
-        onActionError={onActionError}
-        onOpenPostComposer={onOpenPostComposer}
-      />
-    );
-  }
+  const [homeVisited, setHomeVisited] = useState(selectedTab === 'station');
+  const [postsVisited, setPostsVisited] = useState(selectedTab === 'posts');
+  if (selectedTab === 'station' && !homeVisited) setHomeVisited(true);
+  if (selectedTab === 'posts' && !postsVisited) setPostsVisited(true);
+  const renderSelectedPanel = () => {
+    if (selectedTab === 'agents') {
+      return (
+        <StationAgentsPanel
+          palette={palette}
+          language={language}
+          profile={profile}
+          stationContent={stationContent}
+          agents={agents}
+          agentReadiness={agentReadiness}
+          ownedAgents={ownedAgents}
+          status={moduleStatus('agents')}
+          onOpenAgentThread={onOpenAgentThread}
+          onSetAgentEnabled={onSetAgentEnabled}
+          onCreateSiteDraft={onCreateSiteDraft}
+          onApplySiteDraft={onApplySiteDraft}
+          onLoadAlbumSuggestions={onLoadAlbumSuggestions}
+          onApplyAlbumSuggestion={onApplyAlbumSuggestion}
+          onCreateFileAsset={onCreateFileAsset}
+          onPreprocessFileAsset={onPreprocessFileAsset}
+          onCreateVideoDraft={onCreateVideoDraft}
+          onActionMessage={onActionMessage}
+          onActionError={onActionError}
+        />
+      );
+    }
 
-  if (selectedTab === 'agents') {
-    return (
-      <StationAgentsPanel
-        palette={palette}
-        language={language}
-        profile={profile}
-        stationContent={stationContent}
-        agents={agents}
-        agentReadiness={agentReadiness}
-        ownedAgents={ownedAgents}
-        status={moduleStatus('agents')}
-        onOpenAgentThread={onOpenAgentThread}
-        onSetAgentEnabled={onSetAgentEnabled}
-        onCreateSiteDraft={onCreateSiteDraft}
-        onApplySiteDraft={onApplySiteDraft}
-        onLoadAlbumSuggestions={onLoadAlbumSuggestions}
-        onApplyAlbumSuggestion={onApplyAlbumSuggestion}
-        onCreateFileAsset={onCreateFileAsset}
-        onPreprocessFileAsset={onPreprocessFileAsset}
-        onCreateVideoDraft={onCreateVideoDraft}
-        onActionMessage={onActionMessage}
-        onActionError={onActionError}
-      />
-    );
-  }
+    if (selectedTab === 'outcomes') {
+      return (
+        <StationOutcomesPanel
+          language={language}
+          palette={palette}
+          stationContent={stationContent}
+        />
+      );
+    }
 
-  if (selectedTab === 'outcomes') {
-    return (
-      <StationOutcomesPanel
-        language={language}
-        palette={palette}
-        stationContent={stationContent}
-      />
-    );
-  }
+    if (selectedTab === 'social') {
+      return (
+        <StationSocialPanel
+          palette={palette}
+          language={language}
+          relationships={relationships}
+          status={moduleStatus('social')}
+          onOpenFriendThread={onOpenFriendThread}
+          onOpenPublicProfileByAiId={onOpenPublicProfileByAiId}
+          miaoPoints={profile.miaoPoints}
+          onOpenPoints={onOpenPoints}
+          onOpenLocation={onOpenLocation}
+        />
+      );
+    }
 
-  if (selectedTab === 'social') {
-    return (
-      <StationSocialPanel
-        palette={palette}
-        language={language}
-        relationships={relationships}
-        status={moduleStatus('social')}
-        onOpenFriendThread={onOpenFriendThread}
-        onOpenPublicProfileByAiId={onOpenPublicProfileByAiId}
-      />
-    );
-  }
+    return null;
+  };
 
   return (
-    <StationHome
-      active={active}
-      palette={palette}
-      language={language}
-      token={token}
-      profile={profile}
-      stationContent={stationContent}
-      avatar3d={avatar3d}
-      avatar3dStatus={avatar3dStatus}
-      avatar3dError={avatar3dError}
-      agents={agents}
-      ownedAgents={ownedAgents}
-      moduleStatus={moduleStatus}
-      onOpenAvatar3d={onOpenAvatar3d}
-      onSelectStationTab={onSelectStationTab}
-      onOpenCreateSheet={onOpenCreateSheet}
-      onOpenDiaryDetail={onOpenDiaryDetail}
-      onOpenAlbumDetail={onOpenAlbumDetail}
-      onOpenAgentThread={onOpenAgentThread}
-      onOpenContentList={onOpenContentList}
-      onActionMessage={onActionMessage}
-    />
+    <>
+      {homeVisited ? (
+        <View
+          testID="station-home-retained"
+          style={selectedTab !== 'station' && panelStyles.hidden}
+          pointerEvents={selectedTab === 'station' ? 'auto' : 'none'}
+          accessibilityElementsHidden={selectedTab !== 'station'}
+          importantForAccessibility={
+            selectedTab === 'station' ? 'auto' : 'no-hide-descendants'
+          }
+        >
+          <StationHome
+            active={active && selectedTab === 'station'}
+            palette={palette}
+            language={language}
+            token={token}
+            profile={profile}
+            stationContent={stationContent}
+            avatar3d={avatar3d}
+            avatar3dStatus={avatar3dStatus}
+            avatar3dError={avatar3dError}
+            agents={agents}
+            ownedAgents={ownedAgents}
+            onOpenAvatar3d={onOpenAvatar3d}
+            onSelectStationTab={onSelectStationTab}
+            onOpenCreateSheet={onOpenCreateSheet}
+            onOpenDiaryDetail={onOpenDiaryDetail}
+            onOpenAlbumDetail={onOpenAlbumDetail}
+            onOpenAgentThread={onOpenAgentThread}
+            onOpenContentList={onOpenContentList}
+            onActionMessage={onActionMessage}
+          />
+        </View>
+      ) : null}
+      {postsVisited ? (
+        <View
+          testID="station-posts-retained"
+          style={selectedTab !== 'posts' && panelStyles.hidden}
+          pointerEvents={selectedTab === 'posts' ? 'auto' : 'none'}
+          accessibilityElementsHidden={selectedTab !== 'posts'}
+          importantForAccessibility={
+            selectedTab === 'posts' ? 'auto' : 'no-hide-descendants'
+          }
+        >
+          <StationPostsPanel
+            palette={palette}
+            language={language}
+            stationContent={stationContent}
+            profile={profile}
+            renderUserAvatar={renderUserAvatar}
+            ownedAgents={ownedAgents}
+            token={token}
+            onDeletePost={onDeletePost}
+            onSetStationPostInteraction={onSetStationPostInteraction}
+            onActionMessage={onActionMessage}
+            onActionError={onActionError}
+            onOpenPostComposer={onOpenPostComposer}
+          />
+        </View>
+      ) : null}
+      {renderSelectedPanel()}
+    </>
   );
 }
+
+const panelStyles = StyleSheet.create({ hidden: { display: 'none' } });

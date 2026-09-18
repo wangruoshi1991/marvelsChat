@@ -2,6 +2,7 @@ import {
   LocationResolveDTO,
   OwnedAgentDTO,
   ProfileDTO,
+  ProfileUpdateInput,
   ProfileVisibilityDTO,
 } from '../../models/api';
 import { longRequestTimeoutMs, request } from './http';
@@ -18,23 +19,28 @@ export const profileApi = {
     });
   },
 
-  updateProfile(
-    token: string,
-    profile: Pick<
-      ProfileDTO,
-      | 'nickname'
-      | 'avatarText'
-      | 'bio'
-      | 'community'
-      | 'activityArea'
-      | 'avatarConfig'
-    >,
-  ) {
-    return request<ProfileDTO>('/api/me/profile', {
+  async updateProfile(token: string, profile: ProfileUpdateInput) {
+    const updated = await request<ProfileDTO>('/api/me/profile', {
       method: 'PATCH',
       token,
       body: profile,
     });
+    for (const key of [
+      'headline',
+      'publicLocation',
+      'experienceYears',
+      'languages',
+    ] as const) {
+      if (
+        profile[key] !== undefined &&
+        JSON.stringify(updated[key]) !== JSON.stringify(profile[key])
+      ) {
+        throw new Error(
+          '资料接口返回的保存结果与提交内容不一致，请刷新后重试。',
+        );
+      }
+    }
+    return updated;
   },
 
   resolveLocation(

@@ -5,6 +5,7 @@ import { buildMediaRetrievalRuntimeStatus } from "../media-retrieval-runtime-sta
 import { createMediaRetrievalRepository } from "../media-retrieval-repository.js";
 import { MEDIA_RETRIEVAL_MINIMUM_APP_BUILD } from "../media-retrieval-constants.js";
 import { mediaRetrievalAdminControlsSchema } from "../schemas.js";
+import { createMediaRetrievalDiagnostics } from "../media-retrieval-diagnostics.js";
 
 const publicControls = (controls = {}) => ({
   operatorEnabled: Boolean(controls.agent_enabled),
@@ -31,6 +32,7 @@ const defaultDependencies = () => {
   return {
     repository,
     getOverview: () => repository.getMediaRetrievalAdminOverview(),
+    listDiagnostics: createMediaRetrievalDiagnostics().list,
     listRuns: (input) => repository.listMediaRetrievalAdminRuns(input),
     updateControls: (input) => repository.updateMediaRetrievalOperatorControls(input),
     buildRuntimeStatus: (input) => buildMediaRetrievalRuntimeStatus({ ...input, overview: input?.overview }),
@@ -48,7 +50,9 @@ export function registerAdminMediaRetrievalRoutes(app, {
     authenticate,
     requireAdmin("agents:manage"),
     asyncHandler(async (_req, res) => {
-      const overview = await dependencies.getOverview();
+      const [overview, diagnostics] = await Promise.all([
+        dependencies.getOverview(), dependencies.listDiagnostics(),
+      ]);
       const runtimeStatus = await dependencies.buildRuntimeStatus({ overview });
       res.json({
         data: {
@@ -63,6 +67,7 @@ export function registerAdminMediaRetrievalRoutes(app, {
           },
           controls: publicControls(overview.controls),
           recentRuns: overview.recentRuns || [],
+          diagnostics,
         },
       });
     }),

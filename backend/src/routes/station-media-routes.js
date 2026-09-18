@@ -29,6 +29,7 @@ import { deleteOwnedStationMediaAsset } from "../station-media-deletion-service.
 import {
   createStationMediaAsset,
   getStationMediaAssetForUser,
+  getStationMediaAssetForViewer,
   listStationMediaAssetsForUser,
   markStationMediaAssetUploaded,
   prepareStationMediaAssetUpload,
@@ -415,8 +416,8 @@ export function registerStationMediaRoutes(
       const { mediaAssetId } = stationMediaAssetParamsSchema.parse(
         req.params,
       );
-      const asset = await getStationMediaAssetForUser({
-        userId: req.user.id,
+      const asset = await getStationMediaAssetForViewer({
+        viewerUserId: req.user.id,
         mediaAssetId,
       });
       if (!asset) {
@@ -454,7 +455,7 @@ export function registerStationMediaRoutes(
       if (!response.headers.get("content-type") && asset.mimeType) {
         res.setHeader("content-type", asset.mimeType);
       }
-      res.setHeader("cache-control", "private, max-age=31536000, immutable");
+      res.setHeader("cache-control", "private, no-store");
       res.setHeader("vary", "Authorization");
 
       try {
@@ -473,6 +474,24 @@ export function registerStationMediaRoutes(
       const assets = await listStationMediaAssetsForUser(req.user.id, limit);
       const matcher = buildMediaSearchMatcher(query);
       res.json({ data: assets.filter(matcher) });
+    }),
+  );
+
+  app.get(
+    "/api/station/media-assets/:mediaAssetId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { mediaAssetId } = stationMediaAssetParamsSchema.parse(req.params);
+      const asset = await getStationMediaAssetForViewer({
+        viewerUserId: req.user.id,
+        mediaAssetId,
+      });
+      if (!asset) throw new HttpError(404, "Media asset not found");
+      if (asset.status !== "uploaded" || !asset.storageKey) {
+        throw new HttpError(409, "Media asset is not available");
+      }
+      res.setHeader("cache-control", "no-store");
+      res.json({ data: { id: asset.id, kind: asset.kind, status: asset.status } });
     }),
   );
 

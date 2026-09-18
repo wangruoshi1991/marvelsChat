@@ -242,6 +242,89 @@ export async function getStationMediaAssetForUser({ userId, mediaAssetId }) {
   return rows[0] ? mapStationMediaAsset(rows[0]) : null;
 }
 
+export function createStationMediaAssetViewerReader({ runQuery }) {
+  if (typeof runQuery !== "function") {
+    throw new TypeError("Station media viewer reader requires a query function");
+  }
+
+  return async ({ viewerUserId, mediaAssetId }) => {
+    const rows = await runQuery(
+      `SELECT asset.*
+      FROM station_media_assets asset
+      JOIN users owner ON owner.id = asset.user_id
+      LEFT JOIN profile_visibility visibility ON visibility.user_id = asset.user_id
+      WHERE asset.id = ?
+        AND asset.deleted_at IS NULL
+        AND (
+          asset.user_id = ?
+          OR (
+            owner.status = 'active'
+            AND asset.status = 'uploaded'
+            AND asset.storage_key IS NOT NULL
+            AND (
+              (
+                visibility.show_posts = TRUE
+                AND EXISTS (
+                  SELECT 1
+                  FROM station_post_media post_media
+                  JOIN station_posts post ON post.id = post_media.post_id
+                  WHERE post_media.media_asset_id = asset.id
+                    AND post.user_id = asset.user_id
+                    AND post.deleted_at IS NULL
+                    AND (
+                      post.visibility = 'public'
+                      OR (
+                        post.visibility = 'friends'
+                        AND EXISTS (
+                          SELECT 1
+                          FROM social_relationships relationship
+                          WHERE relationship.follower_user_id = ?
+                            AND relationship.followed_user_id = asset.user_id
+                            AND relationship.relation_type = 'friend'
+                            AND relationship.status = 'active'
+                        )
+                      )
+                    )
+                )
+              )
+              OR (
+                visibility.show_album = TRUE
+                AND EXISTS (
+                  SELECT 1
+                  FROM station_albums album
+                  WHERE album.id = asset.album_id
+                    AND album.user_id = asset.user_id
+                    AND album.deleted_at IS NULL
+                    AND (
+                      album.visibility = 'public'
+                      OR (
+                        album.visibility = 'friends'
+                        AND EXISTS (
+                          SELECT 1
+                          FROM social_relationships relationship
+                          WHERE relationship.follower_user_id = ?
+                            AND relationship.followed_user_id = asset.user_id
+                            AND relationship.relation_type = 'friend'
+                            AND relationship.status = 'active'
+                        )
+                      )
+                    )
+                )
+              )
+            )
+          )
+        )
+      LIMIT 1`,
+      [mediaAssetId, viewerUserId, viewerUserId, viewerUserId],
+    );
+    return rows[0] ? mapStationMediaAsset(rows[0]) : null;
+  };
+}
+
+export const getStationMediaAssetForViewer = createStationMediaAssetViewerReader({
+  runQuery: query,
+});
+
 export async function prepareStationMediaAssetUpload({
   userId,
   mediaAssetId,

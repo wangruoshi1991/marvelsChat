@@ -15,6 +15,7 @@ import {
   mediaRetrievalSearchSchema,
 } from "../schemas.js";
 import { assertMediaRetrievalSearchResponse } from "../../../shared/media-retrieval-public-contract.js";
+import { isMediaRetrievalPublicError } from "../media-retrieval-errors.js";
 
 const createDefaultService = () =>
   createMediaRetrievalUserService({
@@ -30,7 +31,7 @@ const safeMediaRetrievalHandler = (asyncHandler, handler) =>
     try {
       await handler(req, res, next);
     } catch (error) {
-      if (error instanceof MediaRetrievalServiceError) throw error;
+      if (error instanceof MediaRetrievalServiceError || isMediaRetrievalPublicError(error)) throw error;
       if (error instanceof ZodError) {
         throw new MediaRetrievalServiceError("retrieval_request_invalid");
       }
@@ -66,7 +67,11 @@ export function registerStationMediaRetrievalRoutes(app, { authenticate, asyncHa
     authenticate,
     safeMediaRetrievalHandler(asyncHandler, async (req, res) => {
       const body = mediaRetrievalSearchSchema.parse(req.body);
-      const data = await service.searchMediaRetrieval({ userId: req.user.id, ...body });
+      const data = await service.searchMediaRetrieval({
+        userId: req.user.id,
+        ...body,
+        idempotencyKey: idempotencyKeyFrom(req),
+      });
       res.json({ data: assertMediaRetrievalSearchResponse(data) });
     }),
   );

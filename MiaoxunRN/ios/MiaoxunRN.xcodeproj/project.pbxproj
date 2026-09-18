@@ -13,6 +13,8 @@
 		761780EF2CA45674006654EE /* QRCodeScannerModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EE2CA45674006654EE /* QRCodeScannerModule.swift */; };
 		761780F12CA45674006654EE /* QRCodeScannerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780F02CA45674006654EE /* QRCodeScannerViewController.swift */; };
 		761780F32CA45674006654EE /* QRCodeScannerModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 761780F22CA45674006654EE /* QRCodeScannerModuleBridge.m */; };
+		761780F52CA45674006654EE /* MiaoxunHapticsModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780F42CA45674006654EE /* MiaoxunHapticsModule.swift */; };
+		761780F72CA45674006654EE /* MiaoxunHapticsModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 761780F62CA45674006654EE /* MiaoxunHapticsModuleBridge.m */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		A5BA25080721E5EE847639B7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
@@ -29,6 +31,8 @@
 		761780EE2CA45674006654EE /* QRCodeScannerModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = QRCodeScannerModule.swift; path = MiaoxunRN/QRCodeScannerModule.swift; sourceTree = "<group>"; };
 		761780F02CA45674006654EE /* QRCodeScannerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = QRCodeScannerViewController.swift; path = MiaoxunRN/QRCodeScannerViewController.swift; sourceTree = "<group>"; };
 		761780F22CA45674006654EE /* QRCodeScannerModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = QRCodeScannerModuleBridge.m; path = MiaoxunRN/QRCodeScannerModuleBridge.m; sourceTree = "<group>"; };
+		761780F42CA45674006654EE /* MiaoxunHapticsModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MiaoxunHapticsModule.swift; path = MiaoxunRN/MiaoxunHapticsModule.swift; sourceTree = "<group>"; };
+		761780F62CA45674006654EE /* MiaoxunHapticsModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = MiaoxunHapticsModuleBridge.m; path = MiaoxunRN/MiaoxunHapticsModuleBridge.m; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = MiaoxunRN/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -50,6 +54,8 @@
 			children = (
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
+				761780F62CA45674006654EE /* MiaoxunHapticsModuleBridge.m */,
+				761780F42CA45674006654EE /* MiaoxunHapticsModule.swift */,
 				761780F22CA45674006654EE /* QRCodeScannerModuleBridge.m */,
 				761780EE2CA45674006654EE /* QRCodeScannerModule.swift */,
 				761780F02CA45674006654EE /* QRCodeScannerViewController.swift */,
@@ -277,6 +283,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				761780F72CA45674006654EE /* MiaoxunHapticsModuleBridge.m in Sources */,
+				761780F52CA45674006654EE /* MiaoxunHapticsModule.swift in Sources */,
 				761780F32CA45674006654EE /* QRCodeScannerModuleBridge.m in Sources */,
 				761780EF2CA45674006654EE /* QRCodeScannerModule.swift in Sources */,
 				761780F12CA45674006654EE /* QRCodeScannerViewController.swift in Sources */,
@@ -293,7 +301,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 42;
+				CURRENT_PROJECT_VERSION = 44;
 				DEVELOPMENT_TEAM = R8K5DUTWB6;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = MiaoxunRN/Info.plist;
@@ -326,7 +334,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 42;
+				CURRENT_PROJECT_VERSION = 44;
 				DEVELOPMENT_TEAM = R8K5DUTWB6;
 				INFOPLIST_FILE = MiaoxunRN/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;

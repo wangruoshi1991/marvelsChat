@@ -109,6 +109,10 @@ export async function getPublicProfileByAiId({ viewerUserId, aiId, onlineUserIds
       p.avatar_text,
       p.avatar_config,
       p.bio,
+      p.headline,
+      p.public_location,
+      p.experience_years,
+      p.languages,
       p.community,
       p.activity_area,
       p.miao_points,
@@ -180,45 +184,66 @@ export async function updateUserStationConfig(userId, stationConfig = {}) {
   return getProfileForUser(userId);
 }
 
-export async function updateUserProfile({
-  userId,
-  nickname,
-  bio = "",
-  community = "",
-  activityArea = "",
-  avatarText = "",
-  avatarConfig = {},
-}) {
-  const resolvedNickname = String(nickname || "").trim();
-  const existing = await findUserByDisplayName(resolvedNickname);
-  if (existing && existing.id !== userId) {
-    throw new HttpError(409, "Display name already registered");
-  }
-  const resolvedAvatarText = String(avatarText || displayInitial(resolvedNickname)).trim().slice(0, 8);
+export function createUserProfileUpdater({
+  findByDisplayName = findUserByDisplayName,
+  transaction = withTransaction,
+  getProfile = getProfileForUser,
+} = {}) {
+  return async function updateUserProfile({
+    userId,
+    nickname,
+    bio = "",
+    community = "",
+    activityArea = "",
+    avatarText = "",
+    avatarConfig = {},
+    headline,
+    publicLocation,
+    experienceYears,
+    languages,
+  }) {
+    const resolvedNickname = String(nickname || "").trim();
+    const existing = await findByDisplayName(resolvedNickname);
+    if (existing && existing.id !== userId) {
+      throw new HttpError(409, "Display name already registered");
+    }
+    const resolvedAvatarText = String(avatarText || displayInitial(resolvedNickname)).trim().slice(0, 8);
 
-  await withTransaction(async (connection) => {
-    await connection.execute("UPDATE users SET display_name = ? WHERE id = ?", [resolvedNickname, userId]);
-    await connection.execute(
-      `UPDATE user_profiles
-      SET
-        nickname = ?,
-        avatar_text = ?,
-        bio = ?,
-        community = ?,
-        activity_area = ?,
-        avatar_config = ?::jsonb
-      WHERE user_id = ?`,
-      [
-        resolvedNickname,
-        resolvedAvatarText || displayInitial(resolvedNickname),
-        bio,
-        normalizeLocationText(community),
-        normalizeLocationText(activityArea),
-        JSON.stringify(normalizeAvatarConfig(avatarConfig, userId)),
-        userId,
-      ],
-    );
-  });
+    await transaction(async (connection) => {
+      await connection.execute("UPDATE users SET display_name = ? WHERE id = ?", [resolvedNickname, userId]);
+      await connection.execute(
+        `UPDATE user_profiles
+        SET
+          nickname = ?,
+          avatar_text = ?,
+          bio = ?,
+          community = ?,
+          activity_area = ?,
+          avatar_config = ?::jsonb,
+          headline = COALESCE(?::text, headline),
+          public_location = COALESCE(?::text, public_location),
+          experience_years = CASE WHEN ?::boolean THEN ?::smallint ELSE experience_years END,
+          languages = COALESCE(?::text[], languages)
+        WHERE user_id = ?`,
+        [
+          resolvedNickname,
+          resolvedAvatarText || displayInitial(resolvedNickname),
+          bio,
+          normalizeLocationText(community),
+          normalizeLocationText(activityArea),
+          JSON.stringify(normalizeAvatarConfig(avatarConfig, userId)),
+          headline ?? null,
+          publicLocation ?? null,
+          experienceYears !== undefined,
+          experienceYears ?? null,
+          languages ?? null,
+          userId,
+        ],
+      );
+    });
 
-  return getProfileForUser(userId);
+    return getProfile(userId);
+  };
 }
+
+export const updateUserProfile = createUserProfileUpdater();

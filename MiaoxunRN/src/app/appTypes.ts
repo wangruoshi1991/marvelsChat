@@ -8,4 +8,5 @@ export type ModalRoute =
   | 'search'
   | 'public-profile'
   | 'station-location'
+  | 'station-profile-edit'
   | null;

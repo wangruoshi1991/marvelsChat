@@ -10,6 +10,8 @@ import {
   toInteger,
 } from "./media-retrieval-repository-shared.js";
 import { MediaRetrievalRepositoryError } from "./media-retrieval-errors.js";
+import { assertMediaRetrievalSearchResponse } from "../../shared/media-retrieval-public-contract.js";
+import { parseJson } from "./repository-mappers.js";
 
 export function createMediaRetrievalRunEventRepository({
   query,
@@ -24,7 +26,8 @@ export function createMediaRetrievalRunEventRepository({
     throw new TypeError("Media retrieval run/event repository requires ID factories.");
   }
 
-  const getExistingRunByIdempotency = async (connection, { userId, idempotencyKey }) => {
+  const getExistingRunByIdempotency = async (connection, input) => {
+    const { userId, idempotencyKey } = input;
     if (!idempotencyKey) return null;
     const rows = await connection.query(
       `SELECT *
@@ -33,7 +36,18 @@ export function createMediaRetrievalRunEventRepository({
       LIMIT 1`,
       [userId, idempotencyKey],
     );
-    return rows[0] || null;
+    const existing = rows[0] || null;
+    if (!existing) return null;
+    const expectedRunType = input.runType || "media-index";
+    const expectedSummary = redactInputSummary(input.inputSummary);
+    const existingSummary = parseJson(existing.input_summary, {});
+    if (
+      existing.run_type !== expectedRunType ||
+      (expectedSummary.requestHash && existingSummary.requestHash !== expectedSummary.requestHash)
+    ) {
+      throw new MediaRetrievalRepositoryError("retrieval_request_invalid");
+    }
+    return existing;
   };
 
   const appendEventWithConnection = async (connection, input) => {
@@ -135,10 +149,15 @@ export function createMediaRetrievalRunEventRepository({
     withTransaction(async (connection) => {
       const existing = await getExistingRunByIdempotency(connection, input);
       if (existing) return { run: mapRun(existing), reused: true };
+      if (input.idempotencyKey) await connection.query("SAVEPOINT media_retrieval_run_insert");
       try {
-        return { run: await insertMediaRetrievalRun(connection, input), reused: false };
+        const run = await insertMediaRetrievalRun(connection, input);
+        if (input.idempotencyKey) await connection.query("RELEASE SAVEPOINT media_retrieval_run_insert");
+        return { run, reused: false };
       } catch (error) {
         if (!input.idempotencyKey || error?.code !== "23505") throw error;
+        await connection.query("ROLLBACK TO SAVEPOINT media_retrieval_run_insert");
+        await connection.query("RELEASE SAVEPOINT media_retrieval_run_insert");
         const replay = await getExistingRunByIdempotency(connection, input);
         if (!replay) throw error;
         return { run: mapRun(replay), reused: true };
@@ -161,6 +180,25 @@ export function createMediaRetrievalRunEventRepository({
       [agentRunId, userId],
     );
     return rows[0] ? mapRun(rows[0]) : null;
+  };
+
+  const getMediaRetrievalSearchResponse = async ({ userId, agentRunId }) => {
+    const rows = await query(
+      `SELECT event.payload -> 'searchResponse' AS search_response
+      FROM agent_run_events AS event
+      JOIN agent_runs AS run
+        ON run.id = event.agent_run_id AND run.user_id = event.user_id
+      WHERE event.user_id = ?
+        AND event.agent_run_id = ?
+        AND event.event_type = 'completed'
+        AND run.agent_id = 'media-retrieval'
+        AND run.run_type = 'media-search'
+      ORDER BY event.sequence DESC
+      LIMIT 1`,
+      [userId, agentRunId],
+    );
+    if (!rows[0]?.search_response) return null;
+    return assertMediaRetrievalSearchResponse(parseJson(rows[0].search_response, null));
   };
 
   const listAgentRunEventsForUser = async ({ userId, agentRunId, afterSequence = 0, limit = 100 }) => {
@@ -200,6 +238,7 @@ export function createMediaRetrievalRunEventRepository({
     createOrGetMediaRetrievalRun,
     appendAgentRunEvent,
     getAgentRunForUser,
+    getMediaRetrievalSearchResponse,
     listAgentRunEventsForUser,
     appendEventWithConnection,
     insertMediaRetrievalRun,

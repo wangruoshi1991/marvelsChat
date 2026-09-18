@@ -1,7 +1,17 @@
 import React from 'react';
-import { Alert, Image, ScrollView, StyleSheet, Text } from 'react-native';
+import {
+  Alert,
+  Image,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+} from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
+import { AIAssistGestureSurface } from '../src/features/assist/AIAssistGestureSurface';
+import { AIAssistProvider } from '../src/features/assist/AIAssistProvider';
+import { AIAssistAction } from '../src/features/assist/aiAssistTypes';
 import {
   Avatar3DBootstrapDTO,
   Avatar3DJobDTO,
@@ -55,6 +65,19 @@ const bootstrap: Avatar3DBootstrapDTO = {
   jobs: [],
   activeJob: null,
   models: [],
+};
+const activeModel = {
+  id: 'model-1',
+  jobId: 'job-1',
+  title: '林末·3D',
+  status: 'active' as const,
+  modelProvider: 'test',
+  qualityStatus: 'passed',
+  byteSize: 4096,
+  thumbnailAvailable: true,
+  interactiveAvailable: true,
+  createdAt: '2026-08-12T00:00:00.000Z',
+  updatedAt: '2026-08-12T00:00:00.000Z',
 };
 
 const awaitingReferencesJob: Avatar3DJobDTO = {
@@ -347,21 +370,23 @@ describe('station avatar layout', () => {
     await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
-  it('fills the 3D stage and keeps only one outfit entry', async () => {
+  it('fills the 3D stage without floating tags covering the model', async () => {
     let renderer: ReactTestRenderer.ReactTestRenderer;
 
     await ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(
-        <StationAvatarSpace
-          avatar3d={bootstrap}
-          avatar3dError=""
-          avatar3dStatus="ready"
-          language="zh"
-          onOpenGenerator={jest.fn()}
-          onOpenOotd={jest.fn()}
-          palette={palettes.light}
-          token="token"
-        />,
+        <AIAssistProvider onAskButler={jest.fn()} routeKey="station">
+          <StationAvatarSpace
+            avatar3d={bootstrap}
+            avatar3dError=""
+            avatar3dStatus="ready"
+            language="zh"
+            onOpenGenerator={jest.fn()}
+            onOpenOotd={jest.fn()}
+            palette={palettes.light}
+            token="token"
+          />
+        </AIAssistProvider>,
       );
     });
 
@@ -376,10 +401,79 @@ describe('station avatar layout', () => {
         .style,
     );
 
-    expect(labels.filter(label => label === '今日穿搭')).toHaveLength(1);
+    expect(labels).not.toContain('今日穿搭');
     expect(labels).toContain('生成形象');
     expect(stageStyle.backgroundColor).toBe('#F7F8FC');
     expect(emptyStyle.flex).toBe(1);
+
+    await ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
+  it('matches the designed 3D long-press actions and keeps legacy entries under More', async () => {
+    const onAskButler = jest.fn();
+    const onOpenGenerator = jest.fn();
+    const onOpenOotd = jest.fn();
+    const share = jest.spyOn(Share, 'share').mockResolvedValue({
+      action: Share.sharedAction,
+    });
+    const alert = jest.spyOn(Alert, 'alert');
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <AIAssistProvider onAskButler={onAskButler} routeKey="station">
+          <StationAvatarSpace
+            avatar3d={{ ...bootstrap, models: [activeModel] }}
+            avatar3dError=""
+            avatar3dStatus="ready"
+            language="zh"
+            onOpenGenerator={onOpenGenerator}
+            onOpenOotd={onOpenOotd}
+            palette={palettes.light}
+            token="token"
+          />
+        </AIAssistProvider>,
+      );
+    });
+
+    const surface = renderer!.root.findByType(AIAssistGestureSurface);
+    const actions = Object.fromEntries(
+      (surface.props.actions as AIAssistAction[]).map(action => [
+        action.direction,
+        action,
+      ]),
+    ) as Record<AIAssistAction['direction'], AIAssistAction>;
+    expect(
+      (['up', 'right', 'down', 'left'] as const).map(direction => [
+        direction,
+        actions[direction].label,
+      ]),
+    ).toEqual([
+      ['up', '分享'],
+      ['right', '妙管家'],
+      ['down', '编辑'],
+      ['left', '更多'],
+    ]);
+
+    await ReactTestRenderer.act(() =>
+      actions.up.onSelect(surface.props.object),
+    );
+    expect(share).toHaveBeenCalledWith({ message: '我的3D形象：林末·3D' });
+    await ReactTestRenderer.act(() =>
+      actions.right.onSelect(surface.props.object),
+    );
+    expect(onAskButler).toHaveBeenCalledWith(surface.props.object);
+    await ReactTestRenderer.act(() =>
+      actions.down.onSelect(surface.props.object),
+    );
+    expect(onOpenGenerator).toHaveBeenCalledTimes(1);
+    await ReactTestRenderer.act(() =>
+      actions.left.onSelect(surface.props.object),
+    );
+    const moreButtons = alert.mock.calls.at(-1)![2]!;
+    expect(moreButtons.map(item => item.text)).toEqual(['今日穿搭', '取消']);
+    await ReactTestRenderer.act(() => moreButtons[0].onPress?.());
+    expect(onOpenOotd).toHaveBeenCalledTimes(1);
 
     await ReactTestRenderer.act(() => renderer!.unmount());
   });
@@ -395,20 +489,22 @@ describe('station avatar layout', () => {
 
     await ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(
-        <StationAvatarSpace
-          avatar3d={{
-            ...bootstrap,
-            activeJob: persistingJob,
-            jobs: [persistingJob],
-            quota: { ...bootstrap.quota, hasActiveJob: true },
-          }}
-          avatar3dError=""
-          avatar3dStatus="ready"
-          language="zh"
-          onOpenGenerator={jest.fn()}
-          palette={palettes.light}
-          token="token"
-        />,
+        <AIAssistProvider onAskButler={jest.fn()} routeKey="station">
+          <StationAvatarSpace
+            avatar3d={{
+              ...bootstrap,
+              activeJob: persistingJob,
+              jobs: [persistingJob],
+              quota: { ...bootstrap.quota, hasActiveJob: true },
+            }}
+            avatar3dError=""
+            avatar3dStatus="ready"
+            language="zh"
+            onOpenGenerator={jest.fn()}
+            palette={palettes.light}
+            token="token"
+          />
+        </AIAssistProvider>,
       );
     });
 

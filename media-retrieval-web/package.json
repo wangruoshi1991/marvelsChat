@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Restricted Web pilot for Miaoxun private media retrieval.",
   "scripts": {
-    "check": "node --check src/api.js src/main.js vite.config.js",
+    "check": "node ../scripts/check-source-syntax.mjs .",
     "test": "node --test test/*.test.js",
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",

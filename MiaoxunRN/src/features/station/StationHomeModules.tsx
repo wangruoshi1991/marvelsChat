@@ -1,7 +1,18 @@
-import { Bot, MoreHorizontal, Plus } from 'lucide-react-native';
+import { Bot, Eye, MoreHorizontal, Plus, Share2 } from 'lucide-react-native';
 import React from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
+import {
+  Alert,
+  Image,
+  Pressable,
+  Share,
+  StyleProp,
+  Text,
+  View,
+  ViewStyle,
+} from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 
+import { stationPartnerIconAssets } from '../../assets/icons';
 import {
   AgentDTO,
   OwnedAgentDTO,
@@ -13,6 +24,12 @@ import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
+import { AIAssistGestureSurface } from '../assist/AIAssistGestureSurface';
+import { useAIAssist } from '../assist/AIAssistProvider';
+import {
+  AIAssistAction,
+  AIAssistObjectReference,
+} from '../assist/aiAssistTypes';
 import { Language } from '../session/useMiaoxunSession';
 import { resolveStationColors } from './stationTheme';
 
@@ -157,6 +174,8 @@ export function DiaryComicGrid({
         {latestEntries.map(entry => (
           <ComicCoverCard
             key={entry.id}
+            entryId={entry.id}
+            language={language}
             palette={palette}
             title={entry.title}
             body={entry.body}
@@ -169,23 +188,33 @@ export function DiaryComicGrid({
 }
 
 function ComicCoverCard({
+  entryId,
+  language,
   palette,
   title,
   body,
   onPress,
 }: {
+  entryId: string;
+  language: Language;
   palette: Palette;
   title: string;
   body: string;
-  onPress?: () => void;
+  onPress: () => void;
 }) {
   const colors = resolveStationColors(palette);
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={!onPress}
-      onPress={onPress}
+    <HomeContentActionCard
+      language={language}
+      onOpen={onPress}
+      palette={palette}
+      object={{
+        kind: 'station-diary',
+        id: entryId,
+        title,
+        metadata: { content: body },
+      }}
       style={[
         styles.stationComicCoverCard,
         { backgroundColor: colors.surface },
@@ -213,7 +242,7 @@ function ComicCoverCard({
       >
         {body}
       </Text>
-    </Pressable>
+    </HomeContentActionCard>
   );
 }
 
@@ -266,9 +295,19 @@ export function AlbumGrid({
 
           return (
             <View key={album.id} style={styles.stationAlbumTile}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => onOpenAlbum(album.id)}
+              <HomeContentActionCard
+                language={language}
+                palette={palette}
+                onOpen={() => onOpenAlbum(album.id)}
+                object={{
+                  kind: 'station-album',
+                  id: album.id,
+                  title: album.title,
+                  metadata: {
+                    content: album.description || '',
+                    mediaCount: album.mediaCount,
+                  },
+                }}
                 style={[
                   styles.stationAlbumCover,
                   { backgroundColor: colors.soft },
@@ -295,7 +334,7 @@ export function AlbumGrid({
                       : textFor(language, '空分类', 'Empty')}
                   </Text>
                 )}
-              </Pressable>
+              </HomeContentActionCard>
               <Text
                 style={[styles.stationAlbumTitle, { color: colors.text }]}
                 numberOfLines={1}
@@ -319,6 +358,113 @@ export function AlbumGrid({
         })}
       </View>
     </View>
+  );
+}
+
+function HomeContentActionCard({
+  children,
+  language,
+  object,
+  onOpen,
+  palette,
+  style,
+}: {
+  children: React.ReactNode;
+  language: Language;
+  object: AIAssistObjectReference;
+  onOpen: () => void;
+  palette: Palette;
+  style: StyleProp<ViewStyle>;
+}) {
+  const assist = useAIAssist();
+  const colors = resolveStationColors(palette);
+  const content =
+    typeof object.metadata?.content === 'string' ? object.metadata.content : '';
+  const text = [object.title.trim(), content.trim()]
+    .filter(Boolean)
+    .join('\n\n');
+  const openDetail = () => {
+    assist.dismiss();
+    onOpen();
+  };
+  const copyContent = () => {
+    Clipboard.setString(text);
+    Alert.alert(textFor(language, '已复制文字', 'Text copied'));
+  };
+  const actions: AIAssistAction[] = [
+    {
+      direction: 'up',
+      label: textFor(language, '分享文字', 'Share text'),
+      Icon: Share2,
+      accent: colors.accent,
+      available: Boolean(text),
+      onSelect: () => {
+        assist.dismiss();
+        Share.share({ message: text }).catch(error => {
+          Alert.alert(
+            textFor(language, '分享失败', 'Sharing failed'),
+            error instanceof Error
+              ? error.message
+              : textFor(
+                  language,
+                  '无法打开系统分享，请重试。',
+                  'Unable to open sharing. Try again.',
+                ),
+          );
+        });
+      },
+    },
+    {
+      direction: 'right',
+      label: textFor(language, '妙管家', 'Butler'),
+      Icon: Bot,
+      accent: colors.accent,
+      onSelect: reference => assist.askButler(reference),
+    },
+    {
+      direction: 'down',
+      label: textFor(language, '查看', 'View'),
+      Icon: Eye,
+      accent: colors.accent,
+      onSelect: openDetail,
+    },
+    {
+      direction: 'left',
+      label: textFor(language, '更多', 'More'),
+      Icon: MoreHorizontal,
+      accent: colors.accent,
+      onSelect: () => {
+        assist.dismiss();
+        Alert.alert(object.title, undefined, [
+          {
+            text: textFor(language, '查看详情', 'View details'),
+            onPress: openDetail,
+          },
+          ...(text
+            ? [
+                {
+                  text: textFor(language, '复制文字', 'Copy text'),
+                  onPress: copyContent,
+                },
+              ]
+            : []),
+          { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
+        ]);
+      },
+    },
+  ];
+
+  return (
+    <AIAssistGestureSurface
+      object={object}
+      actions={actions}
+      palette={palette}
+      onPress={onOpen}
+      style={style}
+      testID={`home-content-assist-${object.kind}-${object.id}`}
+    >
+      {children}
+    </AIAssistGestureSurface>
   );
 }
 
@@ -421,24 +567,32 @@ export function AIPartnerGrid({
             { backgroundColor: colors.soft },
           ]}
         >
-          <View
-            style={[
-              styles.stationAgentMark,
-              {
-                backgroundColor:
-                  agent.identity?.colors.background || palette.rose,
-              },
-            ]}
-          >
-            <Text
+          {agent.id === 'miaoxun-butler' ? (
+            <Image
+              source={stationPartnerIconAssets.miaoxunButler}
+              resizeMode="contain"
+              style={styles.stationAgentImage}
+            />
+          ) : (
+            <View
               style={[
-                styles.stationAgentMarkText,
-                { color: agent.identity?.colors.foreground || '#ffffff' },
+                styles.stationAgentMark,
+                {
+                  backgroundColor:
+                    agent.identity?.colors.background || palette.rose,
+                },
               ]}
             >
-              {agent.identity?.mark || agent.name.slice(0, 1)}
-            </Text>
-          </View>
+              <Text
+                style={[
+                  styles.stationAgentMarkText,
+                  { color: agent.identity?.colors.foreground || '#ffffff' },
+                ]}
+              >
+                {agent.identity?.mark || agent.name.slice(0, 1)}
+              </Text>
+            </View>
+          )}
           <View style={styles.stationAIPartnerCopy}>
             <Text
               style={[styles.stationAIPartnerName, { color: colors.text }]}

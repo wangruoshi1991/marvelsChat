@@ -1,0 +1,18 @@
+# Replace the production HTTPS server's existing /admin blocks with these blocks.
+# Keep API proxy and certificate directives in the surrounding server block.
+location = /admin {
+    return 308 /admin/;
+}
+
+location ^~ /admin/ {
+    alias /opt/projects/marvels-chat/app/admin/;
+    try_files $uri $uri/ /admin/index.html;
+
+    add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "camera=(), geolocation=(), microphone=()" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+}

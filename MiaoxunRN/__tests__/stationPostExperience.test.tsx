@@ -1,8 +1,9 @@
 import React from 'react';
-import { Image, Text, TextInput } from 'react-native';
+import { Alert, Image, Text, TextInput, View } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import { stationPostIconAssets } from '../src/assets/icons';
+import { AIAssistProvider } from '../src/features/assist/AIAssistProvider';
 import { StationPostComposerScreen } from '../src/features/station/StationPostComposerScreen';
 import { StationPostsPanel } from '../src/features/station/StationPostsPanel';
 import { StationTabs } from '../src/features/station/StationHeader';
@@ -25,9 +26,9 @@ jest.mock('react-native/Libraries/Modal/Modal', () => {
 
 jest.mock('react-native-safe-area-context', () => {
   const ReactModule = require('react');
-  const { View } = require('react-native');
+  const { View: NativeView } = require('react-native');
   const SafeAreaMock = ({ children, ...props }: React.PropsWithChildren) =>
-    ReactModule.createElement(View, props, children);
+    ReactModule.createElement(NativeView, props, children);
   return {
     SafeAreaProvider: SafeAreaMock,
     SafeAreaView: SafeAreaMock,
@@ -62,6 +63,8 @@ const post: StationPostDTO = {
   likeCount: 32,
   favoriteCount: 6,
   commentCount: 8,
+  likedByMe: false,
+  favoritedByMe: false,
   media: Array.from({ length: 5 }, (_, index) => imageAsset(index)),
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
@@ -69,7 +72,46 @@ const post: StationPostDTO = {
 
 const renderUserAvatar = () => <Text>头像</Text>;
 
+const postInteractionTree = ({
+  onAskButler,
+  onDeletePost,
+  currentPost = post,
+}: {
+  onAskButler: jest.Mock;
+  onDeletePost: (postId: string) => Promise<void>;
+  currentPost?: StationPostDTO;
+}) => (
+  <AIAssistProvider onAskButler={onAskButler} routeKey="station-posts">
+    <StationPostsPanel
+      language="zh"
+      ownedAgents={[]}
+      palette={palettes.light}
+      profile={emptyProfile}
+      renderUserAvatar={renderUserAvatar}
+      stationContent={{ ...emptyStationContent, posts: [currentPost] }}
+      token="token"
+      onActionError={jest.fn()}
+      onActionMessage={jest.fn()}
+      onDeletePost={onDeletePost}
+      onSetStationPostInteraction={jest.fn(async () => ({
+        postId: currentPost.id,
+        likeCount: currentPost.likeCount,
+        favoriteCount: currentPost.favoriteCount,
+        likedByMe: false,
+        favoritedByMe: false,
+      }))}
+      onOpenPostComposer={jest.fn()}
+    />
+  </AIAssistProvider>
+);
+
+const pressPoint = { nativeEvent: { pageX: 180, pageY: 330 } };
+
 describe('Station post experience', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('maps the five station tabs to the new information architecture', () => {
     const onChange = jest.fn();
     let renderer: ReactTestRenderer.ReactTestRenderer;
@@ -172,19 +214,28 @@ describe('Station post experience', () => {
     let renderer: ReactTestRenderer.ReactTestRenderer;
     ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(
-        <StationPostsPanel
-          language="zh"
-          ownedAgents={[]}
-          palette={palettes.light}
-          profile={emptyProfile}
-          renderUserAvatar={renderUserAvatar}
-          stationContent={{ ...emptyStationContent, posts: [post] }}
-          token="token"
-          onActionError={jest.fn()}
-          onActionMessage={jest.fn()}
-          onDeletePost={jest.fn(async () => undefined)}
-          onOpenPostComposer={onOpenPostComposer}
-        />,
+        <AIAssistProvider onAskButler={jest.fn()} routeKey="station-posts">
+          <StationPostsPanel
+            language="zh"
+            ownedAgents={[]}
+            palette={palettes.light}
+            profile={emptyProfile}
+            renderUserAvatar={renderUserAvatar}
+            stationContent={{ ...emptyStationContent, posts: [post] }}
+            token="token"
+            onActionError={jest.fn()}
+            onActionMessage={jest.fn()}
+            onDeletePost={jest.fn(async () => undefined)}
+            onSetStationPostInteraction={jest.fn(async () => ({
+              postId: post.id,
+              likeCount: post.likeCount,
+              favoriteCount: post.favoriteCount,
+              likedByMe: false,
+              favoritedByMe: false,
+            }))}
+            onOpenPostComposer={onOpenPostComposer}
+          />
+        </AIAssistProvider>,
       );
     });
 
@@ -227,19 +278,28 @@ describe('Station post experience', () => {
 
     ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(
-        <StationPostsPanel
-          language="zh"
-          ownedAgents={[]}
-          palette={palettes.light}
-          profile={emptyProfile}
-          renderUserAvatar={renderUserAvatar}
-          stationContent={emptyStationContent}
-          token="token"
-          onActionError={jest.fn()}
-          onActionMessage={jest.fn()}
-          onDeletePost={jest.fn(async () => undefined)}
-          onOpenPostComposer={onOpenPostComposer}
-        />,
+        <AIAssistProvider onAskButler={jest.fn()} routeKey="station-posts">
+          <StationPostsPanel
+            language="zh"
+            ownedAgents={[]}
+            palette={palettes.light}
+            profile={emptyProfile}
+            renderUserAvatar={renderUserAvatar}
+            stationContent={emptyStationContent}
+            token="token"
+            onActionError={jest.fn()}
+            onActionMessage={jest.fn()}
+            onDeletePost={jest.fn(async () => undefined)}
+            onSetStationPostInteraction={jest.fn(async () => ({
+              postId: post.id,
+              likeCount: post.likeCount,
+              favoriteCount: post.favoriteCount,
+              likedByMe: false,
+              favoritedByMe: false,
+            }))}
+            onOpenPostComposer={onOpenPostComposer}
+          />
+        </AIAssistProvider>,
       );
     });
 
@@ -250,6 +310,128 @@ describe('Station post experience', () => {
         .props.onPress();
     });
     expect(onOpenPostComposer).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes interaction state when the same post receives new server props', () => {
+    const onAskButler = jest.fn();
+    const onDeletePost = jest.fn(async () => undefined);
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        postInteractionTree({ onAskButler, onDeletePost }),
+      );
+    });
+
+    const updatedPost = {
+      ...post,
+      likeCount: 41,
+      favoriteCount: 9,
+      likedByMe: true,
+      favoritedByMe: true,
+    };
+    ReactTestRenderer.act(() => {
+      renderer!.update(
+        postInteractionTree({
+          onAskButler,
+          onDeletePost,
+          currentPost: updatedPost,
+        }),
+      );
+    });
+
+    expect(
+      renderer!.root.findByProps({ accessibilityLabel: '点赞' }).props
+        .accessibilityState,
+    ).toEqual({ selected: true });
+    expect(
+      renderer!.root.findByProps({ accessibilityLabel: '收藏' }).props
+        .accessibilityState,
+    ).toEqual({ selected: true });
+    const textValues = renderer!.root
+      .findAllByType(Text)
+      .map(node => node.props.children);
+    expect(textValues).toContain(41);
+    expect(textValues).toContain(9);
+  });
+
+  it('passes the actual post context to the butler from the global long-press menu', () => {
+    jest
+      .spyOn(View.prototype, 'measureInWindow')
+      .mockImplementation(callback => callback(0, 59, 393, 760));
+    const onAskButler = jest.fn();
+    const onDeletePost = jest.fn(async () => undefined);
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        postInteractionTree({ onAskButler, onDeletePost }),
+      );
+    });
+    ReactTestRenderer.act(() => {
+      renderer!.root
+        .findAllByProps({ testID: `station-post-assist-${post.id}` })
+        .find(node => typeof node.props.onLongPress === 'function')!
+        .props.onLongPress(pressPoint);
+    });
+    expect(
+      renderer!.root.findByProps({ testID: 'content-actions-overlay' }),
+    ).toBeTruthy();
+    ReactTestRenderer.act(() => {
+      renderer!.root
+        .findByProps({ testID: 'content-action-right' })
+        .props.onPress();
+    });
+    expect(onAskButler).toHaveBeenCalledWith({
+      kind: 'station-post',
+      id: post.id,
+      title: '这条动态',
+      metadata: {
+        content: post.body,
+        visibility: post.visibility,
+        mediaCount: post.media.length,
+      },
+    });
+    expect(onDeletePost).not.toHaveBeenCalled();
+    expect(
+      renderer!.root.findAllByProps({ testID: 'content-actions-overlay' }),
+    ).toHaveLength(0);
+    ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
+  it('opens the action menu from more and deletes only after explicit confirmation', async () => {
+    jest
+      .spyOn(View.prototype, 'measureInWindow')
+      .mockImplementation(callback => callback(0, 59, 393, 760));
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    const onDeletePost = jest.fn(async () => undefined);
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        postInteractionTree({ onAskButler: jest.fn(), onDeletePost }),
+      );
+    });
+    ReactTestRenderer.act(() => {
+      renderer!.root
+        .findByProps({ accessibilityLabel: '更多' })
+        .props.onPress(pressPoint);
+    });
+    expect(alert).not.toHaveBeenCalled();
+    expect(onDeletePost).not.toHaveBeenCalled();
+    ReactTestRenderer.act(() => {
+      renderer!.root
+        .findByProps({ testID: 'content-action-left' })
+        .props.onPress();
+    });
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(alert.mock.calls[0][0]).toBe('删除这条动态？');
+    expect(onDeletePost).not.toHaveBeenCalled();
+    const confirm = alert.mock.calls[0][2]?.find(
+      action => action.style === 'destructive',
+    );
+    expect(confirm).toBeDefined();
+    await ReactTestRenderer.act(async () => confirm!.onPress?.());
+    expect(onDeletePost).toHaveBeenCalledTimes(1);
+    expect(onDeletePost).toHaveBeenCalledWith(post.id);
+    ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   it('shows publish errors inside the full-screen composer', async () => {

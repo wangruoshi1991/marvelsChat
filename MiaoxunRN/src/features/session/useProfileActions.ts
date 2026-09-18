@@ -1,29 +1,22 @@
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import {
-  AvatarConfigDTO,
   PresenceMode,
   ProfileDTO,
+  ProfileUpdateInput,
   ProfileVisibilityDTO,
   UserDTO,
 } from '../../models/api';
 import { apiClient } from '../../services/apiClient';
 
-type RefreshBootstrap = (
-  nextToken?: string,
-  showError?: boolean,
-) => Promise<void>;
-
 export function useProfileActions({
   token,
-  refreshBootstrap,
-  setProfile,
+  applySavedProfile,
   setProfileVisibility,
   setUser,
 }: {
   token: string;
-  refreshBootstrap: RefreshBootstrap;
-  setProfile: Dispatch<SetStateAction<ProfileDTO>>;
+  applySavedProfile: (profile: ProfileDTO) => void;
   setProfileVisibility: Dispatch<SetStateAction<ProfileVisibilityDTO>>;
   setUser: Dispatch<SetStateAction<UserDTO | null>>;
 }) {
@@ -55,26 +48,15 @@ export function useProfileActions({
   );
 
   const updateProfile = useCallback(
-    async (nextProfile: {
-      nickname: string;
-      avatarText: string;
-      bio: string;
-      community: string;
-      activityArea: string;
-      avatarConfig: AvatarConfigDTO;
-    }) => {
+    async (nextProfile: ProfileUpdateInput) => {
       if (!token) {
         throw new Error('请先登录。');
       }
       const updated = await apiClient.updateProfile(token, nextProfile);
-      setProfile(updated);
-      setUser(current =>
-        current ? { ...current, displayName: updated.nickname } : current,
-      );
-      await refreshBootstrap(undefined, false);
+      applySavedProfile(updated);
       return updated;
     },
-    [refreshBootstrap, setProfile, setUser, token],
+    [applySavedProfile, token],
   );
 
   return {

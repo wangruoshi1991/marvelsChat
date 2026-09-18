@@ -13,7 +13,12 @@ const htmlDocument = (script: string) => `<!doctype html>
     <meta name="referrer" content="no-referrer" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src http: https: blob:" />
     <style>
-      * { box-sizing: border-box; }
+      * {
+        box-sizing: border-box;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+      }
       html, body, #viewer-stage, #avatar-canvas {
         display: block;
         height: 100%;
@@ -22,7 +27,7 @@ const htmlDocument = (script: string) => `<!doctype html>
         padding: 0;
         width: 100%;
       }
-      html, body, #viewer-stage { background: #F7F8FC; }
+      html, body, #viewer-stage, #avatar-canvas { background: #F7F8FC; }
       #avatar-canvas { touch-action: none; }
       #viewer-loading {
         align-items: center;

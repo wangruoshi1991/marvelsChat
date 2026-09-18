@@ -12,6 +12,7 @@ import {
   stationMediaUploadCompleteSchema,
   stationMediaUploadUrlSchema,
   stationPostParamsSchema,
+  stationPostInteractionSchema,
   stationPostSchema,
 } from "../src/schemas.js";
 
@@ -104,6 +105,14 @@ test("station post schema requires content and bounds attachments", () => {
       ),
     }),
   );
+});
+
+test("station post interactions accept only explicit idempotent states", () => {
+  assert.deepEqual(stationPostInteractionSchema.parse({ interactionType: "like", active: true }), {
+    interactionType: "like", active: true,
+  });
+  assert.throws(() => stationPostInteractionSchema.parse({ interactionType: "comment", active: true }));
+  assert.throws(() => stationPostInteractionSchema.parse({ interactionType: "favorite", active: "true" }));
 });
 
 test("station media upload schemas enforce type and size limits", () => {

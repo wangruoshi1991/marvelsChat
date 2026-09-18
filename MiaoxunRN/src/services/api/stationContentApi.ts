@@ -13,6 +13,12 @@ import { request } from './http';
 import { assertStationContentContract } from './stationContentContract';
 
 export const stationContentApi = {
+  stationMediaAsset(token: string, mediaAssetId: string) {
+    return request<Pick<StationMediaAssetDTO, 'id' | 'kind' | 'status'>>(
+      `/api/station/media-assets/${encodeURIComponent(mediaAssetId)}`,
+      { token },
+    );
+  },
   async stationContent(token: string) {
     const content = await request<StationContentDTO>('/api/station/content', {
       token,
@@ -42,6 +48,25 @@ export const stationContentApi = {
     return request<void>(`/api/station/posts/${postId}`, {
       method: 'DELETE',
       token,
+    });
+  },
+
+  setStationPostInteraction(
+    token: string,
+    postId: string,
+    interactionType: 'like' | 'favorite',
+    active: boolean,
+  ) {
+    return request<{
+      postId: string;
+      likeCount: number;
+      favoriteCount: number;
+      likedByMe: boolean;
+      favoritedByMe: boolean;
+    }>(`/api/station/posts/${postId}/interactions`, {
+      method: 'POST',
+      token,
+      body: { interactionType, active },
     });
   },
 

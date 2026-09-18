@@ -79,7 +79,11 @@ def releaseKeyPassword = project.findProperty("MIAOXUN_RELEASE_KEY_PASSWORD") ?:
 def hasReleaseSigning = [releaseStoreFilePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every {
     it != null && !it.toString().trim().isEmpty()
 }
-def miaoxunVersionCode = (project.findProperty("MIAOXUN_VERSION_CODE") ?: System.getenv("MIAOXUN_VERSION_CODE") ?: "1").toString().toInteger()
+def miaoxunVersionCodeValue = project.findProperty("MIAOXUN_VERSION_CODE") ?: System.getenv("MIAOXUN_VERSION_CODE")
+if (miaoxunVersionCodeValue == null || !(miaoxunVersionCodeValue.toString() ==~ /[1-9][0-9]*/)) {
+    throw new GradleException("MIAOXUN_VERSION_CODE must be provided as a positive integer for Android builds.")
+}
+def miaoxunVersionCode = miaoxunVersionCodeValue.toString().toInteger()
 def miaoxunVersionName = (project.findProperty("MIAOXUN_VERSION_NAME") ?: System.getenv("MIAOXUN_VERSION_NAME") ?: "1.0").toString()
 def miaoxunApiBaseUrl = project.findProperty("MIAOXUN_API_BASE_URL") ?: System.getenv("MIAOXUN_API_BASE_URL")
 
@@ -124,6 +128,11 @@ gradle.taskGraph.whenReady { taskGraph ->
     if (requiresReleaseSigning && isUnsafeReleaseApiBaseUrl(miaoxunApiBaseUrl)) {
         throw new GradleException(
             "Release builds require MIAOXUN_API_BASE_URL to be a public HTTPS origin, not localhost or a loopback URL."
+        )
+    }
+    if (requiresReleaseSigning && miaoxunVersionCode < 26) {
+        throw new GradleException(
+            "Android Release builds with media retrieval require MIAOXUN_VERSION_CODE >= 26."
         )
     }
 }

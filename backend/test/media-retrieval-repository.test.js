@@ -143,6 +143,95 @@ test("createOrGetMediaRetrievalRun redacts its input summary and reuses a user-o
   assert.equal(hasSql(replay.calls, "INSERT INTO agent_runs"), false);
 });
 
+test("a search idempotency key cannot be replayed with a different request hash", async () => {
+  const { repository } = makeRepository({
+    respond: (sql) => sql.includes("FROM agent_runs") && sql.includes("idempotency_key")
+      ? [{
+        id: RUN_A,
+        user_id: USER_A,
+        agent_id: "media-retrieval",
+        run_type: "media-search",
+        lifecycle_status: "succeeded",
+        input_summary: { operation: "search", requestHash: "a".repeat(64) },
+      }]
+      : [],
+  });
+
+  await assert.rejects(
+    () => repository.createOrGetMediaRetrievalRun({
+      userId: USER_A,
+      runType: "media-search",
+      idempotencyKey: "search-operation-0001",
+      inputSummary: { operation: "search", requestHash: "b".repeat(64) },
+    }),
+    (error) => error.code === "retrieval_request_invalid",
+  );
+});
+
+test("a concurrent run key collision rolls back to a savepoint before replay lookup", async () => {
+  let transactionAborted = false;
+  let lookupCount = 0;
+  const { calls, repository } = makeRepository({
+    respond: (sql) => {
+      if (sql.includes("ROLLBACK TO SAVEPOINT media_retrieval_run_insert")) {
+        transactionAborted = false;
+        return [];
+      }
+      if (sql.includes("SAVEPOINT media_retrieval_run_insert")) return [];
+      if (transactionAborted) throw new Error("current transaction is aborted");
+      if (sql.includes("FROM agent_runs") && sql.includes("idempotency_key")) {
+        lookupCount += 1;
+        return lookupCount === 1 ? [] : [{
+          id: RUN_A,
+          user_id: USER_A,
+          agent_id: "media-retrieval",
+          run_type: "media-search",
+          lifecycle_status: "succeeded",
+          input_summary: { operation: "search", requestHash: "a".repeat(64) },
+        }];
+      }
+      if (sql.includes("INSERT INTO agent_runs")) {
+        transactionAborted = true;
+        throw Object.assign(new Error("duplicate key"), { code: "23505" });
+      }
+      return [];
+    },
+  });
+
+  const result = await repository.createOrGetMediaRetrievalRun({
+    userId: USER_A,
+    runType: "media-search",
+    idempotencyKey: "search-operation-0002",
+    inputSummary: { operation: "search", requestHash: "a".repeat(64) },
+  });
+
+  assert.equal(result.reused, true);
+  assert.equal(result.run.id, RUN_A);
+  assert.equal(lookupCount, 2);
+  assert.equal(hasSql(calls, "ROLLBACK TO SAVEPOINT media_retrieval_run_insert"), true);
+});
+
+test("stored search responses are loaded only through the owner-scoped run join", async () => {
+  const response = {
+    agentRunId: RUN_A,
+    lifecycleStatus: "succeeded",
+    method: "b7-product-baseline",
+    results: [],
+  };
+  const { calls, repository } = makeRepository({
+    respond: (sql) => sql.includes("payload -> 'searchResponse'")
+      ? [{ search_response: response }]
+      : [],
+  });
+
+  assert.deepEqual(
+    await repository.getMediaRetrievalSearchResponse({ userId: USER_A, agentRunId: RUN_A }),
+    response,
+  );
+  assert.equal(hasSql(calls, "event.user_id = ?"), true);
+  assert.equal(hasSql(calls, "run.id = event.agent_run_id AND run.user_id = event.user_id"), true);
+});
+
 test("owner-scoped retrieval methods never query a run, profile, event, or segment without user_id", async () => {
   const { calls, repository } = makeRepository({
     respond: (sql) => {
@@ -360,6 +449,9 @@ test("retention uses UTC rollups and scopes event deletion to this Agent only", 
   const eventDeletion = calls.find((call) => call.sql.includes("DELETE FROM agent_run_events"));
   assert.ok(eventDeletion);
   assert.match(eventDeletion.sql, /run\.agent_id = 'media-retrieval'/);
+  const diagnosticDeletion = calls.find((call) => call.sql.includes("DELETE FROM usage_events"));
+  assert.match(diagnosticDeletion.sql, /event_type = 'media_retrieval.provider.failed'/);
+  assert.equal(diagnosticDeletion.params[0].toISOString(), "2026-07-07T00:00:00.000Z");
 });
 
 test("workers claim jobs and lifecycle records with SKIP LOCKED", async () => {

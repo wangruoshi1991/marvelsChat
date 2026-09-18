@@ -39,7 +39,7 @@ const draftLifecycles = new Set(["draft", "review"]);
 const readJson = async (file) => {
   try {
     return JSON.parse(await fs.readFile(file, "utf8"));
-  } catch (error) {
+  } catch {
     throw new AgentCliError(`Unable to read required JSON file: ${path.basename(file)}`, {
       code: "invalid_json_fixture",
     });
@@ -79,7 +79,7 @@ async function validateFixture({ repoRoot, fixture, value, errors }) {
   let schema;
   try {
     schema = await readJson(schemaFile);
-  } catch (error) {
+  } catch {
     addError(errors, "schema_unavailable", `Required ${fixture} schema is unavailable.`);
     return;
   }
@@ -175,7 +175,6 @@ function validateProfileConsistency({ manifest, runtimeStatus, card, errors }) {
 
 async function validateImplementationReferences({
   repoRoot,
-  agentDirectory,
   manifest,
   testPlan,
   integration,
@@ -388,7 +387,6 @@ export async function checkAgentPackage({ repoRoot, agentKey }) {
     ? []
     : await validateImplementationReferences({
       repoRoot,
-      agentDirectory,
       manifest: fixtures.manifest,
       testPlan: fixtures.testPlan,
       integration: fixtures.integration,

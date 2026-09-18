@@ -13,6 +13,7 @@ import {
   mapStationVideoDraft,
   sqlLimit,
 } from "./repository-mappers.js";
+import { listStationPostInteractionsForUser } from "./station-interaction-repository.js";
 
 export {
   getProfileForUser,
@@ -33,6 +34,7 @@ export {
   deleteStationMediaAsset,
   getStationDiaryEntryForUser,
   getStationMediaAssetForUser,
+  getStationMediaAssetForViewer,
   listStationMediaAssetsByIdsForUser,
   listStationAlbumMediaAssetsForUser,
   listStationMediaAssetsForUser,
@@ -61,42 +63,59 @@ export {
   updateFileAssetPreprocessing,
 } from "./station-agent-repository.js";
 
-async function listStationPostsForUser(userId, limit = 40) {
-  const safeLimit = sqlLimit(limit, 40, 80);
-  const postRows = await query(
-    `SELECT *
-    FROM station_posts
-    WHERE user_id = ? AND deleted_at IS NULL
-    ORDER BY created_at DESC, id DESC
-    LIMIT ${safeLimit}`,
-    [userId],
-  );
-  if (!postRows.length) return [];
+export function createStationPostViewerLister({ runQuery, listInteractions }) {
+  return async ({ ownerUserId, viewerUserId, limit = 40 }) => {
+    const safeLimit = sqlLimit(limit, 40, 80);
+    const postRows = await runQuery(
+      `SELECT *
+      FROM station_posts
+      WHERE user_id = ? AND deleted_at IS NULL
+      ORDER BY created_at DESC, id DESC
+      LIMIT ${safeLimit}`,
+      [ownerUserId],
+    );
+    if (!postRows.length) return [];
 
-  const mediaRows = await query(
-    `SELECT pm.post_id, pm.sort_order AS post_sort_order, m.*
-    FROM station_post_media pm
-    JOIN station_media_assets m ON m.id = pm.media_asset_id
-    WHERE
-      pm.post_id = ANY(?::text[])
-      AND m.deleted_at IS NULL
-      AND m.status = 'uploaded'
-    ORDER BY pm.post_id, pm.sort_order ASC`,
-    [postRows.map((row) => row.id)],
-  );
-  const mediaByPost = new Map();
-  for (const row of mediaRows) {
-    const items = mediaByPost.get(row.post_id) || [];
-    items.push(mapStationMediaAsset(row));
-    mediaByPost.set(row.post_id, items);
-  }
+    const postIds = postRows.map((row) => row.id);
+    const mediaRows = await runQuery(
+      `SELECT pm.post_id, pm.sort_order AS post_sort_order, m.*
+      FROM station_post_media pm
+      JOIN station_media_assets m ON m.id = pm.media_asset_id
+      WHERE
+        pm.post_id = ANY(?::text[])
+        AND m.deleted_at IS NULL
+        AND m.status = 'uploaded'
+      ORDER BY pm.post_id, pm.sort_order ASC`,
+      [postIds],
+    );
+    const mediaByPost = new Map();
+    for (const row of mediaRows) {
+      const items = mediaByPost.get(row.post_id) || [];
+      items.push(mapStationMediaAsset(row));
+      mediaByPost.set(row.post_id, items);
+    }
 
-  return postRows.map((row) =>
-    mapStationPost(row, { media: mediaByPost.get(row.id) || [] }),
-  );
+    const interactions = await listInteractions({ userId: viewerUserId, postIds });
+    return postRows.map((row) => {
+      const mine = interactions.get(row.id) || new Set();
+      return mapStationPost(
+        {
+          ...row,
+          liked_by_me: mine.has("like"),
+          favorited_by_me: mine.has("favorite"),
+        },
+        { media: mediaByPost.get(row.id) || [] },
+      );
+    });
+  };
 }
 
-export async function getStationContentForUser(userId) {
+const listStationPostsForViewer = createStationPostViewerLister({
+  runQuery: query,
+  listInteractions: listStationPostInteractionsForUser,
+});
+
+async function getStationContent({ ownerUserId, viewerUserId }) {
   const [
     posts,
     diaryRows,
@@ -108,14 +127,14 @@ export async function getStationContentForUser(userId) {
     comicDiaryRows,
     videoDraftRows,
   ] = await Promise.all([
-    listStationPostsForUser(userId, 40),
+    listStationPostsForViewer({ ownerUserId, viewerUserId, limit: 40 }),
     query(
       `SELECT *
       FROM station_diary_entries
       WHERE user_id = ? AND deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT 20`,
-      [userId],
+      [ownerUserId],
     ),
     query(
       `SELECT
@@ -127,7 +146,7 @@ export async function getStationContentForUser(userId) {
       GROUP BY a.id
       ORDER BY a.created_at DESC
       LIMIT 20`,
-      [userId],
+      [ownerUserId],
     ),
     query(
       `SELECT *
@@ -135,7 +154,7 @@ export async function getStationContentForUser(userId) {
       WHERE user_id = ? AND deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT 40`,
-      [userId],
+      [ownerUserId],
     ),
     query(
       `SELECT *
@@ -143,7 +162,7 @@ export async function getStationContentForUser(userId) {
       WHERE user_id = ? AND deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT 20`,
-      [userId],
+      [ownerUserId],
     ),
     query(
       `SELECT *
@@ -151,7 +170,7 @@ export async function getStationContentForUser(userId) {
       WHERE user_id = ? AND source = 'model' AND deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT 10`,
-      [userId],
+      [ownerUserId],
     ),
     query(
       `SELECT *
@@ -159,7 +178,7 @@ export async function getStationContentForUser(userId) {
       WHERE user_id = ? AND deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT 30`,
-      [userId],
+      [ownerUserId],
     ),
     query(
       `SELECT *
@@ -167,7 +186,7 @@ export async function getStationContentForUser(userId) {
       WHERE user_id = ? AND deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT 20`,
-      [userId],
+      [ownerUserId],
     ),
     query(
       `SELECT *
@@ -175,7 +194,7 @@ export async function getStationContentForUser(userId) {
       WHERE user_id = ? AND deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT 20`,
-      [userId],
+      [ownerUserId],
     ),
   ]);
 
@@ -190,6 +209,14 @@ export async function getStationContentForUser(userId) {
     comicDiaries: comicDiaryRows.map(mapStationComicDiary),
     videoDrafts: videoDraftRows.map(mapStationVideoDraft),
   };
+}
+
+export async function getStationContentForUser(userId) {
+  return getStationContent({ ownerUserId: userId, viewerUserId: userId });
+}
+
+export async function getStationContentForViewer({ ownerUserId, viewerUserId }) {
+  return getStationContent({ ownerUserId, viewerUserId });
 }
 
 export async function createStationPost({

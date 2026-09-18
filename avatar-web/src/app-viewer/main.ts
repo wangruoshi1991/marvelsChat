@@ -49,12 +49,14 @@ const notifyAssistGesture = (
   phase: AssistGesturePhase,
   event: PointerEvent,
 ) => {
-  window.ReactNativeWebView?.postMessage(JSON.stringify({
-    type: "assist-gesture",
-    phase,
-    x: event.clientX,
-    y: event.clientY,
-  }));
+  window.ReactNativeWebView?.postMessage(
+    JSON.stringify({
+      type: "assist-gesture",
+      phase,
+      x: event.clientX,
+      y: event.clientY,
+    }),
+  );
 };
 
 const installAssistGesture = () => {
@@ -75,6 +77,11 @@ const installAssistGesture = () => {
     active = false;
   };
 
+  // A retained WebView can remain mounted while its native screen is hidden.
+  // Cancel its pending timer so a delayed 420 ms callback cannot resurrect a
+  // menu after navigation or backgrounding.
+  const cancel = () => reset();
+
   canvas.addEventListener("pointerdown", (event) => {
     if (!event.isPrimary || event.pointerType !== "touch") return;
     reset();
@@ -90,7 +97,10 @@ const installAssistGesture = () => {
   canvas.addEventListener("pointermove", (event) => {
     if (event.pointerId !== pointerId) return;
     if (!active) {
-      if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > movementTolerance) {
+      if (
+        Math.hypot(event.clientX - origin.x, event.clientY - origin.y) >
+        movementTolerance
+      ) {
         clearTimer();
       }
       return;
@@ -114,6 +124,7 @@ const installAssistGesture = () => {
     }
     reset();
   });
+  return cancel;
 };
 
 const assertModelUrl = (value: string) => {
@@ -124,7 +135,19 @@ const assertModelUrl = (value: string) => {
   return parsed.toString();
 };
 
-installAssistGesture();
+const cancelAssistGesture = installAssistGesture();
+// The canvas has its own long-press interaction; WebKit's image/text callout
+// must not compete with it.
+for (const eventName of ["contextmenu", "selectstart", "dragstart"]) {
+  canvas.addEventListener(eventName, (event) => event.preventDefault());
+}
+canvas.addEventListener("webglcontextlost", () => {
+  loadRevision += 1;
+  activeRequest?.abort();
+  scene?.setActive(false);
+  setLoading(false);
+  notify({ type: "error", message: "3D渲染已中断，请重新加载" });
+});
 
 const load = async ({ modelUrl, token }: ViewerConfig) => {
   if (!String(token || "").trim()) {
@@ -140,7 +163,7 @@ const load = async ({ modelUrl, token }: ViewerConfig) => {
 
   try {
     const response = await fetch(assertModelUrl(modelUrl), {
-      cache: "force-cache",
+      cache: "default",
       credentials: "omit",
       headers: { Authorization: `Bearer ${String(token || "")}` },
       referrerPolicy: "no-referrer",
@@ -150,7 +173,9 @@ const load = async ({ modelUrl, token }: ViewerConfig) => {
       throw new Error(`MODEL_HTTP_${response.status}`);
     }
 
-    const objectUrl = URL.createObjectURL(await response.blob());
+    const blob = await response.blob();
+    if (revision !== loadRevision) return;
+    const objectUrl = URL.createObjectURL(blob);
     try {
       phase = "parsing";
       notify({ type: "parsing" });
@@ -165,7 +190,10 @@ const load = async ({ modelUrl, token }: ViewerConfig) => {
     setLoading(false);
     notify({ type: "loaded" });
   } catch (error) {
-    if (revision !== loadRevision || (error instanceof DOMException && error.name === "AbortError")) {
+    if (
+      revision !== loadRevision ||
+      (error instanceof DOMException && error.name === "AbortError")
+    ) {
       return;
     }
     setLoading(false);
@@ -180,17 +208,22 @@ const resize = () => scene?.resize(canvas.clientWidth, canvas.clientHeight);
 const resizeObserver = new ResizeObserver(resize);
 resizeObserver.observe(canvas);
 window.addEventListener("resize", resize);
-window.addEventListener("pagehide", () => {
-  activeRequest?.abort();
-  resizeObserver.disconnect();
-  scene?.dispose();
-}, { once: true });
+window.addEventListener(
+  "pagehide",
+  () => {
+    activeRequest?.abort();
+    resizeObserver.disconnect();
+    scene?.dispose();
+  },
+  { once: true },
+);
 
 window.MiaoxunAvatarViewer = Object.freeze({
   load,
   resetCamera: () => scene?.resetCamera(),
   setActive: (active: boolean) => {
     viewerActive = active;
+    if (!active) cancelAssistGesture();
     scene?.setActive(active);
     if (active) resize();
   },

@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react-native';
+import type { ImageSourcePropType } from 'react-native';
 
 export type AIAssistDirection = 'up' | 'right' | 'down' | 'left';
 
@@ -6,6 +7,10 @@ export type AIAssistObjectKind =
   | 'avatar-3d'
   | 'chat-message'
   | 'station-post'
+  | 'chat-draft'
+  | 'station-photo'
+  | 'station-diary'
+  | 'station-album'
   | 'link';
 
 export type AIAssistObjectReference = {
@@ -22,6 +27,7 @@ export type AIAssistAction = {
   label: string;
   eyebrow?: string;
   Icon: LucideIcon;
+  imageSource?: ImageSourcePropType;
   accent: string;
   available?: boolean;
   onSelect: (object: AIAssistObjectReference) => void;

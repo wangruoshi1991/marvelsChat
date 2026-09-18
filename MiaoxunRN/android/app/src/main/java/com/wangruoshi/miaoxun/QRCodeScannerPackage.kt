@@ -9,6 +9,7 @@ class QRCodeScannerPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
     listOf(
       MiaoxunConfigModule(reactContext),
+      MiaoxunHapticsModule(reactContext),
       MiaoxunLocationModule(reactContext),
       MiaoxunSpeechModule(reactContext),
       QRCodeScannerModule(reactContext),

@@ -167,7 +167,14 @@ export function createMediaRetrievalIndexLifecycleRepository({
     };
   };
 
-  const transitionMediaRetrievalRun = async ({ userId, agentRunId, lifecycleStatus, failureCode = null, eventType = lifecycleStatus }) =>
+  const transitionMediaRetrievalRun = async ({
+    userId,
+    agentRunId,
+    lifecycleStatus,
+    failureCode = null,
+    eventType = lifecycleStatus,
+    payload = {},
+  }) =>
     withTransaction(async (connection) => {
       const run = await updateRunLifecycle(connection, {
         agentRunId,
@@ -181,7 +188,10 @@ export function createMediaRetrievalIndexLifecycleRepository({
         lifecycleStatus,
         eventType,
         deliveryKey: `${eventType}:${agentRunId}:${lifecycleStatus}`,
-        payload: failureCode ? { reasonCode: failureCode } : {},
+        payload: {
+          ...payload,
+          ...(failureCode ? { reasonCode: failureCode } : {}),
+        },
       });
       return run;
     });

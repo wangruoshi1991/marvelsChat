@@ -38,3 +38,17 @@ test("product audit event vocabulary is stable and payloads retain only allowlis
     },
   );
 });
+
+test("completed search events retain only the strict public response contract", () => {
+  const searchResponse = {
+    agentRunId: "33333333-3333-4333-8333-333333333333",
+    lifecycleStatus: "succeeded",
+    method: "b7-product-baseline",
+    results: [],
+  };
+  assert.deepEqual(safeEventPayload({ searchResponse }), { searchResponse });
+  assert.throws(
+    () => safeEventPayload({ searchResponse: { ...searchResponse, provider: "private" } }),
+    /search response contract/i,
+  );
+});

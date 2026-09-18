@@ -121,6 +121,14 @@ export function createModelScene(
   let radius = 0;
   let homePosition = new Vector3(0, 0, 3);
   let homeTarget = new Vector3();
+  let viewportWidth = 0;
+  let viewportHeight = 0;
+
+  const render = () => {
+    if (disposed) return;
+    controls.update();
+    renderer.render(scene, camera);
+  };
 
   const requiredCameraDistance = () => {
     const verticalHalfFov = (camera.fov * Math.PI / 180) / 2;
@@ -149,12 +157,21 @@ export function createModelScene(
   };
 
   const resize = (width = canvas.clientWidth, height = canvas.clientHeight) => {
-    const safeWidth = Math.max(1, Math.floor(width));
-    const safeHeight = Math.max(1, Math.floor(height));
+    // A retained, hidden native tab has no layout. Preserve its viewport and
+    // camera until it is visible; framing at 1 x 1 makes the return transition jump.
+    if (disposed || width <= 0 || height <= 0) return;
+    const safeWidth = Math.floor(width);
+    const safeHeight = Math.floor(height);
+    if (safeWidth === viewportWidth && safeHeight === viewportHeight) return;
+    viewportWidth = safeWidth;
+    viewportHeight = safeHeight;
     camera.aspect = safeWidth / safeHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(safeWidth, safeHeight, false);
     ensureCurrentCameraFits();
+    // Resizing clears the WebGL buffer. Paint in the same task instead of
+    // exposing that empty (opaque black) buffer until the next animation frame.
+    render();
   };
 
   const frameModel = (model: Object3D) => {
@@ -189,19 +206,21 @@ export function createModelScene(
     currentModel = loaded.scene;
     frameModel(currentModel);
     scene.add(currentModel);
+    // `load` resolves only after the model has actually been drawn. The App may
+    // remove its loading UI immediately after this promise resolves.
+    render();
   };
 
   const resetCamera = () => {
     camera.position.copy(homePosition);
     camera.lookAt(homeTarget);
     controls.target.copy(homeTarget);
-    controls.update();
+    render();
   };
 
   const renderFrame: FrameRequestCallback = () => {
     if (disposed || !rendering) return;
-    controls.update();
-    renderer.render(scene, camera);
+    render();
     frameHandle = requestFrame(renderFrame);
   };
 
@@ -212,6 +231,7 @@ export function createModelScene(
     rendering = active;
     if (rendering) {
       resize();
+      render();
       frameHandle = requestFrame(renderFrame);
     } else {
       cancelFrame(frameHandle);

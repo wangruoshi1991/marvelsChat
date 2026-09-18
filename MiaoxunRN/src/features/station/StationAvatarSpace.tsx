@@ -1,16 +1,18 @@
 import {
-  BookOpen,
   Bot,
   Box,
-  Shirt,
-  Users,
+  ExternalLink,
   RotateCcw,
+  Pencil,
+  LayoutGrid,
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Pressable,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -26,6 +28,7 @@ import {
   AIAssistGestureSurface,
 } from '../assist/AIAssistGestureSurface';
 import { AIAssistAction } from '../assist/aiAssistTypes';
+import { useAIAssist } from '../assist/AIAssistProvider';
 import { Language } from '../session/useMiaoxunSession';
 import { Avatar3DViewer } from './Avatar3DViewer';
 import { resolveStationColors } from './stationTheme';
@@ -61,8 +64,8 @@ export function StationAvatarSpace({
   onOpenOotd?: () => void;
 }) {
   const [viewerError, setViewerError] = useState('');
+  const { askButler } = useAIAssist();
   const [viewerRevision, setViewerRevision] = useState(0);
-  const [assistActive, setAssistActive] = useState(false);
   const assistGestureRef = useRef<AIAssistGestureHandle>(null);
   const colors = resolveStationColors(palette);
   const stageBackgroundColor = '#F7F8FC';
@@ -101,61 +104,106 @@ export function StationAvatarSpace({
     () => [
       {
         direction: 'right',
-        eyebrow: textFor(language, '核心', 'Core'),
-        label: textFor(language, '3D Agent', '3D Agent'),
+        label: textFor(language, '妙管家', 'Butler'),
         Icon: Bot,
         accent: '#2012D9',
-        available: Boolean(onOpenCoreAgent),
-        onSelect: () => onOpenCoreAgent?.(),
+        onSelect: askButler,
       },
       {
         direction: 'up',
-        label: textFor(language, '今日穿搭', 'OOTD'),
-        Icon: Shirt,
+        label: textFor(language, '分享', 'Share'),
+        Icon: ExternalLink,
         accent: '#E46845',
-        available: Boolean(onOpenOotd),
-        onSelect: () => onOpenOotd?.(),
+        available: Boolean(latestModel),
+        onSelect: () => {
+          if (!latestModel) return;
+          const message = textFor(
+            language,
+            `我的3D形象：${latestModel.title}`,
+            `My 3D avatar: ${latestModel.title}`,
+          );
+          Share.share({ message }).catch(error => {
+            Alert.alert(
+              textFor(language, '分享失败', 'Sharing failed'),
+              error instanceof Error
+                ? error.message
+                : textFor(
+                    language,
+                    '无法打开系统分享，请重试。',
+                    'Unable to open sharing. Try again.',
+                  ),
+            );
+          });
+        },
       },
       {
         direction: 'left',
-        label: textFor(language, 'AI伙伴', 'AI partners'),
-        Icon: Users,
+        label: textFor(language, '更多', 'More'),
+        Icon: LayoutGrid,
         accent: '#147D6C',
-        available: Boolean(onOpenAgents),
-        onSelect: () => onOpenAgents?.(),
+        onSelect: () => {
+          Alert.alert(textFor(language, '更多', 'More'), undefined, [
+            ...(onOpenOotd
+              ? [
+                  {
+                    text: textFor(language, '今日穿搭', 'OOTD'),
+                    onPress: onOpenOotd,
+                  },
+                ]
+              : []),
+            ...(onOpenCoreAgent
+              ? [{ text: '3D Agent', onPress: onOpenCoreAgent }]
+              : []),
+            ...(onOpenAgents
+              ? [
+                  {
+                    text: textFor(language, 'AI伙伴', 'AI partners'),
+                    onPress: onOpenAgents,
+                  },
+                ]
+              : []),
+            ...(onOpenDiary
+              ? [
+                  {
+                    text: textFor(language, '漫画日记', 'Comic diary'),
+                    onPress: onOpenDiary,
+                  },
+                ]
+              : []),
+            ...(onOpenCallable
+              ? [
+                  {
+                    text: textFor(language, '可被调用', 'Callable'),
+                    onPress: onOpenCallable,
+                  },
+                ]
+              : []),
+            { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
+          ]);
+        },
       },
       {
         direction: 'down',
-        label: textFor(language, '漫画日记', 'Comic diary'),
-        Icon: BookOpen,
+        label: textFor(language, '编辑', 'Edit'),
+        Icon: Pencil,
         accent: '#C94668',
-        available: Boolean(onOpenDiary),
-        onSelect: () => onOpenDiary?.(),
+        available: canOpenGenerator,
+        onSelect: onOpenGenerator,
       },
     ],
-    [language, onOpenAgents, onOpenCoreAgent, onOpenDiary, onOpenOotd],
+    [
+      askButler,
+      canOpenGenerator,
+      language,
+      onOpenAgents,
+      onOpenCoreAgent,
+      onOpenDiary,
+      onOpenGenerator,
+      onOpenOotd,
+      onOpenCallable,
+      latestModel,
+    ],
   );
-  const floatingTags = [
-    { label: textFor(language, '今日穿搭', 'OOTD'), onPress: onOpenOotd },
-    {
-      label: textFor(language, '漫画日记', 'Comic diary'),
-      onPress: onOpenDiary,
-    },
-    {
-      label: textFor(language, 'AI伙伴', 'AI partners'),
-      onPress: onOpenAgents,
-    },
-    {
-      label: textFor(language, '可被调用', 'Callable'),
-      onPress: onOpenCallable,
-    },
-  ];
-  const floatingTagPositions = [
-    styles.avatarFloatingTag_0,
-    styles.avatarFloatingTag_1,
-    styles.avatarFloatingTag_2,
-    styles.avatarFloatingTag_3,
-  ];
 
   return (
     <View
@@ -179,9 +227,9 @@ export function StationAvatarSpace({
         <AIAssistGestureSurface
           actions={assistActions}
           object={assistObject}
-          onActiveChange={setAssistActive}
           palette={palette}
           ref={assistGestureRef}
+          style={localStyles.assistSurface}
           testID="avatar3d-ai-assist"
         >
           {latestModel && !viewerError ? (
@@ -202,7 +250,6 @@ export function StationAvatarSpace({
               }}
               onError={setViewerError}
               style={styles.avatar3dStageWebView}
-              thumbnailAvailable={latestModel.thumbnailAvailable}
               token={token}
             />
           ) : (
@@ -267,21 +314,6 @@ export function StationAvatarSpace({
               ) : null}
             </View>
           )}
-
-          {!assistActive ? (
-            <View pointerEvents="box-none" style={styles.avatarFloatingTags}>
-              {floatingTags.map((item, index) => (
-                <FloatingTag
-                  key={item.label}
-                  active={index === 3}
-                  label={item.label}
-                  onPress={item.onPress}
-                  palette={palette}
-                  positionStyle={floatingTagPositions[index]}
-                />
-              ))}
-            </View>
-          ) : null}
         </AIAssistGestureSurface>
       </View>
 
@@ -335,6 +367,7 @@ export function StationAvatarSpace({
 }
 
 const localStyles = StyleSheet.create({
+  assistSurface: { flex: 1, width: '100%' },
   preparingPreview: {
     bottom: 0,
     height: '100%',
@@ -417,40 +450,4 @@ function emptyStateBody(language: Language, status: Avatar3DLoadState) {
     );
   }
   return '';
-}
-
-function FloatingTag({
-  label,
-  onPress,
-  positionStyle,
-  active,
-  palette,
-}: {
-  label: string;
-  onPress?: () => void;
-  positionStyle: object;
-  active: boolean;
-  palette: Palette;
-}) {
-  const colors = resolveStationColors(palette);
-  const backgroundColor = active ? colors.accent : colors.surface;
-  const textColor = active ? colors.surface : colors.text;
-
-  return (
-    <Pressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={[
-        styles.avatarFloatingTag,
-        positionStyle,
-        active ? styles.avatarFloatingTagCallable : null,
-        { backgroundColor, shadowColor: palette.shadow },
-      ]}
-    >
-      <Text style={[styles.avatarFloatingTagText, { color: textColor }]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
 }

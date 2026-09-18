@@ -4,9 +4,13 @@ const ReactNative = require('react-native');
 
 ReactNative.NativeModules.MiaoxunConfigModule = {
   apiBaseURL: 'http://127.0.0.1:4390',
+  buildNumber: '42',
 };
 ReactNative.NativeModules.QRCodeScannerModule = {
   scan: jest.fn(async () => 'miaoxun://ai/900202606160001'),
+};
+ReactNative.NativeModules.MiaoxunHapticsModule = {
+  trigger: jest.fn(),
 };
 
 jest.mock('react-native-keychain', () => ({
@@ -16,6 +20,7 @@ jest.mock('react-native-keychain', () => ({
 }));
 
 jest.mock('@react-native-clipboard/clipboard', () => ({
+  getString: jest.fn(async () => ''),
   setString: jest.fn(),
 }));
 
@@ -35,6 +40,23 @@ jest.mock('react-native-webview', () => {
         ...props,
         injectJavaScript,
         testID: 'avatar-webview',
+      });
+    }),
+  };
+});
+
+jest.mock('react-native-video', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    __esModule: true,
+    default: React.forwardRef((props, ref) => {
+      const seek = React.useRef(jest.fn()).current;
+      React.useImperativeHandle(ref, () => ({ seek }));
+      return React.createElement(View, {
+        ...props,
+        seek,
+        testID: 'native-video',
       });
     }),
   };

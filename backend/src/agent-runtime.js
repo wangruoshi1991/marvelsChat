@@ -98,6 +98,7 @@ const callNewApi = async (plan) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.newApi.timeoutMs);
   let response;
+  let payload;
 
   try {
     response = await fetch(endpoint, {
@@ -117,6 +118,15 @@ const callNewApi = async (plan) => {
       body: JSON.stringify(isAnthropicProvider() ? anthropicBody(plan) : completionBody(plan)),
       signal: controller.signal,
     });
+    const responseText = await response.text();
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      throw new HttpError(502, "Model provider returned an invalid JSON response");
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new HttpError(502, "Model provider returned an invalid response envelope");
+    }
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new HttpError(504, "Model provider request timed out", {
@@ -131,7 +141,6 @@ const callNewApi = async (plan) => {
     clearTimeout(timeout);
   }
 
-  const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const providerMessage =
       payload.error?.message ||

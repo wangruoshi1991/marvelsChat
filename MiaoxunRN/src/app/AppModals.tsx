@@ -16,6 +16,7 @@ import { SearchScreen } from '../features/search/SearchScreen';
 import { DeleteAccountSheet } from '../features/settings/DeleteAccountSheet';
 import { SettingsScreen } from '../features/settings/SettingsScreen';
 import { StationLocationScreen } from '../features/station/StationLocationScreen';
+import { StationProfileEditScreen } from '../features/station/StationProfileEditScreen';
 import { AvatarConfigDTO } from '../models/api';
 import { textFor } from '../shared/i18n';
 import { styles } from '../shared/styles';
@@ -171,6 +172,27 @@ export function AppModals({
             profile={session.profile}
             onBack={onCloseModal}
             onResolveLocation={session.resolveLocation}
+            onUpdateProfile={session.updateProfile}
+            onActionError={onToast}
+          />
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={modalRoute === 'station-profile-edit'}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        allowSwipeDismissal={false}
+      >
+        <SafeAreaView
+          style={[styles.safeArea, { backgroundColor: palette.background }]}
+        >
+          <StationProfileEditScreen
+            palette={palette}
+            language={session.language}
+            profile={session.profile}
+            onResolveLocation={session.resolveLocation}
+            onBack={onCloseModal}
             onUpdateProfile={session.updateProfile}
             onActionError={onToast}
           />

@@ -5,6 +5,8 @@ export type APIEnvelope<T> = {
 export type APIErrorEnvelope = {
   error?: {
     message?: string;
+    code?: string;
+    retryable?: boolean;
     requestId?: string;
     details?: {
       code?: string;
@@ -31,12 +33,31 @@ export type UserDTO = {
 export type PresenceMode = 'online' | 'offline' | 'hidden';
 export type PublicPresenceStatus = 'online' | 'offline';
 
+export type ProfileLanguageCode =
+  | 'zh'
+  | 'en'
+  | 'ja'
+  | 'ko'
+  | 'fr'
+  | 'de'
+  | 'es'
+  | 'pt'
+  | 'ru'
+  | 'ar';
+
+export type ProfileIdentityDTO = {
+  headline: string;
+  publicLocation: string;
+  experienceYears: number | null;
+  languages: ProfileLanguageCode[];
+};
+
 type SessionDTO = {
   token: string;
   expiresAt: string;
 };
 
-export type ProfileDTO = {
+export type ProfileDTO = ProfileIdentityDTO & {
   userId: string;
   nickname: string;
   avatarText: string;
@@ -56,6 +77,17 @@ export type ProfileDTO = {
     siteLayout?: StationSiteDraftContentDTO;
   };
 };
+
+export type ProfileUpdateInput = Pick<
+  ProfileDTO,
+  | 'nickname'
+  | 'avatarText'
+  | 'bio'
+  | 'community'
+  | 'activityArea'
+  | 'avatarConfig'
+> &
+  Partial<ProfileIdentityDTO>;
 
 export type AvatarConfigDTO = {
   version?: 2;
@@ -231,7 +263,7 @@ export type PublicProfileDTO = {
     presenceStatus?: PublicPresenceStatus;
     presenceMode?: PresenceMode;
   };
-  profile: {
+  profile: ProfileIdentityDTO & {
     userId: string;
     nickname: string;
     avatarText: string;
@@ -261,7 +293,7 @@ export type RelationshipProfileDTO = {
     aiId: string;
     presenceStatus?: PublicPresenceStatus;
   };
-  profile: {
+  profile: ProfileIdentityDTO & {
     userId: string;
     nickname: string;
     avatarText: string;
@@ -357,6 +389,8 @@ export type StationPostDTO = {
   likeCount: number;
   commentCount: number;
   favoriteCount: number;
+  likedByMe: boolean;
+  favoritedByMe: boolean;
   media: StationMediaAssetDTO[];
   createdAt?: string | null;
   updatedAt?: string | null;

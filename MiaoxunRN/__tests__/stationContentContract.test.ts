@@ -68,6 +68,32 @@ describe('station content API contract', () => {
     });
   });
 
+  test('station content rejects posts without explicit interaction state', async () => {
+    globalThis.fetch = jest.fn(async () =>
+      response({
+        ...validStationContent,
+        posts: [
+          {
+            id: 'post-1',
+            likeCount: 0,
+            favoriteCount: 0,
+            media: [],
+          },
+        ],
+      }),
+    ) as jest.Mock;
+
+    await expect(
+      stationContentApi.stationContent('token'),
+    ).rejects.toMatchObject({
+      code: 'STATION_CONTENT_CONTRACT_MISMATCH',
+      details: {
+        invalidFields: ['posts[0].likedByMe', 'posts[0].favoritedByMe'],
+        source: '/api/station/content',
+      },
+    });
+  });
+
   test('accepts the complete station content contract', async () => {
     globalThis.fetch = jest.fn(async () =>
       response({ stationContent: validStationContent }),

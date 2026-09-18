@@ -89,6 +89,40 @@ export function useStationActions({
     [setStationContent, token],
   );
 
+  const setStationPostInteraction = useCallback(
+    async (
+      postId: string,
+      interactionType: 'like' | 'favorite',
+      active: boolean,
+    ) => {
+      if (!token) {
+        throw new Error('请先登录。');
+      }
+      const result = await apiClient.setStationPostInteraction(
+        token,
+        postId,
+        interactionType,
+        active,
+      );
+      setStationContent(current => ({
+        ...current,
+        posts: current.posts.map(post =>
+          post.id === postId
+            ? {
+                ...post,
+                likeCount: result.likeCount,
+                favoriteCount: result.favoriteCount,
+                likedByMe: result.likedByMe,
+                favoritedByMe: result.favoritedByMe,
+              }
+            : post,
+        ),
+      }));
+      return result;
+    },
+    [setStationContent, token],
+  );
+
   const createStationDiary = useCallback(
     async (payload: {
       title: string;
@@ -571,6 +605,7 @@ export function useStationActions({
     listMiaoPointLedger,
     createStationPost,
     deleteStationPost,
+    setStationPostInteraction,
     createStationDiary,
     updateStationDiary,
     deleteStationDiary,

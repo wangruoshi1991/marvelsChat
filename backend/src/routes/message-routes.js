@@ -118,6 +118,7 @@ export function registerMessageRoutes(
     authenticate,
     asyncHandler(async (req, res) => {
       const { updatedAfter } = incrementalSyncSchema.parse(req.query);
+      const serverTime = new Date().toISOString();
       const threadIds = await listThreadIdsUpdatedSince(req.user.id, updatedAfter || null);
       const threads = threadIds.length
         ? (await listThreadsForUser(req.user.id, getOnlineUserIds())).filter((thread) => threadIds.includes(thread.id))
@@ -134,7 +135,7 @@ export function registerMessageRoutes(
           messagesByThread,
           notices,
           unreadNoticeCount,
-          serverTime: new Date().toISOString(),
+          serverTime,
         },
       });
     }),

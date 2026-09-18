@@ -62,6 +62,10 @@ export const mapProfile = (row) => ({
   nickname: row.nickname,
   avatarText: row.avatar_text,
   bio: row.bio || "",
+  headline: row.headline,
+  publicLocation: row.public_location,
+  experienceYears: row.experience_years,
+  languages: row.languages,
   community: normalizeLocationText(row.community),
   activityArea: normalizeLocationText(row.activity_area),
   avatarConfig: normalizeAvatarConfig(parseJson(row.avatar_config, {}), row.ai_id || row.user_id),
@@ -114,6 +118,8 @@ export const mapStationPost = (row, { media = [] } = {}) => {
     likeCount: Number(row.like_count || 0),
     commentCount: Number(row.comment_count || 0),
     favoriteCount: Number(row.favorite_count || 0),
+    likedByMe: Boolean(row.liked_by_me),
+    favoritedByMe: Boolean(row.favorited_by_me),
     media,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
@@ -390,6 +396,10 @@ export const mapPublicProfile = (row, relation = {}) => {
       avatarText: row.avatar_text,
       avatarConfig: normalizeAvatarConfig(parseJson(row.avatar_config, {}), row.ai_id || row.user_id),
       bio: canShowBio ? row.bio || "" : "",
+      headline: canShowBio ? row.headline : "",
+      publicLocation: canShowBio ? row.public_location : "",
+      experienceYears: canShowBio ? row.experience_years : null,
+      languages: canShowBio ? row.languages : [],
       community: canShowCommunity ? normalizeLocationText(row.community) : "",
       activityArea: canShowActivityArea ? normalizeLocationText(row.activity_area) : "",
       miaoPoints: Number(row.miao_points || 0),
@@ -408,33 +418,43 @@ export const mapPublicProfile = (row, relation = {}) => {
   };
 };
 
-export const mapRelationshipProfile = (row) => ({
-  user: {
-    id: row.user_id,
-    displayName: row.display_name,
-    aiId: row.ai_id,
-    presenceStatus: publicPresenceStatus({
-      presenceMode: normalizePresenceMode(row.presence_mode),
-      isConnected: row.is_connected === true,
-    }),
-  },
-  profile: {
-    userId: row.user_id,
-    nickname: row.nickname,
-    avatarText: row.avatar_text,
-    avatarConfig: normalizeAvatarConfig(parseJson(row.avatar_config, {}), row.ai_id || row.user_id),
-    bio: row.bio || "",
-    community: normalizeLocationText(row.community),
-    activityArea: normalizeLocationText(row.activity_area),
-    followersCount: Number(row.followers_count || 0),
-    followingCount: Number(row.following_count || 0),
-    likesCount: Number(row.likes_count || 0),
-    collectionsCount: Number(row.collections_count || 0),
-  },
-  relationType: row.relation_type,
-  threadId: row.thread_id || null,
-  createdAt: toIso(row.created_at),
-});
+export const mapRelationshipProfile = (row) => {
+  const visibility = mapVisibility(row);
+  const canShowCounts = visibility.showCounts;
+  return {
+    user: {
+      id: row.user_id,
+      displayName: row.display_name,
+      aiId: visibility.showAiId ? row.ai_id : "",
+      presenceStatus: publicPresenceStatus({
+        presenceMode: normalizePresenceMode(row.presence_mode),
+        isConnected: row.is_connected === true,
+      }),
+    },
+    profile: {
+      userId: row.user_id,
+      nickname: row.nickname,
+      avatarText: row.avatar_text,
+      avatarConfig: normalizeAvatarConfig(parseJson(row.avatar_config, {}), row.ai_id || row.user_id),
+      bio: visibility.showBio ? row.bio || "" : "",
+      headline: visibility.showBio ? row.headline : "",
+      publicLocation: visibility.showBio ? row.public_location : "",
+      experienceYears: visibility.showBio ? row.experience_years : null,
+      languages: visibility.showBio ? row.languages : [],
+      community: visibility.showCommunity ? normalizeLocationText(row.community) : "",
+      activityArea: visibility.showActivityArea ? normalizeLocationText(row.activity_area) : "",
+      followersCount: canShowCounts ? Number(row.followers_count || 0) : 0,
+      followingCount: canShowCounts ? Number(row.following_count || 0) : 0,
+      likesCount: canShowCounts ? Number(row.likes_count || 0) : 0,
+      collectionsCount: canShowCounts && visibility.showCollections
+        ? Number(row.collections_count || 0)
+        : 0,
+    },
+    relationType: row.relation_type,
+    threadId: row.thread_id || null,
+    createdAt: toIso(row.created_at),
+  };
+};
 
 export const mapSearchHistory = (row) => ({
   id: row.id,

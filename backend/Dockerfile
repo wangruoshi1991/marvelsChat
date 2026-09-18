@@ -28,6 +28,7 @@ COPY backend/src ./src
 COPY backend/scripts ./scripts
 COPY backend/database ./database
 COPY agents ../agents
+COPY shared ../shared
 COPY --from=avatar-web-build /app/avatar-web/dist ../avatar-web/dist
 
 RUN mkdir -p storage && chown -R node:node /app

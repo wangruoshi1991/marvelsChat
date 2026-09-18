@@ -48,3 +48,27 @@ test("Agent run parameter validation is converted to the public media retrieval 
     (error) => error.code === "retrieval_request_invalid" && error.retryable === false,
   );
 });
+
+test("search requires an explicit idempotency key before service dispatch", async () => {
+  let dispatched = false;
+  const { app, routes } = createRouteRecorder();
+  registerStationMediaRetrievalRoutes(app, {
+    authenticate,
+    asyncHandler,
+    service: {
+      searchMediaRetrieval: async () => {
+        dispatched = true;
+      },
+    },
+  });
+  const route = routes.find((candidate) => candidate.path === "/api/station/media-retrieval/search");
+  await assert.rejects(
+    () => route.handlers[1]({
+      user: { id: "11111111-1111-4111-8111-111111111111" },
+      body: { query: "yellow dress" },
+      get: () => "",
+    }, {}),
+    (error) => error.code === "retrieval_request_invalid" && error.retryable === false,
+  );
+  assert.equal(dispatched, false);
+});

@@ -1,10 +1,9 @@
-import type { LucideIcon } from 'lucide-react-native';
 import {
   Award,
   CircleDot,
   Link2,
-  MapPin,
   Network,
+  Pencil,
   QrCode,
   UserRound,
 } from 'lucide-react-native';
@@ -12,14 +11,21 @@ import React from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 
 import { stationPostIconAssets } from '../../assets/icons';
-import { AvatarConfigDTO, PublicPresenceStatus } from '../../models/api';
+import {
+  AvatarConfigDTO,
+  ProfileIdentityDTO,
+  PublicPresenceStatus,
+} from '../../models/api';
 import { publicPresenceText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { UserAvatarRenderer } from '../messages/messageTypes';
 import { Language } from '../session/useMiaoxunSession';
 import { resolveStationColors } from './stationTheme';
+import { StationTabBar } from './StationTabBar';
+import type { StationTabBarItem } from './StationTabBar';
 import { StationTab } from './stationTypes';
+import { profileIdentityTags } from './stationProfileIdentity';
 
 export function StationProfileHeader({
   palette,
@@ -29,20 +35,17 @@ export function StationProfileHeader({
   avatarText,
   avatarConfig,
   bio,
+  identity,
   presenceStatus,
   followingCount,
   followersCount,
   likesCount,
   collectionsCount,
-  miaoPoints,
-  community,
-  activityArea,
   renderUserAvatar,
   onCopyAIID,
   onShowQRCode,
-  onOpenPoints,
-  onOpenLocation,
   onOpenSocial,
+  onOpenProfileEdit,
 }: {
   palette: Palette;
   language: Language;
@@ -51,26 +54,23 @@ export function StationProfileHeader({
   avatarText: string;
   avatarConfig: AvatarConfigDTO;
   bio: string;
+  identity: ProfileIdentityDTO;
   presenceStatus?: PublicPresenceStatus;
   followingCount: number;
   followersCount: number;
   likesCount: number;
   collectionsCount: number;
-  miaoPoints: number;
-  community: string;
-  activityArea: string;
   renderUserAvatar: UserAvatarRenderer;
   onCopyAIID: () => void;
   onShowQRCode: () => void;
-  onOpenPoints: () => void;
-  onOpenLocation: () => void;
   onOpenSocial: () => void;
+  onOpenProfileEdit?: () => void;
 }) {
   const colors = resolveStationColors(palette);
   const textColor = colors.text;
   const secondaryTextColor = colors.secondaryText;
   const isOnline = presenceStatus === 'online';
-  const tags = [community, activityArea].filter(Boolean);
+  const tags = profileIdentityTags(identity, language);
 
   return (
     <View
@@ -81,7 +81,7 @@ export function StationProfileHeader({
           {renderUserAvatar({
             text: avatarText,
             config: avatarConfig,
-            size: 64,
+            size: 60,
           })}
         </View>
         <View style={styles.stationIdentityCopy}>
@@ -137,6 +137,19 @@ export function StationProfileHeader({
             </Text>
           </View>
         </View>
+        <Pressable
+          accessibilityLabel={textFor(
+            language,
+            '编辑小站资料',
+            'Edit station profile',
+          )}
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={onOpenProfileEdit}
+          style={styles.stationIdentityEditButton}
+        >
+          <Pencil color={secondaryTextColor} size={18} strokeWidth={2.2} />
+        </Pressable>
       </View>
 
       <View style={styles.stationIdentityStats}>
@@ -162,59 +175,42 @@ export function StationProfileHeader({
         />
       </View>
 
+      {identity.headline ? (
+        <Text style={[styles.stationIdentityHeadline, { color: textColor }]}>
+          {identity.headline}
+        </Text>
+      ) : null}
       {bio ? (
         <Text style={[styles.stationIdentityBio, { color: textColor }]}>
           {bio}
         </Text>
       ) : null}
 
-      <View style={styles.stationIdentityTags}>
-        {tags.map(tag => (
-          <Pressable
-            accessibilityRole="button"
-            key={tag}
-            onPress={onOpenLocation}
-            style={[
-              styles.stationIdentityTag,
-              {
-                backgroundColor: colors.soft,
-                borderColor: colors.chipBorder,
-              },
-            ]}
-          >
-            <MapPin color={secondaryTextColor} size={12} strokeWidth={2} />
-            <Text
-              numberOfLines={1}
+      {tags.length ? (
+        <View style={styles.stationIdentityTags}>
+          {tags.map(tag => (
+            <View
+              key={tag}
               style={[
-                styles.stationIdentityTagText,
-                { color: secondaryTextColor },
+                styles.stationIdentityTag,
+                {
+                  backgroundColor: colors.soft,
+                  borderColor: colors.chipBorder,
+                },
               ]}
             >
-              {tag}
-            </Text>
-          </Pressable>
-        ))}
-        <Pressable
-          accessibilityRole="button"
-          onPress={onOpenPoints}
-          style={[
-            styles.stationIdentityTag,
-            {
-              backgroundColor: colors.soft,
-              borderColor: colors.chipBorder,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.stationIdentityTagText,
-              { color: secondaryTextColor },
-            ]}
-          >
-            {textFor(language, `妙点 ${miaoPoints}`, `${miaoPoints} points`)}
-          </Text>
-        </Pressable>
-      </View>
+              <Text
+                style={[
+                  styles.stationIdentityTagText,
+                  { color: secondaryTextColor },
+                ]}
+              >
+                {tag}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -279,14 +275,7 @@ export function StationTabs({
 }) {
   const colors = resolveStationColors(palette);
   const textColor = colors.text;
-  const secondaryTextColor = colors.isLight
-    ? 'rgba(0,0,0,0.52)'
-    : colors.secondaryText;
-  const tabs: Array<{
-    Icon: LucideIcon;
-    label: string;
-    value: StationTab;
-  }> = [
+  const tabs: StationTabBarItem[] = [
     {
       Icon: UserRound,
       label: textFor(language, '第一面', 'Front'),
@@ -312,42 +301,12 @@ export function StationTabs({
 
   return (
     <View style={styles.stationNavRow}>
-      <View accessibilityRole="tablist" style={styles.stationTabs}>
-        {tabs.map(tab => {
-          const isSelected = tab.value === value;
-          return (
-            <Pressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected: isSelected }}
-              key={tab.value}
-              onPress={() => onChange(tab.value)}
-              style={styles.stationTabButton}
-              testID={`station-tab-${tab.value}`}
-            >
-              <View style={styles.stationTabLabelRow}>
-                <tab.Icon
-                  color={isSelected ? textColor : secondaryTextColor}
-                  size={12}
-                  strokeWidth={isSelected ? 2.4 : 1.9}
-                />
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    styles.stationTabText,
-                    isSelected
-                      ? styles.stationTabTextActive
-                      : styles.stationTabTextInactive,
-                    { color: isSelected ? textColor : secondaryTextColor },
-                  ]}
-                >
-                  {tab.label}
-                </Text>
-              </View>
-              {isSelected ? <View style={styles.stationTabIndicator} /> : null}
-            </Pressable>
-          );
-        })}
-      </View>
+      <StationTabBar
+        items={tabs}
+        onChange={onChange}
+        palette={palette}
+        value={value}
+      />
       <Pressable
         accessibilityLabel={textFor(language, '设置', 'Settings')}
         accessibilityRole="button"

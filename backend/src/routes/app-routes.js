@@ -20,7 +20,7 @@ import {
 import {
   getProfileForUser,
   getPublicProfileByAiId,
-  getStationContentForUser,
+  getStationContentForViewer,
 } from "../station-repository.js";
 import {
   aiIdSchema,
@@ -213,7 +213,10 @@ export function registerAppRoutes(
 
       const [ownerProfile, stationContent] = await Promise.all([
         getProfileForUser(publicProfile.user.id),
-        getStationContentForUser(publicProfile.user.id),
+        getStationContentForViewer({
+          ownerUserId: publicProfile.user.id,
+          viewerUserId: req.user.id,
+        }),
       ]);
 
       res.json({

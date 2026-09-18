@@ -108,6 +108,7 @@ test("the real B7 search service and HTTP route emit the canonical search DTO fi
   await route.handlers[1]({
     user: { id: USER_ID },
     body: { query: "Alice wearing a yellow dress", limit: 10 },
+    get: (name) => name === "Idempotency-Key" ? "search-operation-0001" : null,
   }, response);
 
   assert.deepEqual(response.body?.data, fixture.searchSuccess);

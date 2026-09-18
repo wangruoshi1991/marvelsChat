@@ -16,7 +16,7 @@ README.md
 
 项目总说明，包含启动方式、技术栈边界和文档入口。
 
-根目录不放 `package.json`、`package-lock.json` 或 `node_modules/`。依赖安装必须进入对应工程目录执行。
+根目录 `package.json`、`package-lock.json` 与 `node_modules/` 只用于共享质量工具。各业务工程仍在自己的目录安装运行依赖。
 根目录也不放 `.env`，后端环境变量放在 `backend/.env`。
 
 ## MiaoxunRN/
@@ -142,7 +142,7 @@ backend/src/auth.js
 backend/src/repositories.js
 ```
 
-数据库读写层。用户、资料、会话、消息、事件、Agent 授权和后台管理查询都在这里。
+账号基础读写、会话、Agent 授权和 bootstrap 聚合。消息、社交、搜索、通知、账号删除和后台管理查询分别在对应的 `*-repository.js` 或 service 中，不应继续集中写入这个聚合文件。
 
 ```text
 backend/src/station-repository.js
@@ -197,7 +197,7 @@ backend/src/http-error.js
 backend/database/*.sql
 ```
 
-PostgreSQL 表结构和迁移 SQL。
+PostgreSQL 表结构和按编号执行的 forward-only 迁移 SQL。已经执行过的迁移受账本校验和约束；旧表创建语句不是可随意删除的无用文件，数据库变更应增加新迁移。
 
 ```text
 backend/scripts/db-migrate.js
@@ -215,7 +215,7 @@ agents/package.json
 agents/package-lock.json
 ```
 
-Agent 工程的依赖和锁定文件。当前没有额外依赖，所以不会生成实质依赖包。
+Agent 工程的依赖和锁定文件。当前使用 Ajv 验证 Agent SOP 契约。
 
 ```text
 agents/registry.js
@@ -228,6 +228,26 @@ agents/*.agent.js
 ```
 
 每个文件声明一个 Agent 的 key、名称、能力、权限、identity 和提示词计划；后端 `agents/registry.js` 会动态加载这些文件，App 和后台通过后端 API 获取注册结果。
+
+`agents/scripts/` 是检查、测试、评估与发布命令入口。`agents/media-retrieval/` 保存契约、固定测试样本、评估和 smoke 工具，其中一些文件由 CLI 按约定动态加载，不能仅因没有静态 import 就删除。
+
+## avatar-web/ 与 media-retrieval-web/
+
+两个独立 Vite 工程分别负责 3D 工具和媒体检索测试界面。`avatar-web/src/app-viewer/main.ts` 构建 App 的单模型 HTML 查看器，仓库检查会重新生成并和 `MiaoxunRN/src/assets/avatar-viewer/avatar-viewer.html` 比较。普通 Web `dist/` 是可重建产物，不提交。
+
+## shared/
+
+后端与媒体检索 Web 共同使用的公开 DTO、错误码和契约样本。不包含私钥或业务数据库内容；后端 Docker 镜像必须复制此目录。
+
+## scripts/ 与 deploy/
+
+- `scripts/check-repository.sh`：整个仓库的检查入口。
+- `scripts/check-source-syntax.mjs`：递归、逐文件检查 JavaScript 与 Bash，避免 `node --check` 或 `bash -n` 只检查多个参数中的首个文件。
+- `scripts/check-backend-image.sh`：启动无网络、无业务凭据的临时镜像实例，检查存活、未配置数据库时的就绪失败、Agent 加载和 worker 导入。
+- `backend/scripts/check-migration-replay.sh`：在空的专用测试数据库重放历史升级。
+- `backend/scripts/check-api-integration.js`：在名称以 `_migration_test` 结尾的数据库中启动临时后端，验证真实业务请求与拒绝路径。
+- 其他 `scripts/` 文件：生产数据库安装、备份、加密、恢复和发布权限管理。
+- `deploy/`：systemd 服务、数据库限制、环境变量模板与可选 Docker 部署方式。当前 ECS 使用 systemd 和本机 PostgreSQL，容器模板不是运行状态的证明。
 
 ## docs/
 

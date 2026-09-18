@@ -6,9 +6,10 @@ import {
   pickStationPhotoFromLibrary,
   takeStationPhoto,
 } from '../../services/stationMediaPicker';
-import { displayLocationText, displayText, textFor } from '../../shared/i18n';
+import { displayText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
+import { useAIAssist } from '../assist/AIAssistProvider';
 import { UserAvatarRenderer } from '../messages/messageTypes';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { MiaoPointsScreen } from './MiaoPointsScreen';
@@ -29,9 +30,11 @@ import type {
   StationTab,
 } from './stationTypes';
 import { useAvatar3d } from './useAvatar3d';
+import { supportsMediaRetrieval } from '../../services/appFeatures';
+import { StationMediaRetrievalWorkspace } from './StationMediaRetrievalWorkspace';
 
 export function StationScreen({
-  active,
+  active = true,
   palette,
   language,
   session,
@@ -40,6 +43,7 @@ export function StationScreen({
   renderUserAvatar,
   onOpenSettings,
   onOpenLocation,
+  onOpenProfileEdit,
   onCopyAIID,
   onOpenQRCode,
   onOpenFriendThread,
@@ -49,7 +53,7 @@ export function StationScreen({
   onActionMessage,
   onActionError,
 }: {
-  active: boolean;
+  active?: boolean;
   palette: Palette;
   language: Language;
   session: ReturnType<typeof useMiaoxunSession>;
@@ -58,6 +62,7 @@ export function StationScreen({
   renderUserAvatar: UserAvatarRenderer;
   onOpenSettings: () => void;
   onOpenLocation: () => void;
+  onOpenProfileEdit?: () => void;
   onCopyAIID: () => void;
   onOpenQRCode: () => void;
   onOpenFriendThread: (friendUserId: string) => void;
@@ -67,8 +72,10 @@ export function StationScreen({
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
+  const { isActive: isAssistActive } = useAIAssist();
   const [isPointsOpen, setIsPointsOpen] = useState(false);
   const [isAvatar3dOpen, setIsAvatar3dOpen] = useState(false);
+  const [isMediaRetrievalOpen, setIsMediaRetrievalOpen] = useState(false);
   const [createKind, setCreateKind] = useState<StationCreateKind | null>(null);
   const [contentListKind, setContentListKind] =
     useState<StationContentListKind | null>(null);
@@ -94,7 +101,7 @@ export function StationScreen({
   const [isCreatingStationContent, setIsCreatingStationContent] =
     useState(false);
   const [createProgressText, setCreateProgressText] = useState('');
-  const avatar3d = useAvatar3d(session.token, !isAvatar3dOpen);
+  const avatar3d = useAvatar3d(session.token, active && !isAvatar3dOpen);
   const refreshAvatar3d = avatar3d.refresh;
 
   const openAvatar3d = useCallback(() => {
@@ -292,15 +299,12 @@ export function StationScreen({
 
   const isDark = session.appearance === 'dark';
   const stationColors = resolveStationColors(palette);
-  const unsetLocationText = textFor(language, '未设置', 'Not set');
-  const communityText = displayLocationText(
-    language,
-    session.profile.community,
-  );
-  const activityAreaText = displayLocationText(
-    language,
-    session.profile.activityArea,
-  );
+  const isPanelActive =
+    active &&
+    !isAvatar3dOpen &&
+    !isPointsOpen &&
+    contentListKind === null &&
+    createKind === null;
 
   // Presence stays in the session model; its station entry awaits a final design location.
 
@@ -328,6 +332,7 @@ export function StationScreen({
 
       <ScrollView
         contentContainerStyle={styles.stationScrollContent}
+        scrollEnabled={!isAssistActive}
         style={styles.stationPanelScroll}
         testID={`station-panel-scroll-${selectedStationTab}`}
       >
@@ -339,7 +344,7 @@ export function StationScreen({
             ]}
           >
             <StationPageHeading
-              detail={textFor(language, '个人数字名片', 'Digital profile')}
+              detail={textFor(language, '个人数字身份', 'Digital identity')}
               palette={palette}
               title={textFor(language, '第一面', 'Front')}
               watermark="PERSONA"
@@ -352,6 +357,7 @@ export function StationScreen({
               avatarText={session.profile.avatarText}
               avatarConfig={session.profile.avatarConfig}
               bio={displayText(language, session.profile.bio)}
+              identity={session.profile}
               presenceStatus={
                 session.user?.presenceMode === 'online' ? 'online' : 'offline'
               }
@@ -359,18 +365,10 @@ export function StationScreen({
               followersCount={session.profile.followersCount}
               likesCount={session.profile.likesCount}
               collectionsCount={session.profile.collectionsCount}
-              miaoPoints={session.profile.miaoPoints}
-              community={
-                communityText === unsetLocationText ? '' : communityText
-              }
-              activityArea={
-                activityAreaText === unsetLocationText ? '' : activityAreaText
-              }
               renderUserAvatar={renderUserAvatar}
               onCopyAIID={onCopyAIID}
               onShowQRCode={onOpenQRCode}
-              onOpenPoints={() => setIsPointsOpen(true)}
-              onOpenLocation={onOpenLocation}
+              onOpenProfileEdit={onOpenProfileEdit || (() => undefined)}
               onOpenSocial={() => onSelectStationTab('social')}
             />
           </View>
@@ -378,7 +376,7 @@ export function StationScreen({
 
         <View collapsable={false} style={styles.stationPanelWrap}>
           <StationPanel
-            active={active}
+            active={isPanelActive}
             palette={palette}
             language={language}
             selectedTab={selectedStationTab}
@@ -407,6 +405,7 @@ export function StationScreen({
             onOpenDiaryDetail={openDiaryDetail}
             onOpenAlbumDetail={openAlbumDetail}
             onDeletePost={session.deleteStationPost}
+            onSetStationPostInteraction={session.setStationPostInteraction}
             onCreateSiteDraft={session.createStationSiteDraft}
             onApplySiteDraft={session.applyStationSiteDraft}
             onOpenAvatar3d={openAvatar3d}
@@ -417,6 +416,8 @@ export function StationScreen({
             onCreateVideoDraft={session.createStationVideoDraft}
             onActionMessage={onActionMessage}
             onActionError={onActionError}
+            onOpenPoints={() => setIsPointsOpen(true)}
+            onOpenLocation={onOpenLocation}
           />
         </View>
       </ScrollView>
@@ -476,7 +477,11 @@ export function StationScreen({
         animationType="fade"
         presentationStyle="fullScreen"
         visible={contentListKind !== null}
-        onRequestClose={closeContentDetail}
+        onRequestClose={() =>
+          isMediaRetrievalOpen
+            ? setIsMediaRetrievalOpen(false)
+            : closeContentDetail()
+        }
       >
         <SafeAreaProvider>
           <SafeAreaView
@@ -486,7 +491,18 @@ export function StationScreen({
               { backgroundColor: stationColors.surface },
             ]}
           >
-            {contentListDetail?.type === 'create' ? (
+            {isMediaRetrievalOpen ? (
+              <StationMediaRetrievalWorkspace
+                key={session.user?.id}
+                userId={session.user!.id}
+                token={session.token}
+                palette={palette}
+                language={language}
+                agents={session.agents}
+                agentReadiness={session.agentReadiness}
+                onClose={() => setIsMediaRetrievalOpen(false)}
+              />
+            ) : contentListDetail?.type === 'create' ? (
               <StationCreateSheet
                 kind={contentListDetail.kind}
                 fullScreen
@@ -546,6 +562,11 @@ export function StationScreen({
                 diaryEntries={session.stationContent.diaryEntries}
                 language={language}
                 mediaAssets={session.stationContent.mediaAssets}
+                onFindMedia={
+                  supportsMediaRetrieval()
+                    ? () => setIsMediaRetrievalOpen(true)
+                    : undefined
+                }
                 onBack={() => setContentListKind(null)}
                 onCreate={() => {
                   setContentListDetail({

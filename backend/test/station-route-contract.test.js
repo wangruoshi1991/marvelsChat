@@ -29,6 +29,7 @@ test("registers the station content routes used by the mobile client", () => {
     "GET /api/me/miao-points",
     "POST /api/station/posts",
     "DELETE /api/station/posts/:postId",
+    "POST /api/station/posts/:postId/interactions",
     "PATCH /api/station/diary/:entryId",
     "DELETE /api/station/diary/:entryId",
     "PATCH /api/station/albums/:albumId",
@@ -39,6 +40,7 @@ test("registers the station content routes used by the mobile client", () => {
     "PUT /api/station/media-assets/:mediaAssetId/local-upload",
     "POST /api/station/media-assets/:mediaAssetId/upload-complete",
     "GET /api/station/media-assets/:mediaAssetId/file",
+    "GET /api/station/media-assets/:mediaAssetId",
   ];
 
   for (const route of expected) {

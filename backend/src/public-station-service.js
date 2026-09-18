@@ -46,6 +46,36 @@ const publicFileAssets = ({ publicProfile, stationContent, relation }) => {
     }));
 };
 
+const publicMediaAsset = (asset) => ({
+  id: asset.id,
+  albumId: asset.albumId || null,
+  kind: asset.kind,
+  mimeType: asset.mimeType || "",
+  width: asset.width ?? null,
+  height: asset.height ?? null,
+  caption: asset.caption || "",
+  status: asset.status,
+  createdAt: asset.createdAt || null,
+  updatedAt: asset.updatedAt || null,
+});
+
+const publicPost = (post) => ({
+  id: post.id,
+  userId: post.userId,
+  body: post.body || "",
+  locationLabel: post.locationLabel || "",
+  visibility: post.visibility,
+  agentCapabilities: Array.isArray(post.agentCapabilities) ? [...post.agentCapabilities] : [],
+  likeCount: Number(post.likeCount || 0),
+  commentCount: Number(post.commentCount || 0),
+  favoriteCount: Number(post.favoriteCount || 0),
+  likedByMe: post.likedByMe === true,
+  favoritedByMe: post.favoritedByMe === true,
+  media: (post.media || []).map(publicMediaAsset),
+  createdAt: post.createdAt || null,
+  updatedAt: post.updatedAt || null,
+});
+
 export function buildPublicStationView({ publicProfile, ownerProfile = {}, stationContent = {} } = {}) {
   const relation = publicProfile?.relation || {};
   const canShowAlbums = publicListEnabled(publicProfile, "showAlbum");
@@ -54,17 +84,18 @@ export function buildPublicStationView({ publicProfile, ownerProfile = {}, stati
 
   const posts = canShowPosts
     ? (stationContent.posts || []).filter((post) =>
-      canSeeVisibility(post.visibility || "private", relation))
+      canSeeVisibility(post.visibility || "private", relation)).map(publicPost)
     : [];
 
   const albums = canShowAlbums
     ? (stationContent.albums || []).filter((album) => canSeeVisibility(album.visibility || "private", relation))
     : [];
   const visibleAlbumIds = new Set(albums.map((album) => album.id));
-  const mediaAssets = canShowAlbums
+  const visibleMediaAssets = canShowAlbums
     ? (stationContent.mediaAssets || []).filter((asset) => asset.albumId && visibleAlbumIds.has(asset.albumId))
     : [];
-  const visibleMediaIds = new Set(mediaAssets.map((asset) => asset.id));
+  const visibleMediaIds = new Set(visibleMediaAssets.map((asset) => asset.id));
+  const mediaAssets = visibleMediaAssets.map(publicMediaAsset);
 
   const diaryEntries = canShowDiary
     ? (stationContent.diaryEntries || []).filter((entry) => canSeeVisibility(entry.visibility || "private", relation))

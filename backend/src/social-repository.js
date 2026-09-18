@@ -290,6 +290,16 @@ export async function listRelationshipProfiles(userId, type = "friends", limit =
       p.avatar_text,
       p.avatar_config,
       p.bio,
+      p.headline,
+      p.public_location,
+      p.experience_years,
+      p.languages,
+      v.show_bio,
+      v.show_ai_id,
+      v.show_counts,
+      v.show_community,
+      v.show_activity_area,
+      v.show_collections,
       p.community,
       p.activity_area,
       p.following_count,
@@ -300,6 +310,7 @@ export async function listRelationshipProfiles(userId, type = "friends", limit =
     FROM social_relationships r
     JOIN users u ON u.id = r.${targetColumn}
     JOIN user_profiles p ON p.user_id = u.id
+    LEFT JOIN profile_visibility v ON v.user_id = u.id
     LEFT JOIN chat_threads t
       ON t.user_id = ? AND t.peer_user_id = u.id
     WHERE r.${direction} = ? AND r.relation_type = ? AND r.status = 'active' AND u.status = 'active'

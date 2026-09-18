@@ -47,6 +47,13 @@ export async function getPool() {
           database: config.db.database,
           max: config.db.connectionLimit,
         });
+    pool.on("error", (error) => {
+      // pg has already removed the disconnected idle client from the pool.
+      console.error(JSON.stringify({
+        type: "database_pool_error",
+        errorCode: error.code || null,
+      }));
+    });
   }
 
   return pool;

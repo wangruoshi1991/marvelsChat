@@ -150,7 +150,11 @@ export function SettingsScreen({
         palette={palette}
       >
         <SettingsSwitchRow
-          title={textFor(language, '展示简介', 'Show bio')}
+          title={textFor(
+            language,
+            '展示职业资料与简介',
+            'Show professional profile and bio',
+          )}
           value={profileVisibility.showBio}
           palette={palette}
           onChange={value => updateVisibility('showBio', value)}

@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Miaoxun admin console frontend.",
   "scripts": {
-    "check": "node --check *.js test/*.js",
+    "check": "node ../scripts/check-source-syntax.mjs .",
     "test": "node --test test/*.test.js",
     "dev": "vite --host 127.0.0.1",
     "dev:prod-api": "MIAOXUN_ADMIN_API_TARGET=https://8.153.167.11 vite --host 127.0.0.1",

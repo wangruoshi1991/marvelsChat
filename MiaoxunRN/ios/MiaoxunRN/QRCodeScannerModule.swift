@@ -19,7 +19,10 @@ final class MiaoxunConfigModule: NSObject {
       return ["apiBaseURL": ""]
     }
 
-    return ["apiBaseURL": value]
+    return [
+      "apiBaseURL": value,
+      "buildNumber": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
+    ]
   }
 }
 

@@ -38,10 +38,10 @@
       <p class="admin-status" id="admin-status">正在检查登录状态...</p>
 
       <section class="admin-content hidden" id="admin-content">
-        <section class="metric-grid" id="metric-grid"></section>
+        <section class="metric-grid" id="metric-grid" data-admin-permission="users:read"></section>
 
         <section class="admin-grid">
-          <article class="panel wide">
+          <article class="panel wide" data-admin-permission="users:read">
             <header>
               <div>
                 <strong>账号管理</strong>
@@ -82,7 +82,7 @@
             </div>
           </article>
 
-          <article class="panel">
+          <article class="panel" data-admin-permission="agents:manage">
             <header>
               <strong>Agent 注册</strong>
               <span id="agents-count">0</span>
@@ -90,7 +90,7 @@
             <div class="agent-list" id="agents-list"></div>
           </article>
 
-          <article class="panel wide">
+          <article class="panel wide" data-admin-permission="agents:manage">
             <header>
               <strong>Agent 能力配置</strong>
               <span id="agent-readiness-count">0</span>
@@ -100,7 +100,7 @@
             </div>
           </article>
 
-          <article class="panel wide media-retrieval-panel">
+          <article class="panel wide media-retrieval-panel" data-admin-permission="agents:manage">
             <header>
               <div>
                 <strong>媒体检索 Agent</strong>
@@ -113,7 +113,7 @@
             </div>
           </article>
 
-          <article class="panel">
+          <article class="panel" data-admin-permission="model:operate">
             <header>
               <div>
                 <strong>模型服务</strong>
@@ -126,7 +126,7 @@
             </div>
           </article>
 
-          <article class="panel">
+          <article class="panel" data-admin-permission="audit:read">
             <header>
               <strong>事件流</strong>
               <span id="events-count">0</span>
@@ -134,7 +134,7 @@
             <div class="event-list" id="events-list"></div>
           </article>
 
-          <article class="panel wide">
+          <article class="panel wide" data-admin-permission="audit:read">
             <header>
               <strong>Agent 调用记录</strong>
               <span id="runs-count">0</span>

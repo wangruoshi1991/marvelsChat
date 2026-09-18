@@ -118,10 +118,16 @@ export async function authenticate(req, _res, next) {
   }
 }
 
-function hasAdminPermission(user, permission) {
+export function hasAdminPermission(user, permission) {
   if (user?.role !== "admin") return false;
   const permissions = Array.isArray(user.adminPermissions) ? user.adminPermissions : [];
   return permissions.includes("*") || permissions.includes(permission);
+}
+
+export function assertAdminAccountMutationAllowed(actor, { targetRole = "user", requestedRole = "user" } = {}) {
+  if ((targetRole === "admin" || requestedRole === "admin") && !hasAdminPermission(actor, "*")) {
+    throw new HttpError(403, "Super admin permission required");
+  }
 }
 
 export function requireAdmin(permission = "admin:access") {

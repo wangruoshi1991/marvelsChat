@@ -21,9 +21,26 @@ export function assertStationContentContract(
     value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : null;
-  const invalidFields = record
+  const invalidFields: string[] = record
     ? stationContentArrayFields.filter(field => !Array.isArray(record[field]))
     : [...stationContentArrayFields];
+  if (record && Array.isArray(record.posts)) {
+    record.posts.forEach((post, index) => {
+      const item =
+        post && typeof post === 'object' && !Array.isArray(post)
+          ? (post as Record<string, unknown>)
+          : null;
+      if (!item) {
+        invalidFields.push(`posts[${index}]`);
+        return;
+      }
+      for (const field of ['likedByMe', 'favoritedByMe'] as const) {
+        if (typeof item[field] !== 'boolean') {
+          invalidFields.push(`posts[${index}].${field}`);
+        }
+      }
+    });
+  }
 
   if (invalidFields.length === 0) {
     return;

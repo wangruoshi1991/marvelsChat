@@ -2,11 +2,11 @@ import { defineConfig } from "vite";
 
 const apiTarget = process.env.MIAOXUN_ADMIN_API_TARGET || "http://127.0.0.1:4390";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   root: ".",
   base: "/admin/",
   define: {
-    __MIAOXUN_ADMIN_API_TARGET__: JSON.stringify(apiTarget)
+    __MIAOXUN_ADMIN_API_TARGET__: JSON.stringify(command === "serve" ? apiTarget : "")
   },
   server: {
     host: "127.0.0.1",
@@ -29,4 +29,4 @@ export default defineConfig({
       }
     }
   }
-});
+}));

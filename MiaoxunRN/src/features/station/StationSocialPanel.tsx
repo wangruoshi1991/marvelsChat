@@ -20,6 +20,9 @@ export function StationSocialPanel({
   status,
   onOpenFriendThread,
   onOpenPublicProfileByAiId,
+  miaoPoints,
+  onOpenPoints,
+  onOpenLocation,
 }: {
   palette: Palette;
   language: Language;
@@ -27,6 +30,9 @@ export function StationSocialPanel({
   status: string;
   onOpenFriendThread: (friendUserId: string) => void;
   onOpenPublicProfileByAiId: (aiId: string) => void;
+  miaoPoints: number;
+  onOpenPoints: () => void;
+  onOpenLocation: () => void;
 }) {
   const colors = resolveStationColors(palette);
 
@@ -75,6 +81,37 @@ export function StationSocialPanel({
           />
         </View>
       </View>
+
+      <StationCard
+        title={textFor(language, '小站管理', 'Station settings')}
+        detail=""
+        palette={palette}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={textFor(language, '妙点明细', 'Point history')}
+          onPress={onOpenPoints}
+          style={styles.profileDataRow}
+        >
+          <Text style={[styles.profileDataTitle, { color: colors.text }]}>
+            {textFor(language, '妙点', 'Points')}
+          </Text>
+          <Text style={[styles.profileDataValue, { color: colors.text }]}>
+            {miaoPoints}
+          </Text>
+          <ChevronRight color={colors.secondaryText} size={18} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onOpenLocation}
+          style={styles.profileDataRow}
+        >
+          <Text style={[styles.profileDataTitle, { color: colors.text }]}>
+            {textFor(language, '社区与活动区域', 'Community and activity area')}
+          </Text>
+          <ChevronRight color={colors.secondaryText} size={18} />
+        </Pressable>
+      </StationCard>
 
       <StationCard
         title={textFor(language, '社交网络', 'Social')}

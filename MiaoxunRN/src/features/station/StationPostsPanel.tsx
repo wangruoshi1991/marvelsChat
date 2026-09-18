@@ -1,15 +1,30 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Image,
   type ImageSourcePropType,
   Pressable,
+  Share,
   Text,
   View,
 } from 'react-native';
-import { MapPin, Play } from 'lucide-react-native';
+import {
+  Bot,
+  Copy,
+  LayoutGrid,
+  MapPin,
+  Play,
+  Share2,
+} from 'lucide-react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 
 import { stationPostIconAssets } from '../../assets/icons';
+import { AIAssistGestureSurface } from '../assist/AIAssistGestureSurface';
+import { useAIAssist } from '../assist/AIAssistProvider';
+import {
+  AIAssistAction,
+  AIAssistObjectReference,
+} from '../assist/aiAssistTypes';
 import {
   OwnedAgentDTO,
   ProfileDTO,
@@ -34,6 +49,7 @@ export function StationPostsPanel({
   ownedAgents,
   token,
   onDeletePost,
+  onSetStationPostInteraction,
   onActionMessage,
   onActionError,
   onOpenPostComposer,
@@ -46,6 +62,17 @@ export function StationPostsPanel({
   ownedAgents: OwnedAgentDTO[];
   token: string;
   onDeletePost: (postId: string) => Promise<void>;
+  onSetStationPostInteraction: (
+    postId: string,
+    interactionType: 'like' | 'favorite',
+    active: boolean,
+  ) => Promise<{
+    postId: string;
+    likeCount: number;
+    favoriteCount: number;
+    likedByMe: boolean;
+    favoritedByMe: boolean;
+  }>;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
   onOpenPostComposer: () => void;
@@ -131,6 +158,7 @@ export function StationPostsPanel({
           onActionError={onActionError}
           onActionMessage={onActionMessage}
           onDeletePost={onDeletePost}
+          onSetStationPostInteraction={onSetStationPostInteraction}
         />
       ))}
     </View>
@@ -144,6 +172,7 @@ function StationPostCard({
   post,
   token,
   onDeletePost,
+  onSetStationPostInteraction,
   onActionMessage,
   onActionError,
 }: {
@@ -153,10 +182,41 @@ function StationPostCard({
   post: StationPostDTO;
   token: string;
   onDeletePost: (postId: string) => Promise<void>;
+  onSetStationPostInteraction: (
+    postId: string,
+    interactionType: 'like' | 'favorite',
+    active: boolean,
+  ) => Promise<{
+    postId: string;
+    likeCount: number;
+    favoriteCount: number;
+    likedByMe: boolean;
+    favoritedByMe: boolean;
+  }>;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
   const [isDeleting, setIsDeleting] = useState(false);
+  const [liked, setLiked] = useState(post.likedByMe);
+  const [favorited, setFavorited] = useState(post.favoritedByMe);
+  const [likeCount, setLikeCount] = useState(post.likeCount);
+  const [favoriteCount, setFavoriteCount] = useState(post.favoriteCount);
+  const [interactionPending, setInteractionPending] = useState(false);
+
+  useEffect(() => {
+    setLiked(post.likedByMe);
+    setFavorited(post.favoritedByMe);
+    setLikeCount(post.likeCount);
+    setFavoriteCount(post.favoriteCount);
+  }, [
+    post.id,
+    post.likedByMe,
+    post.favoritedByMe,
+    post.likeCount,
+    post.favoriteCount,
+  ]);
+
+  const assist = useAIAssist();
   const agentTags = post.agentCapabilities
     .map(agentId => {
       const agent = ownedAgents.find(item => item.id === agentId);
@@ -165,6 +225,35 @@ function StationPostCard({
     .filter((agent): agent is { id: string; name: string } => Boolean(agent));
   const colors = resolveStationColors(palette);
   const previewMedia = post.media.slice(0, 3);
+
+  const toggleInteraction = (type: 'like' | 'favorite') => {
+    if (interactionPending) return;
+    const next = type === 'like' ? !liked : !favorited;
+    const previous = { liked, favorited, likeCount, favoriteCount };
+    if (type === 'like') {
+      setLiked(next);
+      setLikeCount(value => value + (next ? 1 : -1));
+    } else {
+      setFavorited(next);
+      setFavoriteCount(value => value + (next ? 1 : -1));
+    }
+    setInteractionPending(true);
+    onSetStationPostInteraction(post.id, type, next)
+      .then(result => {
+        setLiked(result.likedByMe);
+        setFavorited(result.favoritedByMe);
+        setLikeCount(result.likeCount);
+        setFavoriteCount(result.favoriteCount);
+      })
+      .catch(error => {
+        setLiked(previous.liked);
+        setFavorited(previous.favorited);
+        setLikeCount(previous.likeCount);
+        setFavoriteCount(previous.favoriteCount);
+        onActionError(error);
+      })
+      .finally(() => setInteractionPending(false));
+  };
 
   const deletePost = () => {
     if (isDeleting) {
@@ -194,8 +283,71 @@ function StationPostCard({
     );
   };
 
+  const object: AIAssistObjectReference = {
+    kind: 'station-post',
+    id: post.id,
+    title: textFor(language, '这条动态', 'This post'),
+    metadata: {
+      content: post.body,
+      visibility: post.visibility,
+      mediaCount: post.media.length,
+    },
+  };
+  const actions: AIAssistAction[] = [
+    ...(post.body
+      ? [
+          {
+            direction: 'up' as const,
+            label: textFor(language, '分享文字', 'Share text'),
+            Icon: Share2,
+            accent: colors.accent,
+            onSelect: () => {
+              Share.share({ message: post.body }).catch(onActionError);
+            },
+          },
+        ]
+      : []),
+    {
+      direction: 'right',
+      label: textFor(language, '妙管家', 'Butler'),
+      Icon: Bot,
+      accent: colors.accent,
+      onSelect: assist.askButler,
+    },
+    ...(post.body
+      ? [
+          {
+            direction: 'down' as const,
+            label: textFor(language, '复制文字', 'Copy text'),
+            Icon: Copy,
+            accent: colors.accent,
+            onSelect: () => {
+              Clipboard.setString(post.body);
+              onActionMessage(
+                textFor(language, '动态文字已复制', 'Post text copied'),
+              );
+            },
+          },
+        ]
+      : []),
+    {
+      direction: 'left',
+      label: textFor(language, '更多', 'More'),
+      Icon: LayoutGrid,
+      accent: colors.accent,
+      onSelect: deletePost,
+      available: !isDeleting,
+    },
+  ];
+
   return (
-    <View style={[styles.stationFeedCard, { backgroundColor: colors.surface }]}>
+    <AIAssistGestureSurface
+      object={object}
+      actions={actions}
+      palette={palette}
+      testID={`station-post-assist-${post.id}`}
+      style={[styles.stationFeedCard, { backgroundColor: colors.surface }]}
+    >
       <View style={styles.stationFeedHeader}>
         <View style={styles.stationFeedDateCopy}>
           <Text
@@ -249,7 +401,16 @@ function StationPostCard({
           accessibilityRole="button"
           accessibilityLabel={textFor(language, '更多', 'More')}
           disabled={isDeleting}
-          onPress={deletePost}
+          onPress={event =>
+            assist.open({
+              object,
+              actions,
+              point: {
+                x: event.nativeEvent.pageX,
+                y: event.nativeEvent.pageY,
+              },
+            })
+          }
           style={styles.stationFeedMore}
         >
           <Image
@@ -351,15 +512,29 @@ function StationPostCard({
       ) : null}
 
       <View style={styles.stationFeedActions}>
-        <PostMetric
-          icon={stationPostIconAssets.likeInactive}
+        <PostMetricButton
+          active={liked}
+          icon={
+            liked
+              ? stationPostIconAssets.likeActive
+              : stationPostIconAssets.likeInactive
+          }
+          label={textFor(language, '点赞', 'Like')}
+          onPress={() => toggleInteraction('like')}
           palette={palette}
-          value={post.likeCount}
+          value={likeCount}
         />
-        <PostMetric
-          icon={stationPostIconAssets.favoriteInactive}
+        <PostMetricButton
+          active={favorited}
+          icon={
+            favorited
+              ? stationPostIconAssets.favoriteActive
+              : stationPostIconAssets.favoriteInactive
+          }
+          label={textFor(language, '收藏', 'Favorite')}
+          onPress={() => toggleInteraction('favorite')}
           palette={palette}
-          value={post.favoriteCount}
+          value={favoriteCount}
         />
         <PostMetric
           icon={stationPostIconAssets.comment}
@@ -367,7 +542,7 @@ function StationPostCard({
           value={post.commentCount}
         />
       </View>
-    </View>
+    </AIAssistGestureSurface>
   );
 }
 
@@ -395,6 +570,33 @@ function PostMetric({
         {value || ''}
       </Text>
     </View>
+  );
+}
+
+function PostMetricButton({
+  active,
+  icon,
+  label,
+  onPress,
+  palette,
+  value,
+}: {
+  active: boolean;
+  icon: ImageSourcePropType;
+  label: string;
+  onPress: () => void;
+  palette: Palette;
+  value: number;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+    >
+      <PostMetric icon={icon} palette={palette} value={value} />
+    </Pressable>
   );
 }
 

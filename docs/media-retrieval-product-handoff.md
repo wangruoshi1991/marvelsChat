@@ -1,7 +1,21 @@
 # AI 相册检索产品后端与 React Native 交接
 
-状态：本地集成冻结，尚未 push、merge 或部署
-更新日期：2026-08-26
+原交付冻结日期：2026-08-26；下文冻结提交保留为伙伴交付基线。公共合同与 RN 接入约定已于
+2026-09-18 正式修订，修订后的搜索请求必须携带幂等键，不能继续按旧合同接入。
+
+9/16 晚间发布更新：新后端/管理台已上线 `app-integration-20260916-04`，RN 1.0(43)
+已分发至现有内外部 TestFlight 群组。检索服务开关和预算未改，仍不可发起真实付费检索。
+实际证据见[发布记录](reviews/2026-09-16-production-and-testflight-43.md)；下段为此前准备快照。
+
+9/18 合同修订更新：已在当前工作区补齐搜索幂等重放、空索引任务终态、Provider 响应大小
+上限和 Android 显式构建号约束。这些修复尚未部署，也没有进入已分发的 TestFlight 43；
+线上 Provider/queue 数据库控制仍关闭、lifecycle 仍为 `sandbox`、ready 索引仍为 0，因而
+手机端当前无法完成真实检索是明确的运行条件阻断。启用付费 Provider、调整预算、部署后端及
+分发新 TestFlight 都是后续独立审批和验收步骤，不能因本次代码闭环而自动执行。
+
+集成状态更新（2026-09-16）：产品后端已通过 `2446809` 进入当前历史并部署；正式 RN 已实现个人相册中的“找素材”，包括明确同意、启用/补建/撤回、运行事件、图片预览和视频命中时间播放，尚未安装到正式模拟器或通过真实供应商验收。新后端/管理台候选 `app-integration-20260916-03` 已暂存，尚未激活。生产 worker 存活，但数据库 Provider/queue 控制关闭、生命周期为 `sandbox`，没有 ready 索引。不能把代码和后端部署等同于 App 检索可用。本地保留开发验证 Web，伙伴分支后续增加的 `/media-retrieval` 托管入口未移植。来源、运行边界和下一步见 [伙伴集成核对](reviews/2026-09-16-partner-integration.md)及[当前线上候选记录](reviews/2026-09-16-online-retrieval-readiness.md)。
+
+生命周期请求先将账号隔离的操作编号存入 Keychain，不保存搜索词、素材或令牌，网络中断/重启后由用户重试并复用原编号，不自动重复付费请求。搜索请求在一次 App 运行期间遇到网络结果不确定时复用同一编号；成功或确定失败后，用户再次搜索生成新编号。费用待核对时禁止索引和搜索，仍允许撤回/物理清除及原编号重试。新增原素材元信息 API 为鉴权 owner-only，只返回 `id/kind/status`；检索结果 DTO 不变。管理台新增脱敏供应商失败诊断，提示词补齐现有 schema，描述提示词 provenance 升至 v2；历史待核对预留、预算和线上开关未更改。
 
 ## 1. 冻结基线
 
@@ -16,10 +30,10 @@
 | 同意版本 | `media-retrieval-consent-v1` |
 | 最低 App Build | `26` |
 
-冻结合同 SHA-256：
+2026-09-18 正式 RN/API 合同修订 SHA-256：
 
 ```text
-bb3ca7619bf84169fb503dbe58a36de7bdd4acc2e63e5763633f37a1d86fba59
+6b92a6df290730d279809a8c64173a5c1258c718f7b912e14125acdfd33851a8
 ```
 
 计算规则：按下列相对路径排序，依次写入 `path + NUL + file bytes + NUL`，最后计算 SHA-256：
@@ -64,7 +78,7 @@ shared/media-retrieval-search-response.schema.json
 | 分类 | 位置 | 用途 |
 | --- | --- | --- |
 | 产品运行时 | `backend/src/media-retrieval-*.js`、`backend/src/routes/station-media-retrieval-routes.js`、`backend/src/routes/agent-run-routes.js` | API、B7、安全策略、worker、生命周期和持久化 |
-| 数据库 | `backend/database/025_*`、`026_*`、`027_*` | pgvector、运行/事件、索引、预算、lease、provenance |
+| 数据库 | 当前主线 `backend/database/027_*`、`028_*`、`029_*`（伙伴原编号为 025–027） | pgvector、运行/事件、索引、预算、lease、provenance；以 `agents/media-retrieval/integration.json` 为当前映射 |
 | 公共合同 | `shared/media-retrieval-*`、`agents/media-retrieval/contracts` | RN、API 和 Agent 共用的安全 DTO/schema |
 | 产品测试 | `backend/test/media-retrieval-*`、`agents/media-retrieval/tests` | 合同、安全、生命周期、真实 pgvector 和 mock smoke |
 | 运维/Admin | `backend/src/routes/admin-media-retrieval-routes.js`、`admin` 中媒体检索面板 | readiness、预算、限额、运行与开关 |
@@ -86,12 +100,17 @@ Content-Type: application/json
 | --- | --- | --- | --- |
 | `POST` | `/api/station/media-retrieval/enable` | `202` | 必须提供 `Idempotency-Key` |
 | `GET` | `/api/station/media-retrieval/status` | `200` | 不需要 |
-| `POST` | `/api/station/media-retrieval/search` | `200` | 不使用；每次搜索创建独立 run |
+| `POST` | `/api/station/media-retrieval/search` | `200` | 必须提供 `Idempotency-Key` |
 | `POST` | `/api/station/media-retrieval/reindex` | `202` | 必须提供 `Idempotency-Key` |
 | `DELETE` | `/api/station/media-retrieval/index` | `202` | 必须提供 `Idempotency-Key` |
 | `GET` | `/api/agent-runs/:runId/events?afterSequence=N` | `200` | 不需要；owner scoped |
 
-`Idempotency-Key` 必须匹配 `[A-Za-z0-9._-]{8,160}`。同一次用户操作重试必须复用原 key；用户主动再次执行必须生成新 key。建议 RN 使用 UUID。
+`Idempotency-Key` 必须匹配 `[A-Za-z0-9._-]{8,160}`。enable、search、reindex 和 delete
+同一次用户操作重试必须复用原 key；用户主动再次执行必须生成新 key。四类 key 均与规范化后的
+请求 SHA-256 绑定，同一 key 携带不同操作或参数会返回 `retrieval_request_invalid`。搜索原文
+不会进入 run 的持久化输入摘要。并发中的
+同 key 重放返回 `retrieval_request_in_progress`；已完成的同 key 重放返回原公共响应，不再次
+调用 Provider 或占用预算。建议 RN 使用 UUID。
 
 ### 4.1 请求体
 
@@ -138,6 +157,7 @@ export type MediaRetrievalErrorCode =
   | "retrieval_budget_exhausted"
   | "retrieval_service_unavailable"
   | "retrieval_request_invalid"
+  | "retrieval_request_in_progress"
   | "asset_not_indexable"
   | "run_not_found"
   | "retrieval_policy_unverifiable"
@@ -303,6 +323,7 @@ RN 建议使用以下六个产品状态。`enable` 是客户端 CTA/提交中状
 | `retrieval_budget_exhausted` | 503 | true | 稍后重试，不循环重试 |
 | `retrieval_service_unavailable` | 503 | true | 保留输入，显示服务暂不可用 |
 | `retrieval_request_invalid` | 400 | false | 本地校验或修正请求 |
+| `retrieval_request_in_progress` | 409 | true | 保留输入并复用原 key，稍后由用户重试 |
 | `asset_not_indexable` | 409 | false | 提示该素材不可建立索引 |
 | `run_not_found` | 404 | false | 停止该 run 轮询并刷新状态 |
 | `retrieval_policy_unverifiable` | 422 | false | 请求无法安全验证；允许用户改写 |
@@ -323,7 +344,8 @@ RN 建议使用以下六个产品状态。`enable` 是客户端 CTA/提交中状
 
 1. 展示明确同意说明。
 2. 用户确认后调用 enable，传当前固定 consent version 和新 idempotency key。
-3. 收到 `202` 后进入 indexing 并轮询 run events。
+3. 收到 `202` 后检查 run 状态；有新任务时进入 indexing 并轮询事件，没有新任务时服务端直接
+   返回 `succeeded`，客户端刷新 status，不得永久停在 accepted/queued。
 4. 上传新素材仍走现有上传 API；上传完成后后端会尝试自动入队，失败有审计事件且可通过 reindex 恢复。
 
 ### 撤回与清除
@@ -339,6 +361,7 @@ RN 建议使用以下六个产品状态。`enable` 是客户端 CTA/提交中状
 - `scope=all`：对当前可用素材创建重建任务。
 - `mediaAssetIds` 非空时只处理这些、且必须属于当前用户的素材。
 - 重复请求必须复用同一 idempotency key；新的主动重建使用新 key。
+- 没有新 job（无目标素材或任务均已存在）时 run 立即进入 `succeeded`，不等待不存在的 worker 任务。
 
 删除后再次启用必须重新同意并产生新的 epoch；旧 job 即使稍后返回也不能重新提交 segment。
 
@@ -352,7 +375,10 @@ RN 建议使用以下六个产品状态。`enable` 是客户端 CTA/提交中状
 - App 启动后同时检查注册 Agent、readiness/availability 和 status；任一不可用时不进入可搜索状态。
 - 旧 Build、关闭 flag 或服务不可用时隐藏入口或展示“暂不可用”，不得回退到跨用户搜索、自由 lexical 搜索或外部生成。
 
-Agent lifecycle 目前仍为 `draft`，因此部署前必须完成真实环境配置和发布审核，再由管理员切到 `limited_release` 或 `available`。这不阻止 RN 依据 mock 合同开发，但阻止当前默认环境发起真实运行。
+伙伴冻结基线中的 Agent lifecycle 为 `draft`；最近一次线上只读核验（2026-09-16）显示数据库
+lifecycle 为 `sandbox`，Provider/queue 控制关闭且没有 ready 索引。部署本次修订后仍必须完成
+真实环境配置和发布审核，再由管理员进入经批准的 `limited_release` 或 `available`，不能把
+mock 合同或 worker 存活当作真实检索可用。
 
 ## 11. Mock fixture 与 curl
 
@@ -374,6 +400,7 @@ curl -sS "$API_BASE/station/media-retrieval/status" \
 curl -sS -X POST "$API_BASE/station/media-retrieval/search" \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
   -d '{"query":"yellow dress on a beach","kind":"image","limit":10}'
 
 curl -i -X POST "$API_BASE/station/media-retrieval/reindex" \
@@ -406,10 +433,11 @@ curl -i -X DELETE "$API_BASE/station/media-retrieval/index" \
 
 ## 13. React Native 验收清单
 
-- [ ] 未修改 Build 25；入口只对 Build 26+ 和 RN feature flag 开放。
-- [ ] 所有请求带登录 Authorization；只有三类写操作带正确 idempotency key。
+- [ ] 最低能力门禁仍为 Build 26+ 和 RN feature flag；实际发布使用新的唯一构建号。
+- [ ] 所有请求带登录 Authorization；enable、search、reindex、delete 四类运行/费用操作带正确 idempotency key。
+- [ ] 搜索网络结果不确定时复用原 key；成功或确定失败后的主动搜索使用新 key。
 - [ ] 同意版本严格使用 `media-retrieval-consent-v1`。
-- [ ] enable 的 `202` 显示 indexing，不显示“已完成”。
+- [ ] enable/reindex 的 `202` 按返回状态展示；零新 job 的 `succeeded` 不显示 indexing。
 - [ ] 前后台切换后 status 和 events 能续拉，不重复事件。
 - [ ] terminal run 停止轮询；unknown-charge 不自动重试。
 - [ ] 搜索空数组显示“未找到”，不当作错误。
@@ -443,8 +471,14 @@ curl -i -X DELETE "$API_BASE/station/media-retrieval/index" \
 - API 和 worker 都必须使用 `deploy/miaoxun-prod.env`，但密钥只能在部署 secret 中提供。
 - 部署前运行 `cd backend && npm run db:migrate`，再启动 API 和 worker。
 - Provider 默认关闭；先配置 Admin 正额度和 `sandbox` 验证，再进入 `limited_release`。
+- Provider HTTP 响应的声明长度和实际读取均限制为 512 KiB；超限立即取消读取并返回脱敏的
+  `retrieval_service_unavailable`，不得保留原始响应 body。
+- Android 每次构建都必须显式提供正整数 `MIAOXUN_VERSION_CODE`；Release 且启用当前检索能力时
+  不得低于 26。示例和 CI 当前使用 43 只用于构建合同，不代表 9/18 修订已进入 TestFlight 43。
 
-开发验证 Web 的目录是 `media-retrieval-web`。它只用于本地合同和状态验证，不应作为移动端发布物或对外产品入口。
+开发验证 Web 的目录是 `media-retrieval-web`。它没有同步 2026-09-18 搜索幂等请求合同，不能
+连接新后端作为正式能力验收入口，也不应作为移动端发布物或对外产品入口。正式验收只使用
+同步新合同的 RN 客户端和受控 API 流程。
 
 ## 15. 回滚和数据清理
 
@@ -460,8 +494,11 @@ curl -i -X DELETE "$API_BASE/station/media-retrieval/index" \
 
 ## 16. 当前限制
 
-- 未调用真实或付费 Provider，因此没有真实可用性、质量、延迟和成本结论。
+- 2026-09-18 修订仅存在于当前工作区，尚未部署，也未进入已分发的 TestFlight 43；新后端与
+  新 RN 必须协同发布，不能先部署强制搜索幂等键的后端再用旧客户端验收。
+- 线上 Provider/queue 控制关闭、lifecycle 为 `sandbox`、ready 索引为 0；未调用真实或付费
+  Provider，因此没有真实可用性、质量、延迟和成本结论。
 - 未使用真实用户媒体或正式论文数据。
 - B0-B6/U1 仍不可用；P1/P2/C9 不是本产品分支的运行时能力。
-- Agent lifecycle 仍为 draft；真实部署、密钥、额度、有限发布审核和监控阈值尚待运维批准。
-- 本文件冻结后，RN 可以开始按合同开发；只有后端部署并进入 `limited_release` 后才可进行真实端到端验收。
+- 预算、同意范围、Provider/queue/lifecycle 开关、少量授权素材、监控阈值、部署和新 TestFlight
+  均需独立审批。只有协同发布并进入批准的 `limited_release` 后，才能进行真实端到端验收。

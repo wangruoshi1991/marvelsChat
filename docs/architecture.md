@@ -2,24 +2,32 @@
 
 妙讯采用单仓库多目录独立工程结构，当前阶段不拆多个 Git 仓库。
 
-根目录不承载统一依赖包。具体依赖分别放在：
+根目录 `package.json` 只承载 ESLint 等仓库质量工具，不安装各业务工程的运行依赖。业务依赖分别放在：
 
 - `MiaoxunRN/package.json`：正式移动端 React Native 工程依赖。
 - `admin/package.json`：后台管理系统前端构建和界面依赖。
 - `backend/package.json`：Node.js API、PostgreSQL、鉴权、Agent 编排依赖。
 - `agents/package.json`：Agent 注册和定义。
+- `avatar-web/package.json`：3D Web 工具与 App 内嵌查看器构建。
+- `media-retrieval-web/package.json`：私有媒体检索 Web 测试工具。
+- `shared/package.json`：共享公开契约的 ESM 边界，无第三方运行依赖。
 
 ## 分层
 
 ```text
-MiaoxunRN/admin -> backend -> PostgreSQL / agents / provider
+MiaoxunRN/admin/avatar-web/media-retrieval-web -> backend -> PostgreSQL / agents / provider
+backend media-retrieval-worker -> PostgreSQL / OSS / configured provider
 ```
 
 - `MiaoxunRN`：正式移动端主线。采用 React Native，并通过 iOS 原生工程接入 Keychain、权限、启动配置和后续推送能力。
 - `admin`：后台管理系统前端。当前为 Vite + 原生 JavaScript/CSS，调用 `/api/admin/*`，但不单独拥有后台后端服务。
 - `backend`：Node.js + Express API、鉴权、PostgreSQL、运营管理、Agent 编排、New API 中转。
-- `backend/database`：PostgreSQL schema，当前包含用户、资料、会话、消息、事件、Agent 运行记录、社交关系、好友申请、通知和搜索历史。
+- `backend/database`：PostgreSQL schema，当前包含用户、资料、会话、消息、事件、Agent 运行记录、社交关系、好友申请、通知和搜索历史。迁移 031 增加独立的职业身份、主动展示城市、经验年限及语言列，和现有 `bio` 一起遵守公开简介权限；不放入 `station_config` 或从 GPS 派生。[身份资料闭环](reviews/2026-09-16-profile-identity.md)记录接口、保存一致性与发布顺序；[合作与评分契约](reviews/2026-09-16-cooperation-lifecycle.md)仍待实现。
 - `agents`：每个 Agent 独立声明能力、权限和提示词计划；模型或外部能力未配置时必须明确不可用，不生成替代结果。
+- `shared`：后端与媒体检索 Web 共用的公开 DTO 和错误契约，必须随后端镜像一起交付。
+- `avatar-web`：伙伴的 3D Web 工作台与 Three.js 查看器源码。App 只嵌入独立构建的单模型查看器，不嵌入整套 Web UI。
+- `media-retrieval-web`：媒体检索测试工具，不是正式 App 实现。
+- `backend/src/media-retrieval-worker.js`：独立进程消费数据库任务，与 HTTP 服务共享仓库、数据库和版本；3D runner 当前仍在 HTTP 进程内运行。
 - `python`：当前没有 Python 工程；后续如接入媒体生成、文件解析、模型处理或长任务队列，应作为独立 worker/service 引入，不混入 RN 或 Node API 进程。
 - `docs`：任何结构和接口变化都要同步记录。
 
@@ -79,6 +87,10 @@ src/services/location.ts
 - `backend/src/agent-runtime.js`：统一调用模型供应商，写入运行记录，不让客户端直接碰模型调用。
 
 ## 当前真实数据链路
+
+登录会话状态只接受当前 token 发起的更新。认证首屏数据必须在凭据持久化成功后发布；退出时清空进行中的同步引用，已结束会话的通知、社交、小站和聊天请求不得回写新会话。bootstrap 和增量同步的游标在读取数据前取值，避免跳过读取期间产生的更新。
+
+后端连接池处理空闲连接断开事件，并记录不包含连接凭据的错误码；就绪检查仍依据实际数据库连接和迁移状态返回成功或失败。模型调用的超时覆盖请求发送和响应体读取，不能在只收到响应头时解除计时。
 
 ```text
 用户注册/登录 -> users/auth_sessions
@@ -145,11 +157,15 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 
 扫码主页、关注、好友申请及拒绝/取消、好友通过通知、好友 direct 聊天线程、通知未读、用户搜索、搜索历史、在线/离线/隐藏、主页展示开关、好友列表、关注列表、粉丝列表、用户资料编辑和位置解析确认已进入前后端闭环。公开主页是用户关系动作的统一入口，可由扫码、搜索、好友列表、关注列表、粉丝列表和好友聊天页进入；好友列表中头像/资料区域进入主页，消息图标进入聊天，聊天页右上角资料按钮进入同一公开主页。好友聊天已支持真实发送中、失败、重试、回复、复制、单侧删除、发送后 1 分钟内撤回和 WebSocket 在线接收；长按操作浮层由客户端贴近被选消息展示。真实用户和 Agent 聊天正文按发送时内容保存和展示，客户端不自动翻译历史消息；切换语言只影响 UI、状态、操作提示和本地妙讯管家动作结果。
 
-小站页承载位置、本人在线状态和 3D 形象展示，设置页不承载这些个人主页内容编辑。“我的小站”面板按原型结构保留 3D 形象舞台、个人日记、个人相册、喜欢的音乐菜单、确定性内容整理工具和我的文件入口；未接入内容模块只展示真实空状态或明确的未开放状态，不展示示例列表、示例封面、示例数量或示例文件。
+小站页承载位置、本人在线状态和 3D 形象展示，设置页不承载这些个人主页内容编辑。现有日记、相册、确定性内容整理工具和文件入口仍含旧版组织方式；新版第一面的“个人数字身份＋形象档案”结构尚未完整实现。2026-09-16 已移除第一面音乐板块，并恢复聊天设计对应的管家人物头像。未接入内容只展示明确空/未开放状态，不展示示例列表、封面或数量；旧统计不得作为新版合作伙伴/综合评分的替代，详见 [设计与伙伴集成核对](reviews/2026-09-16-partner-integration.md)。
+
+内容级长按属于移动端共享交互层，而不是某个业务模块的私有手势。`AIAssistProvider` 在 App 根部维护一个活动菜单，3D 舞台、聊天消息、动态、日记和相册卡片只提供对象引用、动作契约和来源 ID；原内容保持单份挂载，菜单取消、路由变化、后台或组件卸载会使待处理测量和动作失效。妙讯管家动作统一打开已有管家线程并写入待发送草稿，发送仍由用户确认；客户端不自动发送、复制媒体、暴露私有 URL 或伪造 Agent 生成结果。3D WebView 同时关闭网页文本选择和上下文菜单，隐藏时暂停渲染循环并取消长按计时器，避免页面切换后出现重复模块或延迟菜单。
 
 `avatar_config` 只用于人类用户的小站资料和用户小头像。小站 3D 主舞台使用 App 内置的 Three.js `0.180.0`、GLTFLoader 和 OrbitControls，通过 `react-native-webview` 的本地页面（iOS `WKWebView` / Android WebView）加载 Bearer 鉴权的 `/api/avatar-3d/app/models/:modelId/file`，不加载伙伴 Web 工作台页面。上传照片、四视图生成与确认、Tripo 建模、任务状态和费用控制仍由伙伴的后端生命周期负责；App 只是该流程的移动端产品界面。
 
-PostgreSQL 只保存任务、模型状态、字节数和 OSS object key，不保存 GLB、图片或视频二进制。每个成功模型在 OSS 中保留伙伴输出的原始高精 `model.glb`，同时由独立 Node Worker 生成 App 专用 `model-mobile.glb`：最多 25 万三角面、最大 2048px 纹理、`KHR_mesh_quantization` 顶点量化。App 路由只读取移动端资产，缺失时明确失败，不回退到 40-57MB 原件；伙伴 Web 路由继续读取原始资产。模型加载期间先显示已有缩略图，模型和媒体文件按资源 ID 使用带 `Vary: Authorization` 的私有不可变缓存。删除模型时必须同时删除原始 GLB、App GLB 和缩略图。
+PostgreSQL 只保存任务、模型状态、字节数和 OSS object key，不保存 GLB、图片或视频二进制。每个成功模型在 OSS 中保留伙伴输出的原始高精 `model.glb`，同时由独立 Node Worker 生成 App 专用 `model-mobile.glb`：最多 25 万三角面、最大 2048px 纹理、`KHR_mesh_quantization` 顶点量化。App 路由只读取移动端资产，缺失时明确失败，不回退到 40-57MB 原件；伙伴 Web 路由继续读取原始资产。模型加载期间先显示已有缩略图。可见性会变化的小站照片/视频文件按每次鉴权返回 `private, no-store`；3D 模型的独立缓存策略不能套用到这些公开范围可撤销的媒体。删除模型时必须同时删除原始 GLB、App GLB 和缩略图。
+
+公开小站资料读取、按 ID 读取媒体文件和按 ID 点赞/收藏分别在服务端校验所有者账号状态、展示开关、内容可见性及好友关系；文件/元信息不授权返回 404。后台 `users:write` 仅可管理普通账号，创建/晋升管理员、修改管理员资料、状态、密码、会话、Agent 授权和管理权限须当前账号持有 `*`，前端禁用不替代服务端校验。授权回归的隔离 PostgreSQL 用例位于 `backend/test/station-access-postgres.test.js`；上线还需核对实际 Nginx 安全头和旧客户端已缓存的媒体副本。
 
 当前没有捏脸、骨骼动作或任意换装编辑器。后续升级商业素材库或动画时，必须继续保留原始生成资产与平台派生资产的边界，并完成授权、审核、移动端性能和跨平台验证。Agent 头像由 Agent 注册 identity 决定，不允许复用用户可编辑形象。收藏列表、签名动态码、群聊、已读回执、正在输入和媒体聊天消息记录在 [社交关系流程](social-graph.md)，后续必须继续按后端校验优先实现。
 

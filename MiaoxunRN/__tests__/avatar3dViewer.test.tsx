@@ -1,4 +1,5 @@
 import React from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import {
@@ -8,6 +9,17 @@ import {
 } from '../src/features/station/Avatar3DViewer';
 
 describe('Avatar3DViewer', () => {
+  let appStateChange: (state: AppStateStatus) => void;
+  beforeEach(() => {
+    AppState.currentState = 'active';
+    jest
+      .spyOn(AppState, 'addEventListener')
+      .mockImplementation((_type, listener) => {
+        appStateChange = listener;
+        return { remove: jest.fn() };
+      });
+  });
+  afterEach(() => jest.restoreAllMocks());
   it('injects only the authenticated App model endpoint into the local viewer', () => {
     const script = buildAvatar3DViewerScript({
       modelUrl: 'http://127.0.0.1:4390/api/avatar-3d/app/models/model-1/file',
@@ -40,7 +52,7 @@ describe('Avatar3DViewer', () => {
     ).toBe(false);
   });
 
-  it('starts loading after the bundled document finishes and forwards viewer errors', () => {
+  it('loads once when the bridge is ready and preserves the model through tab switches', () => {
     const onError = jest.fn();
     let renderer: ReactTestRenderer.ReactTestRenderer;
 
@@ -49,7 +61,6 @@ describe('Avatar3DViewer', () => {
         <Avatar3DViewer
           modelId="model-1"
           onError={onError}
-          thumbnailAvailable
           token="private-token"
         />,
       );
@@ -58,6 +69,8 @@ describe('Avatar3DViewer', () => {
     const webView = renderer!.root.findByProps({ testID: 'avatar-webview' });
     expect(webView.props.source).toBeDefined();
     expect(webView.props.cacheEnabled).toBe(true);
+    expect(webView.props.textInteractionEnabled).toBe(false);
+    expect(webView.props.dataDetectorTypes).toBe('none');
     expect(webView.props.originWhitelist).toEqual([
       'file://*',
       'http://*',
@@ -67,17 +80,6 @@ describe('Avatar3DViewer', () => {
     expect(
       renderer!.root.findByProps({ testID: 'avatar3d-viewer-loading' }),
     ).toBeDefined();
-    expect(
-      renderer!.root.findByProps({ accessibilityLabel: '3D形象加载预览' }).props
-        .source,
-    ).toEqual(
-      expect.objectContaining({
-        headers: { Authorization: 'Bearer private-token' },
-        uri: expect.stringContaining(
-          '/api/avatar-3d/app/models/model-1/thumbnail',
-        ),
-      }),
-    );
 
     ReactTestRenderer.act(() => {
       webView.props.onMessage({
@@ -87,6 +89,11 @@ describe('Avatar3DViewer', () => {
     expect(webView.props.injectJavaScript).toHaveBeenCalledWith(
       'window.MiaoxunAvatarViewer?.setActive(true); true;',
     );
+    const loadCalls = () =>
+      webView.props.injectJavaScript.mock.calls.filter(([script]: [string]) =>
+        script.includes('void viewer.load('),
+      );
+    expect(loadCalls()).toHaveLength(1);
 
     ReactTestRenderer.act(() => {
       renderer!.update(
@@ -94,7 +101,6 @@ describe('Avatar3DViewer', () => {
           active={false}
           modelId="model-1"
           onError={onError}
-          thumbnailAvailable
           token="private-token"
         />,
       );
@@ -111,9 +117,7 @@ describe('Avatar3DViewer', () => {
         },
       });
     });
-    expect(webView.props.injectJavaScript).not.toHaveBeenCalledWith(
-      expect.stringContaining('/api/avatar-3d/app/models/model-1/file'),
-    );
+    expect(loadCalls()).toHaveLength(1);
 
     ReactTestRenderer.act(() => {
       webView.props.onMessage({
@@ -134,6 +138,21 @@ describe('Avatar3DViewer', () => {
     ).toHaveLength(0);
 
     ReactTestRenderer.act(() => {
+      renderer!.update(
+        <Avatar3DViewer
+          active
+          modelId="model-1"
+          onError={onError}
+          token="private-token"
+        />,
+      );
+    });
+    expect(loadCalls()).toHaveLength(1);
+    expect(
+      renderer!.root.findAllByProps({ testID: 'avatar3d-viewer-loading' }),
+    ).toHaveLength(0);
+
+    ReactTestRenderer.act(() => {
       webView.props.onMessage({
         nativeEvent: {
           data: JSON.stringify({
@@ -145,6 +164,82 @@ describe('Avatar3DViewer', () => {
     });
     expect(onError).toHaveBeenCalledWith('3D形象页面加载失败');
 
+    ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
+  it('defers a hidden viewer until activation and reloads a changed account token', () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <Avatar3DViewer active={false} modelId="model-1" token="token-1" />,
+      );
+    });
+    const webView = renderer!.root.findByProps({ testID: 'avatar-webview' });
+    ReactTestRenderer.act(() => {
+      webView.props.onMessage({
+        nativeEvent: { data: JSON.stringify({ type: 'ready' }) },
+      });
+    });
+    const loadCalls = () =>
+      webView.props.injectJavaScript.mock.calls.filter(([script]: [string]) =>
+        script.includes('void viewer.load('),
+      );
+    expect(loadCalls()).toHaveLength(0);
+
+    ReactTestRenderer.act(() => {
+      renderer!.update(<Avatar3DViewer modelId="model-1" token="token-1" />);
+    });
+    expect(loadCalls()).toHaveLength(1);
+
+    ReactTestRenderer.act(() => {
+      renderer!.update(<Avatar3DViewer modelId="model-1" token="token-2" />);
+    });
+    expect(loadCalls()).toHaveLength(2);
+    expect(loadCalls()[1][0]).toContain('"token":"token-2"');
+    ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
+  it('pauses in the background and resumes without reloading only when its tab is visible', () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <Avatar3DViewer modelId="model-1" token="token-1" />,
+      );
+    });
+    const webView = renderer!.root.findByProps({ testID: 'avatar-webview' });
+    ReactTestRenderer.act(() => {
+      webView.props.onMessage({
+        nativeEvent: { data: JSON.stringify({ type: 'ready' }) },
+      });
+      webView.props.onMessage({
+        nativeEvent: { data: JSON.stringify({ type: 'loaded' }) },
+      });
+    });
+    const loadCalls = () =>
+      webView.props.injectJavaScript.mock.calls.filter(([script]: [string]) =>
+        script.includes('void viewer.load('),
+      );
+    ReactTestRenderer.act(() => appStateChange('background'));
+    expect(webView.props.injectJavaScript).toHaveBeenLastCalledWith(
+      'window.MiaoxunAvatarViewer?.setActive(false); true;',
+    );
+    ReactTestRenderer.act(() => appStateChange('active'));
+    expect(webView.props.injectJavaScript).toHaveBeenLastCalledWith(
+      'window.MiaoxunAvatarViewer?.setActive(true); true;',
+    );
+    expect(loadCalls()).toHaveLength(1);
+
+    ReactTestRenderer.act(() => {
+      renderer!.update(
+        <Avatar3DViewer active={false} modelId="model-1" token="token-1" />,
+      );
+      appStateChange('background');
+    });
+    ReactTestRenderer.act(() => appStateChange('active'));
+    expect(webView.props.injectJavaScript).toHaveBeenLastCalledWith(
+      'window.MiaoxunAvatarViewer?.setActive(false); true;',
+    );
+    expect(loadCalls()).toHaveLength(1);
     ReactTestRenderer.act(() => renderer!.unmount());
   });
 });

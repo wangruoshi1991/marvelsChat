@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
-  Image,
+  AppState,
   StyleProp,
   StyleSheet,
   View,
@@ -15,10 +15,7 @@ import {
 } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 
-import {
-  avatar3dModelFileUrl,
-  avatar3dModelThumbnailUrl,
-} from '../../services/api/avatar3dApi';
+import { avatar3dModelFileUrl } from '../../services/api/avatar3dApi';
 
 type ViewerMessage = {
   type?: unknown;
@@ -75,7 +72,6 @@ export function Avatar3DViewer({
   active = true,
   modelId,
   token,
-  thumbnailAvailable = false,
   onError,
   onAssistGesture,
   style,
@@ -83,7 +79,6 @@ export function Avatar3DViewer({
   active?: boolean;
   modelId: string;
   token: string;
-  thumbnailAvailable?: boolean;
   onError?: (message: string) => void;
   onAssistGesture?: (gesture: Avatar3DAssistGesture) => void;
   style?: StyleProp<ViewStyle>;
@@ -91,12 +86,10 @@ export function Avatar3DViewer({
   const webViewRef = useRef<WebView<object>>(null);
   const loadRequestedRef = useRef(false);
   const viewerReadyRef = useRef(false);
+  const [appState, setAppState] = useState(AppState.currentState);
   const [status, setStatus] = useState<ViewerStatus>('booting');
+  const viewerActive = active && appState === 'active';
   const modelUrl = useMemo(() => avatar3dModelFileUrl(modelId), [modelId]);
-  const thumbnailUrl = useMemo(
-    () => (thumbnailAvailable ? avatar3dModelThumbnailUrl(modelId) : undefined),
-    [modelId, thumbnailAvailable],
-  );
   const loadScript = useMemo(
     () => buildAvatar3DViewerScript({ modelUrl, token }),
     [modelUrl, token],
@@ -110,35 +103,45 @@ export function Avatar3DViewer({
   );
 
   useEffect(() => {
+    const subscription = AppState.addEventListener('change', setAppState);
+    return () => subscription.remove();
+  }, []);
+
+  const startModelLoad = useCallback(() => {
+    if (!viewerActive || !viewerReadyRef.current || loadRequestedRef.current) {
+      return;
+    }
+    const viewer = webViewRef.current;
+    if (!viewer) {
+      failViewer('3D查看器初始化失败');
+      return;
+    }
+    try {
+      loadRequestedRef.current = true;
+      setStatus('loading');
+      viewer.injectJavaScript(loadScript);
+    } catch {
+      failViewer('3D查看器初始化失败');
+    }
+  }, [viewerActive, failViewer, loadScript]);
+
+  useEffect(() => {
     loadRequestedRef.current = false;
-    viewerReadyRef.current = false;
     setStatus('booting');
   }, [modelId, token]);
 
   useEffect(() => {
-    if (!active) {
-      webViewRef.current?.stopLoading?.();
-      if (viewerReadyRef.current) {
-        webViewRef.current?.injectJavaScript(
-          'window.MiaoxunAvatarViewer?.setActive(false); true;',
-        );
-      }
-      return;
-    }
     if (!viewerReadyRef.current) return;
-    if (!loadRequestedRef.current) {
-      loadRequestedRef.current = true;
-      setStatus('loading');
-      webViewRef.current?.injectJavaScript(loadScript);
-      return;
-    }
     webViewRef.current?.injectJavaScript(
-      'window.MiaoxunAvatarViewer?.setActive(true); true;',
+      `window.MiaoxunAvatarViewer?.setActive(${viewerActive}); true;`,
     );
-  }, [active, loadScript]);
+    // Retain a load already in progress when switching tabs. Stopping WebKit
+    // here can leave its bundled document without a second ready event.
+    startModelLoad();
+  }, [viewerActive, startModelLoad]);
 
   useEffect(() => {
-    if (!active || status === 'loaded' || status === 'error') {
+    if (!viewerActive || status === 'loaded' || status === 'error') {
       return undefined;
     }
     const timeoutMs =
@@ -151,39 +154,22 @@ export function Avatar3DViewer({
         : '3D模型下载超时';
     const timeout = setTimeout(() => failViewer(message), timeoutMs);
     return () => clearTimeout(timeout);
-  }, [active, failViewer, status]);
+  }, [viewerActive, failViewer, status]);
 
   const handleViewerDocumentLoaded = useCallback(
     (event: { nativeEvent: { url: string } }) => {
       const documentUrl = event.nativeEvent.url;
       if (
         documentUrl === 'about:blank' ||
-        !isAvatar3DViewerDocumentUrl(documentUrl) ||
-        loadRequestedRef.current
+        !isAvatar3DViewerDocumentUrl(documentUrl)
       ) {
         return;
       }
 
       viewerReadyRef.current = true;
-      if (!active) {
-        return;
-      }
-
-      const viewer = webViewRef.current;
-      if (!viewer) {
-        failViewer('3D查看器初始化失败');
-        return;
-      }
-
-      loadRequestedRef.current = true;
-      try {
-        viewer.injectJavaScript(loadScript);
-        setStatus('loading');
-      } catch {
-        failViewer('3D查看器初始化失败');
-      }
+      startModelLoad();
     },
-    [active, failViewer, loadScript],
+    [startModelLoad],
   );
 
   const handleMessage = (event: WebViewMessageEvent) => {
@@ -207,10 +193,11 @@ export function Avatar3DViewer({
       if (message.type === 'ready') {
         viewerReadyRef.current = true;
         webViewRef.current?.injectJavaScript(
-          active
+          viewerActive
             ? 'window.MiaoxunAvatarViewer?.setActive(true); true;'
             : 'window.MiaoxunAvatarViewer?.setActive(false); true;',
         );
+        startModelLoad();
         return;
       }
       if (message.type === 'downloading') {
@@ -246,6 +233,7 @@ export function Avatar3DViewer({
         bounces={false}
         cacheEnabled
         containerStyle={localStyles.webView}
+        dataDetectorTypes="none"
         domStorageEnabled={false}
         javaScriptCanOpenWindowsAutomatically={false}
         javaScriptEnabled
@@ -253,7 +241,11 @@ export function Avatar3DViewer({
         onContentProcessDidTerminate={() => failViewer()}
         onError={() => failViewer()}
         onLoadEnd={handleViewerDocumentLoaded}
-        onLoadStart={() => setStatus('booting')}
+        onLoadStart={() => {
+          viewerReadyRef.current = false;
+          loadRequestedRef.current = false;
+          setStatus('booting');
+        }}
         onMessage={handleMessage}
         onShouldStartLoadWithRequest={request =>
           isAvatar3DViewerDocumentUrl(request.url)
@@ -266,6 +258,7 @@ export function Avatar3DViewer({
         source={require('../../assets/avatar-viewer/avatar-viewer.html')}
         style={localStyles.webView}
         thirdPartyCookiesEnabled={false}
+        textInteractionEnabled={false}
       />
       {status !== 'loaded' && status !== 'error' ? (
         <View
@@ -273,28 +266,6 @@ export function Avatar3DViewer({
           style={localStyles.preview}
           testID="avatar3d-viewer-loading"
         >
-          {thumbnailUrl ? (
-            <>
-              <Image
-                blurRadius={18}
-                resizeMode="cover"
-                source={{
-                  headers: { Authorization: `Bearer ${token}` },
-                  uri: thumbnailUrl,
-                }}
-                style={localStyles.previewBackdrop}
-              />
-              <Image
-                accessibilityLabel="3D形象加载预览"
-                resizeMode="contain"
-                source={{
-                  headers: { Authorization: `Bearer ${token}` },
-                  uri: thumbnailUrl,
-                }}
-                style={localStyles.previewImage}
-              />
-            </>
-          ) : null}
           <View style={localStyles.loadingIndicator}>
             <ActivityIndicator color="#2012D9" />
           </View>
@@ -330,23 +301,6 @@ const localStyles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     top: 0,
-  },
-  previewBackdrop: {
-    bottom: 0,
-    left: 0,
-    opacity: 0.32,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-  },
-  previewImage: {
-    bottom: 0,
-    height: '100%',
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    width: '100%',
   },
   webView: { backgroundColor: VIEWER_BACKGROUND_COLOR },
 });

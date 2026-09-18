@@ -17,7 +17,6 @@ import {
   AlbumGrid,
   AIPartnerGrid,
   DiaryComicGrid,
-  EmptyModuleState,
   StationModule,
 } from './StationHomeModules';
 import type {
@@ -40,7 +39,6 @@ type StationHomeProps = {
   avatar3dError: string;
   agents: AgentDTO[];
   ownedAgents: OwnedAgentDTO[];
-  moduleStatus: (key: string) => string;
   onOpenAvatar3d: () => void;
   onSelectStationTab: (tab: StationTab) => void;
   onOpenCreateSheet: (kind: StationCreateKind) => void;
@@ -63,7 +61,6 @@ export function StationHome({
   avatar3dError,
   agents,
   ownedAgents,
-  moduleStatus,
   onOpenAvatar3d,
   onSelectStationTab,
   onOpenCreateSheet,
@@ -75,14 +72,6 @@ export function StationHome({
 }: StationHomeProps) {
   const openDiaryFlow = () => onOpenCreateSheet('diary');
   const openAlbumFlow = () => onOpenCreateSheet('album');
-  const openMusicFlow = () =>
-    onActionMessage(
-      textFor(
-        language,
-        '音乐菜单需要先接入音乐来源、版权和播放能力。',
-        'Music menu needs sources, rights, and playback first.',
-      ),
-    );
   const openAgentFlow = () => onSelectStationTab('agents');
   const hasEnabledAgent = (agentId: string) =>
     ownedAgents.some(agent => agent.id === agentId && agent.enabled);
@@ -151,26 +140,6 @@ export function StationHome({
         />
       </StationModule>
     ),
-    music: (
-      <StationModule
-        key="music"
-        palette={palette}
-        title={textFor(language, '喜欢的音乐菜单', 'Music Menu')}
-        action={textFor(language, '添加', 'Add')}
-        onAction={openMusicFlow}
-      >
-        <EmptyModuleState
-          palette={palette}
-          title={textFor(language, '暂无音乐菜单', 'No Music Menu Yet')}
-          body={textFor(
-            language,
-            '接入音乐来源和版权策略后，这里展示真实歌单。',
-            'Real playlists appear here after music sources and rights are connected.',
-          )}
-          meta={moduleStatus('music')}
-        />
-      </StationModule>
-    ),
     agents: (
       <StationModule
         key="agents"
@@ -220,7 +189,7 @@ export function StationHome({
 }
 
 function orderedStationModuleKeys(sections?: StationSiteSectionDTO[]) {
-  const defaults = ['diary', 'gallery', 'music', 'agents'];
+  const defaults = ['diary', 'gallery', 'agents'];
   const sectionMap: Record<string, string> = {
     diary: 'diary',
     gallery: 'gallery',

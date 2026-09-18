@@ -134,6 +134,52 @@ describe('API transport privacy and session handling', () => {
     });
   });
 
+  test('preserves retrieval safety errors and their explicit retry policy', async () => {
+    globalThis.fetch = jest.fn(async () =>
+      response({
+        status: 409,
+        body: {
+          error: {
+            code: 'retrieval_unknown_charge_no_retry',
+            message: '本次操作需要人工确认',
+            retryable: false,
+          },
+        },
+      }),
+    );
+    await expect(
+      request('/api/station/media-retrieval/search', { token: 'session-1' }),
+    ).rejects.toMatchObject({
+      code: 'retrieval_unknown_charge_no_retry',
+      retryable: false,
+      status: 409,
+    });
+  });
+
+  test.each(['unexpected text', 1, true, [], null])(
+    'invalid JSON envelope %p remains an explicit API error',
+    async body => {
+      globalThis.fetch = jest.fn(async () => response({ status: 200, body }));
+      await expect(request('/api/me')).rejects.toMatchObject({
+        name: 'MiaoxunApiError',
+        message: '后端响应格式无效。',
+        status: 200,
+        requestId: 'server-request-1',
+      });
+    },
+  );
+
+  test('scalar error responses preserve HTTP status and request ID', async () => {
+    globalThis.fetch = jest.fn(async () =>
+      response({ status: 502, body: 'Bad Gateway' }),
+    );
+    await expect(request('/api/me')).rejects.toMatchObject({
+      name: 'MiaoxunApiError',
+      status: 502,
+      requestId: 'server-request-1',
+    });
+  });
+
   test('request timeout covers reading the response body', async () => {
     jest.useFakeTimers();
     try {

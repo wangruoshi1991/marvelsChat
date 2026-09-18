@@ -1,7 +1,13 @@
 import {
+  buildAdminProfileUpdate,
+  canManageAdminAccount,
   createAdminApiRequest,
   escapeHtml,
   friendlyAdminErrorMessage,
+  hasAdminPermission,
+  mediaRetrievalDiagnosticGuidance,
+  profileLanguageOptions,
+  shouldClearAdminSession,
 } from "./admin-core.js";
 
 const authStorageKey = "miaoxun.admin.auth.v1";
@@ -28,6 +34,7 @@ let currentUsers = [];
 let currentAgents = [];
 let currentAgentReadiness = {};
 let selectedUserId = "";
+let currentUserDetail = null;
 let currentModelStatus = null;
 let currentMediaRetrievalOverview = null;
 
@@ -137,10 +144,23 @@ const agentModuleBindings = {
 const listText = (items = [], fallback = "无") =>
   items?.length ? items.join(", ") : fallback;
 
+const currentAdminCan = (permission) => hasAdminPermission(auth.user, permission);
+
+const syncAdminPermissionVisibility = () => {
+  qsa("[data-admin-permission]").forEach((element) => {
+    element.hidden = !currentAdminCan(element.dataset.adminPermission)
+      || !canManageAdminAccount(auth.user, element.dataset.adminTargetRole);
+  });
+};
+
 const setAdminReady = (ready) => {
   qs("#admin-content")?.classList.toggle("hidden", !ready);
-  qs("#admin-create-user").disabled = !ready;
-  qs("#model-test").disabled = !ready;
+  qs("#admin-create-user").disabled = !ready || !currentAdminCan("users:write");
+  const adminRoleOption = qs('#create-role option[value="admin"]');
+  adminRoleOption.disabled = !currentAdminCan("*");
+  if (adminRoleOption.disabled) qs("#create-role").value = "user";
+  qs("#model-test").disabled = !ready || !currentAdminCan("model:operate");
+  syncAdminPermissionVisibility();
 };
 
 const apiRequest = createAdminApiRequest({
@@ -156,6 +176,11 @@ const renderMetrics = (overview) => {
     ["今日消息", overview.messagesToday],
     ["今日事件", overview.eventsToday],
     ["今日 Agent", overview.agentRunsToday],
+    ["动态", overview.postsTotal],
+    ["点赞", overview.likesTotal],
+    ["收藏", overview.favoritesTotal],
+    ["媒体资产", overview.mediaAssetsTotal],
+    ["漫画日记", overview.comicDiariesTotal],
   ];
   qs("#metric-grid").innerHTML = metrics
     .map(
@@ -184,11 +209,14 @@ const filteredUsers = () => {
 };
 
 const renderUserRows = (users) => {
+  const canWriteUsers = currentAdminCan("users:write");
+  const canDelegateAdmin = currentAdminCan("*");
   qs("#users-count").textContent = `${users.length} / ${currentUsers.length}`;
   qs("#users-table").innerHTML =
     users
       .map((user) => {
         const isSelf = user.id === auth.user?.id;
+        const canManageTarget = canWriteUsers && (user.role !== "admin" || canDelegateAdmin);
         const nextStatus = user.status === "active" ? "disabled" : "active";
         const nextRole = user.role === "admin" ? "user" : "admin";
         return `
@@ -205,10 +233,10 @@ const renderUserRows = (users) => {
             <td>
               <div class="user-actions">
                 <button type="button" data-user-action="detail" data-user-id="${escapeHtml(user.id)}">详情</button>
-                <button type="button" data-user-action="status" data-user-id="${escapeHtml(user.id)}" data-next-value="${nextStatus}" ${isSelf ? "disabled" : ""}>${user.status === "active" ? "停用" : "启用"}</button>
-                <button type="button" data-user-action="role" data-user-id="${escapeHtml(user.id)}" data-next-value="${nextRole}" ${isSelf ? "disabled" : ""}>${user.role === "admin" ? "设为用户" : "设为管理员"}</button>
-                <button type="button" data-user-action="revoke-sessions" data-user-id="${escapeHtml(user.id)}" ${isSelf ? "disabled" : ""}>踢下线</button>
-                <button type="button" data-user-action="reset-password" data-user-id="${escapeHtml(user.id)}" ${isSelf ? "disabled" : ""}>重置密码</button>
+                <button type="button" data-user-action="status" data-user-id="${escapeHtml(user.id)}" data-next-value="${nextStatus}" ${isSelf || !canManageTarget ? "disabled" : ""}>${user.status === "active" ? "停用" : "启用"}</button>
+                <button type="button" data-user-action="role" data-user-id="${escapeHtml(user.id)}" data-next-value="${nextRole}" ${isSelf || !canDelegateAdmin ? "disabled" : ""}>${user.role === "admin" ? "设为用户" : "设为管理员"}</button>
+                <button type="button" data-user-action="revoke-sessions" data-user-id="${escapeHtml(user.id)}" ${isSelf || !canManageTarget ? "disabled" : ""}>踢下线</button>
+                <button type="button" data-user-action="reset-password" data-user-id="${escapeHtml(user.id)}" ${isSelf || !canManageTarget ? "disabled" : ""}>重置密码</button>
               </div>
             </td>
           </tr>
@@ -297,6 +325,7 @@ const renderMediaRetrievalOverview = (overview = null) => {
   const cost = overview.cost || {};
   const reasonCodes = availability.reasonCodes?.length ? availability.reasonCodes.join("、") : "无";
   const recentRuns = overview.recentRuns || [];
+  const diagnostics = overview.diagnostics || [];
   state.textContent = availabilityStateLabel(availability);
   state.classList.toggle("error", availability.state !== "available");
   content.innerHTML = `
@@ -313,8 +342,9 @@ const renderMediaRetrievalOverview = (overview = null) => {
         <div><dt>已索引分段</dt><dd>${Number(overview.readySegments || 0).toLocaleString("zh-CN")}</dd></div>
         <div><dt>今日已预留</dt><dd>${formatFen(cost.reservedFen)}</dd></div>
         <div><dt>今日已估算</dt><dd>${formatFen(cost.estimatedFen)}</dd></div>
-        <div><dt>未知费用</dt><dd>${formatFen(cost.unknownFen)}</dd></div>
+        <div><dt>今日待核对预留</dt><dd>${formatFen(cost.unknownFen)}</dd></div>
       </dl>
+      <p class="empty-note">预留、估算及待核对金额均为预算占用，不代表供应商实际扣款。未知结果不会自动重试或清零，需先核对供应商账单。</p>
     </section>
     <form class="media-retrieval-controls" id="media-retrieval-controls-form">
       <div class="media-retrieval-controls-heading">
@@ -355,6 +385,21 @@ const renderMediaRetrievalOverview = (overview = null) => {
           </tbody>
         </table>
       </div>
+    </section>
+    <section class="media-retrieval-runs" aria-label="供应商失败诊断">
+      <header><strong>失败诊断（近 30 天）</strong><span>${diagnostics.length}</span></header>
+      <p class="empty-note">仅记录阶段、HTTP 状态、枚举错误和字段路径；不保存素材、查询或模型原文。历史失败若未采集诊断，无法追溯具体原因。</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>运行 / 时间</th><th>调用 / 阶段</th><th>诊断</th><th>处理指引</th></tr></thead>
+        <tbody>${diagnostics.map((diagnostic) => `
+          <tr>
+            <td>${escapeHtml(diagnostic.agentRunId)}<br>${formatTime(diagnostic.createdAt)}</td>
+            <td>${escapeHtml(diagnostic.operation)}<br>${escapeHtml(diagnostic.stage)}</td>
+            <td>${escapeHtml(diagnostic.failureCode)}<br>HTTP ${escapeHtml(diagnostic.httpStatus ?? "--")} / ${escapeHtml(diagnostic.providerCode || "--")}<br>${escapeHtml((diagnostic.schemaPaths || []).join("、") || "--")}</td>
+            <td>${escapeHtml(mediaRetrievalDiagnosticGuidance(diagnostic))}</td>
+          </tr>
+        `).join("") || '<tr><td colspan="4">暂无已采集的失败诊断。</td></tr>'}</tbody>
+      </table></div>
     </section>
   `;
   syncMediaRetrievalControlState();
@@ -464,6 +509,7 @@ const setLoginVisible = (visible) => {
 
 const closeDrawer = () => {
   selectedUserId = "";
+  currentUserDetail = null;
   qs("#user-drawer").classList.remove("active");
   qs("#user-drawer").setAttribute("aria-hidden", "true");
 };
@@ -475,12 +521,13 @@ const openDrawer = () => {
 
 const renderUserDetail = (detail) => {
   selectedUserId = detail.user.id;
+  currentUserDetail = detail;
   qs("#drawer-title").textContent = detail.user.displayName;
   const permissions = detail.user.adminPermissions || [];
   const permissionRows =
     detail.user.role === "admin"
       ? `
-        <form class="detail-form" id="permissions-admin-form">
+        <form class="detail-form" id="permissions-admin-form" data-admin-permission="*">
           <h3>管理员权限</h3>
           <label class="checkbox-row">
             <input type="checkbox" name="admin-permission" value="*" ${permissions.includes("*") ? "checked" : ""} />
@@ -545,16 +592,32 @@ const renderUserDetail = (detail) => {
 
     ${permissionRows}
 
-    <form class="detail-form" id="profile-admin-form">
+    <form class="detail-form" id="profile-admin-form" data-admin-permission="users:write" data-admin-target-role="${escapeHtml(detail.user.role)}">
       <h3>小站资料</h3>
       <label>昵称<input id="detail-nickname" value="${escapeHtml(detail.profile?.nickname || detail.user.displayName)}" maxlength="80" required /></label>
+      <label>身份标题<input id="detail-headline" value="${escapeHtml(detail.profile.headline)}" maxlength="80" aria-describedby="detail-headline-note" /></label>
+      <p class="field-note" id="detail-headline-note">用于第一面展示职业或身份，最多 80 个字符。</p>
       <label>简介<textarea id="detail-bio" maxlength="500">${escapeHtml(detail.profile?.bio || "")}</textarea></label>
+      <label>公开城市<input id="detail-public-location" value="${escapeHtml(detail.profile.publicLocation)}" maxlength="120" aria-describedby="detail-public-location-note" /></label>
+      <p class="field-note" id="detail-public-location-note">用户自愿公开的城市文字，独立于设备定位；修改此处不会更改 GPS 位置。</p>
+      <label>从业年限<input id="detail-experience-years" type="number" inputmode="numeric" min="0" max="80" step="1" value="${escapeHtml(detail.profile.experienceYears ?? "")}" aria-describedby="detail-experience-years-note" /></label>
+      <p class="field-note" id="detail-experience-years-note">填写 0 至 80 的整数；留空表示未填写，不会显示为 0 年。</p>
+      <fieldset class="profile-languages">
+        <legend>语言</legend>
+        <div class="profile-language-options">
+          ${profileLanguageOptions.map(([code, label]) => `
+            <label class="checkbox-row"><input type="checkbox" name="profile-language" value="${code}" ${detail.profile.languages.includes(code) ? "checked" : ""} /><span>${label}</span></label>
+          `).join("")}
+        </div>
+      </fieldset>
       <label>社区<input id="detail-community" value="${escapeHtml(detail.profile?.community || "")}" maxlength="120" /></label>
       <label>活动区域<input id="detail-area" value="${escapeHtml(detail.profile?.activityArea || "")}" maxlength="120" /></label>
+      <p class="field-note">清空身份标题、公开城市、从业年限或取消所有语言后保存，会清除对应的公开资料。</p>
+      <p class="profile-form-status" id="profile-form-status" role="status" aria-live="polite" hidden></p>
       <button type="submit">保存资料</button>
     </form>
 
-    <section class="detail-block">
+    <section class="detail-block" data-admin-permission="agents:manage" data-admin-target-role="${escapeHtml(detail.user.role)}">
       <header><h3>Agent 授权</h3><span>${detail.agents.filter((agent) => agent.enabled).length} 个启用</span></header>
       <div class="agent-access-list">${agentRows}</div>
     </section>
@@ -564,16 +627,17 @@ const renderUserDetail = (detail) => {
       <ul class="detail-list">${threadRows}</ul>
     </section>
 
-    <section class="detail-block">
+    <section class="detail-block" data-admin-permission="audit:read">
       <header><h3>最近事件</h3><span>${detail.recentEvents.length}</span></header>
       <ul class="detail-list event-mini-list">${eventRows}</ul>
     </section>
 
-    <section class="detail-block">
+    <section class="detail-block" data-admin-permission="audit:read">
       <header><h3>最近 Agent 调用</h3><span>${detail.recentRuns.length}</span></header>
       <ul class="detail-list">${runRows}</ul>
     </section>
   `;
+  syncAdminPermissionVisibility();
 };
 
 const openUserDetail = async (userId) => {
@@ -582,6 +646,17 @@ const openUserDetail = async (userId) => {
   renderUserDetail(detail);
   openDrawer();
   setStatus("账号详情已同步。");
+};
+
+const loadAdminModule = async (permission, load, fallbackMessage) => {
+  if (!currentAdminCan(permission)) return null;
+  try {
+    await load();
+    return null;
+  } catch (error) {
+    if (error.status === 401) throw error;
+    return friendlyErrorMessage(error, fallbackMessage);
+  }
 };
 
 async function loadAdmin() {
@@ -595,63 +670,93 @@ async function loadAdmin() {
 
   setStatus("正在读取后台管理数据...");
   try {
-    const [overview, users] = await Promise.all([
-      apiRequest("/api/admin/overview"),
-      apiRequest("/api/admin/users?limit=120"),
-    ]);
-
+    const { user } = await apiRequest("/api/me");
+    auth = { ...auth, user };
+    sessionStorage.setItem(authStorageKey, JSON.stringify(auth));
     setLoginVisible(false);
     setAdminReady(true);
-    renderMetrics(overview);
-    renderUsers(users);
+    renderMetrics({});
+    renderUsers([]);
+    renderEvents([]);
+    renderRuns([]);
+    renderAgents([]);
+    renderAgentReadiness({}, []);
+    renderMediaRetrievalOverview(null);
 
-    try {
-      renderEvents(await apiRequest("/api/admin/events?limit=80"));
-    } catch (error) {
-      renderEvents([]);
-      setStatus(friendlyErrorMessage(error, "审计事件读取失败。"));
+    if (!currentAdminCan("users:read")) closeDrawer();
+
+    const errors = (await Promise.all([
+      loadAdminModule(
+        "users:read",
+        async () => {
+          const [overview, users] = await Promise.all([
+            apiRequest("/api/admin/overview"),
+            apiRequest("/api/admin/users?limit=120"),
+          ]);
+          renderMetrics(overview);
+          renderUsers(users);
+        },
+        "账号管理数据读取失败。",
+      ),
+      loadAdminModule(
+        "audit:read",
+        async () => {
+          const [events, runs] = await Promise.all([
+            apiRequest("/api/admin/events?limit=80"),
+            apiRequest("/api/admin/agent-runs?limit=80"),
+          ]);
+          renderEvents(events);
+          renderRuns(runs);
+        },
+        "审计数据读取失败。",
+      ),
+      loadAdminModule(
+        "agents:manage",
+        async () => {
+          const [agents, readiness, retrievalOverview] = await Promise.all([
+            apiRequest("/api/admin/agents"),
+            apiRequest("/api/admin/agent-readiness"),
+            apiRequest("/api/admin/media-retrieval/overview"),
+          ]);
+          renderAgents(agents);
+          renderAgentReadiness(readiness, agents);
+          renderMediaRetrievalOverview(retrievalOverview);
+        },
+        "Agent 管理数据读取失败。",
+      ),
+      loadAdminModule(
+        "model:operate",
+        async () => renderModelStatus(await apiRequest("/api/admin/model-status")),
+        "模型服务状态读取失败。",
+      ),
+    ])).filter(Boolean);
+
+    if (selectedUserId && currentAdminCan("users:read")) {
+      const detailError = await loadAdminModule(
+        "users:read",
+        () => openUserDetail(selectedUserId),
+        "账号详情读取失败。",
+      );
+      if (detailError) errors.push(detailError);
     }
 
-    try {
-      renderRuns(await apiRequest("/api/admin/agent-runs?limit=80"));
-    } catch (error) {
-      renderRuns([]);
-      setStatus(friendlyErrorMessage(error, "Agent 调用记录读取失败。"));
+    const hasAnyPermission = adminPermissionOptions.some(([permission]) =>
+      currentAdminCan(permission),
+    );
+    if (!hasAnyPermission) {
+      setStatus("当前账号尚未分配可用的后台权限。");
+    } else if (errors.length) {
+      setStatus(`部分后台模块读取失败：${errors[0]}`);
+    } else {
+      setStatus(`后台数据已同步。最近刷新：${new Date().toLocaleTimeString("zh-CN")}`);
     }
-
-    try {
-      const [agents, readiness] = await Promise.all([
-        apiRequest("/api/admin/agents"),
-        apiRequest("/api/admin/agent-readiness"),
-      ]);
-      renderAgents(agents);
-      renderAgentReadiness(readiness, agents);
-    } catch (error) {
-      renderAgents([]);
-      renderAgentReadiness({}, []);
-      setStatus(friendlyErrorMessage(error, "Agent 注册信息读取失败。"));
-    }
-
-    try {
-      renderMediaRetrievalOverview(await apiRequest("/api/admin/media-retrieval/overview"));
-    } catch (error) {
-      renderMediaRetrievalOverview(null);
-      setStatus(friendlyErrorMessage(error, "媒体检索 Agent 状态读取失败。"));
-    }
-
-    try {
-      renderModelStatus(await apiRequest("/api/admin/model-status"));
-    } catch (error) {
-      renderModelError(error);
-    }
-    setStatus(`后台数据已同步。最近刷新：${new Date().toLocaleTimeString("zh-CN")}`);
-    if (selectedUserId) await openUserDetail(selectedUserId);
   } catch (error) {
-    if (error.status === 401 || error.status === 403) {
+    if (shouldClearAdminSession(error)) {
       auth = {};
       sessionStorage.removeItem(authStorageKey);
       setLoginVisible(true);
       setAdminReady(false);
+      closeDrawer();
     }
     setStatus(friendlyErrorMessage(error, "后台数据读取失败。"));
   }
@@ -895,21 +1000,53 @@ qs("#drawer-body").addEventListener("submit", async (event) => {
   if (event.target.id !== "profile-admin-form") return;
   event.preventDefault();
   if (!selectedUserId) return;
+  const form = event.target;
+  const submit = form.querySelector('button[type="submit"]');
+  if (submit.disabled) return;
+  const userId = selectedUserId;
+  const detail = currentUserDetail;
+  const status = form.querySelector("#profile-form-status");
+  const fields = [...form.querySelectorAll("input, textarea")];
+  submit.disabled = true;
+  fields.forEach((field) => { field.disabled = true; });
+  form.setAttribute("aria-busy", "true");
+  status.hidden = false;
+  status.classList.remove("error");
+  status.textContent = "正在保存小站资料...";
   setStatus("正在保存小站资料...");
   try {
-    await apiRequest(`/api/admin/users/${selectedUserId}/profile`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        nickname: qs("#detail-nickname").value.trim(),
-        bio: qs("#detail-bio").value.trim(),
-        community: qs("#detail-community").value.trim(),
-        activityArea: qs("#detail-area").value.trim(),
-      }),
+    const update = buildAdminProfileUpdate({
+      nickname: form.querySelector("#detail-nickname").value,
+      bio: form.querySelector("#detail-bio").value,
+      community: form.querySelector("#detail-community").value,
+      activityArea: form.querySelector("#detail-area").value,
+      headline: form.querySelector("#detail-headline").value,
+      publicLocation: form.querySelector("#detail-public-location").value,
+      experienceYears: form.querySelector("#detail-experience-years").value,
+      languages: [...form.querySelectorAll('input[name="profile-language"]:checked')].map((input) => input.value),
     });
-    await loadAdmin();
+    const { profile } = await apiRequest(`/api/admin/users/${userId}/profile`, {
+      method: "PATCH",
+      body: JSON.stringify(update),
+    });
+    currentUsers = currentUsers.map((user) => user.id === userId ? { ...user, displayName: profile.nickname } : user);
+    renderUserRows(filteredUsers());
+    if (selectedUserId === userId && currentUserDetail === detail) {
+      renderUserDetail({ ...detail, profile, user: { ...detail.user, displayName: profile.nickname } });
+      const savedStatus = qs("#profile-form-status");
+      savedStatus.hidden = false;
+      savedStatus.textContent = "小站资料已保存。";
+    }
     setStatus("小站资料已保存。");
   } catch (error) {
-    setStatus(friendlyErrorMessage(error, "保存资料失败。"));
+    const message = friendlyErrorMessage(error, "保存资料失败。");
+    status.textContent = message;
+    status.classList.add("error");
+    setStatus(message);
+  } finally {
+    submit.disabled = false;
+    fields.forEach((field) => { field.disabled = false; });
+    form.removeAttribute("aria-busy");
   }
 });
 

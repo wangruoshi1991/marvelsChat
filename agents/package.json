@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Miaoxun Agent definitions and registry.",
   "scripts": {
-    "check": "node --check registry.js *.agent.js scripts/*.js scripts/lib/*.js",
+    "check": "node ../scripts/check-source-syntax.mjs .",
     "test": "node --test test/*.test.js",
     "agent:new": "node scripts/agent-new.js",
     "agent:check": "node scripts/agent-check.js",

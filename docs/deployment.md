@@ -1,5 +1,25 @@
 # 妙讯部署说明
 
+## Runtime 制品来源约束
+
+`node scripts/prepare-runtime-release.mjs <release-id>` 只允许在无未提交、无未跟踪文件的
+Git 工作区执行。脚本先删除 `admin/dist` 与 `avatar-web/dist`，重新完成两项生产构建，再按
+明确白名单生成 runtime；`deploy/` 也只收录代码中逐项列出的 systemd、Nginx、数据库和环境
+模板。脚本不会将 `.env*`、凭据、数据库、`node_modules`、本地 storage 或整个工作目录打包。
+`release-manifest.json` 记录 `sourceHead`、`sourceTree`、固定构建命令及每个运行文件的
+SHA-256，并明确 `includesWorkingTreeChanges=false`。
+
+发布前必须先把经审查的修改提交为一个可定位的 Git revision，再生成制品；不能以 dirty
+worktree、手工复制的 dist 或“HEAD 加本地修改”作为生产来源。`npm run test:release-package`
+在隔离的临时 Git 仓库中覆盖成功路径、前端重新构建、敏感配置排除、来源 revision 和清单哈希。
+
+## 2026-09-16 最新发布记录
+
+当前正式 runtime：`/opt/projects/marvels-chat/releases/app-integration-20260916-04/runtime`，
+数据库迁移至031；API/worker/后台正常。TestFlight `1.0 (43)` 已上传、处理并加入现有内外部
+yunzhi 群组，状态“正在测试”。备份校验和、制品、配置与验收限制见
+[发布记录](reviews/2026-09-16-production-and-testflight-43.md)。检索开关/预算未改。
+
 ## 当前生产测试目标
 
 TestFlight 只负责把 iOS App 分发给测试用户；登录、聊天、扫码解析、妙讯管家、通知、在线状态和定位名称解析都必须连接公网 HTTPS 后端。
@@ -47,6 +67,26 @@ PostgreSQL 只监听 ECS 回环地址，不开放安全组或公网端口。Redi
 ```
 
 真实 `miaoxun-prod.env` 只保存在服务器，不提交仓库。
+
+## 管理台 Nginx 安全边界
+
+生产 HTTPS `server` 中的 `/admin` 静态目录必须使用
+[deploy/miaoxun-admin-location.nginx.example](../deploy/miaoxun-admin-location.nginx.example)
+定义的两个 `location`。该配置将管理台限制为同源脚本、样式和 API 连接，禁止被第三方页面嵌入，
+并为静态响应补齐 HSTS、`nosniff`、Referrer Policy、Permissions Policy 与 COOP。不要在另一个
+`location` 中重复声明 `add_header`，否则 Nginx 的继承规则可能覆盖这些响应头。
+
+该文件是待安装配置，不会由应用发布脚本自动改写系统 Nginx。安装前先比对实际 alias，随后执行：
+
+```sh
+sudo nginx -t
+sudo systemctl reload nginx
+curl --fail --silent --show-error --dump-header - --output /dev/null https://8.153.167.11/admin/
+```
+
+验收输出必须包含 `Content-Security-Policy`、`Strict-Transport-Security`、
+`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy`、
+`Permissions-Policy` 和 `Cross-Origin-Opener-Policy`；缺一项都不能把管理台标记为上线就绪。
 
 ## 必需环境变量
 
@@ -162,14 +202,20 @@ curl --fail https://8.153.167.11/api/ready
 
 2026-06-24 继续验证聊天实时体验时，再次连续请求线上 `/api/health`，5 次中 1 次在 TLS 握手阶段返回 `SSL_ERROR_SYSCALL`。客户端已把 WebSocket 生命周期收敛到登录 token，避免 presence 事件导致实时连接自重建；但如果 HTTPS/WSS 入口仍偶发握手失败，手机端仍会出现登录、聊天和定位解析请求间歇变慢或超时。该问题必须从服务器 Nginx、证书链、反向代理和公网网络稳定性继续排查。
 
-## 当前线上配置状态
+## 当前模型配置（2026-09-16 核对）
+
+只读核对 `marvels-chat-backend` 的运行进程环境：`NEW_API_BASE_URL=https://api.deepseek.com/chat/completions`，`NEW_API_MODEL=deepseek-v4-flash`，模型 Key 已配置；后端与媒体检索 worker 均为 active。安装中的 iPhone 17 模拟器包 API 为 `https://8.153.167.11`。本次未发送模型测试请求、未修改生产环境或重启服务。
+
+上述配置没有对应的仓库配置变更记录，无法据此确定由谁设置。`agent_runs.provider=new-api` 是当前代码的通用提供方标签，不是模型名称，也不能证明经过独立中转服务。
+
+本地 `.env` 和环境模板已同步 endpoint、模型名，清除了旧开发供应商 Key。本地 Key 留空；要运行独立开发后端，需配置独立开发凭据。生产 API 联调使用服务器配置。
+
+## 历史线上配置快照（2026-08-04，已过期）
 
 2026-08-04 对服务器 `/opt/projects/marvels-chat/app/deploy/miaoxun-prod.env` 做脱敏只读检查后的状态：
 
-- `NEW_API_BASE_URL=https://api.z.ai/api/paas/v4`
-- `NEW_API_MODEL=glm-4.5-air`
-- `NEW_API_TIMEOUT_MS=30000`
-- `NEW_API_KEY` 当前服务器未配置；本地测试 Key 已返回额度不足，妙讯管家暂不可用。
+- 当时使用旧供应商配置，模型 Key 未配置，本地旧 Key 额度不足；该模型与凭据配置已停用，当前值见上节，勿按历史快照重新配置。
+- 当时 `NEW_API_TIMEOUT_MS=30000`。
 - 当前源码要求 `MIAOXUN_API_BASE_URL` 只能是无路径的 HTTP(S) origin；临时 IP 配置为 `http://8.153.167.11`，业务调用必须显式使用 `/api/*`，非规范路径会直接报错。
 - `GEOCODING_PROVIDER=amap` 和 `AMAP_WEB_SERVICE_KEY` 已配置；正式上线前仍需确认高德逆地理编码的生产授权、配额和隐私披露。未被位置页调用的 MapLibre、地图票据和瓦片代理已从当前源码移除，服务器里的旧地图变量在下次部署时一并清理。
 - 当前常驻环境仍保留 `CREATE_FIRST_USER_AS_ADMIN=true`、`DEFAULT_ADMIN_ENABLED=true`，且没有显式 `TRUST_PROXY_HOPS=1`。下次部署新版后端前必须先关闭两个管理员初始化开关、清空 `ADMIN_EMAILS` 和默认管理员密码，并补齐代理层配置；新版生产配置校验会拒绝以不安全的初始化开关启动。
@@ -498,3 +544,13 @@ Repository Quality 运行 `34931311492` 的 Android 任务在 `Set up Android SD
 `tools platform-tools`，但远端 SDK 仓库已无法提供旧的 `tools` 包；此次任务尚未进入 App 编译。
 工作流现显式设置 `packages: platform-tools`，后续仍安装项目指定的 Android 36、Build Tools
 36.0.0 和 NDK 27.1.12297006，并执行原有 `assembleDebug`。其余质量检查与失败退出规则保持开启。
+
+## 2026-09-15 仓库审查后的发布检查补强
+
+本地审查修复记录见 [仓库审查与修复](reviews/2026-09-15-repository-audit.md)。后端镜像增加必需的
+`shared/` 目录；CI 在构建后实际启动隔离容器，验证健康接口、未配置数据库时的 503 就绪响应、
+动态 Agent 加载和 worker 导入。数据库迁移重放后新增 `backend` 的 `npm run test:api-integration`，
+验证注册、登录、内容读写、好友消息、跨账号权限与退出/注销。测试只允许专用测试库，不使用生产配置。
+
+本轮没有生产部署和 App 上传。完整本地 Docker 构建因外部 Debian 包源返回 502 中止，需在网络
+恢复后完成镜像启动检查；不能把此前“仅镜像构建通过”的记录当作本轮运行验证。

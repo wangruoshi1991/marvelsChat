@@ -17,7 +17,7 @@
 - 注册页只要求昵称、手机号或邮箱、密码；昵称就是用户可见用户名，必须唯一。登录页支持使用昵称、手机号或邮箱登录。后端注册和资料改名都会检查 `displayName` 唯一，重复时提示“名称已使用”。
 - 未登录状态只展示登录/注册页，不再保留原型账号、预览会话或前端假聊天。
 - 设置页退出登录会先调用 `/api/auth/logout` 撤销服务端 session，成功后再清除本机 Keychain token。
-- 妙讯管家通过妙讯会话和小站 Agent 卡片进入；小站不再渲染悬浮“妙”，避免覆盖 3D、动态和后续内容模块。内容级 AI 辅助继续使用模块自身的长按与方向能力入口。
+- 妙讯管家通过妙讯会话和小站 Agent 卡片进入；小站不再渲染悬浮“妙”，避免覆盖 3D、动态和后续内容模块。内容级 AI 辅助统一由根部 `AIAssistProvider` 接管，3D、聊天消息、动态、日记和相册卡片使用同一长按与方向能力入口。
 - API 地址由 `MiaoxunConfigModule` 原生桥接显式注入；iOS 读取 `Info.plist` 的 `MiaoxunAPIBaseURL`，Android 读取 `BuildConfig.MIAOXUN_API_BASE_URL`。该值只能是无路径的 HTTP(S) origin，所有业务调用必须显式传入 `/api/*` 路径；配置缺失或格式错误会直接报错。
 - 妙讯页左上角 `+` 菜单中的扫码已接入统一 `src/services/qrScanner.ts`，iOS 使用 AVFoundation，Android 使用 CameraX + ML Kit。
 - 妙讯页左上角 `+` 菜单展示创建群、添加好友和扫码；创建群和独立添加好友入口当前为待接入状态，不触发业务写入，好友申请从公开主页按钮发起。
@@ -37,11 +37,13 @@
 - 小站社交页已展示真实好友、关注和粉丝列表；小站顶部关注/粉丝数字可进入社交页。搜索页已接入用户搜索与最近搜索；设置页已接入主页展示开关，公开主页会按后端可见性策略隐藏字段。
 - 设置页包含关注列表和粉丝列表公开开关；当前 App 只展示自己的关注/粉丝列表，后续开放查看他人列表前必须先由后端 API 按这两个开关校验。
 - 小站页已接入位置入口。点击“我的社区”或“我的活动区域”进入位置选择；“我的模样”通过独立 App 流程创建和管理私有 3D 形象，只有最终 GLB 查看画布使用受限 WebView。照片上传、授权、任务轮询和四视图确认均为 React Native 页面，不进入 Agent 工作区或完整 Web 工作台。
-- “我的小站”面板按原型结构保留 3D 形象、个人日记、个人相册、喜欢的音乐菜单、可调用能力 Agent 和我的文件的位置。当前未接入内容模块只展示真实空状态，不在客户端写静态假列表、假封面、假数量或假文件；后续需要先补对应后端表、素材/权限模型和 API，再把待接入状态替换为真实数据。
+- 小站仍存在旧版个人日记、相册与 Agent 模块，尚未完成新版第一面“个人数字身份＋形象档案”的整体调整。2026-09-16 已移除不属于本次新版设计范围的音乐板块；不以旧版默认模块代替新版设计验收。
 - 定位通过 `src/services/location.ts` 调用原生薄桥接：iOS 使用 CoreLocation，Android 使用系统 LocationManager。定位只返回 WGS84 坐标，社区和活动区域候选由 `/api/location/resolve` 调用后端显式配置的反向地理编码服务生成；线上当前使用 `GEOCODING_PROVIDER=amap`，WGS84 到 GCJ-02 的转换只发生在后端供应商适配层。App 只展示真实候选并由用户确认保存，不提供未使用的地图选点链路；服务未配置、权限拒绝、设备不可用或解析失败都提示明确错误，不写入假社区或默认活动区域。
 - `avatar_config` v2 继续用于用户头像和未涉及 3D 模型的形象配置；小站 3D 模型来自独立的 `avatar_3d_models` 生命周期，不用 SVG 或低模占位作为生成失败兜底。
 - 原型里小站形象、OOTD 和漫画日记封面都是可交互区域；当前 RN 保留这些真实入口，3D 模型可在舞台旋转查看，未接入内容仍只展示真实空状态，不写客户端假内容。
-- `avatar_config` 只表示人类用户的小站形象。妙讯管家和后续 Agent 不使用用户可编辑形象，Agent 头像来自 `agents/*.agent.js` 的 `identity` 注册声明；客户端按 `agentId` 渲染不可编辑的 Agent 标识。新增 Agent 时必须在注册层声明 identity，registry 会校验缺失或非法配置，不能让客户端把 Agent 当作普通用户头像处理。
+- 第一面“编辑小站资料”已接入昵称、头像文字、签名、职业身份、主动展示的城市、经验年限和沟通语言；通过 `PATCH /api/me/profile` 持久化，后台同步支持编辑。身份标签受“展示职业资料与简介”控制，不读取 GPS；妙点和定位管理移到“其他”。新客户端依赖迁移 031 和新后端，须按[资料闭环记录](../docs/reviews/2026-09-16-profile-identity.md)顺序发布。设计要求的“粉丝、合作伙伴、综合评分”仍未完成统计接入，用户已确认按完成合作与评价计算，具体[生命周期契约](../docs/reviews/2026-09-16-cooperation-lifecycle.md)已记录；不能把旧计数换名替代。
+- 生活动态的点赞和收藏已接入 `station_post_interactions` 真实接口，按钮状态由服务端返回并在失败时回滚；动态、互动、媒体资产和漫画日记数量已进入后台总览。音乐不在当前新版设计实施范围；最终漫画媒体发布仍待接入。
+- `avatar_config` 只表示人类用户的小站形象。Agent 使用独立身份及设计资源；妙讯管家聊天头像映射为蓝湖聊天页对应的 `messages/avatar-butler.png` 人物插画，小站现有 `station/partners/miaoxun-assistant.png` 机器人素材不能替代聊天头像。新增 Agent 必须声明合法 `identity`，正式设计素材按入口与 `agentId` 明确映射，不能使用用户可编辑形象。
 - 正式形象设计可以参考 QQ 秀的顶部人物预览和底部素材卡片编辑结构，同时保留 VRoid 的 Face/Hair/Body/Outfit/Accessories 分区、Roblox 的 avatar cosmetics/accessories 持久化思路。正式扩展捏脸、装扮、动作、上传图片生成或购买素材时，必须使用本地或后端审核后的 2D/3D 人形资源，并补齐素材授权、审核流程、模型压缩、跨平台性能验证和资源版本记录。
 - 收藏列表、签名动态码、好友拒绝/取消流程、群聊、已读回执、正在输入、媒体消息和内容级可见性仍按 `docs/social-graph.md` 后续接入，必须先补后端 schema/API，不能用客户端假状态替代。
 
@@ -67,11 +69,28 @@ src/services/location.ts
 
 ## 本地运行
 
+当前 App 预览采用本地最新源码连接正式 HTTPS API，模拟器与线上使用同一套账号和业务数据。
+本地 PostgreSQL 是独立开发库，不会因生产备份成功而自动同步线上账号；需要查看原有账号时，
+应连接正式 API。连接正式 API 后的创建、编辑、删除和供应商调用会作用于线上环境，联调使用
+专用测试账号。后端代码的修改仍需单独验证和部署，构建本地 App 不会更新服务器代码。
+
+先用 `xcrun simctl list devices available` 确认模拟器 ID，并启动所选设备。然后从 `MiaoxunRN/`
+执行以下命令；将 `<simulator-id>` 替换为实际 ID，构建时显式选择正式 API：
+
 ```sh
-cd MiaoxunRN
-npm start -- --port 8081
-npm run ios -- --simulator "iPhone 17"
+xcodebuild -workspace ios/MiaoxunRN.xcworkspace \
+  -scheme MiaoxunRN -configuration Debug \
+  -destination 'id=<simulator-id>' -derivedDataPath ios/build \
+  MIAOXUN_API_BASE_URL=https://8.153.167.11 build
+
+xcrun simctl install <simulator-id> \
+  ios/build/Build/Products/Debug-iphonesimulator/MiaoxunRN.app
+xcrun simctl launch --terminate-running-process <simulator-id> \
+  com.wangruoshi.miaoxun
 ```
+
+需要隔离验证本地后端变更时，显式把上述构建参数改为 `http://127.0.0.1:4390`，并使用该开发库
+自己的测试账号。两种模式都必须重新构建安装内嵌 JS bundle。
 
 iOS API 地址由 Xcode build setting `MIAOXUN_API_BASE_URL` 注入：
 
@@ -80,9 +99,9 @@ Debug: http://127.0.0.1:4390
 Release: https://8.153.167.11
 ```
 
-Debug 默认连接本机后端。正式 Release 构建必须使用受信任的公网 HTTPS origin，不能使用 localhost 或 loopback URL；当前 IP 证书的 SAN 包含 `8.153.167.11`，不需要 ATS HTTP 例外。同一次扫码联调不能混用两套后端。
+上表是 Xcode 工程默认值；当前线上数据联调使用上方命令显式覆盖 Debug API。正式 Release 构建必须使用受信任的公网 HTTPS origin，不能使用 localhost 或 loopback URL；当前 IP 证书的 SAN 包含 `8.153.167.11`，不需要 ATS HTTP 例外。同一次扫码联调不能混用两套后端。
 
-当前 iOS Debug 工程会通过 `AppDelegate.swift` 强制读取内置 `main.jsbundle`，不是直接从 Metro 拉取最新 JS。修改 `src/` 后如模拟器没有变化，需要重新执行 `npx react-native run-ios --udid <simulator-id>` 生成并安装新的内置 bundle；单纯重启模拟器或 Metro 不会让已安装 App 自动更新。
+当前 iOS Debug 工程会通过 `AppDelegate.swift` 强制读取内置 `main.jsbundle`，不是直接从 Metro 拉取最新 JS。修改 `src/` 后，需要重新执行上方显式指定 API 地址的构建、安装和启动命令，生成并安装新的内置 bundle；单纯重启模拟器或 Metro 不会让已安装 App 自动更新。
 
 真机和模拟器互扫联调必须保证双方进入同一套后端账号、二维码、好友申请和通知数据。同一次扫码联调不能一端连本地、一端连线上。
 
@@ -97,7 +116,13 @@ cd avatar-web
 npm run build:app-viewer
 ```
 
-小站顶层 Tab 使用固定导航栏和单一内容 ScrollView，只挂载当前选中的页面；切换时直接卸载旧页面并挂载目标页面，不同时保留五棵原生视图树，也不使用定时器或动态 `key` 强制延迟重建。查看器原生容器、HTML 加载层和 Three.js 场景使用同一背景色，模型默认以正面视角展示。
+小站顶层 Tab 使用可横向滚动的 `StationTabBar` 和单一内容 ScrollView，选项宽度按标题自然布局并在切换后滚动到可见区域，为后续新增选项保留空间。第一面首次访问后会保留其真实内容树，离开时暂停交互并隐藏；其他面板按访问和当前路由生命周期管理，不能依赖定时器或动态 `key` 强制重建。查看器原生容器、HTML 加载层和 Three.js 场景使用同一浅色背景，模型在首帧渲染后结束加载状态，进入后台或离开小站时暂停 RAF 和未触发的长按计时器，恢复时复用已加载场景。
+
+内容级长按由根部 `AIAssistProvider` 统一管理。3D 舞台、聊天消息、动态、日记和相册卡片使用同一四向半透明操作层；原内容始终保持单份挂载，不克隆 3D 舞台，不显示系统文本选择菜单。选择“妙管家”只打开妙讯管家会话并把标题、正文和内容类型写入待发送草稿，用户确认后才发送；不会自动发送、上传私有媒体或伪造生成结果。未配置 `AIAssistProvider` 时直接报错，动作取消、页面切换、后台和卸载都会使当前交互失效。
+
+四向操作层只复用手势和布局，不复用业务文案：聊天卡片为“分享 / 妙管家 / 复制 / 更多”，聊天输入框为“换行 / 妙管家 / 粘贴 / 更多”，3D / OOTD 为“分享 / 妙管家 / 编辑 / 更多”。边缘布局同时携带标签在圆上方或下方的设计信息，文字与触点光圈不得重叠；具体映射和照片稿的接入状态见 `docs/app-design-assets.md`。
+
+长按菜单中的图标目前按“正式资源优先、Lucide 语义图标补足”的明确映射渲染。仓库没有蓝湖全部图标的原始 SVG/透明 2x/3x 导出时，不能把截图裁剪物当成最终资产；需要设计交付原始资源后按 `agentId`/动作 ID 显式替换，并同步 `docs/app-design-assets.md` 的清单。
 
 小站首页的个人日记和个人相册模块分别绑定已注册的漫画日记 Agent、相册管理 Agent；已添加时点击进入对话，未添加时进入 AI 伙伴管理。模块“更多”进入按月份分组的完整内容列表，列表项点按查看详情、左滑快捷进入编辑。AI 伙伴模块不虚构总管 Agent，具体伙伴点按进入对话，“更多”进入统一伙伴管理。
 
@@ -119,7 +144,7 @@ App bootstrap 与增量同步 DTO 直接对应当前后端响应：通知、未�
 
 涉及两台设备互扫的联调必须保证双方都安装或启动同一次代码版本，并且 `MIAOXUN_API_BASE_URL` 指向同一个后端。只更新真机不更新模拟器时，模拟器展示的二维码、页面状态和客户端逻辑可能仍来自旧包，扫码测试结果无效。
 
-真机构建和安装命令：
+真机连接正式 API 的构建和安装命令：
 
 ```sh
 xcodebuild -allowProvisioningUpdates \
@@ -128,7 +153,7 @@ xcodebuild -allowProvisioningUpdates \
   -configuration Debug \
   -destination 'id=<DEVICE_IDENTIFIER>' \
   -derivedDataPath ios/build \
-      MIAOXUN_API_BASE_URL=http://<MAC_LAN_IP>:4390 \
+  MIAOXUN_API_BASE_URL=https://8.153.167.11 \
   build
 
 xcrun devicectl device install app \
@@ -140,13 +165,19 @@ xcrun devicectl device process launch \
   com.wangruoshi.miaoxun
 ```
 
-Android 构建必须显式提供 API 地址：
+Android 构建必须显式提供 API 地址；连接正式 API 时：
 
 ```sh
-./gradlew assembleDebug -PMIAOXUN_API_BASE_URL=http://<MAC_LAN_IP>:4390
+./gradlew assembleDebug \
+  -PMIAOXUN_API_BASE_URL=https://8.153.167.11 \
+  -PMIAOXUN_VERSION_CODE=43
 ```
 
-Android Release 构建还必须提供正式签名参数，并且 `MIAOXUN_API_BASE_URL` 必须是公网 HTTPS origin，不能使用 localhost 或 loopback URL。可参考：
+真机或 Android 需要隔离验证本地后端时，显式改用 `http://<MAC_LAN_IP>:4390`，并确保设备可访问该开发服务。
+
+Android Release 构建还必须显式提供正整数 `MIAOXUN_VERSION_CODE` 和正式签名参数，并且
+当前媒体检索版本要求 `MIAOXUN_VERSION_CODE >= 26`。`MIAOXUN_API_BASE_URL` 必须是公网
+HTTPS origin，不能使用 localhost 或 loopback URL。可参考：
 
 ```text
 android/release-signing.properties.example

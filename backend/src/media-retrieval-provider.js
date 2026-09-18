@@ -3,7 +3,11 @@ import {
   MEDIA_RETRIEVAL_LIMITS,
   MEDIA_RETRIEVAL_PROVIDER_PATHS,
 } from "./media-retrieval-constants.js";
-import { normalizeDescriptor, normalizeRetrievalQuery } from "./media-retrieval-policy.js";
+import { descriptorSchema, normalizeDescriptor, normalizeRetrievalQuery } from "./media-retrieval-policy.js";
+import { mediaRetrievalParserResponseSchema } from "./media-retrieval-parser-response.js";
+import { projectMediaRetrievalDiagnostic } from "./media-retrieval-errors.js";
+import { recordMediaRetrievalDiagnostic } from "./media-retrieval-diagnostics.js";
+import { DESCRIPTOR_PROMPT_VERSION, descriptorSystemPrompt, querySystemPrompt } from "./media-retrieval-prompts.js";
 import { verifyVisualEmbeddingInput } from "./media-retrieval-embedding-input.js";
 import {
   createDescriptorProvenance,
@@ -13,11 +17,12 @@ import {
 const REQUEST_TIMEOUT_MS = 30_000;
 
 export class MediaRetrievalProviderError extends Error {
-  constructor(code, message = "Media retrieval service is unavailable.", status = 503) {
+  constructor(code, message = "Media retrieval service is unavailable.", status = 503, diagnostic = null) {
     super(message);
     this.name = "MediaRetrievalProviderError";
     this.code = code;
     this.status = status;
+    this.diagnostic = projectMediaRetrievalDiagnostic(diagnostic);
   }
 }
 
@@ -45,6 +50,13 @@ const parseJsonObject = (value) => {
   }
 };
 
+const schemaPathsFor = (schema, candidate) => {
+  const result = schema.safeParse(candidate);
+  if (result.success) return ["response.policy"];
+  return result.error.issues.map((issue) => issue.path.reduce((path, part) =>
+    typeof part === "number" ? `${path}[]` : `${path}${path ? "." : ""}${part}`, "") || "response");
+};
+
 const readEmbedding = (payload) => {
   const vector = payload?.output?.embeddings?.[0]?.embedding || payload?.embeddings?.[0]?.embedding;
   if (
@@ -57,24 +69,12 @@ const readEmbedding = (payload) => {
   return vector;
 };
 
-const querySystemPrompt = [
-  "Return one JSON object with visualQuery, identityTerms, and parseConfidence.",
-  "Identify name-like, celebrity-like, nickname-like, role-like, or character-like wording as identityTerms.",
-  "visualQuery must contain only visual traits such as clothing, color, scene, action, and objects.",
-  "Do not infer identity, age, gender, race, nationality, health, religion, politics, or personality.",
-].join(" ");
-
-const descriptorSystemPrompt = [
-  "Return one JSON object with only summary, clothing, scene, actions, objects, ocrText, and qualitySignals.",
-  "Use concrete visible visual details only. Each clothing item must contain type and color.",
-  "Do not state or infer identity, names, celebrities, age, gender, race, nationality, health, religion, politics, personality, or face attributes.",
-].join(" ");
-
 export function createMediaRetrievalProvider({
   config,
   fetchImpl = globalThis.fetch,
   now = () => Date.now(),
   timeoutMs = REQUEST_TIMEOUT_MS,
+  recordDiagnostic = recordMediaRetrievalDiagnostic,
 } = {}) {
   const retrieval = getRetrievalConfig(config);
   const indexingProvenance = Object.freeze({
@@ -86,7 +86,7 @@ export function createMediaRetrievalProvider({
         apiBaseUrl: retrieval.dashscopeApiBaseUrl || "not-configured",
         endpoint: MEDIA_RETRIEVAL_PROVIDER_PATHS.multimodalGeneration,
         responseFormat: "json_object",
-        promptVersion: "media-retrieval-descriptor-prompt-v1",
+        promptVersion: DESCRIPTOR_PROMPT_VERSION,
       },
     }),
     embeddingProvenance: createEmbeddingProvenance({
@@ -115,7 +115,59 @@ export function createMediaRetrievalProvider({
     }
   };
 
-  const request = async ({ path, body, reservation }) => {
+  const failure = (operation, stage, details = {}) => new MediaRetrievalProviderError(
+    "retrieval_service_unavailable", "Media retrieval service is unavailable.", 503,
+    { operation, stage, ...details },
+  );
+
+  const readBoundedJson = async (response, operation) => {
+    const contentLength = response?.headers?.get?.("content-length");
+    if (/^\d+$/.test(contentLength || "") && Number(contentLength) > MEDIA_RETRIEVAL_LIMITS.providerResponseMaxBytes) {
+      throw failure(operation, "response-json", { httpStatus: response?.status, schemaPaths: ["response"] });
+    }
+    if (!response?.body || typeof response.body.getReader !== "function") {
+      throw failure(operation, "response-json", { httpStatus: response?.status, schemaPaths: ["response"] });
+    }
+    const reader = response.body.getReader();
+    const chunks = [];
+    let byteLength = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        byteLength += value.byteLength;
+        if (byteLength > MEDIA_RETRIEVAL_LIMITS.providerResponseMaxBytes) {
+          await reader.cancel().catch(() => {});
+          throw failure(operation, "response-json", { httpStatus: response.status, schemaPaths: ["response"] });
+        }
+        chunks.push(Buffer.from(value));
+      }
+      return JSON.parse(Buffer.concat(chunks, byteLength).toString("utf8"));
+    } catch (error) {
+      if (error instanceof MediaRetrievalProviderError) throw error;
+      throw failure(operation, "response-json", { httpStatus: response?.status, schemaPaths: ["response"] });
+    }
+  };
+
+  const withDiagnostic = async ({ operation, reservation }, invoke) => {
+    try {
+      return await invoke();
+    } catch (error) {
+      if (error instanceof MediaRetrievalProviderError && error.diagnostic) {
+        try {
+          await recordDiagnostic({ reservationId: reservation?.reservationId, failureCode: error.code, diagnostic: error.diagnostic });
+        } catch {
+          // A failed audit write is an explicit failure. Keep only the bounded
+          // diagnostic in service logs; never serialize the database exception.
+          console.error(JSON.stringify({ type: "media_retrieval_diagnostic_write_failed", operation, diagnostic: error.diagnostic }));
+          throw new MediaRetrievalProviderError("retrieval_repository_write_failed");
+        }
+      }
+      throw error;
+    }
+  };
+
+  const request = async ({ path, body, reservation, operation }) => {
     assertEligible(reservation);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -130,26 +182,25 @@ export function createMediaRetrievalProvider({
         signal: controller.signal,
       });
       if (!response?.ok) {
-        throw new MediaRetrievalProviderError("retrieval_service_unavailable");
+        let payload;
+        try { payload = await readBoundedJson(response, operation); } catch { /* No provider body is retained. */ }
+        throw failure(operation, "http-response", { httpStatus: response?.status, providerCode: payload?.code });
       }
-      try {
-        return await response.json();
-      } catch {
-        throw new MediaRetrievalProviderError("retrieval_service_unavailable");
-      }
+      return await readBoundedJson(response, operation);
     } catch (error) {
       if (error instanceof MediaRetrievalProviderError) throw error;
-      throw new MediaRetrievalProviderError("retrieval_service_unavailable");
+      throw failure(operation, error?.name === "AbortError" ? "timeout" : "transport");
     } finally {
       clearTimeout(timer);
       void now();
     }
   };
 
-  const callGeneration = async ({ systemPrompt, content, reservation }) =>
+  const callGeneration = async ({ systemPrompt, content, reservation, operation }) =>
     request({
       path: MEDIA_RETRIEVAL_PROVIDER_PATHS.multimodalGeneration,
       reservation,
+      operation,
       body: {
         model: retrieval.captionModel,
         input: {
@@ -165,10 +216,11 @@ export function createMediaRetrievalProvider({
       },
     });
 
-  const callEmbedding = async ({ contents, reservation }) => {
+  const callEmbedding = async ({ contents, reservation, operation }) => {
     const payload = await request({
       path: MEDIA_RETRIEVAL_PROVIDER_PATHS.multimodalEmbedding,
       reservation,
+      operation,
       body: {
         model: retrieval.embeddingModel,
         input: { contents },
@@ -178,47 +230,65 @@ export function createMediaRetrievalProvider({
         },
       },
     });
-    return readEmbedding(payload);
+    try {
+      return readEmbedding(payload);
+    } catch {
+      throw failure(operation, "embedding-validation", { httpStatus: 200, schemaPaths: ["embedding"] });
+    }
   };
 
   return {
     async parseRetrievalQuery({ query, reservation }) {
-      const payload = await callGeneration({
-        systemPrompt: querySystemPrompt,
-        content: [{ text: String(query || "").slice(0, 240) }],
-        reservation,
+      const operation = "query-parse";
+      return withDiagnostic({ operation, reservation }, async () => {
+        const payload = await callGeneration({
+          systemPrompt: querySystemPrompt,
+          content: [{ text: String(query || "").slice(0, 240) }],
+          reservation,
+          operation,
+        });
+        const candidate = parseJsonObject(extractText(payload));
+        const normalized = normalizeRetrievalQuery(candidate);
+        if (!normalized) {
+          throw new MediaRetrievalProviderError(
+            "retrieval_policy_unverifiable",
+            "Media retrieval output could not be verified.",
+            422,
+            { operation, stage: "query-validation", httpStatus: 200, schemaPaths: schemaPathsFor(mediaRetrievalParserResponseSchema, candidate) },
+          );
+        }
+        return normalized;
       });
-      const normalized = normalizeRetrievalQuery(parseJsonObject(extractText(payload)));
-      if (!normalized) {
-        throw new MediaRetrievalProviderError(
-          "retrieval_policy_unverifiable",
-          "Media retrieval output could not be verified.",
-          422,
-        );
-      }
-      return normalized;
     },
 
     async describeImage({ imageUrl, reservation }) {
-      const payload = await callGeneration({
-        systemPrompt: descriptorSystemPrompt,
-        content: [{ image: String(imageUrl || "") }, { text: "Describe the visible scene." }],
-        reservation,
+      const operation = "image-description";
+      return withDiagnostic({ operation, reservation }, async () => {
+        const payload = await callGeneration({
+          systemPrompt: descriptorSystemPrompt,
+          content: [{ image: String(imageUrl || "") }, { text: "Describe the visible scene." }],
+          reservation,
+          operation,
+        });
+        const candidate = parseJsonObject(extractText(payload));
+        const descriptor = normalizeDescriptor(candidate);
+        if (!descriptor) {
+          throw new MediaRetrievalProviderError("retrieval_policy_unverifiable", "Media retrieval output could not be verified.", 422,
+            { operation, stage: "descriptor-validation", httpStatus: 200, schemaPaths: schemaPathsFor(descriptorSchema, candidate) });
+        }
+        return descriptor;
       });
-      const descriptor = normalizeDescriptor(parseJsonObject(extractText(payload)));
-      if (!descriptor) {
-        throw new MediaRetrievalProviderError("retrieval_policy_unverifiable", "Media retrieval output could not be verified.", 422);
-      }
-      return descriptor;
     },
 
     async embedImage({ imageUrl, reservation }) {
-      return callEmbedding({ contents: [{ image: String(imageUrl || "") }], reservation });
+      const operation = "image-embedding";
+      return withDiagnostic({ operation, reservation }, () => callEmbedding({ contents: [{ image: String(imageUrl || "") }], reservation, operation }));
     },
 
     async embedText({ input, reservation }) {
       const verified = verifyVisualEmbeddingInput(input);
-      return callEmbedding({ contents: [{ text: verified.text }], reservation });
+      const operation = "query-embedding";
+      return withDiagnostic({ operation, reservation }, () => callEmbedding({ contents: [{ text: verified.text }], reservation, operation }));
     },
 
     getIndexingProvenance() {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { Copy, RefreshCw, Trash2, Undo2 } from 'lucide-react-native';
 
@@ -85,13 +85,30 @@ export function ChatMessageMenu({
           onPress={() => {
             const messageId = selectedMessage.id;
             onClose();
-            Promise.resolve(onDeleteMessage(messageId)).catch(error => {
-              onActionMessage(
-                error instanceof Error
-                  ? error.message
-                  : textFor(language, '删除失败', 'Delete failed'),
-              );
-            });
+            Alert.alert(
+              textFor(language, '删除消息', 'Delete message'),
+              textFor(
+                language,
+                '仅从你的聊天记录中删除这条消息，无法恢复。',
+                'Delete this message from your chat history. This cannot be undone.',
+              ),
+              [
+                { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
+                {
+                  text: textFor(language, '删除', 'Delete'),
+                  style: 'destructive',
+                  onPress: () => {
+                    Promise.resolve(onDeleteMessage(messageId)).catch(error => {
+                      onActionMessage(
+                        error instanceof Error
+                          ? error.message
+                          : textFor(language, '删除失败', 'Delete failed'),
+                      );
+                    });
+                  },
+                },
+              ],
+            );
           }}
         />
         {canRecall ? (

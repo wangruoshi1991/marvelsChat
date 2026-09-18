@@ -88,17 +88,20 @@ test("admin media retrieval routes expose only overview, runs, and bounded contr
   ]);
 });
 
-test("admin overview publishes the frozen minimum App build", async () => {
+test("admin overview publishes the frozen minimum App build and operator-only diagnostics", async () => {
   const routes = [];
+  const permissionChecks = [];
+  const diagnostic = { agentRunId: "test-run", stage: "timeout", operation: "image-description" };
   const app = {
     get: (path, ...handlers) => routes.push({ method: "GET", path, handlers }),
     patch: () => {},
   };
   registerAdminMediaRetrievalRoutes(app, {
     authenticate: () => {},
-    requireAdmin: () => () => {},
+    requireAdmin: (permission) => { permissionChecks.push(permission); return () => {}; },
     asyncHandler: (handler) => handler,
     dependencies: {
+      listDiagnostics: async () => [diagnostic],
       getOverview: async () => ({
         controls: {},
         queue: {},
@@ -120,4 +123,6 @@ test("admin overview publishes the frozen minimum App build", async () => {
   await overview.handlers.at(-1)({}, { json: (body) => { responseBody = body; } });
 
   assert.equal(responseBody.data.agentCard.minimumAppBuild, 26);
+  assert.deepEqual(responseBody.data.diagnostics, [diagnostic]);
+  assert.ok(permissionChecks.every((permission) => permission === "agents:manage"));
 });

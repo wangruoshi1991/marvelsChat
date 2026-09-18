@@ -5,8 +5,9 @@
   "type": "module",
   "description": "Miaoxun Node.js API, PostgreSQL data layer, admin APIs, and Agent orchestration runtime.",
   "scripts": {
-    "check": "node --check src/*.js src/routes/*.js scripts/*.js",
+    "check": "node ../scripts/check-source-syntax.mjs src scripts test",
     "test": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/*.test.js",
+    "test:api-integration": "node scripts/check-api-integration.js",
     "test:media-retrieval": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/media-retrieval-*.test.js",
     "test:media-retrieval-migration": "RUN_MEDIA_RETRIEVAL_MIGRATION_INTEGRATION=1 NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/media-retrieval-migration.test.js",
     "smoke:media-retrieval": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node scripts/media-retrieval-smoke.js",

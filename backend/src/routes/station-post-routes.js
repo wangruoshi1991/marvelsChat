@@ -7,7 +7,9 @@ import {
 import {
   stationPostParamsSchema,
   stationPostSchema,
+  stationPostInteractionSchema,
 } from "../schemas.js";
+import { setStationPostInteraction } from "../station-interaction-repository.js";
 
 export function registerStationPostRoutes(app, { authenticate, asyncHandler }) {
   app.post(
@@ -58,6 +60,25 @@ export function registerStationPostRoutes(app, { authenticate, asyncHandler }) {
         userAgent: req.get("user-agent") || "",
       });
       res.status(204).send();
+    }),
+  );
+
+  app.post(
+    "/api/station/posts/:postId/interactions",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { postId } = stationPostParamsSchema.parse(req.params);
+      const body = stationPostInteractionSchema.parse(req.body);
+      const result = await setStationPostInteraction({
+        userId: req.user.id,
+        postId,
+        ...body,
+        audit: {
+          ipHash: hashRequestIp(req.ip),
+          userAgent: req.get("user-agent") || "",
+        },
+      });
+      res.json({ data: result });
     }),
   );
 }

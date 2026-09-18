@@ -9,6 +9,7 @@ import {
 import { ChevronRight, MessageCircle } from 'lucide-react-native';
 
 import { PublicProfileDTO } from '../../models/api';
+import { profileIdentityTags } from '../station/stationProfileIdentity';
 import {
   displayLocationText,
   displayText,
@@ -110,16 +111,37 @@ export function PublicProfileScreen({
             AI ID: {profile.user.aiId} ·{' '}
             {publicPresenceText(language, profile.user.presenceStatus)}
           </Text>
+          {profile.profile.headline ? (
+            <Text style={[styles.publicProfileBio, { color: palette.text }]}>
+              {profile.profile.headline}
+            </Text>
+          ) : null}
           <Text
             style={[styles.publicProfileBio, { color: palette.secondaryText }]}
           >
             {displayText(language, profile.profile.bio) ||
-              textFor(
-                language,
-                '这个人还没有填写小站简介。',
-                'No station bio yet.',
-              )}
+              (profile.visibility?.showBio === false
+                ? textFor(
+                    language,
+                    '对方未公开职业资料与简介',
+                    'Professional profile and bio are private',
+                  )
+                : textFor(
+                    language,
+                    '这个人还没有填写小站简介。',
+                    'No station bio yet.',
+                  ))}
           </Text>
+          {profileIdentityTags(profile.profile, language).length ? (
+            <Text
+              style={[
+                styles.publicProfileMeta,
+                { color: palette.secondaryText },
+              ]}
+            >
+              {profileIdentityTags(profile.profile, language).join(' · ')}
+            </Text>
+          ) : null}
         </View>
       </View>
 

@@ -12,7 +12,6 @@ import {
 import { listThreadsForUser } from "./message-repository.js";
 import { getProfileForUser } from "./station-repository.js";
 import {
-  displayInitial,
   mapAgentRun,
   parseJson,
   publicUser,
@@ -21,7 +20,7 @@ import {
 } from "./repository-mappers.js";
 
 export async function adminOverview() {
-  const [userRows, activeRows, threadRows, messageRows, eventRows, runRows, recentUsers] =
+  const [userRows, activeRows, threadRows, messageRows, eventRows, runRows, recentUsers, postRows, interactionRows, mediaRows, comicRows] =
     await Promise.all([
       query("SELECT COUNT(*) AS total FROM users"),
       query(
@@ -39,6 +38,10 @@ export async function adminOverview() {
         ORDER BY created_at DESC
         LIMIT 6`,
       ),
+      query("SELECT COUNT(*) AS total FROM station_posts WHERE deleted_at IS NULL"),
+      query("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE interaction_type = 'like') AS likes, COUNT(*) FILTER (WHERE interaction_type = 'favorite') AS favorites FROM station_post_interactions"),
+      query("SELECT COUNT(*) AS total FROM station_media_assets WHERE deleted_at IS NULL"),
+      query("SELECT COUNT(*) AS total FROM station_comic_diaries WHERE deleted_at IS NULL"),
     ]);
 
   return {
@@ -48,6 +51,12 @@ export async function adminOverview() {
     messagesToday: Number(messageRows[0]?.total || 0),
     eventsToday: Number(eventRows[0]?.total || 0),
     agentRunsToday: Number(runRows[0]?.total || 0),
+    postsTotal: Number(postRows[0]?.total || 0),
+    interactionsTotal: Number(interactionRows[0]?.total || 0),
+    likesTotal: Number(interactionRows[0]?.likes || 0),
+    favoritesTotal: Number(interactionRows[0]?.favorites || 0),
+    mediaAssetsTotal: Number(mediaRows[0]?.total || 0),
+    comicDiariesTotal: Number(comicRows[0]?.total || 0),
     recentUsers: recentUsers.map(publicUser),
   };
 }
@@ -85,92 +94,145 @@ export async function adminUsers({ limit = 50 } = {}) {
   }));
 }
 
-export async function adminUserDetail(userId, registeredAgents = []) {
-  const rawUser = await getRawUserById(userId);
-  if (!rawUser) return null;
+export function createAdminUserDetailReader({
+  findRawUser,
+  getProfile,
+  listThreads,
+  listAgentAccess,
+  getSessionSummary,
+  runQuery,
+}) {
+  return async ({ userId, registeredAgents, includeAgents, includeAudit }) => {
+    if (!Array.isArray(registeredAgents)
+      || typeof includeAgents !== "boolean"
+      || typeof includeAudit !== "boolean") {
+      throw new TypeError("Admin user detail requires explicit Agent and audit access flags");
+    }
+    const rawUser = await findRawUser(userId);
+    if (!rawUser) return null;
 
-  const [profile, threads, agents, sessions, events, runs] = await Promise.all([
-    getProfileForUser(userId),
-    listThreadsForUser(userId),
-    listAgentAccessForUser(userId, registeredAgents),
-    adminSessionSummary(userId),
-    query(
-      `SELECT
-        e.id,
-        e.user_id,
-        u.email AS user_email,
-        e.event_type,
-        e.target_type,
-        e.target_id,
-        e.payload,
-        e.user_agent,
-        e.created_at
-      FROM usage_events e
-      LEFT JOIN users u ON u.id = e.user_id
-      WHERE e.user_id = ?
-      ORDER BY e.created_at DESC
-      LIMIT 12`,
-      [userId],
-    ),
-    query(
-      `SELECT
-        r.*,
-        u.email AS user_email
-      FROM agent_runs r
-      LEFT JOIN users u ON u.id = r.user_id
-      WHERE r.user_id = ?
-      ORDER BY r.created_at DESC
-      LIMIT 12`,
-      [userId],
-    ),
-  ]);
+    const [profile, threads, agents, sessions, events, runs] = await Promise.all([
+      getProfile(userId),
+      listThreads(userId),
+      includeAgents ? listAgentAccess(userId, registeredAgents) : Promise.resolve([]),
+      getSessionSummary(userId),
+      includeAudit
+        ? runQuery(
+          `SELECT
+            e.id,
+            e.user_id,
+            u.email AS user_email,
+            e.event_type,
+            e.target_type,
+            e.target_id,
+            e.payload,
+            e.user_agent,
+            e.created_at
+          FROM usage_events e
+          LEFT JOIN users u ON u.id = e.user_id
+          WHERE e.user_id = ?
+          ORDER BY e.created_at DESC
+          LIMIT 12`,
+          [userId],
+        )
+        : Promise.resolve([]),
+      includeAudit
+        ? runQuery(
+          `SELECT
+            r.*,
+            u.email AS user_email
+          FROM agent_runs r
+          LEFT JOIN users u ON u.id = r.user_id
+          WHERE r.user_id = ?
+          ORDER BY r.created_at DESC
+          LIMIT 12`,
+          [userId],
+        )
+        : Promise.resolve([]),
+    ]);
 
-  return {
-    user: publicUser(rawUser),
-    profile,
-    threads,
-    agents,
-    sessions,
-    recentEvents: events.map((row) => ({
-      id: row.id,
-      userId: row.user_id,
-      userEmail: row.user_email || "",
-      eventType: row.event_type,
-      targetType: row.target_type || "",
-      targetId: row.target_id || "",
-      payload: parseJson(row.payload, {}),
-      userAgent: row.user_agent || "",
-      createdAt: toIso(row.created_at),
-    })),
-    recentRuns: runs.map(mapAgentRun),
+    return {
+      user: publicUser(rawUser),
+      profile,
+      threads,
+      agents,
+      sessions,
+      recentEvents: events.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        userEmail: row.user_email || "",
+        eventType: row.event_type,
+        targetType: row.target_type || "",
+        targetId: row.target_id || "",
+        payload: parseJson(row.payload, {}),
+        userAgent: row.user_agent || "",
+        createdAt: toIso(row.created_at),
+      })),
+      recentRuns: runs.map(mapAgentRun),
+    };
   };
 }
 
-export async function updateUserProfileAdmin({
-  userId,
-  nickname,
-  bio = "",
-  community = "",
-  activityArea = "",
-}) {
-  const resolvedNickname = String(nickname || "").trim();
-  const existing = await findUserByDisplayName(resolvedNickname);
-  if (existing && existing.id !== userId) {
-    throw new HttpError(409, "Display name already registered");
-  }
-  const avatarText = displayInitial(resolvedNickname);
-  await withTransaction(async (connection) => {
-    await connection.execute("UPDATE users SET display_name = ? WHERE id = ?", [resolvedNickname, userId]);
-    await connection.execute(
-      `UPDATE user_profiles
-      SET nickname = ?, avatar_text = ?, bio = ?, community = ?, activity_area = ?
-      WHERE user_id = ?`,
-      [resolvedNickname, avatarText, bio, normalizeLocationText(community), normalizeLocationText(activityArea), userId],
-    );
-  });
+export const adminUserDetail = createAdminUserDetailReader({
+  findRawUser: getRawUserById,
+  getProfile: getProfileForUser,
+  listThreads: listThreadsForUser,
+  listAgentAccess: listAgentAccessForUser,
+  getSessionSummary: adminSessionSummary,
+  runQuery: query,
+});
 
-  return getProfileForUser(userId);
+export function createAdminUserProfileUpdater({
+  findByDisplayName = findUserByDisplayName,
+  transaction = withTransaction,
+  getProfile = getProfileForUser,
+} = {}) {
+  return async function updateUserProfileAdmin({
+    userId,
+    nickname,
+    bio = "",
+    community = "",
+    activityArea = "",
+    headline,
+    publicLocation,
+    experienceYears,
+    languages,
+  }) {
+    const resolvedNickname = String(nickname || "").trim();
+    const existing = await findByDisplayName(resolvedNickname);
+    if (existing && existing.id !== userId) {
+      throw new HttpError(409, "Display name already registered");
+    }
+    await transaction(async (connection) => {
+      await connection.execute("UPDATE users SET display_name = ? WHERE id = ?", [resolvedNickname, userId]);
+      await connection.execute(
+        `UPDATE user_profiles
+        SET nickname = ?, bio = ?, community = ?, activity_area = ?,
+          headline = COALESCE(?::text, headline),
+          public_location = COALESCE(?::text, public_location),
+          experience_years = CASE WHEN ?::boolean THEN ?::smallint ELSE experience_years END,
+          languages = COALESCE(?::text[], languages)
+        WHERE user_id = ?`,
+        [
+          resolvedNickname,
+          bio,
+          normalizeLocationText(community),
+          normalizeLocationText(activityArea),
+          headline ?? null,
+          publicLocation ?? null,
+          experienceYears !== undefined,
+          experienceYears ?? null,
+          languages ?? null,
+          userId,
+        ],
+      );
+    });
+
+    return getProfile(userId);
+  };
 }
+
+export const updateUserProfileAdmin = createAdminUserProfileUpdater();
 
 export async function updateUserStatus(userId, status) {
   await query("UPDATE users SET status = ? WHERE id = ?", [status, userId]);

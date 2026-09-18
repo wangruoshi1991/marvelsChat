@@ -251,6 +251,11 @@ export function createMediaRetrievalBudgetAdminRepository({
       const cutoffRuns = new Date(retentionNow.getTime() - 180 * 24 * 60 * 60 * 1000);
       const cutoffRollups = new Date(retentionNow.getTime() - 730 * 24 * 60 * 60 * 1000);
       await connection.query(
+        `DELETE FROM usage_events
+        WHERE event_type = 'media_retrieval.provider.failed' AND created_at < ?`,
+        [new Date(retentionNow.getTime() - 30 * 24 * 60 * 60 * 1000)],
+      );
+      await connection.query(
         `INSERT INTO media_retrieval_cost_daily_rollups
           (utc_day, scope, user_id, action_count, reserved_fen, estimated_fen, unknown_fen)
         SELECT

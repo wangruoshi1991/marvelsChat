@@ -42,6 +42,7 @@ import {
   useRealtimeChannel,
 } from './useRealtimeChannel';
 import { useSocialActions } from './useSocialActions';
+import { useSessionSetter } from './useSessionSetter';
 import { useStationActions } from './useStationActions';
 
 export type { ChatMessage, ChatThread, Language } from './sessionTypes';
@@ -94,13 +95,75 @@ export function useMiaoxunSession() {
     useState<RealtimeNotificationNotice | null>(null);
   const activeThreadIdRef = useRef<string | null>(null);
   const tokenRef = useRef('');
+  const sessionVersionRef = useRef(0);
+  const profileRevisionRef = useRef(0);
   const lastSyncAtRef = useRef<string | null>(null);
-  const bootstrapPromiseRef = useRef<Promise<void> | null>(null);
+  const bootstrapPromiseRef = useRef<{
+    token: string;
+    promise: Promise<void>;
+  } | null>(null);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
   const sessionExpiryPromiseRef = useRef<Promise<void> | null>(null);
   const expiredTokenRef = useRef('');
 
+  const setSessionUser = useSessionSetter(token, tokenRef, setUser);
+  const setSessionProfile = useSessionSetter(token, tokenRef, setProfile);
+  const setSessionThreads = useSessionSetter(token, tokenRef, setThreads);
+  const setSessionNotices = useSessionSetter(token, tokenRef, setNotices);
+  const setSessionUnreadNoticeCount = useSessionSetter(
+    token,
+    tokenRef,
+    setUnreadNoticeCount,
+  );
+  const setSessionProfileVisibility = useSessionSetter(
+    token,
+    tokenRef,
+    setProfileVisibility,
+  );
+  const setSessionSearchHistory = useSessionSetter(
+    token,
+    tokenRef,
+    setSearchHistory,
+  );
+  const setSessionRelationships = useSessionSetter(
+    token,
+    tokenRef,
+    setRelationships,
+  );
+  const setSessionStationContent = useSessionSetter(
+    token,
+    tokenRef,
+    setStationContent,
+  );
+  const setSessionOwnedAgents = useSessionSetter(
+    token,
+    tokenRef,
+    setOwnedAgents,
+  );
+  const setSessionError = useSessionSetter(token, tokenRef, setErrorMessage);
+  const setSessionNotificationNotice = useSessionSetter(
+    token,
+    tokenRef,
+    setRealtimeNotificationNotice,
+  );
+
+  const applySavedProfile = useCallback(
+    (savedProfile: ProfileDTO) => {
+      if (!token || tokenRef.current !== token) return;
+      profileRevisionRef.current += 1;
+      setSessionProfile(savedProfile);
+      setSessionUser(current =>
+        current ? { ...current, displayName: savedProfile.nickname } : current,
+      );
+    },
+    [setSessionProfile, setSessionUser, token],
+  );
+
   const updateToken = useCallback((nextToken: string) => {
+    sessionVersionRef.current += 1;
+    profileRevisionRef.current = 0;
+    bootstrapPromiseRef.current = null;
+    syncPromiseRef.current = null;
     if (nextToken) {
       expiredTokenRef.current = '';
     }
@@ -122,6 +185,7 @@ export function useMiaoxunSession() {
     setSearchHistory([]);
     setRelationships(emptyRelationships);
     setStationContent(emptyStationContent);
+    setRealtimeNotificationNotice(null);
     lastSyncAtRef.current = null;
     activeThreadIdRef.current = null;
   }, []);
@@ -140,11 +204,11 @@ export function useMiaoxunSession() {
 
       expiredTokenRef.current = expiredToken;
       updateToken('');
+      resetAuthenticatedState();
+      setErrorMessage('登录状态已失效，请重新登录。');
+      setRestoreStatus('signedOut');
       const expiry = (async () => {
         await clearLocalSession();
-        resetAuthenticatedState();
-        setErrorMessage('登录状态已失效，请重新登录。');
-        setRestoreStatus('signedOut');
       })();
       sessionExpiryPromiseRef.current = expiry;
       expiry.finally(() => {
@@ -170,41 +234,60 @@ export function useMiaoxunSession() {
     [threads],
   );
 
-  const applyBootstrap = useCallback((bootstrap: BootstrapDTO) => {
-    setUser(bootstrap.user);
-    setProfile(bootstrap.profile);
-    setThreads(buildThreads(bootstrap));
-    setModules(bootstrap.modules);
-    setAgents(bootstrap.agents.registered);
-    setAgentReadiness(bootstrap.agentReadiness);
-    setOwnedAgents(bootstrap.agents.owned);
-    setNotices(bootstrap.notices);
-    setUnreadNoticeCount(bootstrap.unreadNoticeCount);
-    setProfileVisibility(bootstrap.profileVisibility);
-    setSearchHistory(bootstrap.searchHistory);
-    setRelationships(bootstrap.relationships);
-    setStationContent(bootstrap.stationContent);
-    setLanguage(bootstrap.profile.stationConfig.language || 'zh');
-    setAppearance(bootstrap.profile.stationConfig.appearance || 'light');
-    lastSyncAtRef.current = bootstrap.serverTime;
-  }, []);
+  const applyBootstrap = useCallback(
+    (
+      bootstrap: BootstrapDTO,
+      requestedProfileRevision = profileRevisionRef.current,
+    ) => {
+      // A bootstrap started before a confirmed save must not restore its older profile snapshot.
+      const profileChanged =
+        requestedProfileRevision !== profileRevisionRef.current;
+      setUser(current =>
+        profileChanged && current
+          ? { ...bootstrap.user, displayName: current.displayName }
+          : bootstrap.user,
+      );
+      if (!profileChanged) {
+        setProfile(bootstrap.profile);
+        setLanguage(bootstrap.profile.stationConfig.language || 'zh');
+        setAppearance(bootstrap.profile.stationConfig.appearance || 'light');
+      }
+      setThreads(buildThreads(bootstrap));
+      setModules(bootstrap.modules);
+      setAgents(bootstrap.agents.registered);
+      setAgentReadiness(bootstrap.agentReadiness);
+      setOwnedAgents(bootstrap.agents.owned);
+      setNotices(bootstrap.notices);
+      setUnreadNoticeCount(bootstrap.unreadNoticeCount);
+      setProfileVisibility(bootstrap.profileVisibility);
+      setSearchHistory(bootstrap.searchHistory);
+      setRelationships(bootstrap.relationships);
+      setStationContent(bootstrap.stationContent);
+      lastSyncAtRef.current = bootstrap.serverTime;
+    },
+    [],
+  );
 
   const refreshBootstrap = useCallback(
     (nextToken = tokenRef.current, showError = true) => {
-      if (!nextToken) {
+      if (!nextToken || nextToken !== tokenRef.current) {
         return Promise.resolve();
       }
 
-      if (bootstrapPromiseRef.current) {
-        return bootstrapPromiseRef.current;
+      if (bootstrapPromiseRef.current?.token === nextToken) {
+        return bootstrapPromiseRef.current.promise;
       }
 
+      const sessionVersion = sessionVersionRef.current;
+      const requestedProfileRevision = profileRevisionRef.current;
       const request = (async () => {
         try {
           const bootstrap = await apiClient.bootstrap(nextToken);
-          applyBootstrap(bootstrap);
+          if (sessionVersionRef.current === sessionVersion) {
+            applyBootstrap(bootstrap, requestedProfileRevision);
+          }
         } catch (error) {
-          if (showError) {
+          if (showError && sessionVersionRef.current === sessionVersion) {
             setErrorMessage(
               error instanceof Error ? error.message : '同步失败。',
             );
@@ -213,15 +296,15 @@ export function useMiaoxunSession() {
         }
       })();
 
-      bootstrapPromiseRef.current = request;
+      bootstrapPromiseRef.current = { token: nextToken, promise: request };
       request.then(
         () => {
-          if (bootstrapPromiseRef.current === request) {
+          if (bootstrapPromiseRef.current?.promise === request) {
             bootstrapPromiseRef.current = null;
           }
         },
         () => {
-          if (bootstrapPromiseRef.current === request) {
+          if (bootstrapPromiseRef.current?.promise === request) {
             bootstrapPromiseRef.current = null;
           }
         },
@@ -238,8 +321,9 @@ export function useMiaoxunSession() {
         setRestoreStatus('signedOut');
         return;
       }
-      await refreshBootstrap(savedToken, false);
+      const bootstrap = await apiClient.bootstrap(savedToken);
       updateToken(savedToken);
+      applyBootstrap(bootstrap);
       setRestoreStatus('authenticated');
     } catch (error) {
       setErrorMessage(
@@ -255,7 +339,7 @@ export function useMiaoxunSession() {
     } finally {
       setIsRestoring(false);
     }
-  }, [refreshBootstrap, updateToken]);
+  }, [applyBootstrap, updateToken]);
 
   useEffect(() => {
     restoreSession().catch(() => undefined);
@@ -266,10 +350,12 @@ export function useMiaoxunSession() {
       setIsBusy(true);
       setErrorMessage(null);
       try {
+        await sessionExpiryPromiseRef.current;
         const response = await apiClient.login(identifier, password);
-        await refreshBootstrap(response.session.token);
+        const bootstrap = await apiClient.bootstrap(response.session.token);
         await tokenStore.save(response.session.token);
         updateToken(response.session.token);
+        applyBootstrap(bootstrap);
         setRestoreStatus('authenticated');
       } catch (error) {
         if (isAuthSessionError(error)) {
@@ -282,7 +368,7 @@ export function useMiaoxunSession() {
         setIsBusy(false);
       }
     },
-    [refreshBootstrap, updateToken],
+    [applyBootstrap, updateToken],
   );
 
   const signUp = useCallback(
@@ -295,15 +381,17 @@ export function useMiaoxunSession() {
       setIsBusy(true);
       setErrorMessage(null);
       try {
+        await sessionExpiryPromiseRef.current;
         const response = await apiClient.register(
           contactType,
           contact,
           password,
           displayName,
         );
-        await refreshBootstrap(response.session.token);
+        const bootstrap = await apiClient.bootstrap(response.session.token);
         await tokenStore.save(response.session.token);
         updateToken(response.session.token);
+        applyBootstrap(bootstrap);
         setRestoreStatus('authenticated');
         return response.user;
       } catch (error) {
@@ -313,7 +401,7 @@ export function useMiaoxunSession() {
         setIsBusy(false);
       }
     },
-    [refreshBootstrap, updateToken],
+    [applyBootstrap, updateToken],
   );
 
   const incrementalSync = useCallback(
@@ -346,6 +434,9 @@ export function useMiaoxunSession() {
           setUnreadNoticeCount(sync.unreadNoticeCount);
           lastSyncAtRef.current = sync.serverTime;
         } catch (error) {
+          if (tokenRef.current !== currentToken) {
+            return;
+          }
           if (isAuthSessionError(error)) {
             await expireSession(currentToken);
             return;
@@ -379,17 +470,22 @@ export function useMiaoxunSession() {
   const { refreshNotifications, markNotificationsRead, markNotificationRead } =
     useNotificationActions({
       token,
-      setNotices,
-      setUnreadNoticeCount,
+      setNotices: setSessionNotices,
+      setUnreadNoticeCount: setSessionUnreadNoticeCount,
     });
 
   const setActiveThreadId = useCallback((threadId: string | null) => {
     activeThreadIdRef.current = threadId;
   }, []);
 
-  const setUserPresenceMode = useCallback((presenceMode: PresenceMode) => {
-    setUser(current => (current ? { ...current, presenceMode } : current));
-  }, []);
+  const setUserPresenceMode = useCallback(
+    (presenceMode: PresenceMode) => {
+      setSessionUser(current =>
+        current ? { ...current, presenceMode } : current,
+      );
+    },
+    [setSessionUser],
+  );
 
   const realtimeStatus = useRealtimeChannel({
     token,
@@ -397,10 +493,10 @@ export function useMiaoxunSession() {
     activeThreadIdRef,
     refreshNotifications,
     incrementalSync,
-    setThreads,
-    setRelationships,
+    setThreads: setSessionThreads,
+    setRelationships: setSessionRelationships,
     setUserPresenceMode,
-    setRealtimeNotificationNotice,
+    setRealtimeNotificationNotice: setSessionNotificationNotice,
   });
 
   const makeButlerContext = useCallback(
@@ -430,14 +526,17 @@ export function useMiaoxunSession() {
           language: nextLanguage,
           appearance: nextAppearance,
         });
-        setProfile(updatedProfile);
+        setSessionProfile(current => ({
+          ...current,
+          stationConfig: updatedProfile.stationConfig,
+        }));
       } catch (error) {
-        setErrorMessage(
+        setSessionError(
           error instanceof Error ? error.message : '设置同步失败。',
         );
       }
     },
-    [token],
+    [setSessionError, setSessionProfile, token],
   );
 
   const setLanguageAndSync = useCallback(
@@ -462,14 +561,14 @@ export function useMiaoxunSession() {
         throw new Error('请先登录。');
       }
       const updated = await apiClient.setAgentEnabled(token, agentId, enabled);
-      setOwnedAgents(current => {
+      setSessionOwnedAgents(current => {
         const remaining = current.filter(agent => agent.id !== updated.id);
         return updated.enabled ? [...remaining, updated] : remaining;
       });
       await refreshBootstrap(token, false);
       return updated;
     },
-    [refreshBootstrap, token],
+    [refreshBootstrap, setSessionOwnedAgents, token],
   );
 
   const {
@@ -484,8 +583,8 @@ export function useMiaoxunSession() {
     threads,
     currentUserName: user?.displayName,
     makeButlerContext,
-    setThreads,
-    setErrorMessage,
+    setThreads: setSessionThreads,
+    setErrorMessage: setSessionError,
   });
 
   const signOut = useCallback(async () => {
@@ -537,8 +636,9 @@ export function useMiaoxunSession() {
     setIsBusy(true);
     setErrorMessage(null);
     try {
-      await refreshBootstrap(savedToken, false);
+      const bootstrap = await apiClient.bootstrap(savedToken);
       updateToken(savedToken);
+      applyBootstrap(bootstrap);
       setRestoreStatus('authenticated');
     } catch (error) {
       setErrorMessage(
@@ -554,7 +654,7 @@ export function useMiaoxunSession() {
     } finally {
       setIsBusy(false);
     }
-  }, [refreshBootstrap, updateToken]);
+  }, [applyBootstrap, updateToken]);
 
   const {
     resolveScanPayload,
@@ -572,17 +672,16 @@ export function useMiaoxunSession() {
     loadPublicProfileByAiId,
   } = useSocialActions({
     token,
-    setRelationships,
-    setSearchHistory,
+    setRelationships: setSessionRelationships,
+    setSearchHistory: setSessionSearchHistory,
   });
 
   const { updatePresence, updateProfileVisibility, updateProfile } =
     useProfileActions({
       token,
-      refreshBootstrap,
-      setProfile,
-      setProfileVisibility,
-      setUser,
+      applySavedProfile,
+      setProfileVisibility: setSessionProfileVisibility,
+      setUser: setSessionUser,
     });
 
   const {
@@ -590,6 +689,7 @@ export function useMiaoxunSession() {
     listMiaoPointLedger,
     createStationPost,
     deleteStationPost,
+    setStationPostInteraction,
     createStationDiary,
     updateStationDiary,
     deleteStationDiary,
@@ -613,8 +713,8 @@ export function useMiaoxunSession() {
   } = useStationActions({
     token,
     avatarConfig: profile.avatarConfig,
-    setStationContent,
-    setProfile,
+    setStationContent: setSessionStationContent,
+    setProfile: setSessionProfile,
   });
 
   return {
@@ -680,6 +780,7 @@ export function useMiaoxunSession() {
     listMiaoPointLedger,
     createStationPost,
     deleteStationPost,
+    setStationPostInteraction,
     createStationDiary,
     updateStationDiary,
     deleteStationDiary,

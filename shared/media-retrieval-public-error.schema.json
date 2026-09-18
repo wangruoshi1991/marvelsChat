@@ -17,6 +17,7 @@
         "retrieval_budget_exhausted",
         "retrieval_service_unavailable",
         "retrieval_request_invalid",
+        "retrieval_request_in_progress",
         "asset_not_indexable",
         "run_not_found",
         "retrieval_policy_unverifiable",

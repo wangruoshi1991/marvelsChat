@@ -52,6 +52,8 @@ describe("createModelScene", () => {
     });
 
     await scene.load("/model-1.glb");
+    const loadedScene = renderer.render.mock.lastCall?.[0];
+    expect(loadedScene.children).toContain(first.group);
     const firstFrame = scene.getFramingSnapshot();
     expect(firstFrame.radius).toBeGreaterThan(0);
     expect(firstFrame.cameraDistance).toBeGreaterThan(firstFrame.radius);
@@ -77,6 +79,17 @@ describe("createModelScene", () => {
     const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * narrowFrame.aspect);
     const narrowMinimumDistance = narrowFrame.radius / Math.sin(horizontalHalfFov);
     expect(narrowFrame.cameraDistance).toBeGreaterThanOrEqual(narrowMinimumDistance * 1.08);
+
+    scene.setActive(false);
+    const resizeCount = renderer.setSize.mock.calls.length;
+    scene.resize(0, 0);
+    expect(renderer.setSize).toHaveBeenCalledTimes(resizeCount);
+    expect(scene.getFramingSnapshot().aspect).toBe(0.5);
+    const frameCount = renderer.render.mock.calls.length;
+    scene.resize(320, 640);
+    expect(renderer.render).toHaveBeenCalledTimes(frameCount + 1);
+    scene.setActive(true);
+    expect(renderer.render.mock.calls.length).toBeGreaterThan(frameCount + 1);
 
     scene.resetCamera();
     scene.dispose();

@@ -17,11 +17,14 @@ run_in() {
 
 git -C "$root_dir" diff --check
 
-printf '\n==> repository: Bash syntax\n'
-bash -n "$root_dir"/scripts/*.sh
+printf '\n==> repository: script syntax\n'
+node "$root_dir/scripts/check-source-syntax.mjs" "$root_dir/scripts" "$root_dir/backend/scripts"
 
 printf '\n==> repository: npm run lint\n'
 npm --prefix "$root_dir" run lint
+
+printf '\n==> repository: runtime release packaging\n'
+npm --prefix "$root_dir" run test:release-package
 
 run_in backend npm run check
 run_in backend npm test

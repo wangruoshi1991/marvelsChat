@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const scene = vi.hoisted(() => ({
   dispose: vi.fn(),
-  load: vi.fn(async () => undefined),
+  load: vi.fn(async (): Promise<void> => undefined),
   resetCamera: vi.fn(),
   resize: vi.fn(),
   setActive: vi.fn(),
@@ -67,14 +67,15 @@ describe("App avatar viewer bridge", () => {
     expect(fetchModel).toHaveBeenCalledWith(
       "https://api.example.com/api/avatar-3d/app/models/model-1/file",
       expect.objectContaining({
-        cache: "force-cache",
+        cache: "default",
         headers: { Authorization: "Bearer private-token" },
       }),
     );
     expect(scene.load).toHaveBeenCalledWith("blob:model");
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:model");
-    expect(postMessage.mock.calls.map(([message]) => JSON.parse(message).type))
-      .toEqual(["ready", "downloading", "parsing", "loaded"]);
+    expect(
+      postMessage.mock.calls.map(([message]) => JSON.parse(message).type),
+    ).toEqual(["ready", "downloading", "parsing", "loaded"]);
   });
 
   it("reports a held touch as an assist drag instead of a model rotation", async () => {
@@ -83,10 +84,7 @@ describe("App avatar viewer bridge", () => {
     window.ReactNativeWebView = { postMessage };
     await import("./main");
     const canvas = document.querySelector<HTMLCanvasElement>("#avatar-canvas")!;
-    const pointerEvent = (
-      type: string,
-      { x, y }: { x: number; y: number },
-    ) => {
+    const pointerEvent = (type: string, { x, y }: { x: number; y: number }) => {
       const event = new Event(type, { bubbles: true, cancelable: true });
       Object.defineProperties(event, {
         clientX: { value: x },
@@ -106,17 +104,20 @@ describe("App avatar viewer bridge", () => {
     expect(
       postMessage.mock.calls
         .map(([message]) => JSON.parse(message))
-        .filter(message => message.type === "assist-gesture")
-        .map(message => message.phase),
+        .filter((message) => message.type === "assist-gesture")
+        .map((message) => message.phase),
     ).toEqual(["activate", "move", "release"]);
     vi.useRealTimers();
   });
 
   it("pauses and resumes the embedded scene", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      blob: async () => new Blob(["glb"]),
-      ok: true,
-    })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        blob: async () => new Blob(["glb"]),
+        ok: true,
+      })),
+    );
     window.ReactNativeWebView = { postMessage: vi.fn() };
     await import("./main");
 
@@ -131,5 +132,122 @@ describe("App avatar viewer bridge", () => {
     expect(scene.setActive).toHaveBeenNthCalledWith(2, false);
     expect(scene.setActive).toHaveBeenNthCalledWith(3, true);
     expect(scene.resize).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps loading visible until the first model frame finishes drawing", async () => {
+    let finishFrame!: () => void;
+    scene.load.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishFrame = resolve;
+        }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        blob: async () => new Blob(["glb"]),
+        ok: true,
+      })),
+    );
+    const postMessage = vi.fn();
+    window.ReactNativeWebView = { postMessage };
+    await import("./main");
+    const load = window.MiaoxunAvatarViewer.load({
+      modelUrl: "https://api.example.com/model.glb",
+      token: "private-token",
+    });
+    await vi.waitFor(() => expect(scene.load).toHaveBeenCalled());
+    expect(document.querySelector<HTMLElement>("#viewer-loading")!.hidden).toBe(
+      false,
+    );
+    expect(postMessage).not.toHaveBeenCalledWith(
+      JSON.stringify({ type: "loaded" }),
+    );
+    finishFrame();
+    await load;
+    expect(postMessage).toHaveBeenLastCalledWith(
+      JSON.stringify({ type: "loaded" }),
+    );
+  });
+
+  it("prevents native canvas copy and selection menus", async () => {
+    window.ReactNativeWebView = { postMessage: vi.fn() };
+    await import("./main");
+    const canvas = document.querySelector("#avatar-canvas")!;
+    for (const eventName of ["contextmenu", "selectstart", "dragstart"]) {
+      const event = new Event(eventName, { cancelable: true });
+      canvas.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
+  });
+
+  it("cancels a pending long press when the retained viewer is hidden", async () => {
+    vi.useFakeTimers();
+    const postMessage = vi.fn();
+    window.ReactNativeWebView = { postMessage };
+    await import("./main");
+    const canvas = document.querySelector<HTMLCanvasElement>("#avatar-canvas")!;
+    const event = new Event("pointerdown", { bubbles: true, cancelable: true });
+    Object.defineProperties(event, {
+      isPrimary: { value: true },
+      pointerType: { value: "touch" },
+      pointerId: { value: 9 },
+      clientX: { value: 20 },
+      clientY: { value: 20 },
+    });
+    canvas.dispatchEvent(event);
+    window.MiaoxunAvatarViewer.setActive(false);
+    vi.advanceTimersByTime(420);
+    expect(
+      postMessage.mock.calls.map(([message]) => JSON.parse(message).type),
+    ).not.toContain("assist-gesture");
+    vi.useRealTimers();
+  });
+
+  it("discards an obsolete download before parsing when the model changes", async () => {
+    let finishFirstDownload!: (blob: Blob) => void;
+    const fetchModel = vi
+      .fn()
+      .mockResolvedValueOnce({
+        blob: () =>
+          new Promise<Blob>((resolve) => {
+            finishFirstDownload = resolve;
+          }),
+        ok: true,
+      })
+      .mockResolvedValueOnce({
+        blob: async () => new Blob(["latest-model"]),
+        ok: true,
+      });
+    vi.stubGlobal("fetch", fetchModel);
+    window.ReactNativeWebView = { postMessage: vi.fn() };
+    await import("./main");
+    const obsoleteLoad = window.MiaoxunAvatarViewer.load({
+      modelUrl: "https://api.example.com/old.glb",
+      token: "private-token",
+    });
+    await vi.waitFor(() => expect(finishFirstDownload).toBeDefined());
+    await window.MiaoxunAvatarViewer.load({
+      modelUrl: "https://api.example.com/current.glb",
+      token: "private-token",
+    });
+    finishFirstDownload(new Blob(["obsolete-model"]));
+    await obsoleteLoad;
+    expect(scene.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a lost WebGL context as a visible error", async () => {
+    const postMessage = vi.fn();
+    window.ReactNativeWebView = { postMessage };
+    await import("./main");
+    document
+      .querySelector("#avatar-canvas")!
+      .dispatchEvent(new Event("webglcontextlost"));
+    expect(postMessage).toHaveBeenLastCalledWith(
+      JSON.stringify({
+        type: "error",
+        message: "3D渲染已中断，请重新加载",
+      }),
+    );
   });
 });

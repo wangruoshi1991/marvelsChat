@@ -3,7 +3,8 @@ import test from "node:test";
 
 process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 
-const { createMediaRetrievalProvider } = await import("../src/media-retrieval-provider.js");
+const { createMediaRetrievalProvider: createProvider } = await import("../src/media-retrieval-provider.js");
+const createMediaRetrievalProvider = (input) => createProvider({ recordDiagnostic: async () => {}, ...input });
 const {
   createMediaRetrievalUserService: createUserService,
   MediaRetrievalServiceError,
@@ -32,11 +33,10 @@ const configuredRuntime = {
 
 const approvedReservation = { reserved: true, reservationId: "reservation-123", amountFen: 1 };
 
-const responseJson = (payload, ok = true, status = 200) => ({
-  ok,
-  status,
-  json: async () => payload,
-});
+const responseJson = (payload, ok = true, status = 200) =>
+  new Response(JSON.stringify(payload), {
+    status: ok ? status : Math.max(400, status),
+  });
 
 const providerPayload = (candidate) => ({
   output: {
