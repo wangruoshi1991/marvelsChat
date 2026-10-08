@@ -19,6 +19,7 @@
 
 ## 最近验证
 
+- 功能提交 `36633fa` 已于 2026-10-08 推送到 `origin/codex/testflight-44`。本次只更新 Git 功能分支，没有生产部署、数据库写入或 TestFlight 上传。
 - `./scripts/check-repository.sh` 已通过全部门禁；RN 为 30 组、188 项测试。包含格式、lint、类型、各组件测试、Web 构建和内嵌查看器比对，不等于 iOS 真机/UI 验收。
 - 032 的两组隔离 PostgreSQL 测试此前分别通过 3/3、4/4；生产未执行 032。
 - 3D 全量配置应用后后端 active、NRestarts=0，公网 ready 为 200，未登录 bootstrap 为 401。配置文件仍为 root:marvels 0640，修改前有 root-only 备份；详细路径见部署记录。
