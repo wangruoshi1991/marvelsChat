@@ -35,6 +35,12 @@
 - `027_media_retrieval_agent.sql` - 创建媒体检索 Agent、任务、事件、向量和成本结构
 - `028_media_retrieval_lifecycle_hardening.sql` - 增加租约、epoch、staging 和清理任务约束
 - `029_media_retrieval_embedding_provenance.sql` - 持久化描述与向量模型空间来源
+- `030_station_post_interactions.sql` - 小站动态点赞与收藏意图及计数回填
+- `031_station_profile_identity.sql` - 独立的公开职业身份、城市、经验年限和语言字段
+- `032_message_idempotency_social_paging.sql` - 聊天重试唯一约束、Agent 完成记录去重和社交关系游标分页索引
+
+`016_station_posts.sql` 与 `021_station_posts_compat.sql` 当前内容相同，但两者已按不同文件名和
+校验和进入迁移账本；不能为了去重而修改或删除其中一份。
 
 ## 迁移执行
 
@@ -75,9 +81,9 @@ npm run db:migrate
 账本缺失、存在待执行迁移、历史文件被修改或已登记文件从发布包中缺失时，
 readiness 都会返回 503；检查过程只读，不会自动创建账本或执行迁移。
 
-### 3. 当前生产升级基线
+### 3. 历史生产升级基线（2026-08-04，已过期）
 
-2026-08-04 对 PolarDB 做了只读核查，没有创建账本或修改业务数据：
+以下是迁移至 ECS 本机 PostgreSQL 前对 PolarDB 的只读核查，不能用作当前发布前检查：
 
 - `schema_migrations` 尚不存在。
 - `station_posts`、3D 任务、参考图和 App 轻量模型等 016-022 结构已经存在。

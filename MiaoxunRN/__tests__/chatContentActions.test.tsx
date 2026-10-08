@@ -136,6 +136,9 @@ describe('Chat content actions', () => {
   it('closes the global menu before opening local More at the message point', async () => {
     const order: string[] = [];
     mockAssist.dismiss.mockImplementation(() => order.push('dismiss'));
+    const measureInWindow = jest
+      .spyOn(View.prototype, 'measureInWindow')
+      .mockImplementation(callback => callback(12, 100, 320, 96));
     const onOpenMessageMenu = jest.fn(() => order.push('more'));
     await renderMessage({ onOpenMessageMenu });
     const touchView = renderer.root
@@ -150,10 +153,13 @@ describe('Chat content actions', () => {
     );
     await ReactTestRenderer.act(() => more.onSelect(surface.props.object));
     expect(order).toEqual(['dismiss', 'more']);
-    expect(onOpenMessageMenu).toHaveBeenCalledWith(message, true, {
-      x: 180,
-      y: 260,
-    });
+    expect(measureInWindow).toHaveBeenCalled();
+    expect(onOpenMessageMenu).toHaveBeenCalledWith(
+      message,
+      true,
+      { x: 180, y: 260 },
+      { x: 12, y: 100, width: 320, height: 96 },
+    );
   });
 
   it('does not expose message content actions after recall', async () => {
@@ -319,7 +325,7 @@ describe('Chat content actions', () => {
           palette={palettes.light}
           language="zh"
           selectedMessage={message}
-          position={{ x: 12, y: 120, isMine: true }}
+          position={{ x: 12, y: 120, isMine: true, arrowPlacement: 'bottom' }}
           arrowLeft={34}
           canRecall={false}
           onClose={jest.fn()}

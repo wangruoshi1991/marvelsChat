@@ -251,49 +251,8 @@ agents/*.agent.js
 
 ## docs/
 
-项目文档。
-
-```text
-docs/project-structure.md
-```
-
-说明每个目录和关键文件的用途。
-
-```text
-docs/architecture.md
-```
-
-架构、技术栈边界和多 Agent 接入方向。
-
-```text
-docs/agents.md
-```
-
-Agent 文件格式、运行链路和后续多 Agent 接入原则。
-
-```text
-docs/ios.md
-```
-
-iOS 客户端规划、API 边界和后续后端能力要求。
-
-```text
-docs/admin.md
-```
-
-后台管理系统功能和 API。
-
-```text
-docs/database.md
-```
-
-数据库初始化、关键表和管理员配置。
-
-```text
-docs/demo-migration.md
-```
-
-从原 Demo 到当前真实数据链路的迁移记录。
+项目文档按现行工程、发布运维和历史材料分类，见 [文档索引](README.md)。
+`handoffs/` 与 `reviews/` 记录当时的交接和验证，不作为当前实现或部署状态的证明。
 
 ## 生成目录
 

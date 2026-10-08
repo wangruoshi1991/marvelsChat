@@ -6,9 +6,11 @@ process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 const {
   agentRuntimeFailureDiagnostic,
   assertAgentAvailable,
+  assertMatchingMessageRetry,
   buildAgentAppContext,
   registerMessageRoutes,
 } = await import("../src/routes/message-routes.js");
+const { messageSchema } = await import("../src/schemas.js");
 
 test("registers thread notification preference routes", () => {
   const routes = [];
@@ -33,6 +35,31 @@ test("registers thread notification preference routes", () => {
   assert.equal(
     routeHandlers.get("POST /api/threads/:threadId/messages").length,
     2,
+  );
+});
+
+test("message requests accept a stable UUID and reject malformed retry keys", () => {
+  const clientMessageId = "d9503652-c62e-47d7-a6fb-18ba78462990";
+  assert.equal(messageSchema.parse({ content: " hello ", clientMessageId }).content, "hello");
+  assert.equal(messageSchema.parse({ content: "hello" }).clientMessageId, undefined);
+  assert.throws(() => messageSchema.parse({ content: "hello", clientMessageId: "not-a-uuid" }));
+});
+
+test("a reused message ID cannot change its content or reply target", () => {
+  const fingerprint = "original-request";
+  const saved = { metadata: { source: "app", requestFingerprint: fingerprint } };
+  assert.doesNotThrow(() => assertMatchingMessageRetry(saved, fingerprint));
+  assert.throws(
+    () => assertMatchingMessageRetry(saved, "different-content-or-reply"),
+    (error) => error?.status === 409,
+  );
+  assert.throws(
+    () => assertMatchingMessageRetry({ metadata: {} }, fingerprint),
+    (error) => error?.status === 409,
+  );
+  assert.throws(
+    () => assertMatchingMessageRetry({ metadata: { source: "direct", requestFingerprint: fingerprint } }, fingerprint),
+    (error) => error?.status === 409,
   );
 });
 

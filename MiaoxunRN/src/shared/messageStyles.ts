@@ -186,14 +186,23 @@ export const messageStyles = {
     shadowRadius: 18,
     minWidth: 220,
   },
+  messageInlineMenuMine: { width: 284 },
+  messageInlineMenuOther: { width: 220 },
   messageInlineMenuArrow: {
-    borderBottomWidth: 1,
-    borderRightWidth: 1,
-    bottom: -7,
     height: 13,
     position: 'absolute',
     transform: [{ rotate: '45deg' }],
     width: 13,
+  },
+  messageInlineMenuArrowBottom: {
+    borderBottomWidth: 1,
+    borderRightWidth: 1,
+    bottom: -7,
+  },
+  messageInlineMenuArrowTop: {
+    borderLeftWidth: 1,
+    borderTopWidth: 1,
+    top: -7,
   },
   messageInlineAction: {
     alignItems: 'center',

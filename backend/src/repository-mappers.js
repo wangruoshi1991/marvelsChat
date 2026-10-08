@@ -453,6 +453,10 @@ export const mapRelationshipProfile = (row) => {
     relationType: row.relation_type,
     threadId: row.thread_id || null,
     createdAt: toIso(row.created_at),
+    cursor: {
+      createdAt: row.cursor_created_at,
+      relationId: row.relation_id,
+    },
   };
 };
 

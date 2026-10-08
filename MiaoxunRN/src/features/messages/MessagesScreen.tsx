@@ -38,6 +38,7 @@ import { ChatMessageMenu } from './ChatMessageMenu';
 import { resolveMessagePalette } from './messagePalette';
 import { ThreadSettingsSheet } from './ThreadSettingsSheet';
 import { isThreadOnline } from './messageUtils';
+import { messageMenuGeometry } from './messageMenuGeometry';
 
 export type { MessageTab, UserAvatarRenderer };
 
@@ -104,14 +105,16 @@ export function ChatScreen({
     x: number;
     y: number;
     isMine: boolean;
+    arrowPlacement: 'top' | 'bottom';
+    arrowLeft: number;
   } | null>(null);
-  const messageInlineMenuArrowLeft = messageMenuPosition?.isMine ? 232 : 34;
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [isThreadSettingsOpen, setIsThreadSettingsOpen] = useState(false);
   const isChatInteractionBlocked = assist.isActive || Boolean(selectedMessage);
   const interactionBlockedRef = useRef(isChatInteractionBlocked);
   interactionBlockedRef.current = isChatInteractionBlocked;
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  const messageAreaRef = useRef<View>(null);
   const chatTranslateX = useRef(new Animated.Value(0)).current;
   const windowSize = useWindowDimensions();
   const messagePalette = useMemo(
@@ -207,17 +210,18 @@ export function ChatScreen({
     item: ChatMessage,
     isMine: boolean,
     point: AIAssistPoint,
+    messageFrame: { x: number; y: number; width: number; height: number },
   ) => {
-    const menuWidth = isMine ? 284 : 220;
-    const left = Math.min(
-      Math.max(point.x - (isMine ? menuWidth - 42 : 42), 12),
-      Math.max(12, windowSize.width - menuWidth - 12),
-    );
-    setSelectedMessage(item);
-    setMessageMenuPosition({
-      x: left,
-      y: Math.max(78, point.y - 78),
-      isMine,
+    messageAreaRef.current?.measureInWindow((x, y, width, height) => {
+      setSelectedMessage(item);
+      setMessageMenuPosition(
+        messageMenuGeometry(point, isMine, messageFrame, {
+          x,
+          y,
+          width,
+          height,
+        }),
+      );
     });
   };
   const canRecallSelectedMessage = (() => {
@@ -257,7 +261,15 @@ export function ChatScreen({
         if (message.localStatus !== 'failed') {
           return;
         }
-        Promise.resolve(onSend(message.content, message.id)).catch(
+        const replyToMessageId = message.metadata?.replyTo;
+        const replyId =
+          replyToMessageId &&
+          typeof replyToMessageId === 'object' &&
+          'messageId' in replyToMessageId &&
+          typeof replyToMessageId.messageId === 'string'
+            ? replyToMessageId.messageId
+            : null;
+        Promise.resolve(onSend(message.content, message.id, replyId)).catch(
           () => undefined,
         );
       }}
@@ -388,34 +400,42 @@ export function ChatScreen({
             canConfigureThread ? () => setIsThreadSettingsOpen(true) : undefined
           }
         />
-        <FlatList
-          ref={listRef}
-          data={thread.messages}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.messages}
-          initialNumToRender={Math.max(thread.messages.length, 12)}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          scrollEnabled={!isChatInteractionBlocked}
-          ListFooterComponent={<View style={styles.messageFooterSpacer} />}
-          onLayout={() => scrollToBottom(false)}
-          renderItem={renderMessage}
-        />
-        {selectedMessage && messageMenuPosition ? (
-          <ChatMessageMenu
-            palette={messagePalette}
-            language={language}
-            selectedMessage={selectedMessage}
-            position={messageMenuPosition}
-            arrowLeft={messageInlineMenuArrowLeft}
-            canRecall={canRecallSelectedMessage}
-            onClose={closeMessageMenu}
-            onReply={setReplyTarget}
-            onDeleteMessage={onDeleteMessage}
-            onRecallMessage={onRecallMessage}
-            onActionMessage={onActionError}
+        <View
+          ref={messageAreaRef}
+          collapsable={false}
+          onLayout={closeMessageMenu}
+          style={styles.chatMessageArea}
+        >
+          <FlatList
+            ref={listRef}
+            style={styles.chatMessageList}
+            data={thread.messages}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.messages}
+            initialNumToRender={Math.max(thread.messages.length, 12)}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            scrollEnabled={!isChatInteractionBlocked}
+            ListFooterComponent={<View style={styles.messageFooterSpacer} />}
+            onLayout={() => scrollToBottom(false)}
+            renderItem={renderMessage}
           />
-        ) : null}
+          {selectedMessage && messageMenuPosition ? (
+            <ChatMessageMenu
+              palette={messagePalette}
+              language={language}
+              selectedMessage={selectedMessage}
+              position={messageMenuPosition}
+              arrowLeft={messageMenuPosition.arrowLeft}
+              canRecall={canRecallSelectedMessage}
+              onClose={closeMessageMenu}
+              onReply={setReplyTarget}
+              onDeleteMessage={onDeleteMessage}
+              onRecallMessage={onRecallMessage}
+              onActionMessage={onActionError}
+            />
+          ) : null}
+        </View>
         <ChatComposer
           palette={messagePalette}
           language={language}

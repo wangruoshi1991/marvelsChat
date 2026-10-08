@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Modal, ScrollView, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
@@ -73,6 +73,14 @@ export function StationScreen({
   onActionError: (error: unknown) => void;
 }) {
   const { isActive: isAssistActive } = useAIAssist();
+  const onActionErrorRef = useRef(onActionError);
+  onActionErrorRef.current = onActionError;
+  const refreshRelationships = session.refreshRelationships;
+  useEffect(() => {
+    if (active && selectedStationTab === 'social') {
+      refreshRelationships().catch(error => onActionErrorRef.current(error));
+    }
+  }, [active, refreshRelationships, selectedStationTab]);
   const [isPointsOpen, setIsPointsOpen] = useState(false);
   const [isAvatar3dOpen, setIsAvatar3dOpen] = useState(false);
   const [isMediaRetrievalOpen, setIsMediaRetrievalOpen] = useState(false);
@@ -101,6 +109,9 @@ export function StationScreen({
   const [isCreatingStationContent, setIsCreatingStationContent] =
     useState(false);
   const [createProgressText, setCreateProgressText] = useState('');
+  const [selectedAvatar3dModelId, setSelectedAvatar3dModelId] = useState<
+    string | null
+  >(null);
   const avatar3d = useAvatar3d(session.token, active && !isAvatar3dOpen);
   const refreshAvatar3d = avatar3d.refresh;
 
@@ -388,6 +399,7 @@ export function StationScreen({
             avatar3d={avatar3d.bootstrap}
             avatar3dStatus={avatar3d.status}
             avatar3dError={avatar3d.errorMessage}
+            selectedAvatar3dModelId={selectedAvatar3dModelId}
             agents={session.agents}
             agentReadiness={session.agentReadiness}
             ownedAgents={session.ownedAgents}
@@ -441,6 +453,10 @@ export function StationScreen({
                 language={language}
                 onBack={closeAvatar3d}
                 onChanged={handleAvatar3dChanged}
+                onSelectModel={modelId => {
+                  setSelectedAvatar3dModelId(modelId);
+                  closeAvatar3d();
+                }}
                 palette={palette}
                 token={session.token}
               />

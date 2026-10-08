@@ -90,14 +90,14 @@ Release: https://8.153.167.11
 http://192.168.x.x:4390
 ```
 
-Release 构建脚本会阻止 HTTP、裸 IP、localhost 和 loopback API URL。上线前还必须确认证书、CORS、鉴权和隐私合规配置均已完成。
+Release 构建脚本要求无路径的 HTTPS origin，并阻止 localhost 和 loopback 地址；有受信任证书覆盖的公网 IP 可以使用。上线前还必须确认证书、CORS、鉴权和隐私合规配置均已完成。
 
 Android 使用同名构建参数生成 `BuildConfig.MIAOXUN_API_BASE_URL`，并通过同一个 `MiaoxunConfigModule.apiBaseURL` 暴露给 JS。Android 构建时必须显式传入：
 
 ```sh
 ./gradlew assembleDebug \
   -PMIAOXUN_API_BASE_URL=http://<MAC_LAN_IP>:4390 \
-  -PMIAOXUN_VERSION_CODE=43
+  -PMIAOXUN_VERSION_CODE=<version_code>
 ```
 
 未提供 `MIAOXUN_API_BASE_URL` 时 Android 构建会直接失败，避免生成无法访问后端的包。

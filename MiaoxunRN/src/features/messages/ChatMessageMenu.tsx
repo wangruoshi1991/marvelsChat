@@ -25,7 +25,12 @@ export function ChatMessageMenu({
   palette: Palette;
   language: Language;
   selectedMessage: ChatMessage;
-  position: { x: number; y: number; isMine: boolean };
+  position: {
+    x: number;
+    y: number;
+    isMine: boolean;
+    arrowPlacement: 'top' | 'bottom';
+  };
   arrowLeft: number;
   canRecall: boolean;
   onClose: () => void;
@@ -40,6 +45,9 @@ export function ChatMessageMenu({
       <View
         style={[
           styles.messageInlineMenu,
+          position.isMine
+            ? styles.messageInlineMenuMine
+            : styles.messageInlineMenuOther,
           {
             backgroundColor: palette.surface,
             borderColor: palette.border,
@@ -57,6 +65,9 @@ export function ChatMessageMenu({
               borderColor: palette.border,
               left: arrowLeft,
             },
+            position.arrowPlacement === 'top'
+              ? styles.messageInlineMenuArrowTop
+              : styles.messageInlineMenuArrowBottom,
           ]}
         />
         <MessageInlineAction

@@ -13,12 +13,15 @@ SHA-256，并明确 `includesWorkingTreeChanges=false`。
 worktree、手工复制的 dist 或“HEAD 加本地修改”作为生产来源。`npm run test:release-package`
 在隔离的临时 Git 仓库中覆盖成功路径、前端重新构建、敏感配置排除、来源 revision 和清单哈希。
 
-## 2026-09-16 最新发布记录
+## 已核对的发布基线（2026-09-29）
 
-当前正式 runtime：`/opt/projects/marvels-chat/releases/app-integration-20260916-04/runtime`，
-数据库迁移至031；API/worker/后台正常。TestFlight `1.0 (43)` 已上传、处理并加入现有内外部
-yunzhi 群组，状态“正在测试”。备份校验和、制品、配置与验收限制见
-[发布记录](reviews/2026-09-16-production-and-testflight-43.md)。检索开关/预算未改。
+2026-09-29 只读核对：正式 runtime 仍为
+`/opt/projects/marvels-chat/releases/app-integration-20260916-04/runtime`，数据库迁移账本有 31 项，
+本机 `/api/health` 与 `/api/ready` 均返回 200。后端发布来源和限制见
+[Build 43 后端发布记录](reviews/2026-09-16-production-and-testflight-43.md)；iOS TestFlight
+`1.0 (44)` 的上传和测试群组状态见 [Build 44 发布记录](reviews/2026-09-18-testflight-44.md)。
+后续账号级 3D 白名单变更记录在本文末尾。发布前仍需重新核对活动版本和服务状态，不能将
+本文的日期性记录当成实时监控。
 
 ## 当前生产测试目标
 
@@ -554,3 +557,36 @@ Repository Quality 运行 `34931311492` 的 Android 任务在 `Set up Android SD
 
 本轮没有生产部署和 App 上传。完整本地 Docker 构建因外部 Debian 包源返回 502 中止，需在网络
 恢复后完成镜像启动检查；不能把此前“仅镜像构建通过”的记录当作本轮运行验证。
+
+## 2026-09-22 3D 账号白名单修复
+
+TestFlight 用户报告小站显示“3D建模服务未启用”。生产后端的 3D 总开关、Provider 配置和
+`/api/health`、`/api/ready` 均正常；该提示实际来自账号未命中生产白名单时的 bootstrap 404。
+自 2026-07-28 起的后端请求审计中，4 个唯一账号曾收到该路由的 404：其中 2 个后来已获准并
+持续返回 200，仍未获准的活跃账号为 `@000014197161` 和 `@000015989954`。
+
+本次仅将这两个账号的内部 UUID 追加到活动 release 的 `AVATAR_3D_ALLOWLIST`，保留原有 2 项，
+没有使用通配符或开放全体用户。修改前的环境文件以 `root:root 0600` 备份至
+`/opt/projects/marvels-chat/backups/avatar3d-allowlist/miaoxun-prod.env.20260922-114350`。
+重启后运行中的白名单为 4 项，后端 active、重启计数 0，health/ready 均返回 200；在与生产
+环境相同的配置和服务代码下，两账号的只读 bootstrap 均返回可用，未获准账号仍返回 404。
+未创建建模任务或调用付费 Provider；仍需用户在 TestFlight 中重新打开小站验收。下一次发布
+复制生产环境文件时须保留这两项账号授权，不能用仓库中的空白示例覆盖。
+
+## 2026-09-29 3D 对全部账号开放
+
+用户明确选择全量开放后，复用活动后端已有的通配规则，将生产
+`AVATAR_3D_ALLOWLIST` 改为 `*` 并重启 `marvels-chat-backend.service`。
+总开关和 Provider 开关原本均已开启，未修改凭据、个人每日 3 次额度、私有资源鉴权或迁移账本。
+新注册并正常登录的账号同样匹配通配规则，无需逐个添加。
+
+修改前环境文件备份为 root-only：
+`/opt/projects/marvels-chat/backups/avatar3d-allowlist/miaoxun-prod.env.before-all-2026-09-29T10-15-32-289Z`。
+活动文件仍为 `root:marvels 0640`。需要回滚时恢复该配置备份并重启后端，然后重新核对
+health、ready、账号访问范围；此配置变更不涉及数据库恢复。
+
+重启后运行进程的名单确认为 `*`，17 个活跃账号在只读数据库会话下调用实际 bootstrap 服务
+均返回 feature enabled 与 generationAvailable；Provider ready 为 true。
+公网 ready 为 200，未登录 bootstrap 为 401，服务 active、NRestarts=0。
+本次没有建模任务、供应商调用、数据库写入、代码部署或 TestFlight 上传；
+当前无全局费用硬上限，实际消费随用户使用增加。后续发布须保留全员配置。

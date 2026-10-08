@@ -13,7 +13,25 @@ const user = {
   email: "person@example.com",
 };
 
-test("production avatar access requires the global switch and allowlist", () => {
+test("avatar access is available to signed-in users when globally enabled", () => {
+  assert.equal(avatar3dFeatureForUser(user, {
+    enabled: true,
+    requireAllowlist: true,
+    allowlist: ["*"],
+  }).enabled, true);
+  assert.equal(avatar3dFeatureForUser(user, {
+    enabled: true,
+    requireAllowlist: true,
+    allowlist: ["someone-else@example.com", "*"],
+  }).enabled, true);
+  assert.equal(avatar3dFeatureForUser(user, {
+    enabled: false,
+    requireAllowlist: true,
+    allowlist: ["*"],
+  }).enabled, false);
+});
+
+test("allowlist mode still restricts access when explicitly configured", () => {
   assert.equal(avatar3dFeatureForUser(user, {
     enabled: true,
     requireAllowlist: true,
@@ -24,11 +42,6 @@ test("production avatar access requires the global switch and allowlist", () => 
     requireAllowlist: true,
     allowlist: ["person@example.com"],
   }).enabled, true);
-  assert.equal(avatar3dFeatureForUser(user, {
-    enabled: false,
-    requireAllowlist: true,
-    allowlist: ["person@example.com"],
-  }).enabled, false);
 });
 
 test("feature projection contains prices and no secret configuration", () => {

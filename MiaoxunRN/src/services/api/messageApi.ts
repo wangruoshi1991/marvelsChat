@@ -20,12 +20,14 @@ export const messageApi = {
     clientContext?: ButlerClientContextPayload | null,
     localActionResult?: ButlerLocalActionResultPayload | null,
     replyToMessageId?: string | null,
+    clientMessageId?: string,
   ) {
     const body: {
       content: string;
       clientContext?: ButlerClientContextPayload;
       localActionResult?: ButlerLocalActionResultPayload;
       replyToMessageId?: string;
+      clientMessageId?: string;
     } = { content };
 
     if (clientContext) {
@@ -36,6 +38,9 @@ export const messageApi = {
     }
     if (replyToMessageId) {
       body.replyToMessageId = replyToMessageId;
+    }
+    if (clientMessageId) {
+      body.clientMessageId = clientMessageId;
     }
 
     return request<SendMessageResponse>(`/api/threads/${threadId}/messages`, {

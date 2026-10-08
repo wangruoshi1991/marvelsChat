@@ -19,6 +19,7 @@ import {
 } from '../src/models/api';
 import { Avatar3DCreateScreen } from '../src/features/station/Avatar3DCreateScreen';
 import { StationAvatarSpace } from '../src/features/station/StationAvatarSpace';
+import { Avatar3DViewer } from '../src/features/station/Avatar3DViewer';
 import { useAvatar3dWorkflow } from '../src/features/station/useAvatar3dWorkflow';
 import { palettes } from '../src/shared/theme';
 
@@ -191,6 +192,7 @@ describe('station avatar layout', () => {
           language="zh"
           onBack={jest.fn()}
           onChanged={jest.fn()}
+          onSelectModel={jest.fn()}
           palette={palettes.light}
           token="token"
         />,
@@ -242,6 +244,7 @@ describe('station avatar layout', () => {
           language="zh"
           onBack={jest.fn()}
           onChanged={jest.fn()}
+          onSelectModel={jest.fn()}
           palette={palettes.light}
           token="token"
         />,
@@ -288,6 +291,7 @@ describe('station avatar layout', () => {
           language="zh"
           onBack={jest.fn()}
           onChanged={jest.fn()}
+          onSelectModel={jest.fn()}
           palette={palettes.light}
           token="token"
         />,
@@ -355,6 +359,7 @@ describe('station avatar layout', () => {
           language="zh"
           onBack={jest.fn()}
           onChanged={jest.fn()}
+          onSelectModel={jest.fn()}
           palette={palettes.light}
           token="token"
         />,
@@ -370,6 +375,99 @@ describe('station avatar layout', () => {
     await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
+  it('keeps existing models viewable while generation is unavailable', async () => {
+    const unavailable = {
+      ...bootstrap,
+      feature: { ...bootstrap.feature, generationAvailable: false },
+      models: [activeModel],
+    };
+    const onSelectModel = jest.fn();
+    mockedUseAvatar3dWorkflow.mockReturnValue(
+      workflowValue({ bootstrap: unavailable }),
+    );
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <Avatar3DCreateScreen
+          initialBootstrap={unavailable}
+          language="zh"
+          onBack={jest.fn()}
+          onChanged={jest.fn()}
+          onSelectModel={onSelectModel}
+          palette={palettes.light}
+          token="token"
+        />,
+      );
+    });
+    expect(
+      renderer!.root.findByProps({ accessibilityLabel: '创建新形象' }).props
+        .disabled,
+    ).toBe(true);
+    expect(renderedText(renderer!)).toContain('3D建模服务暂时不可用');
+    await ReactTestRenderer.act(() => {
+      renderer!.root
+        .findByProps({ accessibilityLabel: '查看林末·3D' })
+        .props.onPress();
+    });
+    expect(onSelectModel).toHaveBeenCalledWith('model-1');
+    await ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
+  it('blocks photo creation when the daily quota is exhausted', async () => {
+    const exhausted = {
+      ...bootstrap,
+      quota: { ...bootstrap.quota, dailyRemaining: 0 },
+    };
+    mockedUseAvatar3dWorkflow.mockReturnValue(
+      workflowValue({ bootstrap: exhausted }),
+    );
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <Avatar3DCreateScreen
+          initialBootstrap={exhausted}
+          language="zh"
+          onBack={jest.fn()}
+          onChanged={jest.fn()}
+          onSelectModel={jest.fn()}
+          palette={palettes.light}
+          token="token"
+        />,
+      );
+    });
+    expect(
+      renderer!.root.findByProps({ accessibilityLabel: '创建第一个形象' }).props
+        .disabled,
+    ).toBe(true);
+    expect(renderedText(renderer!)).toContain('今日生成次数已用完');
+    await ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
+  it('shows the selected older model on the station stage', async () => {
+    const olderModel = { ...activeModel, id: 'model-older', title: '旧形象' };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <AIAssistProvider onAskButler={jest.fn()} routeKey="station">
+          <StationAvatarSpace
+            avatar3d={{ ...bootstrap, models: [activeModel, olderModel] }}
+            avatar3dError=""
+            avatar3dStatus="ready"
+            selectedModelId="model-older"
+            language="zh"
+            onOpenGenerator={jest.fn()}
+            palette={palettes.light}
+            token="token"
+          />
+        </AIAssistProvider>,
+      );
+    });
+    expect(renderer!.root.findByType(Avatar3DViewer).props.modelId).toBe(
+      'model-older',
+    );
+    await ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
   it('fills the 3D stage without floating tags covering the model', async () => {
     let renderer: ReactTestRenderer.ReactTestRenderer;
 
@@ -380,6 +478,7 @@ describe('station avatar layout', () => {
             avatar3d={bootstrap}
             avatar3dError=""
             avatar3dStatus="ready"
+            selectedModelId={null}
             language="zh"
             onOpenGenerator={jest.fn()}
             onOpenOotd={jest.fn()}
@@ -426,6 +525,7 @@ describe('station avatar layout', () => {
             avatar3d={{ ...bootstrap, models: [activeModel] }}
             avatar3dError=""
             avatar3dStatus="ready"
+            selectedModelId={null}
             language="zh"
             onOpenGenerator={onOpenGenerator}
             onOpenOotd={onOpenOotd}
@@ -499,6 +599,7 @@ describe('station avatar layout', () => {
             }}
             avatar3dError=""
             avatar3dStatus="ready"
+            selectedModelId={null}
             language="zh"
             onOpenGenerator={jest.fn()}
             palette={palettes.light}

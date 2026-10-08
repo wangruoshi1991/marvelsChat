@@ -380,6 +380,8 @@ export function useMiaoxunSession() {
     ) => {
       setIsBusy(true);
       setErrorMessage(null);
+      let registeredToken = '';
+      let tokenSaved = false;
       try {
         await sessionExpiryPromiseRef.current;
         const response = await apiClient.register(
@@ -388,14 +390,32 @@ export function useMiaoxunSession() {
           password,
           displayName,
         );
+        registeredToken = response.session.token;
+        await tokenStore.save(registeredToken);
+        tokenSaved = true;
         const bootstrap = await apiClient.bootstrap(response.session.token);
-        await tokenStore.save(response.session.token);
-        updateToken(response.session.token);
+        updateToken(registeredToken);
         applyBootstrap(bootstrap);
         setRestoreStatus('authenticated');
         return response.user;
       } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : '注册失败。');
+        if (registeredToken) {
+          if (isAuthSessionError(error)) {
+            await clearLocalSession();
+            setRestoreStatus('signedOut');
+            setErrorMessage('账号已创建，但登录状态已失效。请切换到登录。');
+          } else if (tokenSaved) {
+            setRestoreStatus('networkError');
+            setErrorMessage('账号已创建，但资料同步失败。请重试加载。');
+          } else {
+            setRestoreStatus('signedOut');
+            setErrorMessage('账号已创建，但无法保存登录状态。请切换到登录。');
+          }
+        } else {
+          setErrorMessage(
+            error instanceof Error ? error.message : '注册失败。',
+          );
+        }
         throw error;
       } finally {
         setIsBusy(false);
@@ -487,11 +507,32 @@ export function useMiaoxunSession() {
     [setSessionUser],
   );
 
+  const {
+    resolveScanPayload,
+    followUser,
+    unfollowUser,
+    requestFriend,
+    acceptFriendRequest,
+    rejectFriendRequest,
+    cancelFriendRequest,
+    refreshRelationships,
+    searchUsers,
+    saveSearchQuery,
+    clearSearchHistory,
+    deleteSearchHistoryItem,
+    loadPublicProfileByAiId,
+  } = useSocialActions({
+    token,
+    setRelationships: setSessionRelationships,
+    setSearchHistory: setSessionSearchHistory,
+  });
+
   const realtimeStatus = useRealtimeChannel({
     token,
     userId: user?.id,
     activeThreadIdRef,
     refreshNotifications,
+    refreshRelationships,
     incrementalSync,
     setThreads: setSessionThreads,
     setRelationships: setSessionRelationships,
@@ -655,26 +696,6 @@ export function useMiaoxunSession() {
       setIsBusy(false);
     }
   }, [applyBootstrap, updateToken]);
-
-  const {
-    resolveScanPayload,
-    followUser,
-    unfollowUser,
-    requestFriend,
-    acceptFriendRequest,
-    rejectFriendRequest,
-    cancelFriendRequest,
-    refreshRelationships,
-    searchUsers,
-    saveSearchQuery,
-    clearSearchHistory,
-    deleteSearchHistoryItem,
-    loadPublicProfileByAiId,
-  } = useSocialActions({
-    token,
-    setRelationships: setSessionRelationships,
-    setSearchHistory: setSessionSearchHistory,
-  });
 
   const { updatePresence, updateProfileVisibility, updateProfile } =
     useProfileActions({

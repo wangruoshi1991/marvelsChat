@@ -252,6 +252,7 @@ export const avatar3dCreateStyles = StyleSheet.create({
   managerSummaryCopy: { flex: 1, gap: 4 },
   managerTitle: { fontSize: 18, fontWeight: '700' },
   managerSubtitle: { fontSize: 12 },
+  disabledCommand: { opacity: 0.45 },
   newModelButton: {
     alignItems: 'center',
     borderRadius: 8,

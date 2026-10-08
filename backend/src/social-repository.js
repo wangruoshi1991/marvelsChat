@@ -271,7 +271,7 @@ export async function cancelFriendRequest({ requestId, requesterUserId }) {
   return { id: request.id, status: "cancelled", targetUserId: request.target_user_id };
 }
 
-export async function listRelationshipProfiles(userId, type = "friends", limit = 60, onlineUserIds = []) {
+export async function listRelationshipProfiles(userId, type = "friends", limit = 60, onlineUserIds = [], before = null) {
   const safeLimit = sqlLimit(limit, 60, 120);
   const onlineIds = normalizeOnlineUserIds(onlineUserIds);
   const relationType = type === "friends" ? "friend" : "follow";
@@ -281,6 +281,8 @@ export async function listRelationshipProfiles(userId, type = "friends", limit =
     `SELECT
       r.relation_type,
       r.created_at,
+      r.id AS relation_id,
+      to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at,
       u.id AS user_id,
       u.display_name,
       u.ai_id,
@@ -314,9 +316,10 @@ export async function listRelationshipProfiles(userId, type = "friends", limit =
     LEFT JOIN chat_threads t
       ON t.user_id = ? AND t.peer_user_id = u.id
     WHERE r.${direction} = ? AND r.relation_type = ? AND r.status = 'active' AND u.status = 'active'
-    ORDER BY r.created_at DESC
+      ${before ? "AND (r.created_at, r.id) < (?::timestamptz, ?::char(36))" : ""}
+    ORDER BY r.created_at DESC, r.id DESC
     LIMIT ${safeLimit}`,
-    [onlineIds, userId, userId, relationType],
+    [onlineIds, userId, userId, relationType, ...(before ? [before.createdAt, before.relationId] : [])],
   );
   return rows.map(mapRelationshipProfile);
 }

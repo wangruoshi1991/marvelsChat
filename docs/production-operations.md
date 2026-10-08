@@ -42,7 +42,8 @@ AccessKey 会直接进入 root-only 配置，不需要负责人记录或输入�
 | 恢复私钥与本机公钥副本 | macOS `$HOME/Documents/Miaoxun-Recovery/` |
 | 恢复私钥口令 | macOS 登录钥匙串 `com.miaoxun.database-backup.recovery` |
 
-服务器环境文件只允许 root 读取。恢复私钥不能上传到 ECS、Git 或 OSS。AccessKey 创建结果导入
+生产后端环境文件由 `root:marvels` 持有、权限为 `0640`，只供 root 管理和后端服务账号读取；
+独立备份环境文件为 `root:root 0600`。恢复私钥不能上传到 ECS、Git 或 OSS。AccessKey 创建结果导入
 服务器后必须从下载目录和服务器临时目录删除。
 
 ## 常用入口

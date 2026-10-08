@@ -54,6 +54,7 @@ export const accountDeletionSchema = z.object({
 
 export const messageSchema = z.object({
   content: z.string().trim().min(1).max(2000),
+  clientMessageId: z.string().uuid().optional(),
   replyToMessageId: z.string().uuid().optional(),
   clientContext: z.object({
     currentPage: z.string().trim().min(1).max(120).optional(),
@@ -509,6 +510,15 @@ export const friendRequestSchema = z.object({
 export const relationshipTypeSchema = z.object({
   type: z.enum(["following", "followers", "friends"]),
 });
+
+export const relationshipPageSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(120).optional().default(60),
+  beforeCreatedAt: z.string().datetime().optional(),
+  beforeRelationId: z.string().uuid().optional(),
+}).refine(
+  ({ beforeCreatedAt, beforeRelationId }) => Boolean(beforeCreatedAt) === Boolean(beforeRelationId),
+  { message: "Relationship cursor requires both fields." },
+);
 
 export const profileVisibilitySchema = z.object({
   showBio: z.boolean().optional(),

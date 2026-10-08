@@ -309,6 +309,7 @@ export type RelationshipProfileDTO = {
   relationType: string;
   threadId?: string | null;
   createdAt?: string | null;
+  cursor?: { createdAt: string; relationId: string };
 };
 
 export type FriendThreadDTO = {

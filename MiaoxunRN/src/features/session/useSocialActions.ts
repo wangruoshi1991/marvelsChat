@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { PublicProfileDTO, SearchHistoryDTO } from '../../models/api';
 import { apiClient } from '../../services/apiClient';
@@ -13,6 +13,9 @@ export function useSocialActions({
   setRelationships: Dispatch<SetStateAction<RelationshipsState>>;
   setSearchHistory: Dispatch<SetStateAction<SearchHistoryDTO[]>>;
 }) {
+  const currentTokenRef = useRef(token);
+  currentTokenRef.current = token;
+  const relationshipRefreshRef = useRef(0);
   const resolveScanPayload = useCallback(
     async (payload: string) => {
       if (!token) {
@@ -87,12 +90,37 @@ export function useSocialActions({
     if (!token) {
       return;
     }
+    const pageSize = 100;
+    const refreshId = ++relationshipRefreshRef.current;
+    const loadAll = async (type: 'following' | 'followers' | 'friends') => {
+      const profiles: RelationshipsState[typeof type] = [];
+      let before: { createdAt: string; relationId: string } | undefined;
+      while (true) {
+        const page = await apiClient.relationships(type, token, {
+          limit: pageSize,
+          before,
+        });
+        profiles.push(...page);
+        if (page.length < pageSize) {
+          return profiles;
+        }
+        before = page.at(-1)?.cursor;
+        if (!before) {
+          throw new Error('关系列表分页信息缺失，请重试。');
+        }
+      }
+    };
     const [following, followers, friends] = await Promise.all([
-      apiClient.relationships('following', token),
-      apiClient.relationships('followers', token),
-      apiClient.relationships('friends', token),
+      loadAll('following'),
+      loadAll('followers'),
+      loadAll('friends'),
     ]);
-    setRelationships({ following, followers, friends });
+    if (
+      currentTokenRef.current === token &&
+      relationshipRefreshRef.current === refreshId
+    ) {
+      setRelationships({ following, followers, friends });
+    }
   }, [setRelationships, token]);
 
   const searchUsers = useCallback(

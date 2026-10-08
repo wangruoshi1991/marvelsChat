@@ -36,6 +36,7 @@ import { Avatar3DErrorNotice } from './Avatar3DCreateShared';
 import { Avatar3DJobView } from './Avatar3DJobView';
 import { Avatar3DModelManager } from './Avatar3DModelManager';
 import { useAvatar3dWorkflow } from './useAvatar3dWorkflow';
+import { avatar3dCreationUnavailableReason } from './avatar3dAvailability';
 
 export function Avatar3DCreateScreen({
   palette,
@@ -44,6 +45,7 @@ export function Avatar3DCreateScreen({
   initialBootstrap,
   onBack,
   onChanged,
+  onSelectModel,
 }: {
   palette: Palette;
   language: Language;
@@ -51,6 +53,7 @@ export function Avatar3DCreateScreen({
   initialBootstrap: Avatar3DBootstrapDTO | null;
   onBack: () => void;
   onChanged: () => void;
+  onSelectModel: (modelId: string) => void;
 }) {
   const workflow = useAvatar3dWorkflow({
     initialBootstrap,
@@ -58,7 +61,8 @@ export function Avatar3DCreateScreen({
     token,
   });
   const [showComposer, setShowComposer] = useState(
-    !initialBootstrap?.models.length,
+    !initialBootstrap?.models.length &&
+      !avatar3dCreationUnavailableReason(initialBootstrap, language),
   );
   const [media, setMedia] = useState<PickedStationMedia | null>(null);
   const [bodyShape, setBodyShape] = useState<BodyShape>('balanced');
@@ -102,15 +106,24 @@ export function Avatar3DCreateScreen({
   }, [workflow.isSubmissionUncertain, workflow.pendingOptions]);
 
   const isBusy = workflow.busyAction !== 'none';
+  const creationUnavailableReason = avatar3dCreationUnavailableReason(
+    workflow.bootstrap,
+    language,
+  );
   const allConsentsAccepted = acceptedIdentity && acceptedFaceCompletion;
   const canGenerate = Boolean(
     workflow.validatedPhoto &&
       allConsentsAccepted &&
       workflow.bootstrap?.feature.generationAvailable &&
+      !creationUnavailableReason &&
       !isBusy,
   );
 
   const choosePhoto = async () => {
+    if (creationUnavailableReason) {
+      workflow.setErrorMessage(creationUnavailableReason);
+      return;
+    }
     if (workflow.isSubmissionUncertain) {
       workflow.setErrorMessage('上次提交结果尚未确认，请先重试原提交。');
       return;
@@ -131,6 +144,10 @@ export function Avatar3DCreateScreen({
   };
 
   const submitComposer = async () => {
+    if (creationUnavailableReason && !workflow.isSubmissionUncertain) {
+      workflow.setErrorMessage(creationUnavailableReason);
+      return;
+    }
     if (!workflow.validatedPhoto) {
       if (media) {
         await workflow.validatePhoto(media).catch(() => undefined);
@@ -580,8 +597,10 @@ export function Avatar3DCreateScreen({
           language={language}
           models={workflow.bootstrap?.models || []}
           quota={workflow.bootstrap?.quota}
+          creationUnavailableReason={creationUnavailableReason}
           token={token}
           onCreate={() => setShowComposer(true)}
+          onView={model => onSelectModel(model.id)}
           onDelete={model => {
             Alert.alert(
               textFor(language, '删除3D形象', 'Delete 3D Avatar'),

@@ -4,6 +4,7 @@ import {
   ButlerLocalActionResultPayload,
 } from '../../models/api';
 import { apiClient } from '../../services/apiClient';
+import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
 import { appErrorMessage } from './sessionDefaults';
 import { mapMessage, mergeMessages, mergeThreads } from './sessionMappers';
 import { ChatMessage, ChatThread } from './sessionTypes';
@@ -35,13 +36,22 @@ export function useMessageActions({
     ) => {
       const thread = threads.find(item => item.id === threadId);
       const isButler = thread?.agentId === 'miaoxun-butler';
-      const optimisticId = retryMessageId || `local-${Date.now()}`;
+      const retryMessage = thread?.messages.find(
+        message => message.id === retryMessageId,
+      );
+      const clientMessageId =
+        retryMessage?.clientMessageId || createIdempotencyKey();
+      const optimisticId = retryMessageId || `local-${clientMessageId}`;
       const optimistic: ChatMessage = {
         id: optimisticId,
         threadId,
         senderType: 'user',
         senderName: currentUserName || '我',
         content,
+        clientMessageId,
+        metadata: replyToMessageId
+          ? { replyTo: { messageId: replyToMessageId } }
+          : {},
         localStatus: 'sending',
       };
 
@@ -79,7 +89,14 @@ export function useMessageActions({
             item.id === threadId
               ? {
                   ...item,
-                  messages: [...item.messages, localNotice],
+                  messages: [
+                    ...item.messages.map(message =>
+                      message.id === optimisticId
+                        ? { ...message, localStatus: 'failed' as const }
+                        : message,
+                    ),
+                    localNotice,
+                  ],
                   lastContent: reply,
                 }
               : item,
@@ -96,6 +113,7 @@ export function useMessageActions({
           isButler ? makeButlerContext('messages.butler') : null,
           appActionResult,
           replyToMessageId,
+          clientMessageId,
         );
         const incoming = response.messages.map(mapMessage);
         setThreads(current =>

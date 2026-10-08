@@ -1,4 +1,4 @@
-import { Cuboid, ImagePlus, Trash2 } from 'lucide-react-native';
+import { Cuboid, Eye, ImagePlus, Trash2 } from 'lucide-react-native';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -24,8 +24,10 @@ export function Avatar3DModelManager({
   language,
   models,
   quota,
+  creationUnavailableReason,
   token,
   onCreate,
+  onView,
   onDelete,
 }: {
   colors: ScreenColors;
@@ -34,8 +36,10 @@ export function Avatar3DModelManager({
   language: Language;
   models: Avatar3DModelDTO[];
   quota?: Avatar3DBootstrapDTO['quota'];
+  creationUnavailableReason: string | null;
   token: string;
   onCreate: () => void;
+  onView: (model: Avatar3DModelDTO) => void;
   onDelete: (model: Avatar3DModelDTO) => void;
 }) {
   return (
@@ -76,10 +80,13 @@ export function Avatar3DModelManager({
         <Pressable
           accessibilityLabel={textFor(language, '创建新形象', 'Create Avatar')}
           accessibilityRole="button"
+          disabled={Boolean(creationUnavailableReason) || isBusy}
           onPress={onCreate}
           style={[
             localStyles.newModelButton,
             { backgroundColor: colors.accent },
+            (creationUnavailableReason || isBusy) &&
+              localStyles.disabledCommand,
           ]}
         >
           <ImagePlus color="#FFFFFF" size={19} />
@@ -136,6 +143,24 @@ export function Avatar3DModelManager({
               <Pressable
                 accessibilityLabel={textFor(
                   language,
+                  `查看${model.title}`,
+                  `View ${model.title}`,
+                )}
+                accessibilityRole="button"
+                disabled={
+                  isBusy ||
+                  model.status !== 'active' ||
+                  !model.interactiveAvailable
+                }
+                hitSlop={8}
+                onPress={() => onView(model)}
+                style={localStyles.deleteButton}
+              >
+                <Eye color={colors.accent} size={20} strokeWidth={1.8} />
+              </Pressable>
+              <Pressable
+                accessibilityLabel={textFor(
+                  language,
                   '删除形象',
                   'Delete Avatar',
                 )}
@@ -161,9 +186,19 @@ export function Avatar3DModelManager({
             {textFor(language, '还没有3D形象', 'No 3D avatar yet')}
           </Text>
           <Pressable
+            accessibilityLabel={textFor(
+              language,
+              '创建第一个形象',
+              'Create Your First Avatar',
+            )}
             accessibilityRole="button"
+            disabled={Boolean(creationUnavailableReason) || isBusy}
             onPress={onCreate}
-            style={localStyles.inlineCommand}
+            style={[
+              localStyles.inlineCommand,
+              (creationUnavailableReason || isBusy) &&
+                localStyles.disabledCommand,
+            ]}
           >
             <Text
               style={[localStyles.inlineCommandText, { color: colors.accent }]}
@@ -173,6 +208,12 @@ export function Avatar3DModelManager({
           </Pressable>
         </View>
       )}
+
+      {creationUnavailableReason ? (
+        <Text style={[localStyles.managerSubtitle, { color: colors.muted }]}>
+          {creationUnavailableReason}
+        </Text>
+      ) : null}
 
       {errorMessage ? (
         <Avatar3DErrorNotice colors={colors} message={errorMessage} />

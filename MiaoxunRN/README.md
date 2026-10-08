@@ -170,7 +170,7 @@ Android 构建必须显式提供 API 地址；连接正式 API 时：
 ```sh
 ./gradlew assembleDebug \
   -PMIAOXUN_API_BASE_URL=https://8.153.167.11 \
-  -PMIAOXUN_VERSION_CODE=43
+  -PMIAOXUN_VERSION_CODE=<version_code>
 ```
 
 真机或 Android 需要隔离验证本地后端时，显式改用 `http://<MAC_LAN_IP>:4390`，并确保设备可访问该开发服务。

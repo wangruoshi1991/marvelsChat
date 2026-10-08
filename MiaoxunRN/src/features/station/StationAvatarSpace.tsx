@@ -33,6 +33,7 @@ import { Language } from '../session/useMiaoxunSession';
 import { Avatar3DViewer } from './Avatar3DViewer';
 import { resolveStationColors } from './stationTheme';
 import { Avatar3DLoadState } from './useAvatar3d';
+import { avatar3dCreationUnavailableReason } from './avatar3dAvailability';
 
 export function StationAvatarSpace({
   active = true,
@@ -42,6 +43,7 @@ export function StationAvatarSpace({
   avatar3d,
   avatar3dStatus,
   avatar3dError,
+  selectedModelId,
   onOpenGenerator,
   onOpenCoreAgent,
   onOpenAgents,
@@ -56,6 +58,7 @@ export function StationAvatarSpace({
   avatar3d: Avatar3DBootstrapDTO | null;
   avatar3dStatus: Avatar3DLoadState;
   avatar3dError: string;
+  selectedModelId: string | null;
   onOpenGenerator: () => void;
   onOpenCoreAgent?: () => void;
   onOpenAgents?: () => void;
@@ -72,9 +75,16 @@ export function StationAvatarSpace({
   const latestModel = useMemo(
     () =>
       avatar3d?.models.find(
+        model =>
+          model.id === selectedModelId &&
+          model.status === 'active' &&
+          model.interactiveAvailable,
+      ) ||
+      avatar3d?.models.find(
         model => model.status === 'active' && model.interactiveAvailable,
-      ) || null,
-    [avatar3d?.models],
+      ) ||
+      null,
+    [avatar3d?.models, selectedModelId],
   );
   const latestModelId = latestModel?.id || '';
   const activeJob = avatar3d?.activeJob || null;
@@ -86,7 +96,13 @@ export function StationAvatarSpace({
     setViewerRevision(0);
   }, [latestModelId]);
 
-  const canOpenGenerator = avatar3dStatus === 'ready';
+  const creationUnavailableReason = avatar3dCreationUnavailableReason(
+    avatar3d,
+    language,
+  );
+  const canOpenGenerator =
+    avatar3dStatus === 'ready' &&
+    (Boolean(avatar3d?.models.length) || !creationUnavailableReason);
   const assistObject = useMemo(
     () => ({
       kind: 'avatar-3d' as const,
@@ -361,12 +377,25 @@ export function StationAvatarSpace({
             </Text>
           </Pressable>
         </View>
+        {!latestModel &&
+        avatar3dStatus === 'ready' &&
+        creationUnavailableReason ? (
+          <Text
+            style={[
+              localStyles.availabilityText,
+              { color: colors.secondaryText },
+            ]}
+          >
+            {creationUnavailableReason}
+          </Text>
+        ) : null}
       </View>
     </View>
   );
 }
 
 const localStyles = StyleSheet.create({
+  availabilityText: { fontSize: 12, marginTop: 8 },
   assistSurface: { flex: 1, width: '100%' },
   preparingPreview: {
     bottom: 0,

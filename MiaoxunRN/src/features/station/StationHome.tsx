@@ -37,6 +37,7 @@ type StationHomeProps = {
   avatar3d: Avatar3DBootstrapDTO | null;
   avatar3dStatus: Avatar3DLoadState;
   avatar3dError: string;
+  selectedAvatar3dModelId: string | null;
   agents: AgentDTO[];
   ownedAgents: OwnedAgentDTO[];
   onOpenAvatar3d: () => void;
@@ -59,6 +60,7 @@ export function StationHome({
   avatar3d,
   avatar3dStatus,
   avatar3dError,
+  selectedAvatar3dModelId,
   agents,
   ownedAgents,
   onOpenAvatar3d,
@@ -175,6 +177,7 @@ export function StationHome({
         avatar3d={avatar3d}
         avatar3dStatus={avatar3dStatus}
         avatar3dError={avatar3dError}
+        selectedModelId={selectedAvatar3dModelId}
         onOpenGenerator={onOpenAvatar3d}
         onOpenCoreAgent={() => onOpenAgentThread('model-3d')}
         onOpenOotd={() => onOpenCreateSheet('outfit')}

@@ -59,12 +59,14 @@ export function ChatMessageItem({
     item: ChatMessage,
     isMine: boolean,
     point: AIAssistPoint,
+    messageFrame: { x: number; y: number; width: number; height: number },
   ) => void;
   onRetrySend: (message: ChatMessage) => void;
   onActionMessage: (message: string) => void;
 }) {
   const assist = useAIAssist();
   const touchPoint = useRef<AIAssistPoint>({ x: 0, y: 0 });
+  const messageBlockRef = useRef<View>(null);
   const senderUserId =
     typeof item.metadata?.senderUserId === 'string'
       ? item.metadata.senderUserId
@@ -139,7 +141,14 @@ export function ChatMessageItem({
       accent: palette.mint,
       onSelect: () => {
         assist.dismiss();
-        onOpenMessageMenu(item, isMine, touchPoint.current);
+        messageBlockRef.current?.measureInWindow((x, y, width, height) => {
+          onOpenMessageMenu(item, isMine, touchPoint.current, {
+            x,
+            y,
+            width,
+            height,
+          });
+        });
       },
     },
   ];
@@ -320,7 +329,7 @@ export function ChatMessageItem({
   );
 
   return (
-    <View style={styles.messageBlock}>
+    <View ref={messageBlockRef} collapsable={false} style={styles.messageBlock}>
       {showTimeSeparator ? (
         <View style={styles.messageTimeSeparator}>
           <Text

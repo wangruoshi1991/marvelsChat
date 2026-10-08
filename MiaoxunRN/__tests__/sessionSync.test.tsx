@@ -14,6 +14,8 @@ jest.mock('../src/services/apiClient', () => ({
     markThreadRead: jest.fn(),
     logout: jest.fn(),
     login: jest.fn(),
+    register: jest.fn(),
+    relationships: jest.fn(),
     deleteAccount: jest.fn(),
     stationContent: jest.fn(),
     updateProfile: jest.fn(),
@@ -67,6 +69,10 @@ class MockWebSocket {
   emitReady() {
     this.onopen?.();
     this.onmessage?.({ data: JSON.stringify({ type: 'connection.ready' }) });
+  }
+
+  emit(payload: Record<string, unknown>) {
+    this.onmessage?.({ data: JSON.stringify(payload) });
   }
 }
 
@@ -169,6 +175,14 @@ describe('session synchronization', () => {
       user: bootstrap.user,
       session: { token: 'new-token', expiresAt: '2026-10-01T00:00:00.000Z' },
     });
+    mockedApiClient.register.mockResolvedValue({
+      user: bootstrap.user,
+      session: {
+        token: 'registered-token',
+        expiresAt: '2026-10-01T00:00:00.000Z',
+      },
+    });
+    mockedApiClient.relationships.mockResolvedValue([]);
     mockedApiClient.deleteAccount.mockResolvedValue({ deleted: true });
     mockedApiClient.sync.mockResolvedValue({
       threads: [],
@@ -201,6 +215,130 @@ describe('session synchronization', () => {
       'saved-token',
     );
     expect(MockWebSocket.instances).toHaveLength(1);
+
+    await ReactTestRenderer.act(() => {
+      renderer?.unmount();
+    });
+  });
+
+  test('registration keeps the issued session when bootstrap fails and can retry', async () => {
+    mockedTokenStore.read.mockResolvedValue('');
+    mockedApiClient.bootstrap
+      .mockRejectedValueOnce(new Error('网络中断'))
+      .mockResolvedValue(bootstrap);
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+
+    await ReactTestRenderer.act(async () => {
+      await expect(
+        currentSession!.signUp(
+          'email',
+          'tester@example.com',
+          'Password1',
+          'Tester',
+        ),
+      ).rejects.toThrow('网络中断');
+    });
+
+    expect(mockedTokenStore.save).toHaveBeenCalledWith('registered-token');
+    expect(currentSession?.restoreStatus).toBe('networkError');
+    expect(currentSession?.errorMessage).toContain('账号已创建');
+
+    mockedTokenStore.read.mockResolvedValue('registered-token');
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.retryRestoreSession();
+    });
+
+    expect(mockedApiClient.register).toHaveBeenCalledTimes(1);
+    expect(mockedApiClient.bootstrap).toHaveBeenLastCalledWith(
+      'registered-token',
+    );
+    expect(currentSession?.restoreStatus).toBe('authenticated');
+
+    await ReactTestRenderer.act(() => {
+      renderer?.unmount();
+    });
+  });
+
+  test('relationship refresh loads pages beyond the bootstrap limit', async () => {
+    const friendAt = (index: number) => ({
+      user: { id: `friend-${index}`, displayName: `Friend ${index}`, aiId: '' },
+      profile: { ...bootstrap.profile, userId: `friend-${index}` },
+      relationType: 'friend',
+      cursor: {
+        createdAt: '2026-09-29T06:00:00.000000Z',
+        relationId: `00000000-0000-4000-8000-${String(index).padStart(
+          12,
+          '0',
+        )}`,
+      },
+    });
+    mockedApiClient.relationships.mockImplementation(
+      async (type, _token, page) => {
+        if (type !== 'friends') return [];
+        return page?.before
+          ? [friendAt(101)]
+          : Array.from({ length: 100 }, (_, index) => friendAt(index + 1));
+      },
+    );
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.refreshRelationships();
+    });
+
+    expect(currentSession?.relationships.friends).toHaveLength(101);
+    expect(mockedApiClient.relationships).toHaveBeenCalledWith(
+      'friends',
+      'saved-token',
+      { limit: 100, before: undefined },
+    );
+    expect(mockedApiClient.relationships).toHaveBeenLastCalledWith(
+      'friends',
+      'saved-token',
+      { limit: 100, before: friendAt(100).cursor },
+    );
+
+    await ReactTestRenderer.act(() => {
+      renderer?.unmount();
+    });
+  });
+
+  test('relationship realtime events refresh the relation state', async () => {
+    mockedApiClient.relationships.mockImplementation(async type =>
+      type === 'followers'
+        ? [
+            {
+              user: { id: 'new-follower', displayName: 'New', aiId: '' },
+              profile: bootstrap.profile,
+              relationType: 'follow',
+            },
+          ]
+        : [],
+    );
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    await ReactTestRenderer.act(async () => {
+      MockWebSocket.instances[0].emit({ type: 'relationships.changed' });
+      await flushEffects();
+    });
+
+    expect(currentSession?.relationships.followers).toHaveLength(1);
+    expect(currentSession?.relationships.followers[0].user.id).toBe(
+      'new-follower',
+    );
 
     await ReactTestRenderer.act(() => {
       renderer?.unmount();

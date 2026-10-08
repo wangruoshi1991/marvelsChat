@@ -1,11 +1,15 @@
 import crypto from "crypto";
 import { listAgents } from "../../../agents/registry.js";
 import { runAgent } from "../agent-runtime.js";
+import { config } from "../config.js";
 import { HttpError } from "../http-error.js";
 import { createRateLimitMiddleware } from "../rate-limit-service.js";
 import {
-  addMessageToThread,
+  addMessageToThreadOnce,
+  completeAgentMessageOnce,
   deleteMessageForUser,
+  getAgentResultForInput,
+  getMessageByClientId,
   getMessageForUser,
   getThreadForUser,
   listMessagesForThreadSince,
@@ -19,7 +23,6 @@ import {
   setThreadMutedForUser,
 } from "../message-repository.js";
 import {
-  createAgentRun,
   createUsageEvent,
   getAgentContextForUser,
   hashRequestIp,
@@ -36,6 +39,8 @@ import {
 const defaultLogger = { error: (entry) => console.error(JSON.stringify(entry)) };
 export const agentRuntimeFailureCode = "AGENT_RUNTIME_FAILED";
 const hour = 60 * 60 * 1000;
+const staleAgentMessageMs = Math.max(2 * 60 * 1000, config.newApi.timeoutMs + 30 * 1000);
+const agentFailureReply = "模型服务暂时没有返回。请稍后再试，或让管理员检查后端模型配置。";
 const agentMessageCreateLimit = createRateLimitMiddleware({
   action: "agent.message.send",
   limit: 120,
@@ -73,6 +78,20 @@ export function buildAgentAppContext(agentContext, access, clientContext, localA
     client: clientContext || null,
     localActionResult: scopes.has("agents:invoke") ? localActionResult || null : null,
   };
+}
+
+export function assertMatchingMessageRetry(message, fingerprint) {
+  if (message.metadata?.source !== "app" || message.metadata?.requestFingerprint !== fingerprint) {
+    throw new HttpError(409, 'Client message ID already belongs to a different request');
+  }
+}
+
+function assertMatchingPeerMirror(message, fingerprint, senderUserId) {
+  if (message.metadata?.source !== "direct" ||
+      message.metadata?.senderUserId !== senderUserId ||
+      message.metadata?.requestFingerprint !== fingerprint) {
+    throw new HttpError(409, 'Client message ID conflicts with a peer message');
+  }
 }
 
 export function assertAgentAvailable(agentContext, agentId) {
@@ -204,6 +223,66 @@ export function registerMessageRoutes(
       const body = messageSchema.parse(req.body);
       const thread = await getThreadForUser(req.user.id, req.params.threadId, getOnlineUserIds());
       if (!thread) throw new HttpError(404, "Thread not found");
+      const clientMessageId = body.clientMessageId || crypto.randomUUID();
+      const requestFingerprint = crypto.createHash('sha256')
+        .update(JSON.stringify([body.content, body.replyToMessageId || null]))
+        .digest('hex');
+      const replay = async (message) => {
+        assertMatchingMessageRetry(message, requestFingerprint);
+        if (thread.peerUserId) {
+          const peer = await mirrorDirectMessageToPeer({
+            thread,
+            senderUser: req.user,
+            content: body.content,
+            metadata: message.metadata?.replyTo
+              ? { replyTo: message.metadata.replyTo, requestFingerprint }
+              : { requestFingerprint },
+            clientMessageId,
+          });
+          if (peer) assertMatchingPeerMirror(peer.message, requestFingerprint, req.user.id);
+          if (peer?.created) {
+            sendRealtimeToUser(thread.peerUserId, {
+              type: 'thread.message',
+              threadId: peer.message.threadId,
+              message: peer.message,
+            });
+          }
+        }
+        let agentRun = null;
+        const messages = [message];
+        if (thread.agentId) {
+          let result = await getAgentResultForInput(message.id);
+          const createdAt = Date.parse(message.createdAt || "");
+          if (!result?.outputMessage && Number.isFinite(createdAt) && Date.now() - createdAt >= staleAgentMessageMs) {
+            result = await completeAgentMessageOnce({
+              userId: req.user.id,
+              threadId: thread.id,
+              inputMessageId: message.id,
+              agentId: thread.agentId,
+              senderName: thread.title,
+              content: agentFailureReply,
+              metadata: { provider: "runtime-error", errorCode: agentRuntimeFailureCode },
+              status: "error",
+              provider: "runtime-error",
+              latencyMs: Date.now() - createdAt,
+              errorMessage: agentRuntimeFailureCode,
+            });
+          }
+          if (!result?.outputMessage) {
+            throw new HttpError(409, 'Message is still processing; retry shortly');
+          }
+          agentRun = result.agentRun;
+          messages.push(result.outputMessage);
+        }
+        res.status(200).json({ data: { messages, agentRun } });
+      };
+      const existing = await getMessageByClientId({
+        userId: req.user.id,
+        threadId: thread.id,
+        clientMessageId,
+        source: 'app',
+      });
+      if (existing) return replay(existing);
       const agentContext = thread.agentId
         ? await getAgentContextForUser(req.user, await listAgents())
         : null;
@@ -212,7 +291,6 @@ export function registerMessageRoutes(
         agentAccess = assertAgentAvailable(agentContext, thread.agentId);
         enforceAgentMessageCreateLimit(req, res);
       }
-      const clientMessageId = crypto.randomUUID();
       let replyTo = null;
       if (body.replyToMessageId) {
         replyTo = await getMessageForUser({
@@ -233,15 +311,17 @@ export function registerMessageRoutes(
           }
         : {};
 
-      const userMessage = await addMessageToThread({
+      const userInsert = await addMessageToThreadOnce({
         userId: req.user.id,
         threadId: thread.id,
         senderType: "user",
         senderName: req.user.displayName,
         content: body.content,
-        metadata: { source: "app", ...replyMetadata },
+        metadata: { source: "app", ...replyMetadata, requestFingerprint },
         clientMessageId,
       });
+      if (!userInsert.created) return replay(userInsert.message);
+      const userMessage = userInsert.message;
 
       const responseMessages = [userMessage];
       let agentRun = null;
@@ -251,18 +331,20 @@ export function registerMessageRoutes(
           thread,
           senderUser: req.user,
           content: body.content,
-          metadata: replyMetadata,
+          metadata: { ...replyMetadata, requestFingerprint },
           clientMessageId,
         });
-        if (peerMessage) {
+        if (peerMessage) assertMatchingPeerMirror(peerMessage.message, requestFingerprint, req.user.id);
+        if (peerMessage?.created) {
           sendRealtimeToUser(thread.peerUserId, {
             type: "thread.message",
-            threadId: peerMessage.threadId,
-            message: peerMessage,
+            threadId: peerMessage.message.threadId,
+            message: peerMessage.message,
           });
         }
       } else if (thread.agentId) {
         const startedAt = Date.now();
+        let completion;
         try {
           const result = await runAgent({
             agentId: thread.agentId,
@@ -279,30 +361,14 @@ export function registerMessageRoutes(
               body.localActionResult,
             ),
           });
-          const agentMessage = await addMessageToThread({
-            userId: req.user.id,
-            threadId: thread.id,
-            senderType: "agent",
-            senderName: thread.title,
+          completion = {
             content: result.reply,
             metadata: { provider: result.provider, tokenUsage: result.tokenUsage },
-            countUnread: false,
-          });
-
-          agentRun = await createAgentRun({
-            userId: req.user.id,
-            agentId: thread.agentId,
-            threadId: thread.id,
-            inputMessageId: userMessage.id,
-            outputMessageId: agentMessage.id,
             status: "success",
             provider: result.provider,
             latencyMs: result.latencyMs,
-            tokenPrompt: result.tokenUsage.prompt,
-            tokenCompletion: result.tokenUsage.completion,
-            tokenTotal: result.tokenUsage.total,
-          });
-          responseMessages.push(agentMessage);
+            tokenUsage: result.tokenUsage,
+          };
         } catch (error) {
           const failure = agentRuntimeFailureDiagnostic(error);
           logger.error({
@@ -312,31 +378,28 @@ export function registerMessageRoutes(
             requestId: req.requestId || null,
             threadId: thread.id,
           });
-          agentRun = await createAgentRun({
-            userId: req.user.id,
-            agentId: thread.agentId,
-            threadId: thread.id,
-            inputMessageId: userMessage.id,
-            status: "error",
-            provider: "runtime-error",
-            latencyMs: Date.now() - startedAt,
-            errorMessage: failure.code,
-          });
-
-          const agentMessage = await addMessageToThread({
-            userId: req.user.id,
-            threadId: thread.id,
-            senderType: "agent",
-            senderName: thread.title,
-            content: "模型服务暂时没有返回。请稍后再试，或让管理员检查后端模型配置。",
+          completion = {
+            content: agentFailureReply,
             metadata: {
               provider: "runtime-error",
               errorCode: failure.code,
             },
-            countUnread: false,
-          });
-          responseMessages.push(agentMessage);
+            status: "error",
+            provider: "runtime-error",
+            latencyMs: Date.now() - startedAt,
+            errorMessage: failure.code,
+          };
         }
+        const completed = await completeAgentMessageOnce({
+          userId: req.user.id,
+          threadId: thread.id,
+          inputMessageId: userMessage.id,
+          agentId: thread.agentId,
+          senderName: thread.title,
+          ...completion,
+        });
+        agentRun = completed.agentRun;
+        responseMessages.push(completed.outputMessage);
       }
 
       await createUsageEvent({

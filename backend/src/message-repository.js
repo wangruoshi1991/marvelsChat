@@ -3,6 +3,7 @@ import { query, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
 import {
   displayInitial,
+  mapAgentRun,
   mapMessage,
   mapThread,
   normalizeOnlineUserIds,
@@ -118,7 +119,7 @@ export async function mirrorDirectMessageToPeer({ thread, senderUser, content, m
   }
 
   const peerThreadBundle = await ensureFriendThreadForUser(thread.peerUserId, senderUser.id);
-  return addMessageToThread({
+  return addMessageToThreadOnce({
     userId: thread.peerUserId,
     threadId: peerThreadBundle.thread.id,
     senderType: "user",
@@ -127,6 +128,137 @@ export async function mirrorDirectMessageToPeer({ thread, senderUser, content, m
     metadata: { source: "direct", ...metadata, senderUserId: senderUser.id },
     clientMessageId,
     countUnread: true,
+  });
+}
+
+export async function getMessageByClientId({ userId, threadId, clientMessageId, source }) {
+  const rows = await query(
+    `SELECT m.* FROM chat_messages m
+    JOIN chat_threads t ON t.id = m.thread_id
+    WHERE t.user_id = ? AND t.id = ? AND m.client_message_id = ?
+      ${source ? "AND m.metadata ->> 'source' = ?" : ''}
+    LIMIT 1`,
+    [userId, threadId, clientMessageId, ...(source ? [source] : [])],
+  );
+  return rows[0] ? mapMessage(rows[0]) : null;
+}
+
+export async function addMessageToThreadOnce(options) {
+  const lookup = {
+    userId: options.userId,
+    threadId: options.threadId,
+    clientMessageId: options.clientMessageId,
+    source: options.metadata?.source,
+  };
+  const existing = await getMessageByClientId(lookup);
+  if (existing) return { message: existing, created: false };
+  try {
+    return { message: await addMessageToThread(options), created: true };
+  } catch (error) {
+    if (error?.code !== '23505') throw error;
+    const raced = await getMessageByClientId(lookup);
+    if (!raced && ['uniq_messages_owner_client_message', 'uniq_messages_thread_client_message'].includes(error?.constraint)) {
+      throw new HttpError(409, 'Client message ID already belongs to another message');
+    }
+    if (!raced) throw error;
+    return { message: raced, created: false };
+  }
+}
+
+export async function getAgentResultForInput(inputMessageId) {
+  const rows = await query(
+    `SELECT r.*,
+      m.id AS output_id
+    FROM agent_runs r
+    LEFT JOIN chat_messages m ON m.id = r.output_message_id
+    WHERE r.input_message_id = ?
+    ORDER BY r.created_at DESC, r.id DESC LIMIT 1`,
+    [inputMessageId],
+  );
+  if (!rows.length) return null;
+  const row = rows[0];
+  const output = row.output_id
+    ? (await query('SELECT * FROM chat_messages WHERE id = ? LIMIT 1', [row.output_id]))[0]
+    : null;
+  return {
+    agentRun: mapAgentRun(row),
+    outputMessage: output ? mapMessage(output) : null,
+  };
+}
+
+export async function completeAgentMessageOnce({
+  userId,
+  threadId,
+  inputMessageId,
+  agentId,
+  senderName,
+  content,
+  metadata,
+  status,
+  provider,
+  latencyMs,
+  tokenUsage = null,
+  errorMessage = null,
+}) {
+  return withTransaction(async (connection) => {
+    const [inputs] = await connection.execute(
+      `SELECT id FROM chat_messages
+       WHERE id = ? AND thread_id = ? AND user_id = ? AND sender_type = 'user'
+       FOR UPDATE`,
+      [inputMessageId, threadId, userId],
+    );
+    if (!inputs.length) throw new HttpError(404, "Input message not found");
+    const [existingRuns] = await connection.execute(
+      "SELECT * FROM agent_runs WHERE input_message_id = ? AND run_type = 'chat' LIMIT 1",
+      [inputMessageId],
+    );
+    if (existingRuns.length) {
+      const run = existingRuns[0];
+      const [outputs] = await connection.execute(
+        "SELECT * FROM chat_messages WHERE id = ? LIMIT 1",
+        [run.output_message_id],
+      );
+      if (!outputs.length) throw new HttpError(503, "Agent response is incomplete");
+      return {
+        agentRun: mapAgentRun(run),
+        outputMessage: mapMessage(outputs[0]),
+        created: false,
+      };
+    }
+
+    const outputId = crypto.randomUUID();
+    const runId = crypto.randomUUID();
+    const [outputs] = await connection.execute(
+      `INSERT INTO chat_messages
+         (id, thread_id, user_id, sender_type, sender_name, content, metadata)
+       VALUES (?, ?, ?, 'agent', ?, ?, ?::jsonb)
+       RETURNING *`,
+      [outputId, threadId, userId, senderName, content, JSON.stringify(metadata)],
+    );
+    const [runs] = await connection.execute(
+      `INSERT INTO agent_runs
+         (id, user_id, agent_id, thread_id, input_message_id, output_message_id,
+          status, provider, latency_ms, token_prompt, token_completion, token_total,
+          error_message, lifecycle_status, finished_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+       RETURNING *`,
+      [
+        runId, userId, agentId, threadId, inputMessageId, outputId,
+        status, provider, latencyMs,
+        tokenUsage?.prompt ?? null, tokenUsage?.completion ?? null,
+        tokenUsage?.total ?? null, errorMessage,
+        status === "success" ? "succeeded" : "failed",
+      ],
+    );
+    await connection.execute(
+      "UPDATE chat_threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [threadId],
+    );
+    return {
+      agentRun: mapAgentRun(runs[0]),
+      outputMessage: mapMessage(outputs[0]),
+      created: true,
+    };
   });
 }
 

@@ -14,7 +14,7 @@ import {
   rejectFriendRequest,
   unfollowUser,
 } from "../social-repository.js";
-import { friendRequestSchema, relationshipTypeSchema } from "../schemas.js";
+import { friendRequestSchema, relationshipPageSchema, relationshipTypeSchema } from "../schemas.js";
 
 export function registerSocialRoutes(
   app,
@@ -193,7 +193,9 @@ export function registerSocialRoutes(
     authenticate,
     asyncHandler(async (req, res) => {
       const { type } = relationshipTypeSchema.parse(req.params);
-      res.json({ data: await listRelationshipProfiles(req.user.id, type, 60, getOnlineUserIds()) });
+      const { limit, beforeCreatedAt, beforeRelationId } = relationshipPageSchema.parse(req.query);
+      res.json({ data: await listRelationshipProfiles(req.user.id, type, limit, getOnlineUserIds(),
+        beforeCreatedAt ? { createdAt: beforeCreatedAt, relationId: beforeRelationId } : null) });
     }),
   );
 

@@ -70,9 +70,25 @@ export const socialApi = {
     );
   },
 
-  relationships(type: 'following' | 'followers' | 'friends', token: string) {
+  relationships(
+    type: 'following' | 'followers' | 'friends',
+    token: string,
+    page?: {
+      limit: number;
+      before?: { createdAt: string; relationId: string };
+    },
+  ) {
+    const params = new URLSearchParams();
+    if (page) {
+      params.set('limit', String(page.limit));
+      if (page.before) {
+        params.set('beforeCreatedAt', page.before.createdAt);
+        params.set('beforeRelationId', page.before.relationId);
+      }
+    }
+    const query = params.toString();
     return request<RelationshipProfileDTO[]>(
-      `/api/social/relationships/${type}`,
+      `/api/social/relationships/${type}${query ? `?${query}` : ''}`,
       { token },
     );
   },

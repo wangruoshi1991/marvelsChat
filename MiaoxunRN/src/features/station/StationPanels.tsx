@@ -33,6 +33,7 @@ export function StationPanel({
   avatar3d,
   avatar3dStatus,
   avatar3dError,
+  selectedAvatar3dModelId,
   agents,
   agentReadiness,
   ownedAgents,
@@ -74,6 +75,7 @@ export function StationPanel({
   avatar3d: Avatar3DBootstrapDTO | null;
   avatar3dStatus: Avatar3DLoadState;
   avatar3dError: string;
+  selectedAvatar3dModelId: string | null;
   agents: AgentDTO[];
   agentReadiness: ReturnType<typeof useMiaoxunSession>['agentReadiness'];
   ownedAgents: OwnedAgentDTO[];
@@ -204,6 +206,7 @@ export function StationPanel({
             avatar3d={avatar3d}
             avatar3dStatus={avatar3dStatus}
             avatar3dError={avatar3dError}
+            selectedAvatar3dModelId={selectedAvatar3dModelId}
             agents={agents}
             ownedAgents={ownedAgents}
             onOpenAvatar3d={onOpenAvatar3d}

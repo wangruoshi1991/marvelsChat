@@ -53,7 +53,7 @@ React Native 是当前正式移动端主线，iOS 上线能力通过 `MiaoxunRN/
 - 妙讯页保留点击进入聊天，同时支持会话项左滑进入、聊天页左滑返回；聊天实时连接按登录 token 管理，增量游标保存在 ref 中，游标前进或在线状态事件都不会重建连接。`connection.ready` 只触发一次增量补偿，不再重新请求完整 bootstrap；在线状态变化通过 `presence.changed` 事件增量更新聊天列表和社交列表。
 - 登录/注册页和设置页已按独立移动端页面重排：账号面板、表单、偏好、权限、数据和账户操作分区展示。
 - 小站页的日记、相册、可调用 Agent 和文件区块按实际后端能力展示真实内容或明确空状态；未补 schema/API/权限/审核前不展示示例列表、示例封面或示例文件。新版第一面模块结构仍需调整。
-- 小站内容已开始按真实闭环接入：个人日记写入 `station_diary_entries`，相册元数据写入 `station_albums`，今日穿搭写入 `station_outfits`，媒体资产元数据写入 `station_media_assets`；照片拍摄/选图、OSS 上传凭证、上传完成回写、相册封面读取和动态聚合已接入，媒体审核和公开主页读取按 [小站能力闭环方案](docs/station-feature-closure.md) 继续实现。
+- 小站内容已开始按真实闭环接入：个人日记写入 `station_diary_entries`，相册元数据写入 `station_albums`，今日穿搭写入 `station_outfits`，媒体资产元数据写入 `station_media_assets`；照片拍摄/选图、OSS 上传凭证、上传完成回写、相册封面读取和动态聚合已接入。公开媒体读取已有后端可见性校验；媒体审核等未完成环节见 [小站能力闭环方案](docs/station-feature-closure.md)。
 
 ## 启动
 
@@ -158,14 +158,9 @@ GEOCODING_EMAIL=contact@example.com
 
 ## 文档
 
+- [文档索引](docs/README.md)：区分现行说明、上线检查和历史记录
 - [生产运维入口](docs/production-operations.md)
 - [项目结构说明](docs/project-structure.md)
 - [架构说明](docs/architecture.md)
-- [iOS 客户端规划](docs/ios.md)
-- [社交关系流程](docs/social-graph.md)
-- [数据库说明](docs/database.md)
-- [后台管理](docs/admin.md)
-- [Demo 迁移计划](docs/demo-migration.md)
-- [Agent 接入说明](docs/agents.md)
 - [部署说明](docs/deployment.md)
 - [移动端上线功能实施清单](docs/mobile-launch-checklist.md)

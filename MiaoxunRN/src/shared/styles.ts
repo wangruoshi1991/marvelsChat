@@ -176,6 +176,8 @@ export const styles = StyleSheet.create({
   avatarMiniCharacterSmall: { height: 54, marginTop: 14, width: 54 },
   chatScreen: { flex: 1 },
   chatSwipeSurface: { flex: 1 },
+  chatMessageArea: { flex: 1 },
+  chatMessageList: { flex: 1 },
   chatHeader: {
     alignItems: 'center',
     borderBottomWidth: 0.5,
