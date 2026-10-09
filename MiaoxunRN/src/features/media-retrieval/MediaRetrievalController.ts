@@ -14,6 +14,7 @@ import {
 } from './mediaRetrievalState';
 import {
   RetrievalAction,
+  RetrievalIssue,
   RetrievalRun,
   RetrievalState,
 } from './mediaRetrievalTypes';
@@ -49,6 +50,7 @@ export class MediaRetrievalController {
   } | null = null;
   private journalLoaded = false;
   private ignoredRuns = new Set<string>();
+  private statusIssue: RetrievalIssue | null = null;
   constructor(
     private token: string,
     private registered: boolean,
@@ -142,6 +144,14 @@ export class MediaRetrievalController {
       const status = await this.api.status(this.token);
       if (!this.alive || revision !== this.revision) return;
       const next = reconcileRetrievalStatus(this.state, status);
+      if (
+        this.statusIssue &&
+        this.state.error === this.statusIssue &&
+        !this.state.pendingOperation &&
+        !next.chargeReview
+      )
+        next.error = null;
+      this.statusIssue = null;
       this.update({
         ...next,
         events: next.run ? this.eventsByRun.get(next.run.id) || [] : [],
@@ -157,7 +167,7 @@ export class MediaRetrievalController {
         });
     } catch (error) {
       this.update({ statusStale: true });
-      this.failed(error);
+      this.statusIssue = this.failed(error);
     } finally {
       this.update({ refreshing: false });
       this.schedule();

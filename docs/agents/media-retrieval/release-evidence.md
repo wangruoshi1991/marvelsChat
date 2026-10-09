@@ -1,9 +1,9 @@
 # 媒体检索 Agent 发布证据
 
-- 状态: 生产已开放开发联调；真实图片链路通过，视频和 App 可用态修复正在验证，完整上线验收未完成
+- 状态: 生产已开放开发联调；真实图片/视频、隔离、撤回和清理 E2E 已通过，完整上线验收未完成
 - 生产生命周期: `limited_release`（对所有登录用户开放，各用户仍须自行同意私有素材索引）
 - 负责人: Jarson（个人负责）
-- App/TestFlight 集成: Build 45 已在双 Simulator 验证不可用状态；成功索引/搜索 E2E 和 TestFlight Build 45 尚未完成
+- App/TestFlight 集成: Build 45 双 Simulator 已安装；入口和同意页面可达，部分索引成功的 App 状态修复已通过定向回归；TestFlight Build 45 尚未上传
 - 真实模型校准: 公开素材真实模型小规模 smoke 已运行；供应商实际账单金额未知
 - 发布批准: 独立 Security Reviewer 和 Release Owner 尚未完成复核
 
@@ -43,7 +43,7 @@ admin: npm run build
 
 本文件不保存密钥、媒体、对象 URL、原始搜索语句或外部模型原始响应。
 
-## 2026-10-09 当前复核
+## 2026-10-09 部署前复核（历史）
 
 - `./scripts/check-repository.sh`：通过。RN 为 31 组 / 197 项；Agent、Admin、Avatar Web、媒体检索 Web、后端检查及生产构建均通过。默认后端门禁中的环境门控集成项不代替数据库专用测试。
 - `backend` 的 `npm run test:media-retrieval-migration`：在隔离 PostgreSQL / pgvector 中 7/7 通过，包含全迁移重复执行、无限额度、费用预留、所有者隔离、授权撤回与清理；没有连接生产数据库。
@@ -76,3 +76,11 @@ admin: npm run build
 - 停写后的恢复点为 `marvels_chat-20261009T044415Z.dump`，SHA-256 `1c32a2f8eb68092e87a57efc37e28885d1a8957db17518e26a303508acf53fce`，SHA 校验和 TOC 可读。032–034 为 3 applied / 31 unchanged；后端和 Worker 已切换、root 只读权限及 storage 所有权已核对，health/ready 200、NRestarts=0。
 - 开关和脱敏运维事件在同一事务中记录；`limited_release`、Agent/Provider/index=true，三个次数/费用上限=NULL，无账号白名单。新账号可读 available 状态；检索旧客户端 426、未登录 401、普通登录/bootstrap/3D 只读均已真实通过。
 - 公开图片与合成视频 ready 索引、图片开放式中英文检索、空负例及幂等查询通过；视频“自行车的画面”暴露确定性语法误判，替代原始描述不能视为该案例通过。已定位并正在验证修复，App cached readiness 和 Worker 长处理心跳也在修复。测试账号与其素材均已注销清理、聚合残留=0；未读取其他账号私有素材。完整生产 E2E 尚未通过。
+
+### 2026-10-09 runtime 02 与公开素材 E2E（最新）
+
+- runtime 02 来源 `63d6547c045e6bc9b90b95bf3d64c2588b293739`，标准制品 SHA-256 `0b855b75cfd2f2cd43761983dc9bef22cf39319a0c547030f47e5838ae2649d1`，365 文件校验通过；迁移 0 applied / 34 unchanged，Linux runtime 受影响测试 83/83，health/ready 200、服务 active。物体开放描述通过语法修复，没有添加“画面”等固定检索词；Worker 每 10 秒独立报告心跳。
+- 两个随机测试账号使用公开图片和合成视频，通过真实生产 API：注册/登录、OSS 上传、用户同意与索引、开放式中英文正例、空负例、幂等回放；原失败描述的视频回归命中 3000–6000 ms。本人预览 200、其他账号 404，另一空素材账号检索无跨账号结果。撤回同意立即 409，purge 成功且段残留 0，原素材保留；测试账号和媒体均注销清理，最终残留 0。
+- 成功批次 30 条 Provider 操作账本均 estimated，无 reserved/unknown：描述/图片向量各 8、解析/查询向量各 5、重排 4。未将预估当成账单。既有账号含中断/待核对的任务与账本，仍保留原状态，不自动重试或清零。
+- 最新 RN 修复部分索引失败误禁用全检索的页面；成功素材可继续搜索，未完成计数和提示保留。仅成功状态读取会清除对应旧错误，不清除搜索/索引错误或未知费用保护；空素材库不调用模型搜索。最终完整仓库门禁通过：RN 31 组 / 212 项，后端 437 passed / 4 门控 skipped，Agent 33、Admin 14、相关 Web/格式/lint/类型/构建通过。正常签名 Release Simulator Build 45 两机覆盖安装，保留数据；iPhone 17 部分成功页与输入按钮、SE3 空状态布局实测通过。用户自行提交的私有搜索返回空结果；助手未提交其私有查询。成功结果、软件键盘与视频跳转尚无 Simulator 视觉验收。
+- 开发联调范围的 verdict 为 `COMPLETE WITH CONDITIONS`：公开素材生产闭环已通过；正式上线 verdict 仍为 `BLOCKED`，缺 held-out 大库质量、独立安全/发布复核、真机/Android 和 TestFlight 分发。未宣称有限 smoke 可证明所有私人素材均可解析。

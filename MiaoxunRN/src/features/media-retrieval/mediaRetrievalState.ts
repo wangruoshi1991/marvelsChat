@@ -41,14 +41,25 @@ export function phaseFor(
     return 'blocked';
   if (!state.status.enabled) return 'disabled';
   if (state.run && !terminalRun(state.run.lifecycleStatus)) return 'indexing';
-  if (state.run && ['failed', 'blocked'].includes(state.run.lifecycleStatus))
-    return 'blocked';
+  if (state.run && ['failed', 'blocked'].includes(state.run.lifecycleStatus)) {
+    const partialIndex =
+      ['media-index', 'media-reindex'].includes(state.run.runType) &&
+      [
+        'retrieval_child_jobs_failed',
+        'retrieval_child_jobs_blocked',
+        'retrieval_policy_unverifiable',
+        'asset_not_indexable',
+      ].includes(state.run.failureCode || '') &&
+      state.status.backfill.indexedAssets > 0;
+    if (!partialIndex) return 'blocked';
+  }
   return 'ready';
 }
 
 export function canSearch(state: RetrievalState, registered: boolean) {
   return Boolean(
     state.status?.enabled &&
+      state.status.backfill.indexedAssets > 0 &&
       state.status.consentVersion === 'media-retrieval-consent-v1' &&
       registered &&
       state.status.availability.canStartRun &&
@@ -120,7 +131,6 @@ export function reconcileRetrievalStatus(
     purgePending
       ? { results: [], searched: false }
       : {}),
-    ...(state.error?.code === 'network' ? { error: null } : {}),
     ...(chargeReview
       ? {
           error: {
@@ -165,6 +175,10 @@ const messages: Record<string, string> = {
   asset_not_indexable: '该素材暂时无法检索，请检查素材状态。',
   run_not_found: '当前任务不可用，已停止跟踪，请刷新状态。',
   retrieval_policy_unverifiable: '暂时无法处理这段描述，请换一种方式描述画面。',
+  retrieval_child_jobs_failed:
+    '部分素材整理失败，已整理的素材仍可检索。未完成的素材不会自动重试。',
+  retrieval_child_jobs_blocked:
+    '部分素材尚未整理完成，已整理的素材仍可检索。未完成的素材不会自动重试。',
   retrieval_provider_transport_unavailable:
     '检索服务连接暂时中断，请稍后再试。',
   retrieval_purge_incomplete: '清理仍待确认，完成前无法检索。',

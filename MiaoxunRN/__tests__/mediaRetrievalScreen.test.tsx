@@ -185,4 +185,76 @@ describe('Find media screen', () => {
     expect(rendered).toContain('画面内容匹配');
     expect(rendered).not.toContain('descriptor-match');
   });
+
+  it('shows partial indexing and searches ready media only after the user submits', async () => {
+    const partial = status(true);
+    (mediaRetrievalApi.status as jest.Mock).mockResolvedValue({
+      ...partial,
+      backfill: {
+        ...partial.backfill,
+        indexedAssets: 5,
+        totalAssets: 7,
+        skippedAssets: 2,
+      },
+      recentRuns: [
+        {
+          id: 'partial-index',
+          agentId: 'media-retrieval',
+          runType: 'media-index',
+          status: 'error',
+          lifecycleStatus: 'failed',
+          failureCode: 'retrieval_child_jobs_failed',
+          traceId: null,
+          attempt: 1,
+          createdAt: null,
+          finishedAt: null,
+        },
+      ],
+    });
+    await open();
+    const rendered = JSON.stringify(renderer.toJSON());
+    expect(rendered).toContain('已有素材可检索');
+    expect(rendered).toContain('已整理 5 / 7 个素材，2 个待处理');
+    expect(rendered).toContain('未完成的素材不会自动重试');
+    expect(rendered).not.toContain('检索暂不可用');
+    expect(mediaRetrievalApi.search).not.toHaveBeenCalled();
+    expect(mediaRetrievalApi.reindex).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByType(TextInput).props.onChangeText('黄色裙子');
+    });
+    expect(
+      renderer.root.findByProps({ accessibilityLabel: '搜索素材' }).props
+        .disabled,
+    ).toBe(false);
+    await ReactTestRenderer.act(async () => {
+      renderer.root
+        .findByProps({ accessibilityLabel: '搜索素材' })
+        .props.onPress();
+    });
+    expect(mediaRetrievalApi.search).toHaveBeenCalledTimes(1);
+  });
+
+  it('explains an empty library and does not dispatch a model search without indexed media', async () => {
+    const empty = status(true);
+    (mediaRetrievalApi.status as jest.Mock).mockResolvedValue({
+      ...empty,
+      backfill: { ...empty.backfill, indexedAssets: 0, totalAssets: 0 },
+    });
+    await open();
+    expect(JSON.stringify(renderer.toJSON())).toContain('暂无可检索素材');
+    expect(JSON.stringify(renderer.toJSON())).toContain('上传图片或视频后');
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByType(TextInput).props.onChangeText('黄色裙子');
+    });
+    expect(
+      renderer.root.findByProps({ accessibilityLabel: '搜索素材' }).props
+        .disabled,
+    ).toBe(true);
+    await ReactTestRenderer.act(async () => {
+      renderer.root
+        .findByProps({ accessibilityLabel: '搜索素材' })
+        .props.onPress();
+    });
+    expect(mediaRetrievalApi.search).not.toHaveBeenCalled();
+  });
 });

@@ -33,7 +33,9 @@ export function RetrievalStatusCard({
     disabled: t('让描述帮你找到素材', 'Find media with a description'),
     enable: t('正在启用', 'Enabling retrieval'),
     indexing: t('正在整理素材', 'Indexing your media'),
-    ready: t('素材已准备好', 'Your media is ready'),
+    ready: state.status?.backfill.indexedAssets
+      ? t('已有素材可检索', 'Your indexed media is searchable')
+      : t('暂无可检索素材', 'No indexed media yet'),
     blocked: t('检索暂不可用', 'Retrieval unavailable'),
     purging: t('正在清除检索数据', 'Clearing retrieval data'),
   };
@@ -156,6 +158,22 @@ export function RetrievalStatusCard({
                 : ''
             }`,
             `${state.status.backfill.indexedAssets} of ${state.status.backfill.totalAssets} media indexed; ${state.status.backfill.skippedAssets} require attention`,
+          )}
+        </Text>
+      ) : null}
+      {phase === 'ready' && state.status?.backfill.skippedAssets ? (
+        <Text style={[styles.caption, { color: c.secondaryText }]}>
+          {t(
+            '部分素材尚未整理完成，当前可搜索已整理的素材。未完成的素材不会自动重试。',
+            'Some media still requires attention. Search your indexed media now; unfinished tasks are not retried automatically.',
+          )}
+        </Text>
+      ) : null}
+      {phase === 'ready' && !state.status?.backfill.totalAssets ? (
+        <Text style={[styles.caption, { color: c.secondaryText }]}>
+          {t(
+            '上传图片或视频后，即可整理并检索自己的素材。',
+            'Upload photos or videos to index and search your own media.',
           )}
         </Text>
       ) : null}

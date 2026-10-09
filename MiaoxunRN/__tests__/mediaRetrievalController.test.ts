@@ -417,6 +417,111 @@ describe('media retrieval lifecycle', () => {
     expect(api.search).not.toHaveBeenCalled();
   });
 
+  it('clears an obsolete status-read error after a verified refresh', async () => {
+    const api = mockApi();
+    api.status.mockRejectedValueOnce(
+      new MiaoxunApiError('unavailable', {
+        code: 'retrieval_service_unavailable',
+        status: 503,
+      }),
+    );
+    const controller = create(api);
+    await controller.refresh();
+    expect(controller.state.statusStale).toBe(true);
+    expect(controller.state.error?.code).toBe('retrieval_service_unavailable');
+    await controller.refresh();
+    expect(controller.state.error).toBeNull();
+    expect(canSearch(controller.state, true)).toBe(true);
+  });
+
+  it.each([
+    new MiaoxunApiError('offline', { isNetworkError: true }),
+    new MiaoxunApiError('unavailable', {
+      code: 'retrieval_service_unavailable',
+      status: 503,
+    }),
+  ])('preserves a search failure when status refresh succeeds', async error => {
+    const api = mockApi();
+    api.search.mockRejectedValueOnce(error);
+    const controller = create(api);
+    await controller.refresh();
+    await controller.search('yellow dress');
+    const issue = controller.state.error;
+    await controller.refresh();
+    expect(controller.state.error).toBe(issue);
+    expect(api.search).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['media-index', 'media-reindex'])(
+    'searches ready assets after partial %s failure without restarting index tasks',
+    async runType => {
+      const api = mockApi();
+      const partial = status(true, [
+        {
+          ...run('failed', runType),
+          failureCode: 'retrieval_child_jobs_failed',
+        },
+      ]);
+      partial.backfill = {
+        ...partial.backfill,
+        indexedAssets: 5,
+        totalAssets: 7,
+        skippedAssets: 2,
+      };
+      api.status.mockResolvedValue(partial);
+      const controller = create(api);
+      await controller.refresh();
+      expect(phaseFor(controller.state, true)).toBe('ready');
+      expect(canSearch(controller.state, true)).toBe(true);
+      expect(api.search).not.toHaveBeenCalled();
+      await controller.search('yellow dress');
+      expect(api.search).toHaveBeenCalledTimes(1);
+      expect(api.enable).not.toHaveBeenCalled();
+      expect(api.reindex).not.toHaveBeenCalled();
+      expect(controller.state.status?.backfill.skippedAssets).toBe(2);
+    },
+  );
+
+  it.each([
+    'retrieval_unknown_charge_no_retry',
+    'retrieval_purge_incomplete',
+    'retrieval_repository_write_failed',
+  ])('keeps %s blocked despite indexed assets', async failureCode => {
+    const api = mockApi();
+    api.status.mockResolvedValue(
+      status(true, [{ ...run('failed'), failureCode }]),
+    );
+    const controller = create(api);
+    await controller.refresh();
+    await controller.search('yellow dress');
+    expect(phaseFor(controller.state, true)).toBe('blocked');
+    expect(api.search).not.toHaveBeenCalled();
+  });
+
+  it('does not enable partial retrieval with zero ready assets or a closed service', async () => {
+    const api = mockApi();
+    const partial = status(true, [
+      { ...run('failed'), failureCode: 'retrieval_child_jobs_failed' },
+    ]);
+    partial.backfill.indexedAssets = 0;
+    api.status.mockResolvedValue(partial);
+    const controller = create(api);
+    await controller.refresh();
+    expect(canSearch(controller.state, true)).toBe(false);
+    api.status.mockResolvedValue({
+      ...partial,
+      backfill: { ...partial.backfill, indexedAssets: 1 },
+      availability: {
+        state: 'temporarily-unavailable',
+        canStartRun: false,
+        reasonCodes: ['operator-disabled'],
+      },
+    });
+    await controller.refresh();
+    await controller.search('yellow dress');
+    expect(api.search).not.toHaveBeenCalled();
+  });
+
   it('keeps tracking an older active task when a newer upload has completed', async () => {
     const api = mockApi();
     const active = { ...run('running', 'media-reindex'), id: 'older-reindex' };

@@ -13,7 +13,27 @@ SHA-256，并明确 `includesWorkingTreeChanges=false`。
 worktree、手工复制的 dist 或“HEAD 加本地修改”作为生产来源。`npm run test:release-package`
 在隔离的临时 Git 仓库中覆盖成功路径、前端重新构建、敏感配置排除、来源 revision 和清单哈希。
 
-## 已核对的发布基线（2026-09-29）
+## 已核对的发布基线（2026-10-09）
+
+2026-10-09 已按用户授权完成媒体检索开发联调开放。当前活动 runtime 为
+`/opt/projects/marvels-chat/releases/media-retrieval-20261009-02/runtime`，来源 `63d6547`；
+032–034 已执行，迁移账本 34 项。后端/Worker/PostgreSQL active，health/ready 200。
+DB lifecycle 为 `limited_release`、Agent/Provider/index 全开，日次数、月预算与全局日预算为 NULL；
+保留瞬时限流与用户主动同意，没有账号白名单。Build 45 / 合同 v2 才能使用检索接口，
+TestFlight 仍为 44。公开图片/视频检索、跨账号隔离与撤回清理 E2E 已通过，完整上线验收未完成。
+
+制品 SHA-256：`0b855b75cfd2f2cd43761983dc9bef22cf39319a0c547030f47e5838ae2649d1`，
+365 文件清单校验通过。切换前保留原环境与 storage，执行 root 只读权限加固；3D 的
+`AVATAR_3D_ALLOWLIST=*` 保留。02 与 01 无 schema 差异，可按标准停写切换代码回滚到 01；
+回到迁移前旧代码则须停写并恢复迁移前数据库。
+
+停写后的迁移前恢复点为
+`/opt/projects/marvels-chat/database/backups/marvels_chat-20261009T044415Z.dump`，
+SHA-256 为 `1c32a2f8eb68092e87a57efc37e28885d1a8957db17518e26a303508acf53fce`；
+摘要与 450 行 TOC 可读、加密 OSS 归档和 manifest 成功。本轮未做完整恢复演练。
+详细证据见 [媒体检索发布记录](agents/media-retrieval/release-evidence.md)。
+
+## 此前发布基线（2026-09-29，历史）
 
 2026-09-29 只读核对：正式 runtime 仍为
 `/opt/projects/marvels-chat/releases/app-integration-20260916-04/runtime`，数据库迁移账本有 31 项，
