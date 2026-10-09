@@ -53,6 +53,25 @@ test("a harmless visual query remains bound, hash-verified, and embedding-eligib
   assert.deepEqual(verifyVisualEmbeddingInput(input), input);
 });
 
+test("Chinese object details use validated semantics without a vocabulary entry for each detail", () => {
+  for (const rawQuery of ["自行车的画面", "汽车的擦痕", "杯子的裂纹", "飞艇的画面"]) {
+    const input = buildVisualEmbeddingInput({
+      rawQuery,
+      candidate: { visualQuery: rawQuery, identityTerms: [], parseConfidence: "high" },
+    });
+    assert.equal(input.mode, "semantic", rawQuery);
+    assert.equal(input.semanticText, rawQuery);
+    assert.deepEqual(input.identityTerms, [], rawQuery);
+    assert.deepEqual(verifyVisualEmbeddingInput(input), input);
+  }
+  const invalid = buildVisualEmbeddingInput({
+    rawQuery: "自行车的画面",
+    candidate: { visualQuery: "自行车的画面", identityTerms: [], parseConfidence: "low" },
+  });
+  assert.equal(invalid.mode, "exact-only");
+  assert.equal(invalid.text, "");
+});
+
 test("an omitted internal parser candidate keeps deterministic controlled visual replay eligible", () => {
   const input = buildVisualEmbeddingInput({ rawQuery: "yellow dress on a beach" });
 

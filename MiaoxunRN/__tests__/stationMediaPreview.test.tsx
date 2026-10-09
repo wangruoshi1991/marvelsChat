@@ -1,7 +1,9 @@
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { StationMediaPreviewScreen } from '../src/features/station/StationMediaPreviewScreen';
-import { StationMediaAssetDTO } from '../src/models/api';
+import { AgentDTO, StationMediaAssetDTO } from '../src/models/api';
+import { StationMediaRetrievalWorkspace } from '../src/features/station/StationMediaRetrievalWorkspace';
+import { MediaRetrievalScreen } from '../src/features/media-retrieval/MediaRetrievalScreen';
 import { palettes } from '../src/shared/theme';
 import { stationContentApi } from '../src/services/api/stationContentApi';
 import { MiaoxunApiError } from '../src/services/api/http';
@@ -10,6 +12,39 @@ import { supportsMediaRetrieval } from '../src/services/appFeatures';
 jest.mock('../src/services/api/stationContentApi', () => ({
   stationContentApi: { stationMediaAsset: jest.fn() },
 }));
+
+jest.mock('../src/features/media-retrieval/MediaRetrievalScreen', () => ({
+  MediaRetrievalScreen: jest.fn(() => null),
+}));
+
+test('workspace checks registration while the retrieval status API owns live availability', async () => {
+  let renderer!: TestRenderer.ReactTestRenderer;
+  const props = {
+    token: 'test-token',
+    userId: 'test-user',
+    palette: palettes.light,
+    language: 'zh' as const,
+    onClose: jest.fn(),
+  };
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <StationMediaRetrievalWorkspace
+        {...props}
+        agents={[{ key: 'media-retrieval', status: 'registered' } as AgentDTO]}
+      />,
+    );
+  });
+  expect(
+    renderer.root.findByType(MediaRetrievalScreen).props.registeredAvailability,
+  ).toBe(true);
+  await act(async () => {
+    renderer.update(<StationMediaRetrievalWorkspace {...props} agents={[]} />);
+  });
+  expect(
+    renderer.root.findByType(MediaRetrievalScreen).props.registeredAvailability,
+  ).toBe(false);
+  await act(async () => renderer.unmount());
+});
 
 test('video uses authenticated media endpoint and seeks to matched time after load', async () => {
   let renderer!: TestRenderer.ReactTestRenderer;

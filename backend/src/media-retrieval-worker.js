@@ -110,36 +110,56 @@ export async function runMediaRetrievalWorker({
   }
   let lastRetentionAt = 0;
   await repository.heartbeatMediaRetrievalWorker({ workerId, state: "starting" });
-  while (!signal?.aborted) {
-    await repository.heartbeatMediaRetrievalWorker({ workerId, state: "ready" });
-    if (now() - lastRetentionAt >= 24 * 60 * 60 * 1000) {
-      await repository.runMediaRetrievalRetentionSweep({ now: new Date(now()) });
-      lastRetentionAt = now();
-    }
-    await repository.reclaimExpiredMediaRetrievalJobs();
-    const cleanupTask = await repository.claimMediaRetrievalTemporaryCleanup({ workerId });
-    if (cleanupTask) {
-      try {
-        await media.deleteEphemeralProviderObject({ objectKey: cleanupTask.objectKey || cleanupTask.object_key });
-        await repository.completeMediaRetrievalTemporaryCleanup({ cleanupTaskId: cleanupTask.id, workerId });
-      } catch {
-        await repository.retryMediaRetrievalTemporaryCleanup({ cleanupTaskId: cleanupTask.id, workerId });
+  let heartbeatInFlight = null;
+  let heartbeatFailure = null;
+  // Video extraction and model calls can exceed the readiness freshness window.
+  // Liveness must continue independently of the currently leased job.
+  const heartbeatTimer = setInterval(() => {
+    if (heartbeatInFlight || heartbeatFailure || signal?.aborted) return;
+    heartbeatInFlight = Promise.resolve()
+      .then(() => repository.heartbeatMediaRetrievalWorker({ workerId, state: "ready" }))
+      .catch(error => { heartbeatFailure = error; })
+      .finally(() => { heartbeatInFlight = null; });
+  }, 10_000);
+  heartbeatTimer.unref?.();
+  try {
+    while (!signal?.aborted) {
+      if (heartbeatFailure) throw heartbeatFailure;
+      await repository.heartbeatMediaRetrievalWorker({ workerId, state: "ready" });
+      if (now() - lastRetentionAt >= 24 * 60 * 60 * 1000) {
+        await repository.runMediaRetrievalRetentionSweep({ now: new Date(now()) });
+        lastRetentionAt = now();
       }
-      continue;
+      await repository.reclaimExpiredMediaRetrievalJobs();
+      const cleanupTask = await repository.claimMediaRetrievalTemporaryCleanup({ workerId });
+      if (cleanupTask) {
+        try {
+          await media.deleteEphemeralProviderObject({ objectKey: cleanupTask.objectKey || cleanupTask.object_key });
+          await repository.completeMediaRetrievalTemporaryCleanup({ cleanupTaskId: cleanupTask.id, workerId });
+        } catch {
+          await repository.retryMediaRetrievalTemporaryCleanup({ cleanupTaskId: cleanupTask.id, workerId });
+        }
+        continue;
+      }
+      const outbox = await repository.claimMediaRetrievalLifecycleOutbox({ workerId });
+      if (outbox) {
+        await repository.createAssetPurgeRunAndJob({ outboxId: outbox.id, workerId });
+        continue;
+      }
+      const job = await repository.claimNextMediaRetrievalJob({ workerId });
+      if (job) {
+        await processMediaRetrievalJob({ job, repository, provider, media, workerId });
+        continue;
+      }
+      await sleep(pollMs, signal);
     }
-    const outbox = await repository.claimMediaRetrievalLifecycleOutbox({ workerId });
-    if (outbox) {
-      await repository.createAssetPurgeRunAndJob({ outboxId: outbox.id, workerId });
-      continue;
-    }
-    const job = await repository.claimNextMediaRetrievalJob({ workerId });
-    if (job) {
-      await processMediaRetrievalJob({ job, repository, provider, media, workerId });
-      continue;
-    }
-    await sleep(pollMs, signal);
+    if (heartbeatFailure) throw heartbeatFailure;
+  } finally {
+    clearInterval(heartbeatTimer);
+    if (heartbeatInFlight) await heartbeatInFlight;
+    if (!heartbeatFailure) await repository.heartbeatMediaRetrievalWorker({ workerId, state: "stopped" });
   }
-  await repository.heartbeatMediaRetrievalWorker({ workerId, state: "stopped" });
+  if (heartbeatFailure) throw heartbeatFailure;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -360,7 +360,7 @@ export function createMediaRetrievalBudgetAdminRepository({
   const getMediaRetrievalAdminOverview = async () => {
     const [controlsRows, healthRows, queueRows, segmentRows, costRows, runRows] = await Promise.all([
       query("SELECT * FROM media_retrieval_operator_controls WHERE id = TRUE LIMIT 1"),
-      query("SELECT MAX(last_seen_at) AS last_seen_at FROM media_retrieval_worker_heartbeats"),
+      query("SELECT MAX(last_seen_at) AS last_seen_at FROM media_retrieval_worker_heartbeats WHERE state = 'ready'"),
       query(`SELECT status, COUNT(*) AS total FROM media_retrieval_jobs GROUP BY status`),
       query(`SELECT COUNT(*) AS total FROM media_retrieval_segments WHERE state = 'ready'`),
       query(`SELECT reserved_fen, estimated_fen, unknown_fen

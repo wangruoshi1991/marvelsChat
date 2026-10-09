@@ -12,7 +12,7 @@ import {
 } from "./media-retrieval-visual-language.js";
 import { validateMediaRetrievalParserResponse } from "./media-retrieval-parser-response.js";
 
-export const MEDIA_RETRIEVAL_EMBEDDING_POLICY_VERSION = "media-retrieval-semantic-visual-policy-v9";
+export const MEDIA_RETRIEVAL_EMBEDDING_POLICY_VERSION = "media-retrieval-semantic-visual-policy-v10";
 export const MEDIA_RETRIEVAL_EMBEDDING_NORMALIZATION_VERSION = "nfkc-whitespace-v1";
 export const MEDIA_RETRIEVAL_VISUAL_EMBEDDING_INPUT_KIND = "media-retrieval-typed-visual-embedding-v2";
 export const MEDIA_RETRIEVAL_SEMANTIC_SERIALIZATION_VERSION = "semantic-v1";

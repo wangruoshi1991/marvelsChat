@@ -520,7 +520,6 @@ export function StationScreen({
                 palette={palette}
                 language={language}
                 agents={session.agents}
-                agentReadiness={session.agentReadiness}
                 onClose={() => setIsMediaRetrievalOpen(false)}
               />
             ) : contentListDetail?.type === 'create' ? (

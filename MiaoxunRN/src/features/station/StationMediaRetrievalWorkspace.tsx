@@ -1,10 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import {
-  AgentDTO,
-  AgentReadinessDTO,
-  StationMediaAssetDTO,
-} from '../../models/api';
+import { AgentDTO, StationMediaAssetDTO } from '../../models/api';
 import { stationContentApi } from '../../services/api/stationContentApi';
 import { MiaoxunApiError } from '../../services/api/http';
 import { Palette } from '../../shared/theme';
@@ -19,7 +15,6 @@ export function StationMediaRetrievalWorkspace({
   palette,
   language,
   agents,
-  agentReadiness,
   onClose,
 }: {
   token: string;
@@ -27,7 +22,6 @@ export function StationMediaRetrievalWorkspace({
   palette: Palette;
   language: Language;
   agents: AgentDTO[];
-  agentReadiness: Record<string, AgentReadinessDTO>;
   onClose: () => void;
 }) {
   const [preview, setPreview] = useState<{
@@ -55,13 +49,10 @@ export function StationMediaRetrievalWorkspace({
           token={token}
           palette={palette}
           language={language}
-          registeredAvailability={
-            agents.some(
-              agent =>
-                agent.key === 'media-retrieval' &&
-                agent.status === 'registered',
-            ) && agentReadiness['media-retrieval']?.configured === true
-          }
+          registeredAvailability={agents.some(
+            agent =>
+              agent.key === 'media-retrieval' && agent.status === 'registered',
+          )}
           onClose={onClose}
           onOpenResult={onOpenResult}
           invalidatedAssetId={invalidatedAssetId}

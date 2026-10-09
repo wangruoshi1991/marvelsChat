@@ -285,6 +285,75 @@ test("the worker claims and retries durable temporary-object cleanup before new 
   ]);
 });
 
+test("worker liveness stays fresh during long processing and stops after shutdown", async (context) => {
+  context.mock.timers.enable({ apis: ["setInterval"] });
+  const controller = new AbortController();
+  const states = [];
+  let signalBusy;
+  let finishWork;
+  const busy = new Promise(resolve => { signalBusy = resolve; });
+  const pending = new Promise(resolve => { finishWork = resolve; });
+  const repository = {
+    ...WORKER_REPOSITORY_CONTRACT,
+    heartbeatMediaRetrievalWorker: async ({ state }) => states.push(state),
+    claimMediaRetrievalTemporaryCleanup: async () => ({ id: "long-cleanup", objectKey: "test-only-object" }),
+    completeMediaRetrievalTemporaryCleanup: async () => { controller.abort(); return true; },
+  };
+  const worker = runMediaRetrievalWorker({
+    repository, provider: {}, signal: controller.signal, workerId: "long-work-test", pollMs: 1,
+    media: { deleteEphemeralProviderObject: async () => { signalBusy(); await pending; } },
+  });
+  await busy;
+  try {
+    context.mock.timers.tick(10_000);
+    await Promise.resolve();
+    assert.deepEqual(states, ["starting", "ready", "ready"]);
+  } finally {
+    finishWork();
+    await worker;
+  }
+  assert.equal(states.at(-1), "stopped");
+  const count = states.length;
+  context.mock.timers.tick(60_000);
+  await Promise.resolve();
+  assert.equal(states.length, count);
+});
+
+test("background heartbeat failure stops dispatch after the current bounded operation", async (context) => {
+  context.mock.timers.enable({ apis: ["setInterval"] });
+  const controller = new AbortController();
+  let calls = 0;
+  let signalBusy;
+  let finishWork;
+  const busy = new Promise(resolve => { signalBusy = resolve; });
+  const pending = new Promise(resolve => { finishWork = resolve; });
+  const failure = new Error("test-only-heartbeat-failure");
+  const worker = runMediaRetrievalWorker({
+    signal: controller.signal, workerId: "heartbeat-error-test", pollMs: 1, provider: {},
+    repository: {
+      ...WORKER_REPOSITORY_CONTRACT,
+      heartbeatMediaRetrievalWorker: async () => { if (++calls >= 3) throw failure; },
+      claimMediaRetrievalTemporaryCleanup: async () => ({ id: "long-cleanup", objectKey: "test-only-object" }),
+      completeMediaRetrievalTemporaryCleanup: async () => { controller.abort(); return true; },
+    },
+    media: { deleteEphemeralProviderObject: async () => { signalBusy(); await pending; } },
+  });
+  const rejected = assert.rejects(worker, error => error === failure);
+  await busy;
+  try {
+    context.mock.timers.tick(10_000);
+    await Promise.resolve();
+    assert.equal(calls, 3);
+  } finally {
+    finishWork();
+    await rejected;
+  }
+  const count = calls;
+  context.mock.timers.tick(60_000);
+  await Promise.resolve();
+  assert.equal(calls, count);
+});
+
 test("a purge job only succeeds after physical derived-artifact deletion reports zero residue", async () => {
   const calls = [];
   const repository = {

@@ -1,7 +1,7 @@
 # 媒体检索 Agent 发布证据
 
-- 状态: 本地候选代码与自动化验证通过；生产服务不可用，发布仍被安全/质量门槛阻断
-- 生产生命周期: `sandbox`（本地候选 Agent 生命周期不代表生产状态）
+- 状态: 生产已开放开发联调；真实图片链路通过，视频和 App 可用态修复正在验证，完整上线验收未完成
+- 生产生命周期: `limited_release`（对所有登录用户开放，各用户仍须自行同意私有素材索引）
 - 负责人: Jarson（个人负责）
 - App/TestFlight 集成: Build 45 已在双 Simulator 验证不可用状态；成功索引/搜索 E2E 和 TestFlight Build 45 尚未完成
 - 真实模型校准: 公开素材真实模型小规模 smoke 已运行；供应商实际账单金额未知
@@ -69,3 +69,10 @@ admin: npm run build
 - 新恢复点 `marvels_chat-20261009T043128Z.dump` SHA-256 为 `0e666db9606226493bed22b67904afea3621e324a4a73b980289d7acc10ef5ba`，校验和、450 行 custom dump TOC 与加密异地归档/manifest 成功。本次尚未完整恢复演练。
 - iOS Release sourcemap 2,815 个模块中未包含 braces、micromatch、fast-glob、Metro、metro-file-map 或 CLI；依赖 High 为未修复的构建工具风险，不是零漏洞结论。Android 临时 JDK/SDK tools 已准备，Google SDK 法律协议仍待用户接受，未开始 Android 编译。
 - 后端合同 v2 支持先部署：Build 44 检索接口明确返回 426，不影响其他既有 API；Build 45 已安装到两个 Simulator，TestFlight 尚未分发。
+
+### 2026-10-09 已执行的生产变更
+
+- 标准 runtime `media-retrieval-20261009-01` 来自 `70789b1b6ce9c35bf18e28978ea99bc4c0ab63b6`，365 文件哈希校验通过；官方 registry 服务器生产依赖审计 0，Linux 完整源码后端测试 434 passed / 4 skipped。
+- 停写后的恢复点为 `marvels_chat-20261009T044415Z.dump`，SHA-256 `1c32a2f8eb68092e87a57efc37e28885d1a8957db17518e26a303508acf53fce`，SHA 校验和 TOC 可读。032–034 为 3 applied / 31 unchanged；后端和 Worker 已切换、root 只读权限及 storage 所有权已核对，health/ready 200、NRestarts=0。
+- 开关和脱敏运维事件在同一事务中记录；`limited_release`、Agent/Provider/index=true，三个次数/费用上限=NULL，无账号白名单。新账号可读 available 状态；检索旧客户端 426、未登录 401、普通登录/bootstrap/3D 只读均已真实通过。
+- 公开图片与合成视频 ready 索引、图片开放式中英文检索、空负例及幂等查询通过；视频“自行车的画面”暴露确定性语法误判，替代原始描述不能视为该案例通过。已定位并正在验证修复，App cached readiness 和 Worker 长处理心跳也在修复。测试账号与其素材均已注销清理、聚合残留=0；未读取其他账号私有素材。完整生产 E2E 尚未通过。

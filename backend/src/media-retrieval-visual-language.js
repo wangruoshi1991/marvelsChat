@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 // The deterministic visual path uses a closed vocabulary. Open descriptions
 // require validated model parsing and preserved unknown spans before embedding.
 export const MEDIA_RETRIEVAL_VISUAL_ONTOLOGY_VERSION = "media-retrieval-visual-ontology-v3";
-export const MEDIA_RETRIEVAL_VISUAL_GRAMMAR_VERSION = "media-retrieval-controlled-visual-grammar-v3";
+export const MEDIA_RETRIEVAL_VISUAL_GRAMMAR_VERSION = "media-retrieval-controlled-visual-grammar-v4";
 export const MEDIA_RETRIEVAL_VISUAL_SERIALIZATION_VERSION = "visual-v2";
 
 const TYPE_ORDER = Object.freeze([
@@ -349,7 +349,11 @@ const hasUnprovedIdentityContext = (tokens, raw) => {
     // if the parser missed it. Other identities still require model parsing.
     if (token.language === "english" && previous?.normalized === "with" &&
       /^[A-Z]/u.test(raw.slice(token.start, token.end))) return true;
-    if (token.language === "han" && earlierVisual && previous?.kind === "syntax" && ["的", "里"].includes(previous.normalized)) {
+    // An object followed by 的 attaches an open detail to that object. The
+    // validated parser still has to preserve the detail and remove identities;
+    // an unknown noun here is not evidence of a person's name by itself.
+    const objectDetail = previous?.normalized === "的" && isVisualType(content[index - 2], "object");
+    if (token.language === "han" && earlierVisual && previous?.kind === "syntax" && ["的", "里"].includes(previous.normalized) && !objectDetail) {
       return true;
     }
     if (token.language === "han" && !earlierVisual && laterVisual && next?.kind === "syntax" && next.normalized === "在") {

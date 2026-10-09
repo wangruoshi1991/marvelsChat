@@ -11,13 +11,13 @@
 ## 当前候选与未闭环事项
 
 - 工作分支为 `codex/testflight-44`。本轮消息幂等、社交分页、3D 可用性与模型选择、聊天菜单定位及文档整合已通过本地门禁；推送仅针对该功能分支，不代表生产部署或 TestFlight。
-- `backend/database/032_message_idempotency_social_paging.sql` 尚未在生产执行。2026-09-29 的历史只读预检显示当时迁移账本停在 031、历史唯一索引冲突数为 0；本轮未连接生产库，发布前须重新预检、停写后新备份、执行迁移、部署兼容后端并双账号 smoke，最后才是 TestFlight。
+- 2026-10-09 已按用户授权在停写备份后执行生产迁移 032–034，账本 34 项且 readiness 为 200。生产 runtime 为 `media-retrieval-20261009-01`，来源提交 `70789b1`；后端与 Worker active。检索 DB 控制已设为 `limited_release`、Agent/Provider/index=true，三个次数/费用上限均为 NULL，无账号白名单；这是开发联调开放，完整上线质量验收尚未完成。
 - 3D 生成已于 2026-09-29 按用户明确授权在生产全量开放，复用现有 `AVATAR_3D_ALLOWLIST=*`，没有引入新的权限模式。17 个活跃账号的只读 bootstrap 全部确认 enabled 与 generationAvailable；个人每日额度为 3，尚无全局费用上限。此次未创建任务或触发付费调用。未来发布必须保留该通配配置，不能用空白环境样例覆盖。
 - 聊天更多菜单已改为按消息整行测量并避让，补充上下箭头与定位测试。本轮在 iPhone 17 的正式 API 会话中通过无障碍内容操作入口复核本人消息与对方长消息：四项文字可见，更多菜单动作可展开，对方长消息菜单在上方、箭头朝下，未覆盖当前消息的头像和昵称。尚未覆盖 SE3 已登录界面、四边物理长按拖选、顶部短消息和引用回复，不得宣称完整 UI gate 已通过。截图仅现场检查，不把私人会话保存到仓库。
 - QA 数据库中的两名测试账号已从隔离库 `marvels_chat_test` 删除；删除前仓储扫描确认私有存储引用为 0，删除后确认目标 ID 均不存在。QA 后端和容器仍运行，未清除其他 Simulator、本地数据库或构建归档。
-- 已定位 Simulator 的两个登录问题：SE3 原包连已清空的隔离库，正式账号在该库无法登录；禁用签名构建导致 Keychain `errSecMissingEntitlement`。保留 Xcode 默认 ad-hoc 签名后，iPhone 17 的已有正式登录态恢复，包含最新中文登录提示的包再次重启后仍正常恢复会话，没有修改或绕过 Keychain。iPhone 17 和 SE3 现均安装正式 API `https://8.153.167.11` 的 Release Simulator `1.0 (44)`；SE3 从空登录页使用现有账号的完整登录流程仍待确认，真机 Keychain 与物理触感仍未验收。
+- 已定位 Simulator 的两个登录问题：SE3 原包连已清空的隔离库，正式账号在该库无法登录；禁用签名构建导致 Keychain `errSecMissingEntitlement`。保留 Xcode 默认 ad-hoc 签名后已有登录态恢复，没有修改或绕过 Keychain。iPhone 17 和 SE3 均安装正式 API `https://8.153.167.11` 的正常签名 Release Simulator `1.0 (45)`；真机 Keychain 与物理触感仍未验收。
 
-## 最近验证
+## 此前验证（截至 2026-10-08）
 
 - 功能提交 `36633fa` 已于 2026-10-08 推送到 `origin/codex/testflight-44`。本次只更新 Git 功能分支，没有生产部署、数据库写入或 TestFlight 上传。
 - `./scripts/check-repository.sh` 本轮重新通过全部门禁；RN 为 31 组、191 项测试。新增统一账号密码错误的中英文提示测试；格式、lint、类型、各组件测试、Web 构建和内嵌查看器比对均通过，不等于 iOS 真机/UI 验收。默认后端测试有 4 项环境门控集成测试跳过，本轮没有重跑独立 PostgreSQL 集成套件。
@@ -37,10 +37,10 @@
 
 ## 接续顺序
 
-当前用户优先事项是完成媒体检索 Agent；Build 45 候选和双模拟器不可用态已验证，但线上仍未开放。登录、长按和发布步骤保留。
+当前用户优先事项是完成媒体检索 Agent。生产已开放开发联调，Build 45 双模拟器入口可打开；当前正在补齐真实视频检索及服务开放后的 App 状态闭环。登录、长按和正式发布步骤保留。
 
-1. 补齐独立 Security Reviewer 与 Release Owner 复核，并记录 30 案例质量、授权隔离、删除恢复、未封顶费用值守和 kill switch 证据；未完成前维持 draft/sandbox 及 Provider/queue 关闭。
-2. 发布前重新核对生产迁移账本、032 唯一索引冲突、032-034 顺序、可恢复备份和回滚点；标准 runtime 制品需来自干净且已提交的 revision。先 TestFlight Build 45 验收，再进行经批准的生产迁移、部署和开关变更。
+1. 完成已发现的启动 readiness 缓存、物体“的”后开放描述误判、长任务 Worker 心跳修复，并以干净已提交 runtime 更新生产；真实图片/视频检索、隔离、撤回与清理全部验收后记录证据。
+2. 正式上线质量仍需独立安全/发布审阅、30 案例 held-out 大库质量、真机和 Android 构建及 TestFlight 分发；这些未完成项不应被误报成当前用户未授权已明确同意的开发联调操作。
 3. 私有素材 E2E 必须由用户在 App 内主动同意；不可代替用户确认。使用用户自有素材验收时，先说明图片/视频及查询描述会发送到阿里云百炼。
 4. 登录、长按和发布步骤保留；SE3 登录页空状态、四边物理长按拖选、顶部短消息和引用回复尚未验收，真机 Keychain 与物理触感仍需真机验证。
 
@@ -103,6 +103,14 @@
 - RN 0.87.1 的 iOS Release sourcemap 递归检查共 2,815 个模块：braces、micromatch、fast-glob、Metro、metro-file-map、CLI 均未进入 App bundle。未修复的 braces High 位于构建工具链，不能宣称依赖零漏洞；构建过程不得接受不可信 glob 配置。
 - JDK 17 与 Google command-line tools 已下载到独立临时目录，下载来源和 SDK zip 摘要已核对；sdkmanager 正停在 Android SDK License Agreement 确认，已向用户请求接受协议，未擅自接受。该平台验证待定，不阻断独立的后端部署和已验证的 iOS Simulator 联调。
 - Build 45/合同 v2 是检索接口的新合同；旧客户端仅在检索接口收到 426 更新提示。认证、聊天和其他业务接口不依赖该头，因此后端可先部署，不能据此声称 Build 44 用户已能检索。
+
+### 2026-10-09 生产迁移和开发联调开放
+
+- 已创建标准、干净来源 runtime `media-retrieval-20261009-01`，sourceHead `70789b1b6ce9c35bf18e28978ea99bc4c0ab63b6`；365 个文件哈希均通过。服务器官方 registry 生产依赖审计为 0，Sharp WebP 编解码通过；完整源码在独立服务器暂存目录后端测试 434 passed / 4 环境门控 skipped。直接在 runtime 跑全套曾有 5 项失败：4 项依赖未打包的仓库开发文件，1 项因尚未配置 storage 所有权；没有削弱测试或扩大 runtime 白名单，改用同 revision 完整源码验证通过。
+- 停后端和 Worker 后的新恢复点为 `marvels_chat-20261009T044415Z.dump`，SHA-256 `1c32a2f8eb68092e87a57efc37e28885d1a8957db17518e26a303508acf53fce`；摘要校验与 450 行 TOC 通过，backup service success。随后迁移 3 applied / 31 unchanged，切换 immutable runtime 并 harden，保留旧 release、生产环境文件和 storage；health/ready 200，后端/worker active、NRestarts=0，3D 全员通配配置保留。
+- 控制项通过同一事务写入开关和脱敏运维事件：`limited_release`、Agent/Provider/index 全开、日次数/月预算/全局预算 NULL，routeEligibility.canRouteNewRun=true。当前只有瞬时限流，不自动为任何用户建立授权。
+- 临时账号仅上传已授权的公开自行车/汽车照片与合成六秒视频，均可建立 ready 索引；图片开放式中英文搜索、负例空结果、幂等重复查询已真实通过。视频“自行车的画面”漏检可重现：旧规则把物体后“的”连接的未知描述当身份词，走了精确匹配；“自行车的照片”和间接英文查询均命中同视频。正在修复此语法误判、App 启动 readiness 缓存和长处理心跳；尚未声称完整 E2E 通过。所有临时账号均已通过注销 API 删除，聚合核对残留为 0，未处理其他人的私有素材。
+- 三处候选修复已完成并通过新的完整门禁：后端 437 passed / 4 skipped，RN 31 组 / 201 项，Agent/Admin/Web/类型/格式/lint/构建均通过。正常签名 iOS Release Simulator Build 45 再构建成功。物体描述规则用语法关系判定，不新增“画面”等白名单词；低置信度、模型增添细节与既有姓名隔离回归保持通过。Worker 每 10 秒独立更新心跳，退出时清理定时器，后台心跳失败后停止后续派发；ready 只取 state=ready 的心跳。
 
 ## 资料入口
 
