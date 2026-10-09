@@ -24,9 +24,11 @@ test("media retrieval configuration is disabled with zero cost defaults", () => 
   assert.equal(retrieval.embeddingNormalization, "provider-native-dense-v1");
   assert.equal(retrieval.maxVideoFrames, 6);
   assert.equal(retrieval.workerPollMs, 5000);
+  assert.equal(retrieval.captionTimeoutMs, 90000);
 });
 
 test("media retrieval configuration rejects values outside JavaScript's safe integer range", () => {
+  assert.throws(() => createMediaRetrievalConfig({ MEDIA_RETRIEVAL_CAPTION_TIMEOUT_MS: "120001" }), /MEDIA_RETRIEVAL_CAPTION_TIMEOUT_MS must be between/);
   assert.throws(() => createMediaRetrievalConfig({
     MEDIA_RETRIEVAL_EMBEDDING_DIMENSION: "768",
   }), /MEDIA_RETRIEVAL_EMBEDDING_DIMENSION must equal 1024/);

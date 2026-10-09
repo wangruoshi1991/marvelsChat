@@ -112,7 +112,7 @@ export const fingerprintAsset = (asset) =>
         id: asset.id,
         storageKey: asset.storage_key || "",
         byteSize: toNonNegativeInteger(asset.byte_size),
-        updatedAt: toIso(asset.updated_at),
+        updatedAt: toIso(asset.content_revision_at),
       }),
     )
     .digest("hex");
@@ -151,6 +151,7 @@ export const safeEventPayload = (payload = {}) => {
     "jobType",
     "enqueued",
     "reused",
+    "indexEpoch",
   ]) {
     const value = payload[key];
     if (typeof value === "number" && Number.isFinite(value)) {

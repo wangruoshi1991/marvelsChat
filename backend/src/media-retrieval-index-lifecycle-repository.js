@@ -86,7 +86,7 @@ export function createMediaRetrievalIndexLifecycleRepository({
 
   const findIndexableAsset = async (connection, { userId, mediaAssetId }) => {
     const rows = await connection.query(
-      `SELECT id, user_id, storage_key, byte_size, updated_at, metadata
+      `SELECT id, user_id, storage_key, byte_size, content_revision_at, metadata
       FROM station_media_assets
       WHERE id = ?
         AND user_id = ?
@@ -126,10 +126,17 @@ export function createMediaRetrievalIndexLifecycleRepository({
           AND media_asset_id = ?
           AND content_fingerprint = ?
           AND processing_version = ?
+          AND profile_epoch = ?
           AND job_type = 'index'
-          AND status IN ('queued', 'running')
+          AND (status IN ('queued', 'running')
+            OR (status = 'succeeded' AND ? <> 'reindex' AND EXISTS (
+              SELECT 1 FROM media_retrieval_segments s
+              WHERE s.job_id = media_retrieval_jobs.id AND s.state = 'ready'
+            ))
+            OR EXISTS (SELECT 1 FROM media_retrieval_cost_ledger b
+              WHERE b.job_id = media_retrieval_jobs.id AND b.disposition IN ('reserved', 'unknown')))
         LIMIT 1`,
-        [userId, mediaAssetId, contentFingerprint, processingVersion],
+        [userId, mediaAssetId, contentFingerprint, processingVersion, profile.index_epoch, source],
       );
       if (activeRows[0]) return { job: mapJob(activeRows[0]), reused: true };
       const id = idFactory();
@@ -212,6 +219,7 @@ export function createMediaRetrievalIndexLifecycleRepository({
         deliveryKey: `${eventType}:${agentRunId}:${lifecycleStatus}`,
         payload: {
           ...payload,
+          ...(payload.searchResponse ? { indexEpoch: searchIndexEpoch } : {}),
           ...(failureCode ? { reasonCode: failureCode } : {}),
         },
       });
@@ -755,7 +763,7 @@ export function createMediaRetrievalIndexLifecycleRepository({
           asset.deleted_at,
           asset.storage_key,
           asset.byte_size,
-          asset.updated_at
+          asset.content_revision_at
         FROM media_retrieval_jobs AS job
         JOIN media_retrieval_profiles AS profile ON profile.user_id = job.user_id
         JOIN station_media_assets AS asset ON asset.id = job.media_asset_id AND asset.user_id = job.user_id
@@ -791,7 +799,7 @@ export function createMediaRetrievalIndexLifecycleRepository({
           id: current.asset_id,
           storage_key: current.storage_key,
           byte_size: current.byte_size,
-          updated_at: current.updated_at,
+          content_revision_at: current.content_revision_at,
         }) !== contentFingerprint
       ) {
         return { allowed: false, reasonCode: "asset_not_indexable" };
@@ -1045,7 +1053,7 @@ export function createMediaRetrievalIndexLifecycleRepository({
           asset.deleted_at,
           asset.storage_key,
           asset.byte_size,
-          asset.updated_at
+          asset.content_revision_at
         FROM media_retrieval_jobs AS job
         JOIN media_retrieval_profiles AS profile ON profile.user_id = job.user_id
         JOIN station_media_assets AS asset ON asset.id = job.media_asset_id AND asset.user_id = job.user_id
@@ -1081,7 +1089,7 @@ export function createMediaRetrievalIndexLifecycleRepository({
           id: commit.asset_id,
           storage_key: commit.storage_key,
           byte_size: commit.byte_size,
-          updated_at: commit.updated_at,
+          content_revision_at: commit.content_revision_at,
         }) !== contentFingerprint
       ) {
         return { status: "invalidated", reasonCode: "asset_not_indexable", persistedCount: 0 };

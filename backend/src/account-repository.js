@@ -115,7 +115,7 @@ export function createAccountRepository({
 
   const deleteUserAccount = async ({ userId }) => {
     let deleted = false;
-    await withTransactionImpl(async (connection) => {
+    const deleteInTransaction = () => withTransactionImpl(async (connection) => {
       const [lockedUsers] = await connection.execute(
         "SELECT id FROM users WHERE id = ? FOR UPDATE",
         [userId],
@@ -157,6 +157,16 @@ export function createAccountRepository({
       );
       deleted = rows.length > 0;
     });
+    // A worker may hold a run lock while its event needs the user foreign key.
+    // Retry only rolled-back database transactions, never storage/provider calls.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await deleteInTransaction();
+        break;
+      } catch (error) {
+        if (!["40P01", "40001"].includes(error?.code) || attempt === 2) throw error;
+      }
+    }
     if (!deleted) throw new HttpError(404, "Account not found.");
     return { deleted: true };
   };

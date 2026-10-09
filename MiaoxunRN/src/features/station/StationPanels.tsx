@@ -42,7 +42,6 @@ export function StationPanel({
   onOpenAgentThread,
   onOpenPostComposer,
   onOpenContentList,
-  onOpenMediaRetrieval,
   onSetAgentEnabled,
   onOpenPublicProfileByAiId,
   onSelectStationTab,
@@ -54,8 +53,6 @@ export function StationPanel({
   onCreateSiteDraft,
   onApplySiteDraft,
   onOpenAvatar3d,
-  onLoadAlbumSuggestions,
-  onApplyAlbumSuggestion,
   onCreateFileAsset,
   onPreprocessFileAsset,
   onCreateVideoDraft,
@@ -85,7 +82,6 @@ export function StationPanel({
   onOpenAgentThread: (agentId: string) => void;
   onOpenPostComposer: () => void;
   onOpenContentList: (kind: StationContentListKind) => void;
-  onOpenMediaRetrieval?: () => void;
   onSetAgentEnabled: (
     agentId: string,
     enabled: boolean,
@@ -106,12 +102,6 @@ export function StationPanel({
     typeof useMiaoxunSession
   >['applyStationSiteDraft'];
   onOpenAvatar3d: () => void;
-  onLoadAlbumSuggestions: ReturnType<
-    typeof useMiaoxunSession
-  >['listStationAlbumSuggestions'];
-  onApplyAlbumSuggestion: ReturnType<
-    typeof useMiaoxunSession
-  >['applyStationAlbumSuggestion'];
   onCreateFileAsset: ReturnType<
     typeof useMiaoxunSession
   >['createStationFileAsset'];
@@ -146,8 +136,6 @@ export function StationPanel({
           onSetAgentEnabled={onSetAgentEnabled}
           onCreateSiteDraft={onCreateSiteDraft}
           onApplySiteDraft={onApplySiteDraft}
-          onLoadAlbumSuggestions={onLoadAlbumSuggestions}
-          onApplyAlbumSuggestion={onApplyAlbumSuggestion}
           onCreateFileAsset={onCreateFileAsset}
           onPreprocessFileAsset={onPreprocessFileAsset}
           onCreateVideoDraft={onCreateVideoDraft}
@@ -218,7 +206,6 @@ export function StationPanel({
             onOpenAlbumDetail={onOpenAlbumDetail}
             onOpenAgentThread={onOpenAgentThread}
             onOpenContentList={onOpenContentList}
-            onOpenMediaRetrieval={onOpenMediaRetrieval}
             onActionMessage={onActionMessage}
           />
         </View>

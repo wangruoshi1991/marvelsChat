@@ -223,9 +223,14 @@ export function ThreadListScreen({
     [palette],
   );
   const isLightPalette = palette.text === palettes.light.text;
-  const unreadChatCount = useMemo(
-    () => threads.reduce((total, thread) => total + thread.unreadCount, 0),
+  const visibleThreads = useMemo(
+    () => threads.filter(thread => thread.agentId !== 'media-retrieval'),
     [threads],
+  );
+  const unreadChatCount = useMemo(
+    () =>
+      visibleThreads.reduce((total, thread) => total + thread.unreadCount, 0),
+    [visibleThreads],
   );
 
   return (
@@ -322,7 +327,7 @@ export function ThreadListScreen({
       <View style={styles.messageContent}>
         {selectedMessageTab === 'chat' ? (
           <FlatList
-            data={threads}
+            data={visibleThreads}
             keyExtractor={item => item.id}
             contentContainerStyle={styles.threadList}
             style={styles.messageListViewport}

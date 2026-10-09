@@ -4,11 +4,9 @@ import { Text, View } from 'react-native';
 import {
   AgentReadinessDTO,
   ProfileDTO,
-  StationAlbumSuggestionDTO,
   StationContentDTO,
   StationFileAssetDTO,
   StationVideoDraftDTO,
-  StationVisibility,
 } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
@@ -28,8 +26,7 @@ export function StationCapabilityWorkspace({
   hasCapability,
   onCreateSiteDraft,
   onApplySiteDraft,
-  onLoadAlbumSuggestions,
-  onApplyAlbumSuggestion,
+  onOpenAgentThread,
   onCreateFileAsset,
   onPreprocessFileAsset,
   onCreateVideoDraft,
@@ -47,13 +44,7 @@ export function StationCapabilityWorkspace({
     apply?: boolean;
   }) => Promise<unknown>;
   onApplySiteDraft: (draftId: string) => Promise<unknown>;
-  onLoadAlbumSuggestions: () => Promise<StationAlbumSuggestionDTO[]>;
-  onApplyAlbumSuggestion: (payload: {
-    title: string;
-    description?: string;
-    visibility?: StationVisibility;
-    mediaAssetIds: string[];
-  }) => Promise<unknown>;
+  onOpenAgentThread: (agentId: string) => void;
   onCreateFileAsset: (payload: {
     originalFilename: string;
     mimeType?: string;
@@ -102,10 +93,7 @@ export function StationCapabilityWorkspace({
         key="album-manager"
         palette={palette}
         language={language}
-        onLoadSuggestions={onLoadAlbumSuggestions}
-        onApplySuggestion={onApplyAlbumSuggestion}
-        onActionMessage={onActionMessage}
-        onActionError={onActionError}
+        onOpenConversation={() => onOpenAgentThread('album-manager')}
       />
     ) : null,
     hasCapability('file-preprocessor') ? (

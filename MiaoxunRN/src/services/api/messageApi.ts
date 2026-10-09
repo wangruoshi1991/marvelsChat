@@ -4,7 +4,7 @@ import {
   MessageDTO,
   SendMessageResponse,
 } from '../../models/api';
-import { longRequestTimeoutMs, request } from './http';
+import { request } from './http';
 
 export const messageApi = {
   messages(threadId: string, token: string) {
@@ -21,6 +21,7 @@ export const messageApi = {
     localActionResult?: ButlerLocalActionResultPayload | null,
     replyToMessageId?: string | null,
     clientMessageId?: string,
+    timeoutMs = 45000,
   ) {
     const body: {
       content: string;
@@ -47,7 +48,7 @@ export const messageApi = {
       method: 'POST',
       token,
       body,
-      timeoutMs: longRequestTimeoutMs,
+      timeoutMs,
     });
   },
 

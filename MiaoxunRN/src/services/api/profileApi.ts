@@ -66,11 +66,23 @@ export const profileApi = {
     });
   },
 
-  setAgentEnabled(token: string, agentId: string, enabled: boolean) {
+  setAgentEnabled(
+    token: string,
+    agentId: string,
+    enabled: boolean,
+    albumAIConsentVersion?: string,
+    idempotencyKey?: string,
+  ) {
     return request<OwnedAgentDTO>(`/api/me/agents/${agentId}`, {
       method: 'PATCH',
       token,
-      body: { enabled },
+      body: {
+        enabled,
+        ...(albumAIConsentVersion ? { albumAIConsentVersion } : {}),
+      },
+      ...(idempotencyKey
+        ? { headers: { 'Idempotency-Key': idempotencyKey } }
+        : {}),
     });
   },
 };

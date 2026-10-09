@@ -106,10 +106,16 @@ export function assertRetrievalSearch(
       value.lifecycleStatus === 'succeeded' &&
       value.method === 'b7-product-baseline',
   );
+  assertRetrievalResults(value.results);
+}
+
+export function assertRetrievalResults(
+  value: unknown,
+): asserts value is RetrievalSearchResponse['results'] {
   valid(
-    Array.isArray(value.results) &&
-      value.results.length <= 20 &&
-      value.results.every(
+    Array.isArray(value) &&
+      value.length <= 20 &&
+      value.every(
         (item: unknown) =>
           record(item) &&
           exact(item, [

@@ -10,6 +10,14 @@
 
 ## 当前候选与未闭环事项
 
+- 2026-10-09 当前未提交候选已改为相册管理 Agent 对话检索，移除 RN 独立“找素材”页面；模型按会话调用 owner 范围的列相册/检索工具，结果在消息中展示。首次添加统一说明云端 AI 处理，已有同意复用；系统相册权限不自动上传本机素材。生产仍为旧 runtime 与 34 项迁移，本轮对话代码和迁移 035 未部署。以下旧页面验证与发布描述按各段日期解释，不能代替本轮状态。
+- 本轮增加 `content_revision_at` 区分原文件与说明/相册关系变更，重复完成通知复用任务；原文件替换后旧对话结果不再引用它，元数据修改不影响原引用。迁移 035 保守按旧 `updated_at` 回填，无法确认的旧索引须显式重建；不同资产 ID 的同字节文件尚未实现哈希合并。相册授权、索引任务、Agent 与线程改为同一事务；失败全部回滚，并发添加串行化只创建一个线程。
+- 当前公开素材隔离 E2E 已通过图片、指定相册、多轮视频 3–6 秒定位、幂等消息、跨账号 404、鉴权预览和空结果。真实 DeepSeek 对话模型/合成工具响应评测 11/11，这是路由评测而非召回质量。2,005 合成段查询计划仅验证 owner 的 5 条结果及带 user_id 的索引，未做大库性能验收。最新 9/9 pgvector 集成含事务回滚与并发激活；结果引用回归覆盖撤回与素材失效。
+- 本轮最终 `./scripts/check-repository.sh` 全通过：后端 455 项（451 passed、4 环境门控 skipped），RN 30 组/178 项，Agent 33、Admin 14、媒体检索 Web 3，相关格式/lint/类型/构建通过，日志 `/tmp/miaoxun-album-assistant-check-final.log`。`npm --prefix backend run test:media-retrieval-migration` 9/9，日志 `/tmp/miaoxun-album-migration-final.log`；合成查询计划证据 `/tmp/miaoxun-album-query-plan.json`。正常签名 Release Simulator 构建再次成功，日志 `/tmp/miaoxun-album-ios-build-final.log`。
+- iPhone 17 与 SE3 使用独立 bundle `com.wangruoshi.miaoxun.albumqa` 及隔离 QA API，正式 App 登录态/Keychain 未触碰。iPhone 17 实测图片预览、视频 4 秒画面、软件键盘、多行输入和 App 发起的英文检索；SE3 实测结果卡片及键盘显示/隐藏。发现并修复隐藏键盘仍留高度空白的问题，改按窗口与键盘 frame 的相交位置计算；4 项几何回归通过，SE3 再次确认隐藏后输入栏回到底部。
+- 最终隔离 API 核对已有同意可复用、其他账号读结果 404、移除相册 Agent 后旧结果 403；随后注销两名本次 QA 临时账号，三个 OSS 原对象 HEAD 均为 404，隔离库 users/assets/segments/jobs 均为 0。已停止本任务创建的 QA API/Worker、4395/55552 SSH 隧道、Metro 和 `miaoxun-album-qa-pg` 容器；容器只停止、未删除，其他服务未触碰；失效临时 session 文件已删除。独立 QA App 已停止，最新含 JS bundle 的正常签名 Debug Simulator 包保存在 `/tmp/miaoxun-album-qa-ios-final/Build/Products/Debug-iphonesimulator/MiaoxunRN.app`，日志 `/tmp/miaoxun-album-qa-ios-build-final.log`。生产只读 ready 200、backend/worker active，runtime 仍为 `media-retrieval-20261009-02`，未读取其他人的生产素材、部署、推送或上传 TestFlight。
+- 本轮只读发布预检：公网 `/api/health` 与 `/api/ready` 均为 200；SSH 核对迁移账本仍为 34 项，`station_media_assets` 为 17 行、表及索引合计 212,992 bytes；备份 timer active，最近一次 service result 为 success。完整仓库检查通过，PostgreSQL 集成 9/9；补测 035 从 034 升级并把旧格式素材的 `content_revision_at` 回填为原 `updated_at`。发布预检 0 failures、4 warnings（域名 clientHold、两个公网 DNS 查询无结果、当前 Mac 无 Java）；TestFlight IP HTTPS 配置与证书正常。未做生产写入、创建新备份、付费调用、推送或上传；新恢复点和生产维护窗口仍是迁移前置条件。
+- 依赖审计：后端 `npm audit --omit=dev --audit-level=high` 为 0 vulnerabilities；RN 同级审计报告 20 项 High，当前聚合到 `braces@3.0.3` 的 glob/Metro/CLI 构建路径。npm registry 尚无 braces 3.x 修复版本，自动修复要求把 React Native 从 0.87.1 降到 0.72.17，故不盲目降级；该风险暂按构建期依赖跟踪，TestFlight 归档前须确认漏洞代码未进入 App bundle。
 - 工作分支为 `codex/testflight-44`。本轮消息幂等、社交分页、3D 可用性与模型选择、聊天菜单定位及文档整合已通过本地门禁；推送仅针对该功能分支，不代表生产部署或 TestFlight。
 - 2026-10-09 已按用户授权在停写备份后执行生产迁移 032–034，账本 34 项且 readiness 为 200。生产 runtime 为 `media-retrieval-20261009-02`，来源提交 `63d6547`；后端与 Worker active。检索 DB 控制已设为 `limited_release`、Agent/Provider/index=true，三个次数/费用上限均为 NULL，无账号白名单；公开图片/视频生产 E2E 已通过。这是开发联调开放，完整上线质量验收尚未完成。
 - 3D 生成已于 2026-09-29 按用户明确授权在生产全量开放，复用现有 `AVATAR_3D_ALLOWLIST=*`，没有引入新的权限模式。17 个活跃账号的只读 bootstrap 全部确认 enabled 与 generationAvailable；个人每日额度为 3，尚无全局费用上限。此次未创建任务或触发付费调用。未来发布必须保留该通配配置，不能用空白环境样例覆盖。
@@ -37,12 +45,12 @@
 
 ## 接续顺序
 
-当前用户优先事项是完成媒体检索 Agent。生产已开放开发联调，Build 45 双模拟器入口可打开；真实图片/视频、时间定位、跨账号隔离、撤回清理 E2E 已通过。最新 App 收尾修复允许已成功整理的素材继续检索，并保留待处理数量与错误。登录、长按和正式发布步骤保留。
+当前用户优先事项是相册管理与检索 Agent 的对话协作。当前本地实现已通过有限公开素材的真实开发闭环；生产仍是旧检索实现，不能把隔离 QA 验证说成正式用户已能使用新会话流程。实现和边界见 `docs/agents/album-assistant.md`。
 
-1. 启动 readiness 缓存、物体“的”后开放描述误判与长任务 Worker 心跳修复已随 runtime 02 部署。后续先核对线上 runtime 与本地 Build 45，避免把 TestFlight 44 误当成最新客户端。未完成或费用待核对的索引任务保留原状态，不自动重试，也不把账本估计改写为供应商账单。
-2. 正式上线质量仍需独立安全/发布审阅、30 案例 held-out 大库质量、真机和 Android 构建及 TestFlight 分发；这些未完成项不应被误报成当前用户未授权已明确同意的开发联调操作。
-3. 私有素材 E2E 必须由用户在 App 内主动同意；不可代替用户确认。使用用户自有素材验收时，先说明图片/视频及查询描述会发送到阿里云百炼。
-4. 登录、长按和发布步骤保留；SE3 登录页空状态、四边物理长按拖选、顶部短消息和引用回复尚未验收，真机 Keychain 与物理触感仍需真机验证。
+1. 发布相册对话候选前，核对干净来源制品、迁移 035 的实际规模锁时间、最新恢复点与 API/Worker 同步切换；生产迁移、部署、Git 推送和 TestFlight 分发各按用户授权范围执行。035 在隔离库通过，尚未生产执行。
+2. 正式上线质量仍需大库 held-out 召回质量、代表性真实视频、真机与 Android、独立发布验收；11 个模型路由案例与 2,005 合成段计划分别验证不同边界，不能代替这些门槛。Android SDK 协议与既有工具链依赖问题见历史记录，未解决项不伪报通过。
+3. 相册 Agent 添加时统一取得用户对云端 AI 的同意，已有同意复用；不得自动上传未选择的本机照片。用户自有素材测试须明确范围；公开测试图片/合成视频的真实调用授权已在本会话给出。未知费用保留审计状态，不自动重试，账本估计不当作供应商账单或余额扣款。
+4. 登录、长按和正式发布步骤保留；四边物理长按拖选、顶部短消息和引用回复尚未验收，真机 Keychain 与物理触感仍需真机验证。
 
 ## 检索实现记录（2026-10-08，历史）
 

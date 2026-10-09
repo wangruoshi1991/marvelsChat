@@ -1,7 +1,5 @@
-import React, { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
-
-import { StationAlbumSuggestionDTO, StationVisibility } from '../../models/api';
+import React from 'react';
+import { Text } from 'react-native';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
@@ -11,238 +9,28 @@ import { StationModule } from './StationHomeModules';
 export function StationAlbumAgentPanel({
   palette,
   language,
-  onLoadSuggestions,
-  onApplySuggestion,
-  onActionMessage,
-  onActionError,
+  onOpenConversation,
 }: {
   palette: Palette;
   language: Language;
-  onLoadSuggestions: () => Promise<StationAlbumSuggestionDTO[]>;
-  onApplySuggestion: (payload: {
-    title: string;
-    description?: string;
-    visibility?: StationVisibility;
-    mediaAssetIds: string[];
-  }) => Promise<unknown>;
-  onActionMessage: (message: string) => void;
-  onActionError: (error: unknown) => void;
+  onOpenConversation: () => void;
 }) {
-  const [suggestions, setSuggestions] = useState<StationAlbumSuggestionDTO[]>(
-    [],
-  );
-  const [isLoading, setIsLoading] = useState(false);
-  const [applyingTitle, setApplyingTitle] = useState<string | null>(null);
-
-  const loadSuggestions = async () => {
-    if (isLoading) {
-      return;
-    }
-    setIsLoading(true);
-    try {
-      const nextSuggestions = await onLoadSuggestions();
-      setSuggestions(nextSuggestions);
-      onActionMessage(
-        nextSuggestions.length
-          ? textFor(language, '相册整理建议已更新', 'Album suggestions updated')
-          : textFor(language, '暂无可整理素材', 'No media to organize yet'),
-      );
-    } catch (error) {
-      onActionError(error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const applySuggestion = async (suggestion: StationAlbumSuggestionDTO) => {
-    if (applyingTitle || !suggestion.mediaAssetIds.length) {
-      return;
-    }
-    setApplyingTitle(suggestion.title);
-    try {
-      await onApplySuggestion({
-        title: suggestion.title,
-        description: suggestion.description,
-        visibility: suggestion.visibility || 'private',
-        mediaAssetIds: suggestion.mediaAssetIds,
-      });
-      setSuggestions(current =>
-        current.filter(item => item.title !== suggestion.title),
-      );
-      onActionMessage(textFor(language, '相册已整理', 'Album organized'));
-    } catch (error) {
-      onActionError(error);
-    } finally {
-      setApplyingTitle(null);
-    }
-  };
-
   return (
     <StationModule
       palette={palette}
-      title={textFor(language, '相册整理', 'Album Organization')}
-      action={
-        isLoading
-          ? textFor(language, '整理中', 'Organizing')
-          : textFor(language, '整理', 'Organize')
-      }
-      onAction={loadSuggestions}
+      title={textFor(language, '相册管理', 'Album Manager')}
+      action={textFor(language, '开始对话', 'Chat')}
+      onAction={onOpenConversation}
     >
-      <View style={styles.stationAgentLoopStack}>
-        <UtilityStatus
-          palette={palette}
-          language={language}
-          title={textFor(language, '相册整理', 'Album Organization')}
-          body={textFor(
-            language,
-            '按已有标签、说明和文件名整理',
-            'Organizes existing tags, captions, and filenames',
-          )}
-        />
-
-        {suggestions.length ? (
-          suggestions.slice(0, 3).map(suggestion => (
-            <View
-              key={`${suggestion.title}-${suggestion.mediaAssetIds.join('-')}`}
-              style={[
-                styles.stationAgentLoopCard,
-                {
-                  borderColor: palette.border,
-                  backgroundColor: palette.surface,
-                },
-              ]}
-            >
-              <View style={styles.stationAgentLoopCardHeader}>
-                <View style={styles.stationAgentLoopStatusCopy}>
-                  <Text
-                    style={[
-                      styles.stationAgentLoopTitle,
-                      { color: palette.text },
-                    ]}
-                  >
-                    {suggestion.title}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.stationAgentLoopMeta,
-                      { color: palette.secondaryText },
-                    ]}
-                  >
-                    {textFor(
-                      language,
-                      `${suggestion.mediaAssetIds.length} 张照片`,
-                      `${suggestion.mediaAssetIds.length} photos`,
-                    )}
-                  </Text>
-                </View>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={Boolean(applyingTitle)}
-                  onPress={() => applySuggestion(suggestion)}
-                  style={[
-                    styles.stationAgentLoopButton,
-                    {
-                      backgroundColor: applyingTitle
-                        ? palette.soft
-                        : palette.text,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.stationAgentLoopButtonText,
-                      {
-                        color: applyingTitle
-                          ? palette.secondaryText
-                          : palette.background,
-                      },
-                    ]}
-                  >
-                    {applyingTitle === suggestion.title
-                      ? textFor(language, '整理中', 'Applying')
-                      : textFor(language, '应用整理', 'Apply')}
-                  </Text>
-                </Pressable>
-              </View>
-              <Text
-                style={[
-                  styles.stationAgentLoopBody,
-                  { color: palette.secondaryText },
-                ]}
-              >
-                {suggestion.reason || suggestion.description}
-              </Text>
-              <View style={styles.stationAgentLoopChipRow}>
-                {(suggestion.tags || []).slice(0, 5).map(tag => (
-                  <Text
-                    key={tag}
-                    style={[
-                      styles.stationAgentLoopChip,
-                      { backgroundColor: palette.soft, color: palette.text },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {tag}
-                  </Text>
-                ))}
-              </View>
-            </View>
-          ))
-        ) : (
-          <Text
-            style={[styles.relationshipEmpty, { color: palette.secondaryText }]}
-          >
-            {textFor(
-              language,
-              '暂无素材。上传照片后，可以一键整理成相册分类。',
-              'No media yet. Upload photos to organize them into albums.',
-            )}
-          </Text>
-        )}
-      </View>
-    </StationModule>
-  );
-}
-
-function UtilityStatus({
-  palette,
-  language,
-  title,
-  body,
-}: {
-  palette: Palette;
-  language: Language;
-  title: string;
-  body: string;
-}) {
-  return (
-    <View
-      style={[
-        styles.stationAgentLoopStatus,
-        { backgroundColor: palette.soft, borderColor: palette.border },
-      ]}
-    >
-      <View style={styles.stationAgentLoopStatusCopy}>
-        <Text
-          style={[
-            styles.stationAgentLoopEyebrow,
-            { color: palette.secondaryText },
-          ]}
-        >
-          {title}
-        </Text>
-        <Text style={[styles.stationAgentLoopTitle, { color: palette.text }]}>
-          {body}
-        </Text>
-      </View>
       <Text
-        style={[
-          styles.stationAgentLoopBadge,
-          { backgroundColor: palette.surface, color: palette.text },
-        ]}
+        style={[styles.stationAgentLoopBody, { color: palette.secondaryText }]}
       >
-        {textFor(language, '元数据', 'Metadata')}
+        {textFor(
+          language,
+          '告诉相册助手你想找什么图片或视频，也可以继续补充条件、限定相册。结果会直接显示在对话中。',
+          'Describe an image or video, refine your request, or choose an album. Results appear in the conversation.',
+        )}
       </Text>
-    </View>
+    </StationModule>
   );
 }

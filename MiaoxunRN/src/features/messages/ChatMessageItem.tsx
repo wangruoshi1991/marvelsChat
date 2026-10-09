@@ -22,6 +22,7 @@ import {
 import { UserAvatarRenderer } from './messageTypes';
 import { AgentIconAvatar } from './AgentIconAvatar';
 import { chatLayoutStyles } from './chatLayoutStyles';
+import { AlbumAssistantResults } from './AlbumAssistantResults';
 import {
   messageTimeText,
   resolveAgentIdentity,
@@ -29,6 +30,7 @@ import {
 } from './messageUtils';
 
 export function ChatMessageItem({
+  token,
   item,
   previousMessage,
   palette,
@@ -44,6 +46,7 @@ export function ChatMessageItem({
   onRetrySend,
   onActionMessage,
 }: {
+  token?: string;
   item: ChatMessage;
   previousMessage: ChatMessage | null;
   palette: Palette;
@@ -252,6 +255,21 @@ export function ChatMessageItem({
           </Text>
         </AIAssistGestureSurface>
       </View>
+      {token &&
+      thread.agentId === 'album-manager' &&
+      item.senderType === 'agent' &&
+      typeof item.metadata?.albumAssistant === 'object' &&
+      item.metadata.albumAssistant !== null &&
+      'outcome' in item.metadata.albumAssistant &&
+      item.metadata.albumAssistant.outcome === 'found' ? (
+        <AlbumAssistantResults
+          token={token}
+          threadId={thread.id}
+          messageId={item.id}
+          palette={palette}
+          language={language}
+        />
+      ) : null}
       {item.localStatus ? (
         <View
           style={[styles.messageMetaRow, isMine && styles.messageMetaRowMine]}

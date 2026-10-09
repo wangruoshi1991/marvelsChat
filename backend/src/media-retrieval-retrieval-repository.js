@@ -32,6 +32,7 @@ const sourceRowsCte = (userId) => ({
         AND profile.consent_version = ?
         AND asset.status = 'uploaded'
         AND asset.deleted_at IS NULL
+        AND segment.created_at >= asset.content_revision_at
     )`,
   params: [userId, MEDIA_RETRIEVAL_CONSENT_VERSION],
 });

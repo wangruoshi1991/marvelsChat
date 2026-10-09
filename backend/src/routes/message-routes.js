@@ -4,6 +4,10 @@ import { runAgent } from "../agent-runtime.js";
 import { config } from "../config.js";
 import { HttpError } from "../http-error.js";
 import { createRateLimitMiddleware } from "../rate-limit-service.js";
+import { query } from "../db.js";
+import { createAlbumAssistantTools } from "../album-assistant-tools.js";
+import { mediaRetrievalRepository, mediaRetrievalUserService } from "../media-retrieval-default-service.js";
+import { listStationMediaAssetsByIdsForUser } from "../station-library-repository.js";
 import {
   addMessageToThreadOnce,
   completeAgentMessageOnce,
@@ -108,6 +112,54 @@ export function assertAgentAvailable(agentContext, agentId) {
   return { agent, access, grantedScopes };
 }
 
+// Result references are re-authorized at read time. The message metadata only
+// contains run IDs, so an old message cannot be used to bypass owner, consent,
+// Agent-scope, recall, or current-index checks.
+export async function getAuthorizedMediaResults({
+  userId,
+  threadId,
+  messageId,
+  getMessage = getMessageForUser,
+  queryFn = query,
+  retrievalRepository = mediaRetrievalRepository,
+  listAssets = listStationMediaAssetsByIdsForUser,
+}) {
+  const message = await getMessage({ userId, threadId, messageId });
+  if (!message || message.senderType !== "agent" || message.recalledAt) {
+    throw new HttpError(404, "Message not found");
+  }
+  const access = await queryFn(
+    "SELECT enabled, granted_scopes FROM user_agents WHERE user_id = ? AND agent_id = 'album-manager'",
+    [userId],
+  );
+  const profile = await retrievalRepository.getMediaRetrievalProfile({ userId });
+  if (
+    profile?.indexState !== "enabled" ||
+    profile.consentVersion !== "media-retrieval-consent-v1" ||
+    !access[0]?.enabled ||
+    !access[0].granted_scopes.includes("album:read")
+  ) {
+    throw new HttpError(403, "相册 AI 授权已撤回。");
+  }
+  const runIds = message.metadata?.albumAssistant?.retrievalRunIds || [];
+  const responses = await Promise.all(
+    runIds.slice(0, 1).map((agentRunId) =>
+      retrievalRepository.getMediaRetrievalSearchResponse({ userId, agentRunId }),
+    ),
+  );
+  const results = responses.flatMap((response) => response?.results || []);
+  const assets = await listAssets({
+    userId,
+    mediaAssetIds: results.map((result) => result.mediaAssetId),
+  });
+  const live = new Map(
+    assets
+      .filter((asset) => asset.status === "uploaded")
+      .map((asset) => [asset.id, asset]),
+  );
+  return results.filter((result) => live.get(result.mediaAssetId)?.kind === result.kind);
+}
+
 export function registerMessageRoutes(
   app,
   {
@@ -116,8 +168,25 @@ export function registerMessageRoutes(
     getOnlineUserIds,
     sendRealtimeToUser,
     logger = defaultLogger,
+    retrievalRepository = mediaRetrievalRepository,
+    retrievalService = mediaRetrievalUserService,
+    runAgentRuntime = runAgent,
   },
 ) {
+  app.get(
+    "/api/threads/:threadId/messages/:messageId/media-results",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const data = await getAuthorizedMediaResults({
+        userId: req.user.id,
+        threadId: req.params.threadId,
+        messageId: req.params.messageId,
+        retrievalRepository,
+      });
+      res.json({ data });
+    }),
+  );
+
   app.get(
     "/api/threads/:threadId/messages",
     authenticate,
@@ -253,7 +322,8 @@ export function registerMessageRoutes(
         if (thread.agentId) {
           let result = await getAgentResultForInput(message.id);
           const createdAt = Date.parse(message.createdAt || "");
-          if (!result?.outputMessage && Number.isFinite(createdAt) && Date.now() - createdAt >= staleAgentMessageMs) {
+          const staleAfter = thread.agentId === "album-manager" ? Math.max(staleAgentMessageMs, 15 * 60 * 1000) : staleAgentMessageMs;
+          if (!result?.outputMessage && Number.isFinite(createdAt) && Date.now() - createdAt >= staleAfter) {
             result = await completeAgentMessageOnce({
               userId: req.user.id,
               threadId: thread.id,
@@ -346,12 +416,21 @@ export function registerMessageRoutes(
         const startedAt = Date.now();
         let completion;
         try {
-          const result = await runAgent({
+          const tools = thread.agentId === "album-manager" && agentAccess.grantedScopes.includes("album:read")
+            ? createAlbumAssistantTools({
+                userId: req.user.id, inputMessageId: userMessage.id, service: retrievalService,
+                listAlbums: (userId, name = "") => query("SELECT id, title FROM station_albums WHERE user_id = ? AND deleted_at IS NULL AND title ILIKE ? ORDER BY title, id LIMIT 51", [userId, `%${name.replace(/[\\%_]/g, "\\$&")}%`]),
+                assertAccess: async () => {
+                  const rows = await query("SELECT enabled, granted_scopes FROM user_agents WHERE user_id = ? AND agent_id = 'album-manager'", [req.user.id]);
+                  if (!rows[0]?.enabled || !rows[0].granted_scopes?.includes("album:read")) throw new HttpError(403, "相册 AI 授权已撤回。");
+                },
+              }) : null;
+          const result = await runAgentRuntime({
             agentId: thread.agentId,
             input: body.content,
             user: req.user,
             thread,
-            messages: agentAccess.grantedScopes.includes("messages:read")
+            messages: thread.agentId === "album-manager" || agentAccess.grantedScopes.includes("messages:read")
               ? await listRecentMessagesForThread(req.user.id, thread.id, 12)
               : [],
             appContext: buildAgentAppContext(
@@ -360,10 +439,12 @@ export function registerMessageRoutes(
               body.clientContext,
               body.localActionResult,
             ),
+            tools,
           });
           completion = {
             content: result.reply,
-            metadata: { provider: result.provider, tokenUsage: result.tokenUsage },
+            metadata: { provider: result.provider, tokenUsage: result.tokenUsage,
+              ...(result.albumAssistant ? { albumAssistant: result.albumAssistant } : {}) },
             status: "success",
             provider: result.provider,
             latencyMs: result.latencyMs,

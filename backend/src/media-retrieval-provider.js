@@ -174,7 +174,8 @@ export function createMediaRetrievalProvider({
   const request = async ({ path, body, reservation, operation }) => {
     assertEligible(reservation);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const requestTimeoutMs = operation === "image-description" ? retrieval.captionTimeoutMs ?? timeoutMs : timeoutMs;
+    const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
     try {
       const response = await fetchImpl(`${retrieval.dashscopeApiBaseUrl}${path}`, {
         method: "POST",

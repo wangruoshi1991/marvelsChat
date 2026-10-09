@@ -3,6 +3,21 @@ import test from "node:test";
 
 import { createAccountRepository } from "../src/account-repository.js";
 
+test("account deletion retries a rolled-back worker deadlock and propagates other errors", async () => {
+  let attempts = 0;
+  const repository = createAccountRepository({
+    withTransactionImpl: async work => {
+      attempts += 1;
+      if (attempts === 1) throw Object.assign(new Error("deadlock"), { code: "40P01" });
+      return work({ execute: async sql => sql.includes("SELECT id FROM users") || sql.includes("DELETE FROM users") ? [[{ id: "qa" }]] : [[]] });
+    },
+  });
+  assert.deepEqual(await repository.deleteUserAccount({ userId: "qa" }), { deleted: true });
+  assert.equal(attempts, 2);
+  const unavailable = createAccountRepository({ withTransactionImpl: async () => { throw Object.assign(new Error("unavailable"), { code: "ECONNREFUSED" }); } });
+  await assert.rejects(unavailable.deleteUserAccount({ userId: "qa" }), error => error.code === "ECONNREFUSED");
+});
+
 test("account storage inventory includes every persisted private asset column", async () => {
   let storageSql = "";
   const repository = createAccountRepository({

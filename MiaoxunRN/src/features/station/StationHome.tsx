@@ -1,6 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Search } from 'lucide-react-native';
+import { View } from 'react-native';
 
 import {
   AgentDTO,
@@ -48,7 +47,6 @@ type StationHomeProps = {
   onOpenAlbumDetail: (albumId: string) => void;
   onOpenAgentThread: (agentId: string) => void;
   onOpenContentList: (kind: StationContentListKind) => void;
-  onOpenMediaRetrieval?: () => void;
   onActionMessage: (message: string) => void;
 };
 
@@ -72,7 +70,6 @@ export function StationHome({
   onOpenAlbumDetail,
   onOpenAgentThread,
   onOpenContentList,
-  onOpenMediaRetrieval,
   onActionMessage,
 }: StationHomeProps) {
   const openDiaryFlow = () => onOpenCreateSheet('diary');
@@ -136,44 +133,6 @@ export function StationHome({
         onAction={openAlbumFlow}
       >
         <View style={styles.stationModuleStack}>
-          {onOpenMediaRetrieval ? (
-            <Pressable
-              accessibilityLabel={textFor(language, '找素材', 'Find media')}
-              accessibilityRole="button"
-              onPress={onOpenMediaRetrieval}
-              style={[
-                styles.stationContentFilters,
-                mediaRetrievalShortcutStyles.button,
-                {
-                  backgroundColor: palette.soft,
-                },
-              ]}
-              testID="station-home-find-media"
-            >
-              <Search color={palette.text} size={18} />
-              <Text
-                style={[
-                  mediaRetrievalShortcutStyles.title,
-                  { color: palette.text },
-                ]}
-              >
-                {textFor(language, '找素材', 'Find media')}
-              </Text>
-              <Text
-                numberOfLines={1}
-                style={[
-                  mediaRetrievalShortcutStyles.hint,
-                  { color: palette.secondaryText },
-                ]}
-              >
-                {textFor(
-                  language,
-                  '描述你想找的图片或视频',
-                  'Describe an image or video',
-                )}
-              </Text>
-            </Pressable>
-          ) : null}
           <AlbumGrid
             palette={palette}
             language={language}
@@ -250,14 +209,3 @@ function orderedStationModuleKeys(sections?: StationSiteSectionDTO[]) {
 function normalizeSections(sections?: StationSiteSectionDTO[]) {
   return Array.isArray(sections) ? sections : [];
 }
-
-const mediaRetrievalShortcutStyles = StyleSheet.create({
-  button: {
-    alignItems: 'center',
-    borderRadius: 4,
-    minHeight: 42,
-    paddingHorizontal: 12,
-  },
-  title: { fontWeight: '700' },
-  hint: { flex: 1, fontSize: 12 },
-});

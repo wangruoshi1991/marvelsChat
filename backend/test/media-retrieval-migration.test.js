@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -10,6 +11,10 @@ import { createMediaRetrievalRepository } from "../src/media-retrieval-repositor
 import { createMediaRetrievalUserService } from "../src/media-retrieval-user-service.js";
 import { processMediaRetrievalJob } from "../src/media-retrieval-service.js";
 import { createDescriptorProvenance, createEmbeddingProvenance } from "../src/media-retrieval-provenance.js";
+import { createAlbumAssistantAccessService } from "../src/album-assistant-access-service.js";
+import { setUserAgentAccess } from "../src/repositories.js";
+import { loadMigrationFiles } from "../src/migration-files.js";
+import { applyPendingMigrations } from "../src/migration-ledger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const backendDir = path.resolve(__dirname, "..");
@@ -65,6 +70,51 @@ const runAllMigrations = () => {
   } catch (error) {
     const detail = String(error.stderr || error.stdout || error.message || "").trim();
     throw new Error(`Migration run failed: ${detail}`, { cause: error });
+  }
+};
+
+const verifyContentRevisionBackfill = async () => {
+  const migrationClient = new pg.Client({ connectionString: databaseUrl });
+  await migrationClient.connect();
+  const migrations = await loadMigrationFiles();
+  const revisionMigration = "035_album_assistant_content_revision.sql";
+  const previousMigrations = migrations.filter(({ filename }) => filename < revisionMigration);
+  const userId = "91919191-9191-4191-8191-919191919191";
+  const assetId = "92929292-9292-4292-8292-929292929292";
+  const updatedAt = "2024-01-02T03:04:05.000Z";
+  let userInserted = false;
+  let assetInserted = false;
+
+  try {
+    await applyPendingMigrations({ client: migrationClient, migrations: previousMigrations });
+    await migrationClient.query(
+      `INSERT INTO users (id, email, password_hash, display_name, ai_id)
+       VALUES ($1, 'content-revision-backfill@example.test', 'test-password-hash', 'Revision Backfill', '919191919191')`,
+      [userId],
+    );
+    userInserted = true;
+    await migrationClient.query(
+      `INSERT INTO station_media_assets
+        (id, user_id, kind, storage_provider, storage_key, caption, status, updated_at)
+       VALUES ($1, $2, 'image', 'test', 'test/pre-035.jpg', 'pre-035 asset', 'uploaded', $3)`,
+      [assetId, userId, updatedAt],
+    );
+    assetInserted = true;
+
+    await applyPendingMigrations({ client: migrationClient, migrations });
+    const result = await migrationClient.query(
+      "SELECT content_revision_at, updated_at FROM station_media_assets WHERE id = $1",
+      [assetId],
+    );
+    assert.equal(result.rows.length, 1);
+    assert.equal(result.rows[0].content_revision_at.toISOString(), result.rows[0].updated_at.toISOString());
+    assert.equal(result.rows[0].content_revision_at.toISOString(), new Date(updatedAt).toISOString());
+  } finally {
+    if (assetInserted) {
+      await migrationClient.query("DELETE FROM station_media_assets WHERE id = $1", [assetId]);
+    }
+    if (userInserted) await migrationClient.query("DELETE FROM users WHERE id = $1", [userId]);
+    await migrationClient.end();
   }
 };
 
@@ -195,6 +245,7 @@ if (integrationEnabled) {
       if (!port) throw new Error("Disposable pgvector database did not publish a port.");
       databaseUrl = `postgresql://postgres:postgres@127.0.0.1:${port}/marvels_chat_test`;
     }
+    await verifyContentRevisionBackfill();
     runAllMigrations();
     runAllMigrations();
     client = new pg.Pool({ connectionString: databaseUrl, max: 4 });
@@ -204,6 +255,79 @@ if (integrationEnabled) {
   after(async () => {
     await client?.end();
     if (composeStarted) runCompose(["down", "--volumes", "--remove-orphans"]);
+  });
+
+  const albumAgent = { key: "album-manager", name: "相册管理 Agent", permissions: ["album:read"] };
+  const albumTransaction = async (work) => {
+    const transactionClient = await client.connect();
+    try {
+      await transactionClient.query("BEGIN");
+      const result = await work(createConnectionAdapter(transactionClient));
+      await transactionClient.query("COMMIT");
+      return result;
+    } catch (error) {
+      await transactionClient.query("ROLLBACK");
+      throw error;
+    } finally {
+      transactionClient.release();
+    }
+  };
+  const albumAccess = (setAccess = setUserAgentAccess) => createAlbumAssistantAccessService({
+    withTransaction: albumTransaction,
+    getRuntimeStatus: async () => ({ routeEligibility: { canRouteNewRun: true } }),
+    setAccess,
+  });
+
+  test("album consent, jobs, Agent and thread roll back together if access persistence fails", async () => {
+    const userId = crypto.randomUUID();
+    await insertUser({ id: userId, email: `${userId}@example.invalid`, displayName: userId, aiId: "700001700001" });
+    const failingAccess = albumAccess(async (args) => {
+      await setUserAgentAccess(args);
+      throw new Error("injected access persistence failure");
+    });
+    try {
+      await assert.rejects(failingAccess({ userId, agent: albumAgent,
+        body: { enabled: true, albumAIConsentVersion: "media-retrieval-consent-v1" }, idempotencyKey: crypto.randomUUID(),
+      }), /injected access persistence failure/);
+      for (const table of ["media_retrieval_profiles", "media_retrieval_jobs", "agent_runs", "user_agents", "chat_threads"]) {
+        const result = await client.query(`SELECT count(*)::int AS count FROM ${table} WHERE user_id=$1`, [userId]);
+        assert.equal(result.rows[0].count, 0, `${table} must roll back`);
+      }
+      await albumAccess()({ userId, agent: albumAgent,
+        body: { enabled: true, albumAIConsentVersion: "media-retrieval-consent-v1" }, idempotencyKey: crypto.randomUUID(),
+      });
+      const before = await createRepository().getMediaRetrievalProfile({ userId });
+      await assert.rejects(failingAccess({ userId, agent: albumAgent,
+        body: { enabled: false }, idempotencyKey: crypto.randomUUID(),
+      }), /injected access persistence failure/);
+      assert.deepEqual(await createRepository().getMediaRetrievalProfile({ userId }), before);
+      const access = await client.query("SELECT enabled FROM user_agents WHERE user_id=$1 AND agent_id='album-manager'", [userId]);
+      assert.equal(access.rows[0].enabled, true);
+    } finally {
+      await client.query("DELETE FROM agent_runs WHERE user_id=$1", [userId]);
+      await client.query("DELETE FROM users WHERE id=$1", [userId]);
+    }
+  });
+
+  test("concurrent album activation creates one Agent thread and reuses cloud consent", async () => {
+    const userId = crypto.randomUUID();
+    await insertUser({ id: userId, email: `${userId}@example.invalid`, displayName: userId, aiId: "700002700002" });
+    try {
+      const activate = () => albumAccess()({ userId, agent: albumAgent,
+        body: { enabled: true, albumAIConsentVersion: "media-retrieval-consent-v1" }, idempotencyKey: crypto.randomUUID(),
+      });
+      await Promise.all([activate(), activate()]);
+      const rows = await client.query("SELECT count(*)::int AS count FROM chat_threads WHERE user_id=$1 AND agent_id='album-manager'", [userId]);
+      assert.equal(rows.rows[0].count, 1);
+      const runs = await client.query("SELECT count(*)::int AS count FROM agent_runs WHERE user_id=$1", [userId]);
+      assert.equal(runs.rows[0].count, 1);
+      const profile = await createRepository().getMediaRetrievalProfile({ userId });
+      assert.equal(profile.indexState, "enabled");
+      assert.equal(profile.indexEpoch, 1);
+    } finally {
+      await client.query("DELETE FROM agent_runs WHERE user_id=$1", [userId]);
+      await client.query("DELETE FROM users WHERE id=$1", [userId]);
+    }
   });
 
   test("full main plus product migrations are repeatable and install the product-only pgvector schema", async () => {
@@ -541,6 +665,20 @@ if (integrationEnabled) {
       assert.deepEqual(found.results.map((item) => item.mediaAssetId), [assetId]);
       assert.deepEqual(await service.searchMediaRetrieval(searchInput), found);
       assert.deepEqual(calls, ["describe", "image-embedding", "parse", "text-embedding", "rerank"]);
+      const originalRevision = (await client.query("SELECT content_revision_at FROM station_media_assets WHERE id = $1", [assetId])).rows[0].content_revision_at;
+      const albumId = "60606060-6060-4060-8060-606060606060";
+      await client.query("INSERT INTO station_albums (id, user_id, title) VALUES ($1, $2, 'Synthetic album')", [albumId, userId]);
+      await client.query("UPDATE station_media_assets SET album_id = $1 WHERE id = $2", [albumId, assetId]);
+      await client.query("UPDATE station_media_assets SET caption = 'a new description', tags = '[\"summer\"]' WHERE id = $1", [assetId]);
+      const revisionAfterEdit = (await client.query("SELECT content_revision_at FROM station_media_assets WHERE id = $1", [assetId])).rows[0].content_revision_at;
+      assert.equal(revisionAfterEdit.toISOString(), originalRevision.toISOString(), "metadata edits preserve content revision");
+      const repeated = await repository.enqueueAssetIndexJob({ userId, mediaAssetId: assetId, source: "upload" });
+      assert.equal(repeated.reused, true, "repeated upload completion reuses the ready index");
+      const concurrent = await Promise.all(Array.from({ length: 3 }, () => repository.enqueueAssetIndexJob({ userId, mediaAssetId: assetId, source: "upload" })));
+      assert.ok(concurrent.every(result => result.reused && result.job.id === repeated.job.id), "concurrent notifications reuse one index job");
+      assert.equal((await repository.searchMediaRetrievalSegments({ userId, vector, embeddingProvenance: provenance.embeddingProvenance, albumId })).length, 1, "album moves change the query scope without new embedding calls");
+      assert.equal((await repository.getMediaRetrievalSearchResponse({ userId, agentRunId: found.agentRunId })).results.length, 1, "metadata edits preserve existing result references");
+      assert.equal((await repository.claimNextMediaRetrievalJob({ workerId: "duplicate-probe" })), null, "no duplicate model job");
       await assert.rejects(service.getAgentRunEvents({ userId: otherUserId,
         agentRunId: found.agentRunId, afterSequence: 0 }), (error) => error.code === "run_not_found");
 
@@ -558,6 +696,12 @@ if (integrationEnabled) {
       assert.equal(rebuilding.backfill.indexedAssets, 1);
       await processNext();
       assert.equal((await service.getMediaRetrievalStatus({ userId })).backfill.totalAssets, 1);
+      await client.query("UPDATE station_media_assets SET storage_key = 'test/replaced-image.jpg' WHERE id = $1", [assetId]);
+      assert.deepEqual((await repository.getMediaRetrievalSearchResponse({ userId, agentRunId: found.agentRunId })).results, [], "replacing the original file invalidates earlier conversation result references");
+      await client.query("UPDATE station_media_assets SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP WHERE id = $1", [assetId]);
+      assert.equal(Number((await client.query("SELECT COUNT(*) AS n FROM media_retrieval_segments WHERE media_asset_id = $1", [assetId])).rows[0].n), 0);
+      assert.equal(Number((await client.query("SELECT COUNT(*) AS n FROM media_retrieval_segment_staging WHERE media_asset_id = $1", [assetId])).rows[0].n), 0);
+      assert.deepEqual((await repository.getMediaRetrievalSearchResponse({ userId, agentRunId: found.agentRunId })).results, [], "deleted media is scrubbed from persisted search results");
 
       const purge = await service.deleteMediaRetrievalIndex({ userId, idempotencyKey: "lifecycle-purge-0001" });
       await assert.rejects(repository.enableMediaRetrievalProfile({ userId,

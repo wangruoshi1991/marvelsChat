@@ -613,6 +613,7 @@ export const agentAccessSchema = z.object({
   enabled: z.boolean(),
   alias: z.string().trim().max(80).optional().default(""),
   grantedScopes: z.array(z.string().trim().min(1).max(80)).optional(),
+  albumAIConsentVersion: z.literal(MEDIA_RETRIEVAL_CONSENT_VERSION).optional(),
 });
 
 export const modelTestSchema = z.object({

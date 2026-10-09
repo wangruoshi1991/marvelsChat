@@ -1,5 +1,5 @@
 import { listAgents } from "../../../agents/registry.js";
-import { checkDatabase } from "../db.js";
+import { checkDatabase, withTransaction } from "../db.js";
 import { HttpError } from "../http-error.js";
 import {
   createUsageEvent,
@@ -7,9 +7,12 @@ import {
   hashRequestIp,
   parseAiIdFromScanPayload,
   setUserAgentAccess,
+  resolveAgentGrantedScopes,
   updateUserPresenceMode,
 } from "../repositories.js";
 import { buildPublicStationView } from "../public-station-service.js";
+import { createAlbumAssistantAccessService } from "../album-assistant-access-service.js";
+import { buildMediaRetrievalRuntimeStatus } from "../media-retrieval-runtime-status.js";
 import {
   clearSearchHistory,
   deleteSearchHistoryItem,
@@ -31,6 +34,11 @@ import {
   searchHistorySchema,
   searchUsersSchema,
 } from "../schemas.js";
+
+const setAlbumAssistantAccess = createAlbumAssistantAccessService({
+  withTransaction,
+  getRuntimeStatus: buildMediaRetrievalRuntimeStatus,
+});
 
 export function registerAppRoutes(
   app,
@@ -110,8 +118,15 @@ export function registerAppRoutes(
       const registeredAgents = await listAgents();
       const agent = registeredAgents.find((item) => item.key === req.params.agentId);
       if (!agent) throw new HttpError(404, "Agent not found");
+      // Validate scopes before any consent/index side effects.
+      resolveAgentGrantedScopes(agent, body.grantedScopes);
+      if (body.albumAIConsentVersion && (agent.key !== "album-manager" || !body.enabled)) throw new HttpError(400, "相册 AI 授权请求无效。");
 
-      const [updated] = await setUserAgentAccess({
+      const [updated] = agent.key === "album-manager"
+        ? await setAlbumAssistantAccess({
+          userId: req.user.id, agent, body, idempotencyKey: req.get("Idempotency-Key"),
+        })
+        : await setUserAgentAccess({
         userId: req.user.id,
         agent,
         enabled: body.enabled,

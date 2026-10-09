@@ -368,6 +368,10 @@ function App(): React.JSX.Element {
                 {openedThread &&
                 (modalRoute === 'butler' || modalRoute === 'chat') ? (
                   <ChatScreen
+                    token={session.token}
+                    onAuthorizeAlbumAI={() =>
+                      session.setAgentEnabled('album-manager', true)
+                    }
                     key={openedThread.id}
                     initialDraft={
                       openedThread.agentId === 'miaoxun-butler'

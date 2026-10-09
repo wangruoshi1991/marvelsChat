@@ -6,7 +6,7 @@ import { Language } from '../session/useMiaoxunSession';
 import { textFor } from '../../shared/i18n';
 import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
 import { resolveStationColors } from '../station/stationTheme';
-import { matchReasonLabels } from './mediaRetrievalState';
+import { matchReasonLabels } from './matchReasonLabels';
 import { MediaRetrievalSearchResult } from './mediaRetrievalTypes';
 import { retrievalStyles as styles } from './mediaRetrievalStyles';
 

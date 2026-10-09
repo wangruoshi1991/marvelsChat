@@ -44,6 +44,8 @@ import {
 import { useSocialActions } from './useSocialActions';
 import { useSessionSetter } from './useSessionSetter';
 import { useStationActions } from './useStationActions';
+import { albumAssistantConsent } from '../station/albumAssistantAuthorization';
+import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
 
 export type { ChatMessage, ChatThread, Language } from './sessionTypes';
 
@@ -601,7 +603,17 @@ export function useMiaoxunSession() {
       if (!token) {
         throw new Error('请先登录。');
       }
-      const updated = await apiClient.setAgentEnabled(token, agentId, enabled);
+      const consentVersion =
+        agentId === 'album-manager' && enabled
+          ? await albumAssistantConsent(token, language)
+          : undefined;
+      const updated = await apiClient.setAgentEnabled(
+        token,
+        agentId,
+        enabled,
+        consentVersion,
+        createIdempotencyKey(),
+      );
       setSessionOwnedAgents(current => {
         const remaining = current.filter(agent => agent.id !== updated.id);
         return updated.enabled ? [...remaining, updated] : remaining;
@@ -609,7 +621,7 @@ export function useMiaoxunSession() {
       await refreshBootstrap(token, false);
       return updated;
     },
-    [refreshBootstrap, setSessionOwnedAgents, token],
+    [language, refreshBootstrap, setSessionOwnedAgents, token],
   );
 
   const {
@@ -725,8 +737,6 @@ export function useMiaoxunSession() {
     applyStationSiteDraft,
     createStationFileAsset,
     preprocessStationFileAsset,
-    listStationAlbumSuggestions,
-    applyStationAlbumSuggestion,
     createStationComicDiary,
     deleteStationComicDiary,
     createStationVideoDraft,
@@ -816,8 +826,6 @@ export function useMiaoxunSession() {
     applyStationSiteDraft,
     createStationFileAsset,
     preprocessStationFileAsset,
-    listStationAlbumSuggestions,
-    applyStationAlbumSuggestion,
     createStationComicDiary,
     deleteStationComicDiary,
     createStationVideoDraft,

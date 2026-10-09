@@ -184,15 +184,30 @@ export function createMediaRetrievalRunEventRepository({
 
   const getMediaRetrievalSearchResponse = async ({ userId, agentRunId }) => {
     const rows = await query(
-      `SELECT event.payload -> 'searchResponse' AS search_response
+      `SELECT jsonb_set(event.payload -> 'searchResponse', '{results}', COALESCE((
+        SELECT jsonb_agg(result.item ORDER BY result.position)
+        FROM jsonb_array_elements(event.payload -> 'searchResponse' -> 'results')
+          WITH ORDINALITY AS result(item, position)
+        JOIN station_media_assets AS asset
+          ON asset.id = (result.item ->> 'mediaAssetId')
+          AND asset.user_id = event.user_id
+          AND asset.kind = (result.item ->> 'kind')
+          AND asset.status = 'uploaded'
+          AND asset.deleted_at IS NULL
+          AND asset.content_revision_at <= event.created_at
+      ), '[]'::jsonb)) AS search_response
       FROM agent_run_events AS event
       JOIN agent_runs AS run
         ON run.id = event.agent_run_id AND run.user_id = event.user_id
+      JOIN media_retrieval_profiles AS profile ON profile.user_id = event.user_id
       WHERE event.user_id = ?
         AND event.agent_run_id = ?
         AND event.event_type = 'completed'
         AND run.agent_id = 'media-retrieval'
         AND run.run_type = 'media-search'
+        AND profile.index_state = 'enabled'
+        AND profile.consent_version = 'media-retrieval-consent-v1'
+        AND event.payload ->> 'indexEpoch' = profile.index_epoch::text
       ORDER BY event.sequence DESC
       LIMIT 1`,
       [userId, agentRunId],

@@ -256,8 +256,8 @@ async function listOwnedAgents(userId, registeredAgents = []) {
   });
 }
 
-export async function listAgentAccessForUser(userId, registeredAgents = []) {
-  const rows = await query(
+export async function listAgentAccessForUser(userId, registeredAgents = [], queryFn = query) {
+  const rows = await queryFn(
     `SELECT user_id, agent_id, alias, enabled, granted_scopes, created_at, updated_at
     FROM user_agents
     WHERE user_id = ?
@@ -287,10 +287,20 @@ export async function setUserAgentAccess({
   enabled,
   alias = "",
   grantedScopes,
+  connection = null,
 }) {
+  if (!connection) {
+    return withTransaction((transaction) => setUserAgentAccess({
+      userId, agent, enabled, alias, grantedScopes, connection: transaction,
+    }));
+  }
+  const queryFn = connection.query;
+  // Serialize concurrent enable/disable requests and thread creation per owner.
+  const users = await queryFn("SELECT id FROM users WHERE id = ? FOR UPDATE", [userId]);
+  if (!users[0]) throw new HttpError(404, "User not found");
   const resolvedAlias = alias || agent.name || agent.key;
   const resolvedScopes = resolveAgentGrantedScopes(agent, grantedScopes);
-  await query(
+  await queryFn(
     `INSERT INTO user_agents
       (user_id, agent_id, alias, enabled, granted_scopes)
     VALUES (?, ?, ?, ?, ?)
@@ -303,7 +313,7 @@ export async function setUserAgentAccess({
   );
 
   if (enabled) {
-    const existingThreads = await query(
+    const existingThreads = await queryFn(
       "SELECT id FROM chat_threads WHERE user_id = ? AND agent_id = ? LIMIT 1",
       [userId, agent.key],
     );
@@ -311,8 +321,7 @@ export async function setUserAgentAccess({
       const threadId = crypto.randomUUID();
       const messageId = crypto.randomUUID();
       const avatarText = displayInitial(resolvedAlias);
-      await withTransaction(async (connection) => {
-        await connection.execute(
+      await connection.execute(
           `INSERT INTO chat_threads
             (id, user_id, title, status_text, avatar_text, agent_id, kind, pinned)
           VALUES (?, ?, ?, '在线 · Agent', ?, ?, 'agent', FALSE)`,
@@ -331,21 +340,20 @@ export async function setUserAgentAccess({
             JSON.stringify({ source: "admin_agent_enable", agentId: agent.key }),
           ],
         );
-      });
     } else {
-      await query(
+      await queryFn(
         "UPDATE chat_threads SET status_text = '在线 · Agent' WHERE user_id = ? AND agent_id = ?",
         [userId, agent.key],
       );
     }
   } else {
-    await query(
+    await queryFn(
       "UPDATE chat_threads SET status_text = '已停用' WHERE user_id = ? AND agent_id = ?",
       [userId, agent.key],
     );
   }
 
-  return listAgentAccessForUser(userId, [agent]);
+  return listAgentAccessForUser(userId, [agent], queryFn);
 }
 
 export function resolveAgentGrantedScopes(agent, requestedScopes) {

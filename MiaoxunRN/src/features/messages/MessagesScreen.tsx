@@ -39,6 +39,8 @@ import { resolveMessagePalette } from './messagePalette';
 import { ThreadSettingsSheet } from './ThreadSettingsSheet';
 import { isThreadOnline } from './messageUtils';
 import { messageMenuGeometry } from './messageMenuGeometry';
+import { AlbumAssistantStatus } from './AlbumAssistantStatus';
+import { keyboardBottomInset } from './keyboardGeometry';
 
 export type { MessageTab, UserAvatarRenderer };
 
@@ -52,6 +54,8 @@ export function MessagesScreen(
 }
 
 export function ChatScreen({
+  token,
+  onAuthorizeAlbumAI,
   palette,
   language,
   currentUserId,
@@ -70,6 +74,8 @@ export function ChatScreen({
   initialDraft,
   onInitialDraftConsumed,
 }: {
+  token?: string;
+  onAuthorizeAlbumAI?: () => Promise<unknown>;
   palette: Palette;
   language: Language;
   currentUserId: string;
@@ -244,6 +250,7 @@ export function ChatScreen({
     index: number;
   }) => (
     <ChatMessageItem
+      token={token}
       item={item}
       previousMessage={index > 0 ? thread.messages[index - 1] : null}
       palette={messagePalette}
@@ -301,7 +308,11 @@ export function ChatScreen({
     const showSubscription = Keyboard.addListener('keyboardDidShow', event => {
       if (Platform.OS === 'ios') {
         setKeyboardInset(
-          Math.max(0, event.endCoordinates.height - safeAreaInsets.bottom),
+          keyboardBottomInset(
+            event.endCoordinates,
+            windowSize.height,
+            safeAreaInsets.bottom,
+          ),
         );
       }
       scrollToBottom(true);
@@ -312,7 +323,11 @@ export function ChatScreen({
       event => {
         if (Platform.OS === 'ios') {
           setKeyboardInset(
-            Math.max(0, event.endCoordinates.height - safeAreaInsets.bottom),
+            keyboardBottomInset(
+              event.endCoordinates,
+              windowSize.height,
+              safeAreaInsets.bottom,
+            ),
           );
         }
         scrollToBottom(true);
@@ -327,7 +342,7 @@ export function ChatScreen({
       frameSubscription.remove();
       hideSubscription.remove();
     };
-  }, [safeAreaInsets.bottom]);
+  }, [safeAreaInsets.bottom, windowSize.height]);
 
   const send = () => {
     const content = draft.trim();
@@ -400,6 +415,15 @@ export function ChatScreen({
             canConfigureThread ? () => setIsThreadSettingsOpen(true) : undefined
           }
         />
+        {thread.agentId === 'album-manager' && token && onAuthorizeAlbumAI ? (
+          <AlbumAssistantStatus
+            token={token}
+            palette={messagePalette}
+            language={language}
+            onAuthorize={onAuthorizeAlbumAI}
+            onError={onActionError}
+          />
+        ) : null}
         <View
           ref={messageAreaRef}
           collapsable={false}

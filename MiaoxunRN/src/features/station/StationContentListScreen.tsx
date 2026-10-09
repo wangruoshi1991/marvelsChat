@@ -1,4 +1,4 @@
-import { Pencil, Plus, Search } from 'lucide-react-native';
+import { Pencil, Plus } from 'lucide-react-native';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -6,7 +6,6 @@ import {
   PanResponder,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   useWindowDimensions,
   View,
@@ -29,9 +28,6 @@ import type {
 } from './stationTypes';
 
 const swipeOpenThreshold = -72;
-const retrievalEntryStyle = StyleSheet.create({
-  entry: { gap: 8, minHeight: 48, flexWrap: 'wrap' },
-}).entry;
 
 export function StationContentListScreen({
   kind,
@@ -45,7 +41,6 @@ export function StationContentListScreen({
   onCreate,
   onOpen,
   onEdit,
-  onFindMedia,
 }: {
   kind: StationContentListKind;
   palette: Palette;
@@ -58,7 +53,6 @@ export function StationContentListScreen({
   onCreate: () => void;
   onOpen: (target: StationManageTarget) => void;
   onEdit: (target: StationManageTarget) => void;
-  onFindMedia?: () => void;
 }) {
   const items = kind === 'diary' ? diaryEntries : albums;
   const [filter, setFilter] = useState<'all' | 'month' | 'earlier'>('all');
@@ -124,31 +118,6 @@ export function StationContentListScreen({
           </Pressable>
         </View>
       </View>
-
-      {kind === 'album' && onFindMedia ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={textFor(language, '找素材', 'Find media')}
-          onPress={onFindMedia}
-          style={[
-            styles.stationContentFilters,
-            { backgroundColor: palette.surface },
-            retrievalEntryStyle,
-          ]}
-        >
-          <Search color={palette.text} size={18} />
-          <Text style={{ color: palette.text }}>
-            {textFor(language, '找素材', 'Find media')}
-          </Text>
-          <Text style={{ color: palette.secondaryText }}>
-            {textFor(
-              language,
-              '描述你想找的图片或视频',
-              'Describe an image or video',
-            )}
-          </Text>
-        </Pressable>
-      ) : null}
 
       <View
         style={[

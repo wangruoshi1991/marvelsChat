@@ -93,7 +93,17 @@ const normalizeUsage = (usage = {}) => ({
       : null),
 });
 
-const callNewApi = async (plan) => {
+const parseToolCalls = (payload) => {
+  const calls = isAnthropicProvider()
+    ? (Array.isArray(payload.content) ? payload.content : []).filter(part => part?.type === "tool_use")
+    : payload.choices?.[0]?.message?.tool_calls ?? [];
+  if (!Array.isArray(calls) || calls.length > 2) throw new HttpError(502, "Model provider returned invalid tool calls");
+  return calls.map(call => isAnthropicProvider()
+    ? { id: call.id, name: call.name, arguments: call.input }
+    : { id: call?.id, name: call?.function?.name, arguments: call?.function?.arguments });
+};
+
+const callNewApi = async (plan, { conversation = null, tools = null, finalTurn = false } = {}) => {
   const endpoint = completionEndpoint();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.newApi.timeoutMs);
@@ -115,7 +125,14 @@ const callNewApi = async (plan) => {
               Authorization: `Bearer ${config.newApi.apiKey}`,
             }),
       },
-      body: JSON.stringify(isAnthropicProvider() ? anthropicBody(plan) : completionBody(plan)),
+      body: JSON.stringify(isAnthropicProvider()
+        ? { ...anthropicBody(plan),
+            ...(conversation ? { messages: conversation } : {}),
+            ...(tools ? { tools: tools.map(tool => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })),
+              tool_choice: { type: finalTurn ? "none" : "auto" } } : {}) }
+        : { ...completionBody(plan),
+            ...(conversation ? { messages: conversation } : {}),
+            ...(tools ? { tools: tools.map(tool => ({ type: "function", function: tool })), tool_choice: finalTurn ? "none" : "auto" } : {}) }),
       signal: controller.signal,
     });
     const responseText = await response.text();
@@ -160,6 +177,10 @@ const callNewApi = async (plan) => {
   return {
     reply: isAnthropicProvider() ? parseAnthropicReply(payload) : payload.choices?.[0]?.message?.content?.trim() || "",
     usage: normalizeUsage(payload.usage),
+    assistant: isAnthropicProvider()
+      ? { role: "assistant", content: payload.content }
+      : payload.choices?.[0]?.message,
+    toolCalls: parseToolCalls(payload),
   };
 };
 
@@ -206,7 +227,7 @@ export async function testModelRuntime({ input = "请用一句话回复：妙讯
   };
 }
 
-export async function runAgent({ agentId, input, user, thread = null, messages = [], appContext = null }) {
+export async function runAgent({ agentId, input, user, thread = null, messages = [], appContext = null, tools = null }) {
   const agent = await getAgent(agentId);
   if (!agent) throw new HttpError(404, `Agent ${agentId} is not registered`);
 
@@ -221,7 +242,40 @@ export async function runAgent({ agentId, input, user, thread = null, messages =
     });
   }
 
-  const completion = await callNewApi(plan);
+  const conversation = isAnthropicProvider()
+    ? normalizeAnthropicMessages([...(plan.history || []), { role: "user", content: plan.user }])
+    : buildMessages(plan);
+  let completion;
+  const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  let calls = 0;
+  for (let turn = 0; turn < (tools ? 3 : 1); turn += 1) {
+    const finalTurn = turn === 2 || tools?.metadata().outcome != null;
+    completion = await callNewApi(plan, {
+      conversation, tools: tools?.definitions, finalTurn,
+    });
+    for (const key of Object.keys(usage)) {
+      usage[key] = usage[key] == null || completion.usage[key] == null ? null : usage[key] + completion.usage[key];
+    }
+    if (!completion.toolCalls.length) break;
+    if (!tools || finalTurn || calls + completion.toolCalls.length > 2) {
+      throw new HttpError(502, "Model provider exceeded the allowed tool calls");
+    }
+    conversation.push(completion.assistant);
+    const results = [];
+    for (const call of completion.toolCalls) {
+      if (typeof call.id !== "string" || !call.id || !tools.definitions.some(tool => tool.name === call.name)) {
+        throw new HttpError(502, "Model provider returned an unauthorized tool call");
+      }
+      let args;
+      try { args = typeof call.arguments === "string" ? JSON.parse(call.arguments) : call.arguments; }
+      catch { throw new HttpError(502, "Model provider returned invalid tool arguments"); }
+      const result = await tools.execute(call.name, args);
+      calls += 1;
+      if (isAnthropicProvider()) results.push({ type: "tool_result", tool_use_id: call.id, content: JSON.stringify(result) });
+      else conversation.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+    }
+    if (isAnthropicProvider()) conversation.push({ role: "user", content: results });
+  }
   if (!completion.reply) {
     throw new HttpError(502, "Model provider returned an empty reply", {
       provider: providerName(),
@@ -236,9 +290,10 @@ export async function runAgent({ agentId, input, user, thread = null, messages =
     reply: completion.reply,
     latencyMs: Date.now() - startedAt,
     tokenUsage: {
-      prompt: completion.usage.prompt_tokens ?? null,
-      completion: completion.usage.completion_tokens ?? null,
-      total: completion.usage.total_tokens ?? null,
+      prompt: usage.prompt_tokens,
+      completion: usage.completion_tokens,
+      total: usage.total_tokens,
     },
+    ...(tools ? { albumAssistant: tools.metadata() } : {}),
   };
 }

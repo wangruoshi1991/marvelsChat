@@ -216,8 +216,7 @@ describe('Station home content actions', () => {
     ).toBeUndefined();
   });
 
-  it('opens Find media from the album home module without adding the Agent', async () => {
-    const onOpenMediaRetrieval = jest.fn();
+  it('uses the album conversation and has no separate Find media shortcut', async () => {
     await ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(
         <StationHome
@@ -234,7 +233,6 @@ describe('Station home content actions', () => {
           onOpenContentList={jest.fn()}
           onOpenCreateSheet={jest.fn()}
           onOpenDiaryDetail={jest.fn()}
-          onOpenMediaRetrieval={onOpenMediaRetrieval}
           onSelectStationTab={jest.fn()}
           ownedAgents={[]}
           palette={palettes.light}
@@ -252,13 +250,13 @@ describe('Station home content actions', () => {
       );
     });
 
-    const button = renderer.root.findByProps({
-      testID: 'station-home-find-media',
-    });
-    await ReactTestRenderer.act(() => button.props.onPress());
-    expect(onOpenMediaRetrieval).toHaveBeenCalledTimes(1);
+    expect(
+      renderer.root.findAllByProps({
+        testID: 'station-home-find-media',
+      }),
+    ).toHaveLength(0);
     expect(moduleBindingForAgent('media-retrieval', 'zh')).toBe(
-      '个人相册 / 找素材',
+      '相册管理对话 / 检索协作能力',
     );
   });
 });

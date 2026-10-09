@@ -30,8 +30,6 @@ import type {
   StationTab,
 } from './stationTypes';
 import { useAvatar3d } from './useAvatar3d';
-import { supportsMediaRetrieval } from '../../services/appFeatures';
-import { StationMediaRetrievalWorkspace } from './StationMediaRetrievalWorkspace';
 
 export function StationScreen({
   active = true,
@@ -83,7 +81,6 @@ export function StationScreen({
   }, [active, refreshRelationships, selectedStationTab]);
   const [isPointsOpen, setIsPointsOpen] = useState(false);
   const [isAvatar3dOpen, setIsAvatar3dOpen] = useState(false);
-  const [isMediaRetrievalOpen, setIsMediaRetrievalOpen] = useState(false);
   const [createKind, setCreateKind] = useState<StationCreateKind | null>(null);
   const [contentListKind, setContentListKind] =
     useState<StationContentListKind | null>(null);
@@ -410,11 +407,6 @@ export function StationScreen({
             onOpenAgentThread={onOpenAgentThread}
             onOpenPostComposer={onOpenPostComposer}
             onOpenContentList={setContentListKind}
-            onOpenMediaRetrieval={
-              supportsMediaRetrieval()
-                ? () => setIsMediaRetrievalOpen(true)
-                : undefined
-            }
             onSetAgentEnabled={session.setAgentEnabled}
             onOpenPublicProfileByAiId={onOpenPublicProfileByAiId}
             onSelectStationTab={onSelectStationTab}
@@ -426,8 +418,6 @@ export function StationScreen({
             onCreateSiteDraft={session.createStationSiteDraft}
             onApplySiteDraft={session.applyStationSiteDraft}
             onOpenAvatar3d={openAvatar3d}
-            onLoadAlbumSuggestions={session.listStationAlbumSuggestions}
-            onApplyAlbumSuggestion={session.applyStationAlbumSuggestion}
             onCreateFileAsset={session.createStationFileAsset}
             onPreprocessFileAsset={session.preprocessStationFileAsset}
             onCreateVideoDraft={session.createStationVideoDraft}
@@ -497,12 +487,8 @@ export function StationScreen({
       <Modal
         animationType="fade"
         presentationStyle="fullScreen"
-        visible={contentListKind !== null || isMediaRetrievalOpen}
-        onRequestClose={() =>
-          isMediaRetrievalOpen
-            ? setIsMediaRetrievalOpen(false)
-            : closeContentDetail()
-        }
+        visible={contentListKind !== null}
+        onRequestClose={closeContentDetail}
       >
         <SafeAreaProvider>
           <SafeAreaView
@@ -512,17 +498,7 @@ export function StationScreen({
               { backgroundColor: stationColors.surface },
             ]}
           >
-            {isMediaRetrievalOpen ? (
-              <StationMediaRetrievalWorkspace
-                key={session.user?.id}
-                userId={session.user!.id}
-                token={session.token}
-                palette={palette}
-                language={language}
-                agents={session.agents}
-                onClose={() => setIsMediaRetrievalOpen(false)}
-              />
-            ) : contentListDetail?.type === 'create' ? (
+            {contentListDetail?.type === 'create' ? (
               <StationCreateSheet
                 kind={contentListDetail.kind}
                 fullScreen
@@ -582,11 +558,6 @@ export function StationScreen({
                 diaryEntries={session.stationContent.diaryEntries}
                 language={language}
                 mediaAssets={session.stationContent.mediaAssets}
-                onFindMedia={
-                  supportsMediaRetrieval()
-                    ? () => setIsMediaRetrievalOpen(true)
-                    : undefined
-                }
                 onBack={() => setContentListKind(null)}
                 onCreate={() => {
                   setContentListDetail({

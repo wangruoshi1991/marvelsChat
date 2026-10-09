@@ -206,6 +206,13 @@ export const createMediaRetrievalConfig = (env = process.env) => ({
     minimum: MEDIA_RETRIEVAL_RUNTIME_LIMITS.minWorkerPollMs,
     maximum: MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxWorkerPollMs,
   }),
+  captionTimeoutMs: parseBoundedInteger({
+    env,
+    name: "MEDIA_RETRIEVAL_CAPTION_TIMEOUT_MS",
+    fallback: 90000,
+    minimum: 10000,
+    maximum: 120000,
+  }),
   userDailyRequestLimit: parseBoundedInteger({
     env,
     name: "MEDIA_RETRIEVAL_USER_DAILY_REQUEST_LIMIT",

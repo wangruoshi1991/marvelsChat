@@ -8,8 +8,6 @@ import {
   ProfileDTO,
   StationContentDTO,
   StationFileAssetDTO,
-  StationAlbumSuggestionDTO,
-  StationVisibility,
   StationVideoDraftDTO,
 } from '../../models/api';
 import { textFor } from '../../shared/i18n';
@@ -40,8 +38,6 @@ export function StationAgentsPanel({
   onSetAgentEnabled,
   onCreateSiteDraft,
   onApplySiteDraft,
-  onLoadAlbumSuggestions,
-  onApplyAlbumSuggestion,
   onCreateFileAsset,
   onPreprocessFileAsset,
   onCreateVideoDraft,
@@ -66,13 +62,6 @@ export function StationAgentsPanel({
     apply?: boolean;
   }) => Promise<unknown>;
   onApplySiteDraft: (draftId: string) => Promise<unknown>;
-  onLoadAlbumSuggestions: () => Promise<StationAlbumSuggestionDTO[]>;
-  onApplyAlbumSuggestion: (payload: {
-    title: string;
-    description?: string;
-    visibility?: StationVisibility;
-    mediaAssetIds: string[];
-  }) => Promise<unknown>;
   onCreateFileAsset: (payload: {
     originalFilename: string;
     mimeType?: string;
@@ -108,6 +97,7 @@ export function StationAgentsPanel({
     [agents],
   );
   const ownedCards = ownedAgents
+    .filter(agent => agent.id !== 'media-retrieval')
     .filter(agent => agent.enabled)
     .map(agent => ({
       ...agent,
@@ -121,10 +111,15 @@ export function StationAgentsPanel({
     agent => !assistantKeys.has(agent.id),
   );
   const ownedIds = new Set(ownedCards.map(agent => agent.id));
-  const recommendedAgents = agents.filter(agent => !ownedIds.has(agent.key));
+  const recommendedAgents = agents.filter(
+    agent => agent.key !== 'media-retrieval' && !ownedIds.has(agent.key),
+  );
   const availableCount = recommendedAgents.length;
-  const connectionRate = agents.length
-    ? Math.round((ownedCards.length / agents.length) * 100)
+  const visibleAgentCount = agents.filter(
+    agent => agent.key !== 'media-retrieval',
+  ).length;
+  const connectionRate = visibleAgentCount
+    ? Math.round((ownedCards.length / visibleAgentCount) * 100)
     : 0;
   const hasCapability = (agentId: string) => ownedIds.has(agentId);
 
@@ -195,8 +190,8 @@ export function StationAgentsPanel({
           >
             {textFor(
               language,
-              `已接入 ${ownedCards.length} / ${agents.length}`,
-              `${ownedCards.length} / ${agents.length} connected`,
+              `已接入 ${ownedCards.length} / ${visibleAgentCount}`,
+              `${ownedCards.length} / ${visibleAgentCount} connected`,
             )}
           </Text>
           <View style={styles.stationEcosystemProgressTrack}>
@@ -268,8 +263,7 @@ export function StationAgentsPanel({
         hasCapability={hasCapability}
         onCreateSiteDraft={onCreateSiteDraft}
         onApplySiteDraft={onApplySiteDraft}
-        onLoadAlbumSuggestions={onLoadAlbumSuggestions}
-        onApplyAlbumSuggestion={onApplyAlbumSuggestion}
+        onOpenAgentThread={onOpenAgentThread}
         onCreateFileAsset={onCreateFileAsset}
         onPreprocessFileAsset={onPreprocessFileAsset}
         onCreateVideoDraft={onCreateVideoDraft}

@@ -534,7 +534,7 @@ export function AIPartnerGrid({
   const colors = resolveStationColors(palette);
   const registeredByKey = new Map(agents.map(agent => [agent.key, agent]));
   const enabledAgents = ownedAgents
-    .filter(agent => agent.enabled)
+    .filter(agent => agent.enabled && agent.id !== 'media-retrieval')
     .map(agent => ({
       ...agent,
       identity: registeredByKey.get(agent.id)?.identity || null,

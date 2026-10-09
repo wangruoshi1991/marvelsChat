@@ -506,45 +506,6 @@ export function useStationActions({
     [setStationContent, token],
   );
 
-  const applyStationAlbumSuggestion = useCallback(
-    async (payload: {
-      title: string;
-      description?: string;
-      visibility?: StationVisibility;
-      mediaAssetIds: string[];
-    }) => {
-      if (!token) {
-        throw new Error('请先登录。');
-      }
-      const result = await apiClient.applyStationAlbumSuggestion(
-        token,
-        payload,
-      );
-      setStationContent(current => ({
-        ...current,
-        albums: [
-          result.album,
-          ...current.albums.filter(album => album.id !== result.album.id),
-        ],
-        mediaAssets: current.mediaAssets.map(asset => {
-          const movedAsset = result.mediaAssets.find(
-            item => item.id === asset.id,
-          );
-          return movedAsset || asset;
-        }),
-      }));
-      return result;
-    },
-    [setStationContent, token],
-  );
-
-  const listStationAlbumSuggestions = useCallback(async () => {
-    if (!token) {
-      throw new Error('请先登录。');
-    }
-    return apiClient.stationAlbumSuggestions(token);
-  }, [token]);
-
   const createStationVideoDraft = useCallback(
     async (payload: {
       prompt: string;
@@ -620,8 +581,6 @@ export function useStationActions({
     applyStationSiteDraft,
     createStationFileAsset,
     preprocessStationFileAsset,
-    listStationAlbumSuggestions,
-    applyStationAlbumSuggestion,
     createStationComicDiary,
     deleteStationComicDiary,
     createStationVideoDraft,

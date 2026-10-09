@@ -55,6 +55,7 @@ export function createMediaRetrievalBudgetAdminRepository({
               WHERE segment.user_id = asset.user_id
                 AND segment.media_asset_id = asset.id
                 AND segment.state = 'ready'
+                AND segment.created_at >= asset.content_revision_at
                 AND profile.index_state = 'enabled'
             ) THEN 'succeeded'
             WHEN latest_job.status IN ('failed', 'blocked') THEN latest_job.status

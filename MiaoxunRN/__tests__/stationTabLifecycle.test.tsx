@@ -53,10 +53,10 @@ jest.mock('../src/features/station/StationHome', () => {
   return {
     StationHome: ({
       active,
-      onOpenMediaRetrieval,
+      onOpenAgentThread,
     }: {
       active: boolean;
-      onOpenMediaRetrieval?: () => void;
+      onOpenAgentThread?: (agentId: string) => void;
     }) => {
       ReactModule.useEffect(() => {
         mockPanelMounted('station');
@@ -69,8 +69,8 @@ jest.mock('../src/features/station/StationHome', () => {
           active,
         },
         ReactModule.createElement(NativePressable, {
-          onPress: onOpenMediaRetrieval,
-          testID: 'station-home-find-media',
+          onPress: () => onOpenAgentThread?.('album-manager'),
+          testID: 'station-home-album-agent',
         }),
       );
     },
@@ -269,7 +269,7 @@ describe('Station tab lifecycle', () => {
     expect(posts.props.pointerEvents).toBe('none');
   });
 
-  it('opens the media retrieval modal from the home album shortcut', () => {
+  it('opens the album conversation without creating a retrieval page', () => {
     let renderer: ReactTestRenderer.ReactTestRenderer;
     ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(stationScreen('station'));
@@ -287,10 +287,11 @@ describe('Station tab lifecycle', () => {
 
     ReactTestRenderer.act(() => {
       renderer!.root
-        .findByProps({ testID: 'station-home-find-media' })
+        .findByProps({ testID: 'station-home-album-agent' })
         .props.onPress();
     });
 
-    expect(retrievalModal()?.props.visible).toBe(true);
+    expect(retrievalModal()?.props.visible).toBe(false);
+    expect(action).toHaveBeenCalledWith('album-manager');
   });
 });

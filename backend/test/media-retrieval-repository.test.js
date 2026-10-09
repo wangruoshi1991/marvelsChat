@@ -653,7 +653,7 @@ test("final segment persistence rejects a revoked profile before inserting any s
           deleted_at: null,
           storage_key: "private/a.jpg",
           byte_size: 1,
-          updated_at: "2026-08-06T00:00:00.000Z",
+          content_revision_at: "2026-08-06T00:00:00.000Z",
         }];
       }
       return [];
@@ -703,7 +703,7 @@ test("provider dispatch verification binds an index call to live consent, epoch,
           deleted_at: null,
           storage_key: "private/a.jpg",
           byte_size: 1,
-          updated_at: "2026-08-06T00:00:00.000Z",
+          content_revision_at: "2026-08-06T00:00:00.000Z",
         }];
       }
       return [];
@@ -749,7 +749,7 @@ test("provider dispatch verification fails closed when consent or epoch is no lo
           deleted_at: null,
           storage_key: "private/a.jpg",
           byte_size: 1,
-          updated_at: "2026-08-06T00:00:00.000Z",
+          content_revision_at: "2026-08-06T00:00:00.000Z",
         }];
       }
       return [];
@@ -812,7 +812,7 @@ test("final segment persistence supersedes every existing ready version before i
           deleted_at: null,
           storage_key: "private/a.jpg",
           byte_size: 1,
-          updated_at: "2026-08-06T00:00:00.000Z",
+          content_revision_at: "2026-08-06T00:00:00.000Z",
         }];
       }
       if (sql.includes("INSERT INTO media_retrieval_segments")) return [{ id: "new-segment" }];

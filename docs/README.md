@@ -14,6 +14,7 @@
 - [Agent 接入](agents.md)、[Agent SOP](agent-sop/README.md)：注册、授权与能力交付。
 - [社交关系](social-graph.md)、[小站能力](station-feature-closure.md)：业务状态与未闭环能力。
 - [媒体检索产品合同](media-retrieval-product-handoff.md)：后端、RN 和运营控制的接口边界。
+- [相册对话检索](agents/album-assistant.md)：当前会话入口、统一授权、受控工具、增量索引及迁移 035。
 
 ## 发布与运维
 

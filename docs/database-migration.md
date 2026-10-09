@@ -40,6 +40,7 @@
 - `032_message_idempotency_social_paging.sql` - 聊天重试唯一约束、Agent 完成记录去重和社交关系游标分页索引
 - `033_media_retrieval_rerank_operation.sql` - 为媒体检索语义重排调用扩展费用账本操作约束
 - `034_media_retrieval_unlimited_limits.sql` - 以 NULL 表示不设费用/次数上限，并扩大费用记账字段
+- `035_album_assistant_content_revision.sql` - 分离原文件与元数据版本，删除素材同步清理派生索引与结果引用；部署与保守回填边界见[相册对话检索](agents/album-assistant.md)
 
 `016_station_posts.sql` 与 `021_station_posts_compat.sql` 当前内容相同，但两者已按不同文件名和
 校验和进入迁移账本；不能为了去重而修改或删除其中一份。

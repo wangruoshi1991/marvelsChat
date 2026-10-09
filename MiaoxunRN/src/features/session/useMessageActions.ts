@@ -114,6 +114,7 @@ export function useMessageActions({
           appActionResult,
           replyToMessageId,
           clientMessageId,
+          thread?.agentId === 'album-manager' ? 180000 : 45000,
         );
         const incoming = response.messages.map(mapMessage);
         setThreads(current =>

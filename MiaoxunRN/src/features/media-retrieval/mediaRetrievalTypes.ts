@@ -77,31 +77,3 @@ export type RetrievalEvent = {
 };
 
 export type RetrievalEvents = { run: RetrievalRun; events: RetrievalEvent[] };
-export type RetrievalAction = 'enable' | 'reindex' | 'purge';
-export type RetrievalPhase =
-  | 'loading'
-  | 'disabled'
-  | 'enable'
-  | 'indexing'
-  | 'ready'
-  | 'blocked'
-  | 'purging';
-export type RetrievalIssue = {
-  message: string;
-  retryable: boolean;
-  code: string;
-};
-export type RetrievalState = {
-  status: RetrievalStatus | null;
-  results: MediaRetrievalSearchResult[];
-  searched: boolean;
-  busy: RetrievalAction | 'search' | null;
-  refreshing: boolean;
-  statusStale: boolean;
-  error: RetrievalIssue | null;
-  run: RetrievalRun | null;
-  events: RetrievalEvent[];
-  purgePending: boolean;
-  chargeReview: boolean;
-  pendingOperation: boolean;
-};
