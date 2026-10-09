@@ -27,7 +27,7 @@ const status = (enabled: boolean) => ({
     skippedAssets: 0,
     totalAssets: 2,
   },
-  quota: { dailyRemaining: 10, monthlyRemainingFen: 100 },
+  quota: { dailyRemaining: null, monthlyRemainingFen: null },
   availability: { state: 'available', canStartRun: true, reasonCodes: [] },
   recentRuns: [],
 });
@@ -90,12 +90,46 @@ describe('Find media screen', () => {
     expect(mediaRetrievalApi.enable).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(renderer.toJSON())).not.toContain('已完成');
   });
-  it('does not expose an enable action if agent readiness is missing', async () => {
+  it('keeps consent visible and enabling disabled if agent readiness is missing', async () => {
     await open(false);
     expect(
-      renderer.root.findAllByProps({ accessibilityLabel: '启用检索' }),
-    ).toHaveLength(0);
+      renderer.root.findByProps({ accessibilityLabel: '启用检索' }).props
+        .disabled,
+    ).toBe(true);
     expect(JSON.stringify(renderer.toJSON())).toContain('检索暂不可用');
+    expect(JSON.stringify(renderer.toJSON())).toContain('阿里云百炼');
+    await ReactTestRenderer.act(async () => {
+      renderer.root
+        .findByProps({ accessibilityLabel: '同意私有素材检索' })
+        .props.onPress();
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.root
+        .findByProps({ accessibilityLabel: '启用检索' })
+        .props.onPress();
+    });
+    expect(mediaRetrievalApi.enable).not.toHaveBeenCalled();
+  });
+  it('explains a closed service without hiding the consent entry', async () => {
+    (mediaRetrievalApi.status as jest.Mock).mockResolvedValue({
+      ...status(false),
+      availability: {
+        state: 'unavailable',
+        canStartRun: false,
+        reasonCodes: ['lifecycle-not-available'],
+      },
+    });
+    await open();
+    expect(JSON.stringify(renderer.toJSON())).toContain('尚未正式开放');
+    expect(
+      renderer.root.findByProps({ accessibilityLabel: '同意私有素材检索' })
+        .props.accessibilityState.checked,
+    ).toBe(false);
+    expect(
+      renderer.root.findByProps({ accessibilityLabel: '启用检索' }).props
+        .disabled,
+    ).toBe(true);
+    expect(mediaRetrievalApi.enable).not.toHaveBeenCalled();
   });
   it('opens only explicitly searched results and removes a deleted owner asset on 404', async () => {
     (mediaRetrievalApi.status as jest.Mock).mockResolvedValue(status(true));
@@ -125,5 +159,30 @@ describe('Find media screen', () => {
     ).toHaveLength(0);
     expect(mediaRetrievalApi.search).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(renderer.toJSON())).toContain('已从当前结果移除');
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('今日还可检索');
+  });
+  it('renders verified visual evidence as a product label without exposing the internal reason code', async () => {
+    (mediaRetrievalApi.status as jest.Mock).mockResolvedValue(status(true));
+    (mediaRetrievalApi.search as jest.Mock).mockResolvedValue({
+      ...fixture.searchSuccess,
+      results: [
+        {
+          ...fixture.searchSuccess.results[0],
+          matchReasons: ['descriptor-match'],
+        },
+      ],
+    });
+    await open();
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByType(TextInput).props.onChangeText('自行车的照片');
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.root
+        .findByProps({ accessibilityLabel: '搜索素材' })
+        .props.onPress();
+    });
+    const rendered = JSON.stringify(renderer.toJSON());
+    expect(rendered).toContain('画面内容匹配');
+    expect(rendered).not.toContain('descriptor-match');
   });
 });

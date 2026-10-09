@@ -1,5 +1,15 @@
 # AI 相册检索产品后端与 React Native 交接
 
+> 当前语义检索修订（2026-10-08）：搜索采用“解析模型 -> 当前用户 owner-scoped pgvector 召回 -> 受控候选重排”。解析模型可以保留开放词汇的视觉描述（天气、光线、构图、地点等），不再要求命中固定视觉词表；身份/姓名词只作为后端精确筛选条件，绝不进入 embedding 或重排请求。重排请求只携带临时 `c0..c19` 候选编号和结构化视觉属性，服务端把结果映射回本轮候选并拒绝伪造/重复编号。每次搜索最多一次解析、一次 embedding、一次重排，费用记账与调用限流独立；启用无限额度时不会因金额/次数余额而拒绝调用。重排失败或返回无法验证时，搜索进入明确 blocked 终态。
+>
+> 当前客户端合同（2026-10-08）：最低 App Build 为 45；所有检索领域 API 请求携带 `X-Miaoxun-Retrieval-Contract: 2`。Build 44 是现行 TestFlight 基线，Build 45 目前只在本地 Simulator 验证，尚未上传。生产迁移、部署和 Provider/queue 开关仍关闭；不得把历史冻结表中的 Build 26 当作当前最低版本。
+
+10/08 语义检索更新：解析模型保留开放词汇原句并通过覆盖校验；低置信度或空解析不再回退到本地关键词路径。视频候选先按帧完成重排，再按素材去重，避免向量最高帧遮蔽真正命中帧。公开两图校准 10/10 通过，但仍不代表生产质量。
+
+10/08 后续开发校准：增加 OCR 视觉字段隔离（OCR 仍保留作当前用户精确筛选）、NFKC 匹配但原样保留描述文本、逐帧重排及媒体级时间戳结果投影。公开合成视频批次 21 次 Provider 调用、3/3 通过，覆盖汽车前段 0 ms、自行车后段 4133 ms 和雨伞空结果。完整门禁与隔离 PostgreSQL 6/6 通过；媒体检索单测 154 通过、1 个需显式 PostgreSQL 的门控跳过。此处是开发侧有限校准，不是线上检索验收；真实账单、Simulator 成功/空/失败视图仍未完成。
+
+同日生产只读状态复核：服务器 EnvironmentFile 中 Provider flags 为 true，但数据库 lifecycle 是 `sandbox` 且 provider/index queue controls 关闭；Agent 开关开启、worker/vector/OSS 就绪、ready segment 为 0，综合 `canRouteNewRun=false`。因此 Provider 环境配置并不代表用户端已可检索。未查询用户/媒体行，也未写生产状态。
+
 原交付冻结日期：2026-08-26；下文冻结提交保留为伙伴交付基线。公共合同与 RN 接入约定已于
 2026-09-18 正式修订，修订后的搜索请求必须携带幂等键，不能继续按旧合同接入。
 
@@ -28,7 +38,7 @@
 | Agent key | `media-retrieval` |
 | 产品检索方法 | `b7-product-baseline` |
 | 同意版本 | `media-retrieval-consent-v1` |
-| 最低 App Build | `26` |
+| 初始冻结最低 App Build | `26`（历史值；当前合同已升至 45） |
 
 2026-09-18 正式 RN/API 合同修订 SHA-256：
 
@@ -57,10 +67,11 @@ shared/media-retrieval-search-response.schema.json
 - 用户启用、状态、搜索、重建、撤回并清除索引 API。
 - AgentRun 和增量事件 API。
 - B7 产品检索：caption、tags、OCR、metadata 和向量候选的本地排序及素材级去重。
-- Provider 最终安全边界：身份词仅作本地精确约束；embedding 只接受闭合视觉属性序列化。
+- Provider 最终安全边界：身份词仅作 owner-scoped 精确约束；embedding 接受经过覆盖摘要和序列化版本验证的语义或闭合视觉输入；重排只接受本轮候选的临时编号。
 - parser 畸形、遗漏或不可验证时 fail closed。
 - 用户隔离、同意版本、index epoch、lease、heartbeat、checkpoint、恢复和物理 purge。
-- 用户日限额、用户月预算、全局日预算、单次调用预留额和 Admin 控制。
+- 费用账本、可选用户/全局限额、单次调用预留额和 Admin 控制；`NULL` 表示不设限。
+- 用户 API 短窗口限流，独立于每日次数和费用额度。
 - 独立 worker、pgvector migration、mock smoke、合同测试及开发验证 Web。
 
 明确不包含：
@@ -69,7 +80,7 @@ shared/media-retrieval-search-response.schema.json
 - B0-B6/U1 论文 baseline adapter 和任何正式实验结果。
 - `paper/privsearch` 旧快照或 `/Users/I772673/Workspace/IEEE` 中的内容。
 - 正式移动端界面；`media-retrieval-web` 仅是开发验证工具。
-- Provider 真实调用、真实用户素材、正式质量/延迟/成本/隐私结论。
+- 生产 Provider 调用、真实用户素材及正式质量/延迟/成本/隐私结论。`backend/scripts/media-retrieval-calibrate.js` 可在明确授权下对公开素材执行小批次开发校准；预留金额不是账单金额，必须另行核对账单。
 
 产品 HTTP 请求的 import graph 不经过论文 formal harness。B7 不依赖论文数据、manifest、receipt 或 evaluator 才能运行。
 
@@ -93,8 +104,11 @@ API Base 由 App 环境配置提供。下表路径均已包含 `/api`。所有�
 
 ```http
 Authorization: Bearer <access-token>
-Content-Type: application/json
 ```
+
+有 JSON 请求体时发送 `Content-Type: application/json`；无请求体的 `GET` 和 `DELETE` 不需要该头。
+
+当前 RN 客户端还发送 `X-Miaoxun-App-Build` 与 `X-Miaoxun-Retrieval-Contract: 2`。检索领域路由接受 `X-Miaoxun-App-Build >= 45` 或合同版本 `2`；否则在读取状态或执行操作前返回 `426 retrieval_client_update_required`。Web 联调工具也必须为全部检索领域端点发送合同版本头。
 
 | Method | Path | 成功 | Idempotency |
 | --- | --- | --- | --- |
@@ -153,6 +167,7 @@ export type ApiSuccess<T> = { data: T };
 
 export type MediaRetrievalErrorCode =
   | "retrieval_not_enabled"
+  | "retrieval_client_update_required"
   | "retrieval_consent_required"
   | "retrieval_budget_exhausted"
   | "retrieval_service_unavailable"
@@ -222,8 +237,8 @@ export type MediaRetrievalStatus = {
     totalAssets: number;
   };
   quota: {
-    dailyRemaining: number;
-    monthlyRemainingFen: number;
+    dailyRemaining: number | null;
+    monthlyRemainingFen: number | null;
   };
   availability: MediaRetrievalAvailability;
   recentRuns: AgentRun[];
@@ -369,15 +384,15 @@ RN 建议使用以下六个产品状态。`enable` 是客户端 CTA/提交中状
 
 - 服务端总开关：`MEDIA_RETRIEVAL_ENABLED`。
 - Provider 调用总开关：`MEDIA_RETRIEVAL_PROVIDER_CALLS_ENABLED`。
-- Admin 数据库控制：operator、queue、provider、lifecycle、预算与预留额。
-- RN 需增加自己的发布开关，例如 `mediaRetrievalV1`，并只对 Build 26 及以上展示入口。
-- 服务端当前不读取 App build header；最低 Build 由 Agent/Admin 合同和 RN 发布开关共同执行。
+- Admin 数据库控制：operator、queue、provider、lifecycle、可选预算/次数限制与预留额；限制为 `NULL` 时不设上限。
+- RN 保留 `mediaRetrievalV1` 发布开关，最低客户端 Build 为 45。
+- 新客户端对检索领域请求发送合同版本 2；后端对 Build 44 及更旧且未声明新合同的客户端返回 426，避免不兼容客户端读取 nullable quota 合同。
 - App 启动后同时检查注册 Agent、readiness/availability 和 status；任一不可用时不进入可搜索状态。
 - 旧 Build、关闭 flag 或服务不可用时隐藏入口或展示“暂不可用”，不得回退到跨用户搜索、自由 lexical 搜索或外部生成。
 
-伙伴冻结基线中的 Agent lifecycle 为 `draft`；最近一次线上只读核验（2026-09-16）显示数据库
+伙伴冻结基线中的 Agent lifecycle 为 `draft`；2026-10-08 最近一次生产只读核验显示数据库
 lifecycle 为 `sandbox`，Provider/queue 控制关闭且没有 ready 索引。部署本次修订后仍必须完成
-真实环境配置和发布审核，再由管理员进入经批准的 `limited_release` 或 `available`，不能把
+独立安全与发布复核，再由管理员进入经批准的 `limited_release` 或 `available`，不能把
 mock 合同或 worker 存活当作真实检索可用。
 
 ## 11. Mock fixture 与 curl
@@ -390,21 +405,25 @@ export TOKEN='<login token>'
 
 curl -i -X POST "$API_BASE/station/media-retrieval/enable" \
   -H "Authorization: Bearer $TOKEN" \
+  -H 'X-Miaoxun-Retrieval-Contract: 2' \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"consentVersion":"media-retrieval-consent-v1"}'
 
 curl -sS "$API_BASE/station/media-retrieval/status" \
-  -H "Authorization: Bearer $TOKEN"
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'X-Miaoxun-Retrieval-Contract: 2'
 
 curl -sS -X POST "$API_BASE/station/media-retrieval/search" \
   -H "Authorization: Bearer $TOKEN" \
+  -H 'X-Miaoxun-Retrieval-Contract: 2' \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"query":"yellow dress on a beach","kind":"image","limit":10}'
 
 curl -i -X POST "$API_BASE/station/media-retrieval/reindex" \
   -H "Authorization: Bearer $TOKEN" \
+  -H 'X-Miaoxun-Retrieval-Contract: 2' \
   -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"scope":"stale","mediaAssetIds":[]}'
@@ -414,6 +433,7 @@ curl -sS "$API_BASE/agent-runs/<run-id>/events?afterSequence=0" \
 
 curl -i -X DELETE "$API_BASE/station/media-retrieval/index" \
   -H "Authorization: Bearer $TOKEN" \
+  -H 'X-Miaoxun-Retrieval-Contract: 2' \
   -H "Idempotency-Key: $(uuidgen)"
 ```
 
@@ -425,15 +445,19 @@ curl -i -X DELETE "$API_BASE/station/media-retrieval/index" \
 
 | Method | Path | 用途 |
 | --- | --- | --- |
-| `GET` | `/api/admin/media-retrieval/overview` | readiness、队列、成本、控制和最低 Build 26 |
+| `GET` | `/api/admin/media-retrieval/overview` | readiness、队列、成本、控制和最低 Build 45 |
 | `GET` | `/api/admin/media-retrieval/runs?limit=80` | 最近运行；limit 1..200 |
 | `PATCH` | `/api/admin/media-retrieval/controls` | 更新开关、生命周期、限额、预算和调用预留 |
 
-启用 Provider 前，`globalDailyBudgetFen`、`userDailyRequestLimit`、`userMonthlyBudgetFen`、`captionReserveFen` 和 `embeddingReserveFen` 都必须为正数。更新会写入审计事件，不得把密钥放入 PATCH body。
+启用 Provider 前，正数调用预留额必须配置。`globalDailyBudgetFen`、`userDailyRequestLimit`、`userMonthlyBudgetFen` 可以是 `null` 表示不限，也可以设置为非负整数；设置为 `0` 会阻断调用。更新会写入审计事件，不得把密钥放入 PATCH body。
+
+2026-10-08 用户确认当前阶段取消每日请求次数、用户月预算和全局日预算上限；迁移后对应控制值为 `NULL`。保留费用账本和调用预留记录，但这些记录不是供应商实际账单，也不代表已向用户收费。当前不设费用熔断额度，运营方承担未封顶的供应商费用；用户余额、充值和扣费链路另行实施。短窗口限制独立保留：搜索 30 次/分钟、启用 10 次/小时、重建 10 次/分钟，当前由单进程内存计数，多实例部署前必须改为共享限流。任何账号均不需 allowlist，但每个用户仍须主动同意索引自己的私有素材；拒绝或撤回同意后不得处理或检索其素材。检索 Agent 当前使用通义千问 `qwen3.6-flash` 进行解析/视觉描述/重排，以及 `qwen3-vl-embedding` 生成向量；妙讯管家使用 DeepSeek `deepseek-v4-flash`。两者当前不是同一模型，视觉/向量能力保持专用模型。
+
+新后端状态将把不限额度表示为 `null`。已发布 TestFlight Build 44 的客户端仍要求额度字段为数字，不能与该响应合同兼容；Build 45 候选已在本地双模拟器验证，但尚未分发。启用迁移/路由前，必须先交付可解析 nullable quota 的新客户端，并验证实际版本。不得以极大数字冒充“无限”。
 
 ## 13. React Native 验收清单
 
-- [ ] 最低能力门禁仍为 Build 26+ 和 RN feature flag；实际发布使用新的唯一构建号。
+- [ ] 最低能力门禁为 Build 45+ 和 RN feature flag；检索请求携带合同版本 2。
 - [ ] 所有请求带登录 Authorization；enable、search、reindex、delete 四类运行/费用操作带正确 idempotency key。
 - [ ] 搜索网络结果不确定时复用原 key；成功或确定失败后的主动搜索使用新 key。
 - [ ] 同意版本严格使用 `media-retrieval-consent-v1`。
@@ -459,7 +483,7 @@ curl -i -X DELETE "$API_BASE/station/media-retrieval/index" \
 | `015` | `028` | `028_media_retrieval_lifecycle_hardening.sql` |
 | `016` | `029` | `029_media_retrieval_embedding_provenance.sql` |
 
-集成保留主线现有的 `014..026`，不修改任何可能已经执行的历史 migration。媒体检索只使用连续的新编号 `027..029`。
+伙伴集成只重映射了 `027..029`，不修改任何已执行历史 migration。主线随后还新增 `030_station_post_interactions.sql`、`031_station_profile_identity.sql`、`032_message_idempotency_social_paging.sql`、`033_media_retrieval_rerank_operation.sql` 和 `034_media_retrieval_unlimited_limits.sql`。截至最近一次只读预检，生产账本停在 031；032-034 尚未执行，迁移前必须重新核对账本、唯一索引冲突和备份。
 
 运行要求：
 
@@ -470,11 +494,11 @@ curl -i -X DELETE "$API_BASE/station/media-retrieval/index" \
 - worker 容器需要 `ffmpeg`/`ffprobe`，并保持心跳；优雅停止时间 30 秒。
 - API 和 worker 都必须使用 `deploy/miaoxun-prod.env`，但密钥只能在部署 secret 中提供。
 - 部署前运行 `cd backend && npm run db:migrate`，再启动 API 和 worker。
-- Provider 默认关闭；先配置 Admin 正额度和 `sandbox` 验证，再进入 `limited_release`。
+- Provider 默认关闭；`captionReserveFen` 与 `embeddingReserveFen` 必须为正数，用户日次数、用户月预算和全局日预算可以为 `NULL` 表示不限；先在 `sandbox` 验证，再进入经批准的 `limited_release`。
 - Provider HTTP 响应的声明长度和实际读取均限制为 512 KiB；超限立即取消读取并返回脱敏的
   `retrieval_service_unavailable`，不得保留原始响应 body。
 - Android 每次构建都必须显式提供正整数 `MIAOXUN_VERSION_CODE`；Release 且启用当前检索能力时
-  不得低于 26。示例和 CI 当前使用 43 只用于构建合同，不代表 9/18 修订已进入 TestFlight 43。
+  不得低于 45。示例和 CI 使用的旧构建号仅用于 Debug/历史合同，不代表当前 Agent 兼容版本。
 
 开发验证 Web 的目录是 `media-retrieval-web`。它没有同步 2026-09-18 搜索幂等请求合同，不能
 连接新后端作为正式能力验收入口，也不应作为移动端发布物或对外产品入口。正式验收只使用

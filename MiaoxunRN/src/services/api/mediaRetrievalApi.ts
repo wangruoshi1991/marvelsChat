@@ -7,6 +7,7 @@ import {
 } from '../../features/media-retrieval/mediaRetrievalContract';
 
 const base = '/api/station/media-retrieval';
+const retrievalContractHeaders = { 'X-Miaoxun-Retrieval-Contract': '2' };
 const keyHeaders = (key: string) => {
   if (!/^[A-Za-z0-9._-]{8,160}$/.test(key))
     throw new Error('无效的检索操作标识。');
@@ -15,7 +16,10 @@ const keyHeaders = (key: string) => {
 
 export const mediaRetrievalApi = {
   async status(token: string) {
-    const data = await request<unknown>(`${base}/status`, { token });
+    const data = await request<unknown>(`${base}/status`, {
+      token,
+      headers: retrievalContractHeaders,
+    });
     assertRetrievalStatus(data);
     return data;
   },
@@ -23,7 +27,7 @@ export const mediaRetrievalApi = {
     const data = await request<unknown>(`${base}/enable`, {
       method: 'POST',
       token,
-      headers: keyHeaders(key),
+      headers: { ...retrievalContractHeaders, ...keyHeaders(key) },
       body: { consentVersion: 'media-retrieval-consent-v1' },
     });
     assertRetrievalAccepted(data);
@@ -33,7 +37,7 @@ export const mediaRetrievalApi = {
     const data = await request<unknown>(`${base}/reindex`, {
       method: 'POST',
       token,
-      headers: keyHeaders(key),
+      headers: { ...retrievalContractHeaders, ...keyHeaders(key) },
       body: { scope: 'stale' },
     });
     assertRetrievalAccepted(data);
@@ -43,7 +47,7 @@ export const mediaRetrievalApi = {
     const data = await request<unknown>(`${base}/index`, {
       method: 'DELETE',
       token,
-      headers: keyHeaders(key),
+      headers: { ...retrievalContractHeaders, ...keyHeaders(key) },
     });
     assertRetrievalAccepted(data);
     return data;
@@ -71,7 +75,7 @@ export const mediaRetrievalApi = {
       `/api/agent-runs/${encodeURIComponent(
         runId,
       )}/events?afterSequence=${afterSequence}`,
-      { token },
+      { token, headers: retrievalContractHeaders },
     );
     assertRetrievalEvents(data);
     return data;

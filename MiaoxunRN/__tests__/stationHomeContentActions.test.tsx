@@ -15,6 +15,8 @@ import {
   AlbumGrid,
   DiaryComicGrid,
 } from '../src/features/station/StationHomeModules';
+import { StationHome } from '../src/features/station/StationHome';
+import { moduleBindingForAgent } from '../src/features/station/StationAgentCards';
 import {
   AgentDTO,
   OwnedAgentDTO,
@@ -36,6 +38,9 @@ const mockAssist = {
 };
 jest.mock('../src/features/assist/AIAssistProvider', () => ({
   useAIAssist: () => mockAssist,
+}));
+jest.mock('../src/features/station/StationAvatarSpace', () => ({
+  StationAvatarSpace: () => null,
 }));
 
 const entry = {
@@ -209,5 +214,51 @@ describe('Station home content actions', () => {
     expect(
       resolveAgentThreadIcon('new-agent', 'generation').imageSource,
     ).toBeUndefined();
+  });
+
+  it('opens Find media from the album home module without adding the Agent', async () => {
+    const onOpenMediaRetrieval = jest.fn();
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <StationHome
+          active={false}
+          agents={[]}
+          avatar3d={null}
+          avatar3dError=""
+          avatar3dStatus="unavailable"
+          language="zh"
+          onActionMessage={jest.fn()}
+          onOpenAgentThread={jest.fn()}
+          onOpenAlbumDetail={jest.fn()}
+          onOpenAvatar3d={jest.fn()}
+          onOpenContentList={jest.fn()}
+          onOpenCreateSheet={jest.fn()}
+          onOpenDiaryDetail={jest.fn()}
+          onOpenMediaRetrieval={onOpenMediaRetrieval}
+          onSelectStationTab={jest.fn()}
+          ownedAgents={[]}
+          palette={palettes.light}
+          profile={{ stationConfig: { siteLayout: { sections: [] } } } as never}
+          selectedAvatar3dModelId={null}
+          stationContent={
+            {
+              albums: [],
+              diaryEntries: [],
+              mediaAssets: [],
+            } as never
+          }
+          token=""
+        />,
+      );
+    });
+
+    const button = renderer.root.findByProps({
+      testID: 'station-home-find-media',
+    });
+    await ReactTestRenderer.act(() => button.props.onPress());
+    expect(onOpenMediaRetrieval).toHaveBeenCalledTimes(1);
+    expect(moduleBindingForAgent('media-retrieval', 'zh')).toBe(
+      '个人相册 / 找素材',
+    );
   });
 });

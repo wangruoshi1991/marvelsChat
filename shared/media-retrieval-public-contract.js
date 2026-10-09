@@ -16,6 +16,7 @@ export const MEDIA_RETRIEVAL_LIFECYCLE_STATUSES = Object.freeze([
 
 export const MEDIA_RETRIEVAL_ERROR_CONTRACTS = Object.freeze({
   retrieval_not_enabled: { status: 503, message: "Media retrieval is not enabled.", retryable: false },
+  retrieval_client_update_required: { status: 426, message: "Update Miaoxun to use media retrieval.", retryable: false },
   retrieval_consent_required: { status: 409, message: "Media retrieval consent is required.", retryable: false },
   retrieval_budget_exhausted: { status: 503, message: "Media retrieval budget is unavailable.", retryable: true },
   retrieval_service_unavailable: { status: 503, message: "Media retrieval is temporarily unavailable.", retryable: true },

@@ -1,10 +1,9 @@
 import crypto from "node:crypto";
 
-// The embedding boundary accepts only this closed vocabulary. It deliberately
-// does not attempt to recognize names: every unclassified semantic span is
-// withheld from visual embedding instead of being guessed from lexical form.
-export const MEDIA_RETRIEVAL_VISUAL_ONTOLOGY_VERSION = "media-retrieval-visual-ontology-v2";
-export const MEDIA_RETRIEVAL_VISUAL_GRAMMAR_VERSION = "media-retrieval-controlled-visual-grammar-v1";
+// The deterministic visual path uses a closed vocabulary. Open descriptions
+// require validated model parsing and preserved unknown spans before embedding.
+export const MEDIA_RETRIEVAL_VISUAL_ONTOLOGY_VERSION = "media-retrieval-visual-ontology-v3";
+export const MEDIA_RETRIEVAL_VISUAL_GRAMMAR_VERSION = "media-retrieval-controlled-visual-grammar-v3";
 export const MEDIA_RETRIEVAL_VISUAL_SERIALIZATION_VERSION = "visual-v2";
 
 const TYPE_ORDER = Object.freeze([
@@ -19,21 +18,22 @@ const TYPE_ORDER = Object.freeze([
 
 const englishSyntax = new Set([
   "a", "an", "and", "at", "by", "celebrity", "find", "for", "from", "image", "in", "is", "me", "of", "on",
-  "photo", "picture", "please", "search", "show", "the", "to", "video", "wear", "wearing", "worn", "with",
+  "photo", "photos", "picture", "pictures", "please", "search", "show", "the", "to", "video", "videos", "wear", "wearing", "worn", "with",
 ]);
 
 const chineseSyntax = new Set([
   "一张", "一位", "中", "里", "照片中", "照片里", "图片中", "图片里", "图中", "图里", "的", "在", "穿", "穿着",
-  "找", "寻找", "显示", "给我", "我想要", "有", "和", "以及", "一个", "这张", "那张",
+  "找", "寻找", "查找", "帮我", "显示", "给我", "我想要", "有", "和", "以及", "一个", "这张", "那张", "照片", "图片", "视频",
 ]);
 
 const identityContextSyntax = new Set([
-  "wear", "wearing", "worn", "with", "by", "穿", "穿着",
+  "wear", "wearing", "worn", "by", "穿", "穿着",
 ]);
 
 const locationSyntax = new Set(["on", "in", "at", "在"]);
 const locationArticles = new Set(["a", "an", "the", "一张", "一个"]);
 const controlledAttributeTypes = new Set(["color", "season"]);
+const mediaSyntax = new Set(["photo", "photos", "picture", "pictures", "image", "video", "videos", "照片", "图片", "视频"]);
 
 const visualTerms = new Map([
   ["yellow", { type: "color", value: "yellow" }],
@@ -62,6 +62,14 @@ const visualTerms = new Map([
   ["street", { type: "scene", value: "street" }],
   ["indoor", { type: "scene", value: "indoor" }],
   ["outdoor", { type: "scene", value: "outdoor" }],
+  ["bicycle", { type: "object", value: "bicycle" }],
+  ["bike", { type: "object", value: "bicycle" }],
+  ["car", { type: "object", value: "car" }],
+  ["umbrella", { type: "object", value: "umbrella" }],
+  ["backpack", { type: "object", value: "backpack" }],
+  ["cup", { type: "object", value: "cup" }],
+  ["book", { type: "object", value: "book" }],
+  ["computer", { type: "object", value: "computer" }],
   ["standing", { type: "action", value: "standing" }],
   ["sitting", { type: "action", value: "sitting" }],
   ["running", { type: "action", value: "running" }],
@@ -93,6 +101,14 @@ const visualTerms = new Map([
   ["街道", { type: "scene", value: "street" }],
   ["室内", { type: "scene", value: "indoor" }],
   ["户外", { type: "scene", value: "outdoor" }],
+  ["自行车", { type: "object", value: "bicycle" }],
+  ["单车", { type: "object", value: "bicycle" }],
+  ["汽车", { type: "object", value: "car" }],
+  ["雨伞", { type: "object", value: "umbrella" }],
+  ["背包", { type: "object", value: "backpack" }],
+  ["杯子", { type: "object", value: "cup" }],
+  ["书本", { type: "object", value: "book" }],
+  ["电脑", { type: "object", value: "computer" }],
   ["站立", { type: "action", value: "standing" }],
   ["坐着", { type: "action", value: "sitting" }],
   ["跑步", { type: "action", value: "running" }],
@@ -102,6 +118,10 @@ const visualTerms = new Map([
   ["春天", { type: "season", value: "spring" }],
   ["秋天", { type: "season", value: "autumn" }],
 ]);
+
+export const visualTermAliases = (canonicalValue) => [...visualTerms.entries()]
+  .filter(([, clause]) => clause.value === canonicalValue)
+  .map(([term]) => term);
 
 const allChineseLexemes = [...new Set([...chineseSyntax, ...visualTerms.keys()].filter((value) => /\p{Script=Han}/u.test(value)))]
   .sort((left, right) => right.length - left.length || left.localeCompare(right));
@@ -245,14 +265,41 @@ const isVisualType = (token, type) => token?.kind === "visual" && token.type ===
 const isLocationConnector = (token) => token?.kind === "syntax" && locationSyntax.has(token.normalized);
 const isLocationArticle = (token) => token?.kind === "syntax" && locationArticles.has(token.normalized);
 
-// A visual clause is a deliberately small role grammar, not a per-word
-// allow-list: `(color|season)+ clothing [location scene]`. Any matching word
-// outside that role remains exact-only. This makes `Summer wearing yellow`
-// fundamentally different from `summer yellow dress` without naming either
-// person or place.
+// Visual words must occupy a proved role: attributed clothing/object,
+// a scene linked to an object, or a concrete subject in a media description.
+// Unknown spans and identity-context connectors still veto full coverage.
 const controlledVisualTokenIndexes = (tokens) => {
   const content = tokens.filter((token) => token.kind !== "separator");
   const allowed = new Set();
+  const describesMedia = content.some((token) => token.kind === "syntax" && mediaSyntax.has(token.normalized));
+
+  for (let index = 0; index < content.length; index += 1) {
+    const token = content[index];
+    const concrete = token.kind === "visual" && ["object", "clothing", "scene"].includes(token.type);
+    if (!concrete) continue;
+    const previous = content[index - 1];
+    if (describesMedia || isLocationArticle(previous)) allowed.add(token);
+    if (isVisualType(token, "object")) {
+      let cursor = index + 1;
+      if (isVisualType(content[cursor], "action")) cursor += 1;
+      if (isLocationConnector(content[cursor])) {
+        cursor += 1;
+        if (isLocationArticle(content[cursor])) cursor += 1;
+        if (isVisualType(content[cursor], "scene")) {
+          allowed.add(token);
+          allowed.add(content[cursor]);
+          if (isVisualType(content[index + 1], "action")) allowed.add(content[index + 1]);
+        }
+      }
+    }
+    if (isVisualType(token, "scene") && content[index + 1]?.normalized === "里") {
+      const subject = content[index + 2]?.normalized === "的" ? content[index + 3] : content[index + 2];
+      if (isVisualType(subject, "object") || isVisualType(subject, "clothing")) {
+        allowed.add(token);
+        allowed.add(subject);
+      }
+    }
+  }
 
   for (let index = 0; index < content.length; index += 1) {
     if (!isVisualType(content[index], "color") && !isVisualType(content[index], "season")) continue;
@@ -262,7 +309,7 @@ const controlledVisualTokenIndexes = (tokens) => {
       attributes.push(content[cursor]);
       cursor += 1;
     }
-    if (!attributes.length || !isVisualType(content[cursor], "clothing")) continue;
+    if (!attributes.length || !(isVisualType(content[cursor], "clothing") || isVisualType(content[cursor], "object"))) continue;
 
     for (const token of [...attributes, content[cursor]]) allowed.add(token);
     cursor += 1;
@@ -288,6 +335,34 @@ const controlledVisualTokenIndexes = (tokens) => {
 // occurrence makes a raw visual embedding unverifiable.
 const isIdentityContextToken = (token) => token?.kind === "syntax" && identityContextSyntax.has(token.normalized);
 
+const hasUnprovedIdentityContext = (tokens, raw) => {
+  const content = tokens.filter((token) => token.kind !== "separator");
+  for (let index = 0; index < content.length; index += 1) {
+    const token = content[index];
+    if (token.kind !== "unknown") continue;
+    const previous = content[index - 1];
+    const next = content[index + 1];
+    const laterVisual = content.slice(index + 1).some((item) => item.kind === "visual");
+    const earlierVisual = content.slice(0, index).some((item) => item.kind === "visual");
+    // `with` also attaches parts to objects. Preserve that open description,
+    // but keep a name-like English companion reference out of embeddings even
+    // if the parser missed it. Other identities still require model parsing.
+    if (token.language === "english" && previous?.normalized === "with" &&
+      /^[A-Z]/u.test(raw.slice(token.start, token.end))) return true;
+    if (token.language === "han" && earlierVisual && previous?.kind === "syntax" && ["的", "里"].includes(previous.normalized)) {
+      return true;
+    }
+    if (token.language === "han" && !earlierVisual && laterVisual && next?.kind === "syntax" && next.normalized === "在") {
+      return true;
+    }
+    if (token.language === "english" && /^[A-Z]/u.test(raw.slice(token.start, token.end)) && laterVisual &&
+      next?.kind === "syntax" && ["on", "in", "at"].includes(next.normalized)) {
+      return true;
+    }
+  }
+  return false;
+};
+
 export function analyzeTypedVisualQuery(rawQuery) {
   const raw = normalizeVisualRawQuery(rawQuery);
   const tokens = lexicalTokensFor(raw);
@@ -295,7 +370,7 @@ export function analyzeTypedVisualQuery(rawQuery) {
   const spans = [];
   const typedClauses = [];
   const unclassifiedTerms = [];
-  const semanticRoleUnproved = tokens.some(isIdentityContextToken);
+  const semanticRoleUnproved = tokens.some(isIdentityContextToken) || hasUnprovedIdentityContext(tokens, raw);
 
   for (const token of tokens) {
     if (token.kind === "separator") {
@@ -351,26 +426,48 @@ const validCoverageSpan = (span) => {
   return !Object.hasOwn(span, "clause");
 };
 
-export function verifyTypedVisualRepresentation({ rawQueryHash, rawLength, typedClauses, coverage, coverageDigest } = {}) {
+const validSemanticCoverageSpan = (span) => {
+  if (!span || typeof span !== "object" || Array.isArray(span)) return false;
+  if (!Number.isInteger(span.start) || !Number.isInteger(span.end) || span.start < 0 || span.end <= span.start) return false;
+  if (!/^[a-f0-9]{64}$/i.test(String(span.tokenHash || ""))) return false;
+  if (!["typed-visual", "ignorable-syntax", "unclassified"].includes(span.classification)) return false;
+  if (span.classification === "typed-visual") return validClause(span.clause);
+  return !Object.hasOwn(span, "clause");
+};
+
+const verifyVisualCoverageRepresentation = ({
+  rawQueryHash,
+  rawLength,
+  typedClauses,
+  coverage,
+  coverageDigest,
+} = {}, { allowUnclassified = false, allowEmptyClauses = false } = {}) => {
   if (!/^[a-f0-9]{64}$/i.test(String(rawQueryHash || "")) || !Number.isInteger(rawLength) || rawLength <= 0) {
-    throw new TypeError("Typed visual representation has invalid raw coverage metadata.");
+    throw new TypeError("Visual representation has invalid raw coverage metadata.");
   }
-  if (!Array.isArray(typedClauses) || !typedClauses.length || !typedClauses.every(validClause)) {
-    throw new TypeError("Typed visual representation has invalid visual clauses.");
+  if (!Array.isArray(typedClauses) || (!allowEmptyClauses && !typedClauses.length) || !typedClauses.every(validClause)) {
+    throw new TypeError("Visual representation has invalid visual clauses.");
   }
   const normalizedClauses = uniqueClauses(typedClauses);
   if (normalizedClauses.length !== typedClauses.length || JSON.stringify(normalizedClauses) !== JSON.stringify(typedClauses)) {
-    throw new TypeError("Typed visual representation clauses are not canonical.");
+    throw new TypeError("Visual representation clauses are not canonical.");
   }
-  if (!Array.isArray(coverage) || !coverage.length || !coverage.every(validCoverageSpan)) {
-    throw new TypeError("Typed visual representation has invalid coverage spans.");
+  const validSpan = allowUnclassified ? validSemanticCoverageSpan : validCoverageSpan;
+  if (!Array.isArray(coverage) || !coverage.length || !coverage.every(validSpan)) {
+    throw new TypeError("Visual representation has invalid coverage spans.");
+  }
+  const coveredClauses = uniqueClauses(coverage
+    .filter((span) => span.classification === "typed-visual")
+    .map((span) => span.clause));
+  if (JSON.stringify(coveredClauses) !== JSON.stringify(normalizedClauses)) {
+    throw new TypeError("Visual representation clauses do not match covered spans.");
   }
   let cursor = 0;
   for (const span of coverage) {
-    if (span.start !== cursor) throw new TypeError("Typed visual representation coverage is incomplete.");
+    if (span.start !== cursor) throw new TypeError("Visual representation coverage is incomplete.");
     cursor = span.end;
   }
-  if (cursor !== rawLength) throw new TypeError("Typed visual representation coverage is incomplete.");
+  if (cursor !== rawLength) throw new TypeError("Visual representation coverage is incomplete.");
   const expectedDigest = hash(coveragePayload({
     rawQueryHash: String(rawQueryHash).toLowerCase(),
     rawLength,
@@ -378,7 +475,7 @@ export function verifyTypedVisualRepresentation({ rawQueryHash, rawLength, typed
     typedClauses: normalizedClauses,
   }));
   if (String(coverageDigest || "").toLowerCase() !== expectedDigest) {
-    throw new TypeError("Typed visual representation coverage digest mismatch.");
+    throw new TypeError("Visual representation coverage digest mismatch.");
   }
   return {
     rawQueryHash: String(rawQueryHash).toLowerCase(),
@@ -387,4 +484,12 @@ export function verifyTypedVisualRepresentation({ rawQueryHash, rawLength, typed
     coverage,
     coverageDigest: expectedDigest,
   };
+};
+
+export function verifyTypedVisualRepresentation({ rawQueryHash, rawLength, typedClauses, coverage, coverageDigest } = {}) {
+  return verifyVisualCoverageRepresentation({ rawQueryHash, rawLength, typedClauses, coverage, coverageDigest });
+}
+
+export function verifySemanticVisualRepresentation(value = {}) {
+  return verifyVisualCoverageRepresentation(value, { allowUnclassified: true, allowEmptyClauses: true });
 }

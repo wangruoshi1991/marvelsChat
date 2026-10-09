@@ -115,6 +115,38 @@ MIAOXUN_RELEASE_KEY_PASSWORD=...
 
 移动端普通 API 请求超时时间为 20 秒，生成类长请求为 45 秒；超时必须向用户暴露明确错误，不能让关注、加好友、扫码解析等操作一直处于提交状态。关注和好友申请按钮在提交期间需要显示操作中状态，失败后恢复可点击状态。
 
+## Simulator 联调
+
+设备名称不代表安装包的后端环境。联调前从已安装 App 的 `Info.plist` 核实
+`MiaoxunAPIBaseURL` 和 `CFBundleVersion`；正式账号不能登录隔离 QA 数据库，清理测试账号后
+也不能继续复用其凭据。
+
+Simulator 应保留 Xcode 默认 ad-hoc 签名，不传 `CODE_SIGNING_ALLOWED=NO`。禁用签名会导致
+Keychain 返回 `errSecMissingEntitlement`，出现登录 token 无法保存或账号空间无法恢复的错误；
+不得通过修改 Keychain 实现、跳过 token 保存或清空原账号数据掩盖该问题。
+
+以下命令构建可连接正式 API 的 Simulator 包，不部署后端或上传 TestFlight：
+
+```sh
+xcodebuild \
+  -workspace MiaoxunRN/ios/MiaoxunRN.xcworkspace \
+  -scheme MiaoxunRN \
+  -configuration Release \
+  -destination 'id=<SIMULATOR_UDID>' \
+  -derivedDataPath /tmp/miaoxun-simulator \
+  MIAOXUN_API_BASE_URL=https://8.153.167.11 \
+  build
+
+xcrun simctl install <SIMULATOR_UDID> \
+  /tmp/miaoxun-simulator/Build/Products/Release-iphonesimulator/MiaoxunRN.app
+xcrun simctl launch --terminate-running-process <SIMULATOR_UDID> \
+  com.wangruoshi.miaoxun
+```
+
+正式 API 联调应优先使用已有账号做读取和本机草稿交互，不向真实会话发送测试消息或触发
+付费生成。确需写入测试数据时使用明确的测试账号，并在验证结束后按账号删除合同清理
+账号与私有存储引用。窄屏和常见尺寸分别验证，Simulator 通过不代表真机触感和权限通过。
+
 ## 真机调试
 
 真机调试必须满足以下条件：

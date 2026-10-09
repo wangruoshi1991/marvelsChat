@@ -44,12 +44,16 @@ const safePublicErrorFromResponse = ({ status, payload }) => {
 };
 
 const request = async ({ path, token, method = "GET", body, headers = {} }) => {
+  const contractHeaders = path.startsWith("/api/station/media-retrieval/")
+    ? { "X-Miaoxun-Retrieval-Contract": "2" }
+    : {};
   let response;
   try {
     response = await fetch(`${apiOrigin}${path}`, {
       method,
-      headers: asHeaders(token, body === undefined ? headers : {
-        "Content-Type": "application/json",
+      headers: asHeaders(token, {
+        ...contractHeaders,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
         ...headers,
       }),
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),

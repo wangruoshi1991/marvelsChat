@@ -18,7 +18,6 @@ const USER_ID = "11111111-1111-4111-8111-111111111111";
 const visualEmbedding = (rawQuery = "yellow dress on a beach") => {
   const input = buildVisualEmbeddingInput({
     rawQuery,
-    candidate: { visualQuery: rawQuery, identityTerms: [], parseConfidence: "high" },
   });
   return createVisualEmbeddingBinding({
     input,
@@ -90,7 +89,7 @@ test("B7 ranks caption, tag, OCR, metadata, and vector evidence with asset-level
         caption: "Alice",
         tags: ["yellow"],
         descriptor: { ocrText: [] },
-        metadata: {},
+        metadata: { season: "summer" },
       },
     ],
   });
@@ -130,7 +129,7 @@ test("B7 unions vector and local product stages before fixed local ranking", asy
   const result = await retrieveB7ProductBaseline({
     userId: USER_ID,
     normalizedQuery: {
-      visualQuery: queryEmbedding.input.text,
+    visualQuery: queryEmbedding.input.text,
       identityTerms: [],
       parseConfidence: "high",
     },
@@ -146,7 +145,7 @@ test("B7 unions vector and local product stages before fixed local ranking", asy
             score: 0.9,
             caption: "",
             tags: [],
-            descriptor: { ocrText: [] },
+            descriptor: { clothing: [{ type: "dress", color: "yellow" }], scene: ["beach"], ocrText: [] },
             metadata: {},
           }];
         }
@@ -246,4 +245,26 @@ test("B7 rejects forged bindings, bare vectors, and research runtime inputs", as
     () => retrieveB7ProductBaseline({ ...base, queryEmbedding: binding, snapshotId: "research-snapshot" }),
     /research runtime inputs/i,
   );
+});
+
+test("B7 returns no match for unsupported neighbours, partial attributes or substring collisions", () => {
+  const candidates = [
+    { mediaAssetId: "high-vector", score: 0.98, descriptor: { objects: ["bicycle"] } },
+    { mediaAssetId: "partial", score: 0.95, tags: ["red"], descriptor: { objects: ["bicycle"] } },
+    { mediaAssetId: "substring", score: 0.9, tags: ["carpet"], descriptor: {} },
+  ];
+  assert.deepEqual(rankB7ProductBaselineCandidates({ visualQuery: "red car", candidates }), []);
+  assert.deepEqual(rankB7ProductBaselineCandidates({ visualQuery: "umbrella", candidates }), []);
+  assert.deepEqual(rankB7ProductBaselineCandidates({ visualQuery: "car", candidates }), []);
+  assert.deepEqual(rankB7ProductBaselineCandidates({ candidates: [{ mediaAssetId: "no-evidence", score: null }] }), []);
+});
+
+test("B7 matches controlled bilingual aliases in structured descriptors without fabricating vector evidence", () => {
+  const results = rankB7ProductBaselineCandidates({ visualQuery: "bicycle", candidates: [
+    { mediaAssetId: "chinese", score: 0, descriptor: { objects: ["自行车"] } },
+    { mediaAssetId: "plural", score: Number.NaN, descriptor: { objects: ["bicycles"] } },
+    { mediaAssetId: "negative", score: -0.9, descriptor: { objects: ["bike"] } },
+  ] });
+  assert.equal(results.length, 3);
+  for (const result of results) assert.deepEqual(result.matchReasons, ["descriptor-match"]);
 });

@@ -26,9 +26,10 @@ test("media-retrieval Agent has the approved private-media contract", async () =
   assert.equal(manifest.billing.mode, "metered");
   assert.equal(manifest.billing.providerCallsDefaultEnabled, false);
   assert.equal(manifest.billing.confirmationRequired, true);
-  assert.equal(manifest.billing.userDailyLimit, 3);
-  assert.equal(manifest.billing.globalDailyBudgetFen, 1000);
-  assert.equal(manifest.billing.alertThresholdPercent, 80);
+  assert.equal(manifest.billing.userDailyLimit, null);
+  assert.equal(manifest.billing.globalDailyBudgetFen, null);
+  assert.equal(manifest.billing.alertThresholdPercent, null);
+  assert.equal(manifest.billing.unboundedSpendApproved, true);
   assert.equal(manifest.billing.retryOnUnknownBilling, false);
   assert.deepEqual(manifest.permissions, [
     "private-media:read",
@@ -37,7 +38,7 @@ test("media-retrieval Agent has the approved private-media contract", async () =
   ]);
   assert.deepEqual(manifest.artifacts, []);
   assert.equal(manifest.catalog.interaction.artifactAccess, false);
-  assert.equal(manifest.compatibility.minimumAppBuild, 26);
+  assert.equal(manifest.compatibility.minimumAppBuild, 45);
 
   assert.equal(agent.category, "media-retrieval");
   assert.deepEqual(agent.capabilities, [

@@ -54,3 +54,36 @@ test("Web search consumes the same canonical search fixture and rejects malforme
     globalThis.fetch = originalFetch;
   }
 });
+
+test("Web sends the current retrieval contract on every media retrieval endpoint", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  try {
+    globalThis.fetch = async (url, options) => {
+      requests.push({ url: String(url), options });
+      return response({
+        ok: true,
+        status: 200,
+        payload: {
+          data: String(url).endsWith("/search") ? fixture.searchSuccess : {},
+        },
+      });
+    };
+
+    await mediaRetrievalApi.status("test-token");
+    await mediaRetrievalApi.enable("test-token", "enable-key-0001");
+    await mediaRetrievalApi.search("test-token", { query: "yellow dress", limit: 10 });
+    await mediaRetrievalApi.reindex("test-token", { scope: "all" }, "reindex-key-0001");
+    await mediaRetrievalApi.deleteIndex("test-token", "delete-key-0001");
+
+    assert.equal(requests.length, 5);
+    for (const { options } of requests) {
+      assert.equal(options.headers["X-Miaoxun-Retrieval-Contract"], "2");
+    }
+    for (const { options } of requests.filter(({ options }) => options.body !== undefined)) {
+      assert.equal(options.headers["Content-Type"], "application/json");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

@@ -330,7 +330,6 @@ function App(): React.JSX.Element {
               barStyle={
                 session.appearance === 'dark' ? 'light-content' : 'dark-content'
               }
-              backgroundColor={topSafeAreaColor}
             />
             {session.isRestoring ? null : session.restoreStatus ===
               'networkError' ? (

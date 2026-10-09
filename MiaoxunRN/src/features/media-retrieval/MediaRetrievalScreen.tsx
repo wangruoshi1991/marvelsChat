@@ -158,7 +158,8 @@ export function MediaRetrievalScreen({
           consent={consent}
           onConsent={() => setConsent(value => !value)}
           onEnable={() => {
-            if (consent) controller.perform('enable');
+            if (consent && phase === 'disabled' && !busy)
+              controller.perform('enable');
           }}
           palette={palette}
           language={language}
@@ -209,7 +210,6 @@ export function MediaRetrievalScreen({
             busy={Boolean(state.busy)}
             searching={state.busy === 'search'}
             enabled={searchEnabled}
-            remaining={state.status.quota.dailyRemaining}
           />
         ) : null}
         {state.searched ? (

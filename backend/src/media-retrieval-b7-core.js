@@ -7,6 +7,7 @@ import {
   buildVisualEmbeddingInput,
   verifyVisualEmbeddingBinding,
 } from "./media-retrieval-embedding-input.js";
+import { MEDIA_RETRIEVAL_EMBEDDING_PROVENANCE_VERSION } from "./media-retrieval-provenance.js";
 
 const boundedLimit = (value, fallback = 10) => {
   const parsed = Number(value);
@@ -79,18 +80,19 @@ export async function retrieveB7ProductBaselineCore({
   const visualInput = boundInput
     ? verifyB7VisualEmbedding(queryEmbedding).input
     : buildVisualEmbeddingInput({ rawQuery: suppliedVisualQuery });
-  if (boundInput && (suppliedVisualQuery !== visualInput.text || suppliedIdentityTerms.length)) {
+  if (boundInput && (suppliedVisualQuery !== visualInput.text ||
+    JSON.stringify(suppliedIdentityTerms) !== JSON.stringify(uniqueIdentityTerms(visualInput.identityTerms)))) {
     throw new TypeError("B7 normalized query does not match its verified visual embedding binding.");
   }
 
   const identityTerms = boundInput
-    ? []
+    ? uniqueIdentityTerms(visualInput.identityTerms)
     : suppliedIdentityTerms.length
       ? suppliedIdentityTerms
       : uniqueIdentityTerms(visualInput.identityTerms);
   const visualQuery = visualInput.mode === "visual"
     ? visualInput.typedClauses.map((clause) => clause.value).join(" ")
-    : "";
+    : visualInput.mode === "semantic" ? visualInput.semanticText : "";
   const verifiedEmbedding = queryEmbedding
     ? verifyB7VisualEmbedding(queryEmbedding, { expectedInput: visualInput, expectedEmbeddingSpace })
     : null;
@@ -107,9 +109,9 @@ export async function retrieveB7ProductBaselineCore({
   const candidateLimit = candidateLimitFor(resolvedLimit);
   const localTerms = b7LocalTerms(visualQuery);
   const useVectorStage = Boolean(verifiedEmbedding?.vector);
-  const useExactIdentityStage = identityTerms.length > 0;
+  const useExactIdentityStage = identityTerms.length > 0 && !useVectorStage;
   const useLocalLexicalStage = Boolean(allowLocalLexical && visualInput.mode === "visual" && localTerms.length);
-  if (visualQuery && !useLocalLexicalStage) {
+  if (visualInput.mode === "visual" && visualQuery && !useLocalLexicalStage) {
     throw new TypeError("B7 visual retrieval requires its local lexical stage.");
   }
 
@@ -126,8 +128,16 @@ export async function retrieveB7ProductBaselineCore({
     candidates.push(...await runStage("vector", {
       userId,
       vector: verifiedEmbedding.vector,
+      embeddingProvenance: {
+        provenanceVersion: MEDIA_RETRIEVAL_EMBEDDING_PROVENANCE_VERSION,
+        modelId: verifiedEmbedding.modelId,
+        modelVersion: verifiedEmbedding.modelVersion,
+        dimension: verifiedEmbedding.dimension,
+        normalization: verifiedEmbedding.normalization,
+        configurationHash: verifiedEmbedding.configurationHash,
+      },
       lexicalTerms: [],
-      identityTerms: [],
+      identityTerms,
       kind,
       albumId,
       limit: candidateLimit,
@@ -162,6 +172,27 @@ export async function retrieveB7ProductBaselineCore({
     identityTerms,
     limit: resolvedLimit,
   });
+  const semanticCandidateByFrame = new Map();
+  if (visualInput.mode === "semantic") {
+    for (const candidate of candidates) {
+      if (!candidate?.mediaAssetId || !Number.isFinite(candidate.score)) continue;
+      const frameKey = JSON.stringify([candidate.mediaAssetId, candidate.matchedFrameTimestampMs ?? null]);
+      const existing = semanticCandidateByFrame.get(frameKey);
+      if (existing && existing.score > candidate.score) continue;
+      semanticCandidateByFrame.set(frameKey, {
+        mediaAssetId: candidate.mediaAssetId,
+        kind: candidate.kind,
+        matchedFrameTimestampMs: candidate.matchedFrameTimestampMs ?? null,
+        summary: String(candidate.summary || "").slice(0, 160),
+        descriptor: candidate.descriptor || {},
+        score: candidate.score,
+      });
+    }
+  }
+  const semanticCandidates = [...semanticCandidateByFrame.values()]
+    .sort((left, right) => right.score - left.score || String(left.mediaAssetId).localeCompare(String(right.mediaAssetId)) ||
+      (left.matchedFrameTimestampMs ?? 0) - (right.matchedFrameTimestampMs ?? 0))
+    .slice(0, Math.min(20, candidateLimit));
   const execution = Object.freeze({
     vectorStageUsed: useVectorStage,
     exactIdentityStageUsed: useExactIdentityStage,
@@ -174,6 +205,7 @@ export async function retrieveB7ProductBaselineCore({
     execution,
     stages,
     results: diagnostics.results,
+    semanticCandidates,
     diagnostics,
   };
 }

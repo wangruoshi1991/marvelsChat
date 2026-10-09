@@ -6,13 +6,16 @@ import {
   analyzeTypedVisualQuery,
   normalizeVisualRawQuery,
   serializeTypedVisualClauses,
+  visualTermAliases,
+  verifySemanticVisualRepresentation,
   verifyTypedVisualRepresentation,
 } from "./media-retrieval-visual-language.js";
 import { validateMediaRetrievalParserResponse } from "./media-retrieval-parser-response.js";
 
-export const MEDIA_RETRIEVAL_EMBEDDING_POLICY_VERSION = "media-retrieval-typed-visual-policy-v5";
+export const MEDIA_RETRIEVAL_EMBEDDING_POLICY_VERSION = "media-retrieval-semantic-visual-policy-v9";
 export const MEDIA_RETRIEVAL_EMBEDDING_NORMALIZATION_VERSION = "nfkc-whitespace-v1";
 export const MEDIA_RETRIEVAL_VISUAL_EMBEDDING_INPUT_KIND = "media-retrieval-typed-visual-embedding-v2";
+export const MEDIA_RETRIEVAL_SEMANTIC_SERIALIZATION_VERSION = "semantic-v1";
 
 const uniqueTerms = (values) =>
   Array.from(
@@ -97,6 +100,7 @@ const bindingHashFor = ({ input, vectorHash, embeddingSpace }) =>
     serializationVersion: input.serializationVersion,
     coverageDigest: input.coverageDigest,
     rawQueryHash: input.rawQueryHash,
+    identityTerms: uniqueTerms(input.identityTerms),
     vectorHash,
     embeddingSpace,
   });
@@ -126,14 +130,113 @@ const baseInput = ({ analysis, mode, reasonCode, exactOnlyIdentityTerms = analys
     identityTerms: mode === "visual" ? [] : uniqueTerms(exactOnlyIdentityTerms),
     mode,
     reasonCode,
+    semanticRoleUnproved: analysis.semanticRoleUnproved,
   };
 };
 
-// The candidate parser is intentionally not an authority for the external
-// embedding request. Only deterministic coverage of the original query can
-// produce this representation; candidate free text is ignored at this boundary.
-// A parser-provided identity term is an additive veto: it can force exact-only
-// retrieval, but it can never permit a visual embedding.
+const normalizeSemanticText = (value) => String(value || "")
+  .normalize("NFKC")
+  .split("")
+  .map((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127 ? " " : character)
+  .join("")
+  .replace(/\s+/gu, " ")
+  .trim()
+  .slice(0, 240);
+
+const semanticTextContainsIdentity = ({ text, identityTerms }) => identityTerms.some((term) => {
+  const normalizedText = normalizedComparisonText(text);
+  const normalizedTerm = normalizedComparisonText(term);
+  if (!normalizedText || !normalizedTerm) return false;
+  if (/\p{Script=Han}/u.test(normalizedTerm)) return normalizedText.includes(normalizedTerm);
+  const escaped = normalizedTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}(?:$|[^\\p{L}\\p{N}])`, "u").test(normalizedText);
+});
+
+const isIdentityContextTerm = (value) => /^(?:wear|wearing|worn|with|by|穿|穿着)$/iu.test(String(value || "").trim());
+
+const termCoveredAsIdentity = ({ term, identityTerms }) => identityTerms.some((identityTerm) => {
+  const normalizedTerm = normalizedComparisonText(term);
+  const normalizedIdentity = normalizedComparisonText(identityTerm);
+  return normalizedTerm === normalizedIdentity || normalizedIdentity.includes(normalizedTerm);
+});
+
+const termCoveredAsVisual = ({ term, text }) => {
+  const normalizedTerm = normalizedComparisonText(term);
+  const normalizedText = normalizedComparisonText(text);
+  if (!normalizedTerm || !normalizedText) return false;
+  if (/\p{Script=Han}/u.test(normalizedTerm)) return normalizedText.includes(normalizedTerm);
+  const escaped = normalizedTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}(?:$|[^\\p{L}\\p{N}])`, "u").test(normalizedText);
+};
+
+const semanticSourceText = (rawQuery, identityTerms) => {
+  let source = normalizeVisualRawQuery(rawQuery);
+  for (const term of identityTerms) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = /\p{Script=Han}/u.test(term)
+      ? escaped
+      : `(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`;
+    source = source.replace(new RegExp(pattern, "giu"), " ");
+  }
+  return source;
+};
+
+const comparisonCharacters = (value) => [...normalizedComparisonText(value)]
+  .filter((character) => /[\p{L}\p{N}]/u.test(character));
+
+// Permit deletions of search filler and identity terms, never model-added or
+// translated details. Cross-language matching belongs to embeddings/reranking;
+// the embedding query remains tied to the user's original description.
+const isSourcePreservingText = (text, source) => {
+  const requested = comparisonCharacters(text);
+  const original = comparisonCharacters(source);
+  let cursor = 0;
+  for (const character of original) {
+    if (character === requested[cursor]) cursor += 1;
+  }
+  return requested.length > 0 && cursor === requested.length;
+};
+
+const semanticInput = ({ rawQuery, analysis, candidate, identityTerms }) => {
+  const text = normalizeSemanticText(candidate?.visualQuery);
+  if (!text || (analysis.semanticRoleUnproved && !identityTerms.length) || semanticTextContainsIdentity({ text, identityTerms })) return null;
+  const source = semanticSourceText(rawQuery, identityTerms);
+  if (!isSourcePreservingText(text, source)) return null;
+  const typedCovered = analysis.typedClauses.every((clause) => {
+    const aliases = visualTermAliases(clause.value);
+    return aliases.some((term) => termCoveredAsVisual({ term, text })) ||
+      aliases.some((term) => termCoveredAsIdentity({ term, identityTerms }));
+  });
+  if (!typedCovered) return null;
+  const unclassifiedCovered = analysis.unclassifiedTerms.every((term) =>
+    isIdentityContextTerm(term) ||
+    termCoveredAsIdentity({ term, identityTerms }) ||
+    termCoveredAsVisual({ term, text }),
+  );
+  if (!unclassifiedCovered) return null;
+  const input = baseInput({ analysis, mode: "semantic", reasonCode: null, exactOnlyIdentityTerms: [] });
+  return {
+    ...input,
+    kind: MEDIA_RETRIEVAL_VISUAL_EMBEDDING_INPUT_KIND,
+    serializationVersion: MEDIA_RETRIEVAL_SEMANTIC_SERIALIZATION_VERSION,
+    semanticSerializationVersion: MEDIA_RETRIEVAL_SEMANTIC_SERIALIZATION_VERSION,
+    semanticText: text,
+    text: `${MEDIA_RETRIEVAL_SEMANTIC_SERIALIZATION_VERSION} ${text}`,
+    textHash: textHashFor({
+      policyVersion: input.policyVersion,
+      ontologyVersion: input.ontologyVersion,
+      grammarVersion: input.grammarVersion,
+      normalizationVersion: input.normalizationVersion,
+      serializationVersion: MEDIA_RETRIEVAL_SEMANTIC_SERIALIZATION_VERSION,
+      coverageDigest: input.coverageDigest,
+      text,
+    }),
+    identityTerms: [],
+  };
+};
+
+// The parser may normalize open-vocabulary visual language, but every unknown
+// source span must survive as visual text or become an owner-scoped exact filter.
 export function buildVisualEmbeddingInput(request = {}) {
   const supplied = request && typeof request === "object" && !Array.isArray(request) ? request : {};
   const { rawQuery, candidate } = supplied;
@@ -151,20 +254,49 @@ export function buildVisualEmbeddingInput(request = {}) {
     });
   }
   const parserIdentityTerms = uniqueTerms(validatedCandidate?.candidate.identityTerms);
-  if (parserIdentityTerms.length) {
-    const allTermsCoverRawQuery = parserIdentityTerms.every((term) =>
-      parserTermCoversRawQuerySpan({ rawQuery, term }),
-    );
+  const allTermsCoverRawQuery = parserIdentityTerms.every((term) =>
+    parserTermCoversRawQuerySpan({ rawQuery, term }),
+  );
+  if (!allTermsCoverRawQuery) {
     return baseInput({
       analysis,
       mode: "exact-only",
-      // An unprovable parser term is not allowed to become a local retrieval
-      // constraint. Returning no exact terms makes the caller fail closed.
-      exactOnlyIdentityTerms: allTermsCoverRawQuery ? parserIdentityTerms : [],
-      reasonCode: allTermsCoverRawQuery
-        ? "parser-identity-veto"
-        : "parser-identity-unverifiable",
+      exactOnlyIdentityTerms: [],
+      reasonCode: "parser-identity-unverifiable",
     });
+  }
+  if (candidateWasProvided && validatedCandidate.candidate.parseConfidence !== "high") {
+    return baseInput({
+      analysis,
+      mode: "exact-only",
+      exactOnlyIdentityTerms: parserIdentityTerms,
+      reasonCode: parserIdentityTerms.length ? "parser-identity-veto" : "parser-confidence-unverifiable",
+    });
+  }
+  if (
+    validatedCandidate?.candidate.parseConfidence === "high" &&
+    validatedCandidate.candidate.visualQuery
+  ) {
+    const semantic = semanticInput({ rawQuery, analysis, candidate: validatedCandidate.candidate, identityTerms: parserIdentityTerms });
+    if (semantic) return { ...semantic, identityTerms: parserIdentityTerms };
+    return baseInput({ analysis, mode: "exact-only", exactOnlyIdentityTerms: parserIdentityTerms.length
+      ? parserIdentityTerms : analysis.semanticRoleUnproved ? analysis.unclassifiedTerms : [],
+      reasonCode: "parser-visual-unverifiable" });
+  }
+  if (parserIdentityTerms.length) {
+    return baseInput({
+      analysis,
+      mode: "exact-only",
+      exactOnlyIdentityTerms: parserIdentityTerms,
+      reasonCode: "parser-identity-veto",
+    });
+  }
+  if (candidateWasProvided) {
+    return baseInput({ analysis, mode: "exact-only", exactOnlyIdentityTerms: [],
+      reasonCode: "parser-visual-unverifiable" });
+  }
+  if (analysis.complete && analysis.typedClauses.length) {
+    return baseInput({ analysis, mode: "visual", reasonCode: null });
   }
   if (!analysis.complete) {
     return baseInput({
@@ -193,29 +325,43 @@ export function verifyVisualEmbeddingInput(value) {
     value.ontologyVersion !== MEDIA_RETRIEVAL_VISUAL_ONTOLOGY_VERSION ||
     value.grammarVersion !== MEDIA_RETRIEVAL_VISUAL_GRAMMAR_VERSION ||
     value.normalizationVersion !== MEDIA_RETRIEVAL_EMBEDDING_NORMALIZATION_VERSION ||
-    value.serializationVersion !== MEDIA_RETRIEVAL_VISUAL_SERIALIZATION_VERSION ||
-    value.mode !== "visual" ||
+    !["visual", "semantic"].includes(value.mode) ||
+    value.serializationVersion !== (value.mode === "semantic" ? MEDIA_RETRIEVAL_SEMANTIC_SERIALIZATION_VERSION : MEDIA_RETRIEVAL_VISUAL_SERIALIZATION_VERSION) ||
     value.reasonCode !== null ||
     !String(value.text || "") ||
     !/^[a-f0-9]{64}$/i.test(String(value.textHash || "")) ||
     !/^[a-f0-9]{64}$/i.test(String(value.coverageDigest || "")) ||
     !/^[a-f0-9]{64}$/i.test(String(value.rawQueryHash || "")) ||
-    (Array.isArray(value.identityTerms) && value.identityTerms.length)
+    !Array.isArray(value.identityTerms) || value.identityTerms.some((term) => typeof term !== "string") ||
+    (value.mode === "visual" && value.identityTerms.length)
   ) {
     throw new TypeError("Visual embedding input is not visual-safe.");
   }
-  const representation = verifyTypedVisualRepresentation(value);
-  const text = serializeTypedVisualClauses(representation.typedClauses);
+  if (typeof value.semanticRoleUnproved !== "boolean") {
+    throw new TypeError("Visual embedding input lacks semantic role verification.");
+  }
+  const identityTerms = uniqueTerms(value.identityTerms);
+  const representation = value.mode === "visual"
+    ? verifyTypedVisualRepresentation(value)
+    : verifySemanticVisualRepresentation(value);
+  const text = value.mode === "visual" ? serializeTypedVisualClauses(representation.typedClauses) : normalizeSemanticText(value.semanticText);
+  if (value.mode === "semantic" && (
+    value.semanticSerializationVersion !== MEDIA_RETRIEVAL_SEMANTIC_SERIALIZATION_VERSION ||
+    !text || semanticTextContainsIdentity({ text, identityTerms })
+  )) {
+    throw new TypeError("Semantic visual embedding input is invalid.");
+  }
   const expectedTextHash = textHashFor({
     policyVersion: value.policyVersion,
     ontologyVersion: value.ontologyVersion,
     grammarVersion: value.grammarVersion,
     normalizationVersion: value.normalizationVersion,
-    serializationVersion: value.serializationVersion,
+    serializationVersion: value.mode === "semantic" ? MEDIA_RETRIEVAL_SEMANTIC_SERIALIZATION_VERSION : value.serializationVersion,
     coverageDigest: representation.coverageDigest,
     text,
   });
-  if (value.text !== text || value.textHash !== expectedTextHash) {
+  const serializedText = value.mode === "semantic" ? `${MEDIA_RETRIEVAL_SEMANTIC_SERIALIZATION_VERSION} ${text}` : text;
+  if (value.text !== serializedText || value.textHash !== expectedTextHash) {
     throw new TypeError("Visual embedding input does not match its safe serialization.");
   }
   return {
@@ -224,13 +370,15 @@ export function verifyVisualEmbeddingInput(value) {
     ontologyVersion: value.ontologyVersion,
     grammarVersion: value.grammarVersion,
     normalizationVersion: value.normalizationVersion,
-    serializationVersion: value.serializationVersion,
+    serializationVersion: value.mode === "semantic" ? MEDIA_RETRIEVAL_SEMANTIC_SERIALIZATION_VERSION : value.serializationVersion,
     ...representation,
-    text,
+    text: serializedText,
+    ...(value.mode === "semantic" ? { semanticSerializationVersion: MEDIA_RETRIEVAL_SEMANTIC_SERIALIZATION_VERSION, semanticText: text } : {}),
     textHash: expectedTextHash,
-    identityTerms: [],
-    mode: "visual",
+    identityTerms,
+    mode: value.mode,
     reasonCode: null,
+    semanticRoleUnproved: Boolean(value.semanticRoleUnproved),
   };
 }
 
@@ -251,10 +399,12 @@ export function toProviderVisualEmbeddingInput(value) {
     coverage: verified.coverage,
     coverageDigest: verified.coverageDigest,
     text: verified.text,
+    ...(verified.mode === "semantic" ? { semanticText: verified.semanticText, semanticSerializationVersion: verified.semanticSerializationVersion } : {}),
     textHash: verified.textHash,
     identityTerms: [],
     mode: verified.mode,
     reasonCode: verified.reasonCode,
+    semanticRoleUnproved: verified.semanticRoleUnproved,
   };
 }
 
@@ -329,7 +479,8 @@ export function verifyVisualEmbeddingBinding(value, { expectedInput, expectedEmb
     verified.ontologyVersion !== expected.ontologyVersion ||
     verified.grammarVersion !== expected.grammarVersion ||
     verified.normalizationVersion !== expected.normalizationVersion ||
-    verified.serializationVersion !== expected.serializationVersion
+    verified.serializationVersion !== expected.serializationVersion ||
+    JSON.stringify(uniqueTerms(verified.identityTerms)) !== JSON.stringify(uniqueTerms(expected.identityTerms))
   ) {
     throw new TypeError("Visual embedding binding does not match the verified input.");
   }

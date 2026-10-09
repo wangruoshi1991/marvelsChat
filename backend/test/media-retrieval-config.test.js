@@ -26,7 +26,7 @@ test("media retrieval configuration is disabled with zero cost defaults", () => 
   assert.equal(retrieval.workerPollMs, 5000);
 });
 
-test("media retrieval configuration rejects values outside the approved operating range", () => {
+test("media retrieval configuration rejects values outside JavaScript's safe integer range", () => {
   assert.throws(() => createMediaRetrievalConfig({
     MEDIA_RETRIEVAL_EMBEDDING_DIMENSION: "768",
   }), /MEDIA_RETRIEVAL_EMBEDDING_DIMENSION must equal 1024/);
@@ -34,11 +34,11 @@ test("media retrieval configuration rejects values outside the approved operatin
     MEDIA_RETRIEVAL_MAX_VIDEO_FRAMES: "7",
   }), /MEDIA_RETRIEVAL_MAX_VIDEO_FRAMES must be between 1 and 6/);
   assert.throws(() => createMediaRetrievalConfig({
-    MEDIA_RETRIEVAL_USER_DAILY_REQUEST_LIMIT: "1001",
-  }), /MEDIA_RETRIEVAL_USER_DAILY_REQUEST_LIMIT must be between 0 and 1000/);
+    MEDIA_RETRIEVAL_USER_DAILY_REQUEST_LIMIT: "9007199254740992",
+  }), /MEDIA_RETRIEVAL_USER_DAILY_REQUEST_LIMIT must be between 0 and 9007199254740991/);
   assert.throws(() => createMediaRetrievalConfig({
-    MEDIA_RETRIEVAL_GLOBAL_DAILY_BUDGET_FEN: "10000001",
-  }), /MEDIA_RETRIEVAL_GLOBAL_DAILY_BUDGET_FEN must be between 0 and 10000000/);
+    MEDIA_RETRIEVAL_GLOBAL_DAILY_BUDGET_FEN: "9007199254740992",
+  }), /MEDIA_RETRIEVAL_GLOBAL_DAILY_BUDGET_FEN must be between 0 and 9007199254740991/);
   assert.throws(() => createMediaRetrievalConfig({
     MEDIA_RETRIEVAL_DASHSCOPE_API_BASE_URL: "http://localhost:8000",
   }), /MEDIA_RETRIEVAL_DASHSCOPE_API_BASE_URL must be an HTTPS .*\/api\/v1 URL/);

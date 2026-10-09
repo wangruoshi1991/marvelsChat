@@ -39,7 +39,7 @@ const status = (
     totalAssets: 1,
     skippedAssets: 0,
   },
-  quota: { dailyRemaining: 10, monthlyRemainingFen: 100 },
+  quota: { dailyRemaining: null, monthlyRemainingFen: null },
   availability: { state: 'available', canStartRun: true, reasonCodes: [] },
   recentRuns: runs,
 });
@@ -415,6 +415,55 @@ describe('media retrieval lifecycle', () => {
     await controller.search('dress');
     expect(canSearch(controller.state, true)).toBe(false);
     expect(api.search).not.toHaveBeenCalled();
+  });
+
+  it('keeps tracking an older active task when a newer upload has completed', async () => {
+    const api = mockApi();
+    const active = { ...run('running', 'media-reindex'), id: 'older-reindex' };
+    api.status.mockResolvedValue(
+      status(true, [{ ...run('succeeded'), id: 'new-upload' }, active]),
+    );
+    const controller = create(api);
+    await controller.refresh();
+    expect(controller.state.run?.id).toBe(active.id);
+    expect(phaseFor(controller.state, true)).toBe('indexing');
+  });
+
+  it('clears displayed results after consent is withdrawn on another device', async () => {
+    const api = mockApi();
+    const controller = create(api);
+    await controller.refresh();
+    await controller.search('yellow dress');
+    expect(controller.state.results.length).toBeGreaterThan(0);
+    api.status.mockResolvedValue(status(false));
+    await controller.refresh();
+    expect(controller.state.results).toEqual([]);
+    expect(controller.state.searched).toBe(false);
+    expect(canSearch(controller.state, true)).toBe(false);
+  });
+
+  it.each(['dailyRemaining', 'monthlyRemainingFen'] as const)(
+    'does not dispatch a search when %s is exhausted',
+    async field => {
+      const api = mockApi();
+      const exhausted = status();
+      exhausted.quota[field] = 0;
+      api.status.mockResolvedValue(exhausted);
+      const controller = create(api);
+      await controller.refresh();
+      await controller.search('yellow dress');
+      expect(canSearch(controller.state, true)).toBe(false);
+      expect(api.search).not.toHaveBeenCalled();
+    },
+  );
+
+  it('allows searching when the server explicitly reports no usage or spending ceiling', async () => {
+    const api = mockApi();
+    api.status.mockResolvedValue(status());
+    const controller = create(api);
+    await controller.refresh();
+    await controller.search('yellow dress');
+    expect(api.search).toHaveBeenCalledTimes(1);
   });
 
   it('still tracks physical purge while an unknown-charge review is pending', async () => {

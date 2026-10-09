@@ -49,6 +49,7 @@ const createActualSearchService = () => createMediaRetrievalUserService({
     getMediaRetrievalProfile: async () => ({
       indexState: "enabled",
       consentVersion: "media-retrieval-consent-v1",
+      indexEpoch: 1,
     }),
     createOrGetMediaRetrievalRun: async () => ({
       reused: false,
@@ -58,6 +59,8 @@ const createActualSearchService = () => createMediaRetrievalUserService({
       },
     }),
     transitionMediaRetrievalRun: async () => null,
+    reserveProviderBudget: async () => ({ reserved: true, reservationId: "fixture-reservation", amountFen: 1 }),
+    settleProviderBudget: async () => null,
     searchMediaRetrievalSegments: async () => [{
       mediaAssetId: "asset-1",
       kind: "image",
@@ -71,7 +74,8 @@ const createActualSearchService = () => createMediaRetrievalUserService({
     }],
   },
   provider: {
-    getRuntimeStatus: () => ({ configured: false, enabled: false, providerCallsEnabled: false }),
+    getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
+    parseRetrievalQuery: async () => ({ visualQuery: "", identityTerms: ["Alice"], parseConfidence: "low" }),
   },
 });
 
@@ -100,19 +104,55 @@ test("the real B7 search service and HTTP route emit the canonical search DTO fi
   const route = routes.find((candidate) => candidate.routePath === "/api/station/media-retrieval/search");
   const response = {
     body: null,
+    set() {},
     json(value) {
       this.body = value;
       return this;
     },
   };
-  await route.handlers[1]({
+  const request = {
     user: { id: USER_ID },
     body: { query: "Alice wearing a yellow dress", limit: 10 },
-    get: (name) => name === "Idempotency-Key" ? "search-operation-0001" : null,
-  }, response);
+    get: (name) => ({
+      "Idempotency-Key": "search-operation-0001",
+      "X-Miaoxun-Retrieval-Contract": "2",
+    })[name] || null,
+  };
+  route.handlers[1](request, response, () => {});
+  route.handlers[2](request, response, () => {});
+  await route.handlers[3](request, response);
 
   assert.deepEqual(response.body?.data, fixture.searchSuccess);
   assert.deepEqual(assertMediaRetrievalSearchResponse(response.body?.data), fixture.searchSuccess);
+});
+
+test("search requests have a short-window per-user rate limit independent of spend", () => {
+  const { app, routes } = createRecordedRoutes();
+  registerStationMediaRetrievalRoutes(app, {
+    authenticate: (_req, _res, next) => next?.(),
+    asyncHandler: (handler) => handler,
+    service: createActualSearchService(),
+  });
+  const route = routes.find((candidate) => candidate.routePath === "/api/station/media-retrieval/search");
+  const req = {
+    user: { id: "rate-limit-user" },
+    ip: "127.0.0.1",
+    get: (name) => name === "X-Miaoxun-Retrieval-Contract" ? "2" : "",
+  };
+  const response = { headers: {}, set(name, value) { this.headers[name] = value; } };
+  const outcomes = [];
+
+  for (let attempt = 0; attempt < 31; attempt += 1) {
+    route.handlers[1](req, response, () => {
+      route.handlers[2](req, response, (error) => outcomes.push(error || null));
+    });
+  }
+
+  assert.equal(outcomes.filter(Boolean).length, 1);
+  assert.equal(outcomes.at(-1).status, 429);
+  assert.equal(outcomes.at(-1).details.action, "station.media_retrieval.search");
+  assert.ok(Number(response.headers["Retry-After"]) > 0);
+  assert.ok(Number(response.headers["Retry-After"]) <= 60);
 });
 
 test("real public errors validate against the one shared code, body, and HTTP mapping", async () => {

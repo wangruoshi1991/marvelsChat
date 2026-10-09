@@ -4,6 +4,8 @@
 
 所有端点使用已认证用户，服务端重新校验素材、运行和事件的 `user_id` 归属。所有写操作接受 `Idempotency-Key`；客户端不得提交用户 ID、对象路径、密钥或模型配置。受限 Web 试点只在当前页面内存保留 Bearer 会话，刷新页面必须重新登录，且不得写入 `localStorage` 或 `sessionStorage`。
 
+截至 2026-10-08，RN 与 Web 检索客户端均发送 `X-Miaoxun-Retrieval-Contract: 2`；RN 还发送 `X-Miaoxun-App-Build`。服务端接受 Build 45 及以上或显式合同版本 2；两者均缺失时，旧合同返回 `426 retrieval_client_update_required`。
+
 ## 领域 API
 
 | 方法 | 路径 | 行为 |
@@ -27,6 +29,6 @@ Checkpoint 只保存游标、阶段、已处理数量、跳过数量、最近已
 
 ## 稳定公开错误
 
-`retrieval_not_enabled`、`retrieval_consent_required`、`retrieval_budget_exhausted`、`retrieval_service_unavailable`、`asset_not_indexable`、`run_not_found`、`retrieval_policy_unverifiable`、`retrieval_request_invalid`。
+`retrieval_client_update_required`、`retrieval_not_enabled`、`retrieval_consent_required`、`retrieval_budget_exhausted`、`retrieval_service_unavailable`、`asset_not_indexable`、`run_not_found`、`retrieval_policy_unverifiable`、`retrieval_request_invalid`。
 
-公开响应不得包含向量、对象路径、签名 URL、模型配置、原始错误、原始搜索文本或其他用户信息。
+公开响应不得包含向量、对象路径、签名 URL、模型配置、原始错误、原始搜索文本或其他用户信息。旧客户端升级错误为 `retrieval_client_update_required`（HTTP 426）。

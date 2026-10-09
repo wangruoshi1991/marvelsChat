@@ -1,0 +1,27 @@
+{
+  "version": "public-objects-v3",
+  "purpose": "Small public-photo smoke calibration, not a release-quality benchmark",
+  "licenseUrl": "https://unsplash.com/license",
+  "assets": [
+    {
+      "id": "public-bicycle",
+      "imageUrl": "https://images.unsplash.com/photo-1485965120184-e220f721d03e?w=768&fit=max"
+    },
+    {
+      "id": "public-car",
+      "imageUrl": "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?w=768&fit=max"
+    }
+  ],
+  "cases": [
+    { "id": "bicycle-zh", "query": "自行车的照片", "expectedAssetIds": ["public-bicycle"], "tags": ["positive", "zh", "object"] },
+    { "id": "car-en", "query": "photos of a car", "expectedAssetIds": ["public-car"], "tags": ["positive", "en", "object"] },
+    { "id": "umbrella-empty", "query": "雨伞的照片", "expectedAssetIds": [], "tags": ["negative", "zh", "empty", "development"] },
+    { "id": "white-car-heldout", "query": "白色汽车的照片", "expectedAssetIds": ["public-car"], "tags": ["positive", "zh", "color", "held-out"] },
+    { "id": "red-car-empty-heldout", "query": "photos of a red car", "expectedAssetIds": [], "tags": ["negative", "en", "color", "held-out"] },
+    { "id": "backpack-empty-heldout", "query": "背包的照片", "expectedAssetIds": [], "tags": ["negative", "zh", "empty", "held-out"] },
+    { "id": "bicycle-synonym", "query": "靠墙停着的单车", "expectedAssetIds": ["public-bicycle"], "tags": ["positive", "zh", "synonym", "open-description"] },
+    { "id": "bicycle-indirect", "query": "two wheels with pedals against a dark wall", "expectedAssetIds": ["public-bicycle"], "tags": ["positive", "en", "indirect", "open-description"] },
+    { "id": "car-lighting", "query": "昏暗车库里亮着前灯的白色跑车", "expectedAssetIds": ["public-car"], "tags": ["positive", "zh", "lighting", "open-description"] },
+    { "id": "bicycle-rider-empty", "query": "a person riding a bicycle on a beach", "expectedAssetIds": [], "tags": ["negative", "en", "action", "open-description"] }
+  ]
+}

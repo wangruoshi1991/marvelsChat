@@ -1,4 +1,6 @@
 import { mapSegment, toInteger, vectorLiteral } from "./media-retrieval-repository-shared.js";
+import { MEDIA_RETRIEVAL_CONSENT_VERSION } from "./media-retrieval-constants.js";
+import { assertEmbeddingProvenance } from "./media-retrieval-provenance.js";
 
 const normalizedTerms = (terms, maximum) =>
   Array.from(new Set(terms || []))
@@ -16,18 +18,22 @@ const sourceRowsCte = (userId) => ({
         segment.frame_timestamp_ms,
         segment.descriptor,
         segment.embedding,
+        segment.embedding_provenance,
         asset.caption,
         asset.tags,
         asset.metadata,
         segment.created_at AS source_created_at
       FROM media_retrieval_segments AS segment
       JOIN station_media_assets AS asset ON asset.id = segment.media_asset_id AND asset.user_id = segment.user_id
+      JOIN media_retrieval_profiles AS profile ON profile.user_id = segment.user_id
       WHERE segment.user_id = ?
         AND segment.state = 'ready'
+        AND profile.index_state = 'enabled'
+        AND profile.consent_version = ?
         AND asset.status = 'uploaded'
         AND asset.deleted_at IS NULL
     )`,
-  params: [userId],
+  params: [userId, MEDIA_RETRIEVAL_CONSENT_VERSION],
 });
 
 export function createMediaRetrievalRetrievalRepository({ query } = {}) {
@@ -38,6 +44,7 @@ export function createMediaRetrievalRetrievalRepository({ query } = {}) {
   const searchMediaRetrievalSegments = async ({
     userId,
     vector = null,
+    embeddingProvenance = null,
     lexicalTerms = [],
     identityTerms = [],
     kind = null,
@@ -49,6 +56,11 @@ export function createMediaRetrievalRetrievalRepository({ query } = {}) {
     const source = sourceRowsCte(userId);
     const clauses = ["s.user_id = ?"];
     const params = [userId];
+    if (normalizedVector) {
+      const provenance = assertEmbeddingProvenance(embeddingProvenance);
+      clauses.push("s.embedding_provenance = ?::jsonb");
+      params.push(JSON.stringify(provenance));
+    }
     if (kind) {
       clauses.push("s.kind = ?");
       params.push(kind);

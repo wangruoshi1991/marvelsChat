@@ -1,5 +1,5 @@
 export const MEDIA_RETRIEVAL_CONSENT_VERSION = "media-retrieval-consent-v1";
-export const MEDIA_RETRIEVAL_MINIMUM_APP_BUILD = 26;
+export const MEDIA_RETRIEVAL_MINIMUM_APP_BUILD = 45;
 
 export const MEDIA_RETRIEVAL_LIFECYCLE_STATUSES = Object.freeze([
   "accepted",
@@ -27,6 +27,7 @@ export const MEDIA_RETRIEVAL_SEGMENT_STATES = Object.freeze([
 
 export const MEDIA_RETRIEVAL_SAFE_ERROR_CODES = Object.freeze([
   "retrieval_not_enabled",
+  "retrieval_client_update_required",
   "retrieval_consent_required",
   "retrieval_budget_exhausted",
   "retrieval_service_unavailable",
@@ -65,10 +66,10 @@ export const MEDIA_RETRIEVAL_LIMITS = Object.freeze({
 });
 
 export const MEDIA_RETRIEVAL_RUNTIME_LIMITS = Object.freeze({
-  maxUserDailyRequestLimit: 1000,
-  maxUserMonthlyBudgetFen: 1_000_000,
-  maxGlobalDailyBudgetFen: 10_000_000,
-  maxProviderCallReservationFen: 1_000_000,
+  maxUserDailyRequestLimit: Number.MAX_SAFE_INTEGER,
+  maxUserMonthlyBudgetFen: Number.MAX_SAFE_INTEGER,
+  maxGlobalDailyBudgetFen: Number.MAX_SAFE_INTEGER,
+  maxProviderCallReservationFen: Number.MAX_SAFE_INTEGER,
   minWorkerPollMs: 1000,
   maxWorkerPollMs: 60_000,
 });

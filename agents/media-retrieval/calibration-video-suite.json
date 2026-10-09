@@ -1,0 +1,28 @@
+{
+  "version": "public-video-frames-v1",
+  "purpose": "Controlled six-second car-to-bicycle sequence; tests extracted frame timestamps, not general video quality",
+  "licenseUrl": "https://unsplash.com/license",
+  "assets": [{ "id": "public-sequence", "kind": "video" }],
+  "cases": [
+    {
+      "id": "video-car-zh",
+      "query": "昏暗车库里亮着前灯的白色跑车",
+      "expectedAssetIds": ["public-sequence"],
+      "expectedTimestampRangesMs": [{ "assetId": "public-sequence", "startMs": 0, "endMs": 3000 }],
+      "tags": ["positive", "zh", "video", "timestamp"]
+    },
+    {
+      "id": "video-bicycle-en",
+      "query": "two wheels with pedals against a dark wall",
+      "expectedAssetIds": ["public-sequence"],
+      "expectedTimestampRangesMs": [{ "assetId": "public-sequence", "startMs": 3000, "endMs": 6000 }],
+      "tags": ["positive", "en", "video", "timestamp"]
+    },
+    {
+      "id": "video-umbrella-empty",
+      "query": "雨伞的照片",
+      "expectedAssetIds": [],
+      "tags": ["negative", "zh", "video", "empty"]
+    }
+  ]
+}

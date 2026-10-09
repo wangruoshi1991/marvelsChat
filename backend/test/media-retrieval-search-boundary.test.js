@@ -25,7 +25,11 @@ const createMediaRetrievalUserService = (input) => createUserService({
   ...input,
 });
 
-const enabledProfile = () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1" });
+const enabledProfile = () => ({
+  indexState: "enabled",
+  consentVersion: "media-retrieval-consent-v1",
+  indexEpoch: 1,
+});
 
 function repositoryForSearch({ searched = [], transitions = [] } = {}) {
   return {
@@ -47,7 +51,52 @@ function repositoryForSearch({ searched = [], transitions = [] } = {}) {
   };
 }
 
-test("B7 service serializes only fully covered typed visual input and blocks parser-missed identity spans", async () => {
+test("an unverifiable index epoch blocks a search before any run or provider work", async () => {
+  for (const indexEpoch of [undefined, null, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    const service = createMediaRetrievalUserService({
+      repository: {
+        getMediaRetrievalProfile: async () => ({ ...enabledProfile(), indexEpoch }),
+        createOrGetMediaRetrievalRun: async () => assert.fail("must not create a run"),
+      },
+      provider: {},
+    });
+    await assert.rejects(service.searchMediaRetrieval({ userId: USER_ID, query: "a bicycle" }),
+      (error) => error.code === "retrieval_policy_unverifiable");
+  }
+});
+
+test("actual object search binds bilingual queries and forwards the current vector provenance", async () => {
+  const searched = [];
+  const embedded = [];
+  const service = createMediaRetrievalUserService({
+    repository: repositoryForSearch({ searched }),
+    provider: {
+      getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
+      getIndexingProvenance: getTestIndexingProvenance,
+      parseRetrievalQuery: async ({ query }) => ({
+        visualQuery: query,
+        identityTerms: [],
+        parseConfidence: "high",
+      }),
+      embedText: async ({ input }) => {
+        embedded.push(input.text);
+        return VECTOR;
+      },
+    },
+  });
+  for (const query of ["自行车的照片", "photos of a car", "公园里的自行车"]) {
+    const response = await service.searchMediaRetrieval({ userId: USER_ID, query });
+    assert.deepEqual(response.results, []);
+  }
+  assert.deepEqual(embedded, ["semantic-v1 自行车的照片", "semantic-v1 photos of a car", "semantic-v1 公园里的自行车"]);
+  assert.ok(searched.some((input) => input.vector));
+  for (const input of searched.filter((item) => item.vector)) {
+    assert.deepEqual(input.embeddingProvenance, TEST_EMBEDDING_PROVENANCE);
+    assert.equal(input.userId, USER_ID);
+  }
+});
+
+test("B7 service keeps parser-missed identity spans out of semantic embedding and uses semantic retrieval for open queries", async () => {
   const embeddedInputs = [];
   const searched = [];
   let parseCalls = 0;
@@ -104,8 +153,11 @@ test("B7 service serializes only fully covered typed visual input and blocks par
     await service.searchMediaRetrieval({ userId: USER_ID, query });
   }
 
-  assert.equal(parseCalls, 1);
-  assert.deepEqual(embeddedInputs.map((input) => input.text), ["visual-v2 color=yellow;clothing=dress;scene=beach"]);
+  assert.equal(parseCalls, 25);
+  assert.deepEqual(
+    embeddedInputs.map((input) => input.text),
+    ["semantic-v1 yellow dress on a beach"],
+  );
   assert.equal(embeddedInputs[0].kind, "media-retrieval-typed-visual-embedding-v2");
   assert.match(embeddedInputs[0].coverageDigest, /^[a-f0-9]{64}$/);
   assert.match(embeddedInputs[0].textHash, /^[a-f0-9]{64}$/);
@@ -119,7 +171,7 @@ test("B7 service serializes only fully covered typed visual input and blocks par
   }
 });
 
-test("actual search service treats every parser identity term as an additive embedding veto", async () => {
+test("identity terms are exact owner filters and never enter query embeddings", async () => {
   const cases = [
     {
       label: "high-confidence season homonym",
@@ -148,6 +200,7 @@ test("actual search service treats every parser identity term as an additive emb
     const service = createMediaRetrievalUserService({
       provider: {
         getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
+        getIndexingProvenance: getTestIndexingProvenance,
         parseRetrievalQuery: async () => {
           parseCalls += 1;
           return scenario.candidate;
@@ -163,14 +216,24 @@ test("actual search service treats every parser identity term as an additive emb
     await service.searchMediaRetrieval({ userId: USER_ID, query: scenario.query });
 
     assert.equal(parseCalls, 1, scenario.label);
-    assert.equal(embeddedInputs.length, 0, scenario.label);
-    assert.equal(searched.length, 1, scenario.label);
-    assert.deepEqual(searched[0].identityTerms, scenario.expectedIdentityTerms, scenario.label);
-    assert.deepEqual(searched[0].lexicalTerms, [], scenario.label);
+    assert.equal(embeddedInputs.length, scenario.candidate.parseConfidence === "high" ? 1 : 0, scenario.label);
+    assert.ok(searched.length >= 1, scenario.label);
+    assert.ok(
+      searched.every((stage) => JSON.stringify(stage.identityTerms) === JSON.stringify(scenario.expectedIdentityTerms)),
+      scenario.label,
+    );
+    assert.ok(
+      searched.every((stage) => stage.lexicalTerms.length === 0),
+      scenario.label,
+    );
+    if (embeddedInputs.length) {
+      assert.deepEqual(embeddedInputs[0].identityTerms, []);
+      assert.equal(JSON.stringify(embeddedInputs[0]).includes(scenario.expectedIdentityTerms[0]), false);
+    }
   }
 });
 
-test("actual service preserves zero parser and embedding calls for the four parser-miss identity contexts", async () => {
+test("parser-missed identity contexts remain out of embeddings even when the parser is called", async () => {
   for (const query of [
     "Summer wearing yellow",
     "Brown wearing yellow dress",
@@ -196,7 +259,7 @@ test("actual service preserves zero parser and embedding calls for the four pars
 
     await service.searchMediaRetrieval({ userId: USER_ID, query });
 
-    assert.equal(parseCalls, 0, query);
+    assert.equal(parseCalls, 1, query);
     assert.equal(embeddedInputs.length, 0, query);
   }
 });
@@ -231,7 +294,7 @@ test("actual search service fails closed when a low-confidence parser supplies a
   assert.equal(embeddedInputs.length, 0);
 });
 
-test("actual service sends only the controlled beach serialization when the parser reports no identities", async () => {
+test("actual service rejects parser replacement text before embedding or retrieval", async () => {
   const embeddedInputs = [];
   let parseCalls = 0;
   const service = createMediaRetrievalUserService({
@@ -254,14 +317,72 @@ test("actual service sends only the controlled beach serialization when the pars
     repository: repositoryForSearch(),
   });
 
-  await service.searchMediaRetrieval({ userId: USER_ID, query: "yellow dress on a beach" });
+  await assert.rejects(service.searchMediaRetrieval({ userId: USER_ID, query: "yellow dress on a beach" }),
+    (error) => error.code === "retrieval_policy_unverifiable");
 
   assert.equal(parseCalls, 1);
-  assert.equal(embeddedInputs.length, 1);
-  assert.equal(embeddedInputs[0].text, "visual-v2 color=yellow;clothing=dress;scene=beach");
-  assert.deepEqual(embeddedInputs[0].identityTerms, []);
-  assert.equal(JSON.stringify(embeddedInputs[0]).includes("yellow dress on a beach"), false);
-  assert.equal(JSON.stringify(embeddedInputs[0]).includes("untrusted replacement text"), false);
+  assert.equal(embeddedInputs.length, 0);
+});
+
+test("search service rejects reranker IDs outside the current owner's candidate set", async () => {
+  const transitions = [];
+  const searched = [];
+  const service = createMediaRetrievalUserService({
+    repository: {
+      ...repositoryForSearch({ searched, transitions }),
+      searchMediaRetrievalSegments: async (input) => {
+        searched.push(input);
+        return input.vector
+          ? [
+              {
+                mediaAssetId: "owner-asset",
+                kind: "image",
+                matchedFrameTimestampMs: null,
+                summary: "yellow dress at dusk",
+                descriptor: {
+                  clothing: [{ type: "dress", color: "yellow" }],
+                  scene: ["outdoors"],
+                  actions: [],
+                  objects: [],
+                },
+                score: 0.91,
+                caption: "",
+                tags: [],
+                metadata: {},
+              },
+            ]
+          : [];
+      },
+    },
+    provider: {
+      getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
+      getIndexingProvenance: getTestIndexingProvenance,
+      parseRetrievalQuery: async () => ({
+        visualQuery: "a yellow dress at dusk",
+        identityTerms: [],
+        parseConfidence: "high",
+      }),
+      embedText: async () => VECTOR,
+      rerankMediaCandidates: async () => [
+        {
+          mediaAssetId: "other-owner-asset",
+          matchReasons: ["semantic-match"],
+          score: 0.8,
+        },
+      ],
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      service.searchMediaRetrieval({
+        userId: USER_ID,
+        query: "a yellow dress at dusk",
+      }),
+    (error) => error instanceof MediaRetrievalServiceError && error.code === "retrieval_policy_unverifiable",
+  );
+  assert.equal(searched.length, 1);
+  assert.equal(transitions.at(-1).lifecycleStatus, "blocked");
 });
 
 test("a disabled provider does not disguise a generic visual search as local lexical success", async () => {
@@ -283,7 +404,7 @@ test("a disabled provider does not disguise a generic visual search as local lex
   assert.equal(searched, false);
 });
 
-test("a parser failure can only use the exact-only identity path and never loose lexical terms", async () => {
+test("a parser failure blocks identity and visual queries without switching to local retrieval", async () => {
   const searched = [];
   const service = createMediaRetrievalUserService({
     provider: {
@@ -293,15 +414,11 @@ test("a parser failure can only use the exact-only identity path and never loose
     repository: repositoryForSearch({ searched }),
   });
 
-  await service.searchMediaRetrieval({ userId: USER_ID, query: "Alice wearing a yellow dress" });
-
-  assert.equal(searched.length, 1);
-  assert.deepEqual(searched[0].identityTerms, ["Alice"]);
-  assert.deepEqual(searched[0].lexicalTerms, []);
-  await assert.rejects(
-    () => service.searchMediaRetrieval({ userId: USER_ID, query: "yellow dress on a beach" }),
-    (error) => error.code === "retrieval_service_unavailable",
-  );
+  for (const query of ["Alice wearing a yellow dress", "yellow dress on a beach"]) {
+    await assert.rejects(() => service.searchMediaRetrieval({ userId: USER_ID, query }),
+      (error) => error.code === "retrieval_service_unavailable");
+  }
+  assert.equal(searched.length, 0);
 });
 
 test("actual search service blocks every explicit falsy or non-object parser candidate at the final boundary", async () => {
@@ -391,6 +508,187 @@ test("falsy parser candidates cannot serialize Summer or Brown visual homonyms",
     assert.equal(embeddedInputs.length, 0, scenario.label);
     assert.equal(safeOutput.includes(scenario.forbiddenVisual), false, scenario.label);
     assert.equal(safeOutput.includes(scenario.label), false, scenario.label);
+  }
+});
+
+test("revocation during a search stops subsequent model dispatch and result persistence", async () => {
+  for (const revokeAt of ["query-parse", "query-embedding", "recall", "query-rerank", "reservation"]) {
+    let revoked = false;
+    const calls = [];
+    const transitions = [];
+    const settlements = [];
+    const asset = {
+      mediaAssetId: "owner-asset",
+      kind: "image",
+      matchedFrameTimestampMs: null,
+      summary: "a yellow dress outdoors",
+      score: 0.8,
+      descriptor: {
+        clothing: [{ type: "dress", color: "yellow" }],
+        scene: ["outdoors"],
+        actions: [],
+        objects: [],
+      },
+    };
+    const dispatch = (operation) => {
+      calls.push(operation);
+      if (revokeAt === operation) revoked = true;
+    };
+    const service = createMediaRetrievalUserService({
+      repository: {
+        ...repositoryForSearch({ transitions }),
+        getMediaRetrievalProfile: async () => ({
+          ...enabledProfile(),
+          indexEpoch: revoked ? 2 : 1,
+          indexState: revoked ? "purging" : "enabled",
+        }),
+        reserveProviderBudget: async () => {
+          if (revokeAt === "reservation") revoked = true;
+          return { reserved: true, reservationId: "reservation", amountFen: 1 };
+        },
+        settleProviderBudget: async (value) => settlements.push(value),
+        searchMediaRetrievalSegments: async () => {
+          dispatch("recall");
+          return [asset];
+        },
+      },
+      provider: {
+        getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
+        getIndexingProvenance: getTestIndexingProvenance,
+        parseRetrievalQuery: async () => {
+          dispatch("query-parse");
+          return {
+            visualQuery: "a yellow dress outdoors",
+            identityTerms: [],
+            parseConfidence: "high",
+          };
+        },
+        embedText: async () => {
+          dispatch("query-embedding");
+          return VECTOR;
+        },
+        rerankMediaCandidates: async () => {
+          dispatch("query-rerank");
+          return [{ ...asset, matchReasons: ["semantic-match"] }];
+        },
+      },
+    });
+    await assert.rejects(
+      service.searchMediaRetrieval({
+        userId: USER_ID,
+        query: "a yellow dress outdoors",
+      }),
+      (error) => error.code === "retrieval_consent_required",
+      revokeAt,
+    );
+    const expectedCalls = ["query-parse", "query-embedding", "recall", "query-rerank"];
+    assert.deepEqual(calls, revokeAt === "reservation" ? [] : expectedCalls.slice(0, expectedCalls.indexOf(revokeAt) + 1));
+    assert.equal(transitions.at(-1).lifecycleStatus, "failed");
+    assert.equal(
+      transitions.some((value) => value.payload?.searchResponse),
+      false,
+    );
+    if (revokeAt === "reservation")
+      assert.deepEqual(settlements, [
+        {
+          reservationId: "reservation",
+          disposition: "released",
+          amountFen: 0,
+        },
+      ]);
+  }
+});
+
+test("a cleared and re-enabled epoch invalidates an in-flight search", async () => {
+  let epoch = 1;
+  const transitions = [];
+  let embedded = false;
+  const service = createMediaRetrievalUserService({
+    repository: {
+      ...repositoryForSearch({ transitions }),
+      getMediaRetrievalProfile: async () => ({
+        ...enabledProfile(),
+        indexEpoch: epoch,
+      }),
+    },
+    provider: {
+      getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
+      parseRetrievalQuery: async () => {
+        epoch = 3;
+        return {
+          visualQuery: "a yellow dress outdoors",
+          identityTerms: [],
+          parseConfidence: "high",
+        };
+      },
+      embedText: async () => {
+        embedded = true;
+        return VECTOR;
+      },
+    },
+  });
+  await assert.rejects(
+    service.searchMediaRetrieval({
+      userId: USER_ID,
+      query: "a yellow dress outdoors",
+    }),
+    (error) => error.code === "retrieval_purge_incomplete",
+  );
+  assert.equal(embedded, false);
+  assert.equal(transitions.at(-1).failureCode, "retrieval_purge_incomplete");
+});
+
+test("an empty recall skips paid reranking while rerank failure cannot become empty success", async () => {
+  for (const hasCandidate of [false, true]) {
+    let reranks = 0;
+    const transitions = [];
+    const service = createMediaRetrievalUserService({
+      repository: {
+        ...repositoryForSearch({ transitions }),
+        searchMediaRetrievalSegments: async () =>
+          hasCandidate
+            ? [
+                {
+                  mediaAssetId: "owner-asset",
+                  kind: "image",
+                  score: 0.8,
+                  descriptor: {
+                    clothing: [],
+                    scene: ["outdoors"],
+                    actions: [],
+                    objects: ["bicycle"],
+                  },
+                },
+              ]
+            : [],
+      },
+      provider: {
+        getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
+        getIndexingProvenance: getTestIndexingProvenance,
+        parseRetrievalQuery: async () => ({
+          visualQuery: "a bicycle outdoors",
+          identityTerms: [],
+          parseConfidence: "high",
+        }),
+        embedText: async () => VECTOR,
+        rerankMediaCandidates: async () => {
+          reranks += 1;
+          throw new Error("private failure");
+        },
+      },
+    });
+    const request = service.searchMediaRetrieval({
+      userId: USER_ID,
+      query: "a bicycle outdoors",
+    });
+    if (hasCandidate) {
+      await assert.rejects(request, (error) => error.code === "retrieval_service_unavailable");
+      assert.equal(transitions.at(-1).lifecycleStatus, "blocked");
+    } else {
+      assert.deepEqual((await request).results, []);
+      assert.equal(transitions.at(-1).lifecycleStatus, "succeeded");
+    }
+    assert.equal(reranks, hasCandidate ? 1 : 0);
   }
 });
 

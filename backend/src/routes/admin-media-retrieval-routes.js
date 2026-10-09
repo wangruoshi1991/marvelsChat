@@ -11,9 +11,9 @@ const publicControls = (controls = {}) => ({
   operatorEnabled: Boolean(controls.agent_enabled),
   providerCallsEnabled: Boolean(controls.provider_calls_enabled),
   queueEnabled: Boolean(controls.index_requests_enabled),
-  userDailyRequestLimit: Number(controls.user_daily_request_limit || 0),
-  userMonthlyBudgetFen: Number(controls.user_monthly_budget_fen || 0),
-  globalDailyBudgetFen: Number(controls.global_daily_budget_fen || 0),
+  userDailyRequestLimit: controls.user_daily_request_limit == null ? null : Number(controls.user_daily_request_limit),
+  userMonthlyBudgetFen: controls.user_monthly_budget_fen == null ? null : Number(controls.user_monthly_budget_fen),
+  globalDailyBudgetFen: controls.global_daily_budget_fen == null ? null : Number(controls.global_daily_budget_fen),
   captionReserveFen: Number(controls.caption_reserve_fen || 0),
   embeddingReserveFen: Number(controls.embedding_reserve_fen || 0),
   lifecycle: controls.lifecycle || "draft",
@@ -91,17 +91,17 @@ export function registerAdminMediaRetrievalRoutes(app, {
       const body = mediaRetrievalAdminControlsSchema.parse(req.body);
       const overview = await dependencies.getOverview();
       const current = publicControls(overview.controls);
-      const globalDailyBudgetFen = body.globalDailyBudgetFen ?? current.globalDailyBudgetFen;
+      const globalDailyBudgetFen = Object.hasOwn(body, "globalDailyBudgetFen") ? body.globalDailyBudgetFen : current.globalDailyBudgetFen;
       const providerCallsEnabled = body.providerCallsEnabled ?? current.providerCallsEnabled;
-      const userDailyRequestLimit = body.userDailyRequestLimit ?? current.userDailyRequestLimit;
-      const userMonthlyBudgetFen = body.userMonthlyBudgetFen ?? current.userMonthlyBudgetFen;
+      const userDailyRequestLimit = Object.hasOwn(body, "userDailyRequestLimit") ? body.userDailyRequestLimit : current.userDailyRequestLimit;
+      const userMonthlyBudgetFen = Object.hasOwn(body, "userMonthlyBudgetFen") ? body.userMonthlyBudgetFen : current.userMonthlyBudgetFen;
       const captionReserveFen = body.captionReserveFen ?? current.captionReserveFen;
       const embeddingReserveFen = body.embeddingReserveFen ?? current.embeddingReserveFen;
       if (
         providerCallsEnabled &&
-        (!globalDailyBudgetFen || !userDailyRequestLimit || !userMonthlyBudgetFen || !captionReserveFen || !embeddingReserveFen)
+        (globalDailyBudgetFen === 0 || userDailyRequestLimit === 0 || userMonthlyBudgetFen === 0 || !captionReserveFen || !embeddingReserveFen)
       ) {
-        throw new HttpError(400, "Provider calls require positive budgets, limits, and operation reservations.");
+        throw new HttpError(400, "Provider calls require nonzero limits or unlimited values and positive operation reservations.");
       }
       const controls = await dependencies.updateControls(Object.fromEntries(Object.entries({
         agentEnabled: body.operatorEnabled,

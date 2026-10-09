@@ -348,15 +348,15 @@ const renderMediaRetrievalOverview = (overview = null) => {
     </section>
     <form class="media-retrieval-controls" id="media-retrieval-controls-form">
       <div class="media-retrieval-controls-heading">
-        <strong>受限运行控制</strong>
+        <strong>运行控制</strong>
         <span>所有更改将记入审计事件。</span>
       </div>
       <label class="checkbox-row"><input id="media-retrieval-operator" type="checkbox" ${controls.operatorEnabled ? "checked" : ""} /><span>启用 Agent</span></label>
       <label class="checkbox-row"><input id="media-retrieval-provider" type="checkbox" ${controls.providerCallsEnabled ? "checked" : ""} /><span>允许 Provider 调用</span></label>
       <label class="checkbox-row"><input id="media-retrieval-queue" type="checkbox" ${controls.queueEnabled ? "checked" : ""} /><span>允许创建索引任务</span></label>
-      <label>每用户每日请求上限<input id="media-retrieval-user-daily-limit" type="number" min="0" max="1000" step="1" value="${Number(controls.userDailyRequestLimit || 0)}" /></label>
-      <label>每用户每月预算（分）<input id="media-retrieval-user-monthly-budget" type="number" min="0" max="1000000" step="1" value="${Number(controls.userMonthlyBudgetFen || 0)}" /></label>
-      <label>全局每日预算（分）<input id="media-retrieval-budget" type="number" min="0" max="10000000" step="1" value="${Number(controls.globalDailyBudgetFen || 0)}" /></label>
+      <label>每用户每日请求上限<input id="media-retrieval-user-daily-limit" type="number" min="0" max="9007199254740991" step="1" placeholder="留空不限" value="${controls.userDailyRequestLimit == null ? "" : Number(controls.userDailyRequestLimit)}" /></label>
+      <label>每用户每月预算（分）<input id="media-retrieval-user-monthly-budget" type="number" min="0" max="9007199254740991" step="1" placeholder="留空不限" value="${controls.userMonthlyBudgetFen == null ? "" : Number(controls.userMonthlyBudgetFen)}" /></label>
+      <label>全局每日预算（分）<input id="media-retrieval-budget" type="number" min="0" max="9007199254740991" step="1" placeholder="留空不限" value="${controls.globalDailyBudgetFen == null ? "" : Number(controls.globalDailyBudgetFen)}" /></label>
       <label>描述调用预留（分）<input id="media-retrieval-caption-reserve" type="number" min="0" max="1000000" step="1" value="${Number(controls.captionReserveFen || 0)}" /></label>
       <label>向量调用预留（分）<input id="media-retrieval-embedding-reserve" type="number" min="0" max="1000000" step="1" value="${Number(controls.embeddingReserveFen || 0)}" /></label>
       <label>生命周期
@@ -415,7 +415,16 @@ const syncMediaRetrievalControlState = () => {
   ];
   const provider = qs("#media-retrieval-provider");
   if (budgetInputs.some((input) => !input) || !provider) return;
-  const missingCapacity = budgetInputs.some((input) => Number(input.value || 0) <= 0);
+  const unlimitedInputs = new Set([
+    "media-retrieval-user-daily-limit",
+    "media-retrieval-user-monthly-budget",
+    "media-retrieval-budget",
+  ]);
+  const missingCapacity = budgetInputs.some((input) =>
+    unlimitedInputs.has(input.id)
+      ? input.value !== "" && Number(input.value) <= 0
+      : Number(input.value || 0) <= 0,
+  );
   if (missingCapacity) provider.checked = false;
   provider.disabled = missingCapacity;
 };
@@ -849,13 +858,17 @@ qs("#media-retrieval-content").addEventListener("submit", async (event) => {
   if (event.target.id !== "media-retrieval-controls-form") return;
   event.preventDefault();
   const current = currentMediaRetrievalOverview?.controls || {};
+  const nullableLimit = (selector) => {
+    const value = qs(selector).value.trim();
+    return value === "" ? null : Number(value);
+  };
   const next = {
     operatorEnabled: qs("#media-retrieval-operator").checked,
     providerCallsEnabled: qs("#media-retrieval-provider").checked,
     queueEnabled: qs("#media-retrieval-queue").checked,
-    userDailyRequestLimit: Number(qs("#media-retrieval-user-daily-limit").value || 0),
-    userMonthlyBudgetFen: Number(qs("#media-retrieval-user-monthly-budget").value || 0),
-    globalDailyBudgetFen: Number(qs("#media-retrieval-budget").value || 0),
+    userDailyRequestLimit: nullableLimit("#media-retrieval-user-daily-limit"),
+    userMonthlyBudgetFen: nullableLimit("#media-retrieval-user-monthly-budget"),
+    globalDailyBudgetFen: nullableLimit("#media-retrieval-budget"),
     captionReserveFen: Number(qs("#media-retrieval-caption-reserve").value || 0),
     embeddingReserveFen: Number(qs("#media-retrieval-embedding-reserve").value || 0),
     lifecycle: qs("#media-retrieval-lifecycle").value,

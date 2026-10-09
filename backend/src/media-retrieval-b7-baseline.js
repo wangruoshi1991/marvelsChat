@@ -1,10 +1,11 @@
 import { buildVisualEmbeddingInput } from "./media-retrieval-embedding-input.js";
+import { visualTermAliases } from "./media-retrieval-visual-language.js";
 
 export const B7_PRODUCT_BASELINE_METHOD = "b7-product-baseline";
 export const B7_PRODUCT_BASELINE_CONFIGURATION = Object.freeze({
   method: B7_PRODUCT_BASELINE_METHOD,
   retrievalMethod: B7_PRODUCT_BASELINE_METHOD,
-  localRanker: "b7-local-rank-v1",
+  localRanker: "b7-local-rank-v2-evidence-required",
   queryBinding: "typed-visual-binding-v2",
   candidateLimitMultiplier: 8,
   allowLocalLexical: true,
@@ -59,16 +60,39 @@ const metadataValues = (value, depth = 0) => {
 };
 
 const hasExactTerm = (values, term) => values.some((value) => normalizeText(value) === normalizeText(term));
-const hasVisualTerm = (values, term) => values.some((value) => normalizeText(value).includes(normalizeText(term)));
+const hasVisualTerm = (values, term) => {
+  const aliases = visualTermAliases(term);
+  return values.some((value) => (aliases.length ? aliases : [term]).some((alias) => {
+    const normalized = normalizeText(alias);
+    const text = normalizeText(value);
+    if (/\p{Script=Han}/u.test(normalized)) return text.includes(normalized);
+    const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:^|[^a-z])${escaped}(?:s|es)?(?:$|[^a-z])`, "u").test(text);
+  }));
+};
+
+const descriptorVisualValues = (descriptor) => [
+  ...metadataValues(descriptor?.clothing),
+  ...uniqueStrings(descriptor?.scene),
+  ...uniqueStrings(descriptor?.actions),
+  ...uniqueStrings(descriptor?.objects),
+];
 
 const b7EvidenceForCandidate = ({ candidate, visualTerms, identityTerms }) => {
   const caption = String(candidate.caption || "");
   const tags = uniqueStrings(candidate.tags);
   const ocr = descriptorOcrValues(candidate.descriptor);
   const metadata = metadataValues(candidate.metadata);
+  const visualDescriptor = descriptorVisualValues(candidate.descriptor);
   const reasons = [];
-  const hasVectorScore = candidate.score !== null && candidate.score !== undefined && Number.isFinite(Number(candidate.score));
+  const hasVectorScore = typeof candidate.score === "number" && Number.isFinite(candidate.score) && candidate.score > 0 && candidate.score <= 1;
   let localScore = hasVectorScore ? Math.max(0, Number(candidate.score)) : 0;
+
+  // A nearest neighbour is a candidate, not proof of a match. Require every
+  // controlled visual term in structured descriptors or owner-authored data.
+  const localEvidence = [caption, ...tags, ...ocr, ...metadata, ...visualDescriptor];
+  if (visualTerms.length && !visualTerms.every((term) => hasVisualTerm(localEvidence, term))) return null;
+  if (!visualTerms.length && !identityTerms.length) return null;
 
   if (hasVectorScore) {
     reasons.push("visual-vector");
@@ -100,6 +124,10 @@ const b7EvidenceForCandidate = ({ candidate, visualTerms, identityTerms }) => {
   if (visualTerms.some((term) => hasVisualTerm(metadata, term))) {
     reasons.push("metadata-match");
     localScore += 0.05;
+  }
+  if (visualTerms.some((term) => hasVisualTerm(visualDescriptor, term))) {
+    reasons.push("descriptor-match");
+    localScore += 0.08;
   }
 
   return { localScore, matchReasons: reasons };

@@ -15,7 +15,45 @@ import {
   mediaRetrievalSearchSchema,
 } from "../schemas.js";
 import { assertMediaRetrievalSearchResponse } from "../../../shared/media-retrieval-public-contract.js";
-import { isMediaRetrievalPublicError } from "../media-retrieval-errors.js";
+import {
+  isMediaRetrievalPublicError,
+  toPublicMediaRetrievalError,
+} from "../media-retrieval-errors.js";
+import { createRateLimitMiddleware } from "../rate-limit-service.js";
+import { MEDIA_RETRIEVAL_MINIMUM_APP_BUILD } from "../media-retrieval-constants.js";
+
+const retrievalSearchLimit = createRateLimitMiddleware({
+  action: "station.media_retrieval.search",
+  limit: 30,
+  windowMs: 60 * 1000,
+  message: "检索请求过于频繁，请稍后再试。",
+});
+const retrievalEnableLimit = createRateLimitMiddleware({
+  action: "station.media_retrieval.enable",
+  limit: 10,
+  windowMs: 60 * 60 * 1000,
+  message: "检索启用请求过于频繁，请稍后再试。",
+});
+const retrievalReindexLimit = createRateLimitMiddleware({
+  action: "station.media_retrieval.reindex",
+  limit: 10,
+  windowMs: 60 * 1000,
+  message: "检索重建请求过于频繁，请稍后再试。",
+});
+
+const requireRetrievalContract = (req, res, next) => {
+  const rawBuild = req.get("X-Miaoxun-App-Build");
+  const build = /^\d+$/.test(String(rawBuild || "")) ? Number(rawBuild) : 0;
+  const contractVersion = req.get("X-Miaoxun-Retrieval-Contract");
+  if (build >= MEDIA_RETRIEVAL_MINIMUM_APP_BUILD || contractVersion === "2") {
+    next();
+    return;
+  }
+  const error = toPublicMediaRetrievalError(
+    new MediaRetrievalServiceError("retrieval_client_update_required"),
+  );
+  res.status(426).json({ error });
+};
 
 const createDefaultService = () =>
   createMediaRetrievalUserService({
@@ -43,6 +81,8 @@ export function registerStationMediaRetrievalRoutes(app, { authenticate, asyncHa
   app.post(
     "/api/station/media-retrieval/enable",
     authenticate,
+    requireRetrievalContract,
+    retrievalEnableLimit,
     safeMediaRetrievalHandler(asyncHandler, async (req, res) => {
       const body = mediaRetrievalEnableSchema.parse(req.body);
       const data = await service.enableMediaRetrieval({
@@ -57,6 +97,7 @@ export function registerStationMediaRetrievalRoutes(app, { authenticate, asyncHa
   app.get(
     "/api/station/media-retrieval/status",
     authenticate,
+    requireRetrievalContract,
     safeMediaRetrievalHandler(asyncHandler, async (req, res) => {
       res.json({ data: await service.getMediaRetrievalStatus({ userId: req.user.id }) });
     }),
@@ -65,6 +106,8 @@ export function registerStationMediaRetrievalRoutes(app, { authenticate, asyncHa
   app.post(
     "/api/station/media-retrieval/search",
     authenticate,
+    requireRetrievalContract,
+    retrievalSearchLimit,
     safeMediaRetrievalHandler(asyncHandler, async (req, res) => {
       const body = mediaRetrievalSearchSchema.parse(req.body);
       const data = await service.searchMediaRetrieval({
@@ -79,6 +122,8 @@ export function registerStationMediaRetrievalRoutes(app, { authenticate, asyncHa
   app.post(
     "/api/station/media-retrieval/reindex",
     authenticate,
+    requireRetrievalContract,
+    retrievalReindexLimit,
     safeMediaRetrievalHandler(asyncHandler, async (req, res) => {
       const body = mediaRetrievalReindexSchema.parse(req.body);
       const data = await service.requestMediaRetrievalReindex({
@@ -94,6 +139,7 @@ export function registerStationMediaRetrievalRoutes(app, { authenticate, asyncHa
   app.delete(
     "/api/station/media-retrieval/index",
     authenticate,
+    requireRetrievalContract,
     safeMediaRetrievalHandler(asyncHandler, async (req, res) => {
       const data = await service.deleteMediaRetrievalIndex({
         userId: req.user.id,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View } from 'react-native';
+import { Modal, View } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import { AIAssistProvider } from '../src/features/assist/AIAssistProvider';
@@ -46,17 +46,33 @@ jest.mock('../src/features/station/StationPageHeading', () => {
 
 jest.mock('../src/features/station/StationHome', () => {
   const ReactModule = require('react');
-  const { View: NativeView } = require('react-native');
+  const {
+    Pressable: NativePressable,
+    View: NativeView,
+  } = require('react-native');
   return {
-    StationHome: ({ active }: { active: boolean }) => {
+    StationHome: ({
+      active,
+      onOpenMediaRetrieval,
+    }: {
+      active: boolean;
+      onOpenMediaRetrieval?: () => void;
+    }) => {
       ReactModule.useEffect(() => {
         mockPanelMounted('station');
         return () => mockPanelUnmounted('station');
       }, []);
-      return ReactModule.createElement(NativeView, {
-        testID: 'station-panel-station',
-        active,
-      });
+      return ReactModule.createElement(
+        NativeView,
+        {
+          testID: 'station-panel-station',
+          active,
+        },
+        ReactModule.createElement(NativePressable, {
+          onPress: onOpenMediaRetrieval,
+          testID: 'station-home-find-media',
+        }),
+      );
     },
   };
 });
@@ -251,5 +267,30 @@ describe('Station tab lifecycle', () => {
     expect(posts.props.accessibilityElementsHidden).toBe(true);
     expect(posts.props.importantForAccessibility).toBe('no-hide-descendants');
     expect(posts.props.pointerEvents).toBe('none');
+  });
+
+  it('opens the media retrieval modal from the home album shortcut', () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(stationScreen('station'));
+    });
+
+    const retrievalModal = () =>
+      renderer!.root
+        .findAllByType(Modal)
+        .find(
+          modal =>
+            modal.props.animationType === 'fade' &&
+            modal.props.presentationStyle === 'fullScreen',
+        );
+    expect(retrievalModal()?.props.visible).toBe(false);
+
+    ReactTestRenderer.act(() => {
+      renderer!.root
+        .findByProps({ testID: 'station-home-find-media' })
+        .props.onPress();
+    });
+
+    expect(retrievalModal()?.props.visible).toBe(true);
   });
 });

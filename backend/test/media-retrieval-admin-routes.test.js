@@ -67,6 +67,34 @@ test("runtime status becomes route-eligible only for a live, ready, budgeted lim
   assert.equal(status.publicAvailability.state, "available");
 });
 
+test("runtime status treats NULL cost ceiling as available without hiding actual spend", async () => {
+  const status = await buildMediaRetrievalRuntimeStatus({
+    evaluatedAt: new Date("2026-08-06T00:00:00.000Z"),
+    configStatus: {
+      configured: true,
+      enabled: true,
+      providerCallsEnabled: true,
+      missing: [],
+    },
+    vectorReady: true,
+    ossReady: true,
+    overview: {
+      controls: {
+        agent_enabled: true,
+        provider_calls_enabled: true,
+        index_requests_enabled: true,
+        lifecycle: "available",
+        global_daily_budget_fen: null,
+      },
+      workerLastSeenAt: "2026-08-05T23:59:50.000Z",
+      globalCost: { reserved_fen: 10_000_000, estimated_fen: 50_000_000, unknown_fen: 0 },
+    },
+  });
+
+  assert.equal(status.capacity.state, "available");
+  assert.equal(status.routeEligibility.canRouteNewRun, true);
+});
+
 test("admin media retrieval routes expose only overview, runs, and bounded controls", () => {
   const routes = [];
   const app = {
@@ -122,7 +150,7 @@ test("admin overview publishes the frozen minimum App build and operator-only di
   let responseBody;
   await overview.handlers.at(-1)({}, { json: (body) => { responseBody = body; } });
 
-  assert.equal(responseBody.data.agentCard.minimumAppBuild, 26);
+  assert.equal(responseBody.data.agentCard.minimumAppBuild, 45);
   assert.deepEqual(responseBody.data.diagnostics, [diagnostic]);
   assert.ok(permissionChecks.every((permission) => permission === "agents:manage"));
 });

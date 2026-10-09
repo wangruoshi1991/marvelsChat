@@ -317,6 +317,9 @@ test("budget reservation blocks before provider dispatch when controls have no b
           global_daily_budget_fen: 0,
         }];
       }
+      if (sql.includes("FROM media_retrieval_profiles")) {
+        return [{ index_state: "enabled", consent_version: "media-retrieval-consent-v1" }];
+      }
       if (sql.includes("FROM media_retrieval_cost_daily_rollups") && sql.includes("scope = 'user'")) {
         return [{ action_count: 0, reserved_fen: 0, estimated_fen: 0, unknown_fen: 0 }];
       }
@@ -338,6 +341,91 @@ test("budget reservation blocks before provider dispatch when controls have no b
 
   assert.deepEqual(result, { reserved: false, reasonCode: "retrieval_budget_exhausted" });
   assert.equal(hasSql(calls, "INSERT INTO media_retrieval_cost_ledger"), false);
+});
+
+test("budget reservation does not enforce usage or money ceilings when controls are NULL", async () => {
+  const { calls, repository } = makeRepository({
+    respond: (sql) => {
+      if (sql.includes("FROM media_retrieval_operator_controls") && sql.includes("FOR UPDATE")) {
+        return [{
+          agent_enabled: true,
+          provider_calls_enabled: true,
+          index_requests_enabled: true,
+          user_daily_request_limit: null,
+          user_monthly_budget_fen: null,
+          global_daily_budget_fen: null,
+          caption_reserve_fen: 1,
+          embedding_reserve_fen: 1,
+        }];
+      }
+      if (sql.includes("FROM media_retrieval_profiles")) {
+        return [{ index_state: "enabled", consent_version: "media-retrieval-consent-v1" }];
+      }
+      if (sql.includes("FROM agent_runs") && sql.includes("provider_action_counted")) {
+        return [{ provider_action_counted: false }];
+      }
+      if (sql.includes("FROM media_retrieval_cost_daily_rollups") && sql.includes("scope = 'user'")) {
+        return [{ action_count: 1000000, reserved_fen: 50000000, estimated_fen: 0, unknown_fen: 0 }];
+      }
+      if (sql.includes("FROM media_retrieval_cost_daily_rollups") && sql.includes("scope = 'global'")) {
+        return [{ action_count: 0, reserved_fen: 0, estimated_fen: 50000000, unknown_fen: 0 }];
+      }
+      if (sql.includes("FROM media_retrieval_cost_ledger") && sql.includes("committed_fen")) {
+        return [{ committed_fen: 50000000 }];
+      }
+      return [];
+    },
+  });
+
+  const result = await repository.reserveProviderBudget({
+    userId: USER_A,
+    agentRunId: RUN_A,
+    operation: "query-rerank",
+    reserveFen: 1,
+    countUserAction: true,
+  });
+
+  assert.equal(result.reserved, true);
+  assert.equal(result.amountFen, 1);
+  assert.equal(hasSql(calls, "INSERT INTO media_retrieval_cost_ledger"), true);
+});
+
+test("revoked or outdated consent cannot reserve budget even with enabled operator controls", async () => {
+  for (const profile of [null, { index_state: "purging", consent_version: "media-retrieval-consent-v1" },
+    { index_state: "enabled", consent_version: "old-consent" }]) {
+    const { repository, calls } = makeRepository({
+      respond: (sql) => {
+        if (sql.includes("FROM media_retrieval_operator_controls")) return [{
+          agent_enabled: true, provider_calls_enabled: true, index_requests_enabled: true,
+          global_daily_budget_fen: 100, caption_reserve_fen: 1,
+        }];
+        if (sql.includes("FROM media_retrieval_profiles")) return profile ? [profile] : [];
+        return [];
+      },
+    });
+    assert.deepEqual(await repository.reserveProviderBudget({
+      userId: USER_A, agentRunId: RUN_A, operation: "query-rerank",
+    }), { reserved: false, reasonCode: "retrieval_not_enabled" });
+    assert.equal(hasSql(calls, "INSERT INTO media_retrieval_cost_ledger"), false);
+    assert.equal(hasSql(calls, "FROM media_retrieval_profiles WHERE user_id = ? FOR SHARE"), true);
+  }
+});
+
+test("a stale epoch or revoked profile prevents completed search events and lifecycle writes", async () => {
+  for (const scenario of [
+    { profile: { index_state: "purging", consent_version: "media-retrieval-consent-v1", index_epoch: 2 }, code: "retrieval_consent_required" },
+    { profile: { index_state: "enabled", consent_version: "media-retrieval-consent-v1", index_epoch: 3 }, code: "retrieval_purge_incomplete" },
+  ]) {
+    const { repository, calls } = makeRepository({
+      respond: (sql) => sql.includes("FROM media_retrieval_profiles") ? [scenario.profile] : [],
+    });
+    await assert.rejects(repository.transitionMediaRetrievalRun({
+      userId: USER_A, agentRunId: RUN_A, lifecycleStatus: "succeeded", eventType: "completed", searchIndexEpoch: 1,
+      payload: { searchResponse: { agentRunId: RUN_A, lifecycleStatus: "succeeded", method: "b7-product-baseline", results: [] } },
+    }), (error) => error.code === scenario.code);
+    assert.equal(hasSql(calls, "UPDATE agent_runs"), false);
+    assert.equal(hasSql(calls, "INSERT INTO agent_run_events"), false);
+  }
 });
 
 test("operator controls retain values omitted by a partial admin update", async () => {
@@ -406,6 +494,38 @@ test("operator controls persist supplied user limits and operation-specific prov
 
   const update = calls.find((call) => call.sql.includes("UPDATE media_retrieval_operator_controls"));
   assert.deepEqual(update.params, [true, false, true, 9, 9000, 5000, 40, 20, "sandbox"]);
+});
+
+test("operator controls persist unlimited NULL values and large future accounting thresholds", async () => {
+  const current = {
+    agent_enabled: true,
+    provider_calls_enabled: false,
+    index_requests_enabled: true,
+    user_daily_request_limit: 0,
+    user_monthly_budget_fen: 0,
+    global_daily_budget_fen: 0,
+    caption_reserve_fen: 0,
+    embedding_reserve_fen: 0,
+    lifecycle: "sandbox",
+  };
+  const { calls, repository } = makeRepository({
+    respond: (sql) => {
+      if (sql.includes("SELECT * FROM media_retrieval_operator_controls")) return [current];
+      if (sql.includes("UPDATE media_retrieval_operator_controls")) return [current];
+      return [];
+    },
+  });
+
+  await repository.updateMediaRetrievalOperatorControls({
+    userDailyRequestLimit: null,
+    userMonthlyBudgetFen: null,
+    globalDailyBudgetFen: null,
+    captionReserveFen: 50_000_000,
+    embeddingReserveFen: 60_000_000,
+  });
+
+  const update = calls.find((call) => call.sql.includes("UPDATE media_retrieval_operator_controls"));
+  assert.deepEqual(update.params, [true, false, true, null, null, null, 50_000_000, 60_000_000, "sandbox"]);
 });
 
 test("budget rollups use UTC and settlement updates the original reservation day", async () => {
@@ -773,10 +893,21 @@ test("B7 can fetch a larger internal candidate pool before local asset-level ded
   await repository.searchMediaRetrievalSegments({
     userId: USER_A,
     vector: vector(),
+    embeddingProvenance: indexingProvenance().embeddingProvenance,
     identityTerms: [],
     limit: 80,
   });
 
   const select = calls.find((call) => call.sql.includes("FROM media_retrieval_segments"));
   assert.equal(select.params.at(-1), 80);
+  assert.match(select.sql, /s\.embedding_provenance = \?::jsonb/);
+  assert.ok(select.params.includes(JSON.stringify(indexingProvenance().embeddingProvenance)));
+});
+
+test("vector repository access rejects missing or invalid provenance before executing SQL", async () => {
+  const { calls, repository } = makeRepository();
+  for (const embeddingProvenance of [null, {}, { ...indexingProvenance().embeddingProvenance, dimension: 512 }]) {
+    await assert.rejects(repository.searchMediaRetrievalSegments({ userId: USER_A, vector: vector(), embeddingProvenance }), /provenance/);
+  }
+  assert.equal(calls.length, 0);
 });

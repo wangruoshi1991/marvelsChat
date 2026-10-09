@@ -226,6 +226,9 @@ export const authErrorText = (language: Language, message?: string | null) => {
   if (!value) {
     return '';
   }
+  if (value.includes('invalid account or password')) {
+    return textFor(language, '账号或密码错误', 'Incorrect account or password');
+  }
   if (value.includes('account not found')) {
     return textFor(
       language,

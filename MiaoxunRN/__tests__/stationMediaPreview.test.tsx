@@ -64,7 +64,8 @@ test('deleted result is invalidated when the media load fails', async () => {
 
 test('retrieval entry requires an explicit supported native build', () => {
   expect(supportsMediaRetrieval('25')).toBe(false);
-  expect(supportsMediaRetrieval('26')).toBe(true);
+  expect(supportsMediaRetrieval('44')).toBe(false);
+  expect(supportsMediaRetrieval('45')).toBe(true);
   expect(supportsMediaRetrieval('')).toBe(false);
   expect(supportsMediaRetrieval('NaN')).toBe(false);
 });

@@ -4,6 +4,7 @@ import {
   B7_PRODUCT_BASELINE_METHOD,
 } from "./media-retrieval-b7-baseline.js";
 import { retrieveB7ProductBaseline } from "./media-retrieval-b7-service.js";
+import { projectMediaRetrievalRerankedCandidates } from "./media-retrieval-reranker.js";
 import { getMediaRetrievalErrorContract } from "./media-retrieval-errors.js";
 import {
   buildVisualEmbeddingInput,
@@ -55,6 +56,14 @@ const enabledProfile = async (repository, userId) => {
   return profile;
 };
 
+const profileEpoch = (profile) => {
+  const value = Number(profile?.indexEpoch);
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new MediaRetrievalServiceError("retrieval_policy_unverifiable");
+  }
+  return value;
+};
+
 const providerCanSearch = (provider) => {
   const status = provider?.getRuntimeStatus?.() || {};
   return Boolean(
@@ -82,7 +91,8 @@ const canonicalProviderFailureCode = (value) =>
     ? value
     : "retrieval_service_unavailable";
 
-const reserveAndCall = async ({ repository, run, operation, countUserAction, invoke }) => {
+const reserveAndCall = async ({ repository, run, operation, countUserAction, assertAuthorized, invoke }) => {
+  await assertAuthorized();
   const reservation = await repository.reserveProviderBudget({
     userId: run.userId,
     agentRunId: run.id,
@@ -90,7 +100,22 @@ const reserveAndCall = async ({ repository, run, operation, countUserAction, inv
     operation,
     countUserAction,
   });
-  if (!reservation?.reserved) return { value: null, blocked: true, failureCode: "retrieval_budget_exhausted" };
+  if (!reservation?.reserved)
+    return {
+      value: null,
+      blocked: true,
+      failureCode: canonicalProviderFailureCode(reservation?.reasonCode),
+    };
+  try {
+    await assertAuthorized();
+  } catch (error) {
+    await repository.settleProviderBudget({
+      reservationId: reservation.reservationId,
+      disposition: "released",
+      amountFen: 0,
+    });
+    throw error;
+  }
   try {
     const value = await invoke(reservation);
     await repository.settleProviderBudget({
@@ -114,9 +139,9 @@ const reserveAndCall = async ({ repository, run, operation, countUserAction, inv
 };
 
 const asB7NormalizedQuery = (embeddingInput) => ({
-  visualQuery: embeddingInput.mode === "visual" ? embeddingInput.text : "",
+  visualQuery: ["visual", "semantic"].includes(embeddingInput.mode) ? embeddingInput.text : "",
   identityTerms: embeddingInput.identityTerms,
-  parseConfidence: embeddingInput.mode === "visual" ? "high" : "low",
+  parseConfidence: ["visual", "semantic"].includes(embeddingInput.mode) ? "high" : "low",
 });
 
 const createProductEmbeddingBinding = ({ provider, input, vector }) => {
@@ -144,6 +169,25 @@ const createProductEmbeddingBinding = ({ provider, input, vector }) => {
 
 export function createMediaRetrievalUserService({ repository, provider, getRuntimeStatus = null }) {
   if (!repository) throw new TypeError("Media retrieval user service requires a repository.");
+
+  const failRun = async ({ userId, agentRunId, error }) => {
+    const failureCode =
+      typeof error?.code === "string" && Object.hasOwn(MEDIA_RETRIEVAL_ERROR_CONTRACTS, error.code)
+        ? error.code
+        : "retrieval_repository_write_failed";
+    try {
+      await repository.transitionMediaRetrievalRun({
+        userId,
+        agentRunId,
+        lifecycleStatus: "failed",
+        failureCode,
+        eventType: "failed",
+      });
+    } catch {
+      throw new MediaRetrievalServiceError("retrieval_repository_write_failed");
+    }
+    throw new MediaRetrievalServiceError(failureCode);
+  };
 
   const ensureRouteEligible = async () => {
     if (typeof getRuntimeStatus !== "function") {
@@ -178,26 +222,30 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
     if (created.reused) {
       return { agentRunId: created.run.id, lifecycleStatus: created.run.lifecycleStatus, reused: true };
     }
-    await repository.enableMediaRetrievalProfile({
-      userId,
-      consentVersion,
-      agentRunId: created.run.id,
-    });
-    const backfill = await repository.enqueueBackfillJobs({ userId, agentRunId: created.run.id });
-    const lifecycleStatus = backfill.enqueued > 0 ? "queued" : "succeeded";
-    await repository.transitionMediaRetrievalRun({
-      userId,
-      agentRunId: created.run.id,
-      lifecycleStatus,
-      eventType: lifecycleStatus === "queued" ? "queued" : "completed",
-      payload: backfill,
-    });
-    return {
-      agentRunId: created.run.id,
-      lifecycleStatus,
-      backfill,
-      reused: false,
-    };
+    try {
+      await repository.enableMediaRetrievalProfile({
+        userId,
+        consentVersion,
+        agentRunId: created.run.id,
+      });
+      const backfill = await repository.enqueueBackfillJobs({ userId, agentRunId: created.run.id });
+      const lifecycleStatus = backfill.enqueued > 0 ? "queued" : "succeeded";
+      await repository.transitionMediaRetrievalRun({
+        userId,
+        agentRunId: created.run.id,
+        lifecycleStatus,
+        eventType: lifecycleStatus === "queued" ? "queued" : "completed",
+        payload: backfill,
+      });
+      return {
+        agentRunId: created.run.id,
+        lifecycleStatus,
+        backfill,
+        reused: false,
+      };
+    } catch (error) {
+      return failRun({ userId, agentRunId: created.run.id, error });
+    }
   };
 
   const getMediaRetrievalStatus = async ({ userId }) => {
@@ -210,7 +258,9 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
         runtime = null;
       }
     }
-    const currentBackfill = status.recentRuns.find((run) => run.runType === "media-index") || null;
+    const indexRuns = status.recentRuns.filter((run) => ["media-index", "media-reindex"].includes(run.runType));
+    const currentBackfill =
+      indexRuns.find((run) => !["succeeded", "failed", "cancelled", "blocked"].includes(run.lifecycleStatus)) || indexRuns[0] || null;
     return {
       enabled: status.profile?.indexState === "enabled",
       consentVersion: status.profile?.consentVersion || null,
@@ -222,8 +272,12 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
         totalAssets: Object.values(status.jobs).reduce((total, value) => total + Number(value || 0), 0),
       },
       quota: {
-        dailyRemaining: Math.max(0, Number(status.limits?.userDailyRequestLimit || 0) - Number(status.quota.action_count || 0)),
-        monthlyRemainingFen: Math.max(0, Number(status.limits?.userMonthlyBudgetFen || 0) - Number(status.quota.monthly_committed_fen || 0)),
+        dailyRemaining: status.limits?.userDailyRequestLimit == null
+          ? null
+          : Math.max(0, Number(status.limits.userDailyRequestLimit) - Number(status.quota.action_count || 0)),
+        monthlyRemainingFen: status.limits?.userMonthlyBudgetFen == null
+          ? null
+          : Math.max(0, Number(status.limits.userMonthlyBudgetFen) - Number(status.quota.monthly_committed_fen || 0)),
       },
       availability: runtime?.publicAvailability || {
         state: "temporarily-unavailable",
@@ -243,7 +297,8 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
     idempotencyKey,
   }) => {
     await ensureRouteEligible();
-    await enabledProfile(repository, userId);
+    const initialProfile = await enabledProfile(repository, userId);
+    const initialIndexEpoch = profileEpoch(initialProfile);
     const created = await repository.createOrGetMediaRetrievalRun({
       userId,
       runType: "media-search",
@@ -257,6 +312,7 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
           kind: kind || null,
           albumId: albumId || null,
           limit: Number(limit),
+          indexEpoch: initialIndexEpoch,
         }),
       },
     });
@@ -265,7 +321,13 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
         userId,
         agentRunId: created.run.id,
       });
-      if (replay) return replay;
+      if (replay) {
+        const currentProfile = await enabledProfile(repository, userId);
+        if (profileEpoch(currentProfile) !== initialIndexEpoch) {
+          throw new MediaRetrievalServiceError("retrieval_purge_incomplete");
+        }
+        return replay;
+      }
       if (["failed", "blocked", "cancelled"].includes(created.run.lifecycleStatus)) {
         throw new MediaRetrievalServiceError(
           canonicalProviderFailureCode(created.run.failureCode),
@@ -277,13 +339,15 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
       throw new MediaRetrievalServiceError("retrieval_request_in_progress");
     }
     const run = { ...created.run, userId };
-    await repository.transitionMediaRetrievalRun({
-      userId,
-      agentRunId: run.id,
-      lifecycleStatus: "running",
-      eventType: "searching",
-    });
-
+    let terminalRecorded = false;
+    const assertSearchStillAuthorized = async () => {
+      const currentProfile = await enabledProfile(repository, userId);
+      const currentIndexEpoch = profileEpoch(currentProfile);
+      if (currentIndexEpoch !== initialIndexEpoch) {
+        throw new MediaRetrievalServiceError("retrieval_purge_incomplete");
+      }
+      return currentProfile;
+    };
     const finishBlockedSearch = async (failureCode) => {
       await repository.transitionMediaRetrievalRun({
         userId,
@@ -292,86 +356,128 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
         failureCode,
         eventType: "blocked",
       });
+      terminalRecorded = true;
       throw new MediaRetrievalServiceError(failureCode);
     };
 
-    // A raw query is never assumed to be a safe visual query. It can only
-    // use the exact-only path after deterministic identity inspection.
-    let embeddingInput = buildVisualEmbeddingInput({
-      rawQuery: query,
-      candidate: { visualQuery: "", identityTerms: [], parseConfidence: "low" },
-    });
-    let queryEmbedding = null;
-    // Identity-bearing raw input is already exact-only. Do not call a parser
-    // merely to recover visual text, because an upstream parser miss cannot
-    // weaken the final policy boundary.
-    const rawIdentityExactOnly = embeddingInput.identityTerms.length > 0;
-    if (providerCanSearch(provider) && !rawIdentityExactOnly) {
-      const parsed = await reserveAndCall({
-        repository,
-        run,
-        operation: "query-parse",
-        countUserAction: true,
-        invoke: (reservation) => provider.parseRetrievalQuery({ query, traceId: run.traceId, reservation }),
+    try {
+      await repository.transitionMediaRetrievalRun({
+        userId,
+        agentRunId: run.id,
+        lifecycleStatus: "running",
+        eventType: "searching",
       });
-      // A successful parser invocation is still untrusted. Passing the value
-      // explicitly preserves the final builder's malformed-candidate veto for
-      // null, undefined, and every other falsy return value.
-      if (!parsed.blocked) {
-        embeddingInput = buildVisualEmbeddingInput({ rawQuery: query, candidate: parsed.value });
-      }
-      if (parsed.blocked && !(embeddingInput.mode === "exact-only" && embeddingInput.identityTerms.length)) {
-        await finishBlockedSearch(parsed.failureCode || "retrieval_service_unavailable");
-      }
-      if (embeddingInput.mode === "visual") {
-        const embedded = await reserveAndCall({
+      // A failed or uncertain parser never silently switches retrieval modes.
+      // Only a validated parser response can authorize semantic or exact search.
+      let embeddingInput = buildVisualEmbeddingInput({
+        rawQuery: query,
+        candidate: { visualQuery: "", identityTerms: [], parseConfidence: "low" },
+      });
+      let queryEmbedding = null;
+      if (providerCanSearch(provider)) {
+        const parsed = await reserveAndCall({
           repository,
           run,
-          operation: "query-embedding",
-          countUserAction: false,
-          invoke: (reservation) => provider.embedText({
-            input: toProviderVisualEmbeddingInput(embeddingInput),
-            traceId: run.traceId,
-            reservation,
-          }),
+          operation: "query-parse",
+          countUserAction: true,
+          assertAuthorized: assertSearchStillAuthorized,
+          invoke: (reservation) => provider.parseRetrievalQuery({ query, traceId: run.traceId, reservation }),
         });
-        if (embedded.blocked || !embedded.value) {
-          await finishBlockedSearch(embedded.failureCode || "retrieval_service_unavailable");
+        // A successful parser invocation is still untrusted. Passing the value
+        // explicitly preserves the final builder's malformed-candidate veto for
+        // null, undefined, and every other falsy return value.
+        if (!parsed.blocked) {
+          embeddingInput = buildVisualEmbeddingInput({ rawQuery: query, candidate: parsed.value });
         }
-        queryEmbedding = createProductEmbeddingBinding({ provider, input: embeddingInput, vector: embedded.value });
+        if (parsed.blocked && !(embeddingInput.mode === "exact-only" && embeddingInput.identityTerms.length)) {
+          await finishBlockedSearch(parsed.failureCode || "retrieval_service_unavailable");
+        }
+        if (["visual", "semantic"].includes(embeddingInput.mode)) {
+          await assertSearchStillAuthorized();
+          const embedded = await reserveAndCall({
+            repository,
+            run,
+            operation: "query-embedding",
+            countUserAction: false,
+            assertAuthorized: assertSearchStillAuthorized,
+            invoke: (reservation) => provider.embedText({
+              input: toProviderVisualEmbeddingInput(embeddingInput),
+              traceId: run.traceId,
+              reservation,
+            }),
+          });
+          if (embedded.blocked || !embedded.value) {
+            await finishBlockedSearch(embedded.failureCode || "retrieval_service_unavailable");
+          }
+          queryEmbedding = createProductEmbeddingBinding({ provider, input: embeddingInput, vector: embedded.value });
+        }
+      } else if (!(embeddingInput.mode === "exact-only" && embeddingInput.identityTerms.length)) {
+        await finishBlockedSearch("retrieval_service_unavailable");
       }
-    } else if (!(embeddingInput.mode === "exact-only" && embeddingInput.identityTerms.length)) {
-      await finishBlockedSearch("retrieval_service_unavailable");
-    }
 
-    if (embeddingInput.mode !== "visual" && !embeddingInput.identityTerms.length) {
-      await finishBlockedSearch("retrieval_policy_unverifiable");
+      if (!["visual", "semantic"].includes(embeddingInput.mode) && !embeddingInput.identityTerms.length) {
+        await finishBlockedSearch("retrieval_policy_unverifiable");
+      }
+      await assertSearchStillAuthorized();
+      const baseline = await retrieveB7ProductBaseline({
+        repository,
+        userId,
+        normalizedQuery: asB7NormalizedQuery(embeddingInput),
+        queryEmbedding,
+        kind,
+        albumId,
+        limit,
+        allowLocalLexical: embeddingInput.mode === "visual",
+      });
+      let rankedResults = baseline.results;
+      if (embeddingInput.mode === "semantic" && baseline.semanticCandidates.length) {
+        await assertSearchStillAuthorized();
+        const reranked = await reserveAndCall({
+          repository,
+          run,
+          operation: "query-rerank",
+          countUserAction: false,
+          assertAuthorized: assertSearchStillAuthorized,
+          invoke: (reservation) =>
+            provider.rerankMediaCandidates({
+              query: embeddingInput.semanticText,
+              candidates: baseline.semanticCandidates,
+              reservation,
+            }),
+        });
+        const verifiedResults = reranked.blocked
+          ? null
+          : projectMediaRetrievalRerankedCandidates(reranked.value, baseline.semanticCandidates);
+        if (!verifiedResults) {
+          await finishBlockedSearch(reranked.failureCode || "retrieval_policy_unverifiable");
+        }
+        rankedResults = verifiedResults;
+      } else if (embeddingInput.mode === "semantic") {
+        rankedResults = [];
+      }
+      await assertSearchStillAuthorized();
+      rankedResults = rankedResults.slice(0, Math.min(20, Math.max(1, Number(limit) || 10)));
+      const response = projectMediaRetrievalSearchResponse({
+        agentRunId: run.id,
+        lifecycleStatus: "succeeded",
+        method: B7_PRODUCT_BASELINE_METHOD,
+        results: toPublicResults(rankedResults),
+      });
+      await repository.transitionMediaRetrievalRun({
+        userId,
+        agentRunId: run.id,
+        lifecycleStatus: "succeeded",
+        failureCode: null,
+        eventType: "completed",
+        searchIndexEpoch: initialIndexEpoch,
+        payload: { searchResponse: response },
+      });
+      terminalRecorded = true;
+      return response;
+    } catch (error) {
+      if (terminalRecorded) throw error;
+      return failRun({ userId, agentRunId: run.id, error });
     }
-    const baseline = await retrieveB7ProductBaseline({
-      repository,
-      userId,
-      normalizedQuery: asB7NormalizedQuery(embeddingInput),
-      queryEmbedding,
-      kind,
-      albumId,
-      limit,
-      allowLocalLexical: embeddingInput.mode === "visual",
-    });
-    const response = projectMediaRetrievalSearchResponse({
-      agentRunId: run.id,
-      lifecycleStatus: "succeeded",
-      method: B7_PRODUCT_BASELINE_METHOD,
-      results: toPublicResults(baseline.results),
-    });
-    await repository.transitionMediaRetrievalRun({
-      userId,
-      agentRunId: run.id,
-      lifecycleStatus: "succeeded",
-      failureCode: null,
-      eventType: "completed",
-      payload: { searchResponse: response },
-    });
-    return response;
   };
 
   const requestMediaRetrievalReindex = async ({ userId, scope, mediaAssetIds, idempotencyKey }) => {
@@ -396,16 +502,20 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
     if (created.reused) {
       return { agentRunId: created.run.id, lifecycleStatus: created.run.lifecycleStatus, reused: true };
     }
-    const jobs = await repository.enqueueReindexJobs({ userId, agentRunId: created.run.id, scope, mediaAssetIds });
-    const lifecycleStatus = jobs.enqueued > 0 ? "queued" : "succeeded";
-    await repository.transitionMediaRetrievalRun({
-      userId,
-      agentRunId: created.run.id,
-      lifecycleStatus,
-      eventType: lifecycleStatus === "queued" ? "queued" : "completed",
-      payload: jobs,
-    });
-    return { agentRunId: created.run.id, lifecycleStatus, jobs, reused: false };
+    try {
+      const jobs = await repository.enqueueReindexJobs({ userId, agentRunId: created.run.id, scope, mediaAssetIds });
+      const lifecycleStatus = jobs.enqueued > 0 ? "queued" : "succeeded";
+      await repository.transitionMediaRetrievalRun({
+        userId,
+        agentRunId: created.run.id,
+        lifecycleStatus,
+        eventType: lifecycleStatus === "queued" ? "queued" : "completed",
+        payload: jobs,
+      });
+      return { agentRunId: created.run.id, lifecycleStatus, jobs, reused: false };
+    } catch (error) {
+      return failRun({ userId, agentRunId: created.run.id, error });
+    }
   };
 
   const deleteMediaRetrievalIndex = async ({ userId, idempotencyKey }) => {
@@ -422,16 +532,20 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
     if (created.reused) {
       return { agentRunId: created.run.id, lifecycleStatus: created.run.lifecycleStatus, reused: true };
     }
-    const job = await repository.beginIndexPurge({ userId, agentRunId: created.run.id });
-    await repository.appendAgentRunEvent({
-      userId,
-      agentRunId: created.run.id,
-      lifecycleStatus: "queued",
-      eventType: "queued",
-      deliveryKey: `queued:${created.run.id}`,
-      payload: { jobType: job.jobType },
-    });
-    return { agentRunId: created.run.id, lifecycleStatus: "queued", reused: false };
+    try {
+      const job = await repository.beginIndexPurge({ userId, agentRunId: created.run.id });
+      await repository.appendAgentRunEvent({
+        userId,
+        agentRunId: created.run.id,
+        lifecycleStatus: "queued",
+        eventType: "queued",
+        deliveryKey: `queued:${created.run.id}`,
+        payload: { jobType: job.jobType },
+      });
+      return { agentRunId: created.run.id, lifecycleStatus: "queued", reused: false };
+    } catch (error) {
+      return failRun({ userId, agentRunId: created.run.id, error });
+    }
   };
 
   const enqueueUploadedMediaAsset = async ({ userId, mediaAssetId }) => {

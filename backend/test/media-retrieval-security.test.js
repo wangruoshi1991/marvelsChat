@@ -62,7 +62,7 @@ test("a disabled provider rejects a generic visual query instead of silently fal
       },
     },
     repository: {
-      getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1" }),
+      getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1", indexEpoch: 1 }),
       createOrGetMediaRetrievalRun: async (input) => {
         createdInputs.push(input);
         return { reused: false, run: { id: "33333333-3333-4333-8333-333333333333", traceId: "a".repeat(32) } };
@@ -101,7 +101,7 @@ test("B7 keeps a raw identity query exact-only even when the parser would miss t
       },
     },
     repository: {
-      getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1" }),
+      getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1", indexEpoch: 1 }),
       createOrGetMediaRetrievalRun: async () => ({ reused: false, run: { id: "33333333-3333-4333-8333-333333333333", traceId: "a".repeat(32) } }),
       transitionMediaRetrievalRun: async () => null,
       reserveProviderBudget: async () => ({ reserved: true, reservationId: "reservation" }),
@@ -200,6 +200,24 @@ test("user status derives remaining quota from persisted operator controls inste
   const status = await service.getMediaRetrievalStatus({ userId: "11111111-1111-4111-8111-111111111111" });
 
   assert.deepEqual(status.quota, { dailyRemaining: 7, monthlyRemainingFen: 775 });
+});
+
+test("user status returns NULL for explicitly unlimited search and spending limits", async () => {
+  const service = createMediaRetrievalUserService({
+    repository: {
+      getMediaRetrievalStatusForUser: async () => ({
+        profile: { indexState: "enabled", consentVersion: "media-retrieval-consent-v1" },
+        recentRuns: [],
+        jobs: {},
+        quota: { action_count: 500, monthly_committed_fen: 500000 },
+        limits: { userDailyRequestLimit: null, userMonthlyBudgetFen: null },
+      }),
+    },
+  });
+
+  const status = await service.getMediaRetrievalStatus({ userId: "11111111-1111-4111-8111-111111111111" });
+
+  assert.deepEqual(status.quota, { dailyRemaining: null, monthlyRemainingFen: null });
 });
 
 test("upload indexing exposes a recoverable not-queued outcome instead of silently returning null", async () => {

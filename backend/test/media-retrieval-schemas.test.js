@@ -38,4 +38,20 @@ test("media retrieval administrator controls accept explicit per-user limits and
       embeddingReserveFen: 20,
     },
   );
+  assert.deepEqual(
+    mediaRetrievalAdminControlsSchema.parse({
+      userDailyRequestLimit: null,
+      userMonthlyBudgetFen: null,
+      globalDailyBudgetFen: null,
+      captionReserveFen: 50_000_000,
+      embeddingReserveFen: 60_000_000,
+    }),
+    {
+      userDailyRequestLimit: null,
+      userMonthlyBudgetFen: null,
+      globalDailyBudgetFen: null,
+      captionReserveFen: 50_000_000,
+      embeddingReserveFen: 60_000_000,
+    },
+  );
 });

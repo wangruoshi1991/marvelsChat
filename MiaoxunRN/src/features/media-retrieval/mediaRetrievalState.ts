@@ -53,6 +53,10 @@ export function canSearch(state: RetrievalState, registered: boolean) {
       registered &&
       state.status.availability.canStartRun &&
       state.status.availability.state === 'available' &&
+      (state.status.quota.dailyRemaining === null ||
+        state.status.quota.dailyRemaining > 0) &&
+      (state.status.quota.monthlyRemainingFen === null ||
+        state.status.quota.monthlyRemainingFen > 0) &&
       !state.purgePending &&
       !state.chargeReview &&
       !state.busy &&
@@ -66,7 +70,11 @@ export function canSearch(state: RetrievalState, registered: boolean) {
 }
 
 export const statusRun = (status: RetrievalStatus) =>
-  status.recentRuns.find(run => run.runType !== 'media-search') || null;
+  status.recentRuns.find(
+    run => run.runType !== 'media-search' && !terminalRun(run.lifecycleStatus),
+  ) ||
+  status.recentRuns.find(run => run.runType !== 'media-search') ||
+  null;
 
 export function reconcileRetrievalStatus(
   state: RetrievalState,
@@ -107,6 +115,11 @@ export function reconcileRetrievalStatus(
     run,
     purgePending,
     chargeReview,
+    ...(!status.enabled ||
+    status.consentVersion !== 'media-retrieval-consent-v1' ||
+    purgePending
+      ? { results: [], searched: false }
+      : {}),
     ...(state.error?.code === 'network' ? { error: null } : {}),
     ...(chargeReview
       ? {
@@ -143,6 +156,7 @@ export function appendEvents(
 
 const messages: Record<string, string> = {
   retrieval_not_enabled: '找素材暂未开放，请稍后查看。',
+  retrieval_client_update_required: '请更新妙讯后再使用素材检索。',
   retrieval_consent_required: '请先同意并启用私有素材检索。',
   retrieval_budget_exhausted: '当前检索额度已用完，请稍后再试。',
   retrieval_service_unavailable: '检索服务暂不可用，请稍后检查状态。',
@@ -200,6 +214,7 @@ export const matchReasonLabels: Record<string, string> = {
   'tag-match': '标签匹配',
   'ocr-match': '画面文字匹配',
   'metadata-match': '素材信息匹配',
+  'descriptor-match': '画面内容匹配',
 };
 
 export function eventMessage(event?: RetrievalEvent) {

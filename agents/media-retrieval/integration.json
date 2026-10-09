@@ -3,7 +3,9 @@
   "migrationFiles": [
     "backend/database/027_media_retrieval_agent.sql",
     "backend/database/028_media_retrieval_lifecycle_hardening.sql",
-    "backend/database/029_media_retrieval_embedding_provenance.sql"
+    "backend/database/029_media_retrieval_embedding_provenance.sql",
+    "backend/database/033_media_retrieval_rerank_operation.sql",
+    "backend/database/034_media_retrieval_unlimited_limits.sql"
   ],
   "routeFiles": [
     "backend/src/routes/station-media-retrieval-routes.js"

@@ -33,7 +33,7 @@ export type RetrievalStatus = {
     skippedAssets: number;
     totalAssets: number;
   };
-  quota: { dailyRemaining: number; monthlyRemainingFen: number };
+  quota: { dailyRemaining: number | null; monthlyRemainingFen: number | null };
   availability: {
     state: 'available' | 'temporarily-unavailable';
     canStartRun: boolean;

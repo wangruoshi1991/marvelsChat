@@ -50,14 +50,18 @@ export async function buildMediaRetrievalRuntimeStatus({
   const queueEnabled = Boolean(controls.index_requests_enabled);
   const providerEnabled = Boolean(controls.provider_calls_enabled && configStatus.providerCallsEnabled);
   const lifecycle = controls.lifecycle || "draft";
-  const budget = safeNumber(controls.global_daily_budget_fen);
+  const budget = controls.global_daily_budget_fen == null
+    ? null
+    : safeNumber(controls.global_daily_budget_fen);
   const usedBudget = ["reserved_fen", "estimated_fen", "unknown_fen"]
     .reduce((total, key) => total + safeNumber(resolvedOverview?.globalCost?.[key]), 0);
-  const capacityState = !budget || usedBudget >= budget
-    ? "exhausted"
-    : usedBudget / budget >= 0.8
-      ? "limited"
-      : "available";
+  const capacityState = budget === null
+    ? "available"
+    : !budget || usedBudget >= budget
+      ? "exhausted"
+      : usedBudget / budget >= 0.8
+        ? "limited"
+        : "available";
   const dependenciesReady = Boolean(
     resolvedVectorReady &&
       resolvedOssReady &&

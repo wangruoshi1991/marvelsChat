@@ -1,7 +1,13 @@
-import { MEDIA_RETRIEVAL_RUNTIME_LIMITS } from "./media-retrieval-constants.js";
+import { MEDIA_RETRIEVAL_CONSENT_VERSION } from "./media-retrieval-constants.js";
 import { mapRun, toInteger, toNonNegativeInteger } from "./media-retrieval-repository-shared.js";
 import { toIso } from "./repository-mappers.js";
 import { MediaRetrievalRepositoryError } from "./media-retrieval-errors.js";
+
+const toNullableNonNegativeInteger = (value) => {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+};
 
 const lifecycleValues = new Set([
   "draft",
@@ -35,15 +41,42 @@ export function createMediaRetrievalBudgetAdminRepository({
         `SELECT *
         FROM agent_runs
         WHERE user_id = ? AND agent_id = 'media-retrieval'
-        ORDER BY created_at DESC
+        ORDER BY
+          (lifecycle_status NOT IN ('succeeded', 'failed', 'cancelled', 'blocked')) DESC,
+          created_at DESC, id DESC
         LIMIT 12`,
         [userId],
       ),
       query(
-        `SELECT status, COUNT(*) AS total
-        FROM media_retrieval_jobs
-        WHERE user_id = ?
-        GROUP BY status`,
+        `WITH asset_progress AS (
+          SELECT CASE
+            WHEN EXISTS (
+              SELECT 1 FROM media_retrieval_segments AS segment
+              WHERE segment.user_id = asset.user_id
+                AND segment.media_asset_id = asset.id
+                AND segment.state = 'ready'
+                AND profile.index_state = 'enabled'
+            ) THEN 'succeeded'
+            WHEN latest_job.status IN ('failed', 'blocked') THEN latest_job.status
+            ELSE 'queued'
+          END AS status
+          FROM station_media_assets AS asset
+          LEFT JOIN media_retrieval_profiles AS profile ON profile.user_id = asset.user_id
+          LEFT JOIN LATERAL (
+            SELECT job.status FROM media_retrieval_jobs AS job
+            WHERE job.user_id = asset.user_id
+              AND job.media_asset_id = asset.id
+              AND job.job_type = 'index'
+              AND job.profile_epoch = profile.index_epoch
+            ORDER BY job.created_at DESC, job.id DESC
+            LIMIT 1
+          ) AS latest_job ON TRUE
+          WHERE asset.user_id = ?
+            AND asset.kind IN ('image', 'video')
+            AND asset.status = 'uploaded'
+            AND asset.deleted_at IS NULL
+        )
+        SELECT status, COUNT(*) AS total FROM asset_progress GROUP BY status`,
         [userId],
       ),
       query(
@@ -81,8 +114,8 @@ export function createMediaRetrievalBudgetAdminRepository({
         monthly_committed_fen: toNonNegativeInteger(monthlyQuotaRows[0]?.committed_fen),
       },
       limits: {
-        userDailyRequestLimit: toNonNegativeInteger(controlRows[0]?.user_daily_request_limit),
-        userMonthlyBudgetFen: toNonNegativeInteger(controlRows[0]?.user_monthly_budget_fen),
+        userDailyRequestLimit: toNullableNonNegativeInteger(controlRows[0]?.user_daily_request_limit),
+        userMonthlyBudgetFen: toNullableNonNegativeInteger(controlRows[0]?.user_monthly_budget_fen),
       },
     };
   };
@@ -99,14 +132,25 @@ export function createMediaRetrievalBudgetAdminRepository({
       if (!controls?.agent_enabled || !controls?.provider_calls_enabled || !controls?.index_requests_enabled) {
         return { reserved: false, reasonCode: "retrieval_not_enabled" };
       }
-      const defaultReserveFen = String(operation || "").includes("embedding")
+      const defaultReserveFen = ["image-embedding", "query-embedding"].includes(operation)
         ? toNonNegativeInteger(controls.embedding_reserve_fen)
         : toNonNegativeInteger(controls.caption_reserve_fen);
       const requestedFen = reserveFen === undefined
         ? defaultReserveFen
         : toNonNegativeInteger(reserveFen);
-      if (!requestedFen || !toNonNegativeInteger(controls.global_daily_budget_fen)) {
+      if (!requestedFen) {
         return { reserved: false, reasonCode: "retrieval_budget_exhausted" };
+      }
+      const profileRows = await connection.query(
+        `SELECT index_state, consent_version
+        FROM media_retrieval_profiles
+        WHERE user_id = ?
+        FOR SHARE`,
+        [userId],
+      );
+      const profile = profileRows[0];
+      if (!profile || profile.index_state !== "enabled" || profile.consent_version !== MEDIA_RETRIEVAL_CONSENT_VERSION) {
+        return { reserved: false, reasonCode: "retrieval_not_enabled" };
       }
       const runRows = countUserAction && agentRunId
         ? await connection.query(
@@ -135,13 +179,6 @@ export function createMediaRetrievalBudgetAdminRepository({
           AND scope = 'global'
         FOR UPDATE`,
       );
-      await connection.query(
-        `SELECT user_id
-        FROM media_retrieval_profiles
-        WHERE user_id = ?
-        FOR UPDATE`,
-        [userId],
-      );
       const monthlyRows = await connection.query(
         `SELECT COALESCE(SUM(amount_fen), 0) AS committed_fen
         FROM media_retrieval_cost_ledger
@@ -160,10 +197,13 @@ export function createMediaRetrievalBudgetAdminRepository({
         toNonNegativeInteger(globalRollup.estimated_fen) +
         toNonNegativeInteger(globalRollup.unknown_fen);
       const userCommitted = toNonNegativeInteger(monthlyRows[0]?.committed_fen);
+      const userDailyLimit = toNullableNonNegativeInteger(controls.user_daily_request_limit);
+      const userMonthlyBudget = toNullableNonNegativeInteger(controls.user_monthly_budget_fen);
+      const globalDailyBudget = toNullableNonNegativeInteger(controls.global_daily_budget_fen);
       if (
-        (shouldCountAction && userActionCount >= toNonNegativeInteger(controls.user_daily_request_limit)) ||
-        globalCommitted + requestedFen > toNonNegativeInteger(controls.global_daily_budget_fen) ||
-        userCommitted + requestedFen > toNonNegativeInteger(controls.user_monthly_budget_fen)
+        (shouldCountAction && userDailyLimit !== null && userActionCount >= userDailyLimit) ||
+        (globalDailyBudget !== null && globalCommitted + requestedFen > globalDailyBudget) ||
+        (userMonthlyBudget !== null && userCommitted + requestedFen > userMonthlyBudget)
       ) {
         return { reserved: false, reasonCode: "retrieval_budget_exhausted" };
       }
@@ -365,15 +405,19 @@ export function createMediaRetrievalBudgetAdminRepository({
     const current = currentRows[0] || {};
     const requested = (key, fallback) =>
       Object.hasOwn(input, key) && input[key] !== undefined ? input[key] : fallback;
+    const nullableLimit = (key, currentValue) => {
+      const value = requested(key, currentValue);
+      return value === null ? null : Math.min(Number.MAX_SAFE_INTEGER, toNonNegativeInteger(value));
+    };
     const allowed = {
       agentEnabled: Boolean(requested("agentEnabled", current.agent_enabled)),
       providerCallsEnabled: Boolean(requested("providerCallsEnabled", current.provider_calls_enabled)),
       indexRequestsEnabled: Boolean(requested("indexRequestsEnabled", current.index_requests_enabled)),
-      userDailyRequestLimit: Math.min(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxUserDailyRequestLimit, toNonNegativeInteger(requested("userDailyRequestLimit", current.user_daily_request_limit))),
-      userMonthlyBudgetFen: Math.min(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxUserMonthlyBudgetFen, toNonNegativeInteger(requested("userMonthlyBudgetFen", current.user_monthly_budget_fen))),
-      globalDailyBudgetFen: Math.min(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxGlobalDailyBudgetFen, toNonNegativeInteger(requested("globalDailyBudgetFen", current.global_daily_budget_fen))),
-      captionReserveFen: Math.min(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxProviderCallReservationFen, toNonNegativeInteger(requested("captionReserveFen", current.caption_reserve_fen))),
-      embeddingReserveFen: Math.min(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxProviderCallReservationFen, toNonNegativeInteger(requested("embeddingReserveFen", current.embedding_reserve_fen))),
+      userDailyRequestLimit: nullableLimit("userDailyRequestLimit", current.user_daily_request_limit),
+      userMonthlyBudgetFen: nullableLimit("userMonthlyBudgetFen", current.user_monthly_budget_fen),
+      globalDailyBudgetFen: nullableLimit("globalDailyBudgetFen", current.global_daily_budget_fen),
+      captionReserveFen: Math.min(Number.MAX_SAFE_INTEGER, toNonNegativeInteger(requested("captionReserveFen", current.caption_reserve_fen))),
+      embeddingReserveFen: Math.min(Number.MAX_SAFE_INTEGER, toNonNegativeInteger(requested("embeddingReserveFen", current.embedding_reserve_fen))),
       lifecycle: lifecycleValues.has(requested("lifecycle", current.lifecycle))
         ? requested("lifecycle", current.lifecycle)
         : "draft",

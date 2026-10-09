@@ -410,6 +410,11 @@ export function StationScreen({
             onOpenAgentThread={onOpenAgentThread}
             onOpenPostComposer={onOpenPostComposer}
             onOpenContentList={setContentListKind}
+            onOpenMediaRetrieval={
+              supportsMediaRetrieval()
+                ? () => setIsMediaRetrievalOpen(true)
+                : undefined
+            }
             onSetAgentEnabled={session.setAgentEnabled}
             onOpenPublicProfileByAiId={onOpenPublicProfileByAiId}
             onSelectStationTab={onSelectStationTab}
@@ -492,7 +497,7 @@ export function StationScreen({
       <Modal
         animationType="fade"
         presentationStyle="fullScreen"
-        visible={contentListKind !== null}
+        visible={contentListKind !== null || isMediaRetrievalOpen}
         onRequestClose={() =>
           isMediaRetrievalOpen
             ? setIsMediaRetrievalOpen(false)

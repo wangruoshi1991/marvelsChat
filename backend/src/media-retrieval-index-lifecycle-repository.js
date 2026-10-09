@@ -61,12 +61,16 @@ export function createMediaRetrievalIndexLifecycleRepository({
       SET consent_version = EXCLUDED.consent_version,
           consent_granted_at = EXCLUDED.consent_granted_at,
           index_state = 'enabled',
-          index_epoch = media_retrieval_profiles.index_epoch + 1,
+          index_epoch = CASE WHEN media_retrieval_profiles.index_state = 'enabled'
+            THEN media_retrieval_profiles.index_epoch
+            ELSE media_retrieval_profiles.index_epoch + 1 END,
           disabled_at = NULL,
           purge_requested_at = NULL
+      WHERE media_retrieval_profiles.index_state <> 'purging'
       RETURNING *`,
       [userId, consentVersion || MEDIA_RETRIEVAL_CONSENT_VERSION],
     );
+    if (!rows[0]) throw new MediaRetrievalRepositoryError("retrieval_purge_incomplete");
     const profile = requireReturnedRow(rows, "enable-media-retrieval-profile");
     if (agentRunId) {
       await appendAgentRunEvent({
@@ -174,9 +178,27 @@ export function createMediaRetrievalIndexLifecycleRepository({
     failureCode = null,
     eventType = lifecycleStatus,
     payload = {},
+    searchIndexEpoch = null,
   }) =>
     withTransaction(async (connection) => {
+      if (payload.searchResponse) {
+        const profiles = await connection.query(
+          `SELECT index_state, consent_version, index_epoch
+          FROM media_retrieval_profiles
+          WHERE user_id = ?
+          FOR SHARE`,
+          [userId],
+        );
+        const profile = profiles[0];
+        if (!profile || profile.index_state !== "enabled" || profile.consent_version !== MEDIA_RETRIEVAL_CONSENT_VERSION) {
+          throw new MediaRetrievalRepositoryError("retrieval_consent_required");
+        }
+        if (!Number.isSafeInteger(searchIndexEpoch) || searchIndexEpoch < 1 || Number(profile.index_epoch) !== searchIndexEpoch) {
+          throw new MediaRetrievalRepositoryError("retrieval_purge_incomplete");
+        }
+      }
       const run = await updateRunLifecycle(connection, {
+        userId,
         agentRunId,
         lifecycleStatus,
         failureCode,
@@ -221,9 +243,9 @@ export function createMediaRetrievalIndexLifecycleRepository({
       return { canDispatch: false, reasonCode: "retrieval_not_enabled" };
     }
     if (
-      !toNonNegativeInteger(row.user_daily_request_limit) ||
-      !toNonNegativeInteger(row.user_monthly_budget_fen) ||
-      !toNonNegativeInteger(row.global_daily_budget_fen)
+      (row.user_daily_request_limit != null && toNonNegativeInteger(row.user_daily_request_limit) === 0) ||
+      (row.user_monthly_budget_fen != null && toNonNegativeInteger(row.user_monthly_budget_fen) === 0) ||
+      (row.global_daily_budget_fen != null && toNonNegativeInteger(row.global_daily_budget_fen) === 0)
     ) {
       return { canDispatch: false, reasonCode: "retrieval_budget_exhausted" };
     }
@@ -530,7 +552,7 @@ export function createMediaRetrievalIndexLifecycleRepository({
         : lifecycleStatus === "cancelled"
           ? "retrieval_child_jobs_cancelled"
           : null;
-    const run = await updateRunLifecycle(connection, { agentRunId, lifecycleStatus, failureCode });
+    const run = await updateRunLifecycle(connection, { userId, agentRunId, lifecycleStatus, failureCode });
     if (!run) return null;
     const payload = {
       succeededCount: counts.succeeded || 0,
@@ -648,6 +670,7 @@ export function createMediaRetrievalIndexLifecycleRepository({
       );
       for (const job of requeuedRows) {
         const run = await updateRunLifecycle(connection, {
+          userId: job.user_id,
           agentRunId: job.agent_run_id,
           lifecycleStatus: "queued",
         });

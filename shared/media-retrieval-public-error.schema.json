@@ -13,6 +13,7 @@
     "code": {
       "enum": [
         "retrieval_not_enabled",
+        "retrieval_client_update_required",
         "retrieval_consent_required",
         "retrieval_budget_exhausted",
         "retrieval_service_unavailable",

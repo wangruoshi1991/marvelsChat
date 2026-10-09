@@ -3,16 +3,17 @@ import {
   MEDIA_RETRIEVAL_LIMITS,
   MEDIA_RETRIEVAL_PROVIDER_PATHS,
 } from "./media-retrieval-constants.js";
-import { descriptorSchema, normalizeDescriptor, normalizeRetrievalQuery } from "./media-retrieval-policy.js";
+import { descriptorSchema, normalizeDescriptor, normalizeRetrievalQuery, MEDIA_RETRIEVAL_VISUAL_DESCRIPTOR_PROJECTION_VERSION } from "./media-retrieval-policy.js";
 import { mediaRetrievalParserResponseSchema } from "./media-retrieval-parser-response.js";
 import { projectMediaRetrievalDiagnostic } from "./media-retrieval-errors.js";
 import { recordMediaRetrievalDiagnostic } from "./media-retrieval-diagnostics.js";
-import { DESCRIPTOR_PROMPT_VERSION, descriptorSystemPrompt, querySystemPrompt } from "./media-retrieval-prompts.js";
+import { DESCRIPTOR_PROMPT_VERSION, descriptorSystemPrompt, querySystemPrompt, rerankSystemPrompt } from "./media-retrieval-prompts.js";
 import { verifyVisualEmbeddingInput } from "./media-retrieval-embedding-input.js";
 import {
   createDescriptorProvenance,
   createEmbeddingProvenance,
 } from "./media-retrieval-provenance.js";
+import { mediaRetrievalRerankResponseSchema, projectMediaRetrievalRerankCandidates, validateMediaRetrievalRerankResponse } from "./media-retrieval-reranker.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -75,6 +76,7 @@ export function createMediaRetrievalProvider({
   now = () => Date.now(),
   timeoutMs = REQUEST_TIMEOUT_MS,
   recordDiagnostic = recordMediaRetrievalDiagnostic,
+  recordUsage = null,
 } = {}) {
   const retrieval = getRetrievalConfig(config);
   const indexingProvenance = Object.freeze({
@@ -87,6 +89,8 @@ export function createMediaRetrievalProvider({
         endpoint: MEDIA_RETRIEVAL_PROVIDER_PATHS.multimodalGeneration,
         responseFormat: "json_object",
         promptVersion: DESCRIPTOR_PROMPT_VERSION,
+        enableThinking: false,
+        visualProjectionVersion: MEDIA_RETRIEVAL_VISUAL_DESCRIPTOR_PROJECTION_VERSION,
       },
     }),
     embeddingProvenance: createEmbeddingProvenance({
@@ -186,7 +190,14 @@ export function createMediaRetrievalProvider({
         try { payload = await readBoundedJson(response, operation); } catch { /* No provider body is retained. */ }
         throw failure(operation, "http-response", { httpStatus: response?.status, providerCode: payload?.code });
       }
-      return await readBoundedJson(response, operation);
+      const payload = await readBoundedJson(response, operation);
+      if (typeof recordUsage === "function") {
+        const usage = Object.fromEntries(["input_tokens", "output_tokens", "image_tokens", "total_tokens"].map((key) => [
+          key, Number.isSafeInteger(payload?.usage?.[key]) && payload.usage[key] >= 0 ? payload.usage[key] : null,
+        ]));
+        await recordUsage({ operation, usage });
+      }
+      return payload;
     } catch (error) {
       if (error instanceof MediaRetrievalProviderError) throw error;
       throw failure(operation, error?.name === "AbortError" ? "timeout" : "transport");
@@ -212,6 +223,7 @@ export function createMediaRetrievalProvider({
         parameters: {
           result_format: "message",
           response_format: { type: "json_object" },
+          enable_thinking: false,
         },
       },
     });
@@ -261,6 +273,39 @@ export function createMediaRetrievalProvider({
       });
     },
 
+    async rerankMediaCandidates({ query, candidates, reservation }) {
+      const operation = "query-rerank";
+      return withDiagnostic({ operation, reservation }, async () => {
+        const normalizedCandidates = projectMediaRetrievalRerankCandidates(candidates);
+        const payload = await callGeneration({
+          systemPrompt: rerankSystemPrompt,
+          content: [{ text: JSON.stringify({
+            query: String(query || "").slice(0, 240),
+            candidates: normalizedCandidates,
+          }) }],
+          reservation,
+          operation,
+        });
+        const candidate = parseJsonObject(extractText(payload));
+        const validated = validateMediaRetrievalRerankResponse(candidate, normalizedCandidates);
+        if (!validated) {
+          const schemaPaths = schemaPathsFor(mediaRetrievalRerankResponseSchema, candidate);
+          throw new MediaRetrievalProviderError("retrieval_policy_unverifiable", "Media retrieval output could not be verified.", 422,
+            { operation, stage: "rerank-validation", httpStatus: 200,
+              schemaPaths: schemaPaths.length === 1 && schemaPaths[0] === "response.policy"
+                ? ["matches[].candidateKey"] : schemaPaths });
+        }
+        return validated.map((match) => {
+          const sourceCandidate = candidates[Number(match.candidateKey.slice(1))];
+          return {
+            ...sourceCandidate,
+            matchReasons: ["semantic-match"],
+            score: match.relevance === "high" ? 0.8 : 0.6,
+          };
+        });
+      });
+    },
+
     async describeImage({ imageUrl, reservation }) {
       const operation = "image-description";
       return withDiagnostic({ operation, reservation }, async () => {
@@ -288,7 +333,7 @@ export function createMediaRetrievalProvider({
     async embedText({ input, reservation }) {
       const verified = verifyVisualEmbeddingInput(input);
       const operation = "query-embedding";
-      return withDiagnostic({ operation, reservation }, () => callEmbedding({ contents: [{ text: verified.text }], reservation, operation }));
+      return withDiagnostic({ operation, reservation }, () => callEmbedding({ contents: [{ text: verified.semanticText || verified.text }], reservation, operation }));
     },
 
     getIndexingProvenance() {

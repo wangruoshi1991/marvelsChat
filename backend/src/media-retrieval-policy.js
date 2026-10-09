@@ -32,6 +32,59 @@ const normalizeList = (values, maximum = MEDIA_RETRIEVAL_LIMITS.maxDescriptorArr
     ),
   ).slice(0, maximum);
 
+export const MEDIA_RETRIEVAL_VISUAL_DESCRIPTOR_PROJECTION_VERSION = "ocr-isolation-v1";
+const graphemeSegmenter = new Intl.Segmenter("und", { granularity: "grapheme" });
+
+// OCR is retained for owner-scoped exact matching. A model can accidentally
+// repeat it inside visual fields, so also strip those copies deterministically
+// at persistence and when projecting older indexed descriptors for reranking.
+export const isolateMediaRetrievalDescriptorOcr = (descriptor = {}) => {
+  descriptor ??= {};
+  const tokens = Array.from(new Set((Array.isArray(descriptor.ocrText) ? descriptor.ocrText : [])
+    .flatMap((text) => String(text).normalize("NFKC").match(/[\p{L}\p{N}]+/gu) || [])))
+    .sort((left, right) => right.length - left.length);
+  const patterns = tokens.map((token) => {
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(/\p{Script=Han}/u.test(token) ? escaped : `(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "giu");
+  });
+  const strip = (value) => {
+    const original = String(value || "");
+    const spans = [];
+    let normalized = "";
+    // Match in normalized text, but map each match back to its original
+    // graphemes so unrelated punctuation, accents and fullwidth text survive.
+    for (const { segment, index } of graphemeSegmenter.segment(original)) {
+      const text = segment.normalize("NFKC");
+      normalized += text;
+      for (let offset = 0; offset < text.length; offset += 1) {
+        spans.push({ start: index, end: index + segment.length });
+      }
+    }
+    const ranges = patterns.flatMap((pattern) => Array.from(normalized.matchAll(pattern), (match) => ({
+      start: spans[match.index].start,
+      end: spans[match.index + match[0].length - 1].end,
+    }))).sort((left, right) => left.start - right.start);
+    if (!ranges.length) return original;
+    let result = "";
+    let offset = 0;
+    for (const range of ranges) {
+      if (range.end <= offset) continue;
+      result += original.slice(offset, Math.max(offset, range.start)) + " ";
+      offset = range.end;
+    }
+    return (result + original.slice(offset)).replace(/\s+/gu, " ").trim();
+  };
+  return {
+    ...descriptor,
+    ...(typeof descriptor.summary === "string" ? { summary: strip(descriptor.summary) } : {}),
+    clothing: (Array.isArray(descriptor.clothing) ? descriptor.clothing : [])
+      .map((garment) => ({ type: strip(garment?.type), color: strip(garment?.color) }))
+      .filter((garment) => garment.type && garment.color),
+    ...Object.fromEntries(["scene", "actions", "objects", "qualitySignals"].map((field) => [field,
+      (Array.isArray(descriptor[field]) ? descriptor[field] : []).map(strip).filter(Boolean)])),
+  };
+};
+
 export const descriptorSchema = z
   .object({
     summary: descriptorString,
@@ -67,7 +120,11 @@ export const normalizeDescriptor = (candidate) => {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
   if (Object.keys(candidate).some((key) => forbiddenDescriptorKeys.has(normalizeKey(key)))) return null;
   const parsed = descriptorSchema.safeParse(candidate);
-  return parsed.success ? parsed.data : null;
+  if (!parsed.success) return null;
+  const isolated = isolateMediaRetrievalDescriptorOcr(parsed.data);
+  // A descriptor consisting only of visible text has no verified visual
+  // summary; keep it as an explicit policy failure rather than inventing one.
+  return isolated.summary ? isolated : null;
 };
 
 const normalizeIdentityTerms = (candidate) =>

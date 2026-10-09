@@ -33,6 +33,6 @@ test("mobile Release guards require HTTPS and reject loopback without banning pu
   assert.doesNotMatch(androidBuild, /Release builds require MIAOXUN_API_BASE_URL to be an HTTPS domain/);
   assert.doesNotMatch(androidBuild, /normalized ==~ \/\^https:.*\[0-9\]/);
   assert.match(androidBuild, /MIAOXUN_VERSION_CODE must be provided as a positive integer/);
-  assert.match(androidBuild, /miaoxunVersionCode < 26/);
+  assert.match(androidBuild, /miaoxunVersionCode < 45/);
   assert.doesNotMatch(androidBuild, /MIAOXUN_VERSION_CODE[^\n]*\?:\s*"1"/);
 });

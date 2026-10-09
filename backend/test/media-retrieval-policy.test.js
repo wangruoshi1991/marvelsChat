@@ -43,7 +43,25 @@ test("retrieval query removes identity terms from vector text while retaining ex
   assert.equal(normalized.parseConfidence, "high");
 });
 
-test("malformed or low-confidence parsing falls back to lexical-only retrieval", () => {
+test("copied OCR is isolated from every persisted visual field without removing exact-match text", () => {
+  const descriptor = normalizeDescriptor({
+    summary: "white PEUGEOT bicycle near 张三 sign",
+    clothing: [{ type: "Alice coat", color: "blue" }],
+    scene: ["张三 sign against infrared wall"],
+    actions: ["Alice beside bicycle"],
+    objects: ["white Peugeot bicycle", "张三 sign"],
+    qualitySignals: ["Alice text sharp"],
+    ocrText: ["PEUGEOT", "张三", "Hello Alice", "red"],
+  });
+  const { ocrText, ...visual } = descriptor;
+  assert.deepEqual(ocrText, ["PEUGEOT", "张三", "Hello Alice", "red"]);
+  assert.doesNotMatch(JSON.stringify(visual), /peugeot|张三|alice/iu);
+  assert.match(JSON.stringify(visual), /infrared/iu);
+  assert.equal(descriptor.summary, "white bicycle near sign");
+  assert.equal(normalizeDescriptor({ summary: "ALICE", ocrText: ["ALICE"] }), null);
+});
+
+test("malformed parsing is rejected and low confidence retains only identity constraints", () => {
   assert.equal(normalizeRetrievalQuery(null), null);
   assert.deepEqual(normalizeRetrievalQuery({
     visualQuery: "黄色连衣裙",
@@ -54,6 +72,21 @@ test("malformed or low-confidence parsing falls back to lexical-only retrieval",
     identityTerms: ["示例姓名"],
     parseConfidence: "low",
   });
+});
+
+test("OCR isolation matches normalized graphemes while preserving unrelated display text", () => {
+  const descriptor = normalizeDescriptor({
+    summary: "ＡＬＩＣＥ 与 Cafe\u0301 标签，黄色连衣裙",
+    scene: ["Ａｌｉｃｅ sign，infrared wall"],
+    objects: ["ＡＬＩＣＥ coat", "untouched ｂｉｃｙｃｌｅ，park"],
+    ocrText: ["Alice", "CAFÉ", "red"],
+  });
+  assert.equal(descriptor.summary, "与 标签，黄色连衣裙");
+  assert.deepEqual(descriptor.scene, ["sign，infrared wall"]);
+  assert.deepEqual(descriptor.objects, ["coat", "untouched ｂｉｃｙｃｌｅ，park"]);
+  assert.deepEqual(descriptor.ocrText, ["Alice", "CAFÉ", "red"]);
+  assert.equal(normalizeDescriptor({ summary: "ＡＬＩＣＥ", ocrText: ["Alice"] }), null);
+  assert.equal(normalizeDescriptor({ summary: "Alice", ocrText: ["ＡＬＩＣＥ"] }), null);
 });
 
 test("retrieval parser normalization rejects malformed schema fields instead of coercing them", () => {

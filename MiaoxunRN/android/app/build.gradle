@@ -130,9 +130,9 @@ gradle.taskGraph.whenReady { taskGraph ->
             "Release builds require MIAOXUN_API_BASE_URL to be a public HTTPS origin, not localhost or a loopback URL."
         )
     }
-    if (requiresReleaseSigning && miaoxunVersionCode < 26) {
+    if (requiresReleaseSigning && miaoxunVersionCode < 45) {
         throw new GradleException(
-            "Android Release builds with media retrieval require MIAOXUN_VERSION_CODE >= 26."
+            "Android Release builds with media retrieval require MIAOXUN_VERSION_CODE >= 45."
         )
     }
 }

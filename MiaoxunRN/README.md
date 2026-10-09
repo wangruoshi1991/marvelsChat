@@ -176,7 +176,7 @@ Android 构建必须显式提供 API 地址；连接正式 API 时：
 真机或 Android 需要隔离验证本地后端时，显式改用 `http://<MAC_LAN_IP>:4390`，并确保设备可访问该开发服务。
 
 Android Release 构建还必须显式提供正整数 `MIAOXUN_VERSION_CODE` 和正式签名参数，并且
-当前媒体检索版本要求 `MIAOXUN_VERSION_CODE >= 26`。`MIAOXUN_API_BASE_URL` 必须是公网
+当前媒体检索版本要求 `MIAOXUN_VERSION_CODE >= 45`。`MIAOXUN_API_BASE_URL` 必须是公网
 HTTPS origin，不能使用 localhost 或 loopback URL。可参考：
 
 ```text

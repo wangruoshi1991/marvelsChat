@@ -79,7 +79,7 @@ test("provider uses documented Model Studio endpoints and never adds identity te
   const vector = await provider.embedText({
     input: buildVisualEmbeddingInput({
       rawQuery: "黄色连衣裙户外",
-      candidate: { visualQuery: "untrusted", identityTerms: [], parseConfidence: "high" },
+      candidate: { visualQuery: "黄色连衣裙户外", identityTerms: [], parseConfidence: "high" },
     }),
     traceId: "b".repeat(32),
     reservation: approvedReservation,
@@ -165,4 +165,64 @@ test("provider rejects declared and streamed responses above the hard byte limit
         error.diagnostic?.schemaPaths?.includes("response"),
     );
   }
+});
+
+test("optional calibration usage records bounded token counts without copying provider content", async () => {
+  const usage = [];
+  const provider = createMediaRetrievalProvider({
+    config: configuredRuntime,
+    recordUsage: (value) => usage.push(value),
+    fetchImpl: async () => responseJson({
+      output: { embeddings: [{ embedding: Array.from({ length: 1024 }, () => 0.1) }] },
+      usage: { input_tokens: 20, output_tokens: -1, image_tokens: "private", total_tokens: 20, secret: "do-not-copy" },
+    }),
+  });
+  await provider.embedText({ input: buildVisualEmbeddingInput({ rawQuery: "photos of a bicycle" }), reservation: approvedReservation });
+  assert.deepEqual(usage, [{ operation: "query-embedding",
+    usage: { input_tokens: 20, output_tokens: null, image_tokens: null, total_tokens: 20 } }]);
+});
+
+test("reranking sends only bounded visual descriptors and accepts only candidate IDs", async () => {
+  const requests = [];
+  const provider = createMediaRetrievalProvider({
+    config: configuredRuntime,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return responseJson({ output: { choices: [{ message: { content: [{ text: JSON.stringify({ matches: [
+        { candidateKey: "c0", relevance: "high" },
+      ] }) }] } }] } });
+    },
+  });
+  const candidates = [{
+    mediaAssetId: "asset-safe",
+    kind: "image",
+    matchedFrameTimestampMs: null,
+    summary: "private owner caption Alice",
+    caption: "Alice",
+    descriptor: { clothing: [{ type: "dress", color: "yellow" }], scene: ["beach"], actions: ["Alice standing"], objects: ["Alice label"], ocrText: ["Alice"] },
+  }];
+  const result = await provider.rerankMediaCandidates({
+    query: "a yellow dress by the ocean",
+    candidates,
+    reservation: approvedReservation,
+  });
+  assert.equal(result.length, 1);
+  assert.equal(result[0].mediaAssetId, "asset-safe");
+  const requestBody = JSON.parse(requests[0].options.body);
+  const promptPayload = requestBody.input.messages.at(-1).content[0].text;
+  assert.equal(promptPayload.includes("Alice"), false);
+  assert.equal(promptPayload.includes("private owner caption"), false);
+  assert.equal(promptPayload.includes("asset-safe"), false);
+
+  const forgedProvider = createMediaRetrievalProvider({
+    config: configuredRuntime,
+    fetchImpl: async () => responseJson({ output: { choices: [{ message: { content: [{ text: JSON.stringify({ matches: [
+      { candidateKey: "c99", relevance: "high" },
+    ] }) }] } }] } }),
+  });
+  await assert.rejects(() => forgedProvider.rerankMediaCandidates({
+    query: "dress",
+    candidates,
+    reservation: approvedReservation,
+  }), (error) => error.code === "retrieval_policy_unverifiable");
 });

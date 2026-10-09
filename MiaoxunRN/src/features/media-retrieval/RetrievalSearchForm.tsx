@@ -23,7 +23,6 @@ export function RetrievalSearchForm({
   busy,
   searching,
   enabled,
-  remaining,
 }: {
   palette: Palette;
   language: Language;
@@ -35,7 +34,6 @@ export function RetrievalSearchForm({
   busy: boolean;
   searching: boolean;
   enabled: boolean;
-  remaining: number;
 }) {
   const c = resolveStationColors(palette);
   const t = (zh: string, en: string) => textFor(language, zh, en);
@@ -114,12 +112,6 @@ export function RetrievalSearchForm({
           </Text>
         )}
       </Pressable>
-      <Text style={[styles.caption, { color: c.secondaryText }]}>
-        {t(
-          `今日还可检索 ${remaining} 次`,
-          `${remaining} searches remaining today`,
-        )}
-      </Text>
     </View>
   );
 }

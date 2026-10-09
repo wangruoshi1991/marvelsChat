@@ -5,7 +5,6 @@ import {
 } from "./avatar-3d-quality.js";
 import {
   MEDIA_RETRIEVAL_CONSENT_VERSION,
-  MEDIA_RETRIEVAL_RUNTIME_LIMITS,
 } from "./media-retrieval-constants.js";
 
 const phoneNumberSchema = z.string().trim().regex(/^1[3-9]\d{9}$/, "Phone number must be a valid mainland China mobile number");
@@ -338,32 +337,35 @@ export const mediaRetrievalAdminControlsSchema = z
     userDailyRequestLimit: z
       .number()
       .int()
+      .max(Number.MAX_SAFE_INTEGER)
       .min(0)
-      .max(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxUserDailyRequestLimit)
+      .nullable()
       .optional(),
     userMonthlyBudgetFen: z
       .number()
       .int()
+      .max(Number.MAX_SAFE_INTEGER)
       .min(0)
-      .max(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxUserMonthlyBudgetFen)
+      .nullable()
       .optional(),
     globalDailyBudgetFen: z
       .number()
       .int()
+      .max(Number.MAX_SAFE_INTEGER)
       .min(0)
-      .max(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxGlobalDailyBudgetFen)
+      .nullable()
       .optional(),
     captionReserveFen: z
       .number()
       .int()
+      .max(Number.MAX_SAFE_INTEGER)
       .min(0)
-      .max(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxProviderCallReservationFen)
       .optional(),
     embeddingReserveFen: z
       .number()
       .int()
+      .max(Number.MAX_SAFE_INTEGER)
       .min(0)
-      .max(MEDIA_RETRIEVAL_RUNTIME_LIMITS.maxProviderCallReservationFen)
       .optional(),
     lifecycle: z
       .enum([

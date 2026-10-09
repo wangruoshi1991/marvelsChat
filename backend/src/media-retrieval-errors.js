@@ -6,8 +6,8 @@ import {
 
 const ERROR_CONTRACTS = MEDIA_RETRIEVAL_ERROR_CONTRACTS;
 
-const DIAGNOSTIC_OPERATIONS = new Set(["image-description", "query-parse", "image-embedding", "query-embedding"]);
-const DIAGNOSTIC_STAGES = new Set(["transport", "timeout", "http-response", "response-json", "descriptor-validation", "query-validation", "embedding-validation"]);
+const DIAGNOSTIC_OPERATIONS = new Set(["image-description", "query-parse", "query-rerank", "image-embedding", "query-embedding"]);
+const DIAGNOSTIC_STAGES = new Set(["transport", "timeout", "http-response", "response-json", "descriptor-validation", "query-validation", "rerank-validation", "embedding-validation"]);
 const DIAGNOSTIC_PROVIDER_CODES = new Set([
   "InvalidApiKey", "AccessDenied", "AccessDenied.Unpurchased", "InvalidParameter", "InvalidParameterValue",
   "ModelNotFound", "Throttling", "Throttling.RateQuota", "Throttling.AllocationQuota", "Arrearage",
@@ -18,6 +18,7 @@ const DIAGNOSTIC_SCHEMA_PATHS = new Set([
   "scene", "scene[]", "actions", "actions[]", "objects", "objects[]", "ocrText", "ocrText[]",
   "qualitySignals", "qualitySignals[]", "visualQuery", "identityTerms", "identityTerms[]", "parseConfidence",
   "embedding",
+  "matches", "matches[]", "matches[].candidateKey", "matches[].relevance",
 ]);
 
 // Provider bodies, messages and arbitrary property names must never cross this

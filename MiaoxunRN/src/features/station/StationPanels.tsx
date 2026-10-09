@@ -42,6 +42,7 @@ export function StationPanel({
   onOpenAgentThread,
   onOpenPostComposer,
   onOpenContentList,
+  onOpenMediaRetrieval,
   onSetAgentEnabled,
   onOpenPublicProfileByAiId,
   onSelectStationTab,
@@ -84,6 +85,7 @@ export function StationPanel({
   onOpenAgentThread: (agentId: string) => void;
   onOpenPostComposer: () => void;
   onOpenContentList: (kind: StationContentListKind) => void;
+  onOpenMediaRetrieval?: () => void;
   onSetAgentEnabled: (
     agentId: string,
     enabled: boolean,
@@ -216,6 +218,7 @@ export function StationPanel({
             onOpenAlbumDetail={onOpenAlbumDetail}
             onOpenAgentThread={onOpenAgentThread}
             onOpenContentList={onOpenContentList}
+            onOpenMediaRetrieval={onOpenMediaRetrieval}
             onActionMessage={onActionMessage}
           />
         </View>

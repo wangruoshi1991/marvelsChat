@@ -31,6 +31,25 @@ test("media-retrieval projects a public AgentCard without operational metadata",
   }
 });
 
+test("unbounded provider spend requires explicit approval and its migration is registered", async () => {
+  const manifestSchema = JSON.parse(
+    await fs.readFile(path.join(worktree, "docs", "agent-sop", "schemas", "agent-manifest.schema.json"), "utf8"),
+  );
+  const manifest = await readJson("manifest.json");
+  const integration = await readJson("integration.json");
+  const validate = new Ajv2020({ allErrors: true, strict: true }).compile(manifestSchema);
+
+  assert.equal(validate(manifest), true, JSON.stringify(validate.errors));
+  assert.equal(manifest.billing.userDailyLimit, null);
+  assert.equal(manifest.billing.globalDailyBudgetFen, null);
+  assert.equal(manifest.billing.unboundedSpendApproved, true);
+  assert.ok(integration.migrationFiles.includes("backend/database/034_media_retrieval_unlimited_limits.sql"));
+
+  const withoutApproval = structuredClone(manifest);
+  delete withoutApproval.billing.unboundedSpendApproved;
+  assert.equal(validate(withoutApproval), false);
+});
+
 test("media-retrieval public contracts reference the canonical search and error schemas", async () => {
   const [input, output, publicError, canonicalOutput, canonicalError, fixture] = await Promise.all([
     readJson("contracts/input.schema.json"),

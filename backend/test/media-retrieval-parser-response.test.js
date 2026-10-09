@@ -49,7 +49,7 @@ const providerPayload = (candidate) => ({
 const requestKind = (url) => String(url).includes("multimodal-generation") ? "parse" : "embedding";
 
 const repositoryForSearch = (transitions) => ({
-  getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1" }),
+  getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1", indexEpoch: 1 }),
   createOrGetMediaRetrievalRun: async () => ({
     reused: false,
     run: { id: "33333333-3333-4333-8333-333333333333", traceId: "a".repeat(32) },

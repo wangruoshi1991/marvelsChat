@@ -195,6 +195,7 @@
         "userDailyLimit": { "type": ["integer", "null"], "minimum": 1 },
         "globalDailyBudgetFen": { "type": ["integer", "null"], "minimum": 1 },
         "alertThresholdPercent": { "type": ["integer", "null"], "minimum": 1, "maximum": 100 },
+        "unboundedSpendApproved": { "type": "boolean" },
         "retryOnUnknownBilling": { "const": false }
       }
     },
@@ -320,11 +321,27 @@
             "type": "object",
             "properties": {
               "mode": { "enum": ["fixed", "metered"] },
-              "confirmationRequired": { "const": true },
-              "globalDailyBudgetFen": { "type": "integer", "minimum": 1 },
-              "alertThresholdPercent": { "type": "integer", "minimum": 1, "maximum": 100 }
+              "confirmationRequired": { "const": true }
             },
-            "required": ["globalDailyBudgetFen", "alertThresholdPercent"]
+            "oneOf": [
+              {
+                "properties": {
+                  "userDailyLimit": { "type": "integer", "minimum": 1 },
+                  "globalDailyBudgetFen": { "type": "integer", "minimum": 1 },
+                  "alertThresholdPercent": { "type": "integer", "minimum": 1, "maximum": 100 }
+                },
+                "required": ["userDailyLimit", "globalDailyBudgetFen", "alertThresholdPercent"]
+              },
+              {
+                "properties": {
+                  "userDailyLimit": { "type": "null" },
+                  "globalDailyBudgetFen": { "type": "null" },
+                  "alertThresholdPercent": { "type": "null" },
+                  "unboundedSpendApproved": { "const": true }
+                },
+                "required": ["userDailyLimit", "globalDailyBudgetFen", "alertThresholdPercent", "unboundedSpendApproved"]
+              }
+            ]
           }
         }
       }

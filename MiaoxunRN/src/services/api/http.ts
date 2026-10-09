@@ -2,7 +2,7 @@ import { NativeModules } from 'react-native';
 import { APIEnvelope, APIErrorEnvelope } from '../../models/api';
 
 const nativeConfig = NativeModules.MiaoxunConfigModule as
-  | { apiBaseURL?: unknown }
+  | { apiBaseURL?: unknown; buildNumber?: unknown }
   | undefined;
 
 const defaultRequestTimeoutMs = 20000;
@@ -46,6 +46,10 @@ export const isAuthSessionError = (error: unknown) =>
 
 const API_BASE_URL =
   typeof nativeConfig?.apiBaseURL === 'string' ? nativeConfig.apiBaseURL : '';
+const appBuildNumber = String(nativeConfig?.buildNumber ?? '');
+const appBuildHeaders: Record<string, string> = /^\d+$/.test(appBuildNumber)
+  ? { 'X-Miaoxun-App-Build': appBuildNumber }
+  : {};
 
 const normalizedApiBaseURL = (() => {
   const value = API_BASE_URL.trim().replace(/\/+$/, '');
@@ -210,6 +214,7 @@ export async function request<T>(
       headers: {
         ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
         ...options.headers,
+        ...appBuildHeaders,
         'X-Request-ID': clientRequestId,
         ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
       },

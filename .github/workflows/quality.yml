@@ -164,7 +164,7 @@ jobs:
         working-directory: MiaoxunRN/android
         env:
           MIAOXUN_API_BASE_URL: http://10.0.2.2:4390
-          MIAOXUN_VERSION_CODE: 43
+          MIAOXUN_VERSION_CODE: 45
 
   avatar-web-e2e:
     name: Avatar Web end-to-end

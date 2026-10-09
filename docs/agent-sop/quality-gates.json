@@ -76,7 +76,7 @@
     "event-driven": ["deduplication", "out-of-order", "replay", "checkpoint-restore", "pause", "dead-letter"],
     "external-provider": ["provider-contract", "timeout", "safe-error-mapping", "calibration"],
     "artifact-producing": ["ownership", "format-validation", "viewer", "retention", "deletion"],
-    "paid": ["user-quota", "global-budget", "billing-disposition", "retry-safety", "circuit-breaker"],
+    "paid": ["user-abuse-limit", "budget-or-explicit-unbounded-spend-approval", "billing-disposition", "retry-safety", "circuit-breaker"],
     "sensitive-data": ["consent", "data-minimization", "redaction", "retention", "account-deletion"],
     "high-risk-action": ["second-confirmation", "human-or-admin-approval", "reversal-or-compensation"]
   }

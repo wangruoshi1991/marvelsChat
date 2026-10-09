@@ -216,12 +216,12 @@ export function createMediaRetrievalRunEventRepository({
     return rows.map(mapEvent);
   };
 
-  const updateRunLifecycle = async (connection, { agentRunId, lifecycleStatus, failureCode = null }) => {
-    if (!agentRunId || !isSafeLifecycleStatus(lifecycleStatus)) return null;
+  const updateRunLifecycle = async (connection, { userId, agentRunId, lifecycleStatus, failureCode = null }) => {
+    if (!userId || !agentRunId || !isSafeLifecycleStatus(lifecycleStatus)) return null;
     const rows = await connection.query(
       `UPDATE agent_runs
       SET lifecycle_status = ?, status = ?, failure_code = ?, finished_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE finished_at END
-      WHERE id = ? AND agent_id = 'media-retrieval'
+      WHERE id = ? AND user_id = ? AND agent_id = 'media-retrieval'
       RETURNING *`,
       [
         lifecycleStatus,
@@ -229,6 +229,7 @@ export function createMediaRetrievalRunEventRepository({
         failureCode,
         TERMINAL_LIFECYCLE_STATUSES.has(lifecycleStatus),
         agentRunId,
+        userId,
       ],
     );
     return rows[0] ? mapRun(rows[0]) : null;

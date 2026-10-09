@@ -22,6 +22,7 @@ const record = (value: unknown): value is Record<string, any> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
 const count = (value: unknown) =>
   Number.isSafeInteger(value) && Number(value) >= 0;
+const nullableCount = (value: unknown) => value === null || count(value);
 const text = (value: unknown) => typeof value === 'string' && value.length > 0;
 const nullableText = (value: unknown) =>
   value === null || typeof value === 'string';
@@ -66,8 +67,8 @@ export function assertRetrievalStatus(
   );
   valid(
     record(value.quota) &&
-      count(value.quota.dailyRemaining) &&
-      count(value.quota.monthlyRemainingFen),
+      nullableCount(value.quota.dailyRemaining) &&
+      nullableCount(value.quota.monthlyRemainingFen),
   );
   valid(
     record(value.availability) &&

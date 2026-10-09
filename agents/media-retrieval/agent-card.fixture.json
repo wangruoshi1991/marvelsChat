@@ -15,7 +15,7 @@
     {
       "key": "semantic-media-search",
       "label": "自然语言找素材",
-      "description": "按颜色、服饰、场景、动作、物体或既有文字描述检索用户自己的素材。",
+      "description": "按开放式自然语言视觉描述检索用户自己的素材；姓名等身份词只作为当前账号的精确筛选条件。",
       "inputSummary": "自然语言检索条件",
       "outputSummary": "受控命中列表与匹配原因"
     },
@@ -44,7 +44,8 @@
     "不生成图片、视频、3D 模型或人物内容，也不恢复不存在的画面事实。",
     "不进行人脸识别、人物身份、名人、年龄、性别或其他敏感属性推断。",
     "视频最多处理六张代表帧，不转写音频。",
-    "当前为草稿状态，外部模型调用、预算和路由均保持关闭。"
+    "当前阶段不设每日调用次数、用户月预算或全局费用上限；供应商费用由运营方承担，用户余额、充值和扣费链路尚未实现。",
+    "当前为草稿状态，外部模型调用、预算和路由均保持关闭；开发校准不等于生产可用。"
   ],
   "interaction": {
     "runMode": "asynchronous",
@@ -54,7 +55,7 @@
     "resumable": true
   },
   "artifactSupport": [],
-  "minimumAppBuild": 26,
+  "minimumAppBuild": 45,
   "availability": {
     "state": "temporarily-unavailable",
     "canStartRun": false,

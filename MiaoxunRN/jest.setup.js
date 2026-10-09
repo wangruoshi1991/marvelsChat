@@ -4,7 +4,7 @@ const ReactNative = require('react-native');
 
 ReactNative.NativeModules.MiaoxunConfigModule = {
   apiBaseURL: 'http://127.0.0.1:4390',
-  buildNumber: '42',
+  buildNumber: '45',
 };
 ReactNative.NativeModules.QRCodeScannerModule = {
   scan: jest.fn(async () => 'miaoxun://ai/900202606160001'),

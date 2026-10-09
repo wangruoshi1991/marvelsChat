@@ -31,6 +31,10 @@ const agentModuleBindings: Record<string, { zh: string; en: string }> = {
     zh: '个人相册 / 素材整理',
     en: 'Albums / Media Organization',
   },
+  'media-retrieval': {
+    zh: '个人相册 / 找素材',
+    en: 'Albums / Find Media',
+  },
   'file-preprocessor': {
     zh: '文件素材 / 上传预处理',
     en: 'Files / Upload Preprocessing',

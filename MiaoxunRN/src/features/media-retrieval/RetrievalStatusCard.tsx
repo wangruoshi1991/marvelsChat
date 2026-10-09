@@ -38,6 +38,36 @@ export function RetrievalStatusCard({
     purging: t('正在清除检索数据', 'Clearing retrieval data'),
   };
   const busy = Boolean(state.busy || state.refreshing);
+  const showConsent =
+    !state.status?.enabled &&
+    !state.purgePending &&
+    ['disabled', 'enable', 'blocked'].includes(phase);
+  const enableDisabled = phase !== 'disabled' || !consent || busy;
+  const reasonCodes = state.status?.availability.reasonCodes || [];
+  const blockedMessage = reasonCodes.includes('lifecycle-not-available')
+    ? t(
+        '素材检索尚未正式开放，已上传的素材不会受到影响。',
+        'Media retrieval is not open yet. Your uploaded media is unaffected.',
+      )
+    : reasonCodes.includes('operator-disabled')
+    ? t(
+        '检索服务尚未启用，已上传的素材不会受到影响。',
+        'Media retrieval is not enabled. Your uploaded media is unaffected.',
+      )
+    : reasonCodes.includes('not-ready')
+    ? t(
+        '检索服务仍在准备中，请稍后刷新状态。',
+        'Media retrieval is still getting ready. Refresh the status later.',
+      )
+    : reasonCodes.includes('capacity-limited')
+    ? t(
+        '检索服务暂时繁忙，请稍后重试。',
+        'Media retrieval is temporarily busy. Try again later.',
+      )
+    : t(
+        '服务尚未准备好，或素材整理需要处理。请稍后检查状态；已上传素材不受影响。',
+        'The service or media index requires attention. Check again later; your uploaded media is retained.',
+      );
   return (
     <View
       style={[
@@ -53,7 +83,12 @@ export function RetrievalStatusCard({
           {titles[phase]}
         </Text>
       </View>
-      {phase === 'disabled' || phase === 'enable' ? (
+      {phase === 'blocked' && !state.error ? (
+        <Text style={[styles.subtitle, { color: c.secondaryText }]}>
+          {blockedMessage}
+        </Text>
+      ) : null}
+      {showConsent ? (
         <>
           <Text style={[styles.subtitle, { color: c.secondaryText }]}>
             {t(
@@ -95,12 +130,13 @@ export function RetrievalStatusCard({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t('启用检索', 'Enable retrieval')}
-            disabled={!consent || busy}
+            accessibilityState={{ disabled: enableDisabled }}
+            disabled={enableDisabled}
             onPress={onEnable}
             style={[
               styles.button,
               { backgroundColor: c.accent },
-              (!consent || busy) && styles.disabled,
+              enableDisabled && styles.disabled,
             ]}
           >
             <Text style={[styles.buttonText, styles.white]}>
@@ -128,14 +164,6 @@ export function RetrievalStatusCard({
           {t(
             '检索已暂停。待服务端确认清理完成后，才会显示已撤回。你的原始图片和视频仍然保留。',
             'Search is paused until deletion is confirmed by the service. Your original photos and videos remain.',
-          )}
-        </Text>
-      ) : null}
-      {phase === 'blocked' && !state.error ? (
-        <Text style={[styles.subtitle, { color: c.secondaryText }]}>
-          {t(
-            '服务尚未准备好，或素材整理需要处理。请稍后检查状态；已上传素材不受影响。',
-            'The service or media index requires attention. Check again later; your uploaded media is retained.',
           )}
         </Text>
       ) : null}
