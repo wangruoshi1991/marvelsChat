@@ -1,6 +1,6 @@
 # 妙讯当前交接入口
 
-更新：2026-10-09。此文件记录当前工程状态，不授权生产部署、付费调用或 TestFlight 上传。接续时先核对 Git、测试和线上状态，再依照用户最新请求工作。
+更新：2026-10-09。此文件记录当前工程状态，不替代用户对生产部署、付费调用或 TestFlight 上传的明确授权。接续时先核对 Git、测试和线上状态，再依照用户最新请求工作。
 
 ## 项目目标与边界
 
@@ -10,20 +10,29 @@
 
 ## 当前候选与未闭环事项
 
-- 2026-10-09 当前未提交候选已改为相册管理 Agent 对话检索，移除 RN 独立“找素材”页面；模型按会话调用 owner 范围的列相册/检索工具，结果在消息中展示。首次添加统一说明云端 AI 处理，已有同意复用；系统相册权限不自动上传本机素材。生产仍为旧 runtime 与 34 项迁移，本轮对话代码和迁移 035 未部署。以下旧页面验证与发布描述按各段日期解释，不能代替本轮状态。
+- 2026-10-09 相册管理 Agent 对话检索已部署到生产 runtime `album-assistant-20261009-01`；Build 45 客户端尚未进入 TestFlight。模型按会话调用 owner 范围的列相册/检索工具，结果在消息中展示。首次添加统一说明云端 AI 处理，已有同意复用；系统相册权限不自动上传素材。以下旧页面验证与发布描述按各段日期解释，不能代替本轮状态。
 - 本轮增加 `content_revision_at` 区分原文件与说明/相册关系变更，重复完成通知复用任务；原文件替换后旧对话结果不再引用它，元数据修改不影响原引用。迁移 035 保守按旧 `updated_at` 回填，无法确认的旧索引须显式重建；不同资产 ID 的同字节文件尚未实现哈希合并。相册授权、索引任务、Agent 与线程改为同一事务；失败全部回滚，并发添加串行化只创建一个线程。
 - 当前公开素材隔离 E2E 已通过图片、指定相册、多轮视频 3–6 秒定位、幂等消息、跨账号 404、鉴权预览和空结果。真实 DeepSeek 对话模型/合成工具响应评测 11/11，这是路由评测而非召回质量。2,005 合成段查询计划仅验证 owner 的 5 条结果及带 user_id 的索引，未做大库性能验收。最新 9/9 pgvector 集成含事务回滚与并发激活；结果引用回归覆盖撤回与素材失效。
 - 本轮最终 `./scripts/check-repository.sh` 全通过：后端 455 项（451 passed、4 环境门控 skipped），RN 30 组/178 项，Agent 33、Admin 14、媒体检索 Web 3，相关格式/lint/类型/构建通过，日志 `/tmp/miaoxun-album-assistant-check-final.log`。`npm --prefix backend run test:media-retrieval-migration` 9/9，日志 `/tmp/miaoxun-album-migration-final.log`；合成查询计划证据 `/tmp/miaoxun-album-query-plan.json`。正常签名 Release Simulator 构建再次成功，日志 `/tmp/miaoxun-album-ios-build-final.log`。
 - iPhone 17 与 SE3 使用独立 bundle `com.wangruoshi.miaoxun.albumqa` 及隔离 QA API，正式 App 登录态/Keychain 未触碰。iPhone 17 实测图片预览、视频 4 秒画面、软件键盘、多行输入和 App 发起的英文检索；SE3 实测结果卡片及键盘显示/隐藏。发现并修复隐藏键盘仍留高度空白的问题，改按窗口与键盘 frame 的相交位置计算；4 项几何回归通过，SE3 再次确认隐藏后输入栏回到底部。
-- 最终隔离 API 核对已有同意可复用、其他账号读结果 404、移除相册 Agent 后旧结果 403；随后注销两名本次 QA 临时账号，三个 OSS 原对象 HEAD 均为 404，隔离库 users/assets/segments/jobs 均为 0。已停止本任务创建的 QA API/Worker、4395/55552 SSH 隧道、Metro 和 `miaoxun-album-qa-pg` 容器；容器只停止、未删除，其他服务未触碰；失效临时 session 文件已删除。独立 QA App 已停止，最新含 JS bundle 的正常签名 Debug Simulator 包保存在 `/tmp/miaoxun-album-qa-ios-final/Build/Products/Debug-iphonesimulator/MiaoxunRN.app`，日志 `/tmp/miaoxun-album-qa-ios-build-final.log`。生产只读 ready 200、backend/worker active，runtime 仍为 `media-retrieval-20261009-02`，未读取其他人的生产素材、部署、推送或上传 TestFlight。
-- 本轮只读发布预检：公网 `/api/health` 与 `/api/ready` 均为 200；SSH 核对迁移账本仍为 34 项，`station_media_assets` 为 17 行、表及索引合计 212,992 bytes；备份 timer active，最近一次 service result 为 success。完整仓库检查通过，PostgreSQL 集成 9/9；补测 035 从 034 升级并把旧格式素材的 `content_revision_at` 回填为原 `updated_at`。发布预检 0 failures、4 warnings（域名 clientHold、两个公网 DNS 查询无结果、当前 Mac 无 Java）；TestFlight IP HTTPS 配置与证书正常。未做生产写入、创建新备份、付费调用、推送或上传；新恢复点和生产维护窗口仍是迁移前置条件。
-- 依赖审计：后端 `npm audit --omit=dev --audit-level=high` 为 0 vulnerabilities；RN 同级审计报告 20 项 High，当前聚合到 `braces@3.0.3` 的 glob/Metro/CLI 构建路径。npm registry 尚无 braces 3.x 修复版本，自动修复要求把 React Native 从 0.87.1 降到 0.72.17，故不盲目降级；该风险暂按构建期依赖跟踪，TestFlight 归档前须确认漏洞代码未进入 App bundle。
-- 工作分支为 `codex/testflight-44`。本轮消息幂等、社交分页、3D 可用性与模型选择、聊天菜单定位及文档整合已通过本地门禁；推送仅针对该功能分支，不代表生产部署或 TestFlight。
-- 2026-10-09 已按用户授权在停写备份后执行生产迁移 032–034，账本 34 项且 readiness 为 200。生产 runtime 为 `media-retrieval-20261009-02`，来源提交 `63d6547`；后端与 Worker active。检索 DB 控制已设为 `limited_release`、Agent/Provider/index=true，三个次数/费用上限均为 NULL，无账号白名单；公开图片/视频生产 E2E 已通过。这是开发联调开放，完整上线质量验收尚未完成。
+- 部署前 QA 收尾记录：最终隔离 API 核对已有同意可复用、其他账号读结果 404、移除相册 Agent 后旧结果 403；随后注销两名本次 QA 临时账号，三个 OSS 原对象 HEAD 均为 404，隔离库 users/assets/segments/jobs 均为 0。已停止本任务创建的 QA API/Worker、4395/55552 SSH 隧道、Metro 和 `miaoxun-album-qa-pg` 容器；容器只停止、未删除，其他服务未触碰；失效临时 session 文件已删除。独立 QA App 已停止，最新含 JS bundle 的正常签名 Debug Simulator 包保存在 `/tmp/miaoxun-album-qa-ios-final/Build/Products/Debug-iphonesimulator/MiaoxunRN.app`，日志 `/tmp/miaoxun-album-qa-ios-build-final.log`。当时生产 runtime 为 `media-retrieval-20261009-02`，未读取其他人的生产素材；部署与 TestFlight 状态以下方本次发布记录为准。
+- 部署前只读预检历史记录：当时公网 `/api/health` 与 `/api/ready` 为 200、账本 34 项，`station_media_assets` 为 17 行；完整仓库和 PostgreSQL 集成 9/9 通过，发布预检 0 failures、4 warnings。该状态已被下方 2026-10-09 部署记录更新；不能把它当作当前迁移数或备份状态。
+- 依赖审计：后端 `npm audit --omit=dev --audit-level=high` 为 0 vulnerabilities；RN 同级审计报告 20 项 High，当前聚合到 `braces@3.0.3` 的 glob/Metro/CLI 构建路径。npm registry 尚无 braces 3.x 修复版本，自动修复要求把 React Native 从 0.87.1 降到 0.72.17，故不盲目降级；该风险仍按构建期依赖跟踪，本次 Build 45 archive 未发现相关模块路径进入 App JS bundle，但不能据此将依赖风险记为已修复。
+- 工作分支 `codex/testflight-44` 当前 HEAD 为已推送提交 `a634fc4`。生产部署与数据库迁移已按用户授权完成；TestFlight 上传仍受 Apple Distribution 签名和待处理协议阻塞。
+- 2026-10-09 前一阶段按用户授权在停写备份后执行生产迁移 032–034，账本 34 项；生产 runtime `media-retrieval-20261009-02` 来源 `63d6547`，检索 DB 控制为 `limited_release` 且不限次数/费用。该状态已由相册对话 runtime 与迁移 035 更新；公开图片/视频生产 E2E 只验证前一阶段独立检索。
 - 3D 生成已于 2026-09-29 按用户明确授权在生产全量开放，复用现有 `AVATAR_3D_ALLOWLIST=*`，没有引入新的权限模式。17 个活跃账号的只读 bootstrap 全部确认 enabled 与 generationAvailable；个人每日额度为 3，尚无全局费用上限。此次未创建任务或触发付费调用。未来发布必须保留该通配配置，不能用空白环境样例覆盖。
 - 聊天更多菜单已改为按消息整行测量并避让，补充上下箭头与定位测试。本轮在 iPhone 17 的正式 API 会话中通过无障碍内容操作入口复核本人消息与对方长消息：四项文字可见，更多菜单动作可展开，对方长消息菜单在上方、箭头朝下，未覆盖当前消息的头像和昵称。尚未覆盖 SE3 已登录界面、四边物理长按拖选、顶部短消息和引用回复，不得宣称完整 UI gate 已通过。截图仅现场检查，不把私人会话保存到仓库。
 - QA 数据库中的两名测试账号已从隔离库 `marvels_chat_test` 删除；删除前仓储扫描确认私有存储引用为 0，删除后确认目标 ID 均不存在。QA 后端和容器仍运行，未清除其他 Simulator、本地数据库或构建归档。
 - 已定位 Simulator 的两个登录问题：SE3 原包连已清空的隔离库，正式账号在该库无法登录；禁用签名构建导致 Keychain `errSecMissingEntitlement`。保留 Xcode 默认 ad-hoc 签名后已有登录态恢复，没有修改或绕过 Keychain。iPhone 17 和 SE3 均安装正式 API `https://8.153.167.11` 的正常签名 Release Simulator `1.0 (45)`；真机 Keychain 与物理触感仍未验收。
+
+## 2026-10-09 相册对话部署与 TestFlight 状态
+
+- 生产 runtime 已切至 `/opt/projects/marvels-chat/releases/album-assistant-20261009-01/runtime`，来源 `a634fc45ba3551577598e337d44e682192b6ba95`；制品 375 文件，SHA-256 `95dae7c7e0362ff9ff2e3b3bf2f5431968489606c5d4f3d55258077d44543805`。`npm ci --omit=dev` 成功；镜像 registry audit endpoint 返回 404 后改官方 registry 核验生产依赖，0 vulnerabilities。RN 依赖审计仍有 20 High，集中在 Metro/glob 构建链；Release bundle 未发现相关包路径。
+- 迁移 035 已应用，账本 35 项；17 条素材 `content_revision_at` 均非空且等于原 `updated_at`。停写恢复点 `marvels_chat-20261009T092124Z.dump` SHA-256 `77246049bcff65647fe5b75810eafbf8f27bb26852212673994efb8c9b094a82`，`pg_restore --list` 455 项；OSS 加密对象/manifest 下载、解密后的明文 SHA 与本地 dump 一致。未做隔离 PostgreSQL 完整恢复演练。
+- API、Worker、PostgreSQL 与备份 timer active，restart count 0；本机、公网 `/api/health` 和 `/api/ready` 均 200，ready 迁移 current、Worker 心跳存在。新 release 环境文件为 `root:marvels 0640`，`ADMIN_EMAILS` 和禁用的默认管理员密码已清空，`AVATAR_3D_ALLOWLIST=*` 保留。
+- Build 45 `1.0 (45)` App Store archive 成功，正式 API `https://8.153.167.11`、bundle `com.wangruoshi.miaoxun`；archive `get-task-allow=true`。导出失败：`No signing certificate "iOS Distribution" found`，并提示 `PLA Update available`。本机没有 ASC API key、Provisioning Profile 或 Distribution identity，TestFlight 未上传。需账号持有人确认并处理 Apple 待更新协议，再准备可用的分发签名后导出上传。
+- 未做生产相册对话 E2E：本机没有合适的公开图片，Wikimedia Commons API 请求超时，因此没有创建临时生产账号、上传素材或触发模型调用，也没有读取生产用户素材。既有完整对话 E2E 是隔离 QA 数据库上的有限公开素材验证。
+- 接续优先事项：完成 Apple 协议/分发签名条件后上传并核对 Build 45 处理状态；恢复公开素材网络来源后，在隔离或经授权的生产临时账号上做对话检索 smoke 并清理；随后补 held-out 大库评测、真机/Android 与完整恢复演练。项目尚不能称为完整上线就绪。
 
 ## 此前验证（截至 2026-10-08）
 
@@ -40,15 +49,15 @@
 - 不宣称项目零问题或无技术债：`App.tsx` 为 667 行，`useMiaoxunSession.ts` 为 828 行，后续改动应按路由/会话职责拆分；不要仅为减少行数进行大范围重写。
 - 消息 API 的 `clientMessageId` 仍可省略，服务端会为已发布旧客户端生成 ID；这条显式兼容路径保留旧客户端发送能力，但不提供跨请求重试幂等。新客户端发送稳定 ID 才享有幂等保障。
 - 历史迁移 `021_station_posts_compat.sql` 已在迁移账本中，不能因名称含 compat 就删除。通用错误文案、空状态和受控重试不等于静默伪造成功。
-- iOS 公开发布基线按 9 月 18 日记录为 TestFlight `1.0 (44)`；本轮候选尚未上传。不得把临时 QA 包的 build 44 当作新发布。
+- iOS 最近已分发基线仍为 TestFlight `1.0 (44)`；Build 45 archive 已生成，但 Development provisioning (`get-task-allow=true`) 不能分发，导出因缺少 `iOS Distribution` 证书失败。不得把 Simulator / archive 当作 TestFlight 上传成功。
 - QA 隔离后端 `127.0.0.1:4392` 与 Compose 项目 `miaoxun-ui-qa-20260929` 暂留；两个已启动的 Simulator 已切回正式 API，不再连接该空库。后续隔离写入测试要显式确认包的 API 地址，不能凭设备名称推断环境；测试账号凭据不写入仓库。用户已确认此前未跟踪的临时 HTML 是可丢弃测试产物，无需恢复或继续搜索。
 
 ## 接续顺序
 
-当前用户优先事项是相册管理与检索 Agent 的对话协作。当前本地实现已通过有限公开素材的真实开发闭环；生产仍是旧检索实现，不能把隔离 QA 验证说成正式用户已能使用新会话流程。实现和边界见 `docs/agents/album-assistant.md`。
+相册管理与检索 Agent 的对话协作代码和后端已部署，TestFlight 客户端与生产对话 smoke 尚未闭环。实现、迁移与已验证边界见 `docs/agents/album-assistant.md`。
 
-1. 发布相册对话候选前，核对干净来源制品、迁移 035 的实际规模锁时间、最新恢复点与 API/Worker 同步切换；生产迁移、部署、Git 推送和 TestFlight 分发各按用户授权范围执行。035 在隔离库通过，尚未生产执行。
-2. 正式上线质量仍需大库 held-out 召回质量、代表性真实视频、真机与 Android、独立发布验收；11 个模型路由案例与 2,005 合成段计划分别验证不同边界，不能代替这些门槛。Android SDK 协议与既有工具链依赖问题见历史记录，未解决项不伪报通过。
+1. 生产相册对话后端和迁移 035 已部署；当前阻塞 TestFlight 的是 Apple 待处理协议和本机缺失 Distribution 签名，完成账号侧条件后重新导出 Build 45 并确认 App Store Connect 处理状态。
+2. 正式上线质量仍需大库 held-out 召回质量、代表性真实视频、生产对话 smoke、真机与 Android、独立发布验收及完整恢复演练；11 个模型路由案例与 2,005 合成段计划分别验证不同边界，不能代替这些门槛。Android SDK 协议与既有工具链依赖问题见历史记录，未解决项不伪报通过。
 3. 相册 Agent 添加时统一取得用户对云端 AI 的同意，已有同意复用；不得自动上传未选择的本机照片。用户自有素材测试须明确范围；公开测试图片/合成视频的真实调用授权已在本会话给出。未知费用保留审计状态，不自动重试，账本估计不当作供应商账单或余额扣款。
 4. 登录、长按和正式发布步骤保留；四边物理长按拖选、顶部短消息和引用回复尚未验收，真机 Keychain 与物理触感仍需真机验证。
 

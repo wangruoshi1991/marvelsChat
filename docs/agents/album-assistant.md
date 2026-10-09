@@ -56,4 +56,8 @@ RN 0.87.1 已移除旧独立 assets registry，`react-native-svg@15.15.5` 仍导
 - PostgreSQL 集成覆盖添加/移除失败的事务回滚与并发添加单线程；结果读取回归覆盖跨账号 404、消息撤回、云端同意撤回、Agent/scope 撤回、失效 epoch 和素材删除/类型变更。
 - 最终全仓门禁通过：后端 451 passed / 4 门控 skipped，RN 30 组/178 项；独立 pgvector 集成 9/9，正常签名 Release Simulator 构建通过。隔离 API 实测撤回后旧结果 403；两名临时账号已注销、三个测试 OSS 原对象 HEAD 404，隔离业务数据残留 0。没有将单测或 Simulator 验证当作真机/生产验收。
 
-这证明有限公开素材上的开发闭环。大库 held-out 检索质量、代表性视频、实际账单、真机/Android、独立发布验收仍需各自验证。生产仍运行旧 runtime 和 34 项迁移；本轮相册对话代码与 035 尚未部署、未推送或上传 TestFlight。
+2026-10-09 已部署到生产 runtime `album-assistant-20261009-01`，来源提交 `a634fc45ba3551577598e337d44e682192b6ba95`，迁移 035 已应用；生产 readiness 200，API 与 Worker active。停写备份 `marvels_chat-20261009T092124Z.dump` 的本地 SHA 与从 OSS 下载、解密后的明文 SHA 一致。此部署没有读取生产用户素材，也没有触发生产模型调用。
+
+Build 45 App Store archive 成功，包含正式 API origin，且 RN 构建期 `braces`/Metro 工具依赖未出现在归档 JS bundle；但 archive 使用 Development provisioning（`get-task-allow=true`），导出因缺少 iOS Distribution 证书而失败，日志提示 `PLA Update available`。TestFlight 尚未收到 Build 45。账号持有人需先在 Apple Developer / App Store Connect 确认并处理待更新协议，再准备可用的 Distribution 签名并重新导出上传。
+
+本机访问 Wikimedia Commons API 超时，故本轮没有创建生产临时账号、上传测试素材或调用对话/检索模型。已完成的真实 Agent E2E 仍仅代表隔离 QA 数据库上的有限公开图片/合成视频闭环。大库 held-out 检索质量、生产对话 E2E、代表性视频、实际账单、真机/Android 和 TestFlight 分发仍须分别验证；不可将有限 QA 素材、Simulator 或服务 readiness 当成这些验收的替代。

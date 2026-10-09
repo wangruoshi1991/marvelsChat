@@ -41,7 +41,7 @@ React Native 是当前正式移动端主线，iOS 上线能力通过 `MiaoxunRN/
 - 后台管理系统位于 `admin/`，用于创建账号、管理用户状态/角色/资料/登录态/Agent 授权、重置密码，并查看活跃、消息、事件和 Agent 调用记录。
 - 后台管理页使用独立登录态，不复用 App 本地登录缓存；App 登录页也不再提供后台跳转。
 - Agent 已独立成 `agents/`，当前包含妙讯管家和建站、文件预处理、相册管理、漫画日记、视频制作等功能类 Agent；3D 形象顾问只提供准备建议，不调用或控制 3D 生成流程。当前候选通过相册管理 Agent 对话调用媒体检索：多轮补充条件、指定相册、图片卡片和视频匹配时间；已移除 App 独立“找素材”页面。添加相册 Agent 时统一取得云端 AI 同意，已有同意直接复用；手机相册权限不自动上传素材。授权、索引任务、Agent 与线程在同一事务中保存；内容版本与相册/描述变更分离，减少重复视觉模型调用。合同、迁移 035 和验证边界见 [相册对话检索](docs/agents/album-assistant.md)。
-- 2026-10-09 生产仍是旧检索 runtime 与 34 项迁移，已在 `limited_release` 开放开发联调，无账号白名单和次数/费用上限，保留瞬时限流。旧独立检索的公开图片/视频生产 E2E 已通过；本轮相册对话代码和迁移 035 尚未部署。完整上线验收及 TestFlight Build 45 分发尚未完成，旧发布证据见 [检索发布记录](docs/agents/media-retrieval/release-evidence.md)。
+- 2026-10-09 已将相册管理 Agent 对话检索部署到生产 runtime `album-assistant-20261009-01`，迁移账本为 35 项；检索保持 `limited_release`、无账号白名单与次数/费用上限、保留瞬时限流和用户主动同意。API/Worker、公网 health/ready 均通过。TestFlight Build 45 archive 已生成，但因本机缺少 iOS Distribution 证书且 Apple 条款待账号持有人确认，尚未上传；本轮没有用私人素材或额外模型调用做生产对话 E2E。完整上线验收仍需补齐生产对话 E2E、held-out 检索评估、真机/Android 验证和 Build 45 分发，见 [相册对话检索](docs/agents/album-assistant.md) 与 [部署记录](docs/deployment.md)。
 - `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL` 配置完整时，妙讯管家会走后端模型接口。2026-09-16 核实线上运行配置为 DeepSeek `deepseek-v4-flash`；本地模板使用同一模型及 endpoint，开发 Key 必须单独配置。未配置时明确报告服务不可用。
 - 扫码看主页、关注、好友申请、好友通过通知和通知未读已接入真实后端表与 API；扫码结果必须经后端解析 AI ID 后才打开用户主页。
 - 小站社交页已展示真实关注、粉丝和好友列表；搜索页已接入真实用户搜索和最近搜索记录；设置页已接入主页展示开关，公开主页会按后端可见性策略隐藏字段。

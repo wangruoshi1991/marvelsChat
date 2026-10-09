@@ -15,23 +15,35 @@ worktree、手工复制的 dist 或“HEAD 加本地修改”作为生产来源�
 
 ## 已核对的发布基线（2026-10-09）
 
-2026-10-09 已按用户授权完成媒体检索开发联调开放。当前活动 runtime 为
-`/opt/projects/marvels-chat/releases/media-retrieval-20261009-02/runtime`，来源 `63d6547`；
-032–034 已执行，迁移账本 34 项。后端/Worker/PostgreSQL active，health/ready 200。
-DB lifecycle 为 `limited_release`、Agent/Provider/index 全开，日次数、月预算与全局日预算为 NULL；
-保留瞬时限流与用户主动同意，没有账号白名单。Build 45 / 合同 v2 才能使用检索接口，
-TestFlight 仍为 44。公开图片/视频检索、跨账号隔离与撤回清理 E2E 已通过，完整上线验收未完成。
+当前活动 runtime 为 `/opt/projects/marvels-chat/releases/album-assistant-20261009-01/runtime`，
+来源提交 `a634fc45ba3551577598e337d44e682192b6ba95`。干净来源归档含 375 个文件，SHA-256 为
+`95dae7c7e0362ff9ff2e3b3bf2f5431968489606c5d4f3d55258077d44543805`；服务器解包并安装 lockfile
+生产依赖后执行 root 只读权限加固。生产依赖 `npm audit --omit=dev --audit-level=high`
+使用官方 npm registry 检查为 0 漏洞；镜像站 audit endpoint 不兼容，不能将其 404 当作通过。
 
-制品 SHA-256：`0b855b75cfd2f2cd43761983dc9bef22cf39319a0c547030f47e5838ae2649d1`，
-365 文件清单校验通过。切换前保留原环境与 storage，执行 root 只读权限加固；3D 的
-`AVATAR_3D_ALLOWLIST=*` 保留。02 与 01 无 schema 差异，可按标准停写切换代码回滚到 01；
-回到迁移前旧代码则须停写并恢复迁移前数据库。
+迁移 035 已在停写窗口应用，账本 35 项。升级回填涉及 17 条 `station_media_assets`，
+`content_revision_at` 全部非空，并确认原 `updated_at` 值未被回填触发器改写。停写恢复点为
+`marvels_chat-20261009T092124Z.dump`，SHA-256
+`77246049bcff65647fe5b75810eafbf8f27bb26852212673994efb8c9b094a82`，`pg_restore --list` 为
+455 项；私有 OSS 加密归档与 manifest 下载、解密校验后的明文 SHA 与本地 dump 一致。此处未做
+完整隔离 PostgreSQL 恢复演练。
 
-停写后的迁移前恢复点为
-`/opt/projects/marvels-chat/database/backups/marvels_chat-20261009T044415Z.dump`，
-SHA-256 为 `1c32a2f8eb68092e87a57efc37e28885d1a8957db17518e26a303508acf53fce`；
-摘要与 450 行 TOC 可读、加密 OSS 归档和 manifest 成功。本轮未做完整恢复演练。
-详细证据见 [媒体检索发布记录](agents/media-retrieval/release-evidence.md)。
+API、Worker、PostgreSQL 与备份 timer 均 active，服务重启计数为 0；本机及公网
+`/api/health`、`/api/ready` 返回 200，ready 显示迁移 current，Worker 心跳可见。新环境文件保持
+`root:marvels 0640`，已清空不兼容的新邮箱提权白名单与禁用的默认管理员密码，保留
+`AVATAR_3D_ALLOWLIST=*`。媒体检索仍为 `limited_release`、无账号白名单/次数上限/费用上限，保留
+瞬时限流和用户主动同意。没有读取生产用户媒体，也没有在本轮触发生产模型调用。
+
+iOS Build 45 archive 成功，版本 `1.0 (45)`、Bundle ID `com.wangruoshi.miaoxun`、API origin 为
+`https://8.153.167.11`。归档 JS 未发现 RN 构建期 `braces`、`micromatch`、Metro 依赖路径；但签名为
+Development（`get-task-allow=true`）。`xcodebuild -exportArchive` 明确失败：缺少 `iOS Distribution`
+证书，且日志提示 `PLA Update available`；TestFlight 未收到 Build 45。需要账号持有人确认并处理
+Apple 待更新协议、提供/安装 Distribution 签名后重新归档或导出上传。完整上线验收仍未完成：生产对话
+检索 E2E、held-out 大库质量、真机/Android 和完整恢复演练仍待补。
+
+上一 runtime `media-retrieval-20261009-02` 是本次迁移前版本；较早 09:04 UTC 备份仍保留，不作本次
+恢复点替代。032–034、limited-release 控制与公开素材检索证据见
+[媒体检索发布记录](agents/media-retrieval/release-evidence.md)。
 
 ## 此前发布基线（2026-09-29，历史）
 
