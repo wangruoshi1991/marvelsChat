@@ -3,7 +3,7 @@
 - 状态: 生产已开放开发联调；真实图片/视频、隔离、撤回和清理 E2E 已通过，完整上线验收未完成
 - 生产生命周期: `limited_release`（对所有登录用户开放，各用户仍须自行同意私有素材索引）
 - 负责人: Jarson（个人负责）
-- App/TestFlight 集成: Build 45 双 Simulator 已安装；入口和同意页面可达，部分索引成功的 App 状态修复已通过定向回归；TestFlight Build 45 尚未上传
+- App/TestFlight 集成: Build45 Simulator关键路径已验证；2026-10-10 TestFlight 1.0(45)正式签名导出及上传成功，Apple页面已显示“正在测试”，现有测试用户可更新。来源、签名与页面证据见[Build45发布记录](../../reviews/2026-10-10-testflight-45.md)；不代替真机/Android验收
 - 当前生产: runtime retrieval-visual-20261010-03、来源3b001b4、相册Agent0.2.2；原画面修复与对话投影均已部署。公开图片/运动视频生产闭环及Simulator同一旧聊天回复复验通过，临时账号和OSS清理完成；有限素材不代表全部生产质量，实际账单未知
 - 发布批准: 独立 Security Reviewer 和 Release Owner 尚未完成复核
 
@@ -169,6 +169,7 @@ admin: npm run build
 | 生产API/Worker/OSS与权限 | PASS | 图片/真实运动视频、幂等、跨账号、空结果、撤回及最终清理 |
 | iOS Simulator关键路径 | PASS（有限范围） | Build45临时iPhone17，图片/视频/键盘/预览；完整无障碍及真机未验收 |
 | 运维、制品与即时回滚 | PASS（有限范围） | 当前03/回滚02同schema、停写dump/SHA/TOC/异地任务；未做本轮完整恢复演练 |
-| 完整移动端发布 | BLOCKED | Distribution/Apple协议、TestFlight分发、真机/Android、较大库/视频/并发、账单、恢复演练和独立发布复核尚缺 |
+| TestFlight Build45更新 | PASS（有符号警告） | 协议/签名阻塞解除，正式包上传成功且已在原有群组“正在测试”；三项第三方framework崩溃符号待补 |
+| 完整移动端正式发布 | BLOCKED | 真机/Android、较大库/视频/并发、账单、恢复演练和独立发布复核尚缺 |
 
-检索开发联调阶段为READY WITH CONDITIONS；完整移动端正式发布仍BLOCKED。已完成本轮授权的清理、推送、API/Worker部署、公开素材与Simulator闭环及测试数据清理，不要求以另一轮重复调试替代上表的独立发布条件。
+检索开发联调与本轮TestFlight更新为READY WITH CONDITIONS；完整移动端正式发布仍BLOCKED。已完成本轮授权的清理、推送、API/Worker部署、公开素材与Simulator闭环、测试数据清理及Build45分发，不要求以另一轮重复调试替代上表的独立发布条件。Build45的正式签名、来源一致性、上传及最终测试状态见[本轮发布记录](../../reviews/2026-10-10-testflight-45.md)。

@@ -22,6 +22,7 @@
 
 - [移动端上线清单](mobile-launch-checklist.md)：功能分级与发布门槛。
 - [部署说明](deployment.md)：部署顺序、运行目录和按日期记录的发布证据。
+- [TestFlight Build45发布记录](reviews/2026-10-10-testflight-45.md)：正式签名、来源一致性、上传及可测试状态证据。
 - [生产运维入口](production-operations.md)：负责人入口与凭据位置，不记录凭据值。
 - [数据库说明](database.md)、[迁移指南](database-migration.md)、[备份与恢复](database-backup.md)：数据库运行与回滚边界。
 - [数据库恢复负责人手册](database-recovery-owner-guide.md)：隔离恢复和保管流程。

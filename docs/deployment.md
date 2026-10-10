@@ -45,7 +45,11 @@ releases目录只留03与02。九个历史release连同依赖、源码、配置�
 `backups/cleanup-20261010/retrieval-production-final-evidence.tar.gz`，SHA256
 `f1aa33c81f57a9e709aefe11687c7e0b218e0d34e2566ed7a5af500734f0e1b3`，不含临时凭据。
 相册Agent0.2.2、模型回归、失败及费用边界见[检索发布证据](agents/media-retrieval/release-evidence.md)。
-检索开发联调为READY WITH CONDITIONS；完整移动端发布仍BLOCKED，Build45 TestFlight未上传，签名/Apple协议、
+2026-10-10已解除Apple协议与Distribution签名阻塞，使用现有Cloud Managed Apple Distribution导出并上传
+TestFlight 1.0(45)，App Store Connect已显示“正在测试”，关联已有内部/外部测试群组。
+移动端来源与当前代码一致、正式API origin及发布签名均已核验；来源SHA、上传日志和截图见
+[Build45发布记录](reviews/2026-10-10-testflight-45.md)。上传仍有三项第三方framework dSYM警告，影响其崩溃符号化。
+检索开发联调与本轮TestFlight更新为READY WITH CONDITIONS；完整移动端正式发布仍BLOCKED，
 真机/Android、较大库与代表性视频、账单、恢复演练及独立复核仍需完成。
 
 ## 已核对的发布基线（2026-10-09，历史）

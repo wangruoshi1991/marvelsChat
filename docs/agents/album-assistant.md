@@ -65,7 +65,7 @@ RN 0.87.1 已移除旧独立 assets registry，`react-native-svg@15.15.5` 仍导
 
 2026-10-09 已部署到生产 runtime `album-assistant-20261009-01`，来源提交 `a634fc45ba3551577598e337d44e682192b6ba95`，迁移 035 已应用；生产 readiness 200，API 与 Worker active。停写备份 `marvels_chat-20261009T092124Z.dump` 的本地 SHA 与从 OSS 下载、解密后的明文 SHA 一致。此部署没有读取生产用户素材，也没有触发生产模型调用。
 
-Build 45 App Store archive 成功，包含正式 API origin，且 RN 构建期 `braces`/Metro 工具依赖未出现在归档 JS bundle；但 archive 使用 Development provisioning（`get-task-allow=true`），导出因缺少 iOS Distribution 证书而失败，日志提示 `PLA Update available`。TestFlight 尚未收到 Build 45。账号持有人需先在 Apple Developer / App Store Connect 确认并处理待更新协议，再准备可用的 Distribution 签名并重新导出上传。
+2026-10-09 当时Build 45 App Store archive 成功，包含正式 API origin，且 RN 构建期 `braces`/Metro 工具依赖未出现在归档 JS bundle；但 archive 使用 Development provisioning（`get-task-allow=true`），导出因缺少 iOS Distribution 证书而失败，日志提示 `PLA Update available`，当时尚未上传。该历史阻塞已于2026-10-10解除，最终状态见下方当前记录。
 
 部署完成时本机访问 Wikimedia Commons API 超时，因此当时没有创建生产临时账号、上传测试素材或调用对话/检索模型；该状态已由下方后续最小 smoke 更新。隔离 QA E2E 仍只代表有限公开图片/合成视频闭环。大库 held-out 检索质量、代表性视频、实际账单、真机/Android 和 TestFlight 分发仍须分别验证；不可将有限 QA 素材、Simulator 或服务 readiness 当成这些验收的替代。
 
@@ -84,3 +84,5 @@ Build 45 App Store archive 成功，包含正式 API origin，且 RN 构建期 `
 同一Simulator旧聊天在03再次发送图片/视频查询，正常确认匹配并更正之前的摘要否定；16组真实对话模型回归通过。
 临时账号、OSS对象、凭据和测试设备已清理。前两轮回复修复未完全通过、第一批视频未知故障、费用及质量限制均保留在
 [专项发布证据](media-retrieval/release-evidence.md)，不把开发联调完成写成完整移动端上线就绪。
+
+TestFlight 1.0(45)已于2026-10-10正式签名导出并上传，Apple处理完成后显示“正在测试”，关联已有内部/外部测试群组，现有测试用户可更新。归档的MiaoxunRN子树与上传时仓库相同，正式包get-task-allow=false，API为正式HTTPS origin。三项第三方framework崩溃符号待补；完整来源与验证见[Build45发布记录](../reviews/2026-10-10-testflight-45.md)。真机/Android及其他完整上线门槛仍须分别验收。

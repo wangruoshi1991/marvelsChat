@@ -7,7 +7,7 @@
 - 正式移动端为 MiaoxunRN/，API/Worker为 backend/，管理台为 admin/。
 - 目标是可上线的真实产品；无假数据、固定检索词表、关键词降级、旧schema兼容或静默失败路径。
 - 保留已有修改；不用私人素材测试，不替其他用户取得云端AI同意，不自动上传手机相册。
-- 本轮用户授权清理本地/线上冗余、提交推送当前分支及部署检索API/Worker，公开素材模型调用授权有效。没有合并main，没有上传新TestFlight。
+- 本轮用户授权清理本地/线上冗余、提交推送当前分支、部署检索API/Worker及更新TestFlight，公开素材模型调用授权有效。用户自行同意Apple协议后，Build45已上传并进入测试；没有合并main。
 
 ## 已完成的检索阶段
 
@@ -25,7 +25,7 @@
 - API/Worker/数据库/备份timer active，NRestarts=0，health/ready200，最终Worker心跳1秒；环境root:marvels0640、代码root:root只读。
 - AVATAR_3D_ALLOWLIST=*。检索limited_release，Agent/Provider/index开启，无账号白名单、每日次数/月预算/全局预算上限；保留瞬时限流、用户同意、未知费用阻断，无自动重试。
 - Build45连接正式HTTPS。临时iPhone17实际发起图片和运动视频检索，卡片、原图预览、软件键盘布局与2.5s视频定位通过。03在同一旧聊天复验图片/视频，正确报告匹配并更正历史否定。两台原有模拟器数据保留；临时设备和凭据已清理。
-- Build45 archive已生成，但Distribution证书及Apple待更新协议仍阻塞TestFlight；没有上传，Simulator不代替真机/Android验收。
+- TestFlight 1.0(45)已于2026-10-10上传，App Store Connect显示“正在测试”，关联已有内部/外部测试群组，现有测试用户可更新。用户自行处理Apple协议后，现有Cloud Managed Apple Distribution完成正式导出；没有新建/撤销证书。归档的移动端源码与上传时仓库一致，正式包get-task-allow=false、codesign校验通过。三项第三方framework dSYM警告不阻断分发，仍需补符号；来源、SHA及页面证据见[Build45发布记录](../reviews/2026-10-10-testflight-45.md)。Simulator不代替真机/Android验收。
 
 ## 验证证据与失败边界
 
@@ -48,7 +48,7 @@
 
 ## 下一步
 
-检索开发联调阶段为READY WITH CONDITIONS；完整移动端发布仍BLOCKED。后续分别处理Build45签名/协议与分发、真机/Android、代表性大库/视频与并发质量、供应商账单核对、完整隔离恢复演练及独立发布复核。其他产品能力以[上线清单](../mobile-launch-checklist.md)为准，不声称全项目零问题。
+检索开发联调与本轮TestFlight更新为READY WITH CONDITIONS；完整移动端正式发布仍BLOCKED。下一步使用TestFlight Build45完成真机回归，另行补Android、代表性大库/视频与并发质量、供应商账单核对、完整隔离恢复演练、第三方framework崩溃符号及独立发布复核。其他产品能力以[上线清单](../mobile-launch-checklist.md)为准，不声称全项目零问题。
 
 可以从本页接续新对话；先核对当前代码与运行状态，再确定下一项，不重复已经完成的检索修复和清理。
 
