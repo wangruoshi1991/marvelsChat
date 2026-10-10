@@ -14,7 +14,7 @@ const fixture = ({ enabled = true, indexedAssets = 1, totalAssets = 1, error = n
       searchMediaRetrieval: async args => {
         if (error) throw error;
         searches.push(args);
-        return { agentRunId: "run-1", results: [{ mediaAssetId: "asset-1", kind: "video", matchedFrameTimestampMs: 3000 }] };
+        return { agentRunId: "run-1", results: [{ mediaAssetId: "asset-1", kind: "video", matchedFrameTimestampMs: 3000, summary: "untrusted incomplete display summary" }] };
       },
     },
   });
@@ -26,6 +26,8 @@ test("album tool binds search to server owner, one message and real references",
   assert.deepEqual(await tool.execute("list_albums", {}), { albums: [{ id: albumId, title: "海边" }], truncated: false });
   const result = await tool.execute("search_media", { query: "黄昏海边的骑行视频", kind: "video", albumId });
   assert.equal(result.results[0].matchedFrameTimestampMs, 3000);
+  assert.equal(result.matchedQuery, "黄昏海边的骑行视频");
+  assert.equal(Object.hasOwn(result.results[0], "summary"), false);
   assert.equal(searches[0].userId, "owner");
   assert.equal(searches[0].idempotencyKey, "album-chat:message-1:search");
   assert.deepEqual(tool.metadata(), { version: 1, retrievalRunIds: ["run-1"], outcome: "found" });

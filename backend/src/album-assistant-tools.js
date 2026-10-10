@@ -13,7 +13,7 @@ const albumAssistantToolDefinitions = [
   },
   {
     name: "search_media",
-    description: "调用检索 Agent 在当前用户已上传的图片和视频中查找。根据对话补全查询；相册范围只使用 list_albums 返回的 ID。结果已按查询过滤，视频带匹配时间。summary 只作简短展示，不能以摘要省略属性为由否定匹配；不推断额外细节。空结果不代表整个相册不存在相关内容。",
+    description: "调用检索 Agent 在当前用户已上传的图片和视频中查找。根据对话补全查询；相册范围只使用 list_albums 返回的 ID。matchedQuery 是本次实际执行的查询，found 结果已满足该查询，视频带匹配时间；当前结果优先于历史回复中的猜测。不要再判定画面或推断额外细节。空结果不代表整个相册不存在相关内容。",
     parameters: {
       type: "object",
       properties: {
@@ -69,7 +69,14 @@ export function createAlbumAssistantTools({ userId, inputMessageId, service, lis
         await assertAccess();
         retrievalRunIds.push(response.agentRunId);
         outcome = response.results.length ? "found" : "empty";
-        return { state: outcome, results: response.results, partiallyIndexed: status.backfill.indexedAssets < status.backfill.totalAssets };
+        return {
+          state: outcome,
+          matchedQuery: args.query,
+          results: response.results.map(({ mediaAssetId, kind, matchedFrameTimestampMs }) => ({
+            mediaAssetId, kind, matchedFrameTimestampMs,
+          })),
+          partiallyIndexed: status.backfill.indexedAssets < status.backfill.totalAssets,
+        };
       } catch (error) {
         if (!(error instanceof MediaRetrievalServiceError)) throw error;
         outcome = error.code;

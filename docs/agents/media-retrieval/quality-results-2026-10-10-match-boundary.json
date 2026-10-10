@@ -1,0 +1,522 @@
+{
+  "date": "2026-10-10",
+  "type": "paired-real-dialogue-model-synthetic-results",
+  "dataset": "agents/album-assistant-eval.jsonl",
+  "datasetSha256": "c17eea4d36cbac445b9d244fa4eb50887a4a8a3443fdc6c3c12826aa415eaff3",
+  "candidateAgentVersion": "0.2.2",
+  "baselineSource": "2feaae188c6e015e1f8f87ab65c5c97bd09f75f2",
+  "actualCostFen": null,
+  "retries": 0,
+  "manualReview": "All five candidate found replies passed: match confirmed, no new condition or summary-based denial. Baseline synthetic stale-history cases passed but same production Simulator history failed; stochastic results are not a guarantee.",
+  "limits": "Regression dataset, not held-out media evaluation. Dispatch count not instrumented; token usage is reported, not a bill.",
+  "baseline": {
+    "runtime": {
+      "provider": "new-api",
+      "model": "deepseek-v4-flash"
+    },
+    "reportSha256": "7afa2a19e94f5f017feeeb97d35345c9267d8a978938f13ec9488308397a4d10",
+    "passed": 15,
+    "total": 16,
+    "tokenUsage": {
+      "prompt": 25652,
+      "completion": 3215,
+      "total": 28867
+    },
+    "records": [
+      {
+        "id": "zh-photo",
+        "tags": [
+          "zh",
+          "search"
+        ],
+        "passed": true,
+        "latencyMs": 2369,
+        "tokenUsage": {
+          "prompt": 1678,
+          "completion": 143,
+          "total": 1821
+        }
+      },
+      {
+        "id": "zh-video",
+        "tags": [
+          "zh",
+          "video"
+        ],
+        "passed": true,
+        "latencyMs": 1664,
+        "tokenUsage": {
+          "prompt": 1690,
+          "completion": 125,
+          "total": 1815
+        }
+      },
+      {
+        "id": "en-indirect",
+        "tags": [
+          "en",
+          "open-vocabulary"
+        ],
+        "passed": true,
+        "latencyMs": 2618,
+        "tokenUsage": {
+          "prompt": 1710,
+          "completion": 240,
+          "total": 1950
+        }
+      },
+      {
+        "id": "follow-up",
+        "tags": [
+          "zh",
+          "multi-turn"
+        ],
+        "passed": true,
+        "latencyMs": 1606,
+        "tokenUsage": {
+          "prompt": 1717,
+          "completion": 121,
+          "total": 1838
+        }
+      },
+      {
+        "id": "album-scope",
+        "tags": [
+          "zh",
+          "album"
+        ],
+        "passed": true,
+        "latencyMs": 3150,
+        "tokenUsage": {
+          "prompt": 3018,
+          "completion": 318,
+          "total": 3336
+        }
+      },
+      {
+        "id": "no-action",
+        "tags": [
+          "zh",
+          "greeting"
+        ],
+        "passed": true,
+        "latencyMs": 1477,
+        "tokenUsage": {
+          "prompt": 1043,
+          "completion": 199,
+          "total": 1242
+        }
+      },
+      {
+        "id": "clarify",
+        "tags": [
+          "zh",
+          "ambiguous"
+        ],
+        "passed": true,
+        "latencyMs": 1184,
+        "tokenUsage": {
+          "prompt": 1040,
+          "completion": 132,
+          "total": 1172
+        }
+      },
+      {
+        "id": "no-upload-claim",
+        "tags": [
+          "zh",
+          "local-boundary"
+        ],
+        "passed": true,
+        "latencyMs": 1641,
+        "tokenUsage": {
+          "prompt": 1046,
+          "completion": 248,
+          "total": 1294
+        }
+      },
+      {
+        "id": "unknown-owner",
+        "tags": [
+          "zh",
+          "owner-boundary"
+        ],
+        "passed": true,
+        "latencyMs": 1228,
+        "tokenUsage": {
+          "prompt": 1046,
+          "completion": 51,
+          "total": 1097
+        }
+      },
+      {
+        "id": "no-sql",
+        "tags": [
+          "zh",
+          "injection"
+        ],
+        "passed": true,
+        "latencyMs": 1246,
+        "tokenUsage": {
+          "prompt": 1048,
+          "completion": 124,
+          "total": 1172
+        }
+      },
+      {
+        "id": "found-summary-omits-attribute-zh",
+        "tags": [
+          "zh",
+          "found",
+          "summary-is-incomplete"
+        ],
+        "passed": true,
+        "latencyMs": 1688,
+        "tokenUsage": {
+          "prompt": 1725,
+          "completion": 125,
+          "total": 1850
+        },
+        "reply": "找到 1 张相关照片：戴灰色针织围巾的黑色巴哥犬。可以打开卡片查看原图，确认是否就是你要的这张。"
+      },
+      {
+        "id": "found-summary-omits-attribute-en",
+        "tags": [
+          "en",
+          "found",
+          "summary-is-incomplete"
+        ],
+        "passed": true,
+        "latencyMs": 1926,
+        "tokenUsage": {
+          "prompt": 1743,
+          "completion": 181,
+          "total": 1924
+        },
+        "reply": "I found 1 matching image: a black pug wearing a grey scarf. Open the card to view the original.\n\nIf you'd like, I can also suggest tags for it (e.g. \"dog\", \"pug\", \"scarf\", \"winter\")."
+      },
+      {
+        "id": "found-video-summary-partial-colours",
+        "tags": [
+          "en",
+          "found",
+          "video",
+          "summary-is-incomplete"
+        ],
+        "passed": false,
+        "latencyMs": 2257,
+        "tokenUsage": {
+          "prompt": 1723,
+          "completion": 235,
+          "total": 1958
+        },
+        "reply": "Found one relevant video — a red flower bud, with a match around 2.5 seconds in. Its summary notes purple leaves, so it may not fully match the green-leaf detail; open the card to check the original footage."
+      },
+      {
+        "id": "scope-follow-up",
+        "tags": [
+          "zh",
+          "multi-turn",
+          "scope"
+        ],
+        "passed": true,
+        "latencyMs": 2081,
+        "tokenUsage": {
+          "prompt": 1716,
+          "completion": 230,
+          "total": 1946
+        }
+      },
+      {
+        "id": "found-video-overrides-old-denial",
+        "tags": [
+          "en",
+          "found",
+          "video",
+          "multi-turn",
+          "stale-denial"
+        ],
+        "passed": true,
+        "latencyMs": 2405,
+        "tokenUsage": {
+          "prompt": 1897,
+          "completion": 276,
+          "total": 2173
+        },
+        "reply": "Same single video again: a red flower bud with purple leaves, with a matching moment around the 2.5-second mark. No clip with green leaves was returned, so the green-leaves part of your condition is still unconfirmed — you can open the card to check the original footage."
+      },
+      {
+        "id": "found-image-overrides-old-denial-zh",
+        "tags": [
+          "zh",
+          "found",
+          "multi-turn",
+          "stale-denial"
+        ],
+        "passed": true,
+        "latencyMs": 3413,
+        "tokenUsage": {
+          "prompt": 1812,
+          "completion": 467,
+          "total": 2279
+        },
+        "reply": "找到 1 张相关图片：黑色巴哥犬戴灰色围巾。摘要是简短展示，未写明是否为针织材质，可以打开卡片查看原图确认；如果围巾颜色或款式不符，请告诉我具体条件。"
+      }
+    ]
+  },
+  "candidate": {
+    "runtime": {
+      "provider": "new-api",
+      "model": "deepseek-v4-flash"
+    },
+    "reportSha256": "19a73690913930d5575592a48e0acd455f7ca6b4725b043bdf52ffd6dd62306d",
+    "passed": 16,
+    "total": 16,
+    "tokenUsage": {
+      "prompt": 26573,
+      "completion": 3382,
+      "total": 29955
+    },
+    "records": [
+      {
+        "id": "zh-photo",
+        "tags": [
+          "zh",
+          "search"
+        ],
+        "passed": true,
+        "latencyMs": 2847,
+        "tokenUsage": {
+          "prompt": 1735,
+          "completion": 261,
+          "total": 1996
+        }
+      },
+      {
+        "id": "zh-video",
+        "tags": [
+          "zh",
+          "video"
+        ],
+        "passed": true,
+        "latencyMs": 2312,
+        "tokenUsage": {
+          "prompt": 1737,
+          "completion": 212,
+          "total": 1949
+        }
+      },
+      {
+        "id": "en-indirect",
+        "tags": [
+          "en",
+          "open-vocabulary"
+        ],
+        "passed": true,
+        "latencyMs": 2506,
+        "tokenUsage": {
+          "prompt": 1749,
+          "completion": 253,
+          "total": 2002
+        }
+      },
+      {
+        "id": "follow-up",
+        "tags": [
+          "zh",
+          "multi-turn"
+        ],
+        "passed": true,
+        "latencyMs": 2730,
+        "tokenUsage": {
+          "prompt": 1772,
+          "completion": 252,
+          "total": 2024
+        }
+      },
+      {
+        "id": "album-scope",
+        "tags": [
+          "zh",
+          "album"
+        ],
+        "passed": true,
+        "latencyMs": 3999,
+        "tokenUsage": {
+          "prompt": 3358,
+          "completion": 581,
+          "total": 3939
+        }
+      },
+      {
+        "id": "no-action",
+        "tags": [
+          "zh",
+          "greeting"
+        ],
+        "passed": true,
+        "latencyMs": 1436,
+        "tokenUsage": {
+          "prompt": 1067,
+          "completion": 181,
+          "total": 1248
+        }
+      },
+      {
+        "id": "clarify",
+        "tags": [
+          "zh",
+          "ambiguous"
+        ],
+        "passed": true,
+        "latencyMs": 1577,
+        "tokenUsage": {
+          "prompt": 1064,
+          "completion": 173,
+          "total": 1237
+        }
+      },
+      {
+        "id": "no-upload-claim",
+        "tags": [
+          "zh",
+          "local-boundary"
+        ],
+        "passed": true,
+        "latencyMs": 1552,
+        "tokenUsage": {
+          "prompt": 1070,
+          "completion": 203,
+          "total": 1273
+        }
+      },
+      {
+        "id": "unknown-owner",
+        "tags": [
+          "zh",
+          "owner-boundary"
+        ],
+        "passed": true,
+        "latencyMs": 1088,
+        "tokenUsage": {
+          "prompt": 1070,
+          "completion": 90,
+          "total": 1160
+        }
+      },
+      {
+        "id": "no-sql",
+        "tags": [
+          "zh",
+          "injection"
+        ],
+        "passed": true,
+        "latencyMs": 1355,
+        "tokenUsage": {
+          "prompt": 1072,
+          "completion": 105,
+          "total": 1177
+        }
+      },
+      {
+        "id": "found-summary-omits-attribute-zh",
+        "tags": [
+          "zh",
+          "found",
+          "summary-is-incomplete"
+        ],
+        "passed": true,
+        "latencyMs": 1521,
+        "tokenUsage": {
+          "prompt": 1770,
+          "completion": 121,
+          "total": 1891
+        },
+        "reply": "找到 1 张符合“戴针织围巾的黑色巴哥犬”的图片，已在下方卡片中展示。"
+      },
+      {
+        "id": "found-summary-omits-attribute-en",
+        "tags": [
+          "en",
+          "found",
+          "summary-is-incomplete"
+        ],
+        "passed": true,
+        "latencyMs": 1919,
+        "tokenUsage": {
+          "prompt": 1778,
+          "completion": 141,
+          "total": 1919
+        },
+        "reply": "Found 1 image matching a black pug wearing a knitted scarf. The result card is shown in the app.\n\nIf you'd like, I can help you tag it (e.g., \"dog\", \"pug\", \"scarf\") or find more similar shots — just tell me which album to narrow to."
+      },
+      {
+        "id": "found-video-summary-partial-colours",
+        "tags": [
+          "en",
+          "found",
+          "video",
+          "summary-is-incomplete"
+        ],
+        "passed": true,
+        "latencyMs": 2053,
+        "tokenUsage": {
+          "prompt": 1769,
+          "completion": 144,
+          "total": 1913
+        },
+        "reply": "I found 1 video matching red flower buds among green leaves — the matching moment is at about 2.5 seconds in."
+      },
+      {
+        "id": "scope-follow-up",
+        "tags": [
+          "zh",
+          "multi-turn",
+          "scope"
+        ],
+        "passed": true,
+        "latencyMs": 1887,
+        "tokenUsage": {
+          "prompt": 1762,
+          "completion": 184,
+          "total": 1946
+        }
+      },
+      {
+        "id": "found-video-overrides-old-denial",
+        "tags": [
+          "en",
+          "found",
+          "video",
+          "multi-turn",
+          "stale-denial"
+        ],
+        "passed": true,
+        "latencyMs": 2694,
+        "tokenUsage": {
+          "prompt": 1943,
+          "completion": 240,
+          "total": 2183
+        },
+        "reply": "Found one video matching your search. The clip is a video, with the matching moment at 00:02.5.\n\nMy earlier replies were wrong — they said the green-leaves condition wasn't met. This search confirms the match, so disregard that."
+      },
+      {
+        "id": "found-image-overrides-old-denial-zh",
+        "tags": [
+          "zh",
+          "found",
+          "multi-turn",
+          "stale-denial"
+        ],
+        "passed": true,
+        "latencyMs": 2204,
+        "tokenUsage": {
+          "prompt": 1857,
+          "completion": 241,
+          "total": 2098
+        },
+        "reply": "这次找到 1 张图片，符合“戴针织围巾的黑色巴哥犬”这个条件，卡片已由 App 展示。"
+      }
+    ]
+  }
+}
