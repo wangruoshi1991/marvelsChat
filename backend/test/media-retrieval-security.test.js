@@ -85,16 +85,12 @@ test("a disabled provider rejects a generic visual query instead of silently fal
   assert.equal(JSON.stringify(createdInputs).includes("示例姓名"), false);
 });
 
-test("B7 keeps a raw identity query exact-only even when the parser would miss that identity", async () => {
+test("incomplete model source coverage rejects without embedding or exact identity fallback", async () => {
   const embeddedTexts = [];
   const service = createMediaRetrievalUserService({
     provider: {
       getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true, userDailyRequestLimit: 3, globalDailyBudgetFen: 100 }),
-      parseRetrievalQuery: async () => ({
-        visualQuery: "Alice wearing a yellow dress",
-        identityTerms: [],
-        parseConfidence: "high",
-      }),
+      parseRetrievalQuery: async () => ({ spans: [{ text: "Alice wearing a yellow dress", role: "visual" }], parseConfidence: "high" }),
       embedText: async ({ input }) => {
         embeddedTexts.push(input.text);
         return Array.from({ length: 1024 }, () => 0.1);
@@ -106,31 +102,18 @@ test("B7 keeps a raw identity query exact-only even when the parser would miss t
       transitionMediaRetrievalRun: async () => null,
       reserveProviderBudget: async () => ({ reserved: true, reservationId: "reservation" }),
       settleProviderBudget: async () => null,
-      searchMediaRetrievalSegments: async (input) => {
-        assert.equal(input.identityTerms.includes("Alice"), true);
-        assert.equal(input.vector, null);
-        return [{
-          mediaAssetId: "asset-a",
-          kind: "image",
-          matchedFrameTimestampMs: null,
-          summary: "yellow dress",
-          score: null,
-          caption: "Alice",
-          tags: ["yellow"],
-          descriptor: { ocrText: [] },
-          metadata: {},
-        }];
+      searchMediaRetrievalSegments: async () => {
+        assert.fail("incomplete parser response cannot search any repository stage");
       },
     },
   });
 
-  const result = await service.searchMediaRetrieval({
+  await assert.rejects(service.searchMediaRetrieval({
     userId: "11111111-1111-4111-8111-111111111111",
     query: "celebrity Alice wearing a yellow dress",
-  });
+  }), error => error.code === "retrieval_policy_unverifiable");
 
   assert.equal(embeddedTexts.length, 0);
-  assert.deepEqual(result.results[0].matchReasons, ["identity-caption-exact"]);
 });
 
 test("a non-routeable runtime blocks a new run before consent, query text, or provider work is touched", async () => {

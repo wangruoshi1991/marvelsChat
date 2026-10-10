@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test, { after, before } from "node:test";
+import { resolveTestCandidateVisuals } from "./helpers/media-retrieval-visual-fixture.js";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { createConnectionAdapter } from "../src/db.js";
@@ -530,10 +531,15 @@ if (integrationEnabled) {
       userId: userA,
       vector: Array.from({ length: 1024 }, () => 0.1),
       embeddingProvenance: testEmbeddingProvenance,
-      lexicalTerms: ["yellow", "dress"],
       limit: 20,
     });
     assert.deepEqual(hits.map((hit) => hit.mediaAssetId), [assetA]);
+    const sources = await repository.getMediaRetrievalVisualSources({ userId: userA, mediaAssetIds: [assetA, assetB], indexEpoch: 1 });
+    assert.deepEqual(sources.map(source => source.id), [assetA]);
+    assert.equal(sources[0].userId, userA);
+    assert.equal(sources[0].contentRevisionAt, hits[0].contentRevisionAt);
+    assert.deepEqual(await repository.getMediaRetrievalVisualSources({ userId: userA, mediaAssetIds: [assetA], indexEpoch: 2 }), []);
+    await assert.rejects(repository.searchMediaRetrievalSegments({ userId: userA, lexicalTerms: ["yellow"] }), /not supported/);
     for (const mismatch of [
       { configurationHash: "c".repeat(64) }, { modelId: "different-model" },
       { modelVersion: "different-version" }, { normalization: "different-normalization" },
@@ -604,16 +610,18 @@ if (integrationEnabled) {
       embedImage: async () => { calls.push("image-embedding"); return vector; },
       parseRetrievalQuery: async ({ query }) => {
         calls.push("parse");
-        return { visualQuery: query, identityTerms: [], parseConfidence: "high" };
+        return { spans: [{ text: query, role: "visual" }], parseConfidence: "high" };
       },
       embedText: async () => { calls.push("text-embedding"); return vector; },
       rerankMediaCandidates: async ({ candidates }) => {
         calls.push("rerank");
-        return candidates.map((candidate) => ({ ...candidate, matchReasons: ["semantic-match"], score: 0.8 }));
+        return candidates.map((candidate) => ({ ...candidate, matchReasons: ["semantic-match"], score: 0.8,
+          constraintEvidence: [{ constraintIndex: 0, citations: [{ field: "image", itemIndex: 0 }] }] }));
       },
     };
     const service = createMediaRetrievalUserService({
       repository, provider,
+      resolveCandidateVisuals: resolveTestCandidateVisuals,
       getRuntimeStatus: async () => ({
         routeEligibility: { canRouteNewRun: true },
         publicAvailability: { state: "available", canStartRun: true, reasonCodes: [] },

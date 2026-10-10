@@ -7,10 +7,10 @@ import { descriptorSystemPrompt, querySystemPrompt, rerankSystemPrompt, DESCRIPT
 // These are deterministic contract checks, not evidence of live model quality.
 test("versioned provider instructions use examples that satisfy the actual schemas", () => {
   const descriptorExample = descriptorSystemPrompt.match(/\{.*\}/)[0];
-  const queryExample = querySystemPrompt.match(/\{[^{}]*\}/)[0];
+  const queryExample = querySystemPrompt.split("Example input: a ceramic vessel reflecting neon lights. Output: ")[1].split(". ")[0];
   assert.equal(descriptorSchema.safeParse(JSON.parse(descriptorExample)).success, true);
   assert.equal(mediaRetrievalParserResponseSchema.safeParse(JSON.parse(queryExample)).success, true);
-  assert.match(DESCRIPTOR_PROMPT_VERSION, /v5$/);
+  assert.match(DESCRIPTOR_PROMPT_VERSION, /v9$/);
   assert.match(descriptorSystemPrompt, /4 to 8 simple English words, at most 80 characters/);
   assert.match(rerankSystemPrompt, /candidateKey/);
   assert.doesNotMatch(rerankSystemPrompt, /mediaAssetId/);

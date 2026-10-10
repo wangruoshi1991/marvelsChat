@@ -1,0 +1,376 @@
+{
+  "version": "unsplash-6-assets-final-holdout-2026-10-v1",
+  "purpose": "Human-reviewed new assets and queries defined before first inference on frozen single-image candidate; no prior model calls on these assets. Small-corpus quality evidence, not concurrency or large-library recall.",
+  "source": "Unsplash",
+  "licenseUrl": "https://unsplash.com/license",
+  "acceptanceThresholds": {
+    "overallMinimum": 0.9,
+    "positiveTop1Minimum": 0.9,
+    "negativeEmptyMinimum": 0.9,
+    "compositionNegativeMinimum": 0.83
+  },
+  "assets": [
+    {
+      "id": "final-piano",
+      "imageUrl": "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?w=768&fit=max",
+      "sha256": "35dde5b3fd17d178d5ad4325cd7549d353da91485ad8b81745deff59ffc732af"
+    },
+    {
+      "id": "final-pineapple",
+      "imageUrl": "https://images.unsplash.com/photo-1550258987-190a2d41a8ba?w=768&fit=max",
+      "sha256": "93c344677a51f94657384dbb5ab50ec80a440f9cc7607dcadb2db770bc9fcb36"
+    },
+    {
+      "id": "final-tennis",
+      "imageUrl": "https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=768&fit=max",
+      "sha256": "18a3c857d68f8cfefbe8e7a7c73c2824672b3fd163dba8e6a54ecc2ca7cb358e"
+    },
+    {
+      "id": "final-deer",
+      "imageUrl": "https://images.unsplash.com/photo-1472396961693-142e6e269027?w=768&fit=max",
+      "sha256": "dc9779c33b78a3978f80fae8efc91af590c0850cb3e6613a099a8d302be473c0"
+    },
+    {
+      "id": "final-balloon",
+      "imageUrl": "https://images.unsplash.com/photo-1507608616759-54f48f0af0ee?w=768&fit=max",
+      "sha256": "47d4f02224b2cd06c7be41dc9e2784d29e3dd825a9cd347bc323c8a1617c5c6f"
+    },
+    {
+      "id": "final-landscape",
+      "imageUrl": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=768&fit=max",
+      "sha256": "efcdb0d84bed0b74cde347eab401649dab89e343120503c4dd1e21631bd85cea"
+    }
+  ],
+  "cases": [
+    {
+      "id": "final-piano-positive-1",
+      "query": "近距离拍摄的黑白钢琴键",
+      "expectedAssetIds": [
+        "final-piano"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "zh"
+      ]
+    },
+    {
+      "id": "final-piano-positive-2",
+      "query": "a wooden piano with black and white keys",
+      "expectedAssetIds": [
+        "final-piano"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "en"
+      ]
+    },
+    {
+      "id": "final-piano-positive-3",
+      "query": "沿斜线延伸的钢琴键盘",
+      "expectedAssetIds": [
+        "final-piano"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "zh"
+      ]
+    },
+    {
+      "id": "final-pineapple-positive-1",
+      "query": "浅色背景上一只完整的菠萝",
+      "expectedAssetIds": [
+        "final-pineapple"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "zh"
+      ]
+    },
+    {
+      "id": "final-pineapple-positive-2",
+      "query": "a pineapple with long pointed green leaves",
+      "expectedAssetIds": [
+        "final-pineapple"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "en"
+      ]
+    },
+    {
+      "id": "final-pineapple-positive-3",
+      "query": "表皮凹凸不平的橙黄色菠萝",
+      "expectedAssetIds": [
+        "final-pineapple"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "zh"
+      ]
+    },
+    {
+      "id": "final-tennis-positive-1",
+      "query": "橙色球场上举起球拍发球的人",
+      "expectedAssetIds": [
+        "final-tennis"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "zh"
+      ]
+    },
+    {
+      "id": "final-tennis-positive-2",
+      "query": "a tennis player serving on an orange court",
+      "expectedAssetIds": [
+        "final-tennis"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "en"
+      ]
+    },
+    {
+      "id": "final-tennis-positive-3",
+      "query": "球场地面上有白线和长影子",
+      "expectedAssetIds": [
+        "final-tennis"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "zh"
+      ]
+    },
+    {
+      "id": "final-deer-positive-1",
+      "query": "草地上两只鹿背后有树林和岩壁",
+      "expectedAssetIds": [
+        "final-deer"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "zh"
+      ]
+    },
+    {
+      "id": "final-deer-positive-2",
+      "query": "two deer standing in grass below a rocky mountain",
+      "expectedAssetIds": [
+        "final-deer"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "en"
+      ]
+    },
+    {
+      "id": "final-deer-positive-3",
+      "query": "一只有鹿角的鹿和另一只鹿在草地上",
+      "expectedAssetIds": [
+        "final-deer"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "zh"
+      ]
+    },
+    {
+      "id": "final-balloon-positive-1",
+      "query": "蓝绿色天空中飘着多只热气球",
+      "expectedAssetIds": [
+        "final-balloon"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "zh"
+      ]
+    },
+    {
+      "id": "final-balloon-positive-2",
+      "query": "many colorful hot air balloons floating in the sky",
+      "expectedAssetIds": [
+        "final-balloon"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "en"
+      ]
+    },
+    {
+      "id": "final-balloon-positive-3",
+      "query": "彩色条纹的热气球有悬挂的吊篮",
+      "expectedAssetIds": [
+        "final-balloon"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "zh"
+      ]
+    },
+    {
+      "id": "final-landscape-positive-1",
+      "query": "两侧红色岩石之间的公路",
+      "expectedAssetIds": [
+        "final-landscape"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "zh"
+      ]
+    },
+    {
+      "id": "final-landscape-positive-2",
+      "query": "a dark paved road with double yellow lines through red rocks",
+      "expectedAssetIds": [
+        "final-landscape"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "en"
+      ]
+    },
+    {
+      "id": "final-landscape-positive-3",
+      "query": "公路延伸向远处的山峰",
+      "expectedAssetIds": [
+        "final-landscape"
+      ],
+      "tags": [
+        "final-holdout",
+        "positive",
+        "zh"
+      ]
+    },
+    {
+      "id": "negative-aircraft",
+      "query": "一架大型客机正在机场降落",
+      "expectedAssetIds": [],
+      "tags": [
+        "final-holdout",
+        "negative"
+      ]
+    },
+    {
+      "id": "negative-elephant",
+      "query": "an elephant standing in shallow water",
+      "expectedAssetIds": [],
+      "tags": [
+        "final-holdout",
+        "negative"
+      ]
+    },
+    {
+      "id": "negative-snowman",
+      "query": "雪地中戴着红围巾的雪人",
+      "expectedAssetIds": [],
+      "tags": [
+        "final-holdout",
+        "negative"
+      ]
+    },
+    {
+      "id": "negative-meal",
+      "query": "a bowl of noodles with chopsticks",
+      "expectedAssetIds": [],
+      "tags": [
+        "final-holdout",
+        "negative"
+      ]
+    },
+    {
+      "id": "negative-robot",
+      "query": "工厂里伸展机械臂的机器人",
+      "expectedAssetIds": [],
+      "tags": [
+        "final-holdout",
+        "negative"
+      ]
+    },
+    {
+      "id": "negative-ship",
+      "query": "a sailing ship surrounded by ocean waves",
+      "expectedAssetIds": [],
+      "tags": [
+        "final-holdout",
+        "negative"
+      ]
+    },
+    {
+      "id": "composition-piano-water",
+      "query": "黑白键钢琴沉在水下，旁边有游动的鱼",
+      "expectedAssetIds": [],
+      "tags": [
+        "final-holdout",
+        "negative",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-pineapple-keys",
+      "query": "a whole pineapple resting on a piano keyboard",
+      "expectedAssetIds": [],
+      "tags": [
+        "final-holdout",
+        "negative",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-tennis-fruit",
+      "query": "在橙色球场上发球的人手里握着菠萝",
+      "expectedAssetIds": [],
+      "tags": [
+        "final-holdout",
+        "negative",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-deer-balloon",
+      "query": "two deer holding colorful hot air balloons above them",
+      "expectedAssetIds": [],
+      "tags": [
+        "final-holdout",
+        "negative",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-balloon-bowl",
+      "query": "彩色热气球装在桌上的水果碗里",
+      "expectedAssetIds": [],
+      "tags": [
+        "final-holdout",
+        "negative",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-road-keys",
+      "query": "a paved road made of black and white piano keys between red rocks",
+      "expectedAssetIds": [],
+      "tags": [
+        "final-holdout",
+        "negative",
+        "composition"
+      ]
+    }
+  ]
+}

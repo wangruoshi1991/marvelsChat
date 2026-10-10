@@ -15,6 +15,7 @@ const sourceRowsCte = (userId) => ({
         segment.media_asset_id,
         asset.kind,
         asset.album_id,
+        asset.content_revision_at,
         segment.frame_timestamp_ms,
         segment.descriptor,
         segment.embedding,
@@ -46,14 +47,14 @@ export function createMediaRetrievalRetrievalRepository({ query } = {}) {
     userId,
     vector = null,
     embeddingProvenance = null,
-    lexicalTerms = [],
+    lexicalTerms,
     identityTerms = [],
     kind = null,
     albumId = null,
     limit = 10,
   }) => {
     const normalizedVector = vectorLiteral(vector);
-    const terms = normalizedTerms(lexicalTerms, 6);
+    if (lexicalTerms !== undefined) throw new TypeError("Local lexical retrieval is not supported.");
     const source = sourceRowsCte(userId);
     const clauses = ["s.user_id = ?"];
     const params = [userId];
@@ -69,14 +70,6 @@ export function createMediaRetrievalRetrievalRepository({ query } = {}) {
     if (albumId) {
       clauses.push("s.album_id = ?");
       params.push(albumId);
-    }
-    if (terms.length) {
-      const lexicalClauses = terms.map(() => "(s.caption ILIKE ? OR s.tags::text ILIKE ? OR s.descriptor::text ILIKE ? OR s.metadata::text ILIKE ?)");
-      clauses.push(`(${lexicalClauses.join(" AND ")})`);
-      for (const term of terms) {
-        const pattern = `%${term.replace(/[\\%_]/g, "\\$&")}%`;
-        params.push(pattern, pattern, pattern, pattern);
-      }
     }
     const exactIdentityTerms = normalizedTerms(identityTerms, 12);
     for (const term of exactIdentityTerms) {
@@ -108,6 +101,7 @@ export function createMediaRetrievalRetrievalRepository({ query } = {}) {
         s.frame_timestamp_ms,
         s.descriptor,
         s.kind,
+        s.content_revision_at,
         s.caption,
         s.tags,
         s.metadata,
@@ -122,5 +116,24 @@ export function createMediaRetrievalRetrievalRepository({ query } = {}) {
     return rows.map(mapSegment);
   };
 
-  return { searchMediaRetrievalSegments };
+  const getMediaRetrievalVisualSources = async ({ userId, mediaAssetIds, indexEpoch }) => {
+    if (!Array.isArray(mediaAssetIds) || !mediaAssetIds.length || mediaAssetIds.length > 20 ||
+      new Set(mediaAssetIds).size !== mediaAssetIds.length ||
+      mediaAssetIds.some(id => typeof id !== "string" || !/^[a-f0-9-]{36}$/iu.test(id)) ||
+      !Number.isSafeInteger(indexEpoch) || indexEpoch < 1) throw new TypeError("Invalid retrieval visual sources.");
+    const rows = await query(`SELECT a.id, a.user_id, a.kind, a.storage_key, a.mime_type, a.byte_size, a.status, a.content_revision_at
+      FROM station_media_assets AS a
+      JOIN media_retrieval_profiles AS p ON p.user_id = a.user_id
+      WHERE a.user_id = ? AND a.id IN (${mediaAssetIds.map(() => "?").join(",")})
+        AND a.status = 'uploaded' AND a.deleted_at IS NULL
+        AND p.index_state = 'enabled' AND p.consent_version = ? AND p.index_epoch = ?`,
+    [userId, ...mediaAssetIds, MEDIA_RETRIEVAL_CONSENT_VERSION, indexEpoch]);
+    return rows.map(row => ({
+      id: row.id, userId: row.user_id, kind: row.kind, storageKey: row.storage_key, mimeType: row.mime_type,
+      byteSize: toInteger(row.byte_size), status: row.status,
+      contentRevisionAt: new Date(row.content_revision_at).toISOString(),
+    }));
+  };
+
+  return { searchMediaRetrievalSegments, getMediaRetrievalVisualSources };
 }

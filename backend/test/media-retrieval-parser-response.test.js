@@ -17,6 +17,7 @@ const createMediaRetrievalUserService = (input) => createUserService({
   ...input,
 });
 const configuredRuntime = {
+  newApi: { baseUrl: "https://query-model.example/chat/completions", apiKey: "test-query-key", model: "test-dialogue-model" },
   mediaRetrieval: {
     enabled: true,
     providerCallsEnabled: true,
@@ -39,14 +40,12 @@ const responseJson = (payload, ok = true, status = 200) =>
   });
 
 const providerPayload = (candidate) => ({
-  output: {
     choices: [{
-      message: { content: [{ text: JSON.stringify(candidate) }] },
+      message: { content: JSON.stringify(candidate) },
     }],
-  },
 });
 
-const requestKind = (url) => String(url).includes("multimodal-generation") ? "parse" : "embedding";
+const requestKind = (url) => String(url).includes("query-model.example") ? "parse" : "embedding";
 
 const repositoryForSearch = (transitions) => ({
   getMediaRetrievalProfile: async () => ({ indexState: "enabled", consentVersion: "media-retrieval-consent-v1", indexEpoch: 1 }),
@@ -63,15 +62,46 @@ const repositoryForSearch = (transitions) => ({
 });
 
 const malformedCases = [
+  ...[
+    { parseConfidence: "high" },
+    { spans: "private-provider-marker", parseConfidence: "high" },
+    { spans: [null], parseConfidence: "high" },
+    { spans: [{ text: 7, role: "visual" }], parseConfidence: "high" },
+    { spans: [{ text: "", role: "visual" }], parseConfidence: "high" },
+    { spans: [{ text: "x".repeat(241), role: "visual" }], parseConfidence: "high" },
+    { spans: [{ text: "private-provider-marker", role: "unknown" }], parseConfidence: "high" },
+    { spans: [{ text: "private-provider-marker", role: "visual", extra: true }], parseConfidence: "high" },
+    { spans: Array(37).fill({ text: "x", role: "visual" }), parseConfidence: "high" },
+    { spans: [], parseConfidence: "unsupported" },
+    { spans: [], parseConfidence: 1 },
+    { spans: [] },
+    { spans: [], parseConfidence: "high", extra: true },
+    { spans: [{ text: "beach yellow dress", role: "visual" }], parseConfidence: "high" },
+  ].map((candidate, index) => ({ label: "v3 malformed source " + index, marker: "private-provider-marker", candidate })),
+  {
+    label: "missing visual constraints",
+    marker: "provider-body-missing-constraints",
+    candidate: { visualQuery: "provider-body-missing-constraints", identityTerms: [], parseConfidence: "high" },
+  },
+  {
+    label: "non-array visual constraints",
+    marker: "provider-body-invalid-constraints",
+    candidate: { visualQuery: "provider-body-invalid-constraints", visualConstraints: "provider-body-invalid-constraints", identityTerms: [], parseConfidence: "high" },
+  },
+  {
+    label: "too many visual constraints",
+    marker: "provider-body-many-constraints",
+    candidate: { visualQuery: "provider-body-many-constraints", visualConstraints: Array(12).fill("provider-body-many-constraints"), identityTerms: [], parseConfidence: "high" },
+  },
   {
     label: "string identityTerms",
     marker: "Summer",
-    candidate: { visualQuery: "provider-body-string-marker", identityTerms: "Summer", parseConfidence: "high" },
+    candidate: { visualQuery: "provider-body-string-marker", visualConstraints: ["provider-body-string-marker"], identityTerms: "Summer", parseConfidence: "high" },
   },
   {
     label: "missing identityTerms",
     marker: "provider-body-missing-marker",
-    candidate: { visualQuery: "provider-body-missing-marker", parseConfidence: "high" },
+    candidate: { visualQuery: "provider-body-missing-marker", visualConstraints: ["provider-body-missing-marker"], parseConfidence: "high" },
   },
   {
     label: "missing visualQuery",
@@ -81,33 +111,33 @@ const malformedCases = [
   {
     label: "missing parseConfidence",
     marker: "provider-body-missing-confidence-marker",
-    candidate: { visualQuery: "provider-body-missing-confidence-marker", identityTerms: [] },
+    candidate: { visualQuery: "provider-body-missing-confidence-marker", visualConstraints: ["provider-body-missing-confidence-marker"], identityTerms: [] },
   },
   {
     label: "null identityTerms",
     marker: "provider-body-null-marker",
-    candidate: { visualQuery: "provider-body-null-marker", identityTerms: null, parseConfidence: "high" },
+    candidate: { visualQuery: "provider-body-null-marker", visualConstraints: ["provider-body-null-marker"], identityTerms: null, parseConfidence: "high" },
   },
   {
     label: "object identityTerms",
     marker: "provider-body-object-marker",
-    candidate: { visualQuery: "provider-body-object-marker", identityTerms: { value: "Summer" }, parseConfidence: "high" },
+    candidate: { visualQuery: "provider-body-object-marker", visualConstraints: ["provider-body-object-marker"], identityTerms: { value: "Summer" }, parseConfidence: "high" },
   },
   {
     label: "mixed-type identityTerms",
     marker: "provider-body-mixed-marker",
-    candidate: { visualQuery: "provider-body-mixed-marker", identityTerms: ["Summer", 7], parseConfidence: "high" },
+    candidate: { visualQuery: "provider-body-mixed-marker", visualConstraints: ["provider-body-mixed-marker"], identityTerms: ["Summer", 7], parseConfidence: "high" },
   },
   {
     label: "overlong identity term",
     marker: "overlong-provider-marker",
-    candidate: { visualQuery: "overlong-provider-marker", identityTerms: ["overlong-provider-marker".repeat(4)], parseConfidence: "high" },
+    candidate: { visualQuery: "overlong-provider-marker", visualConstraints: ["overlong-provider-marker"], identityTerms: ["overlong-provider-marker".repeat(4)], parseConfidence: "high" },
   },
   {
     label: "too many identity terms",
     marker: "overflow-provider-marker-0",
     candidate: {
-      visualQuery: "provider-body-overflow-marker",
+      visualQuery: "provider-body-overflow-marker", visualConstraints: ["provider-body-overflow-marker"],
       identityTerms: Array.from({ length: 13 }, (_, index) => `overflow-provider-marker-${index}`),
       parseConfidence: "high",
     },
@@ -115,7 +145,7 @@ const malformedCases = [
   {
     label: "unsupported parse confidence",
     marker: "provider-body-confidence-marker",
-    candidate: { visualQuery: "provider-body-confidence-marker", identityTerms: [], parseConfidence: "unsupported" },
+    candidate: { visualQuery: "provider-body-confidence-marker", visualConstraints: ["provider-body-confidence-marker"], identityTerms: [], parseConfidence: "unsupported" },
   },
   {
     label: "non-string visualQuery",

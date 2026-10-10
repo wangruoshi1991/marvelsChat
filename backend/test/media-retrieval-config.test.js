@@ -71,7 +71,9 @@ test("media retrieval safe runtime status never returns credentials or the API b
     MEDIA_RETRIEVAL_USER_DAILY_REQUEST_LIMIT: "3",
     MEDIA_RETRIEVAL_GLOBAL_DAILY_BUDGET_FEN: "1000",
   });
-  const status = getMediaRetrievalConfigStatus({ mediaRetrieval: retrieval });
+  const status = getMediaRetrievalConfigStatus({ mediaRetrieval: retrieval,
+    newApi: { baseUrl: "https://query-model.example/chat/completions", apiKey: "private-test-key", model: "query-model" },
+  });
   const serialized = JSON.stringify(status);
 
   assert.equal(status.configured, true);
@@ -82,4 +84,18 @@ test("media retrieval safe runtime status never returns credentials or the API b
   assert.equal(Object.hasOwn(status, "apiKey"), false);
   assert.equal(Object.hasOwn(status, "apiBaseUrl"), false);
   assert.equal(status.embeddingNormalization, "provider-native-dense-v1");
+});
+
+test("query model readiness rejects endpoints that dispatch will reject", () => {
+  const mediaRetrieval = createMediaRetrievalConfig({
+    MEDIA_RETRIEVAL_ENABLED: "true", MEDIA_RETRIEVAL_PROVIDER_CALLS_ENABLED: "true",
+    MEDIA_RETRIEVAL_DASHSCOPE_API_KEY: "test-key",
+  });
+  for (const baseUrl of ["", "http://query.example", "not-a-url", "https://user:pass@query.example", "https://query.example/?token=value", "https://query.example/#fragment"]) {
+    const status = getMediaRetrievalConfigStatus({ mediaRetrieval,
+      newApi: { baseUrl, apiKey: "test-key", model: "test-model" },
+    });
+    assert.equal(status.configured, false, baseUrl);
+    assert.ok(status.missing.includes("query-model-not-configured"));
+  }
 });

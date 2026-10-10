@@ -13,11 +13,13 @@
 - 对话模型使用现有管家的 `NEW_API_*`，本轮实际验证为 DeepSeek `deepseek-v4-flash`。OpenAI-compatible 与 Anthropic 工具协议均有合同测试。
 - `list_albums` 只查询服务端会话 owner，最多 50 项；指定相册搜索必须使用本轮列表返回的 ID。
 - `search_media` 调用现有检索服务：解析视觉描述、owner 范围 pgvector 召回、验证候选重排、按素材合并视频帧。不按前端固定关键词查询。
-- 检索图片描述与视觉 embedding 继续使用独立的百炼多模态配置，不能把对话模型与视觉索引模型说成同一个模型。每条对话最多一次检索，最多两个工具、三轮对话模型请求。检索结束后关闭工具调用。
+- 检索查询角色解析复用管家的 `NEW_API_*` 对话模型；图片描述、视觉/文本 embedding 和真实画面判定使用独立的百炼多模态配置。不能把视觉索引模型说成对话模型。每条对话最多一次检索，最多两个工具、三轮对话模型请求。检索结束后关闭工具调用。
 - 工具每次执行重新校验 Agent 权限；模型不能传 owner、SQL 或任意业务字段。会话历史限最近 10 条，每条最多 2,000 字符，工具文本视为数据而非指令。
 - 素材主体只有 `station_media_assets` 与 OSS 原文件。相册移动只更新关系，检索段是可删除的派生索引。聊天 metadata 只存运行引用和结果状态，不复制原文件或检索结果描述。
 - 结果读取重新检查 owner、消息撤回、Agent scope、云端同意、当前索引 epoch 和素材存活；原文件内容版本晚于搜索完成时间的素材从旧结果中移除，保留原排名。图片与视频预览使用鉴权文件接口，视频加载后 seek 到匹配时间。换账号、换消息或卸载组件会使旧读取和预览失效。
 - 同一素材版本、重复上传完成通知、并发通知复用已有任务/ready 索引；文件内容改变失效旧索引。不同资产 ID 的相同字节文件尚未实现哈希合并，不能称为全库重复文件去重。
+
+本地候选的查询 schema v3 只分类原文片段，拼接必须完整还原输入，不接受旧 schema、改写、空解析或低置信度；身份只作 owner 数据中的完整值精确约束。视觉路径不使用固定词表、关键词 SQL 或本地词汇排序。召回后对最多 20 个候选逐张读取当前原图片或精确视频帧，每次只让模型看一张图，且全部视觉条件都须明确支持才返回。每张画面单独预留费用和核验权限；后续判定失败会阻断整个查询，不能返回部分成功。仅在请求内存中规范化原画面，不持久化第二份素材。
 
 用户每日次数与费用上限按当前开发联调控制保持 NULL，搜索仍限制 30 次/分钟。此限流为单进程内存实现，多实例前需要共享限流。调用账本是供应商操作预留/估计及待核对记录，不是用户扣款；充值和余额链路未交付。超时或未知费用不自动重试。
 
@@ -47,6 +49,10 @@ RN 0.87.1 已移除旧独立 assets registry，`react-native-svg@15.15.5` 仍导
 
 ## 证据与边界
 
+2026-10-10 后续本地候选已移除原文角色的固定词汇启发式和 B7 关键词排序。解析真实模型评测 24/24；逐张原画面判定后，旧图片回归 30/30、冻结配置后的全新六图首次独立评测 30/30（18 正例、12 负例、其中 6 个组合负例）。真实运动花朵视频此前六例通过；最终逐帧版本的真实服务验收覆盖图片、指定相册、视频精确时间、对话工具、幂等重放、跨账号、空结果和撤回，7 项通过、43 次调用，隔离数据残留为零。当前服务测试的 storage 是公开本地文件适配器、readiness 是注入的 service gate，不能当作生产 OSS/Worker readiness 或新的 Simulator 验收。来源引用校验不等于模型语义确定性保证。失败批次和旧 25/30 结果均保留在 [发布证据](media-retrieval/release-evidence.md) 中；当前候选未部署。
+
+可重复的隔离服务与聊天 HTTP 验收使用 `backend/scripts/media-retrieval-service-e2e.js --allow-paid --fixtures <公开素材目录> --report <新报告路径>`，数据库必须是 loopback 上以 `_migration_test` 结尾的专用迁移测试库。素材目录须含已固定 SHA 的 `fresh-dog.jpg`、`fresh-camera.jpg` 和 CC0 `public-flower.mp4`；所有文件在派发前核对 SHA。报告路径拒绝覆盖已有文件，调用不自动重试，测试用户及其关联运行在结束时清理。此命令会使用环境中显式配置的真实模型。
+
 - `backend/scripts/album-assistant-eval.js --allow-paid`：真实对话模型、合成工具响应的路由评测；JSONL 含中英文、指定相册、多轮、模糊、未上传本机素材、越权与 SQL 注入。不能当作真实召回质量评测。
 - `backend/scripts/album-assistant-e2e.js --base http://127.0.0.1:<QA端口> --bicycle <公开图片> --car <公开图片> --allow-paid`：仅允许隔离 loopback API；公开图片/合成视频，真实 OSS、Worker、模型与数据库。成功后会暂留 QA 素材供 Simulator，凭据仅存 0600 临时 session；`--cleanup <session.json>` 撤回后注销账号并清对象。
 - 本轮完整 E2E 已通过一次授权、指定相册图片、多轮视频 3–6 秒定位、消息重放、其他账号 404、鉴权预览、空负例及已有同意复用。前两批真实图片描述发生 30 秒超时，保留未知费用并清理测试素材；90 秒配置后新批次成功，未重放未知调用。
@@ -60,4 +66,12 @@ RN 0.87.1 已移除旧独立 assets registry，`react-native-svg@15.15.5` 仍导
 
 Build 45 App Store archive 成功，包含正式 API origin，且 RN 构建期 `braces`/Metro 工具依赖未出现在归档 JS bundle；但 archive 使用 Development provisioning（`get-task-allow=true`），导出因缺少 iOS Distribution 证书而失败，日志提示 `PLA Update available`。TestFlight 尚未收到 Build 45。账号持有人需先在 Apple Developer / App Store Connect 确认并处理待更新协议，再准备可用的 Distribution 签名并重新导出上传。
 
-本机访问 Wikimedia Commons API 超时，故本轮没有创建生产临时账号、上传测试素材或调用对话/检索模型。已完成的真实 Agent E2E 仍仅代表隔离 QA 数据库上的有限公开图片/合成视频闭环。大库 held-out 检索质量、生产对话 E2E、代表性视频、实际账单、真机/Android 和 TestFlight 分发仍须分别验证；不可将有限 QA 素材、Simulator 或服务 readiness 当成这些验收的替代。
+部署完成时本机访问 Wikimedia Commons API 超时，因此当时没有创建生产临时账号、上传测试素材或调用对话/检索模型；该状态已由下方后续最小 smoke 更新。隔离 QA E2E 仍只代表有限公开图片/合成视频闭环。大库 held-out 检索质量、代表性视频、实际账单、真机/Android 和 TestFlight 分发仍须分别验证；不可将有限 QA 素材、Simulator 或服务 readiness 当成这些验收的替代。
+
+### 2026-10-09 生产对话最小 smoke
+
+- 后续使用先前校验过的公开自行车 JPEG（与 `/tmp/miaoxun-retrieval-public-bicycle.jpg` SHA-256 相同）和两个随机临时账号，在精确生产 HTTPS origin 完成注册、素材上传至 OSS、首次云端 AI 同意、Worker 索引、指定相册对话检索和幂等重放。Agent 返回 `found`，结果包含预期素材；第二账号读取该结果为 404。
+- 两个临时账号均通过注销 API 删除，注销后原 token 访问 bootstrap 返回 401；相册 Agent 在账号注销前撤权。此次没有读取或搜索其他用户的生产素材。
+- smoke 脚本只在 `/tmp` 临时创建，限定生产 origin 且要求显式 `--production --allow-paid`；未改变 loopback-only 的隔离库 E2E 脚本。
+- smoke 后公网 `/api/health` 与 `/api/ready` 均为 200。随后通过专用生产 SSH 运维入口，在显式只读事务中核对临时用户名、测试文件名和测试相册标题计数均为 0；全库 `station_media_assets` 与相册/索引 profile、job、segment、staging 的 orphan owner 计数均为 0。账号注销服务依次删除其登记的私有存储对象，再删除账号；没有另行对本次 OSS 对象执行 HEAD。实际供应商账单也未核验。
+- 该最小图像 smoke 不是 held-out 质量评估。大库召回率、代表性视频、真实账单核对、真机/Android、Build 45 TestFlight 分发及完整隔离恢复演练仍未完成；项目不可标为完整上线就绪。

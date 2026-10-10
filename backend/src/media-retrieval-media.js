@@ -71,11 +71,30 @@ export async function loadOwnedMediaBytes({ asset, fetchOssObject }) {
   }
   try {
     const response = await fetchOssObject({ objectKey: asset.storageKey });
-    if (!response?.arrayBuffer) throw new MediaRetrievalMediaError("asset_not_indexable");
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (!bytes.length || bytes.length > sourceLimitFor(asset.kind)) {
+    if (typeof response?.body?.getReader !== "function") throw new MediaRetrievalMediaError("asset_not_indexable");
+    const maximum = sourceLimitFor(asset.kind);
+    const declaredLength = response.headers?.get?.("content-length");
+    if (/^\d+$/u.test(declaredLength || "") && Number(declaredLength) > maximum) {
+      await response.body.cancel();
       throw new MediaRetrievalMediaError("asset_not_indexable");
     }
+    const reader = response.body.getReader();
+    const chunks = [];
+    let byteLength = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        byteLength += value.byteLength;
+        if (byteLength > maximum) {
+          await reader.cancel();
+          throw new MediaRetrievalMediaError("asset_not_indexable");
+        }
+        chunks.push(Buffer.from(value));
+      }
+    } finally { reader.releaseLock(); }
+    if (!byteLength) throw new MediaRetrievalMediaError("asset_not_indexable");
+    const bytes = Buffer.concat(chunks, byteLength);
     return {
       bytes,
       mimeType: String(asset.mimeType || "application/octet-stream").split(";", 1)[0].toLowerCase(),
@@ -135,10 +154,10 @@ const parseDurationSeconds = (stdout) => {
   return duration;
 };
 
-export async function extractRepresentativeFrames({
+async function extractVideoFrames({
   bytes,
   mimeType,
-  maxFrames = MEDIA_RETRIEVAL_LIMITS.maxVideoFrames,
+  timestampsForDuration,
   spawnImpl = defaultSpawn,
   fsImpl = fs,
   temporaryDirectory = os.tmpdir(),
@@ -157,15 +176,11 @@ export async function extractRepresentativeFrames({
       args: ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", sourcePath],
       spawnImpl,
     });
-    const timestamps = selectRepresentativeFrameTimestamps({
-      durationSeconds: parseDurationSeconds(probe.stdout),
-      maxFrames,
-    });
+    const timestamps = timestampsForDuration(parseDurationSeconds(probe.stdout));
     const frames = [];
     for (const [index, timestamp] of timestamps.entries()) {
       const framePath = path.join(directory, `frame-${index}.webp`);
-      try {
-        await runProcess({
+      await runProcess({
           command: "ffmpeg",
           args: [
             "-v",
@@ -182,20 +197,47 @@ export async function extractRepresentativeFrames({
             framePath,
           ],
           spawnImpl,
-        });
-        const frameBytes = await fsImpl.readFile(framePath);
-        if (frameBytes.length) {
-          frames.push({ bytes: frameBytes, mimeType: "image/webp", timestampMs: Math.round(timestamp * 1000) });
-        }
-      } catch (error) {
-        if (error instanceof MediaRetrievalMediaError && error.code === "asset_not_indexable") continue;
-        throw error;
-      }
+      });
+      const frameBytes = await fsImpl.readFile(framePath);
+      if (!frameBytes.length) throw new MediaRetrievalMediaError("asset_not_indexable");
+      frames.push({ bytes: frameBytes, mimeType: "image/webp", timestampMs: Math.round(timestamp * 1000) });
     }
     if (!frames.length) throw new MediaRetrievalMediaError("asset_not_indexable");
     return frames;
   } finally {
     await fsImpl.rm(directory, { recursive: true, force: true });
+  }
+}
+
+export const extractRepresentativeFrames = (input) => extractVideoFrames({
+  ...input,
+  timestampsForDuration: durationSeconds => selectRepresentativeFrameTimestamps({ durationSeconds, maxFrames: input.maxFrames }),
+});
+
+export const extractVideoFramesAtTimestamps = (input) => extractVideoFrames({
+  ...input,
+  timestampsForDuration: duration => {
+    const timestamps = input.timestampsMs;
+    if (!Array.isArray(timestamps) || !timestamps.length || timestamps.length > MEDIA_RETRIEVAL_LIMITS.maxVideoFrames ||
+      new Set(timestamps).size !== timestamps.length || timestamps.some(value => !Number.isSafeInteger(value) || value < 0 || value >= duration * 1000)) {
+      throw new MediaRetrievalMediaError("asset_not_indexable");
+    }
+    return timestamps.map(value => value / 1000);
+  },
+});
+
+export async function normalizeImageForReranking({ bytes }) {
+  const source = asBuffer(bytes);
+  if (!source.length || source.length > MEDIA_RETRIEVAL_LIMITS.sourceImageMaxBytes) throw new MediaRetrievalMediaError("asset_not_indexable");
+  try {
+    const normalized = await sharp(source, { limitInputPixels: MEDIA_RETRIEVAL_LIMITS.decodedImageMaxPixels }).rotate()
+      .resize({ width: MEDIA_RETRIEVAL_LIMITS.rerankImageLongestEdge, height: MEDIA_RETRIEVAL_LIMITS.rerankImageLongestEdge, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 80 }).toBuffer();
+    if (!normalized.length || normalized.length > MEDIA_RETRIEVAL_LIMITS.rerankImageMaxBytes) throw new MediaRetrievalMediaError("asset_not_indexable");
+    return { bytes: normalized, mimeType: "image/webp" };
+  } catch (error) {
+    if (error instanceof MediaRetrievalMediaError) throw error;
+    throw new MediaRetrievalMediaError("asset_not_indexable");
   }
 }
 

@@ -13,35 +13,6 @@ export const MEDIA_RETRIEVAL_LIFECYCLE_STATUSES = Object.freeze([
   "blocked",
 ]);
 
-export const MEDIA_RETRIEVAL_JOB_TYPES = Object.freeze([
-  "index",
-  "purge-asset",
-  "purge-user",
-]);
-
-export const MEDIA_RETRIEVAL_SEGMENT_STATES = Object.freeze([
-  "ready",
-  "superseded",
-  "purged",
-]);
-
-export const MEDIA_RETRIEVAL_SAFE_ERROR_CODES = Object.freeze([
-  "retrieval_not_enabled",
-  "retrieval_client_update_required",
-  "retrieval_consent_required",
-  "retrieval_budget_exhausted",
-  "retrieval_service_unavailable",
-  "asset_not_indexable",
-  "run_not_found",
-  "retrieval_policy_unverifiable",
-  "retrieval_request_invalid",
-  "retrieval_request_in_progress",
-  "retrieval_provider_transport_unavailable",
-  "retrieval_purge_incomplete",
-  "retrieval_unknown_charge_no_retry",
-  "retrieval_index_enqueue_failed",
-]);
-
 export const MEDIA_RETRIEVAL_PROVIDER_PATHS = Object.freeze({
   multimodalGeneration: "/services/aigc/multimodal-generation/generation",
   multimodalEmbedding: "/services/embeddings/multimodal-embedding/multimodal-embedding",
@@ -58,8 +29,12 @@ export const MEDIA_RETRIEVAL_LIMITS = Object.freeze({
   videoMaxDurationSeconds: 600,
   mediaToolTimeoutMs: 60_000,
   maxDescriptorSummaryLength: 160,
+  maxDescriptorItemLength: 160,
   maxDescriptorArrayItems: 12,
   providerResponseMaxBytes: 512 * 1024,
+  rerankImageLongestEdge: 1024,
+  rerankImageMaxBytes: 512 * 1024,
+  rerankBatchSize: 1,
   runEventRetentionDays: 180,
   aggregateCostRetentionDays: 730,
   signedUrlMaxTtlSeconds: 600,

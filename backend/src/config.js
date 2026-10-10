@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { avatar3dCostVersion } from "./avatar-3d-quality.js";
+import { isModelQueryConfigured } from "./model-provider-endpoint.js";
 import {
   MEDIA_RETRIEVAL_LIMITS,
   MEDIA_RETRIEVAL_RUNTIME_LIMITS,
@@ -252,18 +253,21 @@ export const createMediaRetrievalConfig = (env = process.env) => ({
 
 export const getMediaRetrievalConfigStatus = (runtimeConfig) => {
   const retrieval = runtimeConfig?.mediaRetrieval || runtimeConfig;
+  const parserConfigured = isModelQueryConfigured(runtimeConfig?.newApi);
   const missing = [];
   if (!retrieval?.dashscopeApiKey) missing.push("credentials-not-configured");
   if (!retrieval?.dashscopeApiBaseUrl) missing.push("model-api-not-configured");
+  if (!parserConfigured) missing.push("query-model-not-configured");
   if (!retrieval?.enabled) missing.push("feature-disabled");
   if (!retrieval?.providerCallsEnabled) missing.push("provider-calls-disabled");
   return {
     configured: Boolean(
-      retrieval?.dashscopeApiKey && retrieval?.dashscopeApiBaseUrl,
+      retrieval?.dashscopeApiKey && retrieval?.dashscopeApiBaseUrl && parserConfigured,
     ),
     enabled: Boolean(retrieval?.enabled),
     providerCallsEnabled: Boolean(retrieval?.providerCallsEnabled),
     missing,
+    queryModel: runtimeConfig?.newApi?.model || null,
     captionModel: retrieval?.captionModel || "qwen3.6-flash",
     captionModelVersion:
       retrieval?.captionModelVersion

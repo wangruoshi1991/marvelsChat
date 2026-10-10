@@ -1,0 +1,1865 @@
+{
+  "evidenceVersion": 1,
+  "date": "2026-10-10",
+  "scope": "public-media-isolated-service-chat-HTTP-and-model-quality",
+  "implementationVerdict": "COMPLETE_WITH_CONDITIONS",
+  "productionCandidateDeployed": false,
+  "projectReleaseVerdict": "BLOCKED",
+  "productionRuntime": "album-assistant-20261009-01",
+  "privateMediaRead": false,
+  "productionDatabaseWrite": false,
+  "productionObjectStorageWrite": false,
+  "gitPush": false,
+  "testFlightUpload": false,
+  "rawReportDirectory": "/tmp/miaoxun-retrieval-generic.uMQmAV",
+  "reportHashAlgorithm": "SHA-256 of raw file bytes; all 27 reports matched local and remote",
+  "cleanup": {
+    "remoteStagingRemoved": true,
+    "productionDependencySymlinkTargetPreserved": true,
+    "exclusiveTestContainerStopped": true,
+    "databaseReverseTunnelStopped": true,
+    "otherServicesOrSimulatorDataChanged": false,
+    "publicLocalReportsRetained": true
+  },
+  "datasetHashAlgorithm": "SHA-256 of JSON.stringify(parsed dataset)",
+  "previousStage": {
+    "evidence": "quality-results-2026-10-10.json",
+    "providerCalls": 406,
+    "includedInCurrentTotals": false
+  },
+  "notes": [
+    "Current totals cover all separate batches, not just passing runs; interrupted and incomplete batches do not establish quality.",
+    "Schema-validated invocations and HTTP-success dispatches are separate statuses. Usage token fields may overlap and do not establish supplier cost; actualCostFen=null. No automatic retries occurred.",
+    "Qwen role-classification regressions and the Qwen-plus HTTP 403 are retained; the accepted parser uses the configured NEW_API dialogue model with no provider fallback.",
+    "Multi-image rerank v10/v11/v12 retained a false composition match despite passing aggregate thresholds. Those versions are rejected for this repair. Temperature 0 and high-only labels alone did not fix the error.",
+    "Five predeclared single-image positive/negative diagnostic pairs passed 10/10. The final v13 single-image candidate passed a 30-case visible regression and the first 30-case run on six new human-reviewed assets, selected before inference.",
+    "Every seen dataset, including the final holdout after this run, is now a visible regression set for future changes. No repeated lucky pass is used to claim stability.",
+    "Original bytes or exact current video frames are re-authorized and normalized only in request memory; citations prove source binding, not deterministic semantic correctness.",
+    "service-third was an incomplete checkpoint: the QA teardown initially deleted users before agent runs. Its 32 dispatches and 29 ledger rows were preserved in a local supplement; precise test users were then cleaned.",
+    "service-final and service-second stopped on macOS Finder metadata in the temporary staging directory with zero model calls. regression-single stopped on a missing evaluation import before dispatch. The first HTTP harness preflight also stopped before report creation due to a missing fixture, with zero dispatches.",
+    "service-http-complete used a Set where the real route requires an array; service-http-diagnostic reached result reads but wrongly expected 201 on idempotent replay, whose contract is 200. Both are failed QA harness batches and retained. The final corrected HTTP batch passed all nine stages.",
+    "Final HTTP E2E uses real PostgreSQL, authentication, registered product routes, conversation/tools and providers. Only storage is a local public-fixture adapter and readiness is an injected service gate. This is not current production OSS, Worker/HTTP readiness, or Simulator evidence.",
+    "The final service ledger contains 43 estimated retrieval operations; six dialogue calls outside that ledger yield 49 total dispatches. Zero reserved/unknown entries were observed in that batch.",
+    "No frontend changes were made; new RN evidence is the repository tests, while Simulator evidence remains dated 2026-10-09.",
+    "20,000 synthetic segments and constant vectors test owner-scoped execution plans and latency, not large-library relevance, concurrent users or million-item scalability."
+  ],
+  "qualityGates": {
+    "parser": {
+      "report": "role-final01-report.json",
+      "passed": 24,
+      "total": 24,
+      "criticalFailures": 0
+    },
+    "regression": {
+      "report": "regression-single-final-report.json",
+      "passed": 30,
+      "total": 30,
+      "positiveTop1": "18/18",
+      "negativeEmpty": "12/12",
+      "compositionNegative": "6/6"
+    },
+    "firstIndependentRun": {
+      "report": "holdout-single-final-report.json",
+      "dataset": "final-holdout-suite.json",
+      "passed": 30,
+      "total": 30,
+      "positiveTop1": "18/18",
+      "negativeEmpty": "12/12",
+      "compositionNegative": "6/6"
+    },
+    "movingVideoRegression": {
+      "report": "video-final-report.json",
+      "passed": 6,
+      "total": 6,
+      "promptStage": "v10"
+    },
+    "currentSingleFrameServiceAndHTTP": {
+      "report": "service-http-verified-report.json",
+      "passedStages": 9,
+      "totalStages": 9,
+      "providerDispatches": 49
+    }
+  },
+  "engineeringGates": {
+    "repository": {
+      "passed": true,
+      "backend": {
+        "passed": 467,
+        "environmentGatedSkipped": 4
+      },
+      "RN": {
+        "suites": 30,
+        "tests": 178
+      },
+      "agents": 33,
+      "admin": 14,
+      "log": "/tmp/miaoxun-retrieval-single-repository-verified.log"
+    },
+    "postgres": {
+      "passed": 9,
+      "total": 9,
+      "log": "/tmp/miaoxun-retrieval-single-postgres-final.log"
+    },
+    "syntheticOwnerQuery": {
+      "totalSegments": 20000,
+      "ownerSegments": 2000,
+      "returned": 20,
+      "samples": 10,
+      "p95Ms": 53.343917,
+      "maximumMs": 500,
+      "ownerIndexesUsed": true
+    },
+    "isolatedFinalResidue": {
+      "users": 0,
+      "assets": 0,
+      "segments": 0,
+      "runs": 0,
+      "threads": 0
+    }
+  },
+  "totals": {
+    "providerCalls": 1628,
+    "statusCounts": {
+      "succeeded": 1395,
+      "failed-billing-unknown": 5,
+      "http-succeeded": 228
+    },
+    "usageTotals": {
+      "input_tokens": 1592431,
+      "output_tokens": 94680,
+      "image_tokens": 778216,
+      "total_tokens": 1744651
+    },
+    "actualCostFen": null
+  },
+  "configurations": {
+    "configuration-1": {
+      "retrieval": {
+        "queryPromptVersion": "media-retrieval-query-prompt-v7",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v9",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v12",
+        "parserSchemaVersion": "media-retrieval-parser-response-v2",
+        "candidateLimit": 20
+      },
+      "query": null,
+      "provider": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "d42134f10fee0ee16cf90077dadca0c48ce4780bc893e10b2c5e0caf4c594aad"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "rerank": null
+    },
+    "configuration-2": {
+      "retrieval": {
+        "queryPromptVersion": "media-retrieval-query-prompt-v8",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v9",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v13",
+        "parserSchemaVersion": "media-retrieval-parser-response-v3",
+        "candidateLimit": 20
+      },
+      "query": null,
+      "provider": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "3a8313a28bf72240baf092356a39c5c48fee66b2b32e67bdbf9668b5135d7ea6"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "rerank": null
+    },
+    "configuration-3": {
+      "retrieval": {
+        "queryPromptVersion": "media-retrieval-query-prompt-v8",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v10",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v13",
+        "parserSchemaVersion": "media-retrieval-parser-response-v3",
+        "candidateLimit": 20
+      },
+      "query": null,
+      "provider": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "3a8313a28bf72240baf092356a39c5c48fee66b2b32e67bdbf9668b5135d7ea6"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "rerank": null
+    },
+    "configuration-4": {
+      "retrieval": {
+        "queryParsingProvenance": {
+          "modelId": "deepseek-v4-flash",
+          "protocol": "openai-compatible",
+          "promptVersion": "media-retrieval-query-prompt-v10",
+          "configurationHash": "10ecec1b64fe11a33133eaefb2e2d4d72861fbb9af14403b025e3630b39097bc"
+        },
+        "queryPromptVersion": "media-retrieval-query-prompt-v10",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v10",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v13",
+        "parserSchemaVersion": "media-retrieval-parser-response-v3",
+        "candidateLimit": 20
+      },
+      "query": null,
+      "provider": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "3a8313a28bf72240baf092356a39c5c48fee66b2b32e67bdbf9668b5135d7ea6"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "rerank": null
+    },
+    "configuration-5": {
+      "retrieval": {
+        "queryParsingProvenance": {
+          "modelId": "deepseek-v4-flash",
+          "protocol": "openai-compatible",
+          "promptVersion": "media-retrieval-query-prompt-v10",
+          "configurationHash": "10ecec1b64fe11a33133eaefb2e2d4d72861fbb9af14403b025e3630b39097bc"
+        },
+        "queryPromptVersion": "media-retrieval-query-prompt-v10",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v13",
+        "rerankTemperature": 0,
+        "rerankBatchSize": 1,
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v13",
+        "parserSchemaVersion": "media-retrieval-parser-response-v3",
+        "candidateLimit": 20
+      },
+      "query": null,
+      "provider": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "3a8313a28bf72240baf092356a39c5c48fee66b2b32e67bdbf9668b5135d7ea6"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "rerank": null
+    },
+    "configuration-6": {
+      "retrieval": null,
+      "query": null,
+      "provider": null,
+      "rerank": null
+    },
+    "configuration-7": {},
+    "configuration-8": {
+      "retrieval": {
+        "queryParsingProvenance": {
+          "modelId": "deepseek-v4-flash",
+          "protocol": "openai-compatible",
+          "promptVersion": "media-retrieval-query-prompt-v10",
+          "configurationHash": "10ecec1b64fe11a33133eaefb2e2d4d72861fbb9af14403b025e3630b39097bc"
+        },
+        "queryPromptVersion": "media-retrieval-query-prompt-v10",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v12",
+        "rerankTemperature": 0,
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v13",
+        "parserSchemaVersion": "media-retrieval-parser-response-v3",
+        "candidateLimit": 20
+      },
+      "query": null,
+      "provider": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "3a8313a28bf72240baf092356a39c5c48fee66b2b32e67bdbf9668b5135d7ea6"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "rerank": null
+    },
+    "configuration-9": {
+      "retrieval": {
+        "queryParsingProvenance": {
+          "modelId": "deepseek-v4-flash",
+          "protocol": "openai-compatible",
+          "promptVersion": "media-retrieval-query-prompt-v10",
+          "configurationHash": "10ecec1b64fe11a33133eaefb2e2d4d72861fbb9af14403b025e3630b39097bc"
+        },
+        "queryPromptVersion": "media-retrieval-query-prompt-v10",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v11",
+        "rerankTemperature": 0,
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v13",
+        "parserSchemaVersion": "media-retrieval-parser-response-v3",
+        "candidateLimit": 20
+      },
+      "query": null,
+      "provider": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "3a8313a28bf72240baf092356a39c5c48fee66b2b32e67bdbf9668b5135d7ea6"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "rerank": null
+    },
+    "configuration-10": {
+      "retrieval": null,
+      "query": null,
+      "provider": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "dialogue-model",
+          "modelVersion": "dialogue-model",
+          "configurationHash": "639a8b3abcf01ee1ea7c922f0d2af367a3787a81b606714f96df5238632d2f33"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "rerank": null
+    },
+    "configuration-11": {
+      "retrieval": null,
+      "query": {
+        "modelId": "deepseek-v4-flash",
+        "protocol": "openai-compatible",
+        "promptVersion": "media-retrieval-query-prompt-v10",
+        "configurationHash": "10ecec1b64fe11a33133eaefb2e2d4d72861fbb9af14403b025e3630b39097bc"
+      },
+      "provider": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "3a8313a28bf72240baf092356a39c5c48fee66b2b32e67bdbf9668b5135d7ea6"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "rerank": null
+    },
+    "configuration-12": {
+      "retrieval": null,
+      "query": null,
+      "provider": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-plus",
+          "modelVersion": "qwen3.6-plus",
+          "configurationHash": "e76c65097e306e3978c6de3df306701fba761c865949e1a45c9eac02f3f502bd"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "rerank": null
+    },
+    "configuration-13": {
+      "retrieval": null,
+      "query": null,
+      "provider": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "3a8313a28bf72240baf092356a39c5c48fee66b2b32e67bdbf9668b5135d7ea6"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "rerank": null
+    },
+    "configuration-14": {
+      "retrieval": null,
+      "query": {
+        "modelId": "deepseek-v4-flash",
+        "protocol": "openai-compatible",
+        "promptVersion": "media-retrieval-query-prompt-v10",
+        "configurationHash": "10ecec1b64fe11a33133eaefb2e2d4d72861fbb9af14403b025e3630b39097bc"
+      },
+      "provider": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "3a8313a28bf72240baf092356a39c5c48fee66b2b32e67bdbf9668b5135d7ea6"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "rerank": {
+        "promptVersion": "media-retrieval-semantic-rerank-prompt-v13",
+        "temperature": 0,
+        "batchSize": 1
+      }
+    }
+  },
+  "runs": [
+    {
+      "id": "baseline-report.json",
+      "reportSha256": "421ab2c7570a696bb8336d7c2ca917e18048c5bd551791b0cfdd779c78746caf",
+      "datasetVersion": "unsplash-6-assets-independent-2026-10-v1",
+      "datasetHash": "90983d29c6113154da6ac3d21c7827fc74c8f14651293024fb4bb8b4e32ef719",
+      "providerCalls": 99,
+      "statusCounts": {
+        "succeeded": 99
+      },
+      "usageTotals": {
+        "input_tokens": 73983,
+        "output_tokens": 6555,
+        "image_tokens": 5628,
+        "total_tokens": 83346
+      },
+      "usageEntries": 99,
+      "quality": null,
+      "completedCases": 29,
+      "failedCases": [
+        {
+          "id": "car-en-action",
+          "failure": null,
+          "diagnostic": null
+        },
+        {
+          "id": "car-en-detail",
+          "failure": null,
+          "diagnostic": null
+        },
+        {
+          "id": "composition-fork-watch",
+          "failure": "parser-visual-unverifiable",
+          "diagnostic": null
+        }
+      ],
+      "completedStages": null,
+      "failure": {
+        "name": null,
+        "code": null,
+        "stagePassedCount": null,
+        "type": "calibration_stopped"
+      },
+      "completion": "interrupted",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": {
+        "p50": 2069,
+        "p95": 2512,
+        "max": 2540
+      },
+      "configurationId": "configuration-1"
+    },
+    {
+      "id": "candidate01-report.json",
+      "reportSha256": "5a96c1d50fe8323ccad3b2069495fe237c2f435b4aad297ffed183232da618c3",
+      "datasetVersion": "unsplash-6-assets-independent-2026-10-v1",
+      "datasetHash": "90983d29c6113154da6ac3d21c7827fc74c8f14651293024fb4bb8b4e32ef719",
+      "providerCalls": 102,
+      "statusCounts": {
+        "succeeded": 102
+      },
+      "usageTotals": {
+        "input_tokens": 74572,
+        "output_tokens": 6471,
+        "image_tokens": 5628,
+        "total_tokens": 83851
+      },
+      "usageEntries": 102,
+      "quality": {
+        "passed": false,
+        "metrics": {
+          "overall": {
+            "passed": 26,
+            "total": 30
+          },
+          "positiveTop1": {
+            "passed": 14,
+            "total": 18
+          },
+          "negativeEmpty": {
+            "passed": 12,
+            "total": 12
+          },
+          "compositionNegative": {
+            "passed": 6,
+            "total": 6
+          }
+        },
+        "thresholds": {
+          "overallMinimum": 0.9,
+          "positiveTop1Minimum": 0.9,
+          "negativeEmptyMinimum": 0.9,
+          "compositionNegativeMinimum": 0.83
+        }
+      },
+      "completedCases": 30,
+      "failedCases": [
+        {
+          "id": "watch-en-detail",
+          "failure": null,
+          "diagnostic": null
+        },
+        {
+          "id": "car-en-action",
+          "failure": null,
+          "diagnostic": null
+        },
+        {
+          "id": "car-zh-scene",
+          "failure": null,
+          "diagnostic": null
+        },
+        {
+          "id": "car-en-detail",
+          "failure": null,
+          "diagnostic": null
+        }
+      ],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": {
+        "p50": 1951,
+        "p95": 3046,
+        "max": 3142
+      },
+      "configurationId": "configuration-2"
+    },
+    {
+      "id": "candidate02-report.json",
+      "reportSha256": "c07839121882f83fbf33cbee74ddd998b94a48cac3bb0ea0eb496b65fd0e73d6",
+      "datasetVersion": "unsplash-6-assets-independent-2026-10-v1",
+      "datasetHash": "90983d29c6113154da6ac3d21c7827fc74c8f14651293024fb4bb8b4e32ef719",
+      "providerCalls": 102,
+      "statusCounts": {
+        "succeeded": 102
+      },
+      "usageTotals": {
+        "input_tokens": 122324,
+        "output_tokens": 4177,
+        "image_tokens": 84468,
+        "total_tokens": 129309
+      },
+      "usageEntries": 102,
+      "quality": {
+        "passed": true,
+        "metrics": {
+          "overall": {
+            "passed": 30,
+            "total": 30
+          },
+          "positiveTop1": {
+            "passed": 18,
+            "total": 18
+          },
+          "negativeEmpty": {
+            "passed": 12,
+            "total": 12
+          },
+          "compositionNegative": {
+            "passed": 6,
+            "total": 6
+          }
+        },
+        "thresholds": {
+          "overallMinimum": 0.9,
+          "positiveTop1Minimum": 0.9,
+          "negativeEmptyMinimum": 0.9,
+          "compositionNegativeMinimum": 0.83
+        }
+      },
+      "completedCases": 30,
+      "failedCases": [],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": {
+        "p50": 1971,
+        "p95": 2509,
+        "max": 2682
+      },
+      "configurationId": "configuration-3"
+    },
+    {
+      "id": "fresh-final-report.json",
+      "reportSha256": "21eff24e107a7bc98d7807bc4623e1a8bcb788ad5f87f63e6d7341be1c13f292",
+      "datasetVersion": "unseen-visual-verification-2026-10-v1",
+      "datasetHash": "bd24768b8f29dedd38bdebecc12bd535cf4beb80014cd4d4acf7f34b534e1a2a",
+      "providerCalls": 102,
+      "statusCounts": {
+        "succeeded": 102
+      },
+      "usageTotals": {
+        "input_tokens": 145093,
+        "output_tokens": 7240,
+        "image_tokens": 103284,
+        "total_tokens": 155549
+      },
+      "usageEntries": 102,
+      "quality": {
+        "passed": true,
+        "metrics": {
+          "overall": {
+            "passed": 30,
+            "total": 30
+          },
+          "positiveTop1": {
+            "passed": 18,
+            "total": 18
+          },
+          "negativeEmpty": {
+            "passed": 12,
+            "total": 12
+          },
+          "compositionNegative": {
+            "passed": 6,
+            "total": 6
+          }
+        },
+        "thresholds": {
+          "overallMinimum": 0.9,
+          "positiveTop1Minimum": 0.9,
+          "negativeEmptyMinimum": 0.9,
+          "compositionNegativeMinimum": 0.83
+        }
+      },
+      "completedCases": 30,
+      "failedCases": [],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": {
+        "p50": 2077,
+        "p95": 2461,
+        "max": 6528
+      },
+      "configurationId": "configuration-4"
+    },
+    {
+      "id": "holdout-single-final-report.json",
+      "reportSha256": "9eb5e0233d63878c5e1cc62b169651cef5194b965fbd13bf926559666ddbd666",
+      "datasetVersion": "unsplash-6-assets-final-holdout-2026-10-v1",
+      "datasetHash": "b202e43a27d504f83e45f8f8be55d4e286f2d992a1d123071f471681f24b9212",
+      "providerCalls": 252,
+      "statusCounts": {
+        "succeeded": 252
+      },
+      "usageTotals": {
+        "input_tokens": 242496,
+        "output_tokens": 7092,
+        "image_tokens": 110772,
+        "total_tokens": 253908
+      },
+      "usageEntries": 252,
+      "quality": {
+        "passed": true,
+        "metrics": {
+          "overall": {
+            "passed": 30,
+            "total": 30
+          },
+          "positiveTop1": {
+            "passed": 18,
+            "total": 18
+          },
+          "negativeEmpty": {
+            "passed": 12,
+            "total": 12
+          },
+          "compositionNegative": {
+            "passed": 6,
+            "total": 6
+          }
+        },
+        "thresholds": {
+          "overallMinimum": 0.9,
+          "positiveTop1Minimum": 0.9,
+          "negativeEmptyMinimum": 0.9,
+          "compositionNegativeMinimum": 0.83
+        }
+      },
+      "completedCases": 30,
+      "failedCases": [],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": {
+        "p50": 4514,
+        "p95": 4960,
+        "max": 5226
+      },
+      "configurationId": "configuration-5"
+    },
+    {
+      "id": "isolation-strict-report.json",
+      "reportSha256": "4f858d57ea09eb3815c41ae5511a2467f8863411898e477475e6e1e5a0dc4d32",
+      "datasetVersion": null,
+      "datasetHash": null,
+      "providerCalls": 10,
+      "statusCounts": {
+        "succeeded": 10
+      },
+      "usageTotals": {
+        "input_tokens": 9880,
+        "output_tokens": 215,
+        "image_tokens": 3860,
+        "total_tokens": 10095
+      },
+      "usageEntries": 10,
+      "quality": null,
+      "completedCases": 10,
+      "failedCases": [],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-6"
+    },
+    {
+      "id": "regression-final-report.json",
+      "reportSha256": "b5b49dbf106e5174c7c640920268e3771de2ee8a9e41f2b10890be8adce131db",
+      "datasetVersion": "unsplash-6-assets-independent-2026-10-v1",
+      "datasetHash": "90983d29c6113154da6ac3d21c7827fc74c8f14651293024fb4bb8b4e32ef719",
+      "providerCalls": 102,
+      "statusCounts": {
+        "succeeded": 102
+      },
+      "usageTotals": {
+        "input_tokens": 126595,
+        "output_tokens": 5924,
+        "image_tokens": 84468,
+        "total_tokens": 135327
+      },
+      "usageEntries": 102,
+      "quality": {
+        "passed": true,
+        "metrics": {
+          "overall": {
+            "passed": 29,
+            "total": 30
+          },
+          "positiveTop1": {
+            "passed": 18,
+            "total": 18
+          },
+          "negativeEmpty": {
+            "passed": 11,
+            "total": 12
+          },
+          "compositionNegative": {
+            "passed": 5,
+            "total": 6
+          }
+        },
+        "thresholds": {
+          "overallMinimum": 0.9,
+          "positiveTop1Minimum": 0.9,
+          "negativeEmptyMinimum": 0.9,
+          "compositionNegativeMinimum": 0.83
+        }
+      },
+      "completedCases": 30,
+      "failedCases": [
+        {
+          "id": "composition-book-stars",
+          "failure": null,
+          "diagnostic": null
+        }
+      ],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": {
+        "p50": 1959,
+        "p95": 2419,
+        "max": 2436
+      },
+      "configurationId": "configuration-4"
+    },
+    {
+      "id": "regression-single-final-report.json",
+      "reportSha256": "ead60383c136601509228370cb3b59d0445cfd82d4d6378128203a18a086f3db",
+      "datasetVersion": "unsplash-6-assets-independent-2026-10-v1",
+      "datasetHash": "90983d29c6113154da6ac3d21c7827fc74c8f14651293024fb4bb8b4e32ef719",
+      "providerCalls": 252,
+      "statusCounts": {
+        "succeeded": 252
+      },
+      "usageTotals": {
+        "input_tokens": 217315,
+        "output_tokens": 7935,
+        "image_tokens": 84468,
+        "total_tokens": 228058
+      },
+      "usageEntries": 252,
+      "quality": {
+        "passed": true,
+        "metrics": {
+          "overall": {
+            "passed": 30,
+            "total": 30
+          },
+          "positiveTop1": {
+            "passed": 18,
+            "total": 18
+          },
+          "negativeEmpty": {
+            "passed": 12,
+            "total": 12
+          },
+          "compositionNegative": {
+            "passed": 6,
+            "total": 6
+          }
+        },
+        "thresholds": {
+          "overallMinimum": 0.9,
+          "positiveTop1Minimum": 0.9,
+          "negativeEmptyMinimum": 0.9,
+          "compositionNegativeMinimum": 0.83
+        }
+      },
+      "completedCases": 30,
+      "failedCases": [],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": {
+        "p50": 4554,
+        "p95": 5493,
+        "max": 10466
+      },
+      "configurationId": "configuration-5"
+    },
+    {
+      "id": "regression-single-report.json",
+      "reportSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "providerCalls": 0,
+      "completion": "startup-failed-before-dispatch",
+      "configurationId": "configuration-7"
+    },
+    {
+      "id": "regression-strict-report.json",
+      "reportSha256": "305c582ce99b164fc8bf9a1bf1a88ef35a4f9ace8d2f47428dcf95f90cdeeea4",
+      "datasetVersion": "unsplash-6-assets-independent-2026-10-v1",
+      "datasetHash": "90983d29c6113154da6ac3d21c7827fc74c8f14651293024fb4bb8b4e32ef719",
+      "providerCalls": 102,
+      "statusCounts": {
+        "succeeded": 102
+      },
+      "usageTotals": {
+        "input_tokens": 129955,
+        "output_tokens": 6048,
+        "image_tokens": 84468,
+        "total_tokens": 138811
+      },
+      "usageEntries": 102,
+      "quality": {
+        "passed": true,
+        "metrics": {
+          "overall": {
+            "passed": 29,
+            "total": 30
+          },
+          "positiveTop1": {
+            "passed": 18,
+            "total": 18
+          },
+          "negativeEmpty": {
+            "passed": 11,
+            "total": 12
+          },
+          "compositionNegative": {
+            "passed": 5,
+            "total": 6
+          }
+        },
+        "thresholds": {
+          "overallMinimum": 0.9,
+          "positiveTop1Minimum": 0.9,
+          "negativeEmptyMinimum": 0.9,
+          "compositionNegativeMinimum": 0.83
+        }
+      },
+      "completedCases": 30,
+      "failedCases": [
+        {
+          "id": "composition-book-stars",
+          "failure": null,
+          "diagnostic": null
+        }
+      ],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": {
+        "p50": 1930,
+        "p95": 2339,
+        "max": 2462
+      },
+      "configurationId": "configuration-8"
+    },
+    {
+      "id": "regression-temp0-report.json",
+      "reportSha256": "8ed48a2348020bfe9db1be9ba35a56fe2e3fa81c7cc79c77b3e259bae7666edd",
+      "datasetVersion": "unsplash-6-assets-independent-2026-10-v1",
+      "datasetHash": "90983d29c6113154da6ac3d21c7827fc74c8f14651293024fb4bb8b4e32ef719",
+      "providerCalls": 102,
+      "statusCounts": {
+        "succeeded": 102
+      },
+      "usageTotals": {
+        "input_tokens": 128905,
+        "output_tokens": 6267,
+        "image_tokens": 84468,
+        "total_tokens": 137980
+      },
+      "usageEntries": 102,
+      "quality": {
+        "passed": true,
+        "metrics": {
+          "overall": {
+            "passed": 29,
+            "total": 30
+          },
+          "positiveTop1": {
+            "passed": 18,
+            "total": 18
+          },
+          "negativeEmpty": {
+            "passed": 11,
+            "total": 12
+          },
+          "compositionNegative": {
+            "passed": 5,
+            "total": 6
+          }
+        },
+        "thresholds": {
+          "overallMinimum": 0.9,
+          "positiveTop1Minimum": 0.9,
+          "negativeEmptyMinimum": 0.9,
+          "compositionNegativeMinimum": 0.83
+        }
+      },
+      "completedCases": 30,
+      "failedCases": [
+        {
+          "id": "composition-book-stars",
+          "failure": null,
+          "diagnostic": null
+        }
+      ],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": {
+        "p50": 2568,
+        "p95": 2916,
+        "max": 3116
+      },
+      "configurationId": "configuration-9"
+    },
+    {
+      "id": "role-dialogue01-report.json",
+      "reportSha256": "3db83c679d90d4bea78d16375f99761983d0417b01577ba31e180584e050cba6",
+      "datasetVersion": "source-role-safety-2026-10-v1",
+      "datasetHash": "db2a1ad2953268c413c3687c8d13e8533ae7be697f852a8d0dae227981187312",
+      "providerCalls": 24,
+      "statusCounts": {
+        "succeeded": 24
+      },
+      "usageTotals": {
+        "input_tokens": 18480,
+        "output_tokens": 6980,
+        "image_tokens": 0,
+        "total_tokens": 25460
+      },
+      "usageEntries": 24,
+      "quality": null,
+      "completedCases": 24,
+      "failedCases": [],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-10"
+    },
+    {
+      "id": "role-final01-report.json",
+      "reportSha256": "dd543924dfbefa637571ffd9d14c411b5eb2d7f94fb3f6ad413e463428e95e89",
+      "datasetVersion": "source-role-safety-2026-10-v1",
+      "datasetHash": "db2a1ad2953268c413c3687c8d13e8533ae7be697f852a8d0dae227981187312",
+      "providerCalls": 24,
+      "statusCounts": {
+        "succeeded": 24
+      },
+      "usageTotals": {
+        "input_tokens": 18480,
+        "output_tokens": 6932,
+        "image_tokens": 0,
+        "total_tokens": 25412
+      },
+      "usageEntries": 24,
+      "quality": null,
+      "completedCases": 24,
+      "failedCases": [],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-11"
+    },
+    {
+      "id": "role-plus01-report.json",
+      "reportSha256": "c9b78fa35bd57644c5cb00a356fe0da28b1ed22758274cb1df16df9aae052fa1",
+      "datasetVersion": "source-role-safety-2026-10-v1",
+      "datasetHash": "db2a1ad2953268c413c3687c8d13e8533ae7be697f852a8d0dae227981187312",
+      "providerCalls": 1,
+      "statusCounts": {
+        "failed-billing-unknown": 1
+      },
+      "usageTotals": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "image_tokens": 0,
+        "total_tokens": 0
+      },
+      "usageEntries": 0,
+      "quality": null,
+      "completedCases": 1,
+      "failedCases": [
+        {
+          "id": "unknown-zh-name",
+          "failure": "role-output-unverifiable",
+          "diagnostic": {
+            "operation": "query-parse",
+            "stage": "http-response",
+            "httpStatus": 403,
+            "providerCode": "AccessDenied",
+            "schemaPaths": []
+          }
+        }
+      ],
+      "completedStages": null,
+      "failure": {
+        "name": null,
+        "code": null,
+        "stagePassedCount": null,
+        "type": "role-evaluation-stopped"
+      },
+      "completion": "interrupted",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-12"
+    },
+    {
+      "id": "role01-report.json",
+      "reportSha256": "0f1159603e67612acbd358848d7478f4f879a3cea335f5912f6bef0539c2a74b",
+      "datasetVersion": "source-role-safety-2026-10-v1",
+      "datasetHash": "db2a1ad2953268c413c3687c8d13e8533ae7be697f852a8d0dae227981187312",
+      "providerCalls": 24,
+      "statusCounts": {
+        "succeeded": 24
+      },
+      "usageTotals": {
+        "input_tokens": 14364,
+        "output_tokens": 1033,
+        "image_tokens": 0,
+        "total_tokens": 15397
+      },
+      "usageEntries": 24,
+      "quality": null,
+      "completedCases": 24,
+      "failedCases": [
+        {
+          "id": "multiple-identities",
+          "failure": null,
+          "diagnostic": null
+        }
+      ],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-13"
+    },
+    {
+      "id": "role02-report.json",
+      "reportSha256": "fe1361b8b6393a48bcae6a417754fc358df766a8f178c97ac0d090b8b1447f6d",
+      "datasetVersion": "source-role-safety-2026-10-v1",
+      "datasetHash": "db2a1ad2953268c413c3687c8d13e8533ae7be697f852a8d0dae227981187312",
+      "providerCalls": 24,
+      "statusCounts": {
+        "succeeded": 23,
+        "failed-billing-unknown": 1
+      },
+      "usageTotals": {
+        "input_tokens": 15444,
+        "output_tokens": 1169,
+        "image_tokens": 0,
+        "total_tokens": 16613
+      },
+      "usageEntries": 24,
+      "quality": null,
+      "completedCases": 24,
+      "failedCases": [
+        {
+          "id": "zh-color-object",
+          "failure": "role-output-unverifiable",
+          "diagnostic": {
+            "operation": "query-parse",
+            "stage": "query-validation",
+            "httpStatus": 200,
+            "providerCode": null,
+            "schemaPaths": [
+              "response.policy"
+            ]
+          }
+        }
+      ],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-13"
+    },
+    {
+      "id": "role03-report.json",
+      "reportSha256": "1cf98af0c2886832ce711c6af421505e2aa458abdc3b11858fcd55b6a9310baf",
+      "datasetVersion": "source-role-safety-2026-10-v1",
+      "datasetHash": "db2a1ad2953268c413c3687c8d13e8533ae7be697f852a8d0dae227981187312",
+      "providerCalls": 24,
+      "statusCounts": {
+        "succeeded": 22,
+        "failed-billing-unknown": 2
+      },
+      "usageTotals": {
+        "input_tokens": 15444,
+        "output_tokens": 1106,
+        "image_tokens": 0,
+        "total_tokens": 16550
+      },
+      "usageEntries": 24,
+      "quality": null,
+      "completedCases": 24,
+      "failedCases": [
+        {
+          "id": "zh-color-object",
+          "failure": "role-output-unverifiable",
+          "diagnostic": {
+            "operation": "query-parse",
+            "stage": "query-validation",
+            "httpStatus": 200,
+            "providerCode": null,
+            "schemaPaths": [
+              "response.policy"
+            ]
+          }
+        },
+        {
+          "id": "spanish-visual",
+          "failure": "role-output-unverifiable",
+          "diagnostic": {
+            "operation": "query-parse",
+            "stage": "query-validation",
+            "httpStatus": 200,
+            "providerCode": null,
+            "schemaPaths": [
+              "response.policy"
+            ]
+          }
+        }
+      ],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-13"
+    },
+    {
+      "id": "role04-report.json",
+      "reportSha256": "38b831d45fd493a22a344ba632c9a3ac8d75657ae8733b476705a2504f2a62b9",
+      "datasetVersion": "source-role-safety-2026-10-v1",
+      "datasetHash": "db2a1ad2953268c413c3687c8d13e8533ae7be697f852a8d0dae227981187312",
+      "providerCalls": 24,
+      "statusCounts": {
+        "succeeded": 23,
+        "failed-billing-unknown": 1
+      },
+      "usageTotals": {
+        "input_tokens": 17364,
+        "output_tokens": 817,
+        "image_tokens": 0,
+        "total_tokens": 18181
+      },
+      "usageEntries": 24,
+      "quality": null,
+      "completedCases": 24,
+      "failedCases": [
+        {
+          "id": "name-season-context",
+          "failure": null,
+          "diagnostic": null
+        },
+        {
+          "id": "multiple-identities",
+          "failure": null,
+          "diagnostic": null
+        },
+        {
+          "id": "trailing-name",
+          "failure": "role-output-unverifiable",
+          "diagnostic": {
+            "operation": "query-parse",
+            "stage": "query-validation",
+            "httpStatus": 200,
+            "providerCode": null,
+            "schemaPaths": [
+              "response.policy"
+            ]
+          }
+        },
+        {
+          "id": "sensitive-health",
+          "failure": null,
+          "diagnostic": null
+        }
+      ],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-13"
+    },
+    {
+      "id": "service-final-report.json",
+      "reportSha256": "8f64a593bc09d7874e6d60c2903d2f95435735ba8fafcc1e60b43305bc98503a",
+      "datasetVersion": null,
+      "datasetHash": null,
+      "providerCalls": 0,
+      "statusCounts": {},
+      "usageTotals": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "image_tokens": 0,
+        "total_tokens": 0
+      },
+      "usageEntries": 0,
+      "quality": null,
+      "completedCases": null,
+      "failedCases": [],
+      "completedStages": [],
+      "failure": {
+        "name": "SyntaxError",
+        "code": null,
+        "stagePassedCount": 0,
+        "type": null
+      },
+      "completion": "failed",
+      "ledger": null,
+      "residue": {
+        "users": 0,
+        "assets": 0,
+        "segments": 0
+      },
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-6"
+    },
+    {
+      "id": "service-http-complete-report.json",
+      "reportSha256": "9a72428e2019ec47d8115c49f28549ff26c7b00ca6ae6fa89a66ab6d97c27e10",
+      "datasetVersion": null,
+      "datasetHash": null,
+      "providerCalls": 33,
+      "statusCounts": {
+        "http-succeeded": 33
+      },
+      "usageTotals": {
+        "input_tokens": 25120,
+        "output_tokens": 2509,
+        "image_tokens": 13724,
+        "total_tokens": 32177
+      },
+      "usageEntries": 33,
+      "quality": null,
+      "completedCases": null,
+      "failedCases": [],
+      "completedStages": [
+        "transactional-consent-agent-thread-and-index-queue",
+        "real-image-and-moving-video-indexing",
+        "owner-album-scope-and-idempotent-replay-no-model-redispatch",
+        "exact-video-frame-original-read-and-visual-judging",
+        "real-dialogue-model-list-album-search-tool-and-real-retrieval"
+      ],
+      "failure": {
+        "name": "AssertionError",
+        "code": "ERR_ASSERTION",
+        "stagePassedCount": 5,
+        "type": null
+      },
+      "completion": "failed",
+      "ledger": [
+        {
+          "operation": "image-description",
+          "disposition": "estimated",
+          "count": 8
+        },
+        {
+          "operation": "image-embedding",
+          "disposition": "estimated",
+          "count": 8
+        },
+        {
+          "operation": "query-embedding",
+          "disposition": "estimated",
+          "count": 3
+        },
+        {
+          "operation": "query-parse",
+          "disposition": "estimated",
+          "count": 3
+        },
+        {
+          "operation": "query-rerank",
+          "disposition": "estimated",
+          "count": 8
+        }
+      ],
+      "residue": {
+        "users": 0,
+        "assets": 0,
+        "segments": 0
+      },
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-14"
+    },
+    {
+      "id": "service-http-diagnostic-report.json",
+      "reportSha256": "2588088a7b13ed50433f805dd3414bad62aeb7036756c85fdccef7fbcc5f2c2a",
+      "datasetVersion": null,
+      "datasetHash": null,
+      "providerCalls": 39,
+      "statusCounts": {
+        "http-succeeded": 39
+      },
+      "usageTotals": {
+        "input_tokens": 30101,
+        "output_tokens": 2978,
+        "image_tokens": 14494,
+        "total_tokens": 37627
+      },
+      "usageEntries": 39,
+      "quality": null,
+      "completedCases": null,
+      "failedCases": [],
+      "completedStages": [
+        "transactional-consent-agent-thread-and-index-queue",
+        "real-image-and-moving-video-indexing",
+        "owner-album-scope-and-idempotent-replay-no-model-redispatch",
+        "exact-video-frame-original-read-and-visual-judging",
+        "real-dialogue-model-list-album-search-tool-and-real-retrieval"
+      ],
+      "failure": {
+        "name": "AssertionError",
+        "code": "ERR_ASSERTION",
+        "stagePassedCount": 5,
+        "type": null
+      },
+      "completion": "failed",
+      "ledger": [
+        {
+          "operation": "image-description",
+          "disposition": "estimated",
+          "count": 8
+        },
+        {
+          "operation": "image-embedding",
+          "disposition": "estimated",
+          "count": 8
+        },
+        {
+          "operation": "query-embedding",
+          "disposition": "estimated",
+          "count": 4
+        },
+        {
+          "operation": "query-parse",
+          "disposition": "estimated",
+          "count": 4
+        },
+        {
+          "operation": "query-rerank",
+          "disposition": "estimated",
+          "count": 9
+        }
+      ],
+      "residue": {
+        "users": 0,
+        "assets": 0,
+        "segments": 0
+      },
+      "httpStage": "message-replay",
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-14"
+    },
+    {
+      "id": "service-http-verified-report.json",
+      "reportSha256": "2c23173546b799c1056dfcebd0f72f2f3ea18ce0a8ddb1884b951f09f9de07e0",
+      "datasetVersion": null,
+      "datasetHash": null,
+      "providerCalls": 49,
+      "statusCounts": {
+        "http-succeeded": 49
+      },
+      "usageTotals": {
+        "input_tokens": 40143,
+        "output_tokens": 3467,
+        "image_tokens": 19058,
+        "total_tokens": 48158
+      },
+      "usageEntries": 49,
+      "quality": null,
+      "completedCases": null,
+      "failedCases": [],
+      "completedStages": [
+        "transactional-consent-agent-thread-and-index-queue",
+        "real-image-and-moving-video-indexing",
+        "owner-album-scope-and-idempotent-replay-no-model-redispatch",
+        "exact-video-frame-original-read-and-visual-judging",
+        "real-dialogue-model-list-album-search-tool-and-real-retrieval",
+        "authenticated-chat-HTTP-result-read-replay-and-cross-owner-denial",
+        "unrelated-query-empty-without-fabricated-result",
+        "revocation-stops-new-model-dispatch",
+        "revoked-chat-result-HTTP-denial"
+      ],
+      "failure": null,
+      "completion": "complete",
+      "ledger": [
+        {
+          "operation": "image-description",
+          "disposition": "estimated",
+          "count": 8
+        },
+        {
+          "operation": "image-embedding",
+          "disposition": "estimated",
+          "count": 8
+        },
+        {
+          "operation": "query-embedding",
+          "disposition": "estimated",
+          "count": 5
+        },
+        {
+          "operation": "query-parse",
+          "disposition": "estimated",
+          "count": 5
+        },
+        {
+          "operation": "query-rerank",
+          "disposition": "estimated",
+          "count": 17
+        }
+      ],
+      "residue": {
+        "users": 0,
+        "assets": 0,
+        "segments": 0
+      },
+      "httpStage": "cross-owner-read",
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-14"
+    },
+    {
+      "id": "service-second-report.json",
+      "reportSha256": "58d8af32e98b4812577f5cd9c03cf10c87bb128d7f4563484ceb1d439eda1262",
+      "datasetVersion": null,
+      "datasetHash": null,
+      "providerCalls": 0,
+      "statusCounts": {},
+      "usageTotals": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "image_tokens": 0,
+        "total_tokens": 0
+      },
+      "usageEntries": 0,
+      "quality": null,
+      "completedCases": null,
+      "failedCases": [],
+      "completedStages": [],
+      "failure": {
+        "name": "SyntaxError",
+        "code": null,
+        "stagePassedCount": 0,
+        "type": null
+      },
+      "completion": "failed",
+      "ledger": null,
+      "residue": {
+        "users": 0,
+        "assets": 0,
+        "segments": 0
+      },
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-6"
+    },
+    {
+      "id": "service-single-report.json",
+      "reportSha256": "72f783e7291de7e5a94af29427844b68778dba92d55632be3789bd3c6603258c",
+      "datasetVersion": null,
+      "datasetHash": null,
+      "providerCalls": 43,
+      "statusCounts": {
+        "http-succeeded": 43
+      },
+      "usageTotals": {
+        "input_tokens": 35144,
+        "output_tokens": 2544,
+        "image_tokens": 18288,
+        "total_tokens": 42236
+      },
+      "usageEntries": 43,
+      "quality": null,
+      "completedCases": null,
+      "failedCases": [],
+      "completedStages": [
+        "transactional-consent-agent-thread-and-index-queue",
+        "real-image-and-moving-video-indexing",
+        "owner-album-scope-and-idempotent-replay-no-model-redispatch",
+        "exact-video-frame-original-read-and-visual-judging",
+        "real-dialogue-model-list-album-search-tool-and-real-retrieval",
+        "unrelated-query-empty-without-fabricated-result",
+        "revocation-stops-new-model-dispatch"
+      ],
+      "failure": null,
+      "completion": "complete",
+      "ledger": [
+        {
+          "operation": "image-description",
+          "disposition": "estimated",
+          "count": 8
+        },
+        {
+          "operation": "image-embedding",
+          "disposition": "estimated",
+          "count": 8
+        },
+        {
+          "operation": "query-embedding",
+          "disposition": "estimated",
+          "count": 4
+        },
+        {
+          "operation": "query-parse",
+          "disposition": "estimated",
+          "count": 4
+        },
+        {
+          "operation": "query-rerank",
+          "disposition": "estimated",
+          "count": 16
+        }
+      ],
+      "residue": {
+        "users": 0,
+        "assets": 0,
+        "segments": 0
+      },
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-6"
+    },
+    {
+      "id": "service-strict-report.json",
+      "reportSha256": "b449333c4f2f8f09b756038bc15c5c1a8ed2041f6d7c3ee661061cc26bd26d27",
+      "datasetVersion": null,
+      "datasetHash": null,
+      "providerCalls": 32,
+      "statusCounts": {
+        "http-succeeded": 32
+      },
+      "usageTotals": {
+        "input_tokens": 28946,
+        "output_tokens": 2513,
+        "image_tokens": 18288,
+        "total_tokens": 36007
+      },
+      "usageEntries": 32,
+      "quality": null,
+      "completedCases": null,
+      "failedCases": [],
+      "completedStages": [
+        "transactional-consent-agent-thread-and-index-queue",
+        "real-image-and-moving-video-indexing",
+        "owner-album-scope-and-idempotent-replay-no-model-redispatch",
+        "exact-video-frame-original-read-and-visual-judging",
+        "real-dialogue-model-list-album-search-tool-and-real-retrieval",
+        "unrelated-query-empty-without-fabricated-result",
+        "revocation-stops-new-model-dispatch"
+      ],
+      "failure": null,
+      "completion": "complete",
+      "ledger": [
+        {
+          "operation": "image-description",
+          "disposition": "estimated",
+          "count": 8
+        },
+        {
+          "operation": "image-embedding",
+          "disposition": "estimated",
+          "count": 8
+        },
+        {
+          "operation": "query-embedding",
+          "disposition": "estimated",
+          "count": 4
+        },
+        {
+          "operation": "query-parse",
+          "disposition": "estimated",
+          "count": 4
+        },
+        {
+          "operation": "query-rerank",
+          "disposition": "estimated",
+          "count": 5
+        }
+      ],
+      "residue": {
+        "users": 0,
+        "assets": 0,
+        "segments": 0
+      },
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-6"
+    },
+    {
+      "id": "service-third-report.json",
+      "reportSha256": "6a170f0142ab946ad3826c1e693d7396bca499a01a5fa19336d844121a298589",
+      "datasetVersion": null,
+      "datasetHash": null,
+      "providerCalls": 32,
+      "statusCounts": {
+        "http-succeeded": 32
+      },
+      "usageTotals": {
+        "input_tokens": 28256,
+        "output_tokens": 2909,
+        "image_tokens": 18288,
+        "total_tokens": 35713
+      },
+      "usageEntries": 32,
+      "quality": null,
+      "completedCases": null,
+      "failedCases": [],
+      "completedStages": [
+        "transactional-consent-agent-thread-and-index-queue",
+        "real-image-and-moving-video-indexing",
+        "owner-album-scope-and-idempotent-replay-no-model-redispatch",
+        "exact-video-frame-original-read-and-visual-judging",
+        "real-dialogue-model-list-album-search-tool-and-real-retrieval"
+      ],
+      "failure": null,
+      "completion": "incomplete-checkpoint-teardown-error",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": null,
+      "configurationId": "configuration-6"
+    },
+    {
+      "id": "video-final-report.json",
+      "reportSha256": "56480c8da5122c503a2fac0c63c4c7f2b9ce83792cca5835ada9c5cc6eff07d3",
+      "datasetVersion": "public-moving-flower-video-2026-10-v1",
+      "datasetHash": "406b150f3ddd017353f5bba9637bd6130a715b385d6daa23ce48af31e53f7db9",
+      "providerCalls": 30,
+      "statusCounts": {
+        "succeeded": 30
+      },
+      "usageTotals": {
+        "input_tokens": 34027,
+        "output_tokens": 1799,
+        "image_tokens": 24564,
+        "total_tokens": 38886
+      },
+      "usageEntries": 30,
+      "quality": null,
+      "completedCases": 6,
+      "failedCases": [],
+      "completedStages": null,
+      "failure": null,
+      "completion": "complete",
+      "ledger": null,
+      "residue": null,
+      "httpStage": null,
+      "actualCostFen": null,
+      "queryLatencyMs": {
+        "p50": 2189,
+        "p95": 2316,
+        "max": 2316
+      },
+      "configurationId": "configuration-4"
+    }
+  ]
+}

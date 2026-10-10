@@ -30,17 +30,12 @@ test("descriptor normalization strips unknown data and rejects identity attribut
   assert.equal(normalizeDescriptor({ summary: "portrait", personName: "Alice" }), null);
 });
 
-test("retrieval query removes identity terms from vector text while retaining exact-match terms", () => {
-  const normalized = normalizeRetrievalQuery({
-    visualQuery: "示例姓名 穿黄色连衣裙 在户外",
-    identityTerms: ["示例姓名"],
+test("query normalization preserves source-role classifications for the source compiler", () => {
+  const candidate = {
+    spans: [{ text: "示例姓名", role: "identity" }, { text: " 穿黄色连衣裙 在户外", role: "visual" }],
     parseConfidence: "high",
-  });
-
-  assert.equal(normalized.visualQuery.includes("示例姓名"), false);
-  assert.equal(normalized.visualQuery, "穿黄色连衣裙 在户外");
-  assert.deepEqual(normalized.identityTerms, ["示例姓名"]);
-  assert.equal(normalized.parseConfidence, "high");
+  };
+  assert.deepEqual(normalizeRetrievalQuery(candidate), candidate);
 });
 
 test("copied OCR is isolated from every persisted visual field without removing exact-match text", () => {
@@ -61,17 +56,10 @@ test("copied OCR is isolated from every persisted visual field without removing 
   assert.equal(normalizeDescriptor({ summary: "ALICE", ocrText: ["ALICE"] }), null);
 });
 
-test("malformed parsing is rejected and low confidence retains only identity constraints", () => {
+test("malformed parsing is rejected and low confidence is not promoted or repaired", () => {
   assert.equal(normalizeRetrievalQuery(null), null);
-  assert.deepEqual(normalizeRetrievalQuery({
-    visualQuery: "黄色连衣裙",
-    identityTerms: ["示例姓名"],
-    parseConfidence: "low",
-  }), {
-    visualQuery: "",
-    identityTerms: ["示例姓名"],
-    parseConfidence: "low",
-  });
+  const candidate = { spans: [{ text: "黄色连衣裙", role: "identity" }], parseConfidence: "low" };
+  assert.deepEqual(normalizeRetrievalQuery(candidate), candidate);
 });
 
 test("OCR isolation matches normalized graphemes while preserving unrelated display text", () => {
@@ -91,19 +79,26 @@ test("OCR isolation matches normalized graphemes while preserving unrelated disp
 
 test("retrieval parser normalization rejects malformed schema fields instead of coercing them", () => {
   const malformedCandidates = [
-    { visualQuery: "yellow dress", identityTerms: "Summer", parseConfidence: "high" },
-    { visualQuery: "yellow dress", parseConfidence: "high" },
+    { visualQuery: "yellow dress", visualConstraints: ["yellow dress"], identityTerms: "Summer", parseConfidence: "high" },
+    { visualQuery: "yellow dress", visualConstraints: ["yellow dress"], parseConfidence: "high" },
     { identityTerms: [], parseConfidence: "high" },
-    { visualQuery: "yellow dress", identityTerms: [] },
-    { visualQuery: "yellow dress", identityTerms: null, parseConfidence: "high" },
-    { visualQuery: "yellow dress", identityTerms: ["Summer", 7], parseConfidence: "high" },
-    { visualQuery: "yellow dress", identityTerms: ["x".repeat(81)], parseConfidence: "high" },
-    { visualQuery: "yellow dress", identityTerms: Array.from({ length: 13 }, (_, index) => `term-${index}`), parseConfidence: "high" },
-    { visualQuery: "yellow dress", identityTerms: [], parseConfidence: "unsupported" },
+    { visualQuery: "yellow dress", visualConstraints: ["yellow dress"], identityTerms: [] },
+    { visualQuery: "yellow dress", visualConstraints: ["yellow dress"], identityTerms: null, parseConfidence: "high" },
+    { visualQuery: "yellow dress", visualConstraints: ["yellow dress"], identityTerms: ["Summer", 7], parseConfidence: "high" },
+    { visualQuery: "yellow dress", visualConstraints: ["yellow dress"], identityTerms: ["x".repeat(81)], parseConfidence: "high" },
+    { visualQuery: "yellow dress", visualConstraints: ["yellow dress"], identityTerms: Array.from({ length: 13 }, (_, index) => `term-${index}`), parseConfidence: "high" },
+    { spans: [{ text: "yellow dress", role: "visual" }], parseConfidence: "unsupported" },
     { visualQuery: 7, identityTerms: [], parseConfidence: "high" },
   ];
 
   for (const candidate of malformedCandidates) {
     assert.equal(normalizeRetrievalQuery(candidate), null);
   }
+});
+
+test("descriptor phrases preserve complete natural-language evidence within a bounded length", () => {
+  const phrase = "various hardcover books with visible spines in red, yellow, beige, brown, and white";
+  const descriptor = { summary: "books", objects: [phrase] };
+  assert.equal(normalizeDescriptor(descriptor).objects[0], phrase);
+  assert.equal(normalizeDescriptor({ ...descriptor, objects: ["x".repeat(161)] }), null);
 });

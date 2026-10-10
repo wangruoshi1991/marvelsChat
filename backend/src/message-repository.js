@@ -410,7 +410,7 @@ export async function getMessageForUser({ userId, threadId, messageId }) {
   return rows[0] ? mapMessage(rows[0]) : null;
 }
 
-export async function addMessageToThread({
+async function addMessageToThread({
   userId,
   threadId,
   senderType,

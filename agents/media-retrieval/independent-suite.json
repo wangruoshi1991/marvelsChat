@@ -1,0 +1,412 @@
+{
+  "version": "unsplash-6-assets-independent-2026-10-v1",
+  "purpose": "Fresh small-corpus held-out set selected before model evaluation; no image or query participates in development tuning. Not a large-library or video benchmark.",
+  "source": "Unsplash",
+  "licenseUrl": "https://unsplash.com/license",
+  "acceptanceThresholds": {
+    "overallMinimum": 0.9,
+    "positiveTop1Minimum": 0.9,
+    "negativeEmptyMinimum": 0.9,
+    "compositionNegativeMinimum": 0.83
+  },
+  "assets": [
+    {
+      "id": "public-shoe",
+      "imageUrl": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=768&fit=max",
+      "sha256": "a0d386ae7a8aaf13c0713ea3aff43bdd5ffba0154d0ffc331ec34c75a19241dd"
+    },
+    {
+      "id": "public-watch",
+      "imageUrl": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=768&fit=max",
+      "sha256": "363af0680140c8d211644977cc63a20f318fe507e66e511d62492305e0f44ae9"
+    },
+    {
+      "id": "public-mountain",
+      "imageUrl": "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=768&fit=max",
+      "sha256": "00347d277f3d3dc5eafa39361c9e6268796fe12eead1f60e1ca47283a092db60"
+    },
+    {
+      "id": "public-road-car",
+      "imageUrl": "https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?w=768&fit=max",
+      "sha256": "b93b7b3e72c92b7972fd5c2a701b694f34cca755a58548f9e7dea79ba17b0c56"
+    },
+    {
+      "id": "public-library",
+      "imageUrl": "https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=768&fit=max",
+      "sha256": "0c946a3aa835c78314ff72f58f7f058191848ec64491ed6da1c4d2f065dd2d03"
+    },
+    {
+      "id": "public-food",
+      "imageUrl": "https://images.unsplash.com/photo-1529042410759-befb1204b468?w=768&fit=max",
+      "sha256": "1bba39db2611afcc80bb36e1679ad22e9e3bb93d6ade04a9d8b67010bd9360d2"
+    }
+  ],
+  "cases": [
+    {
+      "id": "shoe-zh-object",
+      "query": "红色背景上的红色运动鞋",
+      "expectedAssetIds": [
+        "public-shoe"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "zh",
+        "color"
+      ]
+    },
+    {
+      "id": "shoe-en-parts",
+      "query": "a red sports shoe with laces and a pale sole",
+      "expectedAssetIds": [
+        "public-shoe"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "en",
+        "parts"
+      ]
+    },
+    {
+      "id": "shoe-zh-pose",
+      "query": "斜放着的单只红色鞋子",
+      "expectedAssetIds": [
+        "public-shoe"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "zh",
+        "count"
+      ]
+    },
+    {
+      "id": "watch-en-color",
+      "query": "two white watches on a pale background",
+      "expectedAssetIds": [
+        "public-watch"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "en",
+        "count"
+      ]
+    },
+    {
+      "id": "watch-zh-parts",
+      "query": "白色表带带有孔洞的手表",
+      "expectedAssetIds": [
+        "public-watch"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "zh",
+        "parts"
+      ]
+    },
+    {
+      "id": "watch-en-detail",
+      "query": "a round black watch face with a white strap",
+      "expectedAssetIds": [
+        "public-watch"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "en",
+        "object-description"
+      ]
+    },
+    {
+      "id": "mountain-zh-sky",
+      "query": "星空下面的积雪山峰",
+      "expectedAssetIds": [
+        "public-mountain"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "zh",
+        "scene"
+      ]
+    },
+    {
+      "id": "mountain-en-scene",
+      "query": "snowy mountains beneath a star-filled night sky",
+      "expectedAssetIds": [
+        "public-mountain"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "en",
+        "scene"
+      ]
+    },
+    {
+      "id": "mountain-zh-forest",
+      "query": "雪山前的深色树林",
+      "expectedAssetIds": [
+        "public-mountain"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "zh",
+        "relation"
+      ]
+    },
+    {
+      "id": "car-en-action",
+      "query": "a yellow sports car moving along a tree-lined road",
+      "expectedAssetIds": [
+        "public-road-car"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "en",
+        "action"
+      ]
+    },
+    {
+      "id": "car-zh-scene",
+      "query": "绿树旁道路上的黄色跑车",
+      "expectedAssetIds": [
+        "public-road-car"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "zh",
+        "scene"
+      ]
+    },
+    {
+      "id": "car-en-detail",
+      "query": "a yellow car with dark wheels and a low front bumper",
+      "expectedAssetIds": [
+        "public-road-car"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "en",
+        "parts"
+      ]
+    },
+    {
+      "id": "library-zh-object",
+      "query": "摆满书的木质书架",
+      "expectedAssetIds": [
+        "public-library"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "zh",
+        "object-description"
+      ]
+    },
+    {
+      "id": "library-en-scene",
+      "query": "many books arranged across wooden shelves",
+      "expectedAssetIds": [
+        "public-library"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "en",
+        "arrangement"
+      ]
+    },
+    {
+      "id": "library-zh-rows",
+      "query": "多层书架上密集排列的书本",
+      "expectedAssetIds": [
+        "public-library"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "zh",
+        "count"
+      ]
+    },
+    {
+      "id": "food-en-detail",
+      "query": "browned meatballs on green leaves on a white plate",
+      "expectedAssetIds": [
+        "public-food"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "en",
+        "attributes"
+      ]
+    },
+    {
+      "id": "food-zh-relation",
+      "query": "叉子插着一颗褐色丸子",
+      "expectedAssetIds": [
+        "public-food"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "zh",
+        "relation"
+      ]
+    },
+    {
+      "id": "food-en-parts",
+      "query": "a white plate of meatballs with a metal fork",
+      "expectedAssetIds": [
+        "public-food"
+      ],
+      "tags": [
+        "held-out",
+        "positive",
+        "en",
+        "parts"
+      ]
+    },
+    {
+      "id": "empty-plane",
+      "query": "a passenger airplane above clouds",
+      "expectedAssetIds": [],
+      "tags": [
+        "held-out",
+        "negative",
+        "en",
+        "unseen-object"
+      ]
+    },
+    {
+      "id": "empty-violin",
+      "query": "放在沙发上的小提琴",
+      "expectedAssetIds": [],
+      "tags": [
+        "held-out",
+        "negative",
+        "zh",
+        "unseen-object"
+      ]
+    },
+    {
+      "id": "empty-butterfly",
+      "query": "a blue butterfly resting on a leaf",
+      "expectedAssetIds": [],
+      "tags": [
+        "held-out",
+        "negative",
+        "en",
+        "unseen-object"
+      ]
+    },
+    {
+      "id": "empty-dog",
+      "query": "草地上叼着球的狗",
+      "expectedAssetIds": [],
+      "tags": [
+        "held-out",
+        "negative",
+        "zh",
+        "unseen-object"
+      ]
+    },
+    {
+      "id": "empty-keyboard",
+      "query": "a computer keyboard with glowing keys",
+      "expectedAssetIds": [],
+      "tags": [
+        "held-out",
+        "negative",
+        "en",
+        "unseen-object"
+      ]
+    },
+    {
+      "id": "empty-train",
+      "query": "雪地里的绿色列车",
+      "expectedAssetIds": [],
+      "tags": [
+        "held-out",
+        "negative",
+        "zh",
+        "unseen-object"
+      ]
+    },
+    {
+      "id": "composition-shoe-snow",
+      "query": "a red shoe resting on a snowy mountain peak",
+      "expectedAssetIds": [],
+      "tags": [
+        "held-out",
+        "negative",
+        "en",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-watch-food",
+      "query": "白色手表放在丸子上",
+      "expectedAssetIds": [],
+      "tags": [
+        "held-out",
+        "negative",
+        "zh",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-car-shelves",
+      "query": "a yellow car inside a wooden bookshelf",
+      "expectedAssetIds": [],
+      "tags": [
+        "held-out",
+        "negative",
+        "en",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-fork-watch",
+      "query": "叉子插在白色表带里",
+      "expectedAssetIds": [],
+      "tags": [
+        "held-out",
+        "negative",
+        "zh",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-book-stars",
+      "query": "open books floating above snowy mountains under stars",
+      "expectedAssetIds": [],
+      "tags": [
+        "held-out",
+        "negative",
+        "en",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-car-shoe",
+      "query": "黄色跑车的轮胎上放着红色鞋子",
+      "expectedAssetIds": [],
+      "tags": [
+        "held-out",
+        "negative",
+        "zh",
+        "composition"
+      ]
+    }
+  ]
+}

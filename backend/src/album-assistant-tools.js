@@ -5,7 +5,7 @@ import { createInMemoryRateLimiter } from "./rate-limit-service.js";
 
 const searchLimiter = createInMemoryRateLimiter({ limit: 30, windowMs: 60000 });
 
-export const albumAssistantToolDefinitions = [
+const albumAssistantToolDefinitions = [
   {
     name: "list_albums",
     description: "按名称查找当前用户的相册及 ID，用于确定相册范围；名称可留空列出前 50 个。结果截断时需进一步限定名称。",

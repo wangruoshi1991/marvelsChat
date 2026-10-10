@@ -1,10 +1,8 @@
 import {
   B7_PRODUCT_BASELINE_METHOD,
-  b7LocalTerms,
   inspectB7ProductBaselineCandidates,
 } from "./media-retrieval-b7-baseline.js";
 import {
-  buildVisualEmbeddingInput,
   verifyVisualEmbeddingBinding,
 } from "./media-retrieval-embedding-input.js";
 import { MEDIA_RETRIEVAL_EMBEDDING_PROVENANCE_VERSION } from "./media-retrieval-provenance.js";
@@ -33,16 +31,6 @@ const verifyB7VisualEmbedding = (binding, options = {}) => {
   }
 };
 
-const executionModeFor = ({ vectorStageUsed, exactIdentityStageUsed, localLexicalStageUsed }) => {
-  if (vectorStageUsed && exactIdentityStageUsed) return "visual-vector-exact-local";
-  if (vectorStageUsed && localLexicalStageUsed) return "visual-vector-local";
-  if (exactIdentityStageUsed && localLexicalStageUsed) return "exact-visual-local";
-  if (exactIdentityStageUsed) return "exact-only";
-  if (vectorStageUsed) return "visual-vector";
-  if (localLexicalStageUsed) return "visual-local";
-  return "no-executable-stage";
-};
-
 // B7 is the online product baseline. It executes only owner-scoped product
 // repository stages and intentionally has no snapshot or evaluator inputs.
 export async function retrieveB7ProductBaselineCore({
@@ -56,7 +44,6 @@ export async function retrieveB7ProductBaselineCore({
   kind = null,
   albumId = null,
   limit = 10,
-  allowLocalLexical = true,
 } = {}) {
   if (!repository || typeof repository.searchMediaRetrievalSegments !== "function") {
     throw new TypeError("B7 retrieval requires the product media retrieval repository.");
@@ -65,12 +52,13 @@ export async function retrieveB7ProductBaselineCore({
     throw new TypeError("B7 retrieval requires a verified visual embedding binding, not a bare vector.");
   }
 
-  const suppliedVisualQuery = String(normalizedQuery?.visualQuery || "").trim().slice(0, 240);
+  const suppliedVisualQuery = String(normalizedQuery?.visualQuery || "").trim();
   const suppliedIdentityTerms = uniqueIdentityTerms(normalizedQuery?.identityTerms);
+  if (normalizedQuery?.parseConfidence !== "high") throw new TypeError("B7 retrieval requires a high-confidence classified query.");
   if (!suppliedVisualQuery && !suppliedIdentityTerms.length) {
     throw new TypeError("B7 retrieval requires a visual query or an exact identity constraint.");
   }
-  if (suppliedVisualQuery && !suppliedIdentityTerms.length && !queryEmbedding) {
+  if (suppliedVisualQuery && !queryEmbedding) {
     const error = new TypeError("B7 visual-only retrieval requires a verified visual embedding binding.");
     error.code = "b7_visual_embedding_required";
     throw error;
@@ -79,7 +67,7 @@ export async function retrieveB7ProductBaselineCore({
   const boundInput = queryEmbedding?.input || null;
   const visualInput = boundInput
     ? verifyB7VisualEmbedding(queryEmbedding).input
-    : buildVisualEmbeddingInput({ rawQuery: suppliedVisualQuery });
+    : { mode: "exact-only", identityTerms: suppliedIdentityTerms };
   if (boundInput && (suppliedVisualQuery !== visualInput.text ||
     JSON.stringify(suppliedIdentityTerms) !== JSON.stringify(uniqueIdentityTerms(visualInput.identityTerms)))) {
     throw new TypeError("B7 normalized query does not match its verified visual embedding binding.");
@@ -90,9 +78,6 @@ export async function retrieveB7ProductBaselineCore({
     : suppliedIdentityTerms.length
       ? suppliedIdentityTerms
       : uniqueIdentityTerms(visualInput.identityTerms);
-  const visualQuery = visualInput.mode === "visual"
-    ? visualInput.typedClauses.map((clause) => clause.value).join(" ")
-    : visualInput.mode === "semantic" ? visualInput.semanticText : "";
   const verifiedEmbedding = queryEmbedding
     ? verifyB7VisualEmbedding(queryEmbedding, { expectedInput: visualInput, expectedEmbeddingSpace })
     : null;
@@ -107,13 +92,8 @@ export async function retrieveB7ProductBaselineCore({
 
   const resolvedLimit = boundedLimit(limit);
   const candidateLimit = candidateLimitFor(resolvedLimit);
-  const localTerms = b7LocalTerms(visualQuery);
   const useVectorStage = Boolean(verifiedEmbedding?.vector);
   const useExactIdentityStage = identityTerms.length > 0 && !useVectorStage;
-  const useLocalLexicalStage = Boolean(allowLocalLexical && visualInput.mode === "visual" && localTerms.length);
-  if (visualInput.mode === "visual" && visualQuery && !useLocalLexicalStage) {
-    throw new TypeError("B7 visual retrieval requires its local lexical stage.");
-  }
 
   const stages = [];
   const runStage = async (stage, input) => {
@@ -136,7 +116,6 @@ export async function retrieveB7ProductBaselineCore({
         normalization: verifiedEmbedding.normalization,
         configurationHash: verifiedEmbedding.configurationHash,
       },
-      lexicalTerms: [],
       identityTerms,
       kind,
       albumId,
@@ -147,28 +126,14 @@ export async function retrieveB7ProductBaselineCore({
     candidates.push(...await runStage("exact-identity", {
       userId,
       vector: null,
-      lexicalTerms: [],
       identityTerms,
       kind,
       albumId,
       limit: candidateLimit,
     }));
   }
-  if (useLocalLexicalStage) {
-    candidates.push(...await runStage("local-lexical", {
-      userId,
-      vector: null,
-      lexicalTerms: localTerms,
-      identityTerms,
-      kind,
-      albumId,
-      limit: candidateLimit,
-    }));
-  }
-
   const diagnostics = inspectB7ProductBaselineCandidates({
-    candidates,
-    visualQuery,
+    candidates: useExactIdentityStage ? candidates : [],
     identityTerms,
     limit: resolvedLimit,
   });
@@ -181,6 +146,7 @@ export async function retrieveB7ProductBaselineCore({
       if (existing && existing.score > candidate.score) continue;
       semanticCandidateByFrame.set(frameKey, {
         mediaAssetId: candidate.mediaAssetId,
+        contentRevisionAt: candidate.contentRevisionAt,
         kind: candidate.kind,
         matchedFrameTimestampMs: candidate.matchedFrameTimestampMs ?? null,
         summary: String(candidate.summary || "").slice(0, 160),
@@ -196,12 +162,11 @@ export async function retrieveB7ProductBaselineCore({
   const execution = Object.freeze({
     vectorStageUsed: useVectorStage,
     exactIdentityStageUsed: useExactIdentityStage,
-    localLexicalStageUsed: useLocalLexicalStage,
   });
 
   return {
     method: B7_PRODUCT_BASELINE_METHOD,
-    executionMode: executionModeFor(execution),
+    executionMode: useVectorStage ? "visual-vector" : "exact-only",
     execution,
     stages,
     results: diagnostics.results,

@@ -3,7 +3,6 @@ import { assertMediaRetrievalSearchResponse } from "../../shared/media-retrieval
 import { MEDIA_RETRIEVAL_LIFECYCLE_STATUSES } from "./media-retrieval-constants.js";
 import { parseJson, toIso } from "./repository-mappers.js";
 
-export const MEDIA_RETRIEVAL_AGENT_KEY = "media-retrieval";
 export const TERMINAL_LIFECYCLE_STATUSES = new Set(["succeeded", "failed", "cancelled", "blocked"]);
 export const CLIENT_EVENT_VISIBILITY = "client";
 
@@ -84,6 +83,7 @@ export const mapSegment = (row = {}) => {
   const matchReasons = parseJson(row.match_reasons, []);
   return {
     mediaAssetId: row.media_asset_id,
+    contentRevisionAt: toIso(row.content_revision_at),
     kind: row.kind,
     matchedFrameTimestampMs:
       row.frame_timestamp_ms === null || row.frame_timestamp_ms === undefined

@@ -1,270 +1,90 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-
-import {
-  B7_PRODUCT_BASELINE_METHOD,
-  b7LocalTerms,
-  normalizeB7ProductBaselineQuery,
-  rankB7ProductBaselineCandidates,
-} from "../src/media-retrieval-b7-baseline.js";
 import { retrieveB7ProductBaseline } from "../src/media-retrieval-b7-service.js";
-import {
-  buildVisualEmbeddingInput,
-  createVisualEmbeddingBinding,
-} from "../src/media-retrieval-embedding-input.js";
+import { B7_PRODUCT_BASELINE_CONFIGURATION, assertB7ProductBaselineConfiguration } from "../src/media-retrieval-b7-baseline.js";
+import { buildVisualEmbeddingInput, createVisualEmbeddingBinding } from "../src/media-retrieval-embedding-input.js";
 
-const USER_ID = "11111111-1111-4111-8111-111111111111";
-
-const visualEmbedding = (rawQuery = "yellow dress on a beach") => {
-  const input = buildVisualEmbeddingInput({
-    rawQuery,
-  });
-  return createVisualEmbeddingBinding({
-    input,
-    vector: Array.from({ length: 1024 }, () => 0.1),
-    modelId: "product-contract-model",
-    modelVersion: "v1",
-    configurationHash: "product-contract-configuration-v1",
-  });
-};
-
-test("B7 identity safety uses exact-only constraints before any visual embedding", () => {
-  const normalized = normalizeB7ProductBaselineQuery({
-    rawQuery: "Summer yellow dress",
-    candidate: {
-      visualQuery: "yellow dress",
-      identityTerms: ["Summer"],
-      parseConfidence: "high",
-    },
-  });
-
-  assert.equal(normalized.method, B7_PRODUCT_BASELINE_METHOD);
-  assert.equal(normalized.visualQuery, "");
-  assert.deepEqual(normalized.identityTerms, ["Summer"]);
-  assert.equal(normalized.parseConfidence, "low");
+const userId = "11111111-1111-4111-8111-111111111111";
+const bindingFor = query => createVisualEmbeddingBinding({
+  input: buildVisualEmbeddingInput({ rawQuery: query, candidate: {
+    spans: [{ text: query, role: "visual" }], parseConfidence: "high",
+  } }), vector: Array.from({ length: 1024 }, () => 0.1), modelId: "test", modelVersion: "1", configurationHash: "test-space",
 });
 
-test("B7 controlled visual normalization emits only the closed attribute serialization", () => {
-  const normalized = normalizeB7ProductBaselineQuery({ rawQuery: "yellow dress on a beach" });
-
-  assert.equal(normalized.visualQuery, "visual-v2 color=yellow;clothing=dress;scene=beach");
-  assert.deepEqual(normalized.identityTerms, []);
-  assert.equal(normalized.parseConfidence, "high");
-});
-
-test("B7 ranks caption, tag, OCR, metadata, and vector evidence with asset-level deduplication", () => {
-  const results = rankB7ProductBaselineCandidates({
-    visualQuery: "yellow summer",
-    identityTerms: ["Alice"],
-    limit: 10,
-    candidates: [
-      {
-        mediaAssetId: "asset-a",
-        kind: "video",
-        matchedFrameTimestampMs: 0,
-        summary: "plain frame",
-        score: 0.64,
-        caption: "Alice",
-        tags: ["yellow"],
-        descriptor: { ocrText: ["SUMMER"] },
-        metadata: { album: "summer" },
-      },
-      {
-        mediaAssetId: "asset-a",
-        kind: "video",
-        matchedFrameTimestampMs: 1000,
-        summary: "yellow dress",
-        score: 0.92,
-        caption: "Alice",
-        tags: ["yellow"],
-        descriptor: { ocrText: ["SUMMER"] },
-        metadata: { album: "summer" },
-      },
-      {
-        mediaAssetId: "asset-b",
-        kind: "image",
-        matchedFrameTimestampMs: null,
-        summary: "yellow dress",
-        score: 0.86,
-        caption: "Alice",
-        tags: ["yellow"],
-        descriptor: { ocrText: [] },
-        metadata: { season: "summer" },
-      },
-    ],
-  });
-
-  assert.deepEqual(results.map((result) => result.mediaAssetId), ["asset-a", "asset-b"]);
-  assert.equal(results[0].matchedFrameTimestampMs, 1000);
-  assert.deepEqual(results[0].matchReasons, [
-    "visual-vector",
-    "identity-caption-exact",
-    "tag-match",
-    "ocr-match",
-    "metadata-match",
-  ]);
-});
-
-test("B7 does not invent vector evidence for a PostgreSQL NULL score", () => {
-  const results = rankB7ProductBaselineCandidates({
-    visualQuery: "yellow",
-    candidates: [{
-      mediaAssetId: "asset-null-score",
-      kind: "image",
-      summary: "yellow dress",
-      score: null,
-      caption: "",
-      tags: ["yellow"],
-      descriptor: { ocrText: [] },
-      metadata: {},
-    }],
-  });
-
-  assert.deepEqual(results[0].matchReasons, ["tag-match"]);
-});
-
-test("B7 unions vector and local product stages before fixed local ranking", async () => {
-  const calls = [];
-  const queryEmbedding = visualEmbedding();
+test("semantic retrieval uses only owner-scoped vector recall and never returns an unjudged match", async () => {
+  const calls = [], binding = bindingFor("an unfamiliar sculpture beside an arch");
   const result = await retrieveB7ProductBaseline({
-    userId: USER_ID,
-    normalizedQuery: {
-    visualQuery: queryEmbedding.input.text,
-      identityTerms: [],
-      parseConfidence: "high",
-    },
-    queryEmbedding,
-    repository: {
-      searchMediaRetrievalSegments: async (input) => {
-        calls.push(input);
-        if (input.vector) {
-          return [{
-            mediaAssetId: "asset-vector",
-            kind: "image",
-            summary: "yellow dress",
-            score: 0.9,
-            caption: "",
-            tags: [],
-            descriptor: { clothing: [{ type: "dress", color: "yellow" }], scene: ["beach"], ocrText: [] },
-            metadata: {},
-          }];
-        }
-        return [{
-          mediaAssetId: "asset-local",
-          kind: "image",
-          summary: "beach album",
-          score: null,
-          caption: "",
-          tags: ["yellow", "dress"],
-          descriptor: { ocrText: [] },
-          metadata: { location: "beach" },
-        }];
-      },
-    },
+    repository: { searchMediaRetrievalSegments: async input => { calls.push(input); return [{
+      mediaAssetId: "asset", kind: "image", score: 0.9, summary: "arch", descriptor: { objects: ["sculpture"] },
+    }]; } }, userId, normalizedQuery: { visualQuery: binding.input.text, identityTerms: [], parseConfidence: "high" }, queryEmbedding: binding,
   });
-
-  assert.deepEqual(b7LocalTerms("yellow dress beach"), ["yellow", "dress", "beach"]);
-  assert.equal(calls.length, 2);
-  assert.deepEqual(calls[0].lexicalTerms, []);
-  assert.deepEqual(calls[1].lexicalTerms, ["yellow", "dress", "beach"]);
-  assert.deepEqual(result.results.map((item) => item.mediaAssetId), ["asset-vector", "asset-local"]);
-  assert.equal(result.executionMode, "visual-vector-local");
-  assert.deepEqual(result.execution, {
-    vectorStageUsed: true,
-    exactIdentityStageUsed: false,
-    localLexicalStageUsed: true,
-  });
-  assert.deepEqual(result.stages.map((stage) => stage.stage), ["vector", "local-lexical"]);
-});
-
-test("B7 visual retrieval rejects missing bindings before repository access", async () => {
-  let repositoryCalls = 0;
-  await assert.rejects(
-    retrieveB7ProductBaseline({
-      userId: USER_ID,
-      normalizedQuery: { visualQuery: "yellow dress", identityTerms: [], parseConfidence: "high" },
-      repository: {
-        searchMediaRetrievalSegments: async () => {
-          repositoryCalls += 1;
-          return [];
-        },
-      },
-    }),
-    /visual.*embedding|binding|required/i,
-  );
-  assert.equal(repositoryCalls, 0);
-});
-
-test("B7 identity-only retrieval uses one exact local stage and no vector", async () => {
-  const calls = [];
-  const result = await retrieveB7ProductBaseline({
-    userId: USER_ID,
-    normalizedQuery: { visualQuery: "", identityTerms: ["Dr Alice Chen"], parseConfidence: "low" },
-    repository: {
-      searchMediaRetrievalSegments: async (input) => {
-        calls.push(input);
-        return [{
-          mediaAssetId: "identity-asset",
-          kind: "image",
-          summary: "portrait",
-          score: null,
-          caption: "Dr Alice Chen",
-          tags: [],
-          descriptor: { ocrText: [] },
-          metadata: {},
-        }];
-      },
-    },
-  });
-
   assert.equal(calls.length, 1);
+  assert.equal(calls[0].userId, userId);
+  assert.equal(Object.hasOwn(calls[0], "lexicalTerms"), false);
+  assert.deepEqual(result.results, []);
+  assert.equal(result.semanticCandidates.length, 1);
+  assert.equal(result.executionMode, "visual-vector");
+});
+
+test("explicit identity-only retrieval requires complete exact terms and retains owner and album scope", async () => {
+  const calls = [];
+  const result = await retrieveB7ProductBaseline({
+    repository: { searchMediaRetrievalSegments: async input => { calls.push(input); return [
+      { mediaAssetId: "partial", kind: "image", caption: "Alice at dusk" },
+      { mediaAssetId: "exact", kind: "video", caption: "Alice", matchedFrameTimestampMs: 5000 },
+      { mediaAssetId: "exact", kind: "video", tags: ["Alice"], matchedFrameTimestampMs: 1000 },
+    ]; } }, userId, albumId: "album", normalizedQuery: { visualQuery: "", identityTerms: ["Alice"], parseConfidence: "high" },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].userId, userId);
+  assert.equal(calls[0].albumId, "album");
   assert.equal(calls[0].vector, null);
-  assert.deepEqual(calls[0].lexicalTerms, []);
-  assert.deepEqual(calls[0].identityTerms, ["Dr Alice Chen"]);
-  assert.equal(result.executionMode, "exact-only");
-  assert.deepEqual(result.results.map((item) => item.mediaAssetId), ["identity-asset"]);
+  assert.equal(Object.hasOwn(calls[0], "lexicalTerms"), false);
+  assert.deepEqual(result.results.map(r => r.mediaAssetId), ["exact"]);
+  assert.equal(result.results[0].matchedFrameTimestampMs, 1000);
+  assert.deepEqual(result.semanticCandidates, []);
 });
 
-test("B7 rejects forged bindings, bare vectors, and research runtime inputs", async () => {
-  const binding = visualEmbedding();
-  const base = {
-    userId: USER_ID,
+test("a visual request with identity terms still requires a binding and cannot become exact search", async () => {
+  await assert.rejects(retrieveB7ProductBaseline({
+    repository: { searchMediaRetrievalSegments: async () => assert.fail("must not search") }, userId,
+    normalizedQuery: { visualQuery: "yellow dress", identityTerms: ["Alice"], parseConfidence: "high" },
+  }), error => error.code === "b7_visual_embedding_required");
+});
+
+test("missing or uncertain parsing cannot activate any retrieval stage", async () => {
+  for (const parseConfidence of [undefined, "low"]) {
+    await assert.rejects(retrieveB7ProductBaseline({
+      repository: { searchMediaRetrievalSegments: async () => assert.fail("must not search") }, userId,
+      normalizedQuery: { visualQuery: "", identityTerms: ["Alice"], parseConfidence },
+    }), /high-confidence/);
+  }
+});
+
+test("local keyword and research controls are rejected rather than silently ignored", async () => {
+  for (const key of ["allowLocalLexical", "snapshotId", "evaluator", "formalReceipt"]) {
+    assert.throws(() => retrieveB7ProductBaseline({ [key]: true }), /does not accept/);
+  }
+  assert.deepEqual(assertB7ProductBaselineConfiguration(B7_PRODUCT_BASELINE_CONFIGURATION), B7_PRODUCT_BASELINE_CONFIGURATION);
+  assert.throws(() => assertB7ProductBaselineConfiguration({ ...B7_PRODUCT_BASELINE_CONFIGURATION, allowLocalLexical: true }), /configuration/);
+});
+
+test("bare vectors and changed normalized queries never reach the repository", async () => {
+  const binding = bindingFor("a striped vase");
+  const common = { repository: { searchMediaRetrievalSegments: async () => assert.fail("must not search") }, userId,
+    normalizedQuery: { visualQuery: binding.input.text, identityTerms: [], parseConfidence: "high" } };
+  await assert.rejects(retrieveB7ProductBaseline({ ...common, queryVector: binding.vector }), /bare vector/);
+  await assert.rejects(retrieveB7ProductBaseline({ ...common, queryEmbedding: binding, normalizedQuery: {
+    visualQuery: "another query", identityTerms: [], parseConfidence: "high",
+  } }), /normalized query/);
+  await assert.rejects(retrieveB7ProductBaseline({ ...common, queryEmbedding: binding, expectedEmbeddingConfigurationHash: "other" }), /configuration/);
+});
+
+test("the full 240-character query remains bound without silently truncating the serialized prefix", async () => {
+  const binding = bindingFor("x".repeat(240));
+  const result = await retrieveB7ProductBaseline({
+    repository: { searchMediaRetrievalSegments: async () => [] }, userId, queryEmbedding: binding,
     normalizedQuery: { visualQuery: binding.input.text, identityTerms: [], parseConfidence: "high" },
-    repository: { searchMediaRetrievalSegments: async () => [] },
-  };
-
-  await assert.rejects(
-    retrieveB7ProductBaseline({ ...base, queryEmbedding: { ...binding, textHash: "0".repeat(64) } }),
-    /binding|input/i,
-  );
-  await assert.rejects(
-    retrieveB7ProductBaseline({ ...base, queryVector: Array.from({ length: 1024 }, () => 0.1) }),
-    /binding|vector/i,
-  );
-  assert.throws(
-    () => retrieveB7ProductBaseline({ ...base, queryEmbedding: binding, snapshotId: "research-snapshot" }),
-    /research runtime inputs/i,
-  );
-});
-
-test("B7 returns no match for unsupported neighbours, partial attributes or substring collisions", () => {
-  const candidates = [
-    { mediaAssetId: "high-vector", score: 0.98, descriptor: { objects: ["bicycle"] } },
-    { mediaAssetId: "partial", score: 0.95, tags: ["red"], descriptor: { objects: ["bicycle"] } },
-    { mediaAssetId: "substring", score: 0.9, tags: ["carpet"], descriptor: {} },
-  ];
-  assert.deepEqual(rankB7ProductBaselineCandidates({ visualQuery: "red car", candidates }), []);
-  assert.deepEqual(rankB7ProductBaselineCandidates({ visualQuery: "umbrella", candidates }), []);
-  assert.deepEqual(rankB7ProductBaselineCandidates({ visualQuery: "car", candidates }), []);
-  assert.deepEqual(rankB7ProductBaselineCandidates({ candidates: [{ mediaAssetId: "no-evidence", score: null }] }), []);
-});
-
-test("B7 matches controlled bilingual aliases in structured descriptors without fabricating vector evidence", () => {
-  const results = rankB7ProductBaselineCandidates({ visualQuery: "bicycle", candidates: [
-    { mediaAssetId: "chinese", score: 0, descriptor: { objects: ["自行车"] } },
-    { mediaAssetId: "plural", score: Number.NaN, descriptor: { objects: ["bicycles"] } },
-    { mediaAssetId: "negative", score: -0.9, descriptor: { objects: ["bike"] } },
-  ] });
-  assert.equal(results.length, 3);
-  for (const result of results) assert.deepEqual(result.matchReasons, ["descriptor-match"]);
+  });
+  assert.deepEqual(result.results, []);
 });

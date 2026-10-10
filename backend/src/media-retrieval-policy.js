@@ -3,7 +3,7 @@ import { MEDIA_RETRIEVAL_LIMITS } from "./media-retrieval-constants.js";
 import { validateMediaRetrievalParserResponse } from "./media-retrieval-parser-response.js";
 
 const descriptorString = z.string().trim().min(1).max(160);
-const descriptorListItem = z.string().trim().min(1).max(80);
+const descriptorListItem = z.string().trim().min(1).max(MEDIA_RETRIEVAL_LIMITS.maxDescriptorItemLength);
 const forbiddenDescriptorKeys = new Set([
   "age",
   "celebrity",
@@ -38,7 +38,7 @@ const graphemeSegmenter = new Intl.Segmenter("und", { granularity: "grapheme" })
 // OCR is retained for owner-scoped exact matching. A model can accidentally
 // repeat it inside visual fields, so also strip those copies deterministically
 // at persistence and when projecting older indexed descriptors for reranking.
-export const isolateMediaRetrievalDescriptorOcr = (descriptor = {}) => {
+const isolateMediaRetrievalDescriptorOcr = (descriptor = {}) => {
   descriptor ??= {};
   const tokens = Array.from(new Set((Array.isArray(descriptor.ocrText) ? descriptor.ocrText : [])
     .flatMap((text) => String(text).normalize("NFKC").match(/[\p{L}\p{N}]+/gu) || [])))
@@ -127,37 +127,7 @@ export const normalizeDescriptor = (candidate) => {
   return isolated.summary ? isolated : null;
 };
 
-const normalizeIdentityTerms = (candidate) =>
-  Array.from(
-    new Set(
-      candidate
-        .map((value) => value.trim())
-        .filter(Boolean),
-    ),
-  ).slice(0, 12);
-
-const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const removeIdentityTerms = (visualQuery, identityTerms) => {
-  let result = String(visualQuery || "").trim();
-  for (const term of identityTerms) {
-    result = result.replace(new RegExp(escapeRegExp(term), "gi"), " ");
-  }
-  return result.replace(/\s+/g, " ").trim().slice(0, 240);
-};
-
 export const normalizeRetrievalQuery = (candidate) => {
   const validated = validateMediaRetrievalParserResponse(candidate);
-  if (!validated.ok) return null;
-  const identityTerms = normalizeIdentityTerms(validated.candidate.identityTerms);
-  const parseConfidence = validated.candidate.parseConfidence;
-  if (parseConfidence !== "high") {
-    return { visualQuery: "", identityTerms, parseConfidence: "low" };
-  }
-  const visualQuery = removeIdentityTerms(validated.candidate.visualQuery, identityTerms);
-  return {
-    visualQuery,
-    identityTerms,
-    parseConfidence: visualQuery ? "high" : "low",
-  };
+  return validated.ok ? validated.candidate : null;
 };

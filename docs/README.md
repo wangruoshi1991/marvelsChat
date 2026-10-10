@@ -15,6 +15,8 @@
 - [社交关系](social-graph.md)、[小站能力](station-feature-closure.md)：业务状态与未闭环能力。
 - [媒体检索产品合同](media-retrieval-product-handoff.md)：后端、RN 和运营控制的接口边界。
 - [相册对话检索](agents/album-assistant.md)：当前会话入口、统一授权、受控工具、增量索引及迁移 035。
+- [检索发布证据](agents/media-retrieval/release-evidence.md)：当前原画面修复、独立质量评测、真实 HTTP 验收及历史失败边界。
+- [本轮冗余清理](reviews/2026-10-10-redundancy-cleanup.md)：代码引用、文件、Git 分支及生产恢复依赖的清理依据。
 
 ## 发布与运维
 

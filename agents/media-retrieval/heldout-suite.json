@@ -1,0 +1,86 @@
+{
+  "version": "unsplash-8-assets-heldout-2026-10-v1",
+  "purpose": "Held-out bilingual retrieval evaluation over eight newly selected public photos; small-corpus quality evidence, not a large-library benchmark.",
+  "source": "Unsplash",
+  "licenseUrl": "https://unsplash.com/license",
+  "acceptanceThresholds": {
+    "overallMinimum": 0.9,
+    "positiveTop1Minimum": 0.9,
+    "negativeEmptyMinimum": 0.9,
+    "compositionNegativeMinimum": 0.83
+  },
+  "assets": [
+    {
+      "id": "public-dog",
+      "imageUrl": "https://images.unsplash.com/photo-1552053831-71594a27632d?w=768&fit=max",
+      "sha256": "ef06ab6ffa2c19f375be5a88dc9a4b1ba88ecddc34ff2619ab2b3ad8d056ba4d"
+    },
+    {
+      "id": "public-pizza",
+      "imageUrl": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=768&fit=max",
+      "sha256": "3e405f50249a80fd852039e1377a526328c51bf888045c274ab877f4e9a96f3c"
+    },
+    {
+      "id": "public-backpack",
+      "imageUrl": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=768&fit=max",
+      "sha256": "ae95d56481bfc586ebe78aba612b472bad6bd6a87a6545faae55548f8ac974b1"
+    },
+    {
+      "id": "public-beach",
+      "imageUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=768&fit=max",
+      "sha256": "324dadc82508be7b4a257afa45d1ed13389118fc6cd7cc964abd38e641d5ea6f"
+    },
+    {
+      "id": "public-cat",
+      "imageUrl": "https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=768&fit=max",
+      "sha256": "6ab87eef4f9610ff5ce12d05cd62c831474dd8f29570bfe18f88b8f8a5f25019"
+    },
+    {
+      "id": "public-coffee",
+      "imageUrl": "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=768&fit=max",
+      "sha256": "822b7712972e3b851eb0ebfa38b302305ead47349b54612d3eb0c225a73bb6b9"
+    },
+    {
+      "id": "public-books",
+      "imageUrl": "https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=768&fit=max",
+      "sha256": "c493355abefe6cbb3a1bd1b8f9b314e3c2a45bd1dcefe7de39fd5865cf1955a8"
+    },
+    {
+      "id": "public-flowers",
+      "imageUrl": "https://images.unsplash.com/photo-1490750967868-88aa4486c946?w=768&fit=max",
+      "sha256": "20379b1241ba743d239766ce2e73163ef7b90fd174078995e7ab2df062894e40"
+    }
+  ],
+  "cases": [
+    { "id": "dog-zh-object", "query": "叼着浅黄色花朵的金毛犬", "expectedAssetIds": ["public-dog"], "tags": ["held-out", "positive", "zh", "object-description"] },
+    { "id": "dog-en-paraphrase", "query": "a golden retriever sitting outdoors", "expectedAssetIds": ["public-dog"], "tags": ["held-out", "positive", "en", "paraphrase"] },
+    { "id": "pizza-zh-details", "query": "木板上铺着鸡肉和洋葱的披萨", "expectedAssetIds": ["public-pizza"], "tags": ["held-out", "positive", "zh", "attributes"] },
+    { "id": "pizza-en-scene", "query": "pizza slices on a wooden board", "expectedAssetIds": ["public-pizza"], "tags": ["held-out", "positive", "en", "scene"] },
+    { "id": "backpack-zh-color", "query": "白墙前的黑色双肩背包", "expectedAssetIds": ["public-backpack"], "tags": ["held-out", "positive", "zh", "color"] },
+    { "id": "backpack-en-scene", "query": "a black backpack sitting alone indoors", "expectedAssetIds": ["public-backpack"], "tags": ["held-out", "positive", "en", "scene"] },
+    { "id": "beach-zh-action", "query": "海浪涌上沙滩的海边日落", "expectedAssetIds": ["public-beach"], "tags": ["held-out", "positive", "zh", "action"] },
+    { "id": "beach-en-scene", "query": "a tropical beach with turquoise water", "expectedAssetIds": ["public-beach"], "tags": ["held-out", "positive", "en", "scene"] },
+    { "id": "cat-zh-color", "query": "抬头看着镜头的橘猫", "expectedAssetIds": ["public-cat"], "tags": ["held-out", "positive", "zh", "color"] },
+    { "id": "cat-en-action", "query": "a fluffy ginger cat looking upward", "expectedAssetIds": ["public-cat"], "tags": ["held-out", "positive", "en", "action"] },
+    { "id": "coffee-zh-count", "query": "几只咖啡杯和拉花的俯拍照片", "expectedAssetIds": ["public-coffee"], "tags": ["held-out", "positive", "zh", "count", "viewpoint"] },
+    { "id": "coffee-en-detail", "query": "coffee cups with latte art photographed from above", "expectedAssetIds": ["public-coffee"], "tags": ["held-out", "positive", "en", "attributes"] },
+    { "id": "books-zh-scene", "query": "书架上整齐排开的旧书", "expectedAssetIds": ["public-books"], "tags": ["held-out", "positive", "zh", "scene"] },
+    { "id": "books-en-color", "query": "colorful book spines lined up in a row", "expectedAssetIds": ["public-books"], "tags": ["held-out", "positive", "en", "color"] },
+    { "id": "flowers-zh-scene", "query": "蓝天下田野里开着的橙色花朵", "expectedAssetIds": ["public-flowers"], "tags": ["held-out", "positive", "zh", "scene"] },
+    { "id": "flowers-en-object", "query": "orange flowers growing in a field", "expectedAssetIds": ["public-flowers"], "tags": ["held-out", "positive", "en", "object-description"] },
+    { "id": "empty-umbrella", "query": "an open red umbrella in the rain", "expectedAssetIds": [], "tags": ["held-out", "negative", "en", "unseen-object"] },
+    { "id": "empty-motorcycle", "query": "a red motorcycle parked outside", "expectedAssetIds": [], "tags": ["held-out", "negative", "en", "unseen-object"] },
+    { "id": "empty-sushi", "query": "一盘寿司卷", "expectedAssetIds": [], "tags": ["held-out", "negative", "zh", "unseen-object"] },
+    { "id": "empty-airplane", "query": "an airplane flying through clouds", "expectedAssetIds": [], "tags": ["held-out", "negative", "en", "unseen-object"] },
+    { "id": "empty-elephant", "query": "草地上的大象", "expectedAssetIds": [], "tags": ["held-out", "negative", "zh", "unseen-object"] },
+    { "id": "empty-snow-mountain", "query": "a snow-covered mountain peak", "expectedAssetIds": [], "tags": ["held-out", "negative", "en", "unseen-object"] },
+    { "id": "empty-guitar", "query": "stage lights shining on a guitar", "expectedAssetIds": [], "tags": ["held-out", "negative", "en", "unseen-object"] },
+    { "id": "empty-suitcase", "query": "airport luggage carousel with a blue suitcase", "expectedAssetIds": [], "tags": ["held-out", "negative", "en", "unseen-object"] },
+    { "id": "composition-dog-cat", "query": "a golden retriever sitting beside an orange cat", "expectedAssetIds": [], "tags": ["held-out", "negative", "en", "composition"] },
+    { "id": "composition-cat-books", "query": "an orange cat sitting on a stack of books", "expectedAssetIds": [], "tags": ["held-out", "negative", "en", "composition"] },
+    { "id": "composition-backpack-beach", "query": "a black backpack lying on a sandy beach", "expectedAssetIds": [], "tags": ["held-out", "negative", "en", "composition"] },
+    { "id": "composition-coffee-pizza", "query": "咖啡杯放在披萨上面", "expectedAssetIds": [], "tags": ["held-out", "negative", "zh", "composition"] },
+    { "id": "composition-flower-shore", "query": "orange flowers growing out of the ocean shore", "expectedAssetIds": [], "tags": ["held-out", "negative", "en", "composition"] },
+    { "id": "composition-dog-coffee", "query": "a golden retriever drinking coffee at a cafe", "expectedAssetIds": [], "tags": ["held-out", "negative", "en", "composition"] }
+  ]
+}

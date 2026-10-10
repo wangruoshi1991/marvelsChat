@@ -1,21 +1,10 @@
 import { getAgent } from "../../agents/registry.js";
 import { config } from "./config.js";
 import { HttpError } from "./http-error.js";
+import { isAnthropicModelProvider, resolveModelCompletionEndpoint } from "./model-provider-endpoint.js";
 
-const isAnthropicProvider = () => /\/anthropic(?:\/|$)/i.test(config.newApi.baseUrl || "");
-
-const completionEndpoint = () => {
-  if (!config.newApi.baseUrl) return "";
-  if (isAnthropicProvider()) {
-    if (/\/v1\/messages$/i.test(config.newApi.baseUrl)) return config.newApi.baseUrl;
-    return `${config.newApi.baseUrl}/v1/messages`;
-  }
-  if (/\/chat\/completions$/i.test(config.newApi.baseUrl)) return config.newApi.baseUrl;
-  if (/\/(v1|v4|api\/paas\/v4)$/i.test(config.newApi.baseUrl)) {
-    return `${config.newApi.baseUrl}/chat/completions`;
-  }
-  return `${config.newApi.baseUrl}/v1/chat/completions`;
-};
+const isAnthropicProvider = () => isAnthropicModelProvider(config.newApi.baseUrl);
+const completionEndpoint = () => resolveModelCompletionEndpoint(config.newApi.baseUrl);
 
 const isGlmModel = (model) => /^glm-/i.test(model || "");
 const supportsGlmThinkingMode = (model) => /^glm-4\.5/i.test(model || "");

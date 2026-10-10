@@ -1,0 +1,691 @@
+{
+  "evidenceVersion": 1,
+  "date": "2026-10-10",
+  "scope": "public-image-provider-calibration-only",
+  "datasetHashAlgorithm": "sha256 of JSON.stringify(parsed dataset), matching the calibration runner",
+  "reportHashAlgorithm": "sha256 of the raw report file bytes",
+  "releaseVerdict": "BLOCKED",
+  "productionChanges": false,
+  "privateMediaRead": false,
+  "productionDatabaseWrite": false,
+  "productionObjectStorageWrite": false,
+  "actualCostSource": "supplier-billing-not-yet-reconciled",
+  "usageInterpretation": "Raw provider token fields may overlap; these totals and reservation estimates are not billing amounts or user balance deductions.",
+  "notes": [
+    "All nine batches are separate calls; interrupted batches are not quality passes. HTTP 200 followed by validation failure retains failed-billing-unknown and returned usage; no failed call was retried automatically.",
+    "Development v2 corrects a visually uncertain coffee label: two white latte cups and one dark drink. Comparisons with v1 are not strictly paired.",
+    "Independent v1 used six new images and thirty new cases after the final configuration froze. Its first-run result was not used to tune this candidate; after inspection it is a regression set, not a blind release set for future tuning.",
+    "The previous heldout-suite is also a visible regression baseline. No result here establishes large-library or representative-video quality.",
+    "Constraint citation shape and provenance are verified deterministically; semantic sufficiency of cited visual evidence remains a model judgment.",
+    "Four independent positive empty results have not yet been localized to descriptor, retrieval or rerank causes; parser refusal is a quality failure even for a negative case."
+  ],
+  "rawReportDirectory": "/tmp/miaoxun-retrieval-quality.izPPcs",
+  "totals": {
+    "providerCalls": 406,
+    "statusCounts": {
+      "succeeded": 400,
+      "failed-billing-unknown": 6
+    },
+    "usageTotals": {
+      "input_tokens": 298842,
+      "output_tokens": 29928,
+      "image_tokens": 78660,
+      "total_tokens": 367434
+    },
+    "actualCostFen": null
+  },
+  "runs": [
+    {
+      "id": "development-attempt01",
+      "role": "development",
+      "datasetVersion": "public-source-evidence-development-2026-10-v1",
+      "datasetHash": "fed5e23bd501660bdb194341a4c47b5690f43cbfa201de7591605bc43f61166a",
+      "reportSha256": "eaff84fb6a9d57894285b4016e3e0d9f9fe0904f575356eeb5eb83a79ab8974e",
+      "retrievalConfiguration": {
+        "queryPromptVersion": "media-retrieval-query-prompt-v6",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v5",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v11",
+        "parserSchemaVersion": "media-retrieval-parser-response-v2",
+        "candidateLimit": 20
+      },
+      "providerConfiguration": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "9655e2fb3b3a350a4ec55ea6c5e7223285ab654dc7fd3d1a44e3b5363d56f961"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "providerCalls": 9,
+      "statusCounts": {
+        "succeeded": 8,
+        "failed-billing-unknown": 1
+      },
+      "operationCounts": {
+        "image-description": 5,
+        "image-embedding": 4
+      },
+      "usageReturnedCalls": 9,
+      "usageTotals": {
+        "input_tokens": 5980,
+        "output_tokens": 858,
+        "image_tokens": 6538,
+        "total_tokens": 9694
+      },
+      "reservedEstimateFen": 9,
+      "actualCostFen": null,
+      "completedCases": 0,
+      "batchFailure": "retrieval_policy_unverifiable",
+      "quality": null,
+      "failedCases": [],
+      "latencyMs": 10950
+    },
+    {
+      "id": "development-attempt02",
+      "role": "development",
+      "datasetVersion": "public-source-evidence-development-2026-10-v1",
+      "datasetHash": "fed5e23bd501660bdb194341a4c47b5690f43cbfa201de7591605bc43f61166a",
+      "reportSha256": "d9f3bc5f0a32778430e0e02dda915cc82689efb8bb197b56308008c0889428c5",
+      "retrievalConfiguration": {
+        "queryPromptVersion": "media-retrieval-query-prompt-v6",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v5",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v11",
+        "parserSchemaVersion": "media-retrieval-parser-response-v2",
+        "candidateLimit": 20
+      },
+      "providerConfiguration": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "ee4f7c31404068ea700517b0a82a79e612d0b402d9c3b5e2f63d7bbcfd6e1063"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "providerCalls": 28,
+      "statusCounts": {
+        "succeeded": 27,
+        "failed-billing-unknown": 1
+      },
+      "operationCounts": {
+        "image-description": 8,
+        "image-embedding": 8,
+        "query-parse": 4,
+        "query-embedding": 4,
+        "query-rerank": 4
+      },
+      "usageReturnedCalls": 28,
+      "usageTotals": {
+        "input_tokens": 16829,
+        "output_tokens": 2317,
+        "image_tokens": 9664,
+        "total_tokens": 23970
+      },
+      "reservedEstimateFen": 28,
+      "actualCostFen": null,
+      "completedCases": 3,
+      "batchFailure": "retrieval_policy_unverifiable",
+      "quality": null,
+      "failedCases": [],
+      "latencyMs": 23718
+    },
+    {
+      "id": "development-attempt03",
+      "role": "development",
+      "datasetVersion": "public-source-evidence-development-2026-10-v1",
+      "datasetHash": "fed5e23bd501660bdb194341a4c47b5690f43cbfa201de7591605bc43f61166a",
+      "reportSha256": "1ee56def7449a61122333f670bc1f656a9b5d72824c51c5291dbd4e8bd4e864d",
+      "retrievalConfiguration": {
+        "queryPromptVersion": "media-retrieval-query-prompt-v6",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v6",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v11",
+        "parserSchemaVersion": "media-retrieval-parser-response-v2",
+        "candidateLimit": 20
+      },
+      "providerConfiguration": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "ee4f7c31404068ea700517b0a82a79e612d0b402d9c3b5e2f63d7bbcfd6e1063"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "providerCalls": 76,
+      "statusCounts": {
+        "succeeded": 76
+      },
+      "operationCounts": {
+        "image-description": 8,
+        "image-embedding": 8,
+        "query-parse": 24,
+        "query-embedding": 18,
+        "query-rerank": 18
+      },
+      "usageReturnedCalls": 76,
+      "usageTotals": {
+        "input_tokens": 48413,
+        "output_tokens": 3875,
+        "image_tokens": 9664,
+        "total_tokens": 57112
+      },
+      "reservedEstimateFen": 76,
+      "actualCostFen": null,
+      "completedCases": 24,
+      "batchFailure": null,
+      "quality": {
+        "passed": false,
+        "metrics": {
+          "overall": {
+            "passed": 16,
+            "total": 24
+          },
+          "positiveTop1": {
+            "passed": 8,
+            "total": 16
+          },
+          "negativeEmpty": {
+            "passed": 8,
+            "total": 8
+          },
+          "compositionNegative": {
+            "passed": 5,
+            "total": 5
+          }
+        },
+        "thresholds": {
+          "overallMinimum": 0.9,
+          "positiveTop1Minimum": 0.9,
+          "negativeEmptyMinimum": 0.9,
+          "compositionNegativeMinimum": 0.83
+        }
+      },
+      "failedCases": [
+        {
+          "id": "dev-backpack-zh",
+          "failure": "parser-visual-unverifiable",
+          "resultAssetIds": []
+        },
+        {
+          "id": "dev-beach-zh",
+          "failure": "expected-result-not-found",
+          "resultAssetIds": []
+        },
+        {
+          "id": "dev-beach-en",
+          "failure": "parser-visual-unverifiable",
+          "resultAssetIds": []
+        },
+        {
+          "id": "dev-cat-en",
+          "failure": "parser-visual-unverifiable",
+          "resultAssetIds": []
+        },
+        {
+          "id": "dev-coffee-zh",
+          "failure": "parser-visual-unverifiable",
+          "resultAssetIds": []
+        },
+        {
+          "id": "dev-coffee-en",
+          "failure": "expected-result-not-found",
+          "resultAssetIds": []
+        },
+        {
+          "id": "dev-books-en",
+          "failure": "parser-visual-unverifiable",
+          "resultAssetIds": []
+        },
+        {
+          "id": "dev-flowers-zh",
+          "failure": "parser-visual-unverifiable",
+          "resultAssetIds": []
+        }
+      ],
+      "latencyMs": 42255
+    },
+    {
+      "id": "development-attempt04",
+      "role": "development",
+      "datasetVersion": "public-source-evidence-development-2026-10-v2",
+      "datasetHash": "52cef6da006e581caf201c9736d3614eed25480cd1f3513698be32221b1aac2d",
+      "reportSha256": "04cd90020f780985a1c150b8f5acd3d6fdfab37b4454f4f42e9a1cae24760b9c",
+      "retrievalConfiguration": {
+        "queryPromptVersion": "media-retrieval-query-prompt-v7",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v6",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v12",
+        "parserSchemaVersion": "media-retrieval-parser-response-v2",
+        "candidateLimit": 20
+      },
+      "providerConfiguration": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "818f9ce45be2b38d18b27924a38c61f0bfbf49f21068f1aab469fab81297ab48"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "providerCalls": 19,
+      "statusCounts": {
+        "succeeded": 18,
+        "failed-billing-unknown": 1
+      },
+      "operationCounts": {
+        "image-description": 8,
+        "image-embedding": 8,
+        "query-parse": 1,
+        "query-embedding": 1,
+        "query-rerank": 1
+      },
+      "usageReturnedCalls": 19,
+      "usageTotals": {
+        "input_tokens": 11912,
+        "output_tokens": 1927,
+        "image_tokens": 9664,
+        "total_tokens": 18663
+      },
+      "reservedEstimateFen": 19,
+      "actualCostFen": null,
+      "completedCases": 0,
+      "batchFailure": "retrieval_policy_unverifiable",
+      "quality": null,
+      "failedCases": [],
+      "latencyMs": 17290
+    },
+    {
+      "id": "development-attempt05",
+      "role": "development",
+      "datasetVersion": "public-source-evidence-development-2026-10-v2",
+      "datasetHash": "52cef6da006e581caf201c9736d3614eed25480cd1f3513698be32221b1aac2d",
+      "reportSha256": "25a44b313248acbd28e4e7aa7e6483b34bcb00f88254e1e75542e61c55995509",
+      "retrievalConfiguration": {
+        "queryPromptVersion": "media-retrieval-query-prompt-v7",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v7",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v12",
+        "parserSchemaVersion": "media-retrieval-parser-response-v2",
+        "candidateLimit": 20
+      },
+      "providerConfiguration": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "818f9ce45be2b38d18b27924a38c61f0bfbf49f21068f1aab469fab81297ab48"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "providerCalls": 25,
+      "statusCounts": {
+        "succeeded": 24,
+        "failed-billing-unknown": 1
+      },
+      "operationCounts": {
+        "image-description": 8,
+        "image-embedding": 8,
+        "query-parse": 3,
+        "query-embedding": 3,
+        "query-rerank": 3
+      },
+      "usageReturnedCalls": 25,
+      "usageTotals": {
+        "input_tokens": 15836,
+        "output_tokens": 2265,
+        "image_tokens": 9664,
+        "total_tokens": 22925
+      },
+      "reservedEstimateFen": 25,
+      "actualCostFen": null,
+      "completedCases": 2,
+      "batchFailure": "retrieval_policy_unverifiable",
+      "quality": null,
+      "failedCases": [],
+      "latencyMs": 20267
+    },
+    {
+      "id": "development-attempt06",
+      "role": "development",
+      "datasetVersion": "public-source-evidence-development-2026-10-v2",
+      "datasetHash": "52cef6da006e581caf201c9736d3614eed25480cd1f3513698be32221b1aac2d",
+      "reportSha256": "1b62ffe2ab17b9c4693cf42adb0adc711e586f16d6e1aa6526eb8b60174f33ac",
+      "retrievalConfiguration": {
+        "queryPromptVersion": "media-retrieval-query-prompt-v7",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v8",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v12",
+        "parserSchemaVersion": "media-retrieval-parser-response-v2",
+        "candidateLimit": 20
+      },
+      "providerConfiguration": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "818f9ce45be2b38d18b27924a38c61f0bfbf49f21068f1aab469fab81297ab48"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "providerCalls": 13,
+      "statusCounts": {
+        "succeeded": 12,
+        "failed-billing-unknown": 1
+      },
+      "operationCounts": {
+        "image-description": 7,
+        "image-embedding": 6
+      },
+      "usageReturnedCalls": 13,
+      "usageTotals": {
+        "input_tokens": 8849,
+        "output_tokens": 1234,
+        "image_tokens": 8510,
+        "total_tokens": 14139
+      },
+      "reservedEstimateFen": 13,
+      "actualCostFen": null,
+      "completedCases": 0,
+      "batchFailure": "retrieval_policy_unverifiable",
+      "quality": null,
+      "failedCases": [],
+      "latencyMs": 12009
+    },
+    {
+      "id": "development-attempt07",
+      "role": "development",
+      "datasetVersion": "public-source-evidence-development-2026-10-v2",
+      "datasetHash": "52cef6da006e581caf201c9736d3614eed25480cd1f3513698be32221b1aac2d",
+      "reportSha256": "87b0482ddd40a4884f0c92710da335983de90137a15a773c10fe784eb62fa596",
+      "retrievalConfiguration": {
+        "queryPromptVersion": "media-retrieval-query-prompt-v7",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v8",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v12",
+        "parserSchemaVersion": "media-retrieval-parser-response-v2",
+        "candidateLimit": 20
+      },
+      "providerConfiguration": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "d42134f10fee0ee16cf90077dadca0c48ce4780bc893e10b2c5e0caf4c594aad"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "providerCalls": 50,
+      "statusCounts": {
+        "succeeded": 49,
+        "failed-billing-unknown": 1
+      },
+      "operationCounts": {
+        "image-description": 8,
+        "image-embedding": 8,
+        "query-parse": 12,
+        "query-embedding": 11,
+        "query-rerank": 11
+      },
+      "usageReturnedCalls": 50,
+      "usageTotals": {
+        "input_tokens": 38623,
+        "output_tokens": 4321,
+        "image_tokens": 9664,
+        "total_tokens": 47768
+      },
+      "reservedEstimateFen": 50,
+      "actualCostFen": null,
+      "completedCases": 11,
+      "batchFailure": "retrieval_policy_unverifiable",
+      "quality": null,
+      "failedCases": [
+        {
+          "id": "dev-backpack-zh",
+          "failure": "parser-visual-unverifiable",
+          "resultAssetIds": []
+        }
+      ],
+      "latencyMs": 37260
+    },
+    {
+      "id": "development-attempt08",
+      "role": "development",
+      "datasetVersion": "public-source-evidence-development-2026-10-v2",
+      "datasetHash": "52cef6da006e581caf201c9736d3614eed25480cd1f3513698be32221b1aac2d",
+      "reportSha256": "3c4b290f79146df1ff3020d07a23b02d3bfd02b6360da9bfdcb65ceacf8242ce",
+      "retrievalConfiguration": {
+        "queryPromptVersion": "media-retrieval-query-prompt-v7",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v9",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v12",
+        "parserSchemaVersion": "media-retrieval-parser-response-v2",
+        "candidateLimit": 20
+      },
+      "providerConfiguration": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "d42134f10fee0ee16cf90077dadca0c48ce4780bc893e10b2c5e0caf4c594aad"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "providerCalls": 86,
+      "statusCounts": {
+        "succeeded": 86
+      },
+      "operationCounts": {
+        "image-description": 8,
+        "image-embedding": 8,
+        "query-parse": 24,
+        "query-embedding": 23,
+        "query-rerank": 23
+      },
+      "usageReturnedCalls": 86,
+      "usageTotals": {
+        "input_tokens": 71357,
+        "output_tokens": 6401,
+        "image_tokens": 9664,
+        "total_tokens": 82582
+      },
+      "reservedEstimateFen": 86,
+      "actualCostFen": null,
+      "completedCases": 24,
+      "batchFailure": null,
+      "quality": {
+        "passed": true,
+        "metrics": {
+          "overall": {
+            "passed": 23,
+            "total": 24
+          },
+          "positiveTop1": {
+            "passed": 15,
+            "total": 16
+          },
+          "negativeEmpty": {
+            "passed": 8,
+            "total": 8
+          },
+          "compositionNegative": {
+            "passed": 5,
+            "total": 5
+          }
+        },
+        "thresholds": {
+          "overallMinimum": 0.9,
+          "positiveTop1Minimum": 0.9,
+          "negativeEmptyMinimum": 0.9,
+          "compositionNegativeMinimum": 0.83
+        }
+      },
+      "failedCases": [
+        {
+          "id": "dev-backpack-zh",
+          "failure": "parser-visual-unverifiable",
+          "resultAssetIds": []
+        }
+      ],
+      "latencyMs": 60881
+    },
+    {
+      "id": "independent-report",
+      "role": "independent-at-first-run",
+      "datasetVersion": "unsplash-6-assets-independent-2026-10-v1",
+      "datasetHash": "90983d29c6113154da6ac3d21c7827fc74c8f14651293024fb4bb8b4e32ef719",
+      "reportSha256": "a4d7fac5b81589387a1e0a1b623649004de3b12bcd21d8545fa7b61e3a917b26",
+      "retrievalConfiguration": {
+        "queryPromptVersion": "media-retrieval-query-prompt-v7",
+        "rerankPromptVersion": "media-retrieval-semantic-rerank-prompt-v9",
+        "queryPolicyVersion": "media-retrieval-semantic-visual-policy-v12",
+        "parserSchemaVersion": "media-retrieval-parser-response-v2",
+        "candidateLimit": 20
+      },
+      "providerConfiguration": {
+        "descriptorProvenance": {
+          "provenanceVersion": "media-retrieval-descriptor-provenance-v1",
+          "modelId": "qwen3.6-flash",
+          "modelVersion": "qwen3.6-flash",
+          "configurationHash": "d42134f10fee0ee16cf90077dadca0c48ce4780bc893e10b2c5e0caf4c594aad"
+        },
+        "embeddingProvenance": {
+          "provenanceVersion": "media-retrieval-embedding-provenance-v1",
+          "modelId": "qwen3-vl-embedding",
+          "modelVersion": "qwen3-vl-embedding",
+          "dimension": 1024,
+          "normalization": "provider-native-dense-v1",
+          "configurationHash": "d14e2b14e9b1c5adf70a805adc4cc394822da51aa8091e0d55f0c140abb96ba9"
+        }
+      },
+      "providerCalls": 100,
+      "statusCounts": {
+        "succeeded": 100
+      },
+      "operationCounts": {
+        "image-description": 6,
+        "image-embedding": 6,
+        "query-parse": 30,
+        "query-embedding": 29,
+        "query-rerank": 29
+      },
+      "usageReturnedCalls": 100,
+      "usageTotals": {
+        "input_tokens": 81043,
+        "output_tokens": 6730,
+        "image_tokens": 5628,
+        "total_tokens": 90581
+      },
+      "reservedEstimateFen": 100,
+      "actualCostFen": null,
+      "completedCases": 30,
+      "batchFailure": null,
+      "quality": {
+        "passed": false,
+        "metrics": {
+          "overall": {
+            "passed": 25,
+            "total": 30
+          },
+          "positiveTop1": {
+            "passed": 14,
+            "total": 18
+          },
+          "negativeEmpty": {
+            "passed": 11,
+            "total": 12
+          },
+          "compositionNegative": {
+            "passed": 5,
+            "total": 6
+          }
+        },
+        "thresholds": {
+          "overallMinimum": 0.9,
+          "positiveTop1Minimum": 0.9,
+          "negativeEmptyMinimum": 0.9,
+          "compositionNegativeMinimum": 0.83
+        }
+      },
+      "failedCases": [
+        {
+          "id": "watch-en-detail",
+          "failure": "expected-result-not-found",
+          "resultAssetIds": []
+        },
+        {
+          "id": "car-en-action",
+          "failure": "expected-result-not-found",
+          "resultAssetIds": []
+        },
+        {
+          "id": "car-zh-scene",
+          "failure": "expected-result-not-found",
+          "resultAssetIds": []
+        },
+        {
+          "id": "car-en-detail",
+          "failure": "expected-result-not-found",
+          "resultAssetIds": []
+        },
+        {
+          "id": "composition-fork-watch",
+          "failure": "parser-visual-unverifiable",
+          "resultAssetIds": []
+        }
+      ],
+      "latencyMs": 64279
+    }
+  ]
+}

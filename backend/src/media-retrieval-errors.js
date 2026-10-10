@@ -16,9 +16,11 @@ const DIAGNOSTIC_PROVIDER_CODES = new Set([
 const DIAGNOSTIC_SCHEMA_PATHS = new Set([
   "response", "response.policy", "summary", "clothing", "clothing[]", "clothing[].type", "clothing[].color",
   "scene", "scene[]", "actions", "actions[]", "objects", "objects[]", "ocrText", "ocrText[]",
-  "qualitySignals", "qualitySignals[]", "visualQuery", "identityTerms", "identityTerms[]", "parseConfidence",
+  "qualitySignals", "qualitySignals[]", "spans", "spans[]", "spans[].text", "spans[].role", "parseConfidence",
   "embedding",
-  "matches", "matches[]", "matches[].candidateKey", "matches[].relevance",
+  "matches", "matches[]", "matches[].candidateKey", "matches[].relevance", "matches[].constraintEvidence",
+  "matches[].constraintEvidence[]", "matches[].constraintEvidence[].constraintIndex", "matches[].constraintEvidence[].citations",
+  "matches[].constraintEvidence[].citations[]", "matches[].constraintEvidence[].citations[].field", "matches[].constraintEvidence[].citations[].itemIndex",
 ]);
 
 // Provider bodies, messages and arbitrary property names must never cross this

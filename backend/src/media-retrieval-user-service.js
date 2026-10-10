@@ -4,7 +4,7 @@ import {
   B7_PRODUCT_BASELINE_METHOD,
 } from "./media-retrieval-b7-baseline.js";
 import { retrieveB7ProductBaseline } from "./media-retrieval-b7-service.js";
-import { projectMediaRetrievalRerankedCandidates } from "./media-retrieval-reranker.js";
+import { rerankMediaRetrievalVisualCandidates } from "./media-retrieval-reranker.js";
 import { getMediaRetrievalErrorContract } from "./media-retrieval-errors.js";
 import {
   buildVisualEmbeddingInput,
@@ -139,9 +139,9 @@ const reserveAndCall = async ({ repository, run, operation, countUserAction, ass
 };
 
 const asB7NormalizedQuery = (embeddingInput) => ({
-  visualQuery: ["visual", "semantic"].includes(embeddingInput.mode) ? embeddingInput.text : "",
+  visualQuery: embeddingInput.mode === "semantic" ? embeddingInput.text : "",
   identityTerms: embeddingInput.identityTerms,
-  parseConfidence: ["visual", "semantic"].includes(embeddingInput.mode) ? "high" : "low",
+  parseConfidence: embeddingInput.mode === "blocked" ? "low" : "high",
 });
 
 const createProductEmbeddingBinding = ({ provider, input, vector }) => {
@@ -167,7 +167,7 @@ const createProductEmbeddingBinding = ({ provider, input, vector }) => {
   });
 };
 
-export function createMediaRetrievalUserService({ repository, provider, getRuntimeStatus = null }) {
+export function createMediaRetrievalUserService({ repository, provider, resolveCandidateVisuals, getRuntimeStatus = null }) {
   if (!repository) throw new TypeError("Media retrieval user service requires a repository.");
 
   const failRun = async ({ userId, agentRunId, error }) => {
@@ -371,7 +371,7 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
       // Only a validated parser response can authorize semantic or exact search.
       let embeddingInput = buildVisualEmbeddingInput({
         rawQuery: query,
-        candidate: { visualQuery: "", identityTerms: [], parseConfidence: "low" },
+        candidate: { spans: [], parseConfidence: "low" },
       });
       let queryEmbedding = null;
       if (providerCanSearch(provider)) {
@@ -392,7 +392,7 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
         if (parsed.blocked && !(embeddingInput.mode === "exact-only" && embeddingInput.identityTerms.length)) {
           await finishBlockedSearch(parsed.failureCode || "retrieval_service_unavailable");
         }
-        if (["visual", "semantic"].includes(embeddingInput.mode)) {
+        if (embeddingInput.mode === "semantic") {
           await assertSearchStillAuthorized();
           const embedded = await reserveAndCall({
             repository,
@@ -415,7 +415,7 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
         await finishBlockedSearch("retrieval_service_unavailable");
       }
 
-      if (!["visual", "semantic"].includes(embeddingInput.mode) && !embeddingInput.identityTerms.length) {
+      if (embeddingInput.mode === "blocked") {
         await finishBlockedSearch("retrieval_policy_unverifiable");
       }
       await assertSearchStillAuthorized();
@@ -427,35 +427,38 @@ export function createMediaRetrievalUserService({ repository, provider, getRunti
         kind,
         albumId,
         limit,
-        allowLocalLexical: embeddingInput.mode === "visual",
       });
       let rankedResults = baseline.results;
+      let assertVisualsCurrent = assertSearchStillAuthorized;
       if (embeddingInput.mode === "semantic" && baseline.semanticCandidates.length) {
-        await assertSearchStillAuthorized();
-        const reranked = await reserveAndCall({
-          repository,
-          run,
-          operation: "query-rerank",
-          countUserAction: false,
-          assertAuthorized: assertSearchStillAuthorized,
-          invoke: (reservation) =>
-            provider.rerankMediaCandidates({
-              query: embeddingInput.semanticText,
-              candidates: baseline.semanticCandidates,
-              reservation,
-            }),
-        });
-        const verifiedResults = reranked.blocked
-          ? null
-          : projectMediaRetrievalRerankedCandidates(reranked.value, baseline.semanticCandidates);
-        if (!verifiedResults) {
-          await finishBlockedSearch(reranked.failureCode || "retrieval_policy_unverifiable");
+        if (typeof resolveCandidateVisuals !== "function") {
+          throw new MediaRetrievalServiceError("retrieval_service_unavailable");
         }
-        rankedResults = verifiedResults;
+        const visuals = await resolveCandidateVisuals({
+          userId, indexEpoch: initialIndexEpoch, candidates: baseline.semanticCandidates,
+          assertAuthorized: assertSearchStillAuthorized,
+        });
+        assertVisualsCurrent = visuals.assertCurrent;
+        rankedResults = await rerankMediaRetrievalVisualCandidates({
+          candidates: visuals.candidates,
+          visualConstraints: embeddingInput.visualConstraints,
+          invoke: async candidates => {
+            const reranked = await reserveAndCall({
+              repository, run, operation: "query-rerank", countUserAction: false,
+              assertAuthorized: assertVisualsCurrent,
+              invoke: reservation => provider.rerankMediaCandidates({
+                query: embeddingInput.semanticText, visualConstraints: embeddingInput.visualConstraints,
+                candidates, reservation,
+              }),
+            });
+            if (reranked.blocked) await finishBlockedSearch(reranked.failureCode);
+            return reranked.value;
+          },
+        });
       } else if (embeddingInput.mode === "semantic") {
         rankedResults = [];
       }
-      await assertSearchStillAuthorized();
+      await assertVisualsCurrent();
       rankedResults = rankedResults.slice(0, Math.min(20, Math.max(1, Number(limit) || 10)));
       const response = projectMediaRetrievalSearchResponse({
         agentRunId: run.id,

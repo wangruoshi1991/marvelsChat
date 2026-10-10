@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export const MEDIA_RETRIEVAL_DESCRIPTOR_PROVENANCE_VERSION = "media-retrieval-descriptor-provenance-v1";
+const MEDIA_RETRIEVAL_DESCRIPTOR_PROVENANCE_VERSION = "media-retrieval-descriptor-provenance-v1";
 export const MEDIA_RETRIEVAL_EMBEDDING_PROVENANCE_VERSION = "media-retrieval-embedding-provenance-v1";
 
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
@@ -102,7 +102,7 @@ export function createEmbeddingProvenance({
   };
 }
 
-export function assertDescriptorProvenance(value) {
+function assertDescriptorProvenance(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new TypeError("Media retrieval descriptor provenance is required.");
   }
@@ -165,8 +165,3 @@ export function assertMatchingEmbeddingSpace(actual, expected) {
   }
   return actualSpace;
 }
-
-export const provenanceDigestFor = ({ descriptorProvenance, embeddingProvenance } = {}) => canonicalHash({
-  kind: "media-retrieval-indexing-provenance-v1",
-  ...assertIndexingProvenance({ descriptorProvenance, embeddingProvenance }),
-});

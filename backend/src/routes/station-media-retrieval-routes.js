@@ -1,11 +1,6 @@
-import { config } from "../config.js";
 import { ZodError } from "zod";
-import { query, withTransaction } from "../db.js";
-import { createMediaRetrievalProvider } from "../media-retrieval-provider.js";
-import { createMediaRetrievalRepository } from "../media-retrieval-repository.js";
-import { buildMediaRetrievalRuntimeStatus } from "../media-retrieval-runtime-status.js";
+import { mediaRetrievalUserService } from "../media-retrieval-default-service.js";
 import {
-  createMediaRetrievalUserService,
   MediaRetrievalServiceError,
 } from "../media-retrieval-user-service.js";
 import {
@@ -55,13 +50,6 @@ const requireRetrievalContract = (req, res, next) => {
   res.status(426).json({ error });
 };
 
-const createDefaultService = () =>
-  createMediaRetrievalUserService({
-    repository: createMediaRetrievalRepository({ query, withTransaction }),
-    provider: createMediaRetrievalProvider({ config }),
-    getRuntimeStatus: buildMediaRetrievalRuntimeStatus,
-  });
-
 const idempotencyKeyFrom = (req) => mediaRetrievalIdempotencyKeySchema.parse(req.get("Idempotency-Key") || "");
 
 const safeMediaRetrievalHandler = (asyncHandler, handler) =>
@@ -77,7 +65,7 @@ const safeMediaRetrievalHandler = (asyncHandler, handler) =>
     }
   });
 
-export function registerStationMediaRetrievalRoutes(app, { authenticate, asyncHandler, service = createDefaultService() }) {
+export function registerStationMediaRetrievalRoutes(app, { authenticate, asyncHandler, service = mediaRetrievalUserService }) {
   app.post(
     "/api/station/media-retrieval/enable",
     authenticate,

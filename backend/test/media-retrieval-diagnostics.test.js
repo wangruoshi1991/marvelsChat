@@ -10,7 +10,7 @@ const { registerEventRoutes } = await import("../src/routes/event-routes.js");
 
 const reservation = { reserved: true, reservationId: "11111111-1111-4111-8111-111111111111" };
 const runId = "22222222-2222-4222-8222-222222222222";
-const config = { mediaRetrieval: {
+const config = { newApi: { baseUrl: "https://query-model.example/chat/completions", apiKey: "private-query-key", model: "query-model" }, mediaRetrieval: {
   enabled: true, providerCallsEnabled: true, dashscopeApiKey: "private-key-marker",
   dashscopeApiBaseUrl: "https://workspace.example/api/v1", captionModel: "caption", embeddingModel: "embedding",
 } };
@@ -44,13 +44,15 @@ test("provider HTTP failures preserve only status and allowlisted codes in the a
 test("model descriptor and query failures persist schema paths but no values or arbitrary keys", async () => {
   const scenarios = [
     { method: "describeImage", stage: "descriptor-validation", input: { imageUrl: "https://signed.example/private-file" }, candidate: { summary: "private-caption", clothing: [{ type: "private-type" }] }, path: "clothing[].color" },
-    { method: "parseRetrievalQuery", stage: "query-validation", input: { query: "private-query" }, candidate: { visualQuery: "private-query", identityTerms: "private-identity", parseConfidence: "high", "private-key": "private-value" }, path: "identityTerms" },
+    { method: "parseRetrievalQuery", stage: "query-validation", input: { query: "private-query" }, candidate: { spans: [{ text: "private-query", role: "private-role" }], parseConfidence: "high", "private-key": "private-value" }, path: "spans[].role" },
   ];
   for (const scenario of scenarios) {
     const recorded = [];
     const provider = createMediaRetrievalProvider({
       config, recordDiagnostic: async (value) => recorded.push(value),
-      fetchImpl: async () => response({ output: { choices: [{ message: { content: JSON.stringify(scenario.candidate) } }] } }),
+      fetchImpl: async () => response(scenario.method === "parseRetrievalQuery"
+        ? { choices: [{ message: { content: JSON.stringify(scenario.candidate) } }] }
+        : { output: { choices: [{ message: { content: JSON.stringify(scenario.candidate) } }] } }),
     });
     await assert.rejects(() => provider[scenario.method]({ ...scenario.input, reservation }), (error) => error.code === "retrieval_policy_unverifiable");
     assert.equal(recorded.length, 1);

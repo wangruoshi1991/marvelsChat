@@ -75,7 +75,7 @@ const createActualSearchService = () => createMediaRetrievalUserService({
   },
   provider: {
     getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
-    parseRetrievalQuery: async () => ({ visualQuery: "", identityTerms: ["Alice"], parseConfidence: "low" }),
+    parseRetrievalQuery: async () => ({ spans: [{ text: "Alice", role: "identity" }], parseConfidence: "high" }),
   },
 });
 
@@ -87,7 +87,7 @@ test("the real B7 search service and HTTP route emit the canonical search DTO fi
   const service = createActualSearchService();
   const directResult = await service.searchMediaRetrieval({
     userId: USER_ID,
-    query: "Alice wearing a yellow dress",
+    query: "Alice",
   });
 
   assert.deepEqual(directResult, fixture.searchSuccess);
@@ -112,7 +112,7 @@ test("the real B7 search service and HTTP route emit the canonical search DTO fi
   };
   const request = {
     user: { id: USER_ID },
-    body: { query: "Alice wearing a yellow dress", limit: 10 },
+    body: { query: "Alice", limit: 10 },
     get: (name) => ({
       "Idempotency-Key": "search-operation-0001",
       "X-Miaoxun-Retrieval-Contract": "2",

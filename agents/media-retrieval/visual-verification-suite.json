@@ -1,0 +1,410 @@
+{
+  "version": "unseen-visual-verification-2026-10-v1",
+  "kind": "real-provider-new-independent-images",
+  "acceptanceThresholds": {
+    "overallMinimum": 0.9,
+    "positiveTop1Minimum": 0.9,
+    "negativeEmptyMinimum": 0.9,
+    "compositionNegativeMinimum": 0.83
+  },
+  "assets": [
+    {
+      "id": "fresh-dog",
+      "imageUrl": "https://images.unsplash.com/photo-1517849845537-4d257902454a?w=768&fit=max",
+      "sha256": "939bb40c46e604428e5a2f407974e541c46be85285300c0aef7912a9512d767e"
+    },
+    {
+      "id": "fresh-camera",
+      "imageUrl": "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=768&fit=max",
+      "sha256": "fbc507a54318afb9d488584e8d2d06cc17889cb1968dea639ff1e54d013a39a6"
+    },
+    {
+      "id": "fresh-guitar",
+      "imageUrl": "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?w=768&fit=max",
+      "sha256": "136c25c70ee19dcfe3dd97e33d74ff2c6041eda49aeac6ee06c8e009dd3a6e00"
+    },
+    {
+      "id": "fresh-laptop",
+      "imageUrl": "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=768&fit=max",
+      "sha256": "a4a13a5d2c5873300509d1d184fd0ad210f74b6d4a5bad1d8e31f3dfab334a81"
+    },
+    {
+      "id": "fresh-salad",
+      "imageUrl": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=768&fit=max",
+      "sha256": "daf1faf456d9c387b378619b9536e65c36b78b78f5986f535b460b73a01737b8"
+    },
+    {
+      "id": "fresh-plant",
+      "imageUrl": "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=768&fit=max",
+      "sha256": "377fb8f112951561b653c38db5f99552167151a93259d6cef68b313d18b5ac2d"
+    }
+  ],
+  "cases": [
+    {
+      "id": "dog-zh-clothes",
+      "query": "穿着灰色针织衫的黑色巴哥犬",
+      "expectedAssetIds": [
+        "fresh-dog"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "zh",
+        "clothing"
+      ]
+    },
+    {
+      "id": "dog-en-background",
+      "query": "a black pug against a yellow background",
+      "expectedAssetIds": [
+        "fresh-dog"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "en",
+        "color"
+      ]
+    },
+    {
+      "id": "dog-en-detail",
+      "query": "a black dog with round eyes and a short wrinkled muzzle",
+      "expectedAssetIds": [
+        "fresh-dog"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "en",
+        "parts"
+      ]
+    },
+    {
+      "id": "camera-zh-parts",
+      "query": "黑色相机下方摆着两个圆形镜头",
+      "expectedAssetIds": [
+        "fresh-camera"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "zh",
+        "relation"
+      ]
+    },
+    {
+      "id": "camera-en-scene",
+      "query": "a black camera surrounded by lenses on a dark surface",
+      "expectedAssetIds": [
+        "fresh-camera"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "en",
+        "scene"
+      ]
+    },
+    {
+      "id": "camera-en-parts",
+      "query": "a camera with a round glass lens attached",
+      "expectedAssetIds": [
+        "fresh-camera"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "en",
+        "parts"
+      ]
+    },
+    {
+      "id": "guitar-zh-action",
+      "query": "手指按着木吉他的琴弦",
+      "expectedAssetIds": [
+        "fresh-guitar"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "zh",
+        "action"
+      ]
+    },
+    {
+      "id": "guitar-en-action",
+      "query": "hands playing a wooden acoustic guitar",
+      "expectedAssetIds": [
+        "fresh-guitar"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "en",
+        "action"
+      ]
+    },
+    {
+      "id": "guitar-en-closeup",
+      "query": "a close view of fingers on a guitar fretboard",
+      "expectedAssetIds": [
+        "fresh-guitar"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "en",
+        "viewpoint"
+      ]
+    },
+    {
+      "id": "laptop-zh-relation",
+      "query": "木桌上的笔记本电脑右边有白色盆栽",
+      "expectedAssetIds": [
+        "fresh-laptop"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "zh",
+        "relation"
+      ]
+    },
+    {
+      "id": "laptop-en-object",
+      "query": "an open silver laptop on a wooden desk",
+      "expectedAssetIds": [
+        "fresh-laptop"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "en",
+        "attributes"
+      ]
+    },
+    {
+      "id": "laptop-en-parts",
+      "query": "a laptop with a black screen beside a gold desk organizer",
+      "expectedAssetIds": [
+        "fresh-laptop"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "en",
+        "parts"
+      ]
+    },
+    {
+      "id": "salad-zh-colors",
+      "query": "圆碗里有红色番茄、黄色玉米和绿色黄瓜",
+      "expectedAssetIds": [
+        "fresh-salad"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "zh",
+        "attributes"
+      ]
+    },
+    {
+      "id": "salad-en-scene",
+      "query": "a round bowl filled with colorful food on a white background",
+      "expectedAssetIds": [
+        "fresh-salad"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "en",
+        "scene"
+      ]
+    },
+    {
+      "id": "salad-en-topview",
+      "query": "a salad bowl photographed from above",
+      "expectedAssetIds": [
+        "fresh-salad"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "en",
+        "viewpoint"
+      ]
+    },
+    {
+      "id": "soil-zh-parts",
+      "query": "装着泥土的绿色铲子旁边有剪刀",
+      "expectedAssetIds": [
+        "fresh-plant"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "zh",
+        "parts"
+      ]
+    },
+    {
+      "id": "soil-en-scene",
+      "query": "soil scattered across a surface beside a green scoop",
+      "expectedAssetIds": [
+        "fresh-plant"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "en",
+        "relation"
+      ]
+    },
+    {
+      "id": "soil-en-object",
+      "query": "a green gardening scoop filled with brown soil",
+      "expectedAssetIds": [
+        "fresh-plant"
+      ],
+      "tags": [
+        "independent",
+        "positive",
+        "en",
+        "attributes"
+      ]
+    },
+    {
+      "id": "negative-bike",
+      "query": "a blue bicycle leaning on a brick wall",
+      "expectedAssetIds": [],
+      "tags": [
+        "independent",
+        "negative",
+        "en",
+        "unseen"
+      ]
+    },
+    {
+      "id": "negative-ocean",
+      "query": "海浪边撑着红伞的人",
+      "expectedAssetIds": [],
+      "tags": [
+        "independent",
+        "negative",
+        "zh",
+        "unseen"
+      ]
+    },
+    {
+      "id": "negative-watch",
+      "query": "a white watch on a wrist",
+      "expectedAssetIds": [],
+      "tags": [
+        "independent",
+        "negative",
+        "en",
+        "unseen"
+      ]
+    },
+    {
+      "id": "negative-car",
+      "query": "红色跑车停在雪地里",
+      "expectedAssetIds": [],
+      "tags": [
+        "independent",
+        "negative",
+        "zh",
+        "unseen"
+      ]
+    },
+    {
+      "id": "negative-coffee",
+      "query": "two coffee cups with latte art",
+      "expectedAssetIds": [],
+      "tags": [
+        "independent",
+        "negative",
+        "en",
+        "unseen"
+      ]
+    },
+    {
+      "id": "negative-plane",
+      "query": "飞在云层上方的飞机",
+      "expectedAssetIds": [],
+      "tags": [
+        "independent",
+        "negative",
+        "zh",
+        "unseen"
+      ]
+    },
+    {
+      "id": "composition-dog-laptop",
+      "query": "a black pug standing on a laptop keyboard",
+      "expectedAssetIds": [],
+      "tags": [
+        "independent",
+        "negative",
+        "en",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-camera-salad",
+      "query": "相机镜头放在沙拉碗里",
+      "expectedAssetIds": [],
+      "tags": [
+        "independent",
+        "negative",
+        "zh",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-guitar-soil",
+      "query": "a guitar buried in a green scoop of soil",
+      "expectedAssetIds": [],
+      "tags": [
+        "independent",
+        "negative",
+        "en",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-dog-guitar",
+      "query": "黑色狗的爪子正在弹木吉他",
+      "expectedAssetIds": [],
+      "tags": [
+        "independent",
+        "negative",
+        "zh",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-laptop-bowl",
+      "query": "an open laptop inside a round food bowl",
+      "expectedAssetIds": [],
+      "tags": [
+        "independent",
+        "negative",
+        "en",
+        "composition"
+      ]
+    },
+    {
+      "id": "composition-camera-soil",
+      "query": "镜头里装着泥土的黑色相机",
+      "expectedAssetIds": [],
+      "tags": [
+        "independent",
+        "negative",
+        "zh",
+        "composition"
+      ]
+    }
+  ]
+}

@@ -41,7 +41,7 @@ import {
 } from "../schemas.js";
 
 const defaultLogger = { error: (entry) => console.error(JSON.stringify(entry)) };
-export const agentRuntimeFailureCode = "AGENT_RUNTIME_FAILED";
+const agentRuntimeFailureCode = "AGENT_RUNTIME_FAILED";
 const hour = 60 * 60 * 1000;
 const staleAgentMessageMs = Math.max(2 * 60 * 1000, config.newApi.timeoutMs + 30 * 1000);
 const agentFailureReply = "模型服务暂时没有返回。请稍后再试，或让管理员检查后端模型配置。";

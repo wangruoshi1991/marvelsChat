@@ -7,6 +7,7 @@ const FORBIDDEN_PRODUCT_INPUTS = Object.freeze([
   "formalReceipt",
   "experimentManifest",
   "evaluator",
+  "allowLocalLexical",
 ]);
 
 // Public product composition. Deliberately accepts no research receipt,

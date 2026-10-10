@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolveTestCandidateVisuals } from "./helpers/media-retrieval-visual-fixture.js";
 
 process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 
@@ -22,6 +23,7 @@ const TEST_EMBEDDING_PROVENANCE = createEmbeddingProvenance({
 const getTestIndexingProvenance = () => ({ embeddingProvenance: TEST_EMBEDDING_PROVENANCE });
 const createMediaRetrievalUserService = (input) => createUserService({
   getRuntimeStatus: async () => ({ routeEligibility: { canRouteNewRun: true } }),
+  resolveCandidateVisuals: resolveTestCandidateVisuals,
   ...input,
 });
 
@@ -73,11 +75,7 @@ test("actual object search binds bilingual queries and forwards the current vect
     provider: {
       getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
       getIndexingProvenance: getTestIndexingProvenance,
-      parseRetrievalQuery: async ({ query }) => ({
-        visualQuery: query,
-        identityTerms: [],
-        parseConfidence: "high",
-      }),
+      parseRetrievalQuery: async ({ query }) => ({ spans: [{ text: query, role: "visual" }], parseConfidence: "high" }),
       embedText: async ({ input }) => {
         embedded.push(input.text);
         return VECTOR;
@@ -88,7 +86,7 @@ test("actual object search binds bilingual queries and forwards the current vect
     const response = await service.searchMediaRetrieval({ userId: USER_ID, query });
     assert.deepEqual(response.results, []);
   }
-  assert.deepEqual(embedded, ["semantic-v1 自行车的照片", "semantic-v1 photos of a car", "semantic-v1 公园里的自行车"]);
+  assert.deepEqual(embedded, ["semantic-v2 自行车的照片", "semantic-v2 photos of a car", "semantic-v2 公园里的自行车"]);
   assert.ok(searched.some((input) => input.vector));
   for (const input of searched.filter((item) => item.vector)) {
     assert.deepEqual(input.embeddingProvenance, TEST_EMBEDDING_PROVENANCE);
@@ -96,7 +94,7 @@ test("actual object search binds bilingual queries and forwards the current vect
   }
 });
 
-test("B7 service keeps parser-missed identity spans out of semantic embedding and uses semantic retrieval for open queries", async () => {
+test("old parser output cannot activate keyword or identity compatibility paths", async () => {
   const embeddedInputs = [];
   const searched = [];
   let parseCalls = 0;
@@ -106,11 +104,9 @@ test("B7 service keeps parser-missed identity spans out of semantic embedding an
       getIndexingProvenance: getTestIndexingProvenance,
       parseRetrievalQuery: async ({ query }) => {
         parseCalls += 1;
-        return {
-          visualQuery: query,
-          identityTerms: [],
-          parseConfidence: "high",
-        };
+        return query === "yellow dress on a beach"
+          ? { spans: [{ text: query, role: "visual" }], parseConfidence: "high" }
+          : { visualQuery: query, visualConstraints: [query], identityTerms: [], parseConfidence: "high" };
       },
       embedText: async ({ input }) => {
         embeddedInputs.push(input);
@@ -150,15 +146,16 @@ test("B7 service keeps parser-missed identity spans out of semantic embedding an
     "夏天穿黄色衣服",
     "yellow dress on a beach",
   ]) {
-    await service.searchMediaRetrieval({ userId: USER_ID, query });
+    if (query === "yellow dress on a beach") await service.searchMediaRetrieval({ userId: USER_ID, query });
+    else await assert.rejects(service.searchMediaRetrieval({ userId: USER_ID, query }), error => error.code === "retrieval_policy_unverifiable");
   }
 
   assert.equal(parseCalls, 25);
   assert.deepEqual(
     embeddedInputs.map((input) => input.text),
-    ["semantic-v1 yellow dress on a beach"],
+    ["semantic-v2 yellow dress on a beach"],
   );
-  assert.equal(embeddedInputs[0].kind, "media-retrieval-typed-visual-embedding-v2");
+  assert.equal(embeddedInputs[0].kind, "media-retrieval-source-visual-embedding-v3");
   assert.match(embeddedInputs[0].coverageDigest, /^[a-f0-9]{64}$/);
   assert.match(embeddedInputs[0].textHash, /^[a-f0-9]{64}$/);
   assert.equal(JSON.stringify(embeddedInputs).includes("Alice"), false);
@@ -167,7 +164,7 @@ test("B7 service keeps parser-missed identity spans out of semantic embedding an
   assert.equal(JSON.stringify(embeddedInputs).includes("小明"), false);
   assert.equal(JSON.stringify(embeddedInputs).includes("欧阳娜娜"), false);
   for (const input of searched.filter((item) => item.identityTerms.length)) {
-    assert.equal(input.lexicalTerms.some((term) => /Alice|Taylor Swift|周杰伦/u.test(term)), false);
+    assert.equal(Object.hasOwn(input, "lexicalTerms"), false);
   }
 });
 
@@ -176,19 +173,19 @@ test("identity terms are exact owner filters and never enter query embeddings", 
     {
       label: "high-confidence season homonym",
       query: "Summer yellow dress",
-      candidate: { visualQuery: "yellow dress", identityTerms: ["Summer"], parseConfidence: "high" },
+      candidate: { spans: [{ text: "Summer", role: "identity" }, { text: " yellow dress", role: "visual" }], parseConfidence: "high" },
       expectedIdentityTerms: ["Summer"],
     },
     {
       label: "high-confidence color homonym",
       query: "Brown yellow dress",
-      candidate: { visualQuery: "yellow dress", identityTerms: ["Brown"], parseConfidence: "high" },
+      candidate: { spans: [{ text: "Brown", role: "identity" }, { text: " yellow dress", role: "visual" }], parseConfidence: "high" },
       expectedIdentityTerms: ["Brown"],
     },
     {
       label: "low-confidence arbitrary parser identity term",
       query: "yellow dress on a beach",
-      candidate: { visualQuery: "yellow dress on a beach", identityTerms: ["yellow"], parseConfidence: "low" },
+      candidate: { spans: [{ text: "yellow", role: "identity" }, { text: " dress on a beach", role: "visual" }], parseConfidence: "low" },
       expectedIdentityTerms: ["yellow"],
     },
   ];
@@ -213,6 +210,12 @@ test("identity terms are exact owner filters and never enter query embeddings", 
       repository: repositoryForSearch({ searched }),
     });
 
+    if (scenario.candidate.parseConfidence === "low") {
+      await assert.rejects(service.searchMediaRetrieval({ userId: USER_ID, query: scenario.query }), error => error.code === "retrieval_policy_unverifiable");
+      assert.equal(searched.length, 0);
+      assert.equal(embeddedInputs.length, 0);
+      continue;
+    }
     await service.searchMediaRetrieval({ userId: USER_ID, query: scenario.query });
 
     assert.equal(parseCalls, 1, scenario.label);
@@ -223,7 +226,7 @@ test("identity terms are exact owner filters and never enter query embeddings", 
       scenario.label,
     );
     assert.ok(
-      searched.every((stage) => stage.lexicalTerms.length === 0),
+      searched.every((stage) => !Object.hasOwn(stage, "lexicalTerms")),
       scenario.label,
     );
     if (embeddedInputs.length) {
@@ -233,7 +236,7 @@ test("identity terms are exact owner filters and never enter query embeddings", 
   }
 });
 
-test("parser-missed identity contexts remain out of embeddings even when the parser is called", async () => {
+test("source-incomplete classification blocks before embedding even when parser dispatch succeeds", async () => {
   for (const query of [
     "Summer wearing yellow",
     "Brown wearing yellow dress",
@@ -247,7 +250,7 @@ test("parser-missed identity contexts remain out of embeddings even when the par
         getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
         parseRetrievalQuery: async () => {
           parseCalls += 1;
-          return { visualQuery: "untrusted", identityTerms: [], parseConfidence: "high" };
+          return { spans: [{ text: "untrusted", role: "visual" }], parseConfidence: "high" };
         },
         embedText: async ({ input }) => {
           embeddedInputs.push(input);
@@ -257,7 +260,7 @@ test("parser-missed identity contexts remain out of embeddings even when the par
       repository: repositoryForSearch(),
     });
 
-    await service.searchMediaRetrieval({ userId: USER_ID, query });
+    await assert.rejects(service.searchMediaRetrieval({ userId: USER_ID, query }), error => error.code === "retrieval_policy_unverifiable");
 
     assert.equal(parseCalls, 1, query);
     assert.equal(embeddedInputs.length, 0, query);
@@ -273,7 +276,7 @@ test("actual search service fails closed when a low-confidence parser supplies a
       parseRetrievalQuery: async () => {
         parseCalls += 1;
         return {
-          visualQuery: "yellow dress on a beach",
+          visualQuery: "yellow dress on a beach", visualConstraints: ["yellow dress on a beach"],
           identityTerms: ["Not in this query"],
           parseConfidence: "low",
         };
@@ -303,11 +306,7 @@ test("actual service rejects parser replacement text before embedding or retriev
       getIndexingProvenance: getTestIndexingProvenance,
       parseRetrievalQuery: async () => {
         parseCalls += 1;
-        return {
-          visualQuery: "untrusted replacement text",
-          identityTerms: [],
-          parseConfidence: "high",
-        };
+        return { spans: [{ text: "untrusted replacement text", role: "visual" }], parseConfidence: "high" };
       },
       embedText: async ({ input }) => {
         embeddedInputs.push(input);
@@ -357,11 +356,7 @@ test("search service rejects reranker IDs outside the current owner's candidate 
     provider: {
       getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
       getIndexingProvenance: getTestIndexingProvenance,
-      parseRetrievalQuery: async () => ({
-        visualQuery: "a yellow dress at dusk",
-        identityTerms: [],
-        parseConfidence: "high",
-      }),
+      parseRetrievalQuery: async () => ({ spans: [{ text: "a yellow dress at dusk", role: "visual" }], parseConfidence: "high" }),
       embedText: async () => VECTOR,
       rerankMediaCandidates: async () => [
         {
@@ -382,7 +377,7 @@ test("search service rejects reranker IDs outside the current owner's candidate 
     (error) => error instanceof MediaRetrievalServiceError && error.code === "retrieval_policy_unverifiable",
   );
   assert.equal(searched.length, 1);
-  assert.equal(transitions.at(-1).lifecycleStatus, "blocked");
+  assert.equal(transitions.at(-1).lifecycleStatus, "failed");
 });
 
 test("a disabled provider does not disguise a generic visual search as local lexical success", async () => {
@@ -557,11 +552,7 @@ test("revocation during a search stops subsequent model dispatch and result pers
         getIndexingProvenance: getTestIndexingProvenance,
         parseRetrievalQuery: async () => {
           dispatch("query-parse");
-          return {
-            visualQuery: "a yellow dress outdoors",
-            identityTerms: [],
-            parseConfidence: "high",
-          };
+          return { spans: [{ text: "a yellow dress outdoors", role: "visual" }], parseConfidence: "high" };
         },
         embedText: async () => {
           dispatch("query-embedding");
@@ -569,7 +560,8 @@ test("revocation during a search stops subsequent model dispatch and result pers
         },
         rerankMediaCandidates: async () => {
           dispatch("query-rerank");
-          return [{ ...asset, matchReasons: ["semantic-match"] }];
+          return [{ ...asset, matchReasons: ["semantic-match"],
+            constraintEvidence: [{ constraintIndex: 0, citations: [{ field: "image", itemIndex: 0 }] }] }];
         },
       },
     });
@@ -615,11 +607,7 @@ test("a cleared and re-enabled epoch invalidates an in-flight search", async () 
       getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
       parseRetrievalQuery: async () => {
         epoch = 3;
-        return {
-          visualQuery: "a yellow dress outdoors",
-          identityTerms: [],
-          parseConfidence: "high",
-        };
+        return { spans: [{ text: "a yellow dress outdoors", role: "visual" }], parseConfidence: "high" };
       },
       embedText: async () => {
         embedded = true;
@@ -665,11 +653,7 @@ test("an empty recall skips paid reranking while rerank failure cannot become em
       provider: {
         getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
         getIndexingProvenance: getTestIndexingProvenance,
-        parseRetrievalQuery: async () => ({
-          visualQuery: "a bicycle outdoors",
-          identityTerms: [],
-          parseConfidence: "high",
-        }),
+        parseRetrievalQuery: async () => ({ spans: [{ text: "a bicycle outdoors", role: "visual" }], parseConfidence: "high" }),
         embedText: async () => VECTOR,
         rerankMediaCandidates: async () => {
           reranks += 1;
@@ -690,6 +674,43 @@ test("an empty recall skips paid reranking while rerank failure cannot become em
     }
     assert.equal(reranks, hasCandidate ? 1 : 0);
   }
+});
+
+test("each visual batch reserves separately and a later provider failure cannot persist earlier matches", async () => {
+  const transitions = [], reservedOperations = [], dispositions = [], batchSizes = [];
+  const rows = Array.from({ length: 14 }, (_, index) => ({
+    mediaAssetId: "owner-asset-" + index, kind: "image", matchedFrameTimestampMs: null,
+    summary: "a ceramic bowl", score: 0.9,
+  }));
+  const service = createMediaRetrievalUserService({
+    repository: {
+      ...repositoryForSearch({ transitions }),
+      searchMediaRetrievalSegments: async () => rows,
+      reserveProviderBudget: async ({ operation }) => {
+        reservedOperations.push(operation);
+        return { reserved: true, reservationId: "reservation-" + reservedOperations.length, amountFen: 1 };
+      },
+      settleProviderBudget: async ({ disposition }) => { dispositions.push(disposition); },
+    },
+    provider: {
+      getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
+      getIndexingProvenance: getTestIndexingProvenance,
+      parseRetrievalQuery: async ({ query }) => ({ spans: [{ text: query, role: "visual" }], parseConfidence: "high" }),
+      embedText: async () => VECTOR,
+      rerankMediaCandidates: async ({ candidates }) => {
+        batchSizes.push(candidates.length);
+        if (batchSizes.length === 2) throw new Error("provider second batch failed");
+        return candidates.map(candidate => ({ ...candidate, score: 0.8, matchReasons: ["semantic-match"],
+          constraintEvidence: [{ constraintIndex: 0, citations: [{ field: "image", itemIndex: 0 }] }] }));
+      },
+    },
+  });
+  await assert.rejects(service.searchMediaRetrieval({ userId: USER_ID, query: "a ceramic bowl" }),
+    error => error.code === "retrieval_service_unavailable");
+  assert.deepEqual(batchSizes, [1, 1]);
+  assert.deepEqual(reservedOperations, ["query-parse", "query-embedding", "query-rerank", "query-rerank"]);
+  assert.deepEqual(dispositions, ["estimated", "estimated", "estimated", "unknown"]);
+  assert.equal(transitions.some(transition => transition.lifecycleStatus === "succeeded"), false);
 });
 
 test("actual search service persists provider failures only through the canonical error allowlist", async () => {

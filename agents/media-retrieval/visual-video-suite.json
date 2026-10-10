@@ -1,0 +1,20 @@
+{
+  "version": "public-moving-flower-video-2026-10-v1",
+  "purpose": "Actual CC0 moving video of a red flower bud and opening petals; no slideshow or private media",
+  "assets": [
+    {
+      "id": "public-flower",
+      "kind": "video",
+      "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+      "sha256": "0cd83d944a6ca7822b4a8306cecc60a36e859b041f6702c6a1ad9ead78924451"
+    }
+  ],
+  "cases": [
+    { "id": "flower-zh-bud", "query": "绿叶间的红色花苞", "expectedAssetIds": ["public-flower"], "tags": ["positive", "zh", "video"] },
+    { "id": "flower-en-leaves", "query": "a red flower surrounded by green leaves", "expectedAssetIds": ["public-flower"], "tags": ["positive", "en", "video"] },
+    { "id": "flower-zh-closeup", "query": "红色花朵的近距离画面", "expectedAssetIds": ["public-flower"], "tags": ["positive", "zh", "video"] },
+    { "id": "video-negative-dog", "query": "a black dog sitting on the green leaves", "expectedAssetIds": [], "tags": ["negative", "composition", "en", "video"] },
+    { "id": "video-negative-watch", "query": "红花上放着白色手表", "expectedAssetIds": [], "tags": ["negative", "composition", "zh", "video"] },
+    { "id": "video-negative-car", "query": "a sports car moving along a road", "expectedAssetIds": [], "tags": ["negative", "en", "video"] }
+  ]
+}

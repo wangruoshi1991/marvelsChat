@@ -253,7 +253,6 @@ test("owner-scoped retrieval methods never query a run, profile, event, or segme
     await repository.searchMediaRetrievalSegments({
       userId: USER_B,
       vector: null,
-      lexicalTerms: [],
       kind: null,
       albumId: null,
       limit: 10,

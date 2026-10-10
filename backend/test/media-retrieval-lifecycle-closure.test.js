@@ -155,7 +155,7 @@ test("search repository failures become terminal and replay never reruns the pro
     getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
     parseRetrievalQuery: async () => {
       parses += 1;
-      return { visualQuery: "", identityTerms: ["Alice"], parseConfidence: "low" };
+      return { spans: [{ text: "Alice", role: "identity" }], parseConfidence: "high" };
     },
   }, getRuntimeStatus: available });
   const input = { userId: USER_ID, query: "Alice", idempotencyKey: "failed-search-0001" };

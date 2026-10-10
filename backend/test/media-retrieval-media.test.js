@@ -24,7 +24,7 @@ test("owned uploaded images are normalized within provider limits", async () => 
       mimeType: "image/jpeg",
       kind: "image",
     },
-    fetchOssObject: async () => ({ arrayBuffer: async () => source }),
+    fetchOssObject: async () => new Response(source),
   });
   const normalized = await normalizeImageForProvider({ bytes: loaded.bytes, mimeType: loaded.mimeType });
   const metadata = await sharp(normalized.bytes).metadata();
@@ -46,6 +46,23 @@ test("media helper refuses an unowned, deleted, or unavailable asset without sto
     }),
     (error) => error instanceof MediaRetrievalMediaError && error.code === "asset_not_indexable",
   );
+});
+
+test("original media reads cancel declared or streamed oversized bodies and reject legacy body-less transports", async () => {
+  const asset = { userId: "owner", status: "uploaded", storageKey: "owned-original", kind: "image", mimeType: "image/jpeg" };
+  let cancelled = 0;
+  const responses = [
+    new Response(new ReadableStream({ cancel() { cancelled += 1; } }), { headers: { "content-length": String(26 * 1024 * 1024) } }),
+    new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new Uint8Array(26 * 1024 * 1024)); },
+      cancel() { cancelled += 1; },
+    })),
+    { arrayBuffer: async () => Buffer.from("legacy transport") },
+  ];
+  for (const response of responses) await assert.rejects(
+    loadOwnedMediaBytes({ asset, fetchOssObject: async () => response }),
+    error => error.code === "asset_not_indexable");
+  assert.equal(cancelled, 2);
 });
 
 test("representative video frame selection is ordered and never exceeds six frames", () => {
