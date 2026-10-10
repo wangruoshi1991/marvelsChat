@@ -13,7 +13,42 @@ SHA-256，并明确 `includesWorkingTreeChanges=false`。
 worktree、手工复制的 dist 或“HEAD 加本地修改”作为生产来源。`npm run test:release-package`
 在隔离的临时 Git 仓库中覆盖成功路径、前端重新构建、敏感配置排除、来源 revision 和清单哈希。
 
-## 已核对的发布基线（2026-10-09）
+## 当前发布基线（2026-10-10）
+
+当前runtime为 `/opt/projects/marvels-chat/releases/retrieval-visual-20261010-03/runtime`，
+来源 `3b001b426518cd196ec17653738b117f23968987`。389文件哈希通过，干净来源制品SHA256
+`e291d1006b640d9386bd288e0f129781af74c77f4073555c9985ff3de93cc805`。
+Linux按锁文件安装依赖，官方registry审计0漏洞；Node22.22.1、ffmpeg、原有生产配置保留。
+本轮迁移0 applied/35 unchanged，API/Worker同时切换，代码root只读，环境root:marvels0640。
+本机/公网health与ready200，服务active/NRestarts0，最终Worker心跳1秒、媒体与索引owner orphan0。
+
+03停写恢复点 `marvels_chat-20261010T055106Z.dump`，SHA256
+`ad80df5f85afc6010b252fb8bcf32808ed1d6b953eb3733928df96196bbc4cf9`，459行TOC、校验通过；
+异地备份任务Result=success。本轮没有完整恢复演练。02恢复点为
+`marvels_chat-20261010T053436Z.dump`（SHA256
+`f3396d34788963868b2b683f99387d517e5997f825861826dd5193b0450871a8`）；01恢复点见专项发布证据。
+
+即时回滚为 `retrieval-visual-20261010-02/runtime`（来源2feaae1，制品SHA256
+`806e858521e2b0256df1d28c817b8a97853109e48e5cfcd9733ecc45928ad311`）。
+02与03数据库schema相同，故应用故障可停API/Worker写入、同步最新storage到02、用临时软链接原子替换app，
+然后核验权限、启动两个服务并检查health/ready/Worker；不要仅切换一个进程或恢复旧storage覆盖新文件。
+02保留已知的旧聊天摘要否定问题，回滚只用于03更严重的运行故障；优先前向修复。涉及数据损坏时应隔离调查并
+恢复配套数据库与存储，不将dump盲目覆盖仍有新数据的生产库。
+
+releases目录只留03与02。九个历史release连同依赖、源码、配置、storage和权限完整归档至
+`/opt/projects/marvels-chat/backups/release-history-20261010`（约210MiB），root:root0700/归档0600；
+每个归档经内容对比、可读性和SHA核验后才移除旧目录。旧schema制品须配套历史数据库恢复点，不能直接运行当前库。
+备份、密钥、真实用户素材未清理，含独有提交的Git分支保留。范围见[清理审查](reviews/2026-10-10-redundancy-cleanup.md)。
+
+生产公开素材与Simulator图片/视频回复闭环已验收，临时账号/token/OSS和测试设备已清理。
+取证后五个服务器测试stage删除；最终证据归档为root-only
+`backups/cleanup-20261010/retrieval-production-final-evidence.tar.gz`，SHA256
+`f1aa33c81f57a9e709aefe11687c7e0b218e0d34e2566ed7a5af500734f0e1b3`，不含临时凭据。
+相册Agent0.2.2、模型回归、失败及费用边界见[检索发布证据](agents/media-retrieval/release-evidence.md)。
+检索开发联调为READY WITH CONDITIONS；完整移动端发布仍BLOCKED，Build45 TestFlight未上传，签名/Apple协议、
+真机/Android、较大库与代表性视频、账单、恢复演练及独立复核仍需完成。
+
+## 已核对的发布基线（2026-10-09，历史）
 
 当前活动 runtime 为 `/opt/projects/marvels-chat/releases/album-assistant-20261009-01/runtime`，
 来源提交 `a634fc45ba3551577598e337d44e682192b6ba95`。干净来源归档含 375 个文件，SHA-256 为

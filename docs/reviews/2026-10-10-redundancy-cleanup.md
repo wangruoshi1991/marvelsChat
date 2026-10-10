@@ -40,7 +40,13 @@ main、当前分支与唯一worktree保留；没有合并或关闭其他PR。
 
 删除前将三份测试日志与verify.mjs/controls.mjs压缩到 `/opt/projects/marvels-chat/backups/cleanup-20261010/retrieval-deploy-evidence.tar.gz`，SHA256为 `cf76f42639f77ccf96701c7fe4ee5b81c7da63ac8e7a372c223ec08f59c5b22f`。目录0700；仅用于历史取证，不作为当前执行指令。
 
-当前与历史runtime、配置、storage、数据库/异地备份保留；旧release可能承载恢复点对应代码，不能只根据目录日期删。清理后ready仍200，备份timer active/service success。未查询或删除正式用户媒体。
+旧release与历史数据库恢复点配套，因此完整归档后移出运行目录，不保留多套在线代码。已归档042c023、ab6765b、album-assistant-20261009-01、app-integration-20260916-02/03/04、media-retrieval-20261009-01/02；8项合计归档约187MiB，目录为 `/opt/projects/marvels-chat/backups/release-history-20261010`。全部源码、依赖、dist、配置、storage及文件权限保留，目录root:root0700、归档0600。每项经tar内容/权限对比、可读性与SHA校验后删除确切旧目录；服务配置、保留制品软链接和进程文件引用均先核对，未删除正式用户数据或数据库/异地备份。
+
+旧schema版本不能直接指向当前35项迁移数据库运行。恢复历史灾备时，须在隔离环境解包完整制品、匹配数据库恢复点、核验配置及权限，再验收API/Worker和存储；没有执行本轮完整恢复演练。归档用于恢复，不能解释为运行时兼容路径。
+
+最终新增03修复后，将retrieval-visual-20261010-01按同样流程归档；历史共9项约210MiB。releases仅保留03当前与02回滚，02的已知对话历史污染问题明确记录，完整回滚步骤见部署说明。五个本轮服务器stage在报告/脚本/日志取证后删除，最终证据归档SHA256 `f1aa33c81f57a9e709aefe11687c7e0b218e0d34e2566ed7a5af500734f0e1b3`；未跟随生产依赖软链接，不含临时账号凭据。
+
+两个生产测试账号注销、旧token401，users/assets/segments/threads残留0；三项公开OSS对象各404。临时Simulator及其Keychain和本机凭据文件删除；两台已有Simulator保持原数据。最新门禁日志 `/tmp/miaoxun-album-match-boundary-repository-20261010.log` 全通过；生产最终ready200、API/Worker NRestarts0、Worker心跳1秒，检查区间无匹配到uncaught/unhandled/worker-failed/runtime-error日志。
 
 ## 清理后验证
 

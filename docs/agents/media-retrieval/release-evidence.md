@@ -4,7 +4,7 @@
 - 生产生命周期: `limited_release`（对所有登录用户开放，各用户仍须自行同意私有素材索引）
 - 负责人: Jarson（个人负责）
 - App/TestFlight 集成: Build 45 双 Simulator 已安装；入口和同意页面可达，部分索引成功的 App 状态修复已通过定向回归；TestFlight Build 45 尚未上传
-- 最新本地修复校准: 解析 24/24、单图旧回归 30/30、冻结配置后的全新六图首次独立评测 30/30；真实服务/鉴权聊天 HTTP 9 项通过。候选未部署，有限媒体不代表全部生产质量；供应商实际账单未知
+- 当前生产: runtime retrieval-visual-20261010-03、来源3b001b4、相册Agent0.2.2；原画面修复与对话投影均已部署。公开图片/运动视频生产闭环及Simulator同一旧聊天回复复验通过，临时账号和OSS清理完成；有限素材不代表全部生产质量，实际账单未知
 - 发布批准: 独立 Security Reviewer 和 Release Owner 尚未完成复核
 
 ## 2026-08-06 初始本地证据（历史）
@@ -127,7 +127,7 @@ admin: npm run build
 - 最终 `./scripts/check-repository.sh` 全通过：后端 464 passed / 4 门控 skipped，RN 30 组 / 178 项，Agent 33、Admin 14、相关 Web/格式/lint/类型/构建通过；日志 `/tmp/miaoxun-retrieval-repair-repository-final.log`。本轮独立 PostgreSQL/pgvector 集成 9/9，日志 `/tmp/miaoxun-retrieval-repair-postgres.log`。九个报告原始文件 SHA 已核对本地与远端一致，两个最终数据集哈希按 runner 的 `JSON.stringify(parsedDataset)` 方式核对通过。已删除本任务八个远端临时目录中的公开图片、候选代码和报告；本机副本保留可恢复证据，生产 runtime 与依赖未修改。
 - 正式上线 verdict 继续 `BLOCKED`。下一步先诊断中文身份误判及四条漏检，再用新的独立素材验证；较大媒体库、代表性视频、账单核实、真机/Android、独立安全与发布复核、TestFlight 与完整恢复演练仍未完成。未推送、部署或上传 TestFlight。
 
-### 2026-10-10 后续原画面修复（当前候选，未部署）
+### 2026-10-10 后续原画面修复（部署前证据，历史）
 
 - 本地实现已移除固定视觉词表、语法启发式、关键词 SQL 和 B7 词汇排序。parser schema v3 分类原文片段，拼接必须完整还原经 NFKC/trim 的输入；缺失、旧 schema、低置信度、改写或不完整输出明确拒绝。解析复用管家 `NEW_API_*`，视觉/向量使用独立百炼配置，无自动模型切换。readiness 与派发共用 HTTPS 配置判定。
 - 最终判定使用当前 owner 原图片或精确视频帧；读取前后、每次 Provider 请求前、保存结果前重新核验同意、epoch 和内容版本。每素材每查询只读一次，画面最长边 1024、最多 512 KiB，仅存请求内存。文件流式超限、缺帧、越权、版本变化和 Provider 失败均阻断；不取历史描述代替画面或返回部分成功。
@@ -147,3 +147,28 @@ admin: npm run build
 - 最终全仓门禁通过：backend 467 passed / 4 环境门控 skipped，RN 30 组/178 项，Agent 33、Admin 14，相关 Web/lint/类型/格式/构建通过；日志 `/tmp/miaoxun-retrieval-single-repository-verified.log`。隔离 PostgreSQL/pgvector 9/9，日志 `/tmp/miaoxun-retrieval-single-postgres-final.log`。20,000 合成段、当前 owner 2,000，10 次查询返回本人 20 条并用 owner 索引，p95 53.34 ms、预设门槛 500 ms；常量向量只验证执行计划/耗时，不代表大库召回或并发。
 - 摘要核验后清理本任务远端暂存目录，未跟随生产 node_modules 符号链接；停止专属数据库隧道与测试容器，其他服务及模拟器数据不动。本轮无 UI 改动或新 Simulator/真机/Android 验收。
 - 本地检索修复 verdict 为 COMPLETE WITH CONDITIONS：有限公开素材质量和真实服务/API 已验证，候选尚未提交部署。生产只读复核仍为 album-assistant-20261009-01、ready 200、API/Worker active、重启数 0。正式上线 verdict 仍 BLOCKED：生产同步、Build 45 分发、代表性大库/视频与并发、独立发布复核、恢复演练及 Apple 签名/协议条件仍待处理。具体发布范围需单独明确。
+
+### 2026-10-10 生产部署、对话修复与清理（当前）
+
+- 原画面修复a0f3daf已推送并部署runtime01，来源389文件哈希通过。01停写恢复点marvels_chat-20261010T050750Z.dump，SHA256 64fac1e862f54e579d3b1369652b42c1e9231f96b22f5955d8702460e7876514，459行TOC及异地备份success。后续02和03未新增迁移，账本仍35项；每次切换均新建停写恢复点，具体制品/SHA/回滚见[部署记录](../../deployment.md)。
+- 公开两图及CC0运动花朵视频通过生产OSS上传、Worker索引、相册Agent真实对话、结果读取、幂等重放无新增检索派发、本人预览200/跨owner404、精确帧视频时间、空负例；撤回后新搜索409、旧聊天结果403。保留全员3D与检索无限额度配置，仍要求各用户自行取得云端AI同意。
+- 第一批视频索引失败、两图成功；诊断和最终账本在注销前未保存，原因/精确派发数未知，不声称已解决。第二批首次将“花与蜜蜂”误作正例，原视频没有蜜蜂，返回空是正确行为；修正为可见花苞/绿叶后命中。测试SQL将CHAR36误用uuid数组导致续接失败，改为id::text/text[]后完成必要验证；未用替代查询掩盖产品缺陷、未重复整个批次。
+- 01 Simulator发现对话模型用展示summary遗漏“针织”或只提紫叶，否定已匹配结果。0.2.1说明规则在14组真实DeepSeek/合成工具结果上通过；基线13/14、候选14/14是对相同保存输出修正漏检正则后的评分，未重跑/丢输出。然而02在相同生产旧聊天仍否定绿叶匹配，故0.2.1未最终解决，保留[当次证据](quality-results-2026-10-10-dialogue.json)。
+- 0.2.2改为结构化工具投影：本次matchedQuery、状态、素材引用、类型和视频时间；不向对话模型传不完整summary，App仍从鉴权结果接口显示它。保留用户多轮历史，并明确历史助手判断不是当前素材事实、本次工具结论优先。没有固定回复模板、关键词匹配或失败兜底；检索的原画面条件未放宽。
+- 同一16组真实DeepSeek/合成响应比较，基线15/16、候选16/16，五个found案例逐条人工检查通过；新增视频与图片的旧否定历史回归。基线合成旧历史案例此次通过，但生产历史曾失败，说明模型有波动，不能将16/16当作任意对话保证。记录见[匹配结论投影评测](quality-results-2026-10-10-match-boundary.json)。runner没有逐HTTP派发计数，不能将估计轮数说成真实调用数；token usage已记录，无自动重试，actualCostFen=null。
+- 03为干净来源3b001b426518cd196ec17653738b117f23968987、相册Agent0.2.2。Linux依赖审计0、389文件哈希通过；API/Worker一起切换，0 applied/35 unchanged、root只读代码与root:marvels0640环境、health/ready200、NRestarts0。最终Worker心跳1秒，媒体与索引owner orphan0；日志检查区间没有匹配uncaught/unhandled/worker-failed/runtime-error，不作为所有日志零错误结论。
+- Build45正式API App在独立临时iPhone17实际发起图片/运动视频查询；01原图预览、软件键盘布局、卡片0:02与2.5s定位播放通过。03在同一含错误历史的聊天重新发起两条查询，回复正常确认图片/视频匹配，视频回复明确更正旧结论。公开证据本机为/tmp/miaoxun-retrieval-production-image-reply-03-20261010.png、/tmp/miaoxun-retrieval-production-video-reply-03-20261010.png；没有RN改动、新编译或真机验收。两个原有模拟器数据未改，临时设备及Keychain删除。
+- 注销前第二批与后续UI累计检索ledger88条estimated：description16、image-embedding16、query-parse9、query-embedding9、rerank38；无reserved/unknown，6个index和1个purge成功、provider.failed事件0。对话模型调用在ledger外，第一失败批的精确数仍未知；预估不是实际费用或用户扣款。
+- 两个临时生产账号通过注销API删除、旧token401；精确users/assets/segments/threads残留0、三项OSS对象各404，临时凭据文件已删。九项历史release完整归档/核验后移出运行目录，仅保留03当前与02回滚；02仍有历史回复污染问题，不能宣称回滚候选零缺陷。五个测试stage取证后删除，不跟随生产依赖软链接；root-only归档与SHA见部署说明及[清理审查](../../reviews/2026-10-10-redundancy-cleanup.md)。
+
+| 检索开发联调检查 | 结果 | 证据/边界 |
+| --- | --- | --- |
+| 来源、静态检查、单测与构建 | PASS | 最新全仓backend467/4门控skip、RN30组178、Agents33、Admin14与相关Web通过 |
+| PostgreSQL/pgvector | PASS | 本轮隔离9/9；随后工具投影不涉及DB变更，生产账本35 |
+| 模型质量与对话 | PASS（有限范围） | 解析24/24、新六图首次30/30、16组对话及实际旧聊天回复；不是大库质量保证 |
+| 生产API/Worker/OSS与权限 | PASS | 图片/真实运动视频、幂等、跨账号、空结果、撤回及最终清理 |
+| iOS Simulator关键路径 | PASS（有限范围） | Build45临时iPhone17，图片/视频/键盘/预览；完整无障碍及真机未验收 |
+| 运维、制品与即时回滚 | PASS（有限范围） | 当前03/回滚02同schema、停写dump/SHA/TOC/异地任务；未做本轮完整恢复演练 |
+| 完整移动端发布 | BLOCKED | Distribution/Apple协议、TestFlight分发、真机/Android、较大库/视频/并发、账单、恢复演练和独立发布复核尚缺 |
+
+检索开发联调阶段为READY WITH CONDITIONS；完整移动端正式发布仍BLOCKED。已完成本轮授权的清理、推送、API/Worker部署、公开素材与Simulator闭环及测试数据清理，不要求以另一轮重复调试替代上表的独立发布条件。
