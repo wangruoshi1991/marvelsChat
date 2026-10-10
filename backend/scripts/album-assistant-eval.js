@@ -16,7 +16,7 @@ export async function evaluateAlbumAssistant({ run = runAgent } = {}) {
         getMediaRetrievalStatus: async () => ({ enabled: true, availability: { canStartRun: true }, backfill: { indexedAssets: 1, totalAssets: 1 } }),
         searchMediaRetrieval: async args => {
           calls.push(args);
-          return { agentRunId: "synthetic-run", results: [] };
+          return { agentRunId: "synthetic-run", results: example.results || [] };
         },
       } });
     const start = Date.now();
@@ -29,7 +29,8 @@ export async function evaluateAlbumAssistant({ run = runAgent } = {}) {
         && (!example.kind || search?.kind === example.kind)
         && (!example.albumRequired || search?.albumId === albumId)
         && (!example.noAlbum || !search?.albumId)
-        && example.terms.every(term => search?.query.includes(term));
+        && example.terms.every(term => search?.query.includes(term))
+        && (!example.replyForbiddenPattern || !new RegExp(example.replyForbiddenPattern, "i").test(result.reply));
       records.push({ id: example.id, tags: example.tags, passed, latencyMs: Date.now() - start,
         tokenUsage: result.tokenUsage, toolCalls: calls.map(({ query, kind, albumId: scope }) => ({ query, kind, albumId: scope })), reply: result.reply });
     } catch (error) {

@@ -13,7 +13,7 @@ const albumAssistantToolDefinitions = [
   },
   {
     name: "search_media",
-    description: "调用检索 Agent 在当前用户已上传的图片和视频中查找。根据对话补全查询；相册范围只使用 list_albums 返回的 ID。结果包含视频匹配时间。空结果不代表整个相册不存在相关内容。",
+    description: "调用检索 Agent 在当前用户已上传的图片和视频中查找。根据对话补全查询；相册范围只使用 list_albums 返回的 ID。结果已按查询过滤，视频带匹配时间。summary 只作简短展示，不能以摘要省略属性为由否定匹配；不推断额外细节。空结果不代表整个相册不存在相关内容。",
     parameters: {
       type: "object",
       properties: {
