@@ -337,6 +337,7 @@ describe('Chat content actions', () => {
       );
     });
     const actions = renderer.root.findAllByType(MessageInlineAction);
+    expect(actions.some(action => action.props.title === '复制')).toBe(false);
     expect(actions.some(action => action.props.title === '撤回')).toBe(false);
     await ReactTestRenderer.act(() =>
       actions.find(action => action.props.title === '删除')!.props.onPress(),

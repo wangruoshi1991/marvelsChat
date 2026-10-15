@@ -292,6 +292,7 @@ export const stationPostStyles = {
     paddingHorizontal: 12,
     paddingTop: 12,
   },
+  stationFeedContextContent: { gap: 8 },
   stationFeedHeader: {
     alignItems: 'flex-start',
     flexDirection: 'row',

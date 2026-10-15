@@ -29,7 +29,7 @@ if [[ "$env_owner" != "0" ]] || (( (8#$env_mode & 022) != 0 )); then
   printf 'Root database restore refuses a writable production environment file.\n' >&2
   exit 1
 fi
-for service in marvels-chat-backend marvels-chat-media-retrieval-worker; do
+for service in marvels-chat-backend marvels-chat-media-retrieval-worker marvels-chat-ai-task-worker; do
   if systemctl is-active --quiet "$service"; then
     printf '%s must be stopped before a database restore.\n' "$service" >&2
     exit 1

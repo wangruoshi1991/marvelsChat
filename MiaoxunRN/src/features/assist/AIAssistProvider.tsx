@@ -8,8 +8,11 @@ import React, {
   useState,
 } from 'react';
 import {
+  AccessibilityInfo,
+  Animated,
   AppState,
   BackHandler,
+  Easing,
   Image,
   Pressable,
   StyleSheet,
@@ -20,6 +23,7 @@ import {
   AIAssistAction,
   AIAssistObjectReference,
   AIAssistPoint,
+  AIAssistScene,
 } from './aiAssistTypes';
 import {
   AssistBounds,
@@ -54,6 +58,68 @@ type AssistContext = {
 };
 const Context = createContext<AssistContext | null>(null);
 
+function ContentActionCircle({
+  action,
+  selected,
+  reveal,
+  reduceMotion,
+}: {
+  action: AIAssistAction;
+  selected: boolean;
+  reveal: Animated.Value;
+  reduceMotion: boolean;
+}) {
+  const scale = useRef(new Animated.Value(selected ? 1.12 : 1)).current;
+  useEffect(() => {
+    scale.stopAnimation();
+    const target = selected ? 1.12 : 1;
+    if (reduceMotion) {
+      scale.setValue(target);
+      return;
+    }
+    const animation = Animated.timing(scale, {
+      toValue: target,
+      duration: 90,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [reduceMotion, scale, selected]);
+  const Icon = action.Icon;
+  return (
+    <Animated.View
+      style={[
+        localStyles.circle,
+        action.available === false && localStyles.unavailable,
+        {
+          transform: [
+            {
+              scale: Animated.multiply(
+                reveal.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.88, 1],
+                }),
+                scale,
+              ),
+            },
+          ],
+        },
+      ]}
+    >
+      {action.imageSource ? (
+        <Image
+          resizeMode="contain"
+          source={action.imageSource}
+          style={localStyles.icon}
+        />
+      ) : (
+        <Icon color="#FFFFFF" size={23} strokeWidth={1.8} />
+      )}
+    </Animated.View>
+  );
+}
+
 export function useAIAssist() {
   const value = useContext(Context);
   if (!value) throw new Error('Content actions require AIAssistProvider');
@@ -64,11 +130,15 @@ export function AIAssistProvider({
   children,
   onAskButler,
   routeKey,
+  scene,
 }: {
   children: React.ReactNode;
   onAskButler: (object: AIAssistObjectReference) => void;
   routeKey: string;
+  scene?: AIAssistScene;
 }) {
+  const sceneRef = useRef(scene);
+  sceneRef.current = scene;
   const hostRef = useRef<View>(null);
   const boundsRef = useRef<AssistBounds>({ width: 0, height: 0 });
   const pendingRef = useRef(0);
@@ -84,6 +154,43 @@ export function AIAssistProvider({
   const [selected, setSelected] = useState<string | null>(null);
   const selectedRef = useRef<string | null>(null);
   const movedRef = useRef(false);
+  const reveal = useRef(new Animated.Value(0)).current;
+  // Keep motion disabled until the system preference has been read.
+  const [reduceMotion, setReduceMotion] = useState(true);
+  useEffect(() => {
+    let mounted = true;
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      setReduceMotion,
+    );
+    AccessibilityInfo.isReduceMotionEnabled().then(value => {
+      if (mounted) setReduceMotion(value);
+    });
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, []);
+  useEffect(() => {
+    reveal.stopAnimation();
+    if (!request) {
+      reveal.setValue(0);
+      return;
+    }
+    if (reduceMotion) {
+      reveal.setValue(1);
+      return;
+    }
+    reveal.setValue(0);
+    const animation = Animated.timing(reveal, {
+      toValue: 1,
+      duration: 120,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [reduceMotion, request, reveal]);
 
   const dismiss = useCallback((sourceId?: string) => {
     if (
@@ -187,12 +294,9 @@ export function AIAssistProvider({
       movedRef.current ||=
         Math.hypot(point.x - current.point.x, point.y - current.point.y) > 10;
       const action = targetAt(current, point);
-      if (movedRef.current) {
-        if (action?.available === false) return;
-        if (action) select(current, action);
-        else dismiss();
-      }
-      // A stationary release keeps the menu open for a separate tap.
+      if (movedRef.current && action && action.available !== false)
+        select(current, action);
+      else dismiss();
     },
     [dismiss, select, targetAt],
   );
@@ -220,6 +324,10 @@ export function AIAssistProvider({
         pendingReleaseRef.current = null;
         const active = {
           ...next,
+          object: {
+            ...next.object,
+            scene: next.object.scene || sceneRef.current,
+          },
           point: next.point ?? { x: x + width / 2, y: y + height / 2 },
           origin: { x, y },
           bounds: { width, height },
@@ -239,7 +347,7 @@ export function AIAssistProvider({
   const askButler = useCallback(
     (object: AIAssistObjectReference) => {
       dismiss();
-      onAskButler(object);
+      onAskButler({ ...object, scene: object.scene || sceneRef.current });
     },
     [dismiss, onAskButler],
   );
@@ -291,8 +399,8 @@ export function AIAssistProvider({
           {children}
         </View>
         {request && layout ? (
-          <View
-            style={localStyles.overlay}
+          <Animated.View
+            style={[localStyles.overlay, { opacity: reveal }]}
             accessibilityViewIsModal
             testID="content-actions-overlay"
           >
@@ -320,7 +428,6 @@ export function AIAssistProvider({
                 action.label,
                 request.bounds,
               );
-              const Icon = action.Icon;
               return (
                 <React.Fragment key={action.direction}>
                   <Pressable
@@ -328,6 +435,7 @@ export function AIAssistProvider({
                     accessibilityRole="button"
                     accessibilityState={{
                       disabled: action.available === false,
+                      selected: selected === action.direction,
                     }}
                     disabled={action.available === false}
                     testID={`content-action-${action.direction}`}
@@ -341,25 +449,14 @@ export function AIAssistProvider({
                         width: frame.width,
                         height: frame.height,
                       },
-                      selected === action.direction && localStyles.selected,
                     ]}
                   >
-                    <View
-                      style={[
-                        localStyles.circle,
-                        action.available === false && localStyles.unavailable,
-                      ]}
-                    >
-                      {action.imageSource ? (
-                        <Image
-                          resizeMode="contain"
-                          source={action.imageSource}
-                          style={localStyles.icon}
-                        />
-                      ) : (
-                        <Icon color="#FFFFFF" size={23} strokeWidth={1.8} />
-                      )}
-                    </View>
+                    <ContentActionCircle
+                      action={action}
+                      selected={selected === action.direction}
+                      reveal={reveal}
+                      reduceMotion={reduceMotion}
+                    />
                   </Pressable>
                   <View
                     pointerEvents="none"
@@ -384,7 +481,7 @@ export function AIAssistProvider({
                 </React.Fragment>
               );
             })}
-          </View>
+          </Animated.View>
         ) : null}
       </View>
     </Context.Provider>
@@ -419,7 +516,6 @@ const localStyles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 0 },
   },
-  selected: { transform: [{ scale: 1.12 }] },
   unavailable: { opacity: 0.45 },
   icon: { width: 26, height: 26 },
   labelFrame: { position: 'absolute' },

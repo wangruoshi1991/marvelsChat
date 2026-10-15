@@ -143,28 +143,6 @@ export const stationAgentStyles = {
     paddingHorizontal: 8,
     paddingVertical: 5,
   },
-  stationVideoPreviewStack: { gap: 8 },
-  stationVideoPreviewBlock: {
-    borderRadius: spacing.cardRadius,
-    gap: 5,
-    padding: 10,
-  },
-  stationVideoPreviewLine: { fontSize: 12, fontWeight: '800', lineHeight: 18 },
-  stationVideoShotGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  stationVideoShotCard: {
-    borderRadius: spacing.cardRadius,
-    borderWidth: 1,
-    gap: 5,
-    minHeight: 86,
-    padding: 9,
-    width: '48%',
-  },
-  stationVideoShotIndex: { fontSize: 12, fontWeight: '900' },
-  stationVideoShotText: { fontSize: 11, fontWeight: '800', lineHeight: 16 },
   stationAgentSection: { gap: 10, marginTop: 8 },
   stationAgentWorkbench: {
     borderRadius: spacing.cardRadius,

@@ -1,12 +1,18 @@
+import { Artifact, ContextReference } from '../ai/AIInteraction';
 import React, { useRef } from 'react';
-import { Share, Text, View } from 'react-native';
+import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { Bot, Copy, ExternalLink, LayoutGrid } from 'lucide-react-native';
 
 import { AgentDTO, AvatarConfigDTO } from '../../models/api';
+import { AgentWorkspace } from '../../models/agentWorkspace';
+import {
+  messageWorkspaceId,
+  WorkspaceMessageAction,
+} from './WorkspaceMessageAction';
 import { displayText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
-import { Palette } from '../../shared/theme';
+import { Palette, productColors } from '../../shared/theme';
 import { AIAssistGestureSurface } from '../assist/AIAssistGestureSurface';
 import { useAIAssist } from '../assist/AIAssistProvider';
 import {
@@ -23,6 +29,8 @@ import { UserAvatarRenderer } from './messageTypes';
 import { AgentIconAvatar } from './AgentIconAvatar';
 import { chatLayoutStyles } from './chatLayoutStyles';
 import { AlbumAssistantResults } from './AlbumAssistantResults';
+import { agentReplyPresentation } from './agentReplyPresentation';
+import { ChatMessageText } from './ChatMessageText';
 import {
   messageTimeText,
   resolveAgentIdentity,
@@ -44,6 +52,8 @@ export function ChatMessageItem({
   renderUserAvatar,
   onOpenMessageMenu,
   onRetrySend,
+  onOpenAgentAccess,
+  onOpenWorkspace,
   onActionMessage,
 }: {
   token?: string;
@@ -65,9 +75,16 @@ export function ChatMessageItem({
     messageFrame: { x: number; y: number; width: number; height: number },
   ) => void;
   onRetrySend: (message: ChatMessage) => void;
+  onOpenAgentAccess?: () => void;
+  onOpenWorkspace?: (workspace: AgentWorkspace) => void;
   onActionMessage: (message: string) => void;
 }) {
   const assist = useAIAssist();
+  const workspaceId = messageWorkspaceId(item, thread.agentId);
+  const presentedMessageContent = displayText(
+    language,
+    agentReplyPresentation(item, thread.agentId, language),
+  );
   const touchPoint = useRef<AIAssistPoint>({ x: 0, y: 0 });
   const messageBlockRef = useRef<View>(null);
   const senderUserId =
@@ -91,16 +108,24 @@ export function ChatMessageItem({
     typeof item.metadata.replyTo === 'object' &&
     item.metadata.replyTo !== null
       ? (item.metadata.replyTo as {
+          messageId?: unknown;
           senderName?: unknown;
           content?: unknown;
           recalledAt?: unknown;
         })
       : null;
+  const quotedMessage = thread.messages.find(
+    message => message.id === replyTo?.messageId,
+  );
+  const presentedReplyContent =
+    quotedMessage && quotedMessage.content === replyTo?.content
+      ? agentReplyPresentation(quotedMessage, thread.agentId, language)
+      : String(replyTo?.content || '');
   const assistObject: AIAssistObjectReference = {
     kind: 'chat-message',
     id: item.id,
     title: textFor(language, '聊天消息', 'Chat message'),
-    metadata: { content: item.content, threadId: thread.id },
+    metadata: { content: presentedMessageContent, threadId: thread.id },
   };
   const assistActions: AIAssistAction[] = [
     {
@@ -110,7 +135,7 @@ export function ChatMessageItem({
       accent: palette.mint,
       onSelect: () => {
         assist.dismiss();
-        Share.share({ message: item.content }).catch(error => {
+        Share.share({ message: presentedMessageContent }).catch(error => {
           onActionMessage(
             error instanceof Error
               ? error.message
@@ -133,7 +158,7 @@ export function ChatMessageItem({
       accent: palette.mint,
       onSelect: () => {
         assist.dismiss();
-        Clipboard.setString(item.content);
+        Clipboard.setString(presentedMessageContent);
         onActionMessage(textFor(language, '消息已复制', 'Message copied'));
       },
     },
@@ -145,12 +170,17 @@ export function ChatMessageItem({
       onSelect: () => {
         assist.dismiss();
         messageBlockRef.current?.measureInWindow((x, y, width, height) => {
-          onOpenMessageMenu(item, isMine, touchPoint.current, {
-            x,
-            y,
-            width,
-            height,
-          });
+          onOpenMessageMenu(
+            { ...item, content: presentedMessageContent },
+            isMine,
+            touchPoint.current,
+            {
+              x,
+              y,
+              width,
+              height,
+            },
+          );
         });
       },
     },
@@ -180,11 +210,13 @@ export function ChatMessageItem({
       ? palette.soft
       : palette.surface
     : isMine
-    ? '#F0EBFD'
+    ? productColors.border
     : '#FFFFFF';
-  const cardBorder = isDarkPalette ? palette.border : '#F0EBFD';
-  const replyBackground = isDarkPalette ? palette.background : '#F8F7FD';
-  const replyAccent = isDarkPalette ? palette.mint : '#2012D9';
+  const cardBorder = isDarkPalette ? palette.border : productColors.border;
+  const replyBackground = isDarkPalette
+    ? palette.background
+    : productColors.background;
+  const replyAccent = isDarkPalette ? palette.mint : productColors.accent;
   const bubble = (
     <View style={chatLayoutStyles.content}>
       <View
@@ -243,18 +275,35 @@ export function ChatMessageItem({
                       '原消息已撤回',
                       'Original message recalled',
                     )
-                  : displayText(language, String(replyTo.content || ''))}
+                  : displayText(language, presentedReplyContent)}
               </Text>
             </View>
           ) : null}
-          <Text
+          <ContextReference
+            references={item.metadata?.contextRefs || []}
+            palette={palette}
+            language={language}
+          />
+          <ChatMessageText
             testID={`chat-message-content-${item.id}`}
             style={[chatLayoutStyles.body, { color: palette.text }]}
+            formatted={item.senderType === 'agent'}
+            palette={palette}
           >
-            {displayText(language, item.content)}
-          </Text>
+            {presentedMessageContent}
+          </ChatMessageText>
         </AIAssistGestureSurface>
       </View>
+      {token && workspaceId && onOpenWorkspace ? (
+        <WorkspaceMessageAction
+          key={`${token}:${currentUserId}:${thread.id}:${item.id}:${workspaceId}`}
+          token={token}
+          workspaceId={workspaceId}
+          palette={palette}
+          language={language}
+          onOpen={onOpenWorkspace}
+        />
+      ) : null}
       {token &&
       thread.agentId === 'album-manager' &&
       item.senderType === 'agent' &&
@@ -262,13 +311,24 @@ export function ChatMessageItem({
       item.metadata.albumAssistant !== null &&
       'outcome' in item.metadata.albumAssistant &&
       item.metadata.albumAssistant.outcome === 'found' ? (
-        <AlbumAssistantResults
-          token={token}
-          threadId={thread.id}
-          messageId={item.id}
+        <Artifact
+          artifact={{
+            kind: 'message',
+            id: item.id,
+            threadId: thread.id,
+            title: textFor(language, '找到的素材', 'Matching media'),
+          }}
           palette={palette}
           language={language}
-        />
+        >
+          <AlbumAssistantResults
+            token={token}
+            threadId={thread.id}
+            messageId={item.id}
+            palette={palette}
+            language={language}
+          />
+        </Artifact>
       ) : null}
       {item.localStatus ? (
         <View
@@ -282,9 +342,42 @@ export function ChatMessageItem({
             </Text>
           ) : null}
           {item.localStatus === 'failed' ? (
-            <Text style={styles.messageStatusFailed}>
-              {textFor(language, '发送失败，点击重试', 'Failed, tap to retry')}
-            </Text>
+            <View style={failureStyles.content}>
+              <Text style={styles.messageStatusFailed}>
+                {item.localFailure?.message ||
+                  textFor(
+                    language,
+                    '发送失败，点击重试',
+                    'Failed, tap to retry',
+                  )}
+              </Text>
+              {onOpenAgentAccess &&
+              ['AI_CONTEXT_SCOPE_REQUIRED', 'AI_ACCESS_REVOKED'].includes(
+                item.localFailure?.code || '',
+              ) ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={textFor(
+                    language,
+                    '查看授权',
+                    'Review access',
+                  )}
+                  onPress={onOpenAgentAccess}
+                >
+                  <Text style={{ color: palette.text }}>
+                    {textFor(language, '查看授权', 'Review access')}
+                  </Text>
+                </Pressable>
+              ) : (
+                <Text style={{ color: palette.secondaryText }}>
+                  {textFor(
+                    language,
+                    '确认后点击消息重试',
+                    'Tap the message to retry when ready',
+                  )}
+                </Text>
+              )}
+            </View>
           ) : null}
         </View>
       ) : null}
@@ -364,3 +457,5 @@ export function ChatMessageItem({
     </View>
   );
 }
+
+const failureStyles = StyleSheet.create({ content: { flexShrink: 1, gap: 4 } });

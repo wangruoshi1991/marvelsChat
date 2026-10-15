@@ -14,6 +14,9 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "worker:media-retrieval": "node src/media-retrieval-worker.js",
+    "worker:ai-tasks": "node src/ai-task-worker.js",
+    "ops:ai-tasks": "node scripts/check-ai-task-operations.js",
+    "test:ai-tasks": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/ai-*.test.js",
     "db:migrate": "node scripts/db-migrate.js",
     "admin:bootstrap": "node scripts/admin-bootstrap.js",
     "avatar3d:backfill-mobile": "node scripts/avatar-3d-backfill-mobile-models.js"

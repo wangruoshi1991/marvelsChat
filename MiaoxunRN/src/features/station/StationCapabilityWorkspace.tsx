@@ -6,7 +6,6 @@ import {
   ProfileDTO,
   StationContentDTO,
   StationFileAssetDTO,
-  StationVideoDraftDTO,
 } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
@@ -15,9 +14,10 @@ import { Language } from '../session/useMiaoxunSession';
 import { StationAlbumAgentPanel } from './StationAlbumAgentPanel';
 import { StationFileAgentPanel } from './StationFileAgentPanel';
 import { StationSiteBuilderPanel } from './StationSiteBuilderPanel';
-import { StationVideoAgentPanel } from './StationVideoAgentPanel';
 
 export function StationCapabilityWorkspace({
+  token,
+  active,
   palette,
   language,
   profile,
@@ -25,14 +25,14 @@ export function StationCapabilityWorkspace({
   agentReadiness,
   hasCapability,
   onCreateSiteDraft,
-  onApplySiteDraft,
+  onRefreshTaskArtifacts,
   onOpenAgentThread,
   onCreateFileAsset,
-  onPreprocessFileAsset,
-  onCreateVideoDraft,
   onActionMessage,
   onActionError,
 }: {
+  token: string;
+  active: boolean;
   palette: Palette;
   language: Language;
   profile: ProfileDTO;
@@ -41,9 +41,9 @@ export function StationCapabilityWorkspace({
   hasCapability: (agentId: string) => boolean;
   onCreateSiteDraft: (payload: {
     prompt: string;
-    apply?: boolean;
-  }) => Promise<unknown>;
-  onApplySiteDraft: (draftId: string) => Promise<unknown>;
+    idempotencyKey: string;
+  }) => Promise<{ task: import('../../models/aiTask').AITaskDTO }>;
+  onRefreshTaskArtifacts: () => Promise<unknown>;
   onOpenAgentThread: (agentId: string) => void;
   onCreateFileAsset: (payload: {
     originalFilename: string;
@@ -51,31 +51,14 @@ export function StationCapabilityWorkspace({
     content?: string;
     metadata?: Record<string, unknown>;
   }) => Promise<StationFileAssetDTO>;
-  onPreprocessFileAsset: (
-    fileAssetId: string,
-    payload: {
-      originalFilename?: string;
-      mimeType?: string;
-      content?: string;
-      metadata?: Record<string, unknown>;
-    },
-  ) => Promise<StationFileAssetDTO>;
-  onCreateVideoDraft: (payload: {
-    prompt: string;
-    diaryEntryId?: string | null;
-    comicDiaryId?: string | null;
-    mediaAssetIds?: string[];
-    fileAssetIds?: string[];
-    format?: 'short-clip';
-    aspectRatio?: '9:16';
-    durationSeconds?: number;
-  }) => Promise<StationVideoDraftDTO>;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
   const activePanels = [
     hasCapability('site-builder') ? (
       <StationSiteBuilderPanel
+        token={token}
+        active={active}
         key="site-builder"
         palette={palette}
         language={language}
@@ -83,7 +66,7 @@ export function StationCapabilityWorkspace({
         readiness={agentReadiness['site-builder']}
         siteDrafts={stationContent.siteDrafts}
         onCreateDraft={onCreateSiteDraft}
-        onApplyDraft={onApplySiteDraft}
+        onRefreshTaskArtifacts={onRefreshTaskArtifacts}
         onActionMessage={onActionMessage}
         onActionError={onActionError}
       />
@@ -103,18 +86,6 @@ export function StationCapabilityWorkspace({
         language={language}
         fileAssets={stationContent.fileAssets}
         onCreateFileAsset={onCreateFileAsset}
-        onPreprocessFileAsset={onPreprocessFileAsset}
-        onActionMessage={onActionMessage}
-        onActionError={onActionError}
-      />
-    ) : null,
-    hasCapability('video-production') ? (
-      <StationVideoAgentPanel
-        key="video-production"
-        palette={palette}
-        language={language}
-        stationContent={stationContent}
-        onCreateVideoDraft={onCreateVideoDraft}
         onActionMessage={onActionMessage}
         onActionError={onActionError}
       />

@@ -1,11 +1,14 @@
 export class AdminApiError extends Error {
-  constructor(message, {
-    status,
-    details,
-    requestId,
-    isNetworkError = false,
-    isTimeout = false,
-  } = {}) {
+  constructor(
+    message,
+    {
+      status,
+      details,
+      requestId,
+      isNetworkError = false,
+      isTimeout = false,
+    } = {}
+  ) {
     super(message);
     this.name = "AdminApiError";
     this.status = status;
@@ -39,15 +42,46 @@ export const profileLanguageOptions = [
 
 export function hasAdminPermission(user, permission) {
   if (user?.role !== "admin") return false;
-  const permissions = Array.isArray(user.adminPermissions) ? user.adminPermissions : [];
+  const permissions = Array.isArray(user.adminPermissions)
+    ? user.adminPermissions
+    : [];
   return permissions.includes("*") || permissions.includes(permission);
 }
 
-export function canManageAdminAccount(user, targetRole = "user", requestedRole = "user") {
-  return (targetRole !== "admin" && requestedRole !== "admin") || hasAdminPermission(user, "*");
+export function canManageAdminAccount(
+  user,
+  targetRole = "user",
+  requestedRole = "user"
+) {
+  return (
+    (targetRole !== "admin" && requestedRole !== "admin") ||
+    hasAdminPermission(user, "*")
+  );
 }
 
 export const shouldClearAdminSession = (error) => error?.status === 401;
+
+export function buildAdminAgentAccessRequest(agent, enabled, idempotencyKey) {
+  if (!agent || !Array.isArray(agent.permissions))
+    throw new Error("Agent 注册信息不存在，请刷新后重试。");
+  if (agent.key === "album-manager" && enabled)
+    throw new Error("相册 AI 需账户本人从 App 添加授权。");
+  if (
+    typeof idempotencyKey !== "string" ||
+    !/^[A-Za-z0-9._-]{8,160}$/.test(idempotencyKey)
+  ) {
+    throw new Error("Agent 操作缺少有效幂等键。");
+  }
+  return {
+    method: "PATCH",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({
+      enabled,
+      alias: agent.name,
+      grantedScopes: enabled ? [...agent.permissions] : [],
+    }),
+  };
+}
 
 export function buildAdminProfileUpdate(values) {
   const result = {};
@@ -60,7 +94,8 @@ export function buildAdminProfileUpdate(values) {
     ["publicLocation", "公开城市", 120],
   ]) {
     result[field] = String(values[field] ?? "").trim();
-    if (result[field].length > limit) throw new Error(`${label}最多 ${limit} 个字符。`);
+    if (result[field].length > limit)
+      throw new Error(`${label}最多 ${limit} 个字符。`);
   }
   if (!result.nickname) throw new Error("请输入昵称。");
 
@@ -71,10 +106,15 @@ export function buildAdminProfileUpdate(values) {
   result.experienceYears = years === "" ? null : Number(years);
 
   const languages = values.languages;
-  const supportedLanguages = new Set(profileLanguageOptions.map(([code]) => code));
-  if (!Array.isArray(languages) || languages.length > 10
-    || new Set(languages).size !== languages.length
-    || languages.some((code) => !supportedLanguages.has(code))) {
+  const supportedLanguages = new Set(
+    profileLanguageOptions.map(([code]) => code)
+  );
+  if (
+    !Array.isArray(languages) ||
+    languages.length > 10 ||
+    new Set(languages).size !== languages.length ||
+    languages.some((code) => !supportedLanguages.has(code))
+  ) {
     throw new Error("请从列表中选择语言，每种语言只能选择一次。");
   }
   result.languages = [...languages];
@@ -83,27 +123,38 @@ export function buildAdminProfileUpdate(values) {
 
 export const friendlyAdminErrorMessage = (
   error,
-  { fallback = "操作失败，请稍后再试。", apiLabel = "后台服务" } = {},
+  { fallback = "操作失败，请稍后再试。", apiLabel = "后台服务" } = {}
 ) => {
   if (error?.isTimeout) return "后台服务响应超时，请稍后重试。";
   if (error?.isNetworkError) return `无法连接后台服务：${apiLabel}`;
 
   const message = String(error?.message || "");
   if (!message) return fallback;
-  if (error?.name === "TypeError" || /failed to fetch|network|load failed/i.test(message)) {
+  if (
+    error?.name === "TypeError" ||
+    /failed to fetch|network|load failed/i.test(message)
+  ) {
     return `无法连接后台服务：${apiLabel}`;
   }
-  if (/postgres|database|db:migrate|migrated|migration|relation .* does not exist/i.test(message)) {
+  if (
+    /postgres|database|db:migrate|migrated|migration|relation .* does not exist/i.test(
+      message
+    )
+  ) {
     return "妙讯服务正在初始化，请稍后再试。";
   }
-  if (/invalid email or password|invalid account or password/i.test(message)) return "账号或密码不正确。";
+  if (/invalid email or password|invalid account or password/i.test(message))
+    return "账号或密码不正确。";
   if (/already registered/i.test(message)) return "账号或邮箱已存在。";
   if (/disabled/i.test(message)) return "账号已停用。";
   if (/admin permission/i.test(message)) return "当前账号没有后台权限。";
-  if (/disable your own/i.test(message)) return "不能停用当前登录的管理员账号。";
-  if (/remove your own/i.test(message)) return "不能移除当前登录账号的管理员权限。";
+  if (/disable your own/i.test(message))
+    return "不能停用当前登录的管理员账号。";
+  if (/remove your own/i.test(message))
+    return "不能移除当前登录账号的管理员权限。";
   if (/logout to revoke/i.test(message)) return "当前管理员请使用退出后台。";
-  if (/change your own password/i.test(message)) return "请在账号设置中修改自己的密码。";
+  if (/change your own password/i.test(message))
+    return "请在账号设置中修改自己的密码。";
   return message;
 };
 
@@ -157,8 +208,11 @@ export function createAdminApiRequest({
           {
             status: response.status,
             details: payload.error?.details,
-            requestId: payload.error?.requestId || response.headers?.get?.("X-Request-ID") || "",
-          },
+            requestId:
+              payload.error?.requestId ||
+              response.headers?.get?.("X-Request-ID") ||
+              "",
+          }
         );
       }
       return payload.data;
@@ -179,14 +233,24 @@ export function createAdminApiRequest({
   };
 }
 export const mediaRetrievalDiagnosticGuidance = (diagnostic = {}) => {
-  if (diagnostic.stage === "timeout" || diagnostic.stage === "transport") return "检查服务出口、DNS 和供应商连通性；先核对账单，勿自动重复调用。";
+  if (diagnostic.stage === "timeout" || diagnostic.stage === "transport")
+    return "检查服务出口、DNS 和供应商连通性；先核对账单，勿自动重复调用。";
   if (diagnostic.stage === "http-response") {
-    if (diagnostic.httpStatus === 401 || diagnostic.httpStatus === 403) return "核对供应商凭据、工作空间和模型授权；请勿在后台粘贴密钥。";
-    if (diagnostic.httpStatus === 429) return "核对供应商配额、并发及限流；确认恢复后再人工重试。";
-    if (diagnostic.providerCode === "Arrearage") return "核对供应商账户余额与账单。";
+    if (diagnostic.httpStatus === 401 || diagnostic.httpStatus === 403)
+      return "核对供应商凭据、工作空间和模型授权；请勿在后台粘贴密钥。";
+    if (diagnostic.httpStatus === 429)
+      return "核对供应商配额、并发及限流；确认恢复后再人工重试。";
+    if (diagnostic.providerCode === "Arrearage")
+      return "核对供应商账户余额与账单。";
     return "根据 HTTP 状态和供应商错误代码核对模型、参数及服务状态。";
   }
-  if (["descriptor-validation", "query-validation", "response-json"].includes(diagnostic.stage)) return "核对模型输出协议及列出的字段；保持校验开启，不使用原始输出绕过规则。";
-  if (diagnostic.stage === "embedding-validation") return "核对向量模型、输出维度及部署配置，确认与现有索引一致。";
+  if (
+    ["descriptor-validation", "query-validation", "response-json"].includes(
+      diagnostic.stage
+    )
+  )
+    return "核对模型输出协议及列出的字段；保持校验开启，不使用原始输出绕过规则。";
+  if (diagnostic.stage === "embedding-validation")
+    return "核对向量模型、输出维度及部署配置，确认与现有索引一致。";
   return "该记录没有可验证的供应商诊断，需在后续明确授权的调用中采集。";
 };

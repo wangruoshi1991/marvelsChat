@@ -8,11 +8,7 @@ import {
   inspectLocalMediaObject,
   writeLocalMediaObject,
 } from "../local-media-storage.js";
-import {
-  buildMediaSearchMatcher,
-  normalizeMediaTags,
-  suggestTagsForMediaAsset,
-} from "../album-management-service.js";
+import { buildMediaSearchMatcher } from "../media-text-search.js";
 import { createMediaRetrievalProvider } from "../media-retrieval-provider.js";
 import { createMediaRetrievalRepository } from "../media-retrieval-repository.js";
 import { buildMediaRetrievalRuntimeStatus } from "../media-retrieval-runtime-status.js";
@@ -505,7 +501,7 @@ export function registerStationMediaRoutes(
         userId: req.user.id,
         mediaAssetId,
         caption: body.caption,
-        tags: normalizeMediaTags(body.tags),
+        tags: body.tags,
         metadata: body.metadata,
       });
       await createUsageEvent({
@@ -518,22 +514,6 @@ export function registerStationMediaRoutes(
         userAgent: req.get("user-agent") || "",
       });
       res.json({ data: asset });
-    }),
-  );
-
-  app.post(
-    "/api/station/media-assets/:mediaAssetId/suggest-tags",
-    authenticate,
-    asyncHandler(async (req, res) => {
-      const { mediaAssetId } = stationMediaAssetParamsSchema.parse(req.params);
-      const assets = await listStationMediaAssetsForUser(req.user.id, 100);
-      const asset = assets.find((item) => item.id === mediaAssetId);
-      if (!asset) {
-        res.status(404).json({ error: { message: "Media asset not found" } });
-        return;
-      }
-      const tags = suggestTagsForMediaAsset(asset);
-      res.json({ data: { mediaAssetId, tags } });
     }),
   );
 }

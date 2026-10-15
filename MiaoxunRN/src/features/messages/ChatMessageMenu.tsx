@@ -1,7 +1,6 @@
 import React from 'react';
 import { Alert, Pressable, View } from 'react-native';
-import Clipboard from '@react-native-clipboard/clipboard';
-import { Copy, RefreshCw, Trash2, Undo2 } from 'lucide-react-native';
+import { RefreshCw, Trash2, Undo2 } from 'lucide-react-native';
 
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
@@ -77,16 +76,6 @@ export function ChatMessageMenu({
           onPress={() => {
             onReply(selectedMessage);
             onClose();
-          }}
-        />
-        <MessageInlineAction
-          icon={Copy}
-          title={textFor(language, '复制', 'Copy')}
-          palette={palette}
-          onPress={() => {
-            Clipboard.setString(selectedMessage.content);
-            onClose();
-            onActionMessage(textFor(language, '消息已复制', 'Message copied'));
           }}
         />
         <MessageInlineAction

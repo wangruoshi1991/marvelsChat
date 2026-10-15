@@ -26,7 +26,7 @@
 ## 2. 建议阅读顺序
 
 1. 本文和[2026-09-15 仓库审查报告](../reviews/2026-09-15-repository-audit.md)。
-2. [项目总说明](../../README.md)、[项目结构](../project-structure.md)、[架构](../architecture.md)、[开发规范](../development-standards.md)。
+2. [项目总说明](../../README.md)、[项目结构](../architecture.md#工程入口与文件归属)、[架构](../architecture.md)、[开发规范](../development-standards.md)。
 3. [移动端说明](../../MiaoxunRN/README.md)，随后按用户新需求读取对应页面、session action、API 和后端实现。
 4. 涉及内容管理时读[小站能力闭环](../station-feature-closure.md)；涉及 Agent 时读[Agent 说明](../agents.md)。
 5. 涉及发布或外部服务时才读[生产运维入口](../production-operations.md)、[部署](../deployment.md)、[iOS](../ios.md)、[数据库](../database.md)和[备份恢复](../database-backup.md)。

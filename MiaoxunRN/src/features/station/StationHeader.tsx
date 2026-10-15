@@ -2,15 +2,15 @@ import {
   Award,
   CircleDot,
   Link2,
+  MoreHorizontal,
   Network,
   Pencil,
   QrCode,
   UserRound,
 } from 'lucide-react-native';
 import React from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
-import { stationPostIconAssets } from '../../assets/icons';
 import {
   AvatarConfigDTO,
   ProfileIdentityDTO,
@@ -314,14 +314,7 @@ export function StationTabs({
         onPress={onOpenSettings}
         style={styles.stationNavSettings}
       >
-        <Image
-          resizeMode="contain"
-          source={stationPostIconAssets.more}
-          style={[
-            styles.stationNavSettingsIcon,
-            !colors.isLight && { tintColor: textColor },
-          ]}
-        />
+        <MoreHorizontal color={textColor} size={27} strokeWidth={3} />
       </Pressable>
     </View>
   );

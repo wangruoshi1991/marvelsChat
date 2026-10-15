@@ -117,6 +117,18 @@ export const fingerprintAsset = (asset) =>
     )
     .digest("hex");
 
+// SQL counterpart for persisted station_media_assets rows (aliased as asset).
+// Keep JSON key order, escaping and Date's UTC millisecond precision identical
+// to fingerprintAsset above. PostgreSQL byte_size is a nonnegative INTEGER.
+export const ASSET_CONTENT_FINGERPRINT_SQL = `encode(sha256(convert_to(
+  '{"id":' || to_json(asset.id::text)::text ||
+  ',"storageKey":' || to_json(COALESCE(asset.storage_key, ''))::text ||
+  ',"byteSize":' || COALESCE(asset.byte_size, 0)::text ||
+  ',"updatedAt":' || to_json(to_char(asset.content_revision_at AT TIME ZONE 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))::text || '}',
+  'UTF8'
+)), 'hex')`;
+
 export const redactInputSummary = (input = {}) => {
   const summary = {};
   for (const key of ["assetCount", "requestedAssetCount", "scope", "kind", "source", "operation"]) {

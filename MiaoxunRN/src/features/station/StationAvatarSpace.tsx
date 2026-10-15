@@ -71,7 +71,7 @@ export function StationAvatarSpace({
   const [viewerRevision, setViewerRevision] = useState(0);
   const assistGestureRef = useRef<AIAssistGestureHandle>(null);
   const colors = resolveStationColors(palette);
-  const stageBackgroundColor = '#F7F8FC';
+  const stageBackgroundColor = colors.isLight ? '#F7F8FC' : colors.soft;
   const latestModel = useMemo(
     () =>
       avatar3d?.models.find(
@@ -284,11 +284,16 @@ export function StationAvatarSpace({
                     }}
                     style={localStyles.preparingPreview}
                   />
-                  <View style={localStyles.preparingScrim} />
+                  <View
+                    style={[
+                      localStyles.preparingScrim,
+                      !colors.isLight && localStyles.preparingScrimDark,
+                    ]}
+                  />
                 </>
               ) : null}
               {avatar3dStatus === 'loading' || activeJob ? (
-                <ActivityIndicator color="#2012D9" />
+                <ActivityIndicator color={colors.accent} />
               ) : (
                 <Box color={colors.secondaryText} size={28} strokeWidth={1.8} />
               )}
@@ -313,24 +318,29 @@ export function StationAvatarSpace({
                     ? activeJobStageCopy(language, activeJob.status).body
                     : emptyStateBody(language, avatar3dStatus))}
               </Text>
-              {viewerError && latestModel ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => {
-                    setViewerError('');
-                    setViewerRevision(current => current + 1);
-                  }}
-                  style={styles.avatar3dRetryButton}
-                >
-                  <RotateCcw color="#2012D9" size={15} strokeWidth={2} />
-                  <Text style={styles.avatar3dRetryButtonText}>
-                    {textFor(language, '重新加载', 'Reload')}
-                  </Text>
-                </Pressable>
-              ) : null}
             </View>
           )}
         </AIAssistGestureSurface>
+        {viewerError && latestModel ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={textFor(
+              language,
+              '重新加载3D预览',
+              'Reload 3D preview',
+            )}
+            onPress={() => {
+              setViewerError('');
+              setViewerRevision(current => current + 1);
+            }}
+            style={[styles.avatar3dRetryButton, localStyles.retryOverlay]}
+          >
+            <RotateCcw color="#2012D9" size={15} strokeWidth={2} />
+            <Text style={styles.avatar3dRetryButtonText}>
+              {textFor(language, '重新加载', 'Reload')}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={styles.avatarSpaceCopy}>
@@ -413,6 +423,13 @@ const localStyles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     top: 0,
+  },
+  preparingScrimDark: { backgroundColor: 'rgba(14,16,15,0.78)' },
+  retryOverlay: {
+    alignSelf: 'center',
+    bottom: 12,
+    position: 'absolute',
+    zIndex: 2,
   },
 });
 

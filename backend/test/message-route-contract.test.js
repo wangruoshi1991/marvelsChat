@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import test from "node:test";
 
 process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
@@ -9,8 +10,26 @@ const {
   assertMatchingMessageRetry,
   buildAgentAppContext,
   registerMessageRoutes,
+  messageRequestFingerprint,
 } = await import("../src/routes/message-routes.js");
 const { messageSchema } = await import("../src/schemas.js");
+
+test("messages reject fabricated client-side action completion instead of suppressing model dispatch", () => {
+  assert.throws(() => messageSchema.parse({ content: "帮我建站", localActionResult: {
+    type: "navigation", status: "applied", message: "建站入口已准备打开。",
+  } }), error => error.issues.some(issue => issue.code === "unrecognized_keys" && issue.keys.includes("localActionResult")));
+});
+
+test("empty references preserve production message keys while semantic references change them", () => {
+  const body = messageSchema.parse({ content: "Existing message", replyToMessageId: crypto.randomUUID() });
+  const stored = crypto.createHash("sha256").update(JSON.stringify([body.content, body.replyToMessageId])).digest("hex");
+  assert.equal(messageRequestFingerprint(body), stored);
+  const ref = { kind: "station-album", id: crypto.randomUUID(), version: "a".repeat(64) };
+  const referenced = messageRequestFingerprint({ ...body, contextRefs: [ref] });
+  assert.notEqual(referenced, stored);
+  assert.equal(messageRequestFingerprint({ ...body, contextRefs: [{ ...ref, title: "Presentation only" }] }), referenced);
+  assert.notEqual(messageRequestFingerprint({ ...body, contextRefs: [{ ...ref, version: "b".repeat(64) }] }), referenced);
+});
 
 test("registers thread notification preference routes", () => {
   const routes = [];
@@ -91,12 +110,11 @@ test("Agent chat context includes current station content", () => {
     },
     { grantedScopes: ["profile:read", "station:read"] },
     { currentPage: "station" },
-    null,
   );
 
   assert.equal(context.stationContent, stationContent);
   assert.deepEqual(context.client, { currentPage: "station" });
-  assert.equal(context.localActionResult, null);
+  assert.equal(Object.hasOwn(context, "localActionResult"), false);
 });
 
 test("Agent chat context omits data outside granted scopes", () => {
@@ -109,18 +127,18 @@ test("Agent chat context omits data outside granted scopes", () => {
     },
     { grantedScopes: ["profile:read"] },
     { currentPage: "station" },
-    { type: "publish", status: "applied" },
   );
 
   assert.deepEqual(context.profile, { nickname: "Tester" });
   assert.deepEqual(context.modules, {});
   assert.deepEqual(context.ownedAgents, []);
   assert.equal(context.stationContent, null);
-  assert.equal(context.localActionResult, null);
+  assert.equal(Object.hasOwn(context, "localActionResult"), false);
 });
 
-test("Agent chat uses only scopes declared by the registered Agent", () => {
-  const access = assertAgentAvailable(
+test("Agent chat rejects incomplete or outdated declarations instead of filtering into a usable grant", () => {
+  for (const grantedScopes of [["profile:read"], ["profile:read", "station:write"], ["profile:read", "station:read", "station:write"]]) {
+    assert.throws(() => assertAgentAvailable(
     {
       registeredAgents: [
         { key: "model-3d", permissions: ["profile:read", "station:read"] },
@@ -129,14 +147,16 @@ test("Agent chat uses only scopes declared by the registered Agent", () => {
         {
           id: "model-3d",
           enabled: true,
-          grantedScopes: ["profile:read", "station:write"],
+          grantedScopes,
         },
       ],
     },
     "model-3d",
-  );
-
-  assert.deepEqual(access.grantedScopes, ["profile:read"]);
+    ), { details: { code: "AI_ACCESS_REVOKED" } });
+  }
+  const access = assertAgentAvailable({ registeredAgents: [{ key: "model-3d", permissions: ["profile:read", "station:read"] }],
+    ownedAgents: [{ id: "model-3d", enabled: true, grantedScopes: ["station:read", "profile:read"] }] }, "model-3d");
+  assert.deepEqual(access.grantedScopes, ["station:read", "profile:read"]);
 });
 
 test("Agent chat rejects a disabled Agent thread", () => {

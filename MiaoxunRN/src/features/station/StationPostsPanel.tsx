@@ -341,13 +341,7 @@ function StationPostCard({
   ];
 
   return (
-    <AIAssistGestureSurface
-      object={object}
-      actions={actions}
-      palette={palette}
-      testID={`station-post-assist-${post.id}`}
-      style={[styles.stationFeedCard, { backgroundColor: colors.surface }]}
-    >
+    <View style={[styles.stationFeedCard, { backgroundColor: colors.surface }]}>
       <View style={styles.stationFeedHeader}>
         <View style={styles.stationFeedDateCopy}>
           <Text
@@ -421,95 +415,103 @@ function StationPostCard({
         </Pressable>
       </View>
 
-      {post.body ? (
-        <Text style={[styles.stationFeedBody, { color: colors.text }]}>
-          {post.body}
-        </Text>
-      ) : null}
-
-      {post.locationLabel ? (
-        <View style={styles.stationFeedLocation}>
-          <MapPin color={colors.secondaryText} size={13} strokeWidth={2} />
-          <Text
-            numberOfLines={1}
-            style={[
-              styles.stationFeedLocationText,
-              { color: colors.secondaryText },
-            ]}
-          >
-            {post.locationLabel}
+      <AIAssistGestureSurface
+        object={object}
+        actions={actions}
+        palette={palette}
+        testID={`station-post-assist-${post.id}`}
+        style={styles.stationFeedContextContent}
+      >
+        {post.body ? (
+          <Text style={[styles.stationFeedBody, { color: colors.text }]}>
+            {post.body}
           </Text>
-        </View>
-      ) : null}
+        ) : null}
 
-      {post.media.length ? (
-        <View style={styles.stationFeedMediaGrid}>
-          {previewMedia.map((asset, index) => (
-            <View
-              key={asset.id}
+        {post.locationLabel ? (
+          <View style={styles.stationFeedLocation}>
+            <MapPin color={colors.secondaryText} size={13} strokeWidth={2} />
+            <Text
+              numberOfLines={1}
               style={[
-                styles.stationFeedMediaItem,
-                post.media.length === 1 && styles.stationFeedMediaItemSingle,
-                post.media.length === 2 && styles.stationFeedMediaItemDouble,
-                { backgroundColor: colors.soft },
+                styles.stationFeedLocationText,
+                { color: colors.secondaryText },
               ]}
             >
-              {asset.kind === 'image' ? (
-                <Image
-                  resizeMode="cover"
-                  source={{
-                    uri: buildStationMediaFileUrl(asset.id),
-                    headers: { Authorization: `Bearer ${token}` },
-                  }}
-                  style={styles.stationFeedMediaImage}
-                />
-              ) : (
-                <View style={styles.stationFeedVideo}>
-                  <View style={styles.stationFeedVideoPlay}>
-                    <Play color="#FFFFFF" fill="#FFFFFF" size={21} />
-                  </View>
-                  <Text
-                    numberOfLines={1}
-                    style={[
-                      styles.stationFeedVideoText,
-                      { color: colors.secondaryText },
-                    ]}
-                  >
-                    {textFor(language, '视频', 'Video')}
-                  </Text>
-                </View>
-              )}
-              {index === 2 && post.media.length > previewMedia.length ? (
-                <View style={styles.stationFeedMediaMore}>
-                  <Text style={styles.stationFeedMediaMoreText}>
-                    +{post.media.length - previewMedia.length}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          ))}
-        </View>
-      ) : null}
+              {post.locationLabel}
+            </Text>
+          </View>
+        ) : null}
 
-      {agentTags.length ? (
-        <View style={styles.stationFeedAgents}>
-          {agentTags.map(agent => (
-            <View
-              key={agent.id}
-              style={[
-                styles.stationFeedAgentChip,
-                { backgroundColor: colors.soft },
-              ]}
-            >
-              <Text
-                style={[styles.stationFeedAgentText, { color: colors.text }]}
+        {post.media.length ? (
+          <View style={styles.stationFeedMediaGrid}>
+            {previewMedia.map((asset, index) => (
+              <View
+                key={asset.id}
+                style={[
+                  styles.stationFeedMediaItem,
+                  post.media.length === 1 && styles.stationFeedMediaItemSingle,
+                  post.media.length === 2 && styles.stationFeedMediaItemDouble,
+                  { backgroundColor: colors.soft },
+                ]}
               >
-                {agent.name}
-              </Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
+                {asset.kind === 'image' ? (
+                  <Image
+                    resizeMode="cover"
+                    source={{
+                      uri: buildStationMediaFileUrl(asset.id),
+                      headers: { Authorization: `Bearer ${token}` },
+                    }}
+                    style={styles.stationFeedMediaImage}
+                  />
+                ) : (
+                  <View style={styles.stationFeedVideo}>
+                    <View style={styles.stationFeedVideoPlay}>
+                      <Play color="#FFFFFF" fill="#FFFFFF" size={21} />
+                    </View>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.stationFeedVideoText,
+                        { color: colors.secondaryText },
+                      ]}
+                    >
+                      {textFor(language, '视频', 'Video')}
+                    </Text>
+                  </View>
+                )}
+                {index === 2 && post.media.length > previewMedia.length ? (
+                  <View style={styles.stationFeedMediaMore}>
+                    <Text style={styles.stationFeedMediaMoreText}>
+                      +{post.media.length - previewMedia.length}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {agentTags.length ? (
+          <View style={styles.stationFeedAgents}>
+            {agentTags.map(agent => (
+              <View
+                key={agent.id}
+                style={[
+                  styles.stationFeedAgentChip,
+                  { backgroundColor: colors.soft },
+                ]}
+              >
+                <Text
+                  style={[styles.stationFeedAgentText, { color: colors.text }]}
+                >
+                  {agent.name}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+      </AIAssistGestureSurface>
 
       <View style={styles.stationFeedActions}>
         <PostMetricButton
@@ -542,7 +544,7 @@ function StationPostCard({
           value={post.commentCount}
         />
       </View>
-    </AIAssistGestureSurface>
+    </View>
   );
 }
 

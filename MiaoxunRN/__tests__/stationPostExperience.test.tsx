@@ -3,6 +3,7 @@ import { Alert, Image, Text, TextInput, View } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import { stationPostIconAssets } from '../src/assets/icons';
+import { AIAssistGestureSurface } from '../src/features/assist/AIAssistGestureSurface';
 import { AIAssistProvider } from '../src/features/assist/AIAssistProvider';
 import { StationPostComposerScreen } from '../src/features/station/StationPostComposerScreen';
 import { StationPostsPanel } from '../src/features/station/StationPostsPanel';
@@ -14,6 +15,15 @@ import {
   emptyStationContent,
 } from '../src/features/session/sessionDefaults';
 import { palettes } from '../src/shared/theme';
+
+jest.mock('../src/features/workspaces/useAgentWorkspaces', () => ({
+  useAgentWorkspaces: () => ({
+    workspaces: [],
+    loaded: true,
+    error: '',
+    refresh: jest.fn(),
+  }),
+}));
 
 jest.mock('react-native/Libraries/Modal/Modal', () => {
   const ReactModule = require('react');
@@ -108,15 +118,17 @@ const postInteractionTree = ({
 const pressPoint = { nativeEvent: { pageX: 180, pageY: 330 } };
 
 describe('Station post experience', () => {
-  afterEach(() => {
+  let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+  afterEach(async () => {
+    await ReactTestRenderer.act(async () => renderer?.unmount());
+    renderer = undefined;
     jest.restoreAllMocks();
   });
 
-  it('maps the five station tabs to the new information architecture', () => {
+  it('maps the five station tabs to the new information architecture', async () => {
     const onChange = jest.fn();
-    let renderer: ReactTestRenderer.ReactTestRenderer;
 
-    ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <StationTabs
           language="zh"
@@ -153,8 +165,7 @@ describe('Station post experience', () => {
     ]);
   });
 
-  it('counts only real station content in the outcomes overview', () => {
-    let renderer: ReactTestRenderer.ReactTestRenderer;
+  it('shows actionable real records without fabricated total or AI output statistics', async () => {
     const stationContent = {
       ...emptyStationContent,
       posts: [post],
@@ -162,19 +173,35 @@ describe('Station post experience', () => {
         {
           id: 'comic-1',
           title: '漫画成果',
+          frames: [],
           prompt: '',
           summary: '',
           createdAt: null,
         } as never,
       ],
       siteDrafts: [
-        { id: 'site-1', prompt: '', draft: {}, createdAt: null } as never,
-        { id: 'site-2', prompt: '', draft: {}, createdAt: null } as never,
+        {
+          id: 'site-1',
+          title: '周末页面',
+          source: 'model' as const,
+          status: 'draft' as const,
+          createdAt: null,
+          updatedAt: null,
+        },
+        {
+          id: 'site-2',
+          title: '旅行页面',
+          source: 'model' as const,
+          status: 'applied' as const,
+          createdAt: null,
+          updatedAt: null,
+        },
       ],
       videoDrafts: [
         {
           id: 'video-1',
           title: '视频成果',
+          shots: [],
           prompt: '',
           summary: '',
           createdAt: null,
@@ -187,9 +214,13 @@ describe('Station post experience', () => {
       ],
     };
 
-    ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <StationOutcomesPanel
+          active
+          token="test-token"
+          onRefreshStationContent={async () => stationContent}
+          onOpenWorkspace={jest.fn()}
           language="zh"
           palette={palettes.light}
           stationContent={stationContent}
@@ -200,19 +231,24 @@ describe('Station post experience', () => {
     const textValues = renderer!.root
       .findAllByType(Text)
       .map(node => node.props.children);
+    expect(textValues).toContain('周末页面');
+    expect(textValues).toContain('旅行页面');
+    expect(textValues).toContain('页面草稿');
+    expect(textValues).toContain('已保存页面');
     expect(textValues).toContain('我的成果');
-    expect(textValues).toContain('生活动态');
-    expect(textValues).toContain('AI 产出');
-    expect(textValues).toContain('形象穿搭');
-    expect(textValues).toContain(1);
-    expect(textValues).toContain(4);
-    expect(textValues).toContain(3);
+    expect(textValues).not.toContain('累计成果');
+    expect(textValues).not.toContain('AI 产出');
+    const outcomeEntries = renderer!.root.findAll(
+      node =>
+        node.props.testID?.startsWith('outcome-') &&
+        typeof node.props.onPress === 'function',
+    );
+    expect(new Set(outcomeEntries.map(node => node.props.testID)).size).toBe(7);
   });
 
-  it('matches the compact design and caps the image preview at three items', () => {
+  it('matches the compact design and caps the image preview at three items', async () => {
     const onOpenPostComposer = jest.fn();
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-    ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <AIAssistProvider onAskButler={jest.fn()} routeKey="station-posts">
           <StationPostsPanel
@@ -272,11 +308,10 @@ describe('Station post experience', () => {
     expect(imageSources).toContain(stationPostIconAssets.photo);
   });
 
-  it('keeps the life composer available when there are no posts', () => {
+  it('keeps the life composer available when there are no posts', async () => {
     const onOpenPostComposer = jest.fn();
-    let renderer: ReactTestRenderer.ReactTestRenderer;
 
-    ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <AIAssistProvider onAskButler={jest.fn()} routeKey="station-posts">
           <StationPostsPanel
@@ -312,11 +347,10 @@ describe('Station post experience', () => {
     expect(onOpenPostComposer).toHaveBeenCalledTimes(1);
   });
 
-  it('refreshes interaction state when the same post receives new server props', () => {
+  it('refreshes interaction state when the same post receives new server props', async () => {
     const onAskButler = jest.fn();
     const onDeletePost = jest.fn(async () => undefined);
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-    ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         postInteractionTree({ onAskButler, onDeletePost }),
       );
@@ -354,14 +388,87 @@ describe('Station post experience', () => {
     expect(textValues).toContain(9);
   });
 
-  it('passes the actual post context to the butler from the global long-press menu', () => {
+  it('keeps like and favorite taps on their controls without opening card actions', async () => {
+    const onSetStationPostInteraction = jest
+      .fn()
+      .mockResolvedValueOnce({
+        postId: post.id,
+        likeCount: post.likeCount + 1,
+        favoriteCount: post.favoriteCount,
+        likedByMe: true,
+        favoritedByMe: false,
+      })
+      .mockResolvedValueOnce({
+        postId: post.id,
+        likeCount: post.likeCount + 1,
+        favoriteCount: post.favoriteCount + 1,
+        likedByMe: true,
+        favoritedByMe: true,
+      });
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AIAssistProvider onAskButler={jest.fn()} routeKey="station-posts">
+          <StationPostsPanel
+            language="zh"
+            ownedAgents={[]}
+            palette={palettes.light}
+            profile={emptyProfile}
+            renderUserAvatar={renderUserAvatar}
+            stationContent={{ ...emptyStationContent, posts: [post] }}
+            token="token"
+            onActionError={jest.fn()}
+            onActionMessage={jest.fn()}
+            onDeletePost={jest.fn(async () => undefined)}
+            onSetStationPostInteraction={onSetStationPostInteraction}
+            onOpenPostComposer={jest.fn()}
+          />
+        </AIAssistProvider>,
+      );
+    });
+
+    const contextSurface = renderer!.root.findByType(AIAssistGestureSurface);
+    expect(
+      contextSurface.findAllByProps({ accessibilityLabel: '更多' }),
+    ).toHaveLength(0);
+    expect(
+      contextSurface.findAllByProps({ accessibilityLabel: '点赞' }),
+    ).toHaveLength(0);
+    expect(
+      contextSurface.findAllByProps({ accessibilityLabel: '收藏' }),
+    ).toHaveLength(0);
+
+    await ReactTestRenderer.act(async () => {
+      renderer!.root
+        .findByProps({ accessibilityLabel: '点赞' })
+        .props.onPress();
+      await Promise.resolve();
+    });
+    expect(
+      renderer!.root.findAllByProps({ testID: 'content-actions-overlay' }),
+    ).toHaveLength(0);
+    await ReactTestRenderer.act(async () => {
+      renderer!.root
+        .findByProps({ accessibilityLabel: '收藏' })
+        .props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(onSetStationPostInteraction.mock.calls).toEqual([
+      [post.id, 'like', true],
+      [post.id, 'favorite', true],
+    ]);
+    expect(
+      renderer!.root.findAllByProps({ testID: 'content-actions-overlay' }),
+    ).toHaveLength(0);
+  });
+
+  it('passes the actual post context to the butler from the global long-press menu', async () => {
     jest
       .spyOn(View.prototype, 'measureInWindow')
       .mockImplementation(callback => callback(0, 59, 393, 760));
     const onAskButler = jest.fn();
     const onDeletePost = jest.fn(async () => undefined);
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-    ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         postInteractionTree({ onAskButler, onDeletePost }),
       );
@@ -394,7 +501,6 @@ describe('Station post experience', () => {
     expect(
       renderer!.root.findAllByProps({ testID: 'content-actions-overlay' }),
     ).toHaveLength(0);
-    ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   it('opens the action menu from more and deletes only after explicit confirmation', async () => {
@@ -403,8 +509,7 @@ describe('Station post experience', () => {
       .mockImplementation(callback => callback(0, 59, 393, 760));
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
     const onDeletePost = jest.fn(async () => undefined);
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-    ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         postInteractionTree({ onAskButler: jest.fn(), onDeletePost }),
       );
@@ -431,7 +536,6 @@ describe('Station post experience', () => {
     await ReactTestRenderer.act(async () => confirm!.onPress?.());
     expect(onDeletePost).toHaveBeenCalledTimes(1);
     expect(onDeletePost).toHaveBeenCalledWith(post.id);
-    ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   it('shows publish errors inside the full-screen composer', async () => {
@@ -448,9 +552,8 @@ describe('Station post experience', () => {
       createStationMediaAsset: jest.fn(),
       deleteStationMediaAsset: jest.fn(async () => undefined),
     } as never;
-    let renderer: ReactTestRenderer.ReactTestRenderer;
 
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <StationPostComposerScreen
           language="zh"
@@ -463,7 +566,7 @@ describe('Station post experience', () => {
       );
     });
     const input = renderer!.root.findByType(TextInput);
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       input.props.onChangeText('测试动态');
     });
     const publishButton = renderer!.root.findByProps({

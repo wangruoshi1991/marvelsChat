@@ -19,6 +19,7 @@ export function AlbumAssistantStatus({
   onError: (message: string) => void;
 }) {
   const [state, setState] = useState('loading');
+  const [unavailableAssets, setUnavailableAssets] = useState(0);
   const [busy, setBusy] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
   useEffect(() => {
@@ -27,20 +28,29 @@ export function AlbumAssistantStatus({
       mediaRetrievalApi
         .status(token)
         .then(status => {
-          if (active)
+          if (active) {
+            const { indexedAssets, skippedAssets, totalAssets } =
+              status.backfill;
+            const pendingAssets = totalAssets - indexedAssets - skippedAssets;
+            setUnavailableAssets(skippedAssets);
             setState(
               !status.enabled
                 ? 'consent'
                 : !status.availability.canStartRun
                 ? 'unavailable'
-                : status.backfill.totalAssets === 0
+                : totalAssets === 0
                 ? 'no-media'
-                : status.backfill.indexedAssets === 0
-                ? 'index-pending'
-                : status.backfill.indexedAssets < status.backfill.totalAssets
-                ? 'indexing'
+                : pendingAssets > 0
+                ? indexedAssets === 0
+                  ? 'index-pending'
+                  : 'indexing'
+                : skippedAssets > 0
+                ? indexedAssets === 0
+                  ? 'index-unavailable'
+                  : 'index-partial'
                 : 'ready',
             );
+          }
         })
         .catch(() => {
           if (active) setState('unavailable');
@@ -67,6 +77,10 @@ export function AlbumAssistantStatus({
             ? '素材正在建立索引；可以先查找已完成的素材。'
             : state === 'index-pending'
             ? '还没有完成索引的素材，请等待处理完成后再查找。'
+            : state === 'index-unavailable'
+            ? '素材处理失败、受阻或尚未开始，目前没有可检索素材，也没有排队任务。'
+            : state === 'index-partial'
+            ? '部分素材暂不可检索；可以查找已完成索引的素材。'
             : state === 'loading'
             ? '正在读取相册 AI 状态…'
             : '直接描述要找的图片或视频，也可以继续补充条件。',
@@ -80,11 +94,30 @@ export function AlbumAssistantStatus({
             ? 'Indexing media. You can search completed items.'
             : state === 'index-pending'
             ? 'No media is indexed yet. Wait for processing to complete.'
+            : state === 'index-unavailable'
+            ? 'Media processing failed, was blocked, or has not started. No media is searchable and no tasks are pending.'
+            : state === 'index-partial'
+            ? 'Some media is unavailable for search. You can search completed items.'
             : state === 'loading'
             ? 'Loading Album AI status…'
             : 'Describe an image or video, then refine your request in the conversation.',
         )}
       </Text>
+      {unavailableAssets > 0 &&
+      [
+        'index-pending',
+        'indexing',
+        'index-unavailable',
+        'index-partial',
+      ].includes(state) ? (
+        <Text style={{ color: palette.secondaryText }}>
+          {textFor(
+            language,
+            `${unavailableAssets} 个素材需要检查处理状态，不会自动重试。`,
+            `${unavailableAssets} items need their processing status checked and will not retry automatically.`,
+          )}
+        </Text>
+      ) : null}
       {state === 'consent' ? (
         <Pressable
           accessibilityRole="button"

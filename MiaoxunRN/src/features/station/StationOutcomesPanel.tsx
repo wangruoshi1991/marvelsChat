@@ -1,293 +1,304 @@
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
-  Box,
-  Clapperboard,
-  FileText,
-  Images,
-  Sparkles,
-} from 'lucide-react-native';
-import React, { useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
-
+  AppState,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ChevronRight } from 'lucide-react-native';
+import { AgentWorkspace } from '../../models/agentWorkspace';
 import { StationContentDTO } from '../../models/api';
 import { textFor } from '../../shared/i18n';
-import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
-import { Language } from '../session/useMiaoxunSession';
-import { StationMetricBox } from './StationMetricBox';
+import { Header } from '../../shared/ui';
+import { WorkspaceButton, WorkspaceState } from '../../shared/workspaceUi';
+import { ChatMessageText } from '../messages/ChatMessageText';
+import { Language } from '../session/sessionTypes';
+import { SiteDocumentPreview } from '../site-document/SiteDocumentPreview';
+import { useAgentWorkspaces } from '../workspaces/useAgentWorkspaces';
 import { StationPageHeading } from './StationPageHeading';
 import { resolveStationColors } from './stationTheme';
-
-type OutcomeFilter = 'all' | 'site' | 'comic' | 'video' | 'outfit';
+import { stationOutcomes } from './stationOutcomes';
+import { StationOutfitResult } from './StationOutfitResult';
 
 export function StationOutcomesPanel({
+  active,
+  token,
   language,
   palette,
   stationContent,
+  onRefreshStationContent,
+  onOpenWorkspace,
 }: {
+  active: boolean;
+  token: string;
   language: Language;
   palette: Palette;
   stationContent: StationContentDTO;
+  onRefreshStationContent: (signal: AbortSignal) => Promise<unknown>;
+  onOpenWorkspace: (workspace: AgentWorkspace) => void;
 }) {
-  const [filter, setFilter] = useState<OutcomeFilter>('all');
   const colors = resolveStationColors(palette);
+  const t = (zh: string, en: string) => textFor(language, zh, en);
+  const workspaces = useAgentWorkspaces({ token, active });
   const outcomes = useMemo(
-    () => [
-      ...stationContent.siteDrafts.map(item => ({
-        id: `site-${item.id}`,
-        kind: 'site' as const,
-        title:
-          item.draft.title || textFor(language, '小站方案', 'Station plan'),
-        summary: item.draft.summary || item.prompt,
-        createdAt: item.createdAt,
-        Icon: FileText,
-      })),
-      ...stationContent.comicDiaries.map(item => ({
-        id: `comic-${item.id}`,
-        kind: 'comic' as const,
-        title: item.title,
-        summary: item.summary || item.prompt,
-        createdAt: item.createdAt,
-        Icon: Images,
-      })),
-      ...stationContent.videoDrafts.map(item => ({
-        id: `video-${item.id}`,
-        kind: 'video' as const,
-        title: item.title,
-        summary: item.summary || item.prompt,
-        createdAt: item.createdAt,
-        Icon: Clapperboard,
-      })),
-      ...stationContent.outfits.map(item => ({
-        id: `outfit-${item.id}`,
-        kind: 'outfit' as const,
-        title: item.title,
-        summary: item.note,
-        createdAt: item.createdAt,
-        Icon: Box,
-      })),
-    ],
-    [language, stationContent],
+    () => stationOutcomes(stationContent, workspaces.workspaces, language),
+    [stationContent, workspaces.workspaces, language],
   );
-  const visibleOutcomes =
-    filter === 'all' ? outcomes : outcomes.filter(item => item.kind === filter);
-  const generatedCount =
-    stationContent.comicDiaries.length +
-    stationContent.siteDrafts.length +
-    stationContent.videoDrafts.length;
-
+  const [selection, setSelection] = useState<{
+    token: string;
+    key: string;
+  } | null>(null);
+  const [foreground, setForeground] = useState(
+    AppState.currentState === 'active',
+  );
+  const visibleScope = useRef({ token, active, foreground });
+  visibleScope.current = { token, active, foreground };
+  const contentRequest = useRef<AbortController | null>(null);
+  const [contentRefresh, setContentRefresh] = useState<{
+    token: string;
+    status: 'loading' | 'loaded' | 'failed';
+  } | null>(null);
+  const refreshContent = useCallback(async () => {
+    const scope = visibleScope.current;
+    if (scope.token !== token || !scope.active || !scope.foreground || !token)
+      return;
+    contentRequest.current?.abort();
+    const controller = new AbortController();
+    contentRequest.current = controller;
+    const isCurrent = () =>
+      contentRequest.current === controller &&
+      !controller.signal.aborted &&
+      visibleScope.current.token === token &&
+      visibleScope.current.active &&
+      visibleScope.current.foreground;
+    setContentRefresh({ token, status: 'loading' });
+    try {
+      await onRefreshStationContent(controller.signal);
+      if (isCurrent()) setContentRefresh({ token, status: 'loaded' });
+    } catch {
+      if (isCurrent()) setContentRefresh({ token, status: 'failed' });
+    }
+  }, [onRefreshStationContent, token]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      visibleScope.current.foreground = state === 'active';
+      setForeground(state === 'active');
+      if (state !== 'active') {
+        contentRequest.current?.abort();
+        setSelection(null);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+  useEffect(() => {
+    setSelection(null);
+  }, [active, token]);
+  useEffect(() => {
+    if (active && foreground) refreshContent();
+    return () => contentRequest.current?.abort();
+  }, [active, foreground, refreshContent]);
+  const contentStatus =
+    contentRefresh?.token === token ? contentRefresh.status : null;
+  const contentError =
+    contentStatus === 'failed'
+      ? t('无法读取创作成果，请重试。', 'Unable to load creations. Try again.')
+      : '';
+  const selected =
+    active && foreground && selection?.token === token
+      ? outcomes.find(item => item.key === selection.key)
+      : undefined;
   return (
-    <View style={styles.stationPanelStack}>
+    <View style={s.stack}>
       <StationPageHeading
-        detail={textFor(language, '创作与沉淀', 'Work and archive')}
         palette={palette}
-        title={textFor(language, '我的成果', 'My Outcomes')}
+        title={t('我的成果', 'My outcomes')}
+        detail={t(
+          '查看最近的创作与协作产出',
+          'Recent creations and task results',
+        )}
         watermark="OUTCOMES"
       />
-      <View
-        style={[
-          styles.stationOutcomeHero,
-          !colors.isLight && { backgroundColor: colors.soft },
-        ]}
-      >
-        <View style={styles.stationOutcomeHeroCopy}>
-          <Text
-            style={[styles.stationOutcomeHeroLabel, { color: colors.text }]}
-          >
-            {textFor(language, '累计成果', 'Total outcomes')}
-          </Text>
-          <Text
-            style={[styles.stationOutcomeHeroValue, { color: colors.accent }]}
-          >
-            {outcomes.length}
-          </Text>
-          <View style={styles.stationOutcomeHeroTrend}>
-            <Sparkles color={colors.accent} size={14} strokeWidth={2.2} />
-            <Text
-              style={[
-                styles.stationOutcomeHeroTrendText,
-                { color: colors.secondaryText },
-              ]}
-            >
-              {textFor(
-                language,
-                '均来自真实创作记录',
-                'Built from real records',
-              )}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.stationOutcomeHeroMark}>
-          <AwardMark />
-        </View>
-      </View>
-      <View
-        style={[
-          styles.stationOutcomeMetrics,
-          { backgroundColor: colors.surface },
-        ]}
-      >
-        <StationMetricBox
-          label={textFor(language, '生活动态', 'Life posts')}
-          palette={palette}
-          value={stationContent.posts.length}
-        />
-        <StationMetricBox
-          label={textFor(language, 'AI 产出', 'AI outputs')}
-          palette={palette}
-          value={generatedCount}
-        />
-        <StationMetricBox
-          label={textFor(language, '形象穿搭', 'Outfits')}
-          palette={palette}
-          value={stationContent.outfits.length}
-        />
-      </View>
-
-      <View style={styles.stationOutcomeSectionHead}>
-        <Text style={[styles.stationSectionTitle, { color: colors.text }]}>
-          {textFor(language, '精选成果', 'Selected outcomes')}
-        </Text>
-        <Text style={[styles.stationSectionDetail, { color: colors.accent }]}>
-          {textFor(
-            language,
-            `${outcomes.length} 项`,
-            `${outcomes.length} items`,
-          )}
-        </Text>
-      </View>
-      <View style={styles.stationOutcomeFilters}>
-        {outcomeFilters(language).map(item => (
-          <Pressable
-            accessibilityRole="button"
-            key={item.value}
-            onPress={() => setFilter(item.value)}
-            style={[
-              styles.stationOutcomeFilter,
-              { backgroundColor: colors.surface },
-              filter === item.value && styles.stationOutcomeFilterActive,
-            ]}
-          >
-            <Text
-              style={[
-                styles.stationOutcomeFilterText,
-                filter === item.value && styles.stationOutcomeFilterTextActive,
-              ]}
-            >
-              {item.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-      {visibleOutcomes.length ? (
-        <View style={styles.stationOutcomeGrid}>
-          {visibleOutcomes.map((item, index) => (
-            <View
-              key={item.id}
-              style={[
-                styles.stationOutcomeCard,
-                { backgroundColor: colors.surface },
-                index === 0 && styles.stationOutcomeCardFeatured,
-              ]}
-            >
-              <View
-                style={[
-                  styles.stationOutcomeVisual,
-                  index % 2
-                    ? styles.stationOutcomeVisualRose
-                    : styles.stationOutcomeVisualBlue,
-                ]}
-              >
-                <item.Icon color="#2012D9" size={32} strokeWidth={1.6} />
-              </View>
+      {contentError || workspaces.error ? (
+        <View style={s.stack}>
+          {[contentError, workspaces.error]
+            .filter(Boolean)
+            .map((error, index) => (
               <Text
-                style={[
-                  styles.stationOutcomeKind,
-                  { color: colors.secondaryText },
-                ]}
+                key={index}
+                accessibilityRole="alert"
+                style={{ color: palette.rose }}
               >
-                {outcomeKindLabel(language, item.kind)}
+                {error}
               </Text>
-              <Text
-                numberOfLines={2}
-                style={[styles.stationOutcomeTitle, { color: colors.text }]}
-              >
-                {item.title}
-              </Text>
-              {item.summary ? (
-                <Text
-                  numberOfLines={2}
-                  style={[
-                    styles.stationOutcomeSummary,
-                    { color: colors.secondaryText },
-                  ]}
-                >
-                  {item.summary}
-                </Text>
-              ) : null}
-            </View>
-          ))}
+            ))}
+          <WorkspaceButton
+            palette={palette}
+            label={t('重新读取成果', 'Reload outcomes')}
+            disabled={!active || !foreground || contentStatus === 'loading'}
+            onPress={() => {
+              const scope = visibleScope.current;
+              if (scope.token !== token || !scope.active || !scope.foreground)
+                return;
+              refreshContent();
+              workspaces.refresh();
+            }}
+          />
         </View>
-      ) : (
-        <View
+      ) : !workspaces.loaded || contentStatus !== 'loaded' ? (
+        <Text style={{ color: colors.secondaryText }}>
+          {t('正在读取成果…', 'Loading outcomes…')}
+        </Text>
+      ) : null}
+      {outcomes.map(item => (
+        <Pressable
+          key={item.key}
+          testID={`outcome-${item.key}`}
+          accessibilityRole="button"
+          accessibilityLabel={t(`打开${item.title}`, `Open ${item.title}`)}
+          disabled={!active}
+          onPress={() => {
+            if (item.target.kind === 'workspace')
+              onOpenWorkspace(item.target.workspace);
+            else setSelection({ token, key: item.key });
+          }}
           style={[
-            styles.stationOutcomeEmpty,
-            { backgroundColor: colors.surface },
+            s.card,
+            { backgroundColor: colors.surface, borderColor: colors.border },
           ]}
         >
-          <Text
-            style={[styles.stationOutcomeEmptyTitle, { color: colors.text }]}
+          <View style={s.copy}>
+            <Text style={[s.label, { color: colors.secondaryText }]}>
+              {item.label}
+            </Text>
+            <Text numberOfLines={2} style={[s.title, { color: colors.text }]}>
+              {item.title}
+            </Text>
+            {item.summary && item.summary !== item.title ? (
+              <Text
+                numberOfLines={2}
+                style={[s.body, { color: colors.secondaryText }]}
+              >
+                {item.summary}
+              </Text>
+            ) : null}
+          </View>
+          <ChevronRight size={18} color={colors.secondaryText} />
+        </Pressable>
+      ))}
+      {contentStatus === 'loaded' &&
+      workspaces.loaded &&
+      !workspaces.error &&
+      !outcomes.length ? (
+        <WorkspaceState
+          palette={palette}
+          title={t('暂无成果', 'No outcomes yet')}
+          description={t(
+            '完成的文字成果、页面、分镜和穿搭记录会显示在这里。',
+            'Text results, pages, storyboards and outfits appear here.',
+          )}
+        />
+      ) : null}
+      {selected?.target.kind === 'site' ? (
+        <SiteDocumentPreview
+          key={`${token}:${selected.target.id}`}
+          draftId={selected.target.id}
+          token={token}
+          active={active}
+          palette={palette}
+          language={language}
+          onClose={() => setSelection(null)}
+        />
+      ) : null}
+      {selected?.target.kind === 'text' ||
+      selected?.target.kind === 'outfit' ? (
+        <Modal
+          key={`${token}:${selected.key}`}
+          animationType="slide"
+          visible
+          onRequestClose={() => setSelection(null)}
+        >
+          <SafeAreaView
+            style={[s.screen, { backgroundColor: colors.background }]}
           >
-            {textFor(language, '暂无成果', 'No outcomes yet')}
-          </Text>
-          <Text
-            style={[
-              styles.stationOutcomeEmptyBody,
-              { color: colors.secondaryText },
-            ]}
-          >
-            {textFor(
-              language,
-              '完成并保存的小站方案、漫画、视频和穿搭会展示在这里。',
-              'Saved station plans, comics, videos, and outfits appear here.',
-            )}
-          </Text>
-        </View>
-      )}
+            <Header
+              title={selected.title}
+              palette={palette}
+              onBack={() => setSelection(null)}
+            />
+            <ScrollView contentContainerStyle={s.detail}>
+              <Text style={[s.label, { color: colors.secondaryText }]}>
+                {selected.label}
+              </Text>
+              {selected.summary ? (
+                <ChatMessageText
+                  formatted
+                  palette={palette}
+                  style={[s.body, { color: colors.text }]}
+                >
+                  {selected.summary}
+                </ChatMessageText>
+              ) : null}
+              {selected.target.kind === 'outfit' ? (
+                <StationOutfitResult
+                  avatarConfig={selected.target.avatarConfig}
+                  mediaAssetId={selected.target.mediaAssetId}
+                  token={token}
+                  palette={palette}
+                  language={language}
+                />
+              ) : (
+                selected.target.sections.map((section, index) => (
+                  <View key={index} style={s.stack}>
+                    {section.title ? (
+                      <Text style={[s.title, { color: colors.text }]}>
+                        {section.title}
+                      </Text>
+                    ) : null}
+                    {section.body.map((body, part) => (
+                      <ChatMessageText
+                        key={part}
+                        formatted
+                        palette={palette}
+                        style={[s.body, { color: colors.text }]}
+                      >
+                        {body}
+                      </ChatMessageText>
+                    ))}
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </SafeAreaView>
+        </Modal>
+      ) : null}
     </View>
   );
 }
-
-function AwardMark() {
-  return (
-    <View style={styles.stationOutcomeAwardOuter}>
-      <View style={styles.stationOutcomeAwardInner}>
-        <Sparkles color="#FFFFFF" size={28} strokeWidth={2.2} />
-      </View>
-    </View>
-  );
-}
-
-function outcomeFilters(
-  language: Language,
-): Array<{ label: string; value: OutcomeFilter }> {
-  return [
-    { label: textFor(language, '全部', 'All'), value: 'all' },
-    { label: textFor(language, '小站', 'Station'), value: 'site' },
-    { label: textFor(language, '漫画', 'Comic'), value: 'comic' },
-    { label: textFor(language, '视频', 'Video'), value: 'video' },
-    { label: textFor(language, '形象', 'Avatar'), value: 'outfit' },
-  ];
-}
-
-function outcomeKindLabel(
-  language: Language,
-  kind: Exclude<OutcomeFilter, 'all'>,
-) {
-  const labels = {
-    site: textFor(language, '小站方案', 'Station plan'),
-    comic: textFor(language, '漫画日记', 'Comic diary'),
-    video: textFor(language, '视频草稿', 'Video draft'),
-    outfit: textFor(language, '形象穿搭', 'Avatar outfit'),
-  };
-  return labels[kind];
-}
+const s = StyleSheet.create({
+  screen: { flex: 1 },
+  stack: { gap: 12 },
+  detail: { padding: 20, gap: 20 },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  copy: { flex: 1, gap: 6 },
+  title: { fontSize: 17, lineHeight: 24, fontWeight: '600' },
+  label: { fontSize: 12, lineHeight: 18 },
+  body: { fontSize: 15, lineHeight: 23 },
+});

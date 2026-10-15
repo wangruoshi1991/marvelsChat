@@ -11,6 +11,7 @@ class MiaoxunConfigModule(
   override fun getConstants(): MutableMap<String, Any> =
     mutableMapOf(
       "apiBaseURL" to BuildConfig.MIAOXUN_API_BASE_URL,
+      "bundleIdentifier" to BuildConfig.APPLICATION_ID,
       "buildNumber" to BuildConfig.VERSION_CODE.toString(),
     )
 }

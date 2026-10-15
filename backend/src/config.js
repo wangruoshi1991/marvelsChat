@@ -3,6 +3,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { avatar3dCostVersion } from "./avatar-3d-quality.js";
 import { isModelQueryConfigured } from "./model-provider-endpoint.js";
+import { AGENT_MODEL_ROLE_POLICY, createAgentModelConfig, resolveAgentModelRoute } from "./agent-model-config.js";
+import { createAgentWorkspaceConfig } from "./agent-workspace-config.js";
 import {
   MEDIA_RETRIEVAL_LIMITS,
   MEDIA_RETRIEVAL_RUNTIME_LIMITS,
@@ -11,7 +13,11 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const backendEnvPath = path.resolve(__dirname, "../.env");
 
-dotenv.config({ path: backendEnvPath });
+// Isolated local launchers supply a complete environment and must never load
+// credentials from the checkout's normal runtime file.
+if (process.env.MIAOXUN_DOTENV_ENABLED !== "false") {
+  dotenv.config({ path: backendEnvPath });
+}
 
 const nodeEnv = process.env.NODE_ENV || "development";
 const isProduction = nodeEnv === "production";
@@ -253,7 +259,8 @@ export const createMediaRetrievalConfig = (env = process.env) => ({
 
 export const getMediaRetrievalConfigStatus = (runtimeConfig) => {
   const retrieval = runtimeConfig?.mediaRetrieval || runtimeConfig;
-  const parserConfigured = isModelQueryConfigured(runtimeConfig?.newApi);
+  const queryRoute = resolveAgentModelRoute(runtimeConfig?.newApi, AGENT_MODEL_ROLE_POLICY.mediaQueryParsing);
+  const parserConfigured = isModelQueryConfigured({ ...runtimeConfig?.newApi, model: queryRoute.model });
   const missing = [];
   if (!retrieval?.dashscopeApiKey) missing.push("credentials-not-configured");
   if (!retrieval?.dashscopeApiBaseUrl) missing.push("model-api-not-configured");
@@ -267,7 +274,7 @@ export const getMediaRetrievalConfigStatus = (runtimeConfig) => {
     enabled: Boolean(retrieval?.enabled),
     providerCallsEnabled: Boolean(retrieval?.providerCallsEnabled),
     missing,
-    queryModel: runtimeConfig?.newApi?.model || null,
+    queryModel: queryRoute.model || null,
     captionModel: retrieval?.captionModel || "qwen3.6-flash",
     captionModelVersion:
       retrieval?.captionModelVersion
@@ -346,6 +353,7 @@ validateAdminBootstrapConfig({
 });
 
 export const config = {
+  agentWorkspace: createAgentWorkspaceConfig(),
   env: nodeEnv,
   isProduction,
   host: (process.env.HOST || "127.0.0.1").trim(),
@@ -368,12 +376,7 @@ export const config = {
   auth: {
     sessionTtlDays: parseNumber(process.env.SESSION_TTL_DAYS, 30),
   },
-  newApi: {
-    baseUrl: (process.env.NEW_API_BASE_URL || "").replace(/\/+$/, ""),
-    apiKey: process.env.NEW_API_KEY || "",
-    model: process.env.NEW_API_MODEL || "",
-    timeoutMs: parseNumber(process.env.NEW_API_TIMEOUT_MS, 30000),
-  },
+  newApi: createAgentModelConfig(process.env),
   dashscope: {
     baseUrl: (process.env.DASHSCOPE_API_BASE_URL || "https://dashscope.aliyuncs.com")
       .trim()
@@ -439,6 +442,9 @@ export const config = {
     accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET || "",
     timeoutMs: parseNumber(process.env.OSS_TIMEOUT_MS, 60000),
   },
+  localMediaRoot: path.resolve(
+    process.env.MIAOXUN_LOCAL_MEDIA_ROOT || path.join(__dirname, "../storage/station-media"),
+  ),
   db: {
     configured: hasPostgresConfig,
     databaseUrl,

@@ -12,6 +12,7 @@ export async function runMediaRetrievalMockSmoke() {
   let privateMediaReads = 0;
   let temporaryArtifacts = 0;
   let providerCalls = 0;
+  let dispatchChecks = 0;
   const failures = [];
   const result = await processMediaRetrievalJob({
     job: {
@@ -23,11 +24,13 @@ export async function runMediaRetrievalMockSmoke() {
     },
     workerId: "mock-smoke-worker",
     repository: {
-      getMediaRetrievalProfile: async () => ({ indexState: "enabled" }),
-      getMediaRetrievalDispatchState: async () => ({
-        canDispatch: false,
-        reasonCode: "retrieval_not_enabled",
+      getMediaRetrievalProfile: async () => ({
+        indexState: "enabled", consentVersion: "media-retrieval-consent-v1",
       }),
+      getMediaRetrievalDispatchState: async () => {
+        dispatchChecks += 1;
+        return { canDispatch: false, reasonCode: "retrieval_not_enabled" };
+      },
       failMediaRetrievalJob: async (input) => failures.push(input),
       appendAgentRunEvent: async () => null,
     },
@@ -50,6 +53,7 @@ export async function runMediaRetrievalMockSmoke() {
 
   const blockedBeforeRead = result.status === "blocked" &&
     result.failureCode === "retrieval_not_enabled" &&
+    dispatchChecks === 1 &&
     failures.length === 1 &&
     privateMediaReads === 0 &&
     temporaryArtifacts === 0 &&
@@ -62,6 +66,7 @@ export async function runMediaRetrievalMockSmoke() {
     status: "passed",
     evidence: [
       "mode:mock",
+      "dispatch-state-checks:1",
       "dispatch:blocked-before-read",
       "provider-calls:0",
       "temporary-artifacts:0",

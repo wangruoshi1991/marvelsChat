@@ -1,3 +1,6 @@
+import type { AssistMessageSource } from '../assist/assistMessageSource';
+import type { AIContextReference } from '../../models/aiTask';
+import { ContextReference } from '../ai/AIInteraction';
 import React, { useRef } from 'react';
 import {
   ActivityIndicator,
@@ -5,6 +8,7 @@ import {
   Image,
   Pressable,
   Share,
+  StyleSheet,
   Text,
   TextInput,
   View,
@@ -21,7 +25,7 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import { stationPartnerIconAssets } from '../../assets/icons';
 import { displayText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
-import { Palette, palettes } from '../../shared/theme';
+import { Palette, palettes, productColors } from '../../shared/theme';
 import { useAIAssist } from '../assist/AIAssistProvider';
 import {
   AIAssistAction,
@@ -39,6 +43,10 @@ export function ChatComposer({
   isSending,
   isRecognizingSpeech,
   replyTarget,
+  contextRefs = [],
+  contextAccessWarning,
+  onOpenAgentAccess,
+  onRemoveContextReference,
   onChangeDraft,
   onClearReplyTarget,
   onFocusInput,
@@ -54,6 +62,11 @@ export function ChatComposer({
   isSending: boolean;
   isRecognizingSpeech: boolean;
   replyTarget: ChatMessage | null;
+  contextRefs?: AIContextReference[];
+  assistSource?: AssistMessageSource;
+  contextAccessWarning?: string;
+  onOpenAgentAccess?: () => void;
+  onRemoveContextReference?: (index: number) => void;
   onChangeDraft: (value: string) => void;
   onClearReplyTarget: () => void;
   onFocusInput: () => void;
@@ -183,11 +196,11 @@ export function ChatComposer({
     },
   ];
   const canOpenAssist = !isSending;
-  const canSend = Boolean(draft.trim()) && !isSending;
+  const canSend = Boolean(draft.trim()) && !isSending && !contextAccessWarning;
   const isLight = palette.text === palettes.light.text;
-  const accent = isLight ? '#2012D9' : palette.mint;
-  const soft = isLight ? '#F4F6FF' : palette.soft;
-  const inputBorder = isLight ? '#DBE2FF' : palette.border;
+  const accent = isLight ? productColors.accent : palette.mint;
+  const soft = isLight ? productColors.soft : palette.soft;
+  const inputBorder = isLight ? productColors.chipBorder : palette.border;
 
   return (
     <View
@@ -199,6 +212,30 @@ export function ChatComposer({
         },
       ]}
     >
+      {contextAccessWarning ? (
+        <Pressable
+          testID="chat-context-access"
+          accessibilityRole="button"
+          accessibilityLabel={contextAccessWarning}
+          onPress={onOpenAgentAccess}
+          style={accessStyles.warning}
+        >
+          <Text style={{ color: palette.text }}>{contextAccessWarning}</Text>
+          <Text style={{ color: palette.secondaryText }}>
+            {textFor(
+              language,
+              '查看并确认授权，或移除引用',
+              'Review access, or remove the reference',
+            )}
+          </Text>
+        </Pressable>
+      ) : null}
+      <ContextReference
+        references={contextRefs}
+        onRemove={onRemoveContextReference}
+        palette={palette}
+        language={language}
+      />
       {replyTarget ? (
         <View
           style={[
@@ -345,3 +382,5 @@ export function ChatComposer({
     </View>
   );
 }
+
+const accessStyles = StyleSheet.create({ warning: { paddingVertical: 8 } });

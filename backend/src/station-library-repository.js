@@ -441,24 +441,6 @@ export async function listStationMediaAssetsByIdsForUser({ userId, mediaAssetIds
   return ids.map((id) => byId.get(id)).filter(Boolean);
 }
 
-export async function moveMediaAssetsToAlbum({ userId, albumId, mediaAssetIds = [] }) {
-  if (!mediaAssetIds.length) return [];
-  const albumRows = await query(
-    "SELECT id FROM station_albums WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
-    [albumId, userId],
-  );
-  if (!albumRows.length) throw new HttpError(404, "Album not found");
-
-  const rows = await query(
-    `UPDATE station_media_assets
-    SET album_id = ?
-    WHERE user_id = ? AND id = ANY(?::text[]) AND deleted_at IS NULL
-    RETURNING *`,
-    [albumId, userId, mediaAssetIds],
-  );
-  return rows.map(mapStationMediaAsset);
-}
-
 export async function createStationOutfit({
   userId,
   title,

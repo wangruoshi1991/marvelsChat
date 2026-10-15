@@ -1,5 +1,6 @@
 import { HttpError } from "../http-error.js";
 import { ensureFriendThreadForUser } from "../message-repository.js";
+import { publicMessage } from "../public-message.js";
 import {
   createUsageEvent,
   getRawUserById,
@@ -24,6 +25,8 @@ export function registerSocialRoutes(
     getOnlineUserIds,
     sendNotificationChanged,
     sendRelationshipsChanged,
+    openFriendThread = ensureFriendThreadForUser,
+    recordFriendThreadOpen = createUsageEvent,
   },
 ) {
   app.post(
@@ -203,8 +206,8 @@ export function registerSocialRoutes(
     "/api/social/friends/:friendUserId/thread",
     authenticate,
     asyncHandler(async (req, res) => {
-      const bundle = await ensureFriendThreadForUser(req.user.id, req.params.friendUserId, getOnlineUserIds());
-      await createUsageEvent({
+      const bundle = await openFriendThread(req.user.id, req.params.friendUserId, getOnlineUserIds());
+      await recordFriendThreadOpen({
         userId: req.user.id,
         eventType: "social.friend_thread.open",
         targetType: "user",
@@ -213,7 +216,7 @@ export function registerSocialRoutes(
         ipHash: hashRequestIp(req.ip),
         userAgent: req.get("user-agent") || "",
       });
-      res.json({ data: bundle });
+      res.json({ data: { ...bundle, messages: bundle.messages.map(publicMessage) } });
     }),
   );
 }

@@ -1,5 +1,5 @@
 import { MEDIA_RETRIEVAL_CONSENT_VERSION } from "./media-retrieval-constants.js";
-import { mapRun, toInteger, toNonNegativeInteger } from "./media-retrieval-repository-shared.js";
+import { ASSET_CONTENT_FINGERPRINT_SQL, mapRun, toInteger, toNonNegativeInteger } from "./media-retrieval-repository-shared.js";
 import { toIso } from "./repository-mappers.js";
 import { MediaRetrievalRepositoryError } from "./media-retrieval-errors.js";
 
@@ -55,13 +55,17 @@ export function createMediaRetrievalBudgetAdminRepository({
               WHERE segment.user_id = asset.user_id
                 AND segment.media_asset_id = asset.id
                 AND segment.state = 'ready'
-                AND segment.created_at >= asset.content_revision_at
+                AND segment.content_fingerprint = current_content.fingerprint
                 AND profile.index_state = 'enabled'
             ) THEN 'succeeded'
+            WHEN latest_job.status IN ('queued', 'running') THEN 'queued'
             WHEN latest_job.status IN ('failed', 'blocked') THEN latest_job.status
-            ELSE 'queued'
+            -- No current job, cancelled jobs, and stale completed jobs have no
+            -- work in progress. This asset is unavailable, not still queued.
+            ELSE 'blocked'
           END AS status
           FROM station_media_assets AS asset
+          CROSS JOIN LATERAL (SELECT ${ASSET_CONTENT_FINGERPRINT_SQL} AS fingerprint) AS current_content
           LEFT JOIN media_retrieval_profiles AS profile ON profile.user_id = asset.user_id
           LEFT JOIN LATERAL (
             SELECT job.status FROM media_retrieval_jobs AS job
@@ -69,7 +73,8 @@ export function createMediaRetrievalBudgetAdminRepository({
               AND job.media_asset_id = asset.id
               AND job.job_type = 'index'
               AND job.profile_epoch = profile.index_epoch
-            ORDER BY job.created_at DESC, job.id DESC
+              AND job.content_fingerprint = current_content.fingerprint
+            ORDER BY (job.status IN ('queued', 'running')) DESC, job.created_at DESC, job.id DESC
             LIMIT 1
           ) AS latest_job ON TRUE
           WHERE asset.user_id = ?

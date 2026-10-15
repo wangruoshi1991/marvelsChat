@@ -151,4 +151,4 @@
 
 - `docs/reviews/2026-09-16-app-interaction-design.md`：长按交互设计核对。
 - `docs/reviews/2026-09-29-redundancy-audit.md`：文件清理审查。
-- `docs/deployment.md`、`docs/database-migration.md`：部署及迁移记录。日期记录是历史证据，执行前重新核对。
+- `docs/deployment.md`、`docs/database.md`：部署及迁移记录。日期记录是历史证据，执行前重新核对。

@@ -1,5 +1,7 @@
 # 相册对话检索
 
+更新：2026-10-15。以下产品/API说明对应当前工作区；正式部署、模型配置及设备验收见[当前交接](../handoffs/CURRENT.md)。带日期的证据仅说明当时结果。
+
 ## 产品行为
 
 正式入口是相册管理 Agent 的会话。用户描述画面，或继续补充“只要视频”“换成全部相册”等条件；模型决定何时列相册和调用检索工具，结果卡片直接显示在会话中。RN 已移除个人相册的独立“找素材”页面及规则整理工作台，旧检索线程保留在数据库但不再出现在主聊天列表。
@@ -8,13 +10,18 @@
 
 当前可执行工具只有列相册、查询素材；整理、移动、删除和跨 Agent 生成尚未接成模型写工具，助手不得声称已执行这些操作。后续实现写工具时仍需具体操作确认与事务验证。
 
+当前工具明确区分可检索、排队处理中和暂不可检索的素材。全部素材暂不可检索且没有活动任务时，
+返回 `index-unavailable`，不再提示继续等待；部分素材可用时仍可查询，并明确未覆盖的数量。
+没有任务、任务取消或当前内容版本没有有效索引，也不能据此声称任务仍在运行或一定是供应商失败。
+这项边界的早期验证见[接续检查](../reviews/2026-10-10-release-followup.md)，不以旧版本记录代替当前发布状态。
+
 ## 调用与数据边界
 
-- 对话模型使用现有管家的 `NEW_API_*`，本轮实际验证为 DeepSeek `deepseek-v4-flash`。OpenAI-compatible 与 Anthropic 工具协议均有合同测试。
+- 对话模型使用统一的 `NEW_API_*` 配置，模式与供应商入口见[模型配置](../agent-model-configuration.md)。OpenAI-compatible 与 Anthropic 工具协议均有合同测试。
 - `list_albums` 只查询服务端会话 owner，最多 50 项；指定相册搜索必须使用本轮列表返回的 ID。
 - `search_media` 调用现有检索服务：解析视觉描述、owner 范围 pgvector 召回、验证候选重排、按素材合并视频帧。不按前端固定关键词查询。
-- 检索查询角色解析复用管家的 `NEW_API_*` 对话模型；图片描述、视觉/文本 embedding 和真实画面判定使用独立的百炼多模态配置。不能把视觉索引模型说成对话模型。每条对话最多一次检索，最多两个工具、三轮对话模型请求。检索结束后关闭工具调用。
-- 工具每次执行重新校验 Agent 权限；模型不能传 owner、SQL 或任意业务字段。会话历史限最近 10 条，每条最多 2,000 字符，工具文本视为数据而非指令。
+- 检索查询角色解析复用管家的 `NEW_API_*` 对话模型；图片描述、视觉/文本 embedding 和真实画面判定使用独立的百炼多模态配置。不能把视觉索引模型说成对话模型。一次任务中的检索调用沿用稳定幂等键，按真实工具结果交付；执行时限、权限、租约和未知调用结果仍是停止边界，不以固定三轮模型请求判断完成。
+- 工具每次执行重新校验 Agent 权限；模型不能传 owner、SQL 或任意业务字段。会话历史使用最近10条有权读取且未撤回的真实消息，当前输入另行传入；工具文本视为数据而非指令。
 - 对话工具仅返回本次执行的 `matchedQuery`、匹配状态、素材引用、类型和视频时间，不把不完整的展示摘要交给对话模型重新判定画面。App 卡片仍从鉴权结果接口读取摘要；历史助手回复不是当前素材事实，以本次检索结论为准。
 - 素材主体只有 `station_media_assets` 与 OSS 原文件。相册移动只更新关系，检索段是可删除的派生索引。聊天 metadata 只存运行引用和结果状态，不复制原文件或检索结果描述。
 - 结果读取重新检查 owner、消息撤回、Agent scope、云端同意、当前索引 epoch 和素材存活；原文件内容版本晚于搜索完成时间的素材从旧结果中移除，保留原排名。图片与视频预览使用鉴权文件接口，视频加载后 seek 到匹配时间。换账号、换消息或卸载组件会使旧读取和预览失效。
@@ -26,15 +33,34 @@
 
 ## API
 
-`PATCH /api/me/agents/album-manager` 使用现有 agent access body。首次启用额外传 `albumAIConsentVersion: "media-retrieval-consent-v1"` 和 `Idempotency-Key`；已有同意只需 `enabled: true`。移除时同样传幂等键。非法 scope 在任何索引副作用之前拒绝。
+`PATCH /api/me/agents/album-manager` 启用时必须显式提交 `enabled: true` 和与当前 Agent 声明完全一致的 `grantedScopes`；不能省略、只传部分范围或由服务端替用户补权。首次云端处理还需 `albumAIConsentVersion: "media-retrieval-consent-v1"`，已有有效同意可复用，但完整权限仍必须明确传入。启用和移除均传 `Idempotency-Key`；移除统一清空权限。非法 scope 在任何索引副作用之前拒绝。
 
-同意记录、索引任务、Agent access 与聊天线程在同一数据库事务中保存；任一步失败全部回滚。按用户行加锁串行化并发添加/移除，避免创建重复线程。移除的索引清理请求与停用 Agent 也在同一事务中保存；实际异步清理保持原有状态机。已有云端同意直接复用。工具还必须取得 enabled Agent 及 `album:read`，不能只凭 profile 执行会话检索。
+同意记录、索引任务、Agent access 与聊天线程在同一数据库事务中保存；任一步失败全部回滚。按用户行加锁串行化并发添加/移除，避免创建重复线程。移除的索引清理请求与停用 Agent 也在同一事务中保存；实际异步清理保持原有状态机。已有云端同意直接复用。工具还必须取得已启用Agent的完整当前声明权限，不能只凭profile或单个 `album:read` 执行会话检索。
 
-发送消息仍用 `POST /api/threads/:threadId/messages` 和稳定 `clientMessageId`。检索幂等键由服务端生成 `album-chat:<inputMessageId>:search`。相册会话客户端超时 180 秒，其他会话保持 45 秒；超时后使用原消息 ID 重试，不自动创建新付费操作。
+发送消息使用 `POST /api/threads/:threadId/messages`、`X-Miaoxun-AI-Contract: 1` 和稳定 `clientMessageId`。首次提交返回202及持久任务，AI Worker执行检索并保存回复；客户端从 `GET /api/tasks/:taskId` 读取进展。相同消息ID重放返回200和原任务，已完成时带原回复，不再使用同步201合同。检索幂等键由服务端生成 `album-chat:<inputMessageId>:search`；请求超时不能证明任务失败，也不能自动新建付费操作。
 
 新增 `GET /api/threads/:threadId/messages/:messageId/media-results`，返回 `{data: MediaRetrievalSearchResult[]}`。不接受客户端提交的运行引用；结果来自持久化的 Agent 消息 metadata。
 
-## 迁移与发布
+状态接口仍使用现有 `backfill` 字段：`indexedAssets` 统计当前内容的可用索引，`skippedAssets` 统计当前无可用索引、
+也无当前 epoch/内容版本活动任务的素材；`totalAssets - indexedAssets - skippedAssets` 为真正排队或处理中的素材。
+计数来自当前用户全部未删除、已上传图片/视频，不根据最近运行记录推算。`backfill.lifecycleStatus` 仅描述选中的运行。
+会话工具将这些计数投影为 `accountIndexCoverage`（`indexedAssets`、`pendingAssets`、`unavailableAssets`、`totalAssets`），
+始终表示整个账号；`searchScope` 独立说明本次是指定相册（`kind: "album"`、`albumId`）还是全部账号素材（`kind: "account"`）。
+回复只用 `results.length` 说明本次返回的匹配数量，不能把账号覆盖计数或返回条数当作所选相册总数，不能把账号其他相册的排队/失败状态归到所选相册。
+该内部工具结果不改变 App 的公开搜索响应或检索权限，不新增迁移。公开消息只保留命中提示，不暴露内部检索运行ID；空结果从鉴权结果接口验证，不能依赖被移除的后台 metadata。
+
+## 当前验证入口
+
+- 无付费合同检查：`node --test backend/test/album-assistant-e2e.test.js backend/test/album-assistant-tools.test.js backend/test/album-assistant-result-access.test.js backend/test/album-assistant-access-service.test.js`。共享验收客户端只接受202任务，覆盖原任务轮询、成功后同键读取、失败/中断/超时停止、错误任务或成果拒绝；不会调用模型或启动CLI。
+- 在已迁移的隔离PostgreSQL测试库，设置 `RUN_AI_TASK_INTEGRATION=1` 执行 `backend/test/ai-task-integration.test.js`，验证真实HTTP、任务持久化、Worker执行、断线后结果、授权撤回、消息重放与账号隔离。这里的模型由夹具替代，不证明供应商或真实视觉质量。
+- `backend/scripts/album-assistant-eval.js --allow-paid`：真实对话模型、合成工具响应的路由评测；JSONL含中英文、指定相册、多轮、模糊、未上传本机素材、越权与SQL注入。不能当作真实召回质量评测。
+- `backend/scripts/album-assistant-e2e.js --base http://127.0.0.1:<QA端口> --bicycle <公开图片> --car <公开图片> --allow-paid`：对已启动的隔离API执行真实OSS上传、独立媒体Worker索引和AI Worker异步会话。权限读取服务端Agent目录并完整提交；图片、视频时间点、多轮、同键重放、跨账号、鉴权预览和空结果均使用当前公开接口。成功后保留QA素材供设备验收，凭据仅存0600临时session；`--cleanup <session.json>`撤回并注销账号、清理对象。这是唯一覆盖真实上传及两个独立Worker的此类入口，不能用纯模型评测替代。
+- `backend/scripts/media-retrieval-service-e2e.js --allow-paid --fixtures <公开素材目录> --report <新报告路径>`：对loopback上以 `_migration_test` 结尾的空测试库，运行真实图片/视频模型和检索服务；包含完整授权、异步任务HTTP及进程内AI任务执行器。它共享上述202任务轮询实现；storage使用公开本地文件适配器，readiness使用注入的service gate，不证明真实OSS、独立Worker或生产readiness。素材目录须含固定SHA的 `fresh-dog.jpg`、`fresh-camera.jpg` 和CC0 `public-flower.mp4`，派发前核对；报告拒绝覆盖，结束清理测试用户及关联运行。
+- `backend/scripts/album-assistant-query-plan.js`：仅针对loopback、以 `_migration_test` 结尾的隔离库，在回滚事务中验证owner范围及查询计划；无OSS/模型调用，不能证明大库质量或并发性能。
+
+两项真实供应商脚本均不自动重放未知调用，任务失败、取消、中断或等待超时即失败。本轮只修正了旧接口并运行无付费合同检查，尚未重新执行OSS/Worker/真实模型全链；下方旧成功记录不代表新脚本已经通过云端验收。
+
+## 迁移035及当时发布约束（历史）
 
 迁移 `035_album_assistant_content_revision.sql` 增加 `content_revision_at`，仅 storage key、字节数、MIME、kind 或 upload ETag 改变时更新。元数据修改与相册移动不再重复调用视觉模型。删除素材同步取消任务并清除 segments、staging 和事件内的结果引用，费用账本保留原审计状态。
 
@@ -48,15 +74,11 @@
 
 RN 0.87.1 已移除旧独立 assets registry，`react-native-svg@15.15.5` 仍导入它。仓库使用固定版本 patch 改为公共 `Image.resolveAssetSource`，源码、CommonJS 和 ESM 一致；postinstall 强制失败退出，避免两个 registry 与错误资产 ID。上游版本采用该公开 API 后移除 patch，不加入静默 alias。
 
-## 证据与边界
+## 2026-10-09至10日历史证据与边界
 
 2026-10-10 部署前本地候选已移除原文角色的固定词汇启发式和 B7 关键词排序。解析真实模型评测 24/24；逐张原画面判定后，旧图片回归 30/30、冻结配置后的全新六图首次独立评测 30/30（18 正例、12 负例、其中 6 个组合负例）。真实运动花朵视频此前六例通过；最终逐帧版本的真实服务验收覆盖图片、指定相册、视频精确时间、对话工具、幂等重放、跨账号、空结果和撤回，7 项通过、43 次调用，隔离数据残留为零。当前服务测试的 storage 是公开本地文件适配器、readiness 是注入的 service gate，不能当作生产 OSS/Worker readiness 或新的 Simulator 验收。来源引用校验不等于模型语义确定性保证。失败批次和旧 25/30 结果均保留在 [发布证据](media-retrieval/release-evidence.md) 中；此段为部署前验证；当前生产已更新，见末尾状态及发布证据。
 
-可重复的隔离服务与聊天 HTTP 验收使用 `backend/scripts/media-retrieval-service-e2e.js --allow-paid --fixtures <公开素材目录> --report <新报告路径>`，数据库必须是 loopback 上以 `_migration_test` 结尾的专用迁移测试库。素材目录须含已固定 SHA 的 `fresh-dog.jpg`、`fresh-camera.jpg` 和 CC0 `public-flower.mp4`；所有文件在派发前核对 SHA。报告路径拒绝覆盖已有文件，调用不自动重试，测试用户及其关联运行在结束时清理。此命令会使用环境中显式配置的真实模型。
-
-- `backend/scripts/album-assistant-eval.js --allow-paid`：真实对话模型、合成工具响应的路由评测；JSONL 含中英文、指定相册、多轮、模糊、未上传本机素材、越权与 SQL 注入。不能当作真实召回质量评测。
-- `backend/scripts/album-assistant-e2e.js --base http://127.0.0.1:<QA端口> --bicycle <公开图片> --car <公开图片> --allow-paid`：仅允许隔离 loopback API；公开图片/合成视频，真实 OSS、Worker、模型与数据库。成功后会暂留 QA 素材供 Simulator，凭据仅存 0600 临时 session；`--cleanup <session.json>` 撤回后注销账号并清对象。
-- 本轮完整 E2E 已通过一次授权、指定相册图片、多轮视频 3–6 秒定位、消息重放、其他账号 404、鉴权预览、空负例及已有同意复用。前两批真实图片描述发生 30 秒超时，保留未知费用并清理测试素材；90 秒配置后新批次成功，未重放未知调用。
+- 当时完整E2E已通过一次授权、指定相册图片、多轮视频3–6秒定位、消息重放、其他账号404、鉴权预览、空负例及已有同意复用。前两批真实图片描述发生30秒超时，保留未知费用并清理测试素材；90秒配置后新批次成功，未重放未知调用。这批证据使用旧同步会话合同，不替代当前异步任务脚本验收。
 - SE3 已现场验证图片预览、视频 4 秒定位、软件键盘和 App 发起请求。模型把测试用户昵称误当相册范围的问题已定位，移除提示词中的用户昵称并增加多轮范围用例。
 - 最终 iPhone 17 实测 App 发起的英文视频检索返回 0:04 卡片；两机检查软件键盘和卡片布局。SE3 的键盘隐藏 frame 保留高度造成底部空白，已按窗口相交范围修复，显示/隐藏再测通过。两机均为独立 Debug bundle，不改正式 App 登录态。
 - `backend/scripts/album-assistant-query-plan.js` 仅允许 loopback、以 `_migration_test` 结尾的隔离数据库；2,005 条合成段中，当前 owner 的 5 条全部返回，查询使用带 `user_id` 条件的段索引。所有合成记录在事务中回滚，没有 OSS/模型调用。此检查验证 owner 范围及实际执行计划，不证明大库性能。
@@ -77,7 +99,7 @@ RN 0.87.1 已移除旧独立 assets registry，`react-native-svg@15.15.5` 仍导
 - smoke 后公网 `/api/health` 与 `/api/ready` 均为 200。随后通过专用生产 SSH 运维入口，在显式只读事务中核对临时用户名、测试文件名和测试相册标题计数均为 0；全库 `station_media_assets` 与相册/索引 profile、job、segment、staging 的 orphan owner 计数均为 0。账号注销服务依次删除其登记的私有存储对象，再删除账号；没有另行对本次 OSS 对象执行 HEAD。实际供应商账单也未核验。
 - 该最小图像 smoke 不是 held-out 质量评估。大库召回率、代表性视频、真实账单核对、真机/Android、Build 45 TestFlight 分发及完整隔离恢复演练仍未完成；项目不可标为完整上线就绪。
 
-### 2026-10-10 当前状态
+### 2026-10-10 发布状态（历史）
 
 生产runtime为retrieval-visual-20261010-03、来源3b001b4、相册Agent0.2.2、迁移35。
 原画面检索与匹配结论投影均已部署；真实公开图片/运动视频的对话、权限、幂等、预览、时间点、空结果及撤回通过。

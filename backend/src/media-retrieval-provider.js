@@ -1,6 +1,7 @@
 import { getMediaRetrievalConfigStatus } from "./config.js";
 import crypto from "node:crypto";
 import { isAnthropicModelProvider, resolveModelCompletionEndpoint, isModelQueryConfigured } from "./model-provider-endpoint.js";
+import { AGENT_MODEL_ROLE_POLICY, resolveAgentModelRoute } from "./agent-model-config.js";
 import {
   MEDIA_RETRIEVAL_LIMITS,
   MEDIA_RETRIEVAL_PROVIDER_PATHS,
@@ -82,9 +83,10 @@ export function createMediaRetrievalProvider({
 } = {}) {
   const retrieval = getRetrievalConfig(config);
   const queryRuntime = config?.newApi;
+  const queryRoute = resolveAgentModelRoute(queryRuntime, AGENT_MODEL_ROLE_POLICY.mediaQueryParsing);
   const queryEndpoint = resolveModelCompletionEndpoint(queryRuntime?.baseUrl);
   const queryAnthropic = isAnthropicModelProvider(queryRuntime?.baseUrl);
-  const queryConfigured = isModelQueryConfigured(queryRuntime);
+  const queryConfigured = isModelQueryConfigured({ ...queryRuntime, model: queryRoute.model });
   const indexingProvenance = Object.freeze({
     descriptorProvenance: createDescriptorProvenance({
       modelId: retrieval.captionModel || "qwen3.6-flash",
@@ -177,7 +179,8 @@ export function createMediaRetrievalProvider({
     }
   };
 
-  const request = async ({ path, body, reservation, operation, queryTransport = false }) => {
+  const request = async ({ path, body, reservation, operation, queryTransport = false, onModelResponse = null }) => {
+    const callStartedAt = now();
     assertEligible(reservation);
     if (queryTransport && !queryConfigured) throw new MediaRetrievalProviderError("retrieval_service_unavailable");
     const controller = new AbortController();
@@ -202,16 +205,27 @@ export function createMediaRetrievalProvider({
         throw failure(operation, "http-response", { httpStatus: response?.status, providerCode: payload?.code });
       }
       const payload = await readBoundedJson(response, operation);
-      if (typeof recordUsage === "function") {
-        const sourceUsage = queryTransport && !queryAnthropic ? {
-          input_tokens: payload?.usage?.prompt_tokens, output_tokens: payload?.usage?.completion_tokens,
-          total_tokens: payload?.usage?.total_tokens,
-        } : payload?.usage;
-        const usage = Object.fromEntries(["input_tokens", "output_tokens", "image_tokens", "total_tokens"].map((key) => [
-          key, Number.isSafeInteger(sourceUsage?.[key]) && sourceUsage[key] >= 0 ? sourceUsage[key] : null,
-        ]));
-        await recordUsage({ operation, usage });
-      }
+      const sourceUsage = queryTransport && !queryAnthropic ? {
+        input_tokens: payload?.usage?.prompt_tokens, output_tokens: payload?.usage?.completion_tokens,
+        total_tokens: payload?.usage?.total_tokens,
+      } : payload?.usage;
+      const usage = Object.fromEntries(["input_tokens", "output_tokens", "image_tokens", "total_tokens"].map((key) => [
+        key, Number.isSafeInteger(sourceUsage?.[key]) && sourceUsage[key] >= 0 ? sourceUsage[key] : null,
+      ]));
+      // This call-local collector only captures a private receipt. Persistence
+      // happens in the service after retrieval budget settlement; shared
+      // provider instances never retain another request's usage.
+      const servedModel = typeof payload?.model === "string" && payload.model.trim() && payload.model.length <= 200
+        ? payload.model.trim()
+        : null;
+      if (onModelResponse) onModelResponse({
+        provider: queryTransport ? (queryAnthropic ? "anthropic" : "openai-compatible") : "dashscope-compatible-v1",
+        model: body.model,
+        servedModel,
+        tokenUsage: { prompt: usage.input_tokens, completion: usage.output_tokens, total: usage.total_tokens },
+        latencyMs: Math.max(0, now() - callStartedAt),
+      });
+      if (typeof recordUsage === "function") await recordUsage({ operation, usage });
       return payload;
     } catch (error) {
       if (error instanceof MediaRetrievalProviderError) throw error;
@@ -222,11 +236,11 @@ export function createMediaRetrievalProvider({
     }
   };
 
-  const callGeneration = async ({ systemPrompt, content, reservation, operation }) =>
+  const callGeneration = async ({ systemPrompt, content, reservation, operation, onModelResponse = null }) =>
     request({
       path: MEDIA_RETRIEVAL_PROVIDER_PATHS.multimodalGeneration,
       reservation,
-      operation,
+      operation, onModelResponse,
       body: {
         model: retrieval.captionModel,
         input: {
@@ -244,11 +258,11 @@ export function createMediaRetrievalProvider({
       },
     });
 
-  const callEmbedding = async ({ contents, reservation, operation }) => {
+  const callEmbedding = async ({ contents, reservation, operation, onModelResponse = null }) => {
     const payload = await request({
       path: MEDIA_RETRIEVAL_PROVIDER_PATHS.multimodalEmbedding,
       reservation,
-      operation,
+      operation, onModelResponse,
       body: {
         model: retrieval.embeddingModel,
         input: { contents },
@@ -268,28 +282,28 @@ export function createMediaRetrievalProvider({
   return {
     getQueryParsingProvenance() {
       return {
-        modelId: queryRuntime?.model || null,
+        modelId: queryRoute.model || null,
         protocol: queryAnthropic ? "anthropic" : "openai-compatible",
         promptVersion: QUERY_PROMPT_VERSION,
         configurationHash: crypto.createHash("sha256").update(JSON.stringify({
-          endpoint: queryEndpoint, model: queryRuntime?.model,
+          endpoint: queryEndpoint, model: queryRoute.model || undefined,
           protocol: queryAnthropic ? "anthropic" : "openai-compatible",
           promptVersion: QUERY_PROMPT_VERSION, temperature: 0,
         })).digest("hex"),
       };
     },
-    async parseRetrievalQuery({ query, reservation }) {
+    async parseRetrievalQuery({ query, reservation, onModelResponse = null }) {
       const operation = "query-parse";
       return withDiagnostic({ operation, reservation }, async () => {
         const source = normalizeVisualRawQuery(query);
         if (!source || source.length > 240) throw new MediaRetrievalProviderError("retrieval_request_invalid", undefined, 422);
         const payload = await request({
-          reservation, operation, queryTransport: true,
+          reservation, operation, queryTransport: true, onModelResponse,
           body: queryAnthropic ? {
-            model: queryRuntime?.model, temperature: 0, max_tokens: 1600, system: querySystemPrompt,
+            model: queryRoute.model, temperature: 0, max_tokens: 1600, system: querySystemPrompt,
             messages: [{ role: "user", content: source }],
           } : {
-            model: queryRuntime?.model, temperature: 0, response_format: { type: "json_object" },
+            model: queryRoute.model, temperature: 0, response_format: { type: "json_object" },
             messages: [{ role: "system", content: querySystemPrompt }, { role: "user", content: source }],
           },
         });
@@ -310,7 +324,7 @@ export function createMediaRetrievalProvider({
       });
     },
 
-    async rerankMediaCandidates({ query, visualConstraints, candidates, reservation }) {
+    async rerankMediaCandidates({ query, visualConstraints, candidates, reservation, onModelResponse = null }) {
       const operation = "query-rerank";
       return withDiagnostic({ operation, reservation }, async () => {
         const normalizedCandidates = projectMediaRetrievalRerankCandidates(candidates);
@@ -330,7 +344,7 @@ export function createMediaRetrievalProvider({
             { image: candidate.imageUrl },
           ])],
           reservation,
-          operation,
+          operation, onModelResponse,
         });
         const candidate = parseJsonObject(extractText(payload));
         const validated = validateMediaRetrievalRerankResponse(candidate, normalizedCandidates, visualConstraints);
@@ -359,14 +373,14 @@ export function createMediaRetrievalProvider({
       });
     },
 
-    async describeImage({ imageUrl, reservation }) {
+    async describeImage({ imageUrl, reservation, onModelResponse = null }) {
       const operation = "image-description";
       return withDiagnostic({ operation, reservation }, async () => {
         const payload = await callGeneration({
           systemPrompt: descriptorSystemPrompt,
           content: [{ image: String(imageUrl || "") }, { text: "Describe the visible scene." }],
           reservation,
-          operation,
+          operation, onModelResponse,
         });
         const candidate = parseJsonObject(extractText(payload));
         const descriptor = normalizeDescriptor(candidate);
@@ -383,10 +397,10 @@ export function createMediaRetrievalProvider({
       return withDiagnostic({ operation, reservation }, () => callEmbedding({ contents: [{ image: String(imageUrl || "") }], reservation, operation }));
     },
 
-    async embedText({ input, reservation }) {
+    async embedText({ input, reservation, onModelResponse = null }) {
       const verified = verifyVisualEmbeddingInput(input);
       const operation = "query-embedding";
-      return withDiagnostic({ operation, reservation }, () => callEmbedding({ contents: [{ text: verified.semanticText || verified.text }], reservation, operation }));
+      return withDiagnostic({ operation, reservation }, () => callEmbedding({ contents: [{ text: verified.semanticText || verified.text }], reservation, operation, onModelResponse }));
     },
 
     getIndexingProvenance() {

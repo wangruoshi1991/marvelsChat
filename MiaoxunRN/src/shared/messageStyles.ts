@@ -314,7 +314,7 @@ export const messageStyles = {
   actionSheetCopy: { flex: 1, gap: 4 },
   actionSheetRowTitle: { fontSize: 13, fontWeight: '900' },
   noticeScreen: { flex: 1 },
-  noticeList: { gap: 10, padding: 14 },
+  noticeList: { gap: 10, padding: 14, paddingBottom: 88 },
   noticeRow: {
     alignItems: 'flex-start',
     borderRadius: spacing.cardRadius,

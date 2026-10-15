@@ -13,6 +13,7 @@ test("media retrieval local smoke blocks dispatch before private media or provid
 
   assert.equal(report.status, "passed");
   assert.ok(report.evidence.includes("mode:mock"));
+  assert.ok(report.evidence.includes("dispatch-state-checks:1"));
   assert.ok(report.evidence.includes("dispatch:blocked-before-read"));
   assert.ok(report.evidence.includes("provider-calls:0"));
   assert.ok(report.evidence.includes("temporary-artifacts:0"));

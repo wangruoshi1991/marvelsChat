@@ -1,4 +1,6 @@
 import { listAgents } from "../../../agents/registry.js";
+import { aiClientContracts } from "../ai-client-contract.js";
+import { publicMessagesByThread } from "../public-message.js";
 import { checkDatabase, withTransaction } from "../db.js";
 import { HttpError } from "../http-error.js";
 import {
@@ -48,6 +50,7 @@ export function registerAppRoutes(
     getOnlineUserIds,
     sendPresenceChanged,
     checkDatabaseStatus = checkDatabase,
+    getBootstrap = getBootstrapForUser,
   },
 ) {
   app.get("/api/health", (_req, res) => {
@@ -58,26 +61,33 @@ export function registerAppRoutes(
     });
   });
 
-  app.get("/api/ready", asyncHandler(async (_req, res) => {
-    const database = await checkDatabaseStatus();
-    const ready = database.configured && database.connected && database.migrationsCurrent;
-    res.status(ready ? 200 : 503).json({
-      ok: ready,
-      app: "marvelsChat",
-      service: "miaoxun-backend",
-      dependencies: {
-        database: {
-          configured: database.configured,
-          connected: database.connected,
-          migrationsCurrent: Boolean(database.migrationsCurrent),
+  app.get(
+    "/api/ready",
+    asyncHandler(async (_req, res) => {
+      const database = await checkDatabaseStatus();
+      const ready =
+        database.configured && database.connected && database.migrationsCurrent;
+      res.status(ready ? 200 : 503).json({
+        ok: ready,
+        app: "marvelsChat",
+        service: "miaoxun-backend",
+        dependencies: {
+          database: {
+            configured: database.configured,
+            connected: database.connected,
+            migrationsCurrent: Boolean(database.migrationsCurrent),
+          },
         },
-      },
-    });
-  }));
+      });
+    }),
+  );
 
-  app.get("/api/agents", asyncHandler(async (_req, res) => {
-    res.json({ data: await listAgents() });
-  }));
+  app.get(
+    "/api/agents",
+    asyncHandler(async (_req, res) => {
+      res.json({ data: await listAgents() });
+    }),
+  );
 
   app.patch(
     "/api/me/presence",
@@ -105,8 +115,18 @@ export function registerAppRoutes(
     authenticate,
     asyncHandler(async (req, res) => {
       const registeredAgents = await listAgents();
-      const data = await getBootstrapForUser(req.user, registeredAgents, getOnlineUserIds());
-      res.json({ data });
+      const data = await getBootstrap(
+        req.user,
+        registeredAgents,
+        getOnlineUserIds(),
+      );
+      res.json({
+        data: {
+          ...data,
+          messagesByThread: publicMessagesByThread(data.messagesByThread),
+          contracts: aiClientContracts,
+        },
+      });
     }),
   );
 
@@ -116,23 +136,33 @@ export function registerAppRoutes(
     asyncHandler(async (req, res) => {
       const body = agentAccessSchema.parse(req.body);
       const registeredAgents = await listAgents();
-      const agent = registeredAgents.find((item) => item.key === req.params.agentId);
+      const agent = registeredAgents.find(
+        (item) => item.key === req.params.agentId,
+      );
       if (!agent) throw new HttpError(404, "Agent not found");
       // Validate scopes before any consent/index side effects.
-      resolveAgentGrantedScopes(agent, body.grantedScopes);
-      if (body.albumAIConsentVersion && (agent.key !== "album-manager" || !body.enabled)) throw new HttpError(400, "相册 AI 授权请求无效。");
+      if (body.enabled) resolveAgentGrantedScopes(agent, body.grantedScopes);
+      if (
+        body.albumAIConsentVersion &&
+        (agent.key !== "album-manager" || !body.enabled)
+      )
+        throw new HttpError(400, "相册 AI 授权请求无效。");
 
-      const [updated] = agent.key === "album-manager"
-        ? await setAlbumAssistantAccess({
-          userId: req.user.id, agent, body, idempotencyKey: req.get("Idempotency-Key"),
-        })
-        : await setUserAgentAccess({
-        userId: req.user.id,
-        agent,
-        enabled: body.enabled,
-        alias: body.alias,
-        grantedScopes: body.grantedScopes,
-      });
+      const [updated] =
+        agent.key === "album-manager"
+          ? await setAlbumAssistantAccess({
+              userId: req.user.id,
+              agent,
+              body,
+              idempotencyKey: req.get("Idempotency-Key"),
+            })
+          : await setUserAgentAccess({
+              userId: req.user.id,
+              agent,
+              enabled: body.enabled,
+              alias: body.alias,
+              grantedScopes: body.grantedScopes,
+            });
 
       await createUsageEvent({
         userId: req.user.id,

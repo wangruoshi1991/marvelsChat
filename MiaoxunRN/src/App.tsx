@@ -1,12 +1,26 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, StatusBar, StyleSheet, Text, View } from 'react-native';
+import type { AIContextReference, AITaskDTO } from './models/aiTask';
+import { persistentAssistReference } from './features/ai/assistContext';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {
+  Modal,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AppModals } from './app/AppModals';
 import { ModalRoute } from './app/appTypes';
 import { LaunchAnimation } from './app/LaunchAnimation';
 import { RestoreErrorScreen } from './app/RestoreErrorScreen';
-import { useButlerActions } from './app/useButlerActions';
 import {
   ChatThread,
   useMiaoxunSession,
@@ -14,11 +28,13 @@ import {
 import { AuthScreen } from './features/auth/AuthScreen';
 import { UserAvatar } from './features/avatar/AvatarBadges';
 import {
+  ChatDraftSnapshot,
   ChatScreen,
   MessageTab,
   MessagesScreen,
 } from './features/messages/MessagesScreen';
 import { resolveMessagePalette } from './features/messages/messagePalette';
+import { pendingButlerClarification } from './features/messages/butlerClarification';
 import { useProfileFlows } from './features/profile/useProfileFlows';
 import { StationPostComposerScreen } from './features/station/StationPostComposerScreen';
 import { StationScreen } from './features/station/StationScreen';
@@ -29,13 +45,37 @@ import { styles } from './shared/styles';
 import { palettes } from './shared/theme';
 import { BottomBar, RootTab } from './shared/ui';
 import { AIAssistProvider } from './features/assist/AIAssistProvider';
-import { AIAssistObjectReference } from './features/assist/aiAssistTypes';
+import {
+  AIAssistObjectReference,
+  AIAssistScene,
+} from './features/assist/aiAssistTypes';
+import { AgentWorkspace } from './models/agentWorkspace';
+import { AgentWorkspaceScreen } from './features/workspaces/AgentWorkspaceScreen';
+import { WorkspaceSubmissionRecovery } from './features/workspaces/WorkspaceSubmission';
+import { MiaoTaskFeed } from './features/miao/MiaoTaskFeed';
+import { MiaoTaskWorkspace } from './features/miao/MiaoTaskWorkspace';
+import { AIRequestComposer } from './features/ai/AIRequestComposer';
+import {
+  assistMessageLimit,
+  buildAssistMessage,
+} from './features/assist/assistRequest';
+import type { AssistMessageSource } from './features/assist/assistMessageSource';
+import { VoiceShortcutDock } from './features/agents/VoiceShortcutDock';
+import {
+  SecondFloorScreen,
+  SecondFloorTool,
+} from './features/second-floor/SecondFloorScreen';
+import { workspacePalette } from './shared/workspacePalette';
 
 function App(): React.JSX.Element {
   const session = useMiaoxunSession();
   const palette = palettes[session.appearance];
   const messagePalette = resolveMessagePalette(palette);
-  const [selectedTab, setSelectedTab] = useState<RootTab>('messages');
+  const [selectedTab, setSelectedTab] = useState<RootTab>('agents');
+  const [secondFloorOpen, setSecondFloorOpen] = useState(false);
+  const [secondFloorTool, setSecondFloorTool] =
+    useState<SecondFloorTool | null>(null);
+  const closeSecondFloor = useCallback(() => setSecondFloorOpen(false), []);
   const [selectedStationTab, setSelectedStationTab] =
     useState<StationTab>('station');
   const [isPostComposerOpen, setIsPostComposerOpen] = useState(false);
@@ -52,12 +92,80 @@ function App(): React.JSX.Element {
   const [pendingScanRequest, setPendingScanRequest] = useState(false);
   const [stationVisited, setStationVisited] = useState(false);
   const [butlerDraft, setButlerDraft] = useState('');
+  const [butlerDraftOwner, setButlerDraftOwner] = useState('');
+  const [butlerSource, setButlerSource] = useState<AssistMessageSource>();
+  const [miaoVoiceExpanded, setMiaoVoiceExpanded] = useState(false);
+  const [miaoWaterfall, setMiaoWaterfall] = useState(false);
+  const [navigationHeight, setNavigationHeight] = useState(76);
+  const workspaceOwner = `${session.user?.id || ''}:${session.token || ''}`;
+  const workspaceOwnerRef = useRef(workspaceOwner);
+  workspaceOwnerRef.current = workspaceOwner;
+  const [accessDrafts, setAccessDrafts] = useState<{
+    owner: string;
+    threads: Record<string, ChatDraftSnapshot>;
+  }>({ owner: '', threads: {} });
+  const [requestDraftState, setRequestDraftState] = useState({
+    owner: '',
+    text: '',
+  });
+  const requestDraft =
+    requestDraftState.owner === workspaceOwner ? requestDraftState.text : '';
+  const [requestContext, setRequestContext] = useState<{
+    owner: string;
+    scene: AIAssistScene;
+    object?: AIAssistObjectReference;
+    references?: AIContextReference[];
+  } | null>(null);
+  const selectedRequest =
+    requestContext?.owner === workspaceOwner ? requestContext : null;
+  const selectedReference = selectedRequest?.object
+    ? persistentAssistReference(selectedRequest.object)
+    : null;
+  const requestReferences =
+    selectedRequest?.references ||
+    (selectedReference ? [selectedReference] : []);
+  const [composerOwner, setComposerOwner] = useState<string | null>(null);
+  const requestComposerOpen = composerOwner === workspaceOwner;
+  const [selectedMiaoTask, setSelectedMiaoTask] = useState<{
+    owner: string;
+    task: AITaskDTO;
+  } | null>(null);
+  const miaoTask =
+    selectedMiaoTask?.owner === workspaceOwner ? selectedMiaoTask.task : null;
+  const [selectedWorkspace, setSelectedWorkspace] = useState<{
+    owner: string;
+    workspace: AgentWorkspace;
+  } | null>(null);
+  const agentWorkspace =
+    selectedWorkspace?.owner === workspaceOwner
+      ? selectedWorkspace.workspace
+      : null;
+  const updateRequestDraft = (text: string) =>
+    setRequestDraftState({ owner: workspaceOwner, text });
+  useEffect(() => {
+    setAccessDrafts({ owner: '', threads: {} });
+    setComposerOwner(null);
+    setRequestContext(null);
+    setButlerSource(undefined);
+    setButlerDraftOwner('');
+    setSelectedMiaoTask(null);
+    setSelectedWorkspace(null);
+    setRequestDraftState({ owner: '', text: '' });
+    setMiaoVoiceExpanded(false);
+    setMiaoWaterfall(false);
+  }, [workspaceOwner]);
+  const [butlerReferences, setButlerReferences] = useState<
+    AIContextReference[]
+  >([]);
   useEffect(() => {
     if (selectedTab === 'station') setStationVisited(true);
   }, [selectedTab]);
   useEffect(() => {
     setStationVisited(false);
+    setSelectedTab('agents');
+    setSecondFloorOpen(false);
     setButlerDraft('');
+    setButlerReferences([]);
     setActiveThread(null);
     setActiveThreadOwner(null);
     setModalRoute(null);
@@ -82,6 +190,82 @@ function App(): React.JSX.Element {
       activeThread
     );
   }, [activeThread, activeThreadOwner, session.threads, session.user?.id]);
+  const workspaceChatScope = `${workspaceOwner}:${modalRoute || ''}:${
+    openedThread?.id || ''
+  }:${agentWorkspace?.id || ''}:${requestComposerOpen}`;
+  const workspaceChatScopeRef = useRef(workspaceChatScope);
+  workspaceChatScopeRef.current = workspaceChatScope;
+  const accessDraft =
+    accessDrafts.owner === workspaceOwner && openedThread
+      ? accessDrafts.threads[openedThread.id]
+      : undefined;
+  const hasButlerDraft =
+    openedThread?.agentId === 'miaoxun-butler' &&
+    butlerDraftOwner === workspaceOwner &&
+    (Boolean(butlerDraft.trim()) ||
+      butlerReferences.length > 0 ||
+      !accessDraft);
+  const currentScene = useMemo<AIAssistScene>(() => {
+    const t = (zh: string, en: string) => textFor(session.language, zh, en);
+    if (modalRoute === 'butler' || modalRoute === 'chat')
+      return {
+        page: modalRoute === 'butler' ? 'messages.butler' : 'messages.chat',
+        label: t('讯 · 对话', 'Xun · Conversation'),
+        module: {
+          key: 'conversation',
+          label: openedThread?.title || t('对话', 'Conversation'),
+        },
+      };
+    if (secondFloorOpen) {
+      const names = {
+        albums: t('相册', 'Albums'),
+        files: t('文件', 'Files'),
+        relationships: t('关系', 'People'),
+        assets: t('资产', 'Assets'),
+        information: t('信息海', 'Inbox'),
+        permissions: t('权限', 'Access'),
+      };
+      const label = secondFloorTool
+        ? names[secondFloorTool]
+        : t('入口', 'Home');
+      return {
+        page: `second-floor.${secondFloorTool || 'home'}`,
+        label: t(`讯 · 二楼 · ${label}`, `Xun · Second floor · ${label}`),
+      };
+    }
+    if (selectedTab === 'agents')
+      return {
+        page: 'miao.feed',
+        label: t('妙 · 任务动态', 'Miao · Tasks'),
+        module: { key: 'task-feed', label: t('任务动态', 'Task feed') },
+      };
+    if (selectedTab === 'station') {
+      const names = {
+        station: t('主页', 'Home'),
+        posts: t('生活', 'Life'),
+        outcomes: t('成果', 'Results'),
+        agents: t('Agent', 'Agents'),
+        social: t('关系', 'People'),
+      };
+      return {
+        page: `station.${selectedStationTab}`,
+        label: t(
+          `我 · ${names[selectedStationTab]}`,
+          `Me · ${names[selectedStationTab]}`,
+        ),
+      };
+    }
+    return { page: `messages.${selectedMessageTab}`, label: t('讯', 'Xun') };
+  }, [
+    session.language,
+    modalRoute,
+    openedThread?.title,
+    secondFloorOpen,
+    secondFloorTool,
+    selectedTab,
+    selectedStationTab,
+    selectedMessageTab,
+  ]);
   const renderUserAvatar = useCallback(
     ({
       text,
@@ -127,6 +311,22 @@ function App(): React.JSX.Element {
       setToastMessage(current => (current === message ? null : current));
     }, 1600);
   }, []);
+
+  const closeWorkspace = () => {
+    if (workspaceOwnerRef.current !== workspaceOwner) return;
+    setSelectedWorkspace(null);
+    session.refreshStationContent().catch(error => {
+      if (workspaceOwnerRef.current !== workspaceOwner) return;
+      showToast(
+        appErrorText(
+          session.language,
+          error,
+          '无法刷新成果，请重新进入成果页。',
+          'Unable to refresh outcomes. Reopen the outcomes page.',
+        ),
+      );
+    });
+  };
 
   useEffect(() => {
     const notice = session.realtimeNotificationNotice;
@@ -185,18 +385,12 @@ function App(): React.JSX.Element {
     [openThread, session.language, session.threads, showToast],
   );
 
-  const { sendButlerMessage } = useButlerActions({
-    session,
-    setSelectedTab,
-    setSelectedMessageTab,
-    setSelectedStationTab,
-    setModalRoute,
-    setSearchQuery,
-    openQRCode: profileFlows.openQRCode,
-  });
-
-  const askButler = useCallback(
-    (object: AIAssistObjectReference) => {
+  const composeWithButler = useCallback(
+    (
+      draft = '',
+      references: AIContextReference[] = [],
+      source?: AssistMessageSource,
+    ) => {
       const thread = session.threads.find(
         item => item.agentId === 'miaoxun-butler',
       );
@@ -204,39 +398,93 @@ function App(): React.JSX.Element {
         showToast(
           textFor(
             session.language,
-            '妙管家会话不可用，请先添加妙管家。',
-            'Add the butler before opening its chat.',
+            '请先在我页的 Agent 中添加妙讯管家。',
+            'Add the Miao assistant first.',
           ),
         );
+        return false;
+      }
+      setButlerDraft(draft);
+      setButlerDraftOwner(workspaceOwner);
+      setButlerSource(source || { currentPage: currentScene.page });
+      setButlerReferences(references);
+      openThread(thread);
+      return true;
+    },
+    [
+      openThread,
+      session.language,
+      session.threads,
+      showToast,
+      workspaceOwner,
+      currentScene.page,
+    ],
+  );
+  const continueRequestWithButler = (message: string) => {
+    if (
+      message.length > assistMessageLimit ||
+      !composeWithButler(message, requestReferences, {
+        currentPage: selectedRequest?.scene.page || currentScene.page,
+      })
+    )
+      return false;
+    setComposerOwner(null);
+    updateRequestDraft('');
+    setRequestContext(null);
+    return true;
+  };
+  const openTaskInbox = useCallback(() => {
+    setSecondFloorOpen(false);
+    setSelectedTab('messages');
+    setSelectedMessageTab('tasks');
+  }, []);
+  const openAgentManagement = () => {
+    setSelectedWorkspace(null);
+    setSelectedMiaoTask(null);
+    setComposerOwner(null);
+    setModalRoute(null);
+    setActiveThread(null);
+    session.setActiveThreadId(null);
+    setSecondFloorOpen(false);
+    setSelectedStationTab('agents');
+    setSelectedTab('station');
+  };
+  const openTask = useCallback(
+    (task: AITaskDTO) => {
+      if (task.kind === 'site_draft') {
+        setSelectedStationTab('agents');
+        setSelectedTab('station');
         return;
       }
-      const content =
-        typeof object.metadata?.content === 'string'
-          ? object.metadata.content
-          : '';
-      setButlerDraft(
-        [
+      const thread = session.threads.find(item => item.id === task.threadId);
+      if (thread) openThread(thread);
+      else
+        showToast(
           textFor(
             session.language,
-            `请帮我分析「${object.title}」：`,
-            `Help me with “${object.title}”:`,
+            '任务所属对话已不可用，请刷新后重试。',
+            'This conversation is unavailable. Refresh and try again.',
           ),
-          content,
-          object.id ? `${object.kind}: ${object.id}` : '',
-          object.kind === 'avatar-3d'
-            ? textFor(
-                session.language,
-                '这是一条形象记录引用，请先给我建议，不要直接生成或修改。',
-                'This is an avatar reference. Suggest next steps before generating or changing anything.',
-              )
-            : '',
-        ]
-          .filter(Boolean)
-          .join('\n'),
-      );
-      openThread(thread);
+        );
     },
     [openThread, session.language, session.threads, showToast],
+  );
+
+  const askButler = useCallback(
+    (object: AIAssistObjectReference) => {
+      const scene = object.scene || currentScene;
+      setRequestContext({
+        owner: workspaceOwner,
+        scene,
+        object: { ...object, scene },
+      });
+      setRequestDraftState({
+        owner: workspaceOwner,
+        text: '',
+      });
+      setComposerOwner(workspaceOwner);
+    },
+    [currentScene, workspaceOwner],
   );
 
   useEffect(() => {
@@ -291,10 +539,11 @@ function App(): React.JSX.Element {
   const isChatRoute =
     Boolean(openedThread) && (modalRoute === 'butler' || modalRoute === 'chat');
   const isRootTabRoute = Boolean(session.token) && !isChatRoute;
+  const voiceDockBottomOffset = navigationHeight + 64;
   const topSafeAreaColor = isChatRoute
     ? messagePalette.background
-    : isRootTabRoute && selectedTab === 'messages'
-    ? messagePalette.soft
+    : isRootTabRoute && selectedTab !== 'station'
+    ? workspacePalette(palette).background
     : isRootTabRoute &&
       selectedTab === 'station' &&
       session.appearance === 'light'
@@ -302,6 +551,10 @@ function App(): React.JSX.Element {
     : palette.background;
   const bottomSafeAreaColor = isChatRoute
     ? messagePalette.surface
+    : isRootTabRoute &&
+      ((selectedTab === 'messages' && secondFloorOpen) ||
+        (miaoVoiceExpanded && selectedTab !== 'station'))
+    ? workspacePalette(palette).background
     : isRootTabRoute
     ? session.appearance === 'light'
       ? '#FFFFFF'
@@ -320,11 +573,16 @@ function App(): React.JSX.Element {
         >
           <AIAssistProvider
             onAskButler={askButler}
+            scene={currentScene}
             routeKey={`${
               session.user?.id || ''
             }:${selectedTab}:${selectedStationTab}:${
               modalRoute || ''
-            }:${isPostComposerOpen}`}
+            }:${isPostComposerOpen}:${secondFloorOpen}:${requestComposerOpen}:${
+              miaoTask?.id || agentWorkspace?.id || ''
+            }:${secondFloorTool || ''}:${
+              openedThread?.id || ''
+            }:${selectedMessageTab}:${session.token}`}
           >
             <StatusBar
               barStyle={
@@ -369,16 +627,85 @@ function App(): React.JSX.Element {
                 (modalRoute === 'butler' || modalRoute === 'chat') ? (
                   <ChatScreen
                     token={session.token}
-                    onAuthorizeAlbumAI={() =>
-                      session.setAgentEnabled('album-manager', true)
+                    onOpenWorkspace={workspace => {
+                      if (workspaceChatScopeRef.current !== workspaceChatScope)
+                        return;
+                      setSelectedWorkspace({
+                        owner: workspaceOwner,
+                        workspace,
+                      });
+                    }}
+                    onAuthorizeAlbumAI={async () => openAgentManagement()}
+                    onOpenAgentAccess={openAgentManagement}
+                    agentGrantedScopes={
+                      session.ownedAgents.find(
+                        agent =>
+                          agent.id === openedThread.agentId && agent.enabled,
+                      )?.grantedScopes || []
                     }
-                    key={openedThread.id}
+                    key={`${workspaceOwner}:${openedThread.id}`}
+                    onPreserveDraftForAccess={draft => {
+                      if (workspaceOwnerRef.current !== workspaceOwner) return;
+                      setAccessDrafts(current => ({
+                        owner: workspaceOwner,
+                        threads: {
+                          ...(current.owner === workspaceOwner
+                            ? current.threads
+                            : {}),
+                          [openedThread.id]: {
+                            ...draft,
+                            references: draft.references.map(reference => ({
+                              ...reference,
+                            })),
+                            ...(draft.source
+                              ? { source: { ...draft.source } }
+                              : {}),
+                          },
+                        },
+                      }));
+                    }}
                     initialDraft={
-                      openedThread.agentId === 'miaoxun-butler'
-                        ? butlerDraft
-                        : undefined
+                      hasButlerDraft ? butlerDraft : accessDraft?.text
                     }
-                    onInitialDraftConsumed={() => setButlerDraft('')}
+                    initialContextRefs={
+                      hasButlerDraft
+                        ? butlerReferences
+                        : accessDraft?.references
+                    }
+                    initialAssistSource={
+                      hasButlerDraft ? butlerSource : accessDraft?.source
+                    }
+                    initialReplyToMessageId={
+                      hasButlerDraft ? undefined : accessDraft?.replyToMessageId
+                    }
+                    initialButlerContextReset={
+                      hasButlerDraft
+                        ? Boolean(
+                            butlerReferences.length &&
+                              pendingButlerClarification(openedThread),
+                          )
+                        : accessDraft?.butlerContextReset
+                    }
+                    onInitialDraftConsumed={() => {
+                      if (workspaceOwnerRef.current !== workspaceOwner) return;
+                      setAccessDrafts(current => {
+                        if (
+                          current.owner !== workspaceOwner ||
+                          !current.threads[openedThread.id]
+                        )
+                          return current;
+                        const threads = { ...current.threads };
+                        delete threads[openedThread.id];
+                        return { owner: workspaceOwner, threads };
+                      });
+                      setButlerDraft('');
+                      setButlerReferences([]);
+                      setButlerSource(undefined);
+                      setButlerDraftOwner('');
+                    }}
+                    onRefreshThread={() =>
+                      session.refreshThreadMessages(openedThread.id)
+                    }
                     palette={palette}
                     language={session.language}
                     currentUserId={session.user?.id || ''}
@@ -388,23 +715,23 @@ function App(): React.JSX.Element {
                     agents={session.agents}
                     renderUserAvatar={renderUserAvatar}
                     onBack={closeThread}
-                    onSend={
-                      openedThread.agentId === 'miaoxun-butler'
-                        ? (content, retryMessageId, replyToMessageId) =>
-                            sendButlerMessage(
-                              openedThread.id,
-                              content,
-                              retryMessageId,
-                              replyToMessageId,
-                            )
-                        : (content, retryMessageId, replyToMessageId) =>
-                            session.sendMessage(
-                              openedThread.id,
-                              content,
-                              undefined,
-                              retryMessageId,
-                              replyToMessageId,
-                            )
+                    onSend={(
+                      content,
+                      retryMessageId,
+                      replyToMessageId,
+                      contextRefs,
+                      assistSource,
+                      butlerContextReset,
+                    ) =>
+                      session.sendMessage(
+                        openedThread.id,
+                        content,
+                        retryMessageId,
+                        replyToMessageId,
+                        contextRefs,
+                        assistSource,
+                        ...(butlerContextReset ? ([true] as const) : []),
+                      )
                     }
                     onDeleteMessage={messageId =>
                       session.deleteMessage(openedThread.id, messageId)
@@ -447,71 +774,125 @@ function App(): React.JSX.Element {
                     isChatRoute ? 'no-hide-descendants' : 'auto'
                   }
                 >
-                  {selectedTab === 'messages' ? (
-                    <MessagesScreen
+                  {selectedTab === 'agents' ? (
+                    <MiaoTaskFeed
+                      key={workspaceOwner}
+                      token={session.token}
+                      active={
+                        !modalRoute &&
+                        !requestComposerOpen &&
+                        !miaoTask &&
+                        !agentWorkspace &&
+                        !isPostComposerOpen
+                      }
                       palette={palette}
                       language={session.language}
-                      threads={session.threads}
                       agents={session.agents}
-                      notices={session.notices}
-                      unreadNoticeCount={session.unreadNoticeCount}
-                      selectedMessageTab={selectedMessageTab}
-                      renderUserAvatar={renderUserAvatar}
-                      onOpenThread={openThread}
-                      onOpenMessageActions={() =>
-                        setModalRoute('message-actions')
+                      waterfall={miaoWaterfall}
+                      onOpenWorkspace={workspace =>
+                        setSelectedWorkspace({
+                          owner: workspaceOwner,
+                          workspace,
+                        })
                       }
-                      onOpenSearch={() => {
-                        setSearchQuery('');
-                        setModalRoute('search');
-                      }}
-                      onSelectMessageTab={setSelectedMessageTab}
-                      onMarkNotificationRead={session.markNotificationRead}
-                      onAcceptFriendRequest={async requestId => {
-                        try {
-                          await session.acceptFriendRequest(requestId);
-                          await session.refreshBootstrap(undefined, false);
-                          showToast(
-                            textFor(
-                              session.language,
-                              '已通过好友申请',
-                              'Friend request accepted',
-                            ),
-                          );
-                        } catch (error) {
-                          showToast(
-                            appErrorText(
-                              session.language,
-                              error,
-                              '操作失败',
-                              'Action failed',
-                            ),
-                          );
-                        }
-                      }}
-                      onRejectFriendRequest={async requestId => {
-                        try {
-                          await session.rejectFriendRequest(requestId);
-                          await session.refreshNotifications();
-                          showToast(
-                            textFor(
-                              session.language,
-                              '已拒绝好友申请',
-                              'Friend request rejected',
-                            ),
-                          );
-                        } catch (error) {
-                          showToast(
-                            appErrorText(
-                              session.language,
-                              error,
-                              '操作失败',
-                              'Action failed',
-                            ),
-                          );
-                        }
+                      onOpenTask={task =>
+                        setSelectedMiaoTask({ owner: workspaceOwner, task })
+                      }
+                    />
+                  ) : null}
+                  {selectedTab === 'messages' && secondFloorOpen ? (
+                    <SecondFloorScreen
+                      active={
+                        !modalRoute &&
+                        !isPostComposerOpen &&
+                        !requestComposerOpen
+                      }
+                      onToolChange={setSecondFloorTool}
+                      key={workspaceOwner}
+                      palette={palette}
+                      language={session.language}
+                      session={session}
+                      onClose={closeSecondFloor}
+                      onOpenFriendThread={openFriendThread}
+                      onOpenProfile={profileFlows.openPublicProfileByAiId}
+                      onOpenSettings={() => setModalRoute('settings')}
+                      onOpenNotices={() => {
+                        setSecondFloorOpen(false);
+                        setSelectedMessageTab('notice');
                       }}
                     />
+                  ) : null}
+                  {selectedTab === 'messages' && !secondFloorOpen ? (
+                    <View style={appStyles.retained}>
+                      <MessagesScreen
+                        token={session.token}
+                        active={!modalRoute && !isPostComposerOpen}
+                        onOpenTask={openTask}
+                        onOpenSecondFloor={() => setSecondFloorOpen(true)}
+                        palette={palette}
+                        language={session.language}
+                        threads={session.threads}
+                        agents={session.agents}
+                        notices={session.notices}
+                        unreadNoticeCount={session.unreadNoticeCount}
+                        selectedMessageTab={selectedMessageTab}
+                        renderUserAvatar={renderUserAvatar}
+                        onOpenThread={openThread}
+                        onOpenMessageActions={() =>
+                          setModalRoute('message-actions')
+                        }
+                        onOpenSearch={() => {
+                          setSearchQuery('');
+                          setModalRoute('search');
+                        }}
+                        onSelectMessageTab={setSelectedMessageTab}
+                        onMarkNotificationRead={session.markNotificationRead}
+                        onAcceptFriendRequest={async requestId => {
+                          try {
+                            await session.acceptFriendRequest(requestId);
+                            await session.refreshBootstrap(undefined, false);
+                            showToast(
+                              textFor(
+                                session.language,
+                                '已通过好友申请',
+                                'Friend request accepted',
+                              ),
+                            );
+                          } catch (error) {
+                            showToast(
+                              appErrorText(
+                                session.language,
+                                error,
+                                '操作失败',
+                                'Action failed',
+                              ),
+                            );
+                          }
+                        }}
+                        onRejectFriendRequest={async requestId => {
+                          try {
+                            await session.rejectFriendRequest(requestId);
+                            await session.refreshNotifications();
+                            showToast(
+                              textFor(
+                                session.language,
+                                '已拒绝好友申请',
+                                'Friend request rejected',
+                              ),
+                            );
+                          } catch (error) {
+                            showToast(
+                              appErrorText(
+                                session.language,
+                                error,
+                                '操作失败',
+                                'Action failed',
+                              ),
+                            );
+                          }
+                        }}
+                      />
+                    </View>
                   ) : null}
                   {stationVisited || selectedTab === 'station' ? (
                     <View
@@ -535,7 +916,10 @@ function App(): React.JSX.Element {
                           selectedTab === 'station' &&
                           !isChatRoute &&
                           !modalRoute &&
-                          !isPostComposerOpen
+                          !isPostComposerOpen &&
+                          !requestComposerOpen &&
+                          !miaoTask &&
+                          !agentWorkspace
                         }
                         palette={palette}
                         language={session.language}
@@ -552,6 +936,14 @@ function App(): React.JSX.Element {
                         onOpenQRCode={profileFlows.openQRCode}
                         onOpenFriendThread={openFriendThread}
                         onOpenAgentThread={openAgentThread}
+                        onOpenWorkspace={workspace => {
+                          if (workspaceOwnerRef.current !== workspaceOwner)
+                            return;
+                          setSelectedWorkspace({
+                            owner: workspaceOwner,
+                            workspace,
+                          });
+                        }}
                         onOpenPostComposer={() => setIsPostComposerOpen(true)}
                         onOpenPublicProfileByAiId={
                           profileFlows.openPublicProfileByAiId
@@ -571,12 +963,104 @@ function App(): React.JSX.Element {
                     </View>
                   ) : null}
 
-                  <BottomBar
-                    palette={palette}
-                    language={session.language}
-                    selectedTab={selectedTab}
-                    onSelectTab={setSelectedTab}
-                  />
+                  {!(selectedTab === 'messages' && secondFloorOpen) ? (
+                    <View
+                      testID="root-navigation"
+                      onLayout={event =>
+                        setNavigationHeight(event.nativeEvent.layout.height)
+                      }
+                      style={
+                        miaoVoiceExpanded ? appStyles.invisible : undefined
+                      }
+                      pointerEvents={miaoVoiceExpanded ? 'none' : 'auto'}
+                      accessibilityElementsHidden={miaoVoiceExpanded}
+                      importantForAccessibility={
+                        miaoVoiceExpanded ? 'no-hide-descendants' : 'auto'
+                      }
+                    >
+                      <BottomBar
+                        palette={palette}
+                        language={session.language}
+                        selectedTab={selectedTab}
+                        onSelectTab={tab => {
+                          setSecondFloorOpen(false);
+                          setSelectedTab(tab);
+                        }}
+                      />
+                    </View>
+                  ) : null}
+                  {selectedTab === 'messages' && !secondFloorOpen ? (
+                    <VoiceShortcutDock
+                      key={`assistant:${workspaceOwner}`}
+                      active={
+                        !modalRoute &&
+                        !isPostComposerOpen &&
+                        !requestComposerOpen &&
+                        !miaoTask &&
+                        !agentWorkspace
+                      }
+                      palette={palette}
+                      language={session.language}
+                      tone="xun"
+                      bottomOffset={voiceDockBottomOffset}
+                      onCompose={composeWithButler}
+                      onOpenButler={composeWithButler}
+                      onToggleFeed={openTaskInbox}
+                      onExpandedChange={setMiaoVoiceExpanded}
+                    />
+                  ) : null}
+                  {selectedTab === 'agents' ? (
+                    <VoiceShortcutDock
+                      key={`voice:${workspaceOwner}`}
+                      active={
+                        !modalRoute &&
+                        !requestComposerOpen &&
+                        !miaoTask &&
+                        !agentWorkspace &&
+                        !isPostComposerOpen
+                      }
+                      palette={palette}
+                      language={session.language}
+                      bottomOffset={voiceDockBottomOffset}
+                      onExpandedChange={setMiaoVoiceExpanded}
+                      onToggleFeed={() => setMiaoWaterfall(value => !value)}
+                      onCompose={transcript => {
+                        if (!selectedRequest)
+                          setRequestContext({
+                            owner: workspaceOwner,
+                            scene: currentScene,
+                          });
+                        if (transcript)
+                          updateRequestDraft(
+                            [requestDraft, transcript]
+                              .filter(Boolean)
+                              .join('\n'),
+                          );
+                        setComposerOwner(workspaceOwner);
+                      }}
+                      onOpenButler={transcript => {
+                        const draft = [requestDraft, transcript]
+                          .filter(Boolean)
+                          .join('\n');
+                        const scene = selectedRequest?.scene || currentScene;
+                        const message =
+                          draft.trim() || selectedRequest
+                            ? buildAssistMessage(
+                                draft,
+                                scene,
+                                selectedRequest?.object,
+                                session.language,
+                              )
+                            : '';
+                        if (!continueRequestWithButler(message)) {
+                          if (!selectedRequest)
+                            setRequestContext({ owner: workspaceOwner, scene });
+                          updateRequestDraft(draft);
+                          setComposerOwner(workspaceOwner);
+                        }
+                      }}
+                    />
+                  ) : null}
                 </View>
               </>
             ) : (
@@ -599,6 +1083,142 @@ function App(): React.JSX.Element {
               />
             )}
 
+            {session.token &&
+            (requestComposerOpen || miaoTask || agentWorkspace) ? (
+              <Modal
+                visible
+                animationType="slide"
+                presentationStyle="fullScreen"
+                onRequestClose={() => {
+                  setComposerOwner(null);
+                  setSelectedMiaoTask(null);
+                  if (agentWorkspace) closeWorkspace();
+                }}
+              >
+                <SafeAreaProvider>
+                  <SafeAreaView
+                    style={[
+                      appStyles.retained,
+                      { backgroundColor: workspacePalette(palette).background },
+                    ]}
+                  >
+                    {requestComposerOpen ? (
+                      <AIRequestComposer
+                        palette={palette}
+                        language={session.language}
+                        draft={requestDraft}
+                        scene={selectedRequest?.scene}
+                        context={selectedRequest?.object}
+                        references={selectedRequest?.references}
+                        onRemoveReference={index =>
+                          setRequestContext(value =>
+                            value?.owner === workspaceOwner
+                              ? {
+                                  ...value,
+                                  references: value.references?.filter(
+                                    (_ref, i) => i !== index,
+                                  ),
+                                }
+                              : value,
+                          )
+                        }
+                        onRemoveContext={() =>
+                          setRequestContext(value =>
+                            value ? { ...value, object: undefined } : null,
+                          )
+                        }
+                        recovery={
+                          session.user ? (
+                            <WorkspaceSubmissionRecovery
+                              token={session.token}
+                              userId={session.user.id}
+                              palette={workspacePalette(palette)}
+                              language={session.language}
+                              onCreated={workspace => {
+                                if (
+                                  workspaceOwnerRef.current !== workspaceOwner
+                                )
+                                  return;
+                                setComposerOwner(null);
+                                setSelectedWorkspace({
+                                  owner: workspaceOwner,
+                                  workspace,
+                                });
+                              }}
+                            />
+                          ) : undefined
+                        }
+                        onChangeDraft={updateRequestDraft}
+                        onClose={() => setComposerOwner(null)}
+                        onContinue={continueRequestWithButler}
+                      />
+                    ) : agentWorkspace ? (
+                      <AgentWorkspaceScreen
+                        token={session.token}
+                        workspace={agentWorkspace}
+                        agents={session.agents}
+                        palette={palette}
+                        language={session.language}
+                        onClose={closeWorkspace}
+                        onManageAgents={openAgentManagement}
+                        onNewTask={workspace => {
+                          setRequestContext({
+                            owner: workspaceOwner,
+                            scene: {
+                              page: 'miao.workspace',
+                              label: textFor(
+                                session.language,
+                                '妙 · 协作详情',
+                                'Miao · Workspace',
+                              ),
+                              module: {
+                                key: 'workspace-details',
+                                label: textFor(
+                                  session.language,
+                                  '重新发起任务',
+                                  'Restart a task',
+                                ),
+                              },
+                            },
+                            references: workspace.contextRefs.map(ref => ({
+                              ...ref,
+                            })),
+                          });
+                          updateRequestDraft(
+                            [
+                              workspace.goal,
+                              ...workspace.followups.map(
+                                text =>
+                                  `${textFor(
+                                    session.language,
+                                    '已补充要求',
+                                    'Additional requirements',
+                                  )}：${text}`,
+                              ),
+                            ].join('\n\n'),
+                          );
+                          setSelectedWorkspace(null);
+                          setComposerOwner(workspaceOwner);
+                        }}
+                      />
+                    ) : miaoTask ? (
+                      <MiaoTaskWorkspace
+                        token={session.token}
+                        task={miaoTask}
+                        agents={session.agents}
+                        palette={palette}
+                        language={session.language}
+                        onClose={() => setSelectedMiaoTask(null)}
+                        onOpenSource={task => {
+                          setSelectedMiaoTask(null);
+                          openTask(task);
+                        }}
+                      />
+                    ) : null}
+                  </SafeAreaView>
+                </SafeAreaProvider>
+              </Modal>
+            ) : null}
             <AppModals
               modalRoute={modalRoute}
               palette={palette}
@@ -666,5 +1286,6 @@ export default App;
 
 const appStyles = StyleSheet.create({
   hidden: { display: 'none' },
+  invisible: { opacity: 0 },
   retained: { flex: 1 },
 });

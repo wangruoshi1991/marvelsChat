@@ -121,7 +121,6 @@ export const stationProfileStyles = {
     justifyContent: 'center',
     width: 38,
   },
-  stationNavSettingsIcon: { height: 7, width: 27 },
   profileDataRow: {
     alignItems: 'center',
     borderRadius: spacing.cardRadius,

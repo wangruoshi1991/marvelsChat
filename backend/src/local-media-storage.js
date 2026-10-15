@@ -7,11 +7,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Transform, Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { fileURLToPath } from "node:url";
+import { config } from "./config.js";
 import { HttpError } from "./http-error.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const localMediaRoot = path.resolve(__dirname, "../storage/station-media");
+const localMediaRoot = config.localMediaRoot;
 
 export function localMediaPathForObjectKey(objectKey) {
   const key = String(objectKey || "").replaceAll("\\", "/");

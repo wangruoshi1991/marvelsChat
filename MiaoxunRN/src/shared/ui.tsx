@@ -1,30 +1,23 @@
 import React from 'react';
-import {
-  Image,
-  type ImageSourcePropType,
-  Pressable,
-  Text,
-  View,
-} from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   Circle,
   ChevronDown,
   Settings,
+  House,
+  MessageSquare,
+  UserRound,
   type LucideIcon,
 } from 'lucide-react-native';
 
-import {
-  contactIconAssets,
-  messageIconAssets,
-  stationPostIconAssets,
-} from '../assets/icons';
+import { contactIconAssets } from '../assets/icons';
 import { Language } from '../features/session/useMiaoxunSession';
 import { textFor } from './i18n';
 import { styles } from './styles';
-import { Palette, palettes } from './theme';
+import { Palette, palettes, workspaceColors } from './theme';
 
 export type IconComponent = LucideIcon;
-export type RootTab = 'messages' | 'station';
+export type RootTab = 'agents' | 'messages' | 'station';
 
 export function SegmentedControl<T extends string>({
   fill,
@@ -241,77 +234,90 @@ export function BottomBar({
   selectedTab: RootTab;
   onSelectTab: (tab: RootTab) => void;
 }) {
-  const isLightPalette = palette.text === palettes.light.text;
-  const bottomBarColors = isLightPalette
-    ? { backgroundColor: '#FFFFFF', borderTopColor: '#F0EBFD' }
-    : { backgroundColor: palette.surface, borderTopColor: palette.border };
-
+  const light = palette.text === palettes.light.text;
+  const color = light ? workspaceColors.text : palette.text;
+  const borderColor = light ? workspaceColors.border : palette.border;
   return (
-    <View style={[styles.bottomBar, bottomBarColors]}>
-      <TabButton
-        title={textFor(language, '妙讯', 'Messages')}
-        iconSource={
-          selectedTab === 'messages'
-            ? messageIconAssets.tabMessagesActive
-            : stationPostIconAssets.tabMessagesInactive
-        }
-        selected={selectedTab === 'messages'}
-        palette={palette}
-        onPress={() => onSelectTab('messages')}
-      />
-      <TabButton
-        title={textFor(language, '小站', 'Station')}
-        iconSource={
-          selectedTab === 'station'
-            ? stationPostIconAssets.tabStationActive
-            : messageIconAssets.tabStationInactive
-        }
-        selected={selectedTab === 'station'}
-        palette={palette}
-        onPress={() => onSelectTab('station')}
-      />
+    <View
+      style={[
+        navigationStyles.bar,
+        {
+          backgroundColor: palette.surface,
+          borderTopColor: borderColor,
+        },
+      ]}
+    >
+      {(
+        [
+          {
+            key: 'agents',
+            label: textFor(language, '妙', 'Miao'),
+            icon: House,
+          },
+          {
+            key: 'messages',
+            label: textFor(language, '讯', 'Chats'),
+            icon: MessageSquare,
+          },
+          {
+            key: 'station',
+            label: textFor(language, '我', 'Me'),
+            icon: UserRound,
+          },
+        ] as const
+      ).map(({ key, label, icon: Icon }) => {
+        const selected = selectedTab === key;
+        const tint = selected
+          ? color
+          : light
+          ? '#9D9DA5'
+          : palette.secondaryText;
+        return (
+          <Pressable
+            key={key}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            onPress={() => onSelectTab(key)}
+            style={navigationStyles.tab}
+          >
+            {selected ? (
+              <View
+                style={[navigationStyles.indicator, { backgroundColor: color }]}
+              />
+            ) : null}
+            <Icon size={25} color={tint} strokeWidth={selected ? 2.25 : 1.8} />
+            <Text style={[navigationStyles.label, { color: tint }]}>
+              {label}
+            </Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
-
-function TabButton({
-  title,
-  iconSource,
-  selected,
-  palette,
-  onPress,
-}: {
-  title: string;
-  iconSource: ImageSourcePropType;
-  selected: boolean;
-  palette: Palette;
-  onPress: () => void;
-}) {
-  const isLightPalette = palette.text === palettes.light.text;
-  const titleColor = isLightPalette
-    ? selected
-      ? '#2A00FF'
-      : '#CBC5DE'
-    : selected
-    ? palette.mint
-    : palette.secondaryText;
-
-  return (
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={styles.tabButton}
-    >
-      <Image
-        source={iconSource}
-        style={[styles.tabIcon, !isLightPalette && { tintColor: titleColor }]}
-        resizeMode="contain"
-      />
-      <Text style={[styles.tabTitle, { color: titleColor }]}>{title}</Text>
-    </Pressable>
-  );
-}
+const navigationStyles = StyleSheet.create({
+  bar: {
+    minHeight: 76,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+  },
+  indicator: {
+    position: 'absolute',
+    top: 0,
+    width: 22,
+    height: 2,
+    borderRadius: 2,
+  },
+  label: { fontSize: 13, fontWeight: '600' },
+});
 
 export function MessageInlineAction({
   icon: Icon,

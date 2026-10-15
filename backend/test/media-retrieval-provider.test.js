@@ -285,6 +285,32 @@ test("query parsing requires its own configured dialogue model and never falls b
   assert.equal(calls, 0);
 });
 
+test("query parsing shares the configured chat route and never inherits the planning override", async () => {
+  const requests = [];
+  const provider = createMediaRetrievalProvider({
+    config: { ...configuredRuntime, newApi: { ...configuredRuntime.newApi, planningModel: "dedicated-planner" } },
+    fetchImpl: async (url, options) => {
+      requests.push({ url, body: JSON.parse(options.body), headers: options.headers });
+      return responseJson({ choices: [{ message: { content: JSON.stringify({
+        spans: [{ text: "a bowl", role: "visual" }], parseConfidence: "high",
+      }) } }] });
+    },
+  });
+  await provider.parseRetrievalQuery({ query: "a bowl", reservation: approvedReservation });
+  assert.equal(requests[0].url, configuredRuntime.newApi.baseUrl);
+  assert.equal(requests[0].body.model, "test-dialogue-model");
+  assert.equal(requests[0].headers.Authorization, "Bearer test-query-key");
+  assert.equal(provider.getRuntimeStatus().queryModel, "test-dialogue-model");
+  assert.equal(provider.getQueryParsingProvenance().modelId, "test-dialogue-model");
+  const missingChat = createMediaRetrievalProvider({
+    config: { ...configuredRuntime, newApi: { ...configuredRuntime.newApi, model: "", planningModel: "dedicated-planner" } },
+    fetchImpl: async () => { throw new Error("A planning override must not authorize a query dispatch"); },
+  });
+  assert.equal(missingChat.getRuntimeStatus().configured, false);
+  await assert.rejects(missingChat.parseRetrievalQuery({ query: "a bowl", reservation: approvedReservation }),
+    error => error.code === "retrieval_service_unavailable");
+});
+
 test("Anthropic query transport uses the selected dialogue configuration and the same strict source schema", async () => {
   const requests = [];
   const provider = createMediaRetrievalProvider({
@@ -303,4 +329,47 @@ test("Anthropic query transport uses the selected dialogue configuration and the
   assert.deepEqual(requests[0].body.messages, [{ role: "user", content: "a bowl" }]);
   assert.equal(requests[0].body.model, "test-dialogue-model");
   assert.equal(JSON.stringify(provider.getQueryParsingProvenance()).includes("test-query-key"), false);
+});
+
+test("query and embedding response receipts remain local and include actual provider usage", async () => {
+  const parseReceipts = [], embeddingReceipts = [], legacyUsage = [];
+  const provider = createMediaRetrievalProvider({ config: configuredRuntime,
+    recordUsage: async value => legacyUsage.push(value),
+    fetchImpl: async url => String(url).includes("query-model.example")
+      ? responseJson({ model: "served-query-model", choices: [{ message: { content: JSON.stringify({ spans: [{ text: "a bowl", role: "visual" }], parseConfidence: "high" }) } }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } })
+      : responseJson({ output: { embeddings: [{ embedding: Array.from({ length: 1024 }, () => 0.1) }] }, usage: { input_tokens: 5, total_tokens: 5 } }),
+  });
+  const parsed = await provider.parseRetrievalQuery({ query: "a bowl", reservation: approvedReservation, onModelResponse: value => parseReceipts.push(value) });
+  await provider.embedText({ input: buildVisualEmbeddingInput({ rawQuery: "a bowl", candidate: parsed }), reservation: approvedReservation,
+    onModelResponse: value => embeddingReceipts.push(value) });
+  assert.equal(parseReceipts.length, 1); assert.equal(embeddingReceipts.length, 1);
+  assert.equal(parseReceipts[0].model, "test-dialogue-model");
+  assert.equal(parseReceipts[0].servedModel, "served-query-model");
+  assert.deepEqual(parseReceipts[0].tokenUsage, { prompt: 8, completion: 4, total: 12 });
+  assert.deepEqual(embeddingReceipts[0].tokenUsage, { prompt: 5, completion: null, total: 5 });
+  assert.equal(embeddingReceipts[0].model, "qwen3-vl-embedding");
+  assert.equal(embeddingReceipts[0].servedModel, null);
+  assert.equal(legacyUsage.length, 2);
+  assert.equal(JSON.stringify([...parseReceipts, ...embeddingReceipts]).includes("test-key"), false);
+});
+
+test("paid response receipt is captured even when subsequent output schema validation fails", async () => {
+  const receipts = [];
+  const provider = createMediaRetrievalProvider({ config: configuredRuntime,
+    fetchImpl: async () => responseJson({ choices: [{ message: { content: "malformed model content" } }], usage: { prompt_tokens: 7, completion_tokens: 1, total_tokens: 8 } }) });
+  await assert.rejects(provider.parseRetrievalQuery({ query: "a bowl", reservation: approvedReservation, onModelResponse: value => receipts.push(value) }));
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].tokenUsage.total, 8);
+});
+
+test("served model is bounded to the provider response field and never inferred from the request", async () => {
+  for (const model of [undefined, " ", "x".repeat(201), 7]) {
+    const receipts = [];
+    const payload = { choices: [{ message: { content: JSON.stringify({ spans: [{ text: "a bowl", role: "visual" }], parseConfidence: "high" }) } }] };
+    if (model !== undefined) payload.model = model;
+    const provider = createMediaRetrievalProvider({ config: configuredRuntime, fetchImpl: async () => responseJson(payload) });
+    await provider.parseRetrievalQuery({ query: "a bowl", reservation: approvedReservation, onModelResponse: value => receipts.push(value) });
+    assert.equal(receipts[0].model, "test-dialogue-model");
+    assert.equal(receipts[0].servedModel, null);
+  }
 });

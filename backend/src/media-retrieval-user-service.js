@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { HttpError } from "./http-error.js";
 import { MEDIA_RETRIEVAL_CONSENT_VERSION } from "./media-retrieval-constants.js";
 import {
   B7_PRODUCT_BASELINE_METHOD,
@@ -91,51 +92,64 @@ const canonicalProviderFailureCode = (value) =>
     ? value
     : "retrieval_service_unavailable";
 
-const reserveAndCall = async ({ repository, run, operation, countUserAction, assertAuthorized, invoke }) => {
+// Hook errors belong to the workspace runtime. They must not be converted
+// into a retrieval result that allows another provider call or fallback branch.
+class WorkspaceModelHookError extends Error {
+  constructor(cause) { super("Workspace model boundary stopped execution", { cause }); }
+}
+
+const reserveAndCall = async ({ repository, run, operation, countUserAction, assertAuthorized, invoke,
+  beforeModelCall = null, afterModelCall = null }) => {
   await assertAuthorized();
   const reservation = await repository.reserveProviderBudget({
-    userId: run.userId,
-    agentRunId: run.id,
-    jobId: null,
-    operation,
-    countUserAction,
+    userId: run.userId, agentRunId: run.id, jobId: null, operation, countUserAction,
   });
-  if (!reservation?.reserved)
-    return {
-      value: null,
-      blocked: true,
-      failureCode: canonicalProviderFailureCode(reservation?.reasonCode),
-    };
+  if (!reservation?.reserved) return { value: null, blocked: true, failureCode: canonicalProviderFailureCode(reservation?.reasonCode) };
+  let receipt = null;
   try {
     await assertAuthorized();
+    if (beforeModelCall) {
+      try { receipt = await beforeModelCall(); }
+      catch (error) { throw new WorkspaceModelHookError(error); }
+    }
   } catch (error) {
-    await repository.settleProviderBudget({
-      reservationId: reservation.reservationId,
-      disposition: "released",
-      amountFen: 0,
-    });
+    try {
+      await repository.settleProviderBudget({ reservationId: reservation.reservationId, disposition: "released", amountFen: 0 });
+    } catch (settlementError) {
+      // No provider was dispatched. Keep a workspace authorization/limit
+      // rejection if independent retrieval settlement also cannot be stored.
+      if (!(error instanceof WorkspaceModelHookError)) throw settlementError;
+    }
     throw error;
   }
+  const startedAt = Date.now();
+  let responseReceipt = null;
+  let value = null;
+  let failure = null;
+  try { value = await invoke(reservation, captured => { responseReceipt = captured; }); }
+  catch (error) { failure = error; }
   try {
-    const value = await invoke(reservation);
     await repository.settleProviderBudget({
-      reservationId: reservation.reservationId,
-      disposition: "estimated",
-      amountFen: reservation.amountFen,
+      reservationId: reservation.reservationId, disposition: failure ? "unknown" : "estimated", amountFen: reservation.amountFen,
     });
-    return { value, blocked: false, failureCode: null };
   } catch (error) {
-    await repository.settleProviderBudget({
-      reservationId: reservation.reservationId,
-      disposition: "unknown",
-      amountFen: reservation.amountFen,
-    });
-    return {
-      value: null,
-      blocked: true,
-      failureCode: canonicalProviderFailureCode(error?.code),
-    };
+    if (beforeModelCall || afterModelCall) throw new WorkspaceModelHookError(new HttpError(504,
+      "检索预算回执未能保存，不能自动重试。", { code: "WORKSPACE_MODEL_RESULT_UNKNOWN" }));
+    throw error;
   }
+  if (afterModelCall) {
+    if (!responseReceipt) throw new WorkspaceModelHookError(new HttpError(504,
+      "检索模型响应无法确认，不能自动重试。", { code: "WORKSPACE_MODEL_RESULT_UNKNOWN" }));
+    try {
+      await afterModelCall({ receipt,
+        provider: responseReceipt.provider, model: responseReceipt.model,
+        servedModel: responseReceipt.servedModel ?? null,
+        tokenUsage: responseReceipt.tokenUsage,
+        latencyMs: responseReceipt.latencyMs ?? Date.now() - startedAt });
+    } catch (error) { throw new WorkspaceModelHookError(error); }
+  }
+  if (failure) return { value: null, blocked: true, failureCode: canonicalProviderFailureCode(failure?.code) };
+  return { value, blocked: false, failureCode: null };
 };
 
 const asB7NormalizedQuery = (embeddingInput) => ({
@@ -268,6 +282,8 @@ export function createMediaRetrievalUserService({ repository, provider, resolveC
         agentRunId: currentBackfill?.id || null,
         lifecycleStatus: currentBackfill?.lifecycleStatus || "idle",
         indexedAssets: Number(status.jobs.succeeded || 0),
+        // Unavailable assets without a current queued/running task, including
+        // failed, cancelled, missing and stale tasks; not a provider-failure count.
         skippedAssets: Number(status.jobs.blocked || 0) + Number(status.jobs.failed || 0),
         totalAssets: Object.values(status.jobs).reduce((total, value) => total + Number(value || 0), 0),
       },
@@ -295,6 +311,8 @@ export function createMediaRetrievalUserService({ repository, provider, resolveC
     albumId = null,
     limit = 10,
     idempotencyKey,
+    beforeModelCall = null,
+    afterModelCall = null,
   }) => {
     await ensureRouteEligible();
     const initialProfile = await enabledProfile(repository, userId);
@@ -380,8 +398,8 @@ export function createMediaRetrievalUserService({ repository, provider, resolveC
           run,
           operation: "query-parse",
           countUserAction: true,
-          assertAuthorized: assertSearchStillAuthorized,
-          invoke: (reservation) => provider.parseRetrievalQuery({ query, traceId: run.traceId, reservation }),
+          assertAuthorized: assertSearchStillAuthorized, beforeModelCall, afterModelCall,
+          invoke: (reservation, onModelResponse) => provider.parseRetrievalQuery({ query, traceId: run.traceId, reservation, onModelResponse }),
         });
         // A successful parser invocation is still untrusted. Passing the value
         // explicitly preserves the final builder's malformed-candidate veto for
@@ -399,11 +417,11 @@ export function createMediaRetrievalUserService({ repository, provider, resolveC
             run,
             operation: "query-embedding",
             countUserAction: false,
-            assertAuthorized: assertSearchStillAuthorized,
-            invoke: (reservation) => provider.embedText({
+            assertAuthorized: assertSearchStillAuthorized, beforeModelCall, afterModelCall,
+            invoke: (reservation, onModelResponse) => provider.embedText({
               input: toProviderVisualEmbeddingInput(embeddingInput),
               traceId: run.traceId,
-              reservation,
+              reservation, onModelResponse,
             }),
           });
           if (embedded.blocked || !embedded.value) {
@@ -445,10 +463,10 @@ export function createMediaRetrievalUserService({ repository, provider, resolveC
           invoke: async candidates => {
             const reranked = await reserveAndCall({
               repository, run, operation: "query-rerank", countUserAction: false,
-              assertAuthorized: assertVisualsCurrent,
-              invoke: reservation => provider.rerankMediaCandidates({
+              assertAuthorized: assertVisualsCurrent, beforeModelCall, afterModelCall,
+              invoke: (reservation, onModelResponse) => provider.rerankMediaCandidates({
                 query: embeddingInput.semanticText, visualConstraints: embeddingInput.visualConstraints,
-                candidates, reservation,
+                candidates, reservation, onModelResponse,
               }),
             });
             if (reranked.blocked) await finishBlockedSearch(reranked.failureCode);
@@ -479,6 +497,16 @@ export function createMediaRetrievalUserService({ repository, provider, resolveC
       return response;
     } catch (error) {
       if (terminalRecorded) throw error;
+      if (error instanceof WorkspaceModelHookError) {
+        try {
+          await repository.transitionMediaRetrievalRun({ userId, agentRunId: run.id,
+            lifecycleStatus: "failed", failureCode: "retrieval_service_unavailable", eventType: "failed" });
+        } catch {
+          // The workspace owns its failure semantics even if recording the
+          // independent retrieval run failure also cannot complete.
+        }
+        throw error.cause;
+      }
       return failRun({ userId, agentRunId: run.id, error });
     }
   };

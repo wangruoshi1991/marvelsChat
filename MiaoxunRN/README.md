@@ -1,5 +1,21 @@
 # MiaoxunRN
 
+## 妙 / 讯 / 我与二楼
+
+以下描述当前源码能力；实际服务器版本、设备安装和验收状态见[当前交接](../docs/handoffs/CURRENT.md)。
+
+底栏为妙、讯、我，登录后默认进入妙的任务动态。卡片读取真实 `GET /api/tasks` 与 `GET /api/agent-workspaces`，展示目标、实际参与Agent与当前状态，点击进入单任务或多Agent协作工作区。单任务保留一个执行Agent，协作展示服务端持久节点与真实参与者；普通同步对话不混入任务动态。Agent添加管理保留在我的既有小站入口。讯使用“对话 / 任务”分段及独立通知入口。
+
+讯对话列表在顶部纵向下拉，经0.56阻尼后显示位移达到86pt，松开进入二楼；短拖回弹，静止时无提示占位。二楼按实际宽度显示五张完整功能卡，六项横向滚动并按一卡间距吸附，进出卡缩放；底部拖拽柄上滑55pt返回，另支持无障碍和Android系统返回。我保留原小站，已访问的小站在切换栏时保留挂载、暂停交互。账号切换重置导航与二楼页面状态。
+
+妙/讯共用 `VoiceShortcutDock` 的紧凑三方向按钮菜单，轴向间距56pt、入口同幅上移16pt；两页均为上/左/下，分别映射键盘、妙管家、瀑布或任务。原地松手取消，140ms收起且立即禁交互；转写先入可编辑草稿，不自动发送。首次权限由用户显式准备，成功后重新长按才识别。妙长按隐藏底栏；读屏/轻点打开的菜单仍可选择。最新验收见[当前交接](../docs/handoffs/CURRENT.md)。
+
+二楼相册复用内容列表/编辑组件，部分上传失败保留新相册和成功素材，明确提示用户进入详情检查后继续添加；原小站创建流程仍保留其原有整体回滚语义。文件入口只保存现有 API 支持的文本素材预览，不声称保存完整原文件；信息海只展示应用通知，关系评分、第三方汇聚、代支付和文件上传未开放。完整 Agent 后续合同见 [方案](../docs/agent-workspace-architecture.md)。
+
+新增和调整的任务/二楼界面统一使用 `shared/workspaceUi.tsx` 的按钮、面板、状态与视觉规范，以及 `shared/workspacePalette.ts`。业务组件持有真实状态，共享组件只负责呈现和交互语义。任务状态及可读阶段只在 `features/ai/taskPresentation.ts` 定义。
+
+单任务、协作与相册卡的长按复用 `features/assist/AIContextActions.tsx` 和既有全局径向菜单，携带页面、模块、对象与选择时快照；草稿只展示所选内容及必要快照，再由用户主动发起。来源使用 `clientContext.currentPage`，资源使用鉴权 `contextRefs`；工程来源不拼入新聊天正文。缺完整授权时引导到我页添加；已添加但授权不完整的Agent须移除后重新添加并确认全部声明范围。按账号/token/会话保留未发送内容，返回不自动发送。协作快照不冒充可鉴权资源或自动读取原素材，尚未支持任意页面直接作为服务端资源引用。
+
 这是妙讯的 React Native 正式实现目录。
 
 ## 定位
@@ -8,6 +24,9 @@
 
 ## 当前状态
 
+- 前轮46反馈的客户端修复已进入2026-10-13旧TestFlight47冻结制品；对应普通Agent自然语言chat后端修复尚未部署。已知历史漫画/建站JSON以可读草稿呈现，正文/读屏/复制分享/回复/会话预览一致；存储原文、用户JSON和未知结构保持原值。前轮范围见[反馈修复记录](../docs/handoffs/2026-10-14-build48-history.md)，本轮增量以当前交接为准。
+- 2026-10-14工作区将Agent添加与全部声明权限确认集中到我页，二楼只留账号隐私；妙/讯共享上移三向菜单，卡片共用长按。公开消息与漫画结果去后台审计字段，Agent历史按输入身份查询。最终RN63组640项及整仓通过；固定iPhone17已安装当前Debug1.0(47)。这些增量尚未部署或上传新包；TestFlight47仍是旧冻结制品，当前源码、后台与真机不能视为已经配套，见[当前交接](../docs/handoffs/CURRENT.md)。
+- 2026-10-13历史配套：正式API与两个Worker为 `agent-preview-20261013-02` / `c04385e`，迁移038，合同 `aiTasks:1 / siteDocuments:2 / agentWorkspaces:2`。当时固定iPhone17与TestFlight1.0(46)配套结果保留于[Build46记录](../docs/reviews/2026-10-13-testflight-46.md)。
 - 已建立独立 RN 工程。
 - 已保留与原型相近的视觉基调。
 - 已预留 `src/features`、`src/services`、`src/shared` 分层。
@@ -67,41 +86,27 @@ src/services/location.ts
 新增相机、推送、相册、文件、分享等能力时，先在 `src/services` 定义统一 JS API，再分别补 iOS / Android 原生实现和权限说明。
 如果后续产品不使用 QR Code 或不需要相机实时识别，可以移除扫码桥接和相机权限，改为纯 RN 输入、链接打开或后端校验流程。
 
-## 本地运行
+## 本地构建与正式环境联调
 
-当前 App 预览采用本地最新源码连接正式 HTTPS API，模拟器与线上使用同一套账号和业务数据。
-本地 PostgreSQL 是独立开发库，不会因生产备份成功而自动同步线上账号；需要查看原有账号时，
-应连接正式 API。连接正式 API 后的创建、编辑、删除和供应商调用会作用于线上环境，联调使用
-专用测试账号。后端代码的修改仍需单独验证和部署，构建本地 App 不会更新服务器代码。
+日常使用现有主 iPhone 17 Simulator（UDID `7E81531F-02AE-40FC-98DA-A575CEC9930F`，iOS 26.5）上的同一个 **妙讯** App，Bundle ID为 `com.wangruoshi.miaoxun`。Build 48 是工作区下一候选配置，默认 API 仍为 `https://8.153.167.11`；TestFlight 47 及当前安装版本仍是旧冻结制品，039/合同3后端完成配套前不能安装该候选验收。固定设备原位更新并保留已有数据与Keychain登录态（Simulator可能重定位容器路径），不再并列维护另一个日常开发App。
 
-先用 `xcrun simctl list devices available` 确认模拟器 ID，并启动所选设备。然后从 `MiaoxunRN/`
-执行以下命令；将 `<simulator-id>` 替换为实际 ID，构建时显式选择正式 API：
+从仓库根目录执行：
 
 ```sh
-xcodebuild -workspace ios/MiaoxunRN.xcworkspace \
-  -scheme MiaoxunRN -configuration Debug \
-  -destination 'id=<simulator-id>' -derivedDataPath ios/build \
-  MIAOXUN_API_BASE_URL=https://8.153.167.11 build
-
-xcrun simctl install <simulator-id> \
-  ios/build/Build/Products/Debug-iphonesimulator/MiaoxunRN.app
-xcrun simctl launch --terminate-running-process <simulator-id> \
-  com.wangruoshi.miaoxun
+node scripts/miaoxun-development.mjs ios
 ```
 
-需要隔离验证本地后端变更时，显式把上述构建参数改为 `http://127.0.0.1:4390`，并使用该开发库
-自己的测试账号。两种模式都必须重新构建安装内嵌 JS bundle。
+该命令检查正式API readiness，再构建、签名、安装并启动固定设备上的正式Bundle；不需要先启动本机API、PostgreSQL或Worker。构建证据记录设备UDID、Build、提交、未提交源码摘要、`main.jsbundle`摘要、产品摘要和API origin。源码在构建期间变化时中止安装；单凭Build号或HEAD不能证明版本一致。实际部署与安装结果以[当前交接](../docs/handoffs/CURRENT.md)为准，构建不会自动升级服务器或TestFlight。
 
-iOS API 地址由 Xcode build setting `MIAOXUN_API_BASE_URL` 注入：
+当前工作区新增专业文字成果引用与鉴权读取，协作合同为3，正式仍2。候选只执行`node scripts/miaoxun-development.mjs ios --build-only`，配套前保持已安装App；不能原位换新端后用旧后台验收。TestFlight47仍为旧冻结制品。正式038及协作合同2可读不代表当前授权声明、Agent版本与模型分派已部署；提交结果账本区分已接受、明确拒绝和结果未知。新端在当前会话bootstrap确认AI合同后再提交受影响请求，不对旧合同试发业务。正式联调复用既有正式账号，不搬运本地token、不每轮创建测试账号；供应商付费验收、生产部署和TestFlight上传按各自确认范围执行。
 
-```text
-Debug: http://127.0.0.1:4390
-Release: https://8.153.167.11
-```
+当前固定Simulator反馈候选安装证据为 `~/Library/Application Support/MiaoxunDevelopment/76237d6f8986/builds/2026-10-14T03-45-31-222Z/build.json`，`installed:true`、`launched:true`，JS SHA256 `12425c48be1dd11a0216206cf1469eea98e702ab72baead2999f8503e1cda8ff`。默认妙、同间距三向菜单、原地长按松手无残留及二楼隐私已实看；安装成功不代表完整素材链、连续触摸或真机录音已验收，也不代表TestFlight已更新。构建后补状态文档，实施代码未变。
 
-上表是 Xcode 工程默认值；当前线上数据联调使用上方命令显式覆盖 Debug API。正式 Release 构建必须使用受信任的公网 HTTPS origin，不能使用 localhost 或 loopback URL；当前 IP 证书的 SAN 包含 `8.153.167.11`，不需要 ATS HTTP 例外。同一次扫码联调不能混用两套后端。
+仅在显式验证后端迁移、权限或失败场景时使用 `verify-local-start` / `verify-local-restart`；`stop` / `status` 继续管理已有本机验证服务。隔离库账号与数据保留，供应商请求明确阻断。它不是日常App的后端，`status`也不表示生产状态。详细命令、证据和恢复约定见[固定iPhone 17联调](../docs/local-development-preview.md)。
 
-当前 iOS Debug 工程会通过 `AppDelegate.swift` 强制读取内置 `main.jsbundle`，不是直接从 Metro 拉取最新 JS。修改 `src/` 后，需要重新执行上方显式指定 API 地址的构建、安装和启动命令，生成并安装新的内置 bundle；单纯重启模拟器或 Metro 不会让已安装 App 自动更新。
+iOS API地址由Xcode build setting `MIAOXUN_API_BASE_URL` 注入，Android使用同名构建参数。Release必须使用受信任的公网HTTPS origin；当前IP证书SAN包含 `8.153.167.11`，无需ATS HTTP例外。Debug可在显式隔离验证时覆盖origin，日常默认保持正式HTTPS。同一次扫码联调不能混用两套后端。
+
+当前iOS Debug通过 `AppDelegate.swift` 读取内置 `main.jsbundle`。修改 `src/` 后重新执行 `ios` 构建安装；重启Simulator或Metro不会让已安装App自动更新。Simulator通过不代表真机、Android或TestFlight已通过。
 
 真机和模拟器互扫联调必须保证双方进入同一套后端账号、二维码、好友申请和通知数据。同一次扫码联调不能一端连本地、一端连线上。
 
@@ -130,7 +135,7 @@ npm run build:app-viewer
 
 个人日记和个人相册从首页、完整列表进入创建、详情或编辑时统一使用全屏内容工作区；首页创建返回首页，完整列表内创建返回列表，不再从底部打开旧 `pageSheet`。日记创建采用动态发布页风格的纯文本编辑器；相册创建必须先选择 1 至 9 张照片，保存时创建相册并逐张上传，任一上传失败会删除已上传对象和新相册。今日穿搭仍保留独立创建弹层。
 
-小站顶层导航按照新版设计映射为“第一面 / 生活 / 成果 / 生态 / 其他”：第一面保留个人主页与形象模块，生活承载动态时间线并在“正在发生”入口发布动态，成果只汇总真实内容产出，生态承载 AI 伙伴能力，既有社交关系归入其他。底部导航仅保留“妙讯 / 小站”两项，不再显示中央发布按钮。
+小站顶层导航按照新版设计映射为“第一面 / 生活 / 成果 / 生态 / 其他”：第一面保留个人主页与形象模块，生活承载动态时间线并在“正在发生”入口发布动态，成果只汇总真实内容产出，生态承载 AI 伙伴能力，既有社交关系归入其他。当前底部导航为“妙 / 讯 / 我”，小站内容保留在“我”页，不再显示中央发布按钮。
 
 小站浅色模式使用独立的设计色解析：页面底色 `#F8F7FD`、内容板块 `#FFFFFF`、辅助底色 `#F4F6FF`、分隔色 `#F0EBFD`、标签边框 `#DBE2FF`、强调色 `#2012D9`。妙讯管家可使用已确认的专属图标；其他动态 Agent 默认读取注册层的 `identity` 标记，正式图标到位后再按 `agentId` 显式替换，不把设计示例头像映射成真实 Agent。
 
@@ -165,23 +170,27 @@ xcrun devicectl device process launch \
   com.wangruoshi.miaoxun
 ```
 
-Android 构建必须显式提供 API 地址；连接正式 API 时：
+Android候选默认版本为Build48并使用同一正式API。在 `MiaoxunRN/android` 中构建：
 
 ```sh
-./gradlew assembleDebug \
-  -PMIAOXUN_API_BASE_URL=https://8.153.167.11 \
-  -PMIAOXUN_VERSION_CODE=<version_code>
+./gradlew assembleDebug
 ```
 
-真机或 Android 需要隔离验证本地后端时，显式改用 `http://<MAC_LAN_IP>:4390`，并确保设备可访问该开发服务。
+构建参数仍可显式传入 `MIAOXUN_API_BASE_URL`、`MIAOXUN_VERSION_CODE` 和 `MIAOXUN_VERSION_NAME`；后续版本递增需同步iOS与Android发布计划。真机或Android做隔离后端验证时，必须明确配置设备可访问的origin；仅绑定本机的4391验证服务不能直接作为真机LAN服务使用。
 
-Android Release 构建还必须显式提供正整数 `MIAOXUN_VERSION_CODE` 和正式签名参数，并且
-当前媒体检索版本要求 `MIAOXUN_VERSION_CODE >= 45`。`MIAOXUN_API_BASE_URL` 必须是公网
+Android Release构建必须显式提供正式签名参数，版本码必须为正整数，
+Build 47 已占用，Android Release 要求 `MIAOXUN_VERSION_CODE >= 48`。`MIAOXUN_API_BASE_URL` 必须是公网
 HTTPS origin，不能使用 localhost 或 loopback URL。可参考：
 
 ```text
 android/release-signing.properties.example
 ```
+
+iOS/Android Release 共用仓库 `scripts/validate-release-api-origin.mjs`：允许公网 IPv4、普通全球单播 IPv6
+和标准域名，拒绝本地/保留地址、特殊本地域名、用户信息、非根路径、查询、片段和非法端口。
+该构建检查不做 DNS 或 TLS 探测，正式目标仍须运行生产只读预检。
+iOS 从 `.xcode.env` 与可选 `.xcode.env.local` 读取 `NODE_BINARY`，Android 使用 React Native 的
+`nodeExecutableAndArgs`；必须从完整仓库构建。Debug 仍支持显式指定本地开发 API。
 
 iOS 依赖同步使用项目内 Bundler：
 
@@ -192,9 +201,15 @@ bundle exec pod install
 
 首次安装后，如果 iOS 阻止启动，需要在 iPhone 的“设置 -> 通用 -> VPN 与设备管理”中信任 Apple Development 开发者证书，再重新启动 App。
 
-## 迁移原则
+## 开发原则
 
-1. 先保留 Swift 原型可运行。
-2. 新能力优先在 RN 目录实现。
-3. 后端接口和数据结构尽量不变。
-4. 原生能力用桥接层接入，不重写后端。
+1. RN是唯一正式移动端主线，不恢复已移除的SwiftUI原型。
+2. 新能力优先在RN业务层实现，原生能力通过薄桥接接入。
+3. 合同变更同步后端、迁移、客户端和测试；不增加旧接口静默兜底。
+4. 以真实数据和显式状态验收，保留现有用户内容。
+
+## 结构化页面与完整预览
+
+2026-10-12：新建站页面通过 `features/site-document` 的同一RN渲染器完成草稿和当前保存页面的全屏查看，合同共用仓库 `shared/site-document.js`。Metro只额外纳入shared目录，并显式从移动端node_modules解析共享代码的转换运行库。生成/确认先检查会话的 `siteDocuments:2`，资源通过本人文档接口精确读取，预览双hash匹配才允许保存。
+
+当前已在 `agent-preview-20261013-02` / 038与固定iPhone17配套启用。页面中所有图片实例实际加载成功后才允许标记已审阅；失败、重试或已发现资源不可用会撤销审阅，迟到响应按当前会话/文档/hash隔离。正常关闭已完成审阅的预览后，仍需用户回到任务明确确认保存。实现依据见[结构页面记录](../docs/reviews/2026-10-12-structured-pages.md)和[图片预览门禁](../docs/handoffs/2026-10-14-build48-history.md)，本轮实际发布状态见[Build46记录](../docs/reviews/2026-10-13-testflight-46.md)。

@@ -1,41 +1,33 @@
 # 妙讯文档索引
 
-`README.md` 是仓库入口；本页说明各文档的用途。现行行为以代码、数据库迁移、运行配置和最近
-一次验证为准。带日期的交接、审查和发布记录是当时证据，不是当前操作指令。
+现状只维护在[当前交接](handoffs/CURRENT.md)。开始工作先读仓库`AGENTS.md`、根`README.md`和该交接，再核对Git与运行环境。带日期的记录只证明当时发生的事，不代表现在已验收或新操作授权。
 
-新对话先读 [当前交接入口](handoffs/CURRENT.md) 和仓库根目录的 `AGENTS.md`，再核对 Git 与运行环境。
+## 产品与实现
 
-## 当前工程
+当前为Build48配套、039和合同1/2/3；2026-10-15只读运行核验正常，整体产品仍有协作续作、成果展示和设计一致性缺口。详细结论、清理结果及后续完成标准见[当前交接](handoffs/CURRENT.md)。
 
-- [架构说明](architecture.md)：运行单元、调用链与数据边界。
-- [项目结构说明](project-structure.md)：目录与关键文件职责。
-- [开发规范](development-standards.md)：真实数据、错误状态和变更要求。
-- [React Native 工程说明](../MiaoxunRN/README.md)、[iOS 配置与历史](ios.md)：客户端构建和原生边界。
-- [Agent 接入](agents.md)、[Agent SOP](agent-sop/README.md)：注册、授权与能力交付。
-- [社交关系](social-graph.md)、[小站能力](station-feature-closure.md)：业务状态与未闭环能力。
-- [媒体检索产品合同](media-retrieval-product-handoff.md)：后端、RN 和运营控制的接口边界。
-- [相册对话检索](agents/album-assistant.md)：当前会话入口、统一授权、受控工具、增量索引及迁移 035。
-- [检索发布证据](agents/media-retrieval/release-evidence.md)：当前原画面修复、独立质量评测、真实 HTTP 验收及历史失败边界。
-- [本轮冗余清理](reviews/2026-10-10-redundancy-cleanup.md)：代码引用、文件、Git 分支及生产恢复依赖的清理依据。
+- **[项目地图](project-map.md)**：页面/模块清单、Agent功能现状、设计对照、清理候选及改动范围估计。完整了解项目从这里开始。
+- [架构与项目结构](architecture.md)、[开发规范](development-standards.md)：目录职责、服务边界与真实数据原则。
+- [Agent工作空间](agent-workspace-architecture.md)：动态选人、授权、交接及尚未实现的能力。
+- [统一AI交互](ai-interaction-system.md)：消息、持久任务、澄清、成果预览和确认合同。
+- [Agent接入](agents.md)、[Agent SOP](agent-sop/README.md)、[模型配置代码入口](agent-model-configuration.md)：能力声明、执行器与共享供应商配置。
+- [相册Agent](agents/album-assistant.md)、[媒体检索合同](media-retrieval-product-handoff.md)、[检索验证记录](agents/media-retrieval/release-evidence.md)：素材权限、索引、对话检索及验收边界。
+- [社交关系](social-graph.md)、[小站能力与缺口](station-feature-closure.md)：真实接口及尚未完成的功能。
+- [设计资产映射](app-design-assets.md)：资产来源与缺口；有日期的映射不代表当前全App已还原设计。
 
-## 发布与运维
+## 开发与运维
 
-- [移动端上线清单](mobile-launch-checklist.md)：功能分级与发布门槛。
-- [部署说明](deployment.md)：部署顺序、运行目录和按日期记录的发布证据。
-- [TestFlight Build45发布记录](reviews/2026-10-10-testflight-45.md)：正式签名、来源一致性、上传及可测试状态证据。
-- [生产运维入口](production-operations.md)：负责人入口与凭据位置，不记录凭据值。
-- [数据库说明](database.md)、[迁移指南](database-migration.md)、[备份与恢复](database-backup.md)：数据库运行与回滚边界。
-- [数据库恢复负责人手册](database-recovery-owner-guide.md)：隔离恢复和保管流程。
-- [管理后台](admin.md)：内部账号、权限和管理 API。
+- [固定iPhone17联调](local-development-preview.md)、[React Native说明](../MiaoxunRN/README.md)、[iOS配置](ios.md)：唯一日常App、构建和设备验收边界。
+- [部署说明](deployment.md)、[生产运维入口](production-operations.md)：当前运行入口、制品与服务操作；先核对当前交接，旧发布段落按日期解释。
+- [数据库与迁移](database.md)、[备份恢复](database-backup.md)、[恢复负责人手册](database-recovery-owner-guide.md)。
+- [管理后台](admin.md)、[移动端上线清单](mobile-launch-checklist.md)。
 
-## 历史材料
+## 历史证据
 
-- [早期产品需求草稿](../开发需求.md)：保留产品愿景，不作为现行技术栈或功能完成状态的依据。
-- `handoffs/`：跨对话和跨人员交接，按文件日期解释当时状态。
-- `reviews/`：一次性审查、发布证据和未闭环问题；后续修复不重写历史结论。
-- `superpowers/`：已执行或待执行的设计与计划，不作为当前上线状态证明。
-- `agents/media-retrieval/`：媒体检索专项评估和安全证据。
+- [Build48及此前实施、恢复与验证](handoffs/2026-10-14-build48-history.md)：由旧CURRENT迁出，保留证据；其中“下一步”均为当时安排。
+- [Build47上传与模型验证](reviews/2026-10-13-butler-live-release.md)、[038配套与Build46](reviews/2026-10-13-testflight-46.md)、[Build45](reviews/2026-10-10-testflight-45.md)：历史制品与发布记录，不代表当前分发状态。
+- [旧测试账号清理](reviews/2026-10-12-test-account-cleanup.md)、[旧冗余清理](reviews/2026-10-10-redundancy-cleanup.md)：仅覆盖各次明确范围，不代表全项目已清理。
+- `reviews/`、`handoffs/`、`superpowers/`：保留已有审查、历史交接和实施计划，具体结论须结合日期与当前代码。
+- [早期产品需求](../开发需求.md)：愿景材料，不是现行技术栈或完成状态。
 
-早期 Demo 迁移计划已不再描述正式 App，其历史内容仍可从 Git 追溯；正式移动端只有
-`MiaoxunRN/`。迁移 SQL、App 内嵌查看器和 iOS 资源中看似重复的文件可能参与校验或构建，
-清理前须核对其运行入口与发布合同。
+迁移SQL、构建依赖、App内嵌查看器、签名制品及恢复资料不能仅因文件多或看似重复而删除。已不再使用的缓存、进程、代码路径应先核对引用和来源，再按明确范围清理。

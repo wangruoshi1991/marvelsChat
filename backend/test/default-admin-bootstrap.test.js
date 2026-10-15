@@ -11,7 +11,7 @@ const defaultAdmin = {
   resetPasswordOnBootstrap: false,
 };
 
-const createConnection = ({ users = [], thread = [], message = [] } = {}) => {
+const createConnection = ({ users = [] } = {}) => {
   const calls = [];
   return {
     calls,
@@ -20,37 +20,41 @@ const createConnection = ({ users = [], thread = [], message = [] } = {}) => {
         calls.push({ sql, params });
         if (sql.includes("FROM users")) return [users];
         if (sql.includes("nextval")) return [[{ value: "42" }]];
-        if (sql.includes("FROM chat_threads")) return [thread];
-        if (sql.includes("FROM chat_messages")) return [message];
         return [[]];
       },
     },
   };
 };
 
-test("bootstrap creates the admin and all required experience records", async () => {
+test("bootstrap creates administrator profile records without granting an Agent", async () => {
   const { calls, connection } = createConnection();
 
   const result = await bootstrapDefaultAdmin(connection, defaultAdmin);
 
   assert.equal(result.created, true);
   assert.match(result.userId, /^[0-9a-f-]{36}$/);
-  const userInsert = calls.find((call) => call.sql.includes("INSERT INTO users"));
+  const userInsert = calls.find((call) =>
+    call.sql.includes("INSERT INTO users")
+  );
   assert.ok(userInsert);
   assert.match(userInsert.params[3], /^pbkdf2\$/);
   assert.match(userInsert.params[5], /^000042\d{6}$/);
-  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO user_profiles")));
-  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO profile_visibility")));
-  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO user_agents")));
-  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO chat_threads")));
-  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO chat_messages")));
+  assert.ok(
+    calls.some((call) => call.sql.includes("INSERT INTO user_profiles"))
+  );
+  assert.ok(
+    calls.some((call) => call.sql.includes("INSERT INTO profile_visibility"))
+  );
+  assert.ok(
+    calls.every(
+      (call) => !/user_agents|chat_threads|chat_messages/.test(call.sql)
+    )
+  );
 });
 
 test("bootstrap updates an existing admin without silently resetting its password", async () => {
   const { calls, connection } = createConnection({
     users: [{ id: "existing-user" }],
-    thread: [{ id: "existing-thread" }],
-    message: [{ id: "existing-message" }],
   });
 
   const result = await bootstrapDefaultAdmin(connection, defaultAdmin);
@@ -59,8 +63,15 @@ test("bootstrap updates an existing admin without silently resetting its passwor
   const userUpdate = calls.find((call) => call.sql.includes("UPDATE users"));
   assert.ok(userUpdate);
   assert.doesNotMatch(userUpdate.sql, /password_hash/);
-  assert.ok(calls.some((call) => call.sql.includes("UPDATE chat_threads")));
-  assert.ok(calls.some((call) => call.sql.includes("UPDATE chat_messages")));
+  assert.ok(
+    calls.every(
+      (call) => !/user_agents|chat_threads|chat_messages/.test(call.sql)
+    )
+  );
+  const profile = calls.find((call) =>
+    call.sql.includes("INSERT INTO user_profiles")
+  );
+  assert.match(profile.sql, /ON CONFLICT \(user_id\) DO NOTHING/);
 });
 
 test("bootstrap refuses to merge accounts that separately match login and email", async () => {
@@ -70,6 +81,6 @@ test("bootstrap refuses to merge accounts that separately match login and email"
 
   await assert.rejects(
     () => bootstrapDefaultAdmin(connection, defaultAdmin),
-    /belong to different accounts/,
+    /belong to different accounts/
   );
 });

@@ -1,11 +1,12 @@
-import { Palette, palettes } from '../../shared/theme';
+import { Palette, palettes, productColors } from '../../shared/theme';
 
 const messageLightPalette: Partial<Palette> = {
-  background: '#ffffff',
-  border: '#F0EBFD',
-  input: '#ffffff',
-  soft: '#F8F7FD',
-  surface: '#ffffff',
+  background: productColors.surface,
+  border: productColors.border,
+  input: productColors.surface,
+  soft: productColors.background,
+  surface: productColors.surface,
+  mint: productColors.accent,
 };
 
 export function resolveMessagePalette(palette: Palette): Palette {

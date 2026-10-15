@@ -72,12 +72,14 @@ export const profileApi = {
     enabled: boolean,
     albumAIConsentVersion?: string,
     idempotencyKey?: string,
+    grantedScopes?: string[],
   ) {
     return request<OwnedAgentDTO>(`/api/me/agents/${agentId}`, {
       method: 'PATCH',
       token,
       body: {
         enabled,
+        ...(grantedScopes !== undefined ? { grantedScopes } : {}),
         ...(albumAIConsentVersion ? { albumAIConsentVersion } : {}),
       },
       ...(idempotencyKey

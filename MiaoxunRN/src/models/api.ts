@@ -1,3 +1,5 @@
+import type { AIContextReference, AITaskDTO } from './aiTask';
+
 export type APIEnvelope<T> = {
   data: T;
 };
@@ -74,7 +76,7 @@ export type ProfileDTO = ProfileIdentityDTO & {
     language?: 'zh' | 'en';
     appearance?: 'light' | 'dark';
     siteDraftId?: string;
-    siteLayout?: StationSiteDraftContentDTO;
+    siteLayout?: unknown;
   };
 };
 
@@ -151,11 +153,18 @@ export type ThreadDTO = {
 export type MessageDTO = {
   id: string;
   threadId: string;
-  userId?: string | null;
   senderType: 'user' | 'agent' | 'system' | string;
   senderName: string;
   content: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & {
+    contextRefs?: AIContextReference[];
+    agentWorkspace?: { id: string };
+    butlerClarification?: {
+      contextRefs: AIContextReference[];
+      source: { currentPage: string };
+    };
+    butlerContextReset?: boolean;
+  };
   clientMessageId?: string | null;
   deletedAt?: string | null;
   recalledAt?: string | null;
@@ -436,39 +445,11 @@ export type StationMediaUploadDTO = {
 
 export type StationSiteDraftDTO = {
   id: string;
-  userId?: string;
-  prompt: string;
-  draft: StationSiteDraftContentDTO;
-  source: string;
-  status?: string;
-  modelProvider?: string;
-  modelMissing?: string[];
-  modelError?: string;
-  createdAt?: string | null;
-  updatedAt?: string | null;
-};
-
-type StationSiteDraftContentDTO = {
-  version?: number;
-  language?: 'zh' | 'en';
-  title?: string;
-  theme?: string;
-  summary?: string;
-  sections?: StationSiteSectionDTO[];
-};
-
-export type StationSiteSectionDTO = {
-  type?: string;
-  title?: string;
-  subtitle?: string;
-  body?: string;
-  assetIds?: string[];
-  diaryEntryIds?: string[];
-  actions?: Array<{
-    label?: string;
-    kind?: string;
-    href?: string;
-  }>;
+  title: string;
+  source: 'model';
+  status: 'draft' | 'applied' | 'archived';
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 export type Avatar3DQualityPresetId = 'standard' | 'ultra';
@@ -643,15 +624,6 @@ export type StationFileAssetDTO = {
   updatedAt?: string | null;
 };
 
-export type StationAlbumSuggestionDTO = {
-  title: string;
-  description: string;
-  visibility?: StationVisibility;
-  mediaAssetIds: string[];
-  reason?: string;
-  tags?: string[];
-};
-
 export type StationComicDiaryDTO = {
   id: string;
   userId?: string;
@@ -664,7 +636,6 @@ export type StationComicDiaryDTO = {
   frames: Array<Record<string, unknown>>;
   summary: string;
   status?: string;
-  metadata?: Record<string, unknown>;
   createdAt?: string | null;
   updatedAt?: string | null;
 };
@@ -691,6 +662,11 @@ export type StationVideoDraftDTO = {
 };
 
 export type BootstrapDTO = {
+  contracts?: {
+    aiTasks?: number;
+    siteDocuments?: number;
+    agentWorkspaces?: number;
+  };
   serverTime: string;
   user: UserDTO;
   profile: ProfileDTO;
@@ -736,22 +712,9 @@ export type ButlerClientContextPayload = {
   enabledAgentIds: string[];
 };
 
-export type ButlerLocalActionResultPayload = {
-  type: string;
-  status: 'applied' | 'rejected' | 'unsupported';
-  message: string;
-};
-
 export type SendMessageResponse = {
+  task?: AITaskDTO;
   messages: MessageDTO[];
-  agentRun?: {
-    id: string;
-    agentId: string;
-    status: string;
-    provider: string;
-    latencyMs?: number | null;
-    tokenTotal?: number | null;
-  } | null;
 };
 
 export type AuthResponse = {

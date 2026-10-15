@@ -18,6 +18,8 @@ import { installGracefulShutdown } from "./server-shutdown.js";
 import { registerAdminRoutes } from "./routes/admin-routes.js";
 import { registerAccountRoutes } from "./routes/account-routes.js";
 import { registerAgentRunRoutes } from "./routes/agent-run-routes.js";
+import { registerAITaskRoutes } from "./routes/ai-task-routes.js";
+import { registerAgentWorkspaceRoutes } from "./routes/agent-workspace-routes.js";
 import { registerAppRoutes } from "./routes/app-routes.js";
 import { registerAuthRoutes } from "./routes/auth-routes.js";
 import { registerAvatar3dAppRoutes } from "./routes/avatar-3d-app-routes.js";
@@ -115,6 +117,8 @@ registerMessageRoutes(app, {
 registerStationRoutes(app, { authenticate, asyncHandler });
 
 registerAgentRunRoutes(app, { authenticate, asyncHandler });
+registerAITaskRoutes(app, { authenticate, asyncHandler });
+registerAgentWorkspaceRoutes(app, { authenticate, asyncHandler });
 
 registerEventRoutes(app, { authenticate, asyncHandler });
 

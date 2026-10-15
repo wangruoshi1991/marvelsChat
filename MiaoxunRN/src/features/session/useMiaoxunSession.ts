@@ -21,6 +21,10 @@ import {
 } from '../../services/apiClient';
 import { avatar3dAttemptStore } from '../../services/avatar3dAttemptStore';
 import { tokenStore } from '../../services/tokenStore';
+import {
+  clearAIContractSession,
+  setAIContractSession,
+} from '../../services/aiContract';
 import { Appearance } from '../../shared/theme';
 import {
   defaultProfileVisibility,
@@ -44,8 +48,12 @@ import {
 import { useSocialActions } from './useSocialActions';
 import { useSessionSetter } from './useSessionSetter';
 import { useStationActions } from './useStationActions';
-import { albumAssistantConsent } from '../station/albumAssistantAuthorization';
+import {
+  AlbumAIConsentVersion,
+  albumAssistantConsent,
+} from '../station/albumAssistantAuthorization';
 import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
+import { agentAccessSnapshot } from '../agents/agentAccess';
 
 export type { ChatMessage, ChatThread, Language } from './sessionTypes';
 
@@ -98,6 +106,23 @@ export function useMiaoxunSession() {
   const activeThreadIdRef = useRef<string | null>(null);
   const tokenRef = useRef('');
   const sessionVersionRef = useRef(0);
+  const agentAccessGenerationRef = useRef(0);
+  const agentAccessBlockedRef = useRef(false);
+  const agentAccessPendingRef = useRef(new Set<string>());
+  const agentAccessAliveRef = useRef(true);
+  const agentAccessStateRef = useRef({ agents, ownedAgents });
+  agentAccessStateRef.current = { agents, ownedAgents };
+  const accessStateSnapshot = agentAccessSnapshot(agents, ownedAgents);
+  const accessStateRevisionRef = useRef({
+    snapshot: accessStateSnapshot,
+    value: 0,
+  });
+  if (accessStateRevisionRef.current.snapshot !== accessStateSnapshot) {
+    accessStateRevisionRef.current = {
+      snapshot: accessStateSnapshot,
+      value: accessStateRevisionRef.current.value + 1,
+    };
+  }
   const profileRevisionRef = useRef(0);
   const lastSyncAtRef = useRef<string | null>(null);
   const bootstrapPromiseRef = useRef<{
@@ -107,6 +132,13 @@ export function useMiaoxunSession() {
   const syncPromiseRef = useRef<Promise<void> | null>(null);
   const sessionExpiryPromiseRef = useRef<Promise<void> | null>(null);
   const expiredTokenRef = useRef('');
+
+  useEffect(() => {
+    agentAccessAliveRef.current = true;
+    return () => {
+      agentAccessAliveRef.current = false;
+    };
+  }, []);
 
   const setSessionUser = useSessionSetter(token, tokenRef, setUser);
   const setSessionProfile = useSessionSetter(token, tokenRef, setProfile);
@@ -162,6 +194,7 @@ export function useMiaoxunSession() {
   );
 
   const updateToken = useCallback((nextToken: string) => {
+    clearAIContractSession();
     sessionVersionRef.current += 1;
     profileRevisionRef.current = 0;
     bootstrapPromiseRef.current = null;
@@ -241,6 +274,7 @@ export function useMiaoxunSession() {
       bootstrap: BootstrapDTO,
       requestedProfileRevision = profileRevisionRef.current,
     ) => {
+      setAIContractSession(tokenRef.current, bootstrap.contracts);
       // A bootstrap started before a confirmed save must not restore its older profile snapshot.
       const profileChanged =
         requestedProfileRevision !== profileRevisionRef.current;
@@ -599,33 +633,96 @@ export function useMiaoxunSession() {
   );
 
   const setAgentEnabled = useCallback(
-    async (agentId: string, enabled: boolean) => {
-      if (!token) {
+    async (
+      agentId: string,
+      enabled: boolean,
+      grantedScopes?: string[],
+      confirmedAlbumConsent?: AlbumAIConsentVersion,
+    ) => {
+      if (!token || tokenRef.current !== token) {
         throw new Error('请先登录。');
       }
-      const consentVersion =
-        agentId === 'album-manager' && enabled
-          ? await albumAssistantConsent(token, language)
-          : undefined;
-      const updated = await apiClient.setAgentEnabled(
-        token,
-        agentId,
-        enabled,
-        consentVersion,
-        createIdempotencyKey(),
-      );
-      setSessionOwnedAgents(current => {
-        const remaining = current.filter(agent => agent.id !== updated.id);
-        return updated.enabled ? [...remaining, updated] : remaining;
-      });
-      await refreshBootstrap(token, false);
-      return updated;
+      if (agentAccessBlockedRef.current)
+        throw new Error('账号正在退出或注销，请稍后重试。');
+      const agent = agents.find(item => item.key === agentId);
+      if (!agent) throw new Error('Agent 已不可用，请刷新后重试。');
+      // Capture the scopes shown by this client. Server registry additions must
+      // never expand an already confirmed grant while the request is in flight.
+      if (enabled && !Array.isArray(grantedScopes))
+        throw new Error('请先查看并确认 Agent 的授权范围。');
+      const scopes = enabled ? [...grantedScopes!] : [];
+      const confirmedState = agentAccessSnapshot(agents, ownedAgents);
+      const confirmedRevision = accessStateRevisionRef.current.value;
+      const isAccessCurrent = () =>
+        confirmedRevision === accessStateRevisionRef.current.value &&
+        confirmedState ===
+          agentAccessSnapshot(
+            agentAccessStateRef.current.agents,
+            agentAccessStateRef.current.ownedAgents,
+          );
+      const version = sessionVersionRef.current;
+      const generation = agentAccessGenerationRef.current;
+      const isCurrent = () =>
+        agentAccessAliveRef.current &&
+        !agentAccessBlockedRef.current &&
+        tokenRef.current === token &&
+        sessionVersionRef.current === version &&
+        agentAccessGenerationRef.current === generation;
+      const assertCurrent = () => {
+        if (!isCurrent())
+          throw new Error('账号状态已变化，已取消 Agent 授权操作。');
+      };
+      const key = `${token}:${agentId}`;
+      if (agentAccessPendingRef.current.has(key))
+        throw new Error('此 Agent 授权正在更新，请稍后查看。');
+      agentAccessPendingRef.current.add(key);
+      try {
+        assertCurrent();
+        const consentVersion =
+          agentId === 'album-manager' && enabled
+            ? await albumAssistantConsent(
+                token,
+                language,
+                () => isCurrent() && isAccessCurrent(),
+                confirmedAlbumConsent,
+              )
+            : undefined;
+        assertCurrent();
+        if (!isAccessCurrent())
+          throw new Error('Agent 信息或授权已更新，请重新查看范围后确认。');
+        const updated = await apiClient.setAgentEnabled(
+          token,
+          agentId,
+          enabled,
+          consentVersion,
+          createIdempotencyKey(),
+          scopes,
+        );
+        assertCurrent();
+        setSessionOwnedAgents(current => {
+          const remaining = current.filter(item => item.id !== updated.id);
+          return updated.enabled ? [...remaining, updated] : remaining;
+        });
+        await refreshBootstrap(token, false);
+        assertCurrent();
+        return updated;
+      } finally {
+        agentAccessPendingRef.current.delete(key);
+      }
     },
-    [language, refreshBootstrap, setSessionOwnedAgents, token],
+    [
+      agents,
+      ownedAgents,
+      language,
+      refreshBootstrap,
+      setSessionOwnedAgents,
+      token,
+    ],
   );
 
   const {
     sendMessage,
+    refreshThreadMessages,
     deleteMessage,
     recallMessage,
     markThreadRead,
@@ -641,15 +738,21 @@ export function useMiaoxunSession() {
   });
 
   const signOut = useCallback(async () => {
+    agentAccessGenerationRef.current += 1;
+    agentAccessBlockedRef.current = true;
     const currentToken = token;
-    if (currentToken) {
-      await apiClient.logout(currentToken).catch(() => undefined);
+    try {
+      if (currentToken) {
+        await apiClient.logout(currentToken).catch(() => undefined);
+      }
+      await clearLocalSession({ requireTokenClear: true });
+      updateToken('');
+      resetAuthenticatedState();
+      setErrorMessage(null);
+      setRestoreStatus('signedOut');
+    } finally {
+      agentAccessBlockedRef.current = false;
     }
-    await clearLocalSession({ requireTokenClear: true });
-    updateToken('');
-    resetAuthenticatedState();
-    setErrorMessage(null);
-    setRestoreStatus('signedOut');
   }, [resetAuthenticatedState, token, updateToken]);
 
   const deleteAccount = useCallback(
@@ -659,6 +762,8 @@ export function useMiaoxunSession() {
         throw new Error('请先登录。');
       }
 
+      agentAccessGenerationRef.current += 1;
+      agentAccessBlockedRef.current = true;
       setIsBusy(true);
       setErrorMessage(null);
       try {
@@ -673,6 +778,7 @@ export function useMiaoxunSession() {
         );
         throw error;
       } finally {
+        agentAccessBlockedRef.current = false;
         setIsBusy(false);
       }
     },
@@ -734,18 +840,14 @@ export function useMiaoxunSession() {
     deleteStationMediaAsset,
     createStationOutfit,
     createStationSiteDraft,
-    applyStationSiteDraft,
     createStationFileAsset,
-    preprocessStationFileAsset,
     createStationComicDiary,
     deleteStationComicDiary,
-    createStationVideoDraft,
     resolveLocation,
   } = useStationActions({
     token,
     avatarConfig: profile.avatarConfig,
     setStationContent: setSessionStationContent,
-    setProfile: setSessionProfile,
   });
 
   return {
@@ -780,6 +882,7 @@ export function useMiaoxunSession() {
     refreshBootstrap,
     incrementalSync,
     sendMessage,
+    refreshThreadMessages,
     deleteMessage,
     recallMessage,
     markThreadRead,
@@ -823,12 +926,9 @@ export function useMiaoxunSession() {
     deleteStationMediaAsset,
     createStationOutfit,
     createStationSiteDraft,
-    applyStationSiteDraft,
     createStationFileAsset,
-    preprocessStationFileAsset,
     createStationComicDiary,
     deleteStationComicDiary,
-    createStationVideoDraft,
     resolveLocation,
     updateProfileVisibility,
     updatePresence,

@@ -1,10 +1,21 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
-import type { AppSyncDTO, BootstrapDTO, ProfileDTO } from '../src/models/api';
+import type {
+  AgentDTO,
+  AppSyncDTO,
+  BootstrapDTO,
+  OwnedAgentDTO,
+  ProfileDTO,
+} from '../src/models/api';
 import { avatar3dAttemptStore } from '../src/services/avatar3dAttemptStore';
 import { apiClient } from '../src/services/apiClient';
 import { tokenStore } from '../src/services/tokenStore';
 import { useMiaoxunSession } from '../src/features/session/useMiaoxunSession';
+import { albumAssistantConsent } from '../src/features/station/albumAssistantAuthorization';
+import {
+  assertAIContract,
+  clearAIContractSession,
+} from '../src/services/aiContract';
 
 jest.mock('../src/services/apiClient', () => ({
   apiClient: {
@@ -20,6 +31,7 @@ jest.mock('../src/services/apiClient', () => ({
     stationContent: jest.fn(),
     updateProfile: jest.fn(),
     updateStationConfig: jest.fn(),
+    setAgentEnabled: jest.fn(),
   },
   buildRealtimeUrl: (path: string) => `ws://127.0.0.1:4390${path}`,
   setAuthSessionExpiredHandler: () => () => undefined,
@@ -30,6 +42,10 @@ jest.mock('../src/services/apiClient', () => ({
         'status' in error &&
         error.status === 401,
     ),
+}));
+
+jest.mock('../src/features/station/albumAssistantAuthorization', () => ({
+  albumAssistantConsent: jest.fn(),
 }));
 
 jest.mock('../src/services/avatar3dAttemptStore', () => ({
@@ -51,7 +67,11 @@ const mockedAvatar3dAttemptStore = avatar3dAttemptStore as jest.Mocked<
   typeof avatar3dAttemptStore
 >;
 const mockedTokenStore = tokenStore as jest.Mocked<typeof tokenStore>;
+const mockedAlbumConsent = jest.mocked(albumAssistantConsent);
 let currentSession: ReturnType<typeof useMiaoxunSession> | null = null;
+let currentWorkspaceAccess:
+  | ReturnType<typeof useMiaoxunSession>['setAgentEnabled']
+  | null = null;
 
 class MockWebSocket {
   static instances: MockWebSocket[] = [];
@@ -141,9 +161,72 @@ const bootstrap: BootstrapDTO = {
   modules: {},
 };
 
-function SessionHarness() {
-  currentSession = useMiaoxunSession();
+function AuthorizationWorkspace({
+  setAgentEnabled,
+}: {
+  setAgentEnabled: ReturnType<typeof useMiaoxunSession>['setAgentEnabled'];
+}) {
+  currentWorkspaceAccess = setAgentEnabled;
   return null;
+}
+
+function SessionHarness({ workspaceKey }: { workspaceKey?: string } = {}) {
+  currentSession = useMiaoxunSession();
+  return workspaceKey ? (
+    <AuthorizationWorkspace
+      key={workspaceKey}
+      setAgentEnabled={currentSession.setAgentEnabled}
+    />
+  ) : null;
+}
+
+// Authorization fixtures are isolated from the existing empty-registry tests.
+function authorizationBootstrap(): BootstrapDTO {
+  const registered: AgentDTO[] = [
+    {
+      key: 'album-manager',
+      name: '相册管理',
+      version: '0.2.3',
+      category: 'media-management',
+      description: '相册管理',
+      capabilities: [],
+      permissions: ['album:read'],
+      status: 'registered',
+    },
+    {
+      key: 'site-builder',
+      name: '建站',
+      version: '0.1.0',
+      category: 'station-builder',
+      description: '建站',
+      capabilities: [],
+      permissions: ['station:read'],
+      status: 'registered',
+    },
+  ];
+  return { ...bootstrap, agents: { registered, owned: [] } };
+}
+
+function accessGrant(
+  agent: AgentDTO,
+  grantedScopes = agent.permissions,
+): OwnedAgentDTO {
+  return {
+    id: agent.key,
+    name: agent.name,
+    description: agent.description,
+    category: agent.category,
+    enabled: true,
+    grantedScopes: [...grantedScopes],
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(finish => {
+    resolve = finish;
+  });
+  return { promise, resolve };
 }
 
 async function flushEffects() {
@@ -154,9 +237,11 @@ async function flushEffects() {
 
 describe('session synchronization', () => {
   beforeEach(() => {
+    clearAIContractSession();
     jest.restoreAllMocks();
     jest.clearAllMocks();
     currentSession = null;
+    currentWorkspaceAccess = null;
     MockWebSocket.instances = [];
     Object.defineProperty(globalThis, 'WebSocket', {
       configurable: true,
@@ -170,6 +255,8 @@ describe('session synchronization', () => {
     mockedApiClient.bootstrap.mockResolvedValue(bootstrap);
     mockedApiClient.updateProfile.mockResolvedValue(bootstrap.profile);
     mockedApiClient.updateStationConfig.mockResolvedValue(bootstrap.profile);
+    mockedApiClient.setAgentEnabled.mockReset();
+    mockedAlbumConsent.mockReset().mockResolvedValue(undefined);
     mockedApiClient.logout.mockResolvedValue({ ok: true });
     mockedApiClient.login.mockResolvedValue({
       user: bootstrap.user,
@@ -191,6 +278,32 @@ describe('session synchronization', () => {
       unreadNoticeCount: 0,
       serverTime: '2026-07-10T06:00:01.000Z',
     });
+  });
+
+  test('old bootstrap keeps login available while AI contract follows refresh and account changes', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    expect(currentSession?.user?.id).toBe(bootstrap.user.id);
+    expect(() => assertAIContract('saved-token')).toThrow('当前服务器不支持');
+    mockedApiClient.bootstrap.mockResolvedValue({
+      ...bootstrap,
+      contracts: { aiTasks: 1 },
+    });
+    await ReactTestRenderer.act(async () => {
+      await currentSession?.refreshBootstrap();
+    });
+    expect(() => assertAIContract('saved-token')).not.toThrow();
+    mockedApiClient.bootstrap.mockResolvedValue(bootstrap);
+    await ReactTestRenderer.act(async () => {
+      await currentSession?.signIn('fixed-user', 'test-only-password');
+    });
+    expect(currentSession?.token).toBe('new-token');
+    expect(() => assertAIContract('saved-token')).toThrow();
+    expect(() => assertAIContract('new-token')).toThrow();
+    await ReactTestRenderer.act(async () => renderer!.unmount());
   });
 
   test('connection.ready catches up once without rebuilding the socket', async () => {
@@ -219,6 +332,259 @@ describe('session synchronization', () => {
     await ReactTestRenderer.act(() => {
       renderer?.unmount();
     });
+  });
+
+  test('an authorization already in flight stays deduplicated after its workspace remounts', async () => {
+    const initial = authorizationBootstrap();
+    const grant = accessGrant(initial.agents.registered[1]);
+    const patch = deferred<OwnedAgentDTO>();
+    mockedApiClient.bootstrap.mockResolvedValue(initial);
+    mockedApiClient.setAgentEnabled.mockReturnValueOnce(patch.promise);
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <SessionHarness workspaceKey="first" />,
+      );
+      await flushEffects();
+    });
+    let first!: Promise<OwnedAgentDTO>;
+    ReactTestRenderer.act(() => {
+      first = currentWorkspaceAccess!('site-builder', true, ['station:read']);
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer?.update(<SessionHarness workspaceKey="remounted" />);
+      await flushEffects();
+    });
+    await ReactTestRenderer.act(async () => {
+      await expect(
+        currentWorkspaceAccess!('site-builder', true, ['station:read']),
+      ).rejects.toThrow('授权正在更新');
+    });
+    expect(mockedApiClient.setAgentEnabled).toHaveBeenCalledTimes(1);
+    mockedApiClient.bootstrap.mockResolvedValue({
+      ...initial,
+      agents: { ...initial.agents, owned: [grant] },
+    });
+    await ReactTestRenderer.act(async () => {
+      patch.resolve(grant);
+      await first;
+    });
+    expect(currentSession?.ownedAgents).toEqual([grant]);
+    await ReactTestRenderer.act(() => renderer?.unmount());
+  });
+
+  test('enabling without explicitly confirmed scopes is rejected before any network consent or PATCH', async () => {
+    mockedApiClient.bootstrap.mockResolvedValue(authorizationBootstrap());
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    await ReactTestRenderer.act(async () => {
+      await expect(
+        currentSession!.setAgentEnabled('album-manager', true),
+      ).rejects.toThrow('查看并确认');
+    });
+    expect(mockedAlbumConsent).not.toHaveBeenCalled();
+    expect(mockedApiClient.setAgentEnabled).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(() => renderer?.unmount());
+  });
+
+  test('confirmed scopes are copied before cloud consent and never expanded by a caller mutation', async () => {
+    const initial = authorizationBootstrap();
+    const grant = accessGrant(initial.agents.registered[0]);
+    const consent = deferred<'media-retrieval-consent-v1'>();
+    mockedApiClient.bootstrap.mockResolvedValue(initial);
+    mockedAlbumConsent.mockReturnValueOnce(consent.promise);
+    mockedApiClient.setAgentEnabled.mockResolvedValueOnce(grant);
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    const approved = ['album:read'];
+    let authorization!: Promise<OwnedAgentDTO>;
+    ReactTestRenderer.act(() => {
+      authorization = currentSession!.setAgentEnabled(
+        'album-manager',
+        true,
+        approved,
+        'media-retrieval-consent-v1',
+      );
+    });
+    approved.push('files:read');
+    expect(mockedAlbumConsent).toHaveBeenCalledWith(
+      'saved-token',
+      'zh',
+      expect.any(Function),
+      'media-retrieval-consent-v1',
+    );
+    await ReactTestRenderer.act(async () => {
+      consent.resolve('media-retrieval-consent-v1');
+      await authorization;
+    });
+    expect(mockedApiClient.setAgentEnabled).toHaveBeenCalledWith(
+      'saved-token',
+      'album-manager',
+      true,
+      'media-retrieval-consent-v1',
+      expect.any(String),
+      ['album:read'],
+    );
+    await ReactTestRenderer.act(() => renderer?.unmount());
+  });
+
+  test('registry or ownership changes during cloud consent invalidate the authorization', async () => {
+    const initial = authorizationBootstrap();
+    const grant = accessGrant(initial.agents.registered[0]);
+    const consent = deferred<'media-retrieval-consent-v1'>();
+    mockedApiClient.bootstrap.mockResolvedValue(initial);
+    mockedAlbumConsent.mockReturnValueOnce(consent.promise);
+    mockedApiClient.setAgentEnabled.mockResolvedValueOnce(grant);
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    const approvedScopes = ['album:read'];
+    let authorization!: Promise<OwnedAgentDTO>;
+    ReactTestRenderer.act(() => {
+      authorization = currentSession!.setAgentEnabled(
+        'album-manager',
+        true,
+        approvedScopes,
+      );
+    });
+    approvedScopes.push('files:read');
+    const newer = {
+      ...initial,
+      agents: {
+        registered: initial.agents.registered.map(agent =>
+          agent.key === 'album-manager'
+            ? {
+                ...agent,
+                version: '0.2.4',
+                permissions: ['album:read', 'files:read'],
+              }
+            : agent,
+        ),
+        owned: [grant],
+      },
+    };
+    mockedApiClient.bootstrap.mockResolvedValue(newer);
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.refreshBootstrap();
+    });
+    expect(
+      currentSession?.agents.find(agent => agent.key === 'album-manager')
+        ?.permissions,
+    ).toContain('files:read');
+    expect(mockedApiClient.setAgentEnabled).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(async () => {
+      consent.resolve('media-retrieval-consent-v1');
+      await expect(authorization).rejects.toThrow('重新查看范围后确认');
+    });
+    expect(mockedApiClient.setAgentEnabled).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(() => renderer?.unmount());
+  });
+
+  test('logout invalidates pending album consent before the server logout completes', async () => {
+    const consent = deferred<'media-retrieval-consent-v1'>();
+    const logout = deferred<{ ok: boolean }>();
+    mockedApiClient.bootstrap.mockResolvedValue(authorizationBootstrap());
+    mockedAlbumConsent.mockReturnValueOnce(consent.promise);
+    mockedApiClient.logout.mockReturnValueOnce(logout.promise);
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    let authorization!: Promise<unknown>;
+    ReactTestRenderer.act(() => {
+      authorization = currentSession!
+        .setAgentEnabled('album-manager', true, ['album:read'])
+        .catch(cause => cause);
+    });
+    const isCurrent = mockedAlbumConsent.mock.calls[0][2];
+    expect(isCurrent()).toBe(true);
+    let signOut!: Promise<void>;
+    ReactTestRenderer.act(() => {
+      signOut = currentSession!.signOut();
+    });
+    expect(currentSession?.token).toBe('saved-token');
+    expect(mockedTokenStore.clear).not.toHaveBeenCalled();
+    expect(isCurrent()).toBe(false);
+    let result: unknown;
+    await ReactTestRenderer.act(async () => {
+      consent.resolve('media-retrieval-consent-v1');
+      result = await authorization;
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('账号状态已变化'),
+      }),
+    );
+    expect(mockedApiClient.setAgentEnabled).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(async () => {
+      logout.resolve({ ok: true });
+      await signOut;
+    });
+    expect(currentSession?.token).toBe('');
+    await ReactTestRenderer.act(() => renderer?.unmount());
+  });
+
+  test('a late authorization PATCH cannot refresh or overwrite the next account', async () => {
+    const initial = authorizationBootstrap();
+    const oldGrant = accessGrant(initial.agents.registered[1]);
+    const patch = deferred<OwnedAgentDTO>();
+    mockedApiClient.bootstrap.mockResolvedValue(initial);
+    mockedApiClient.setAgentEnabled.mockReturnValueOnce(patch.promise);
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    let authorization!: Promise<unknown>;
+    ReactTestRenderer.act(() => {
+      authorization = currentSession!
+        .setAgentEnabled('site-builder', true, ['station:read'])
+        .catch(cause => cause);
+    });
+    expect(mockedApiClient.setAgentEnabled).toHaveBeenCalledTimes(1);
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.signOut();
+    });
+    const nextGrant = {
+      ...oldGrant,
+      name: '下一账号的建站助手',
+      grantedScopes: [],
+    };
+    const next = {
+      ...initial,
+      user: { ...initial.user, id: 'user-2', displayName: 'Next User' },
+      profile: { ...initial.profile, userId: 'user-2', nickname: 'Next User' },
+      agents: { ...initial.agents, owned: [nextGrant] },
+    };
+    mockedApiClient.bootstrap.mockResolvedValue(next);
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.signIn('next@example.com', 'password');
+    });
+    const bootstrapCount = mockedApiClient.bootstrap.mock.calls.length;
+    let result: unknown;
+    await ReactTestRenderer.act(async () => {
+      patch.resolve(oldGrant);
+      result = await authorization;
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('账号状态已变化'),
+      }),
+    );
+    expect(mockedApiClient.bootstrap).toHaveBeenCalledTimes(bootstrapCount);
+    expect(currentSession?.token).toBe('new-token');
+    expect(currentSession?.user?.id).toBe('user-2');
+    expect(currentSession?.ownedAgents).toEqual([nextGrant]);
+    await ReactTestRenderer.act(() => renderer?.unmount());
   });
 
   test('registration keeps the issued session when bootstrap fails and can retry', async () => {
@@ -467,13 +833,14 @@ describe('session synchronization', () => {
 
     await ReactTestRenderer.act(async () => {
       await currentSession!.signOut();
-      finishBootstrap(bootstrap);
+      finishBootstrap({ ...bootstrap, contracts: { aiTasks: 1 } });
       await pendingRefresh;
     });
 
     expect(currentSession?.token).toBe('');
     expect(currentSession?.user).toBeNull();
     expect(currentSession?.profile.nickname).toBe('未登录');
+    expect(() => assertAIContract('saved-token')).toThrow();
     await ReactTestRenderer.act(() => renderer?.unmount());
   });
 

@@ -178,14 +178,18 @@ const renderedText = (renderer: ReactTestRenderer.ReactTestRenderer) =>
     .join('');
 
 describe('station avatar layout', () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+  afterEach(async () => {
+    await ReactTestRenderer.act(async () => renderer?.unmount());
+    renderer = undefined;
+    jest.restoreAllMocks();
+  });
   beforeEach(() => {
     mockedUseAvatar3dWorkflow.mockReturnValue(workflowValue());
   });
 
   it('keeps the composer scrollable below its fixed header and footer', async () => {
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <Avatar3DCreateScreen
           initialBootstrap={bootstrap}
@@ -222,8 +226,6 @@ describe('station avatar layout', () => {
     expect(renderedText(renderer!)).toContain('本次先生成 4 张参考图');
     expect(renderedText(renderer!)).toContain('预计 ¥2.00');
     expect(renderedText(renderer!)).not.toContain('3D 生成精度');
-
-    await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   it('offers model quality only after all four reference views are ready', async () => {
@@ -235,9 +237,8 @@ describe('station avatar layout', () => {
         references,
       }),
     );
-    let renderer: ReactTestRenderer.ReactTestRenderer;
 
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <Avatar3DCreateScreen
           initialBootstrap={bootstrap}
@@ -260,7 +261,7 @@ describe('station avatar layout', () => {
     ).toEqual({ checked: true });
     expect(renderedText(renderer!)).toContain('预计 ¥4.20');
 
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer!.root
         .findByProps({ testID: 'avatar3d-quality-standard' })
         .props.onPress();
@@ -270,10 +271,8 @@ describe('station avatar layout', () => {
     });
     expect(confirmButton.props.disabled).toBe(false);
 
-    await ReactTestRenderer.act(() => confirmButton.props.onPress());
+    await ReactTestRenderer.act(async () => confirmButton.props.onPress());
     expect(confirmReferences).toHaveBeenCalledWith('standard');
-
-    await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   it('confirms reference cost and uses the server default for the initial job', async () => {
@@ -282,9 +281,8 @@ describe('station avatar layout', () => {
       workflowValue({ createJob, validatedPhoto }),
     );
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
-    let renderer: ReactTestRenderer.ReactTestRenderer;
 
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <Avatar3DCreateScreen
           initialBootstrap={bootstrap}
@@ -315,7 +313,7 @@ describe('station avatar layout', () => {
       }
       return node;
     };
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       consentControl(
         '确认拥有照片使用授权，且照片中的人物已成年',
       ).props.onPress();
@@ -323,7 +321,7 @@ describe('station avatar layout', () => {
         '同意 AI 根据描述补全未展示的身体、服装与背面',
       ).props.onPress();
     });
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer!.root.findByProps({ testID: 'avatar3d-submit' }).props.onPress();
     });
 
@@ -331,7 +329,7 @@ describe('station avatar layout', () => {
     expect(alert.mock.calls[0][0]).toBe('确认生成四视图');
     expect(alert.mock.calls[0][1]).toContain('预计费用：¥2.00');
     const actions = alert.mock.calls[0][2];
-    await ReactTestRenderer.act(() => actions?.[1]?.onPress?.());
+    await ReactTestRenderer.act(async () => actions?.[1]?.onPress?.());
     expect(createJob).toHaveBeenCalledWith({
       bodyShape: 'balanced',
       outfit: 'smart_casual',
@@ -340,7 +338,6 @@ describe('station avatar layout', () => {
     });
 
     alert.mockRestore();
-    await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   it('blocks 3D generation when the reference set is incomplete', async () => {
@@ -350,9 +347,8 @@ describe('station avatar layout', () => {
         references: { ...references, images: references.images.slice(0, 3) },
       }),
     );
-    let renderer: ReactTestRenderer.ReactTestRenderer;
 
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <Avatar3DCreateScreen
           initialBootstrap={bootstrap}
@@ -371,8 +367,6 @@ describe('station avatar layout', () => {
         testID: 'avatar3d-confirm-references',
       }).props.disabled,
     ).toBe(true);
-
-    await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   it('keeps existing models viewable while generation is unavailable', async () => {
@@ -385,8 +379,7 @@ describe('station avatar layout', () => {
     mockedUseAvatar3dWorkflow.mockReturnValue(
       workflowValue({ bootstrap: unavailable }),
     );
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <Avatar3DCreateScreen
           initialBootstrap={unavailable}
@@ -404,13 +397,12 @@ describe('station avatar layout', () => {
         .disabled,
     ).toBe(true);
     expect(renderedText(renderer!)).toContain('3D建模服务暂时不可用');
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer!.root
         .findByProps({ accessibilityLabel: '查看林末·3D' })
         .props.onPress();
     });
     expect(onSelectModel).toHaveBeenCalledWith('model-1');
-    await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   it('blocks photo creation when the daily quota is exhausted', async () => {
@@ -421,8 +413,7 @@ describe('station avatar layout', () => {
     mockedUseAvatar3dWorkflow.mockReturnValue(
       workflowValue({ bootstrap: exhausted }),
     );
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <Avatar3DCreateScreen
           initialBootstrap={exhausted}
@@ -440,13 +431,11 @@ describe('station avatar layout', () => {
         .disabled,
     ).toBe(true);
     expect(renderedText(renderer!)).toContain('今日生成次数已用完');
-    await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   it('shows the selected older model on the station stage', async () => {
     const olderModel = { ...activeModel, id: 'model-older', title: '旧形象' };
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <AIAssistProvider onAskButler={jest.fn()} routeKey="station">
           <StationAvatarSpace
@@ -465,13 +454,47 @@ describe('station avatar layout', () => {
     expect(renderer!.root.findByType(Avatar3DViewer).props.modelId).toBe(
       'model-older',
     );
-    await ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
+  it('keeps the 3D retry action outside the long-press surface and reloads the viewer', async () => {
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AIAssistProvider onAskButler={jest.fn()} routeKey="station">
+          <StationAvatarSpace
+            avatar3d={{ ...bootstrap, models: [activeModel] }}
+            avatar3dError=""
+            avatar3dStatus="ready"
+            selectedModelId={null}
+            language="zh"
+            onOpenGenerator={jest.fn()}
+            palette={palettes.light}
+            token="token"
+          />
+        </AIAssistProvider>,
+      );
+    });
+
+    const viewer = renderer!.root.findByType(Avatar3DViewer);
+    const surface = renderer!.root.findByType(AIAssistGestureSurface);
+    expect(
+      surface.findAllByProps({ accessibilityLabel: '重新加载3D预览' }),
+    ).toHaveLength(0);
+    await ReactTestRenderer.act(async () =>
+      viewer.props.onError('预览连接中断'),
+    );
+
+    const retry = renderer!.root.findByProps({
+      accessibilityLabel: '重新加载3D预览',
+    });
+    expect(retry.parent!.parent).not.toBe(surface);
+    await ReactTestRenderer.act(async () => retry.props.onPress());
+    expect(renderer!.root.findByType(Avatar3DViewer).props.modelId).toBe(
+      activeModel.id,
+    );
   });
 
   it('fills the 3D stage without floating tags covering the model', async () => {
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <AIAssistProvider onAskButler={jest.fn()} routeKey="station">
           <StationAvatarSpace
@@ -504,8 +527,6 @@ describe('station avatar layout', () => {
     expect(labels).toContain('生成形象');
     expect(stageStyle.backgroundColor).toBe('#F7F8FC');
     expect(emptyStyle.flex).toBe(1);
-
-    await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   it('matches the designed 3D long-press actions and keeps legacy entries under More', async () => {
@@ -516,9 +537,8 @@ describe('station avatar layout', () => {
       action: Share.sharedAction,
     });
     const alert = jest.spyOn(Alert, 'alert');
-    let renderer: ReactTestRenderer.ReactTestRenderer;
 
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <AIAssistProvider onAskButler={onAskButler} routeKey="station">
           <StationAvatarSpace
@@ -555,27 +575,25 @@ describe('station avatar layout', () => {
       ['left', '更多'],
     ]);
 
-    await ReactTestRenderer.act(() =>
+    await ReactTestRenderer.act(async () =>
       actions.up.onSelect(surface.props.object),
     );
     expect(share).toHaveBeenCalledWith({ message: '我的3D形象：林末·3D' });
-    await ReactTestRenderer.act(() =>
+    await ReactTestRenderer.act(async () =>
       actions.right.onSelect(surface.props.object),
     );
     expect(onAskButler).toHaveBeenCalledWith(surface.props.object);
-    await ReactTestRenderer.act(() =>
+    await ReactTestRenderer.act(async () =>
       actions.down.onSelect(surface.props.object),
     );
     expect(onOpenGenerator).toHaveBeenCalledTimes(1);
-    await ReactTestRenderer.act(() =>
+    await ReactTestRenderer.act(async () =>
       actions.left.onSelect(surface.props.object),
     );
     const moreButtons = alert.mock.calls.at(-1)![2]!;
     expect(moreButtons.map(item => item.text)).toEqual(['今日穿搭', '取消']);
-    await ReactTestRenderer.act(() => moreButtons[0].onPress?.());
+    await ReactTestRenderer.act(async () => moreButtons[0].onPress?.());
     expect(onOpenOotd).toHaveBeenCalledTimes(1);
-
-    await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   it('shows the generated preview while the interactive model is being saved', async () => {
@@ -585,9 +603,8 @@ describe('station avatar layout', () => {
       progress: 95,
       status: 'persisting',
     };
-    let renderer: ReactTestRenderer.ReactTestRenderer;
 
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <AIAssistProvider onAskButler={jest.fn()} routeKey="station">
           <StationAvatarSpace
@@ -613,7 +630,5 @@ describe('station avatar layout', () => {
     expect(renderer!.root.findByType(Image).props.source.uri).toContain(
       '/models/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/thumbnail',
     );
-
-    await ReactTestRenderer.act(() => renderer!.unmount());
   });
 });

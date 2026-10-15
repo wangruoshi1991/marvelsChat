@@ -16,6 +16,7 @@ import { createAlbumAssistantAccessService } from "../src/album-assistant-access
 import { setUserAgentAccess } from "../src/repositories.js";
 import { loadMigrationFiles } from "../src/migration-files.js";
 import { applyPendingMigrations } from "../src/migration-ledger.js";
+import { ASSET_CONTENT_FINGERPRINT_SQL, fingerprintAsset } from "../src/media-retrieval-repository-shared.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const backendDir = path.resolve(__dirname, "..");
@@ -579,6 +580,122 @@ if (integrationEnabled) {
       [userB],
     );
     assert.equal(afterDelete.rows[0].total, 0);
+  });
+
+  test("SQL asset fingerprints match JavaScript JSON escaping and UTC millisecond timestamps", async () => {
+    const fixtures = [
+      { storageKey: null, byteSize: null, revision: "2026-10-10T01:02:03.000001Z" },
+      { storageKey: "", byteSize: 0, revision: "2026-10-10T01:02:03.999999Z" },
+      { storageKey: '相册/照片😀/"quoted"/\\slash/line\n\t\b\f\r.jpg', byteSize: 2147483647, revision: "2026-10-10T09:02:03.123456+08:00" },
+      { storageKey: "é/e\u0301/\u2028\u2029/" + String.fromCharCode(...Array.from({ length: 31 }, (_, index) => index + 1)), byteSize: 1, revision: "2026-10-10T01:02:03.001999Z" },
+    ];
+    for (const { storageKey, byteSize, revision } of fixtures) {
+      const result = await client.query(`WITH asset AS (
+        SELECT $1::char(36) AS id, $2::text AS storage_key,
+          $3::integer AS byte_size, $4::timestamptz AS content_revision_at
+      ) SELECT asset.*, ${ASSET_CONTENT_FINGERPRINT_SQL} AS sql_fingerprint FROM asset`,
+      [crypto.randomUUID(), storageKey, byteSize, revision]);
+      assert.equal(result.rows[0].sql_fingerprint, fingerprintAsset(result.rows[0]));
+    }
+  });
+
+  test("index coverage identifies current content by fingerprint despite earlier transaction timestamps", async () => {
+    const userId = crypto.randomUUID();
+    const assetId = crypto.randomUUID();
+    const repository = createRepository();
+    const transactionClient = await client.connect();
+    let transactionOpen = false;
+    try {
+      await insertUser({ id: userId, email: `${userId}@example.test`, displayName: "Fingerprint Race", aiId: "727272727272" });
+      await insertAsset({ id: assetId, userId, caption: "isolated transaction fixture" });
+      await client.query(`INSERT INTO media_retrieval_profiles (user_id, consent_version, consent_granted_at, index_state)
+        VALUES ($1, 'media-retrieval-consent-v1', CURRENT_TIMESTAMP, 'enabled')`, [userId]);
+      const oldAsset = (await client.query("SELECT * FROM station_media_assets WHERE id = $1", [assetId])).rows[0];
+      await transactionClient.query("BEGIN");
+      transactionOpen = true;
+      await transactionClient.query("SELECT CURRENT_TIMESTAMP");
+      await client.query("UPDATE station_media_assets SET storage_key = $1 WHERE id = $2", ['test/当前"内容"😀.jpg', assetId]);
+      const connection = createConnectionAdapter(transactionClient);
+      const transactionRepository = createMediaRetrievalRepository({ query: connection.query, withTransaction: work => work(connection) });
+      const queued = await transactionRepository.enqueueAssetIndexJob({ userId, mediaAssetId: assetId });
+      const timestamps = await transactionClient.query(`SELECT job.created_at < asset.content_revision_at AS transaction_predates_content
+        FROM media_retrieval_jobs job JOIN station_media_assets asset ON asset.id = job.media_asset_id WHERE job.id = $1`, [queued.job.id]);
+      assert.equal(timestamps.rows[0].transaction_predates_content, true, "real queued job inherits the older transaction timestamp");
+      await transactionClient.query("COMMIT");
+      transactionOpen = false;
+      assert.deepEqual((await repository.getMediaRetrievalStatusForUser({ userId })).jobs, { queued: 1 });
+
+      await client.query("UPDATE media_retrieval_jobs SET status = 'failed' WHERE id = $1", [queued.job.id]);
+      const staleJobId = crypto.randomUUID();
+      await client.query(`INSERT INTO media_retrieval_jobs
+        (id, user_id, media_asset_id, job_type, status, content_fingerprint, profile_epoch)
+        VALUES ($1, $2, $3, 'index', 'queued', $4, 1)`, [staleJobId, userId, assetId, fingerprintAsset(oldAsset)]);
+      const staleTimestamps = await client.query(`SELECT job.created_at > asset.content_revision_at AS job_postdates_content
+        FROM media_retrieval_jobs job JOIN station_media_assets asset ON asset.id = job.media_asset_id WHERE job.id = $1`, [staleJobId]);
+      assert.equal(staleTimestamps.rows[0].job_postdates_content, true);
+      assert.deepEqual((await repository.getMediaRetrievalStatusForUser({ userId })).jobs, { failed: 1 }, "a new timestamp cannot make an old fingerprint current");
+      await insertReadySegment({ id: crypto.randomUUID(), userId, assetId, fingerprint: fingerprintAsset(oldAsset), vectorValue: 0.1 });
+      assert.deepEqual((await repository.getMediaRetrievalStatusForUser({ userId })).jobs, { failed: 1 }, "a fresh segment timestamp cannot make an old fingerprint current");
+    } finally {
+      if (transactionOpen) await transactionClient.query("ROLLBACK");
+      transactionClient.release();
+      await client.query("DELETE FROM users WHERE id = $1", [userId]);
+    }
+  });
+
+  test("index coverage counts actual current work and never treats terminal or missing jobs as pending", async () => {
+    const userId = crypto.randomUUID();
+    const assetId = crypto.randomUUID();
+    const repository = createRepository();
+    const service = createMediaRetrievalUserService({ repository });
+    const coverage = async () => {
+      const { indexedAssets, skippedAssets, totalAssets } = (await service.getMediaRetrievalStatus({ userId })).backfill;
+      return { indexedAssets, skippedAssets, totalAssets };
+    };
+    const currentFingerprint = async () => fingerprintAsset((await client.query("SELECT * FROM station_media_assets WHERE id = $1", [assetId])).rows[0]);
+    const insertJob = async (status, { epoch = 1, fingerprint = null, processingVersion = "coverage-test" } = {}) => {
+      const id = crypto.randomUUID();
+      await client.query(`INSERT INTO media_retrieval_jobs
+        (id, user_id, media_asset_id, job_type, status, content_fingerprint, profile_epoch, processing_version)
+        VALUES ($1, $2, $3, 'index', $4, $5, $6, $7)`,
+      [id, userId, assetId, status, fingerprint ?? await currentFingerprint(), epoch, processingVersion]);
+      return id;
+    };
+    try {
+      await insertUser({ id: userId, email: `${userId}@example.test`, displayName: "Coverage Test", aiId: "717171717171" });
+      await insertAsset({ id: assetId, userId, caption: "isolated coverage fixture" });
+      await client.query(`INSERT INTO media_retrieval_profiles (user_id, consent_version, consent_granted_at, index_state)
+        VALUES ($1, 'media-retrieval-consent-v1', CURRENT_TIMESTAMP, 'enabled')`, [userId]);
+      const unavailable = { indexedAssets: 0, skippedAssets: 1, totalAssets: 1 };
+      assert.deepEqual(await coverage(), unavailable, "no index job is not work in progress");
+      for (const status of ["failed", "blocked", "cancelled", "succeeded"]) {
+        await insertJob(status);
+        assert.deepEqual(await coverage(), unavailable, `${status} without a usable segment is unavailable`);
+        await client.query("DELETE FROM media_retrieval_jobs WHERE user_id = $1", [userId]);
+      }
+      const stale = await insertJob("queued", { fingerprint: "a".repeat(64) });
+      assert.deepEqual(await coverage(), unavailable, "an older-content job cannot process current content");
+      await client.query("DELETE FROM media_retrieval_jobs WHERE id = $1", [stale]);
+      const oldEpoch = await insertJob("queued", { epoch: 0 });
+      assert.deepEqual(await coverage(), unavailable, "a revoked-epoch job is not current work");
+      await client.query("DELETE FROM media_retrieval_jobs WHERE id = $1", [oldEpoch]);
+
+      const active = await insertJob("queued");
+      await insertJob("failed", { processingVersion: "older-failure" });
+      assert.deepEqual(await coverage(), { indexedAssets: 0, skippedAssets: 0, totalAssets: 1 }, "an active job wins over later failure history");
+      await client.query("UPDATE media_retrieval_jobs SET status = 'running' WHERE id = $1", [active]);
+      assert.deepEqual(await coverage(), { indexedAssets: 0, skippedAssets: 0, totalAssets: 1 });
+      await client.query("UPDATE media_retrieval_jobs SET status = 'failed' WHERE id = $1", [active]);
+      assert.deepEqual(await coverage(), unavailable, "finishing with a failure removes the pending count");
+
+      await insertReadySegment({ id: crypto.randomUUID(), userId, assetId, fingerprint: await currentFingerprint(), vectorValue: 0.1 });
+      await insertAsset({ id: crypto.randomUUID(), userId, caption: "unprocessed fixture" });
+      assert.deepEqual(await coverage(), { indexedAssets: 1, skippedAssets: 1, totalAssets: 2 }, "ready media remain searchable alongside unavailable media");
+      await client.query("UPDATE station_media_assets SET storage_key = 'test/coverage-replaced.jpg' WHERE id = $1", [assetId]);
+      assert.deepEqual(await coverage(), { indexedAssets: 0, skippedAssets: 2, totalAssets: 2 }, "stale ready segments and terminal jobs do not imply active indexing");
+    } finally {
+      await client.query("DELETE FROM users WHERE id = $1", [userId]);
+    }
   });
 
   test("real product lifecycle indexes, searches, replays, tracks live assets and purges without external calls", async () => {

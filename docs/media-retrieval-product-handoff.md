@@ -235,7 +235,7 @@ export type MediaRetrievalStatus = {
     agentRunId: string | null;
     lifecycleStatus: MediaRetrievalLifecycleStatus;
     indexedAssets: number;
-    skippedAssets: number;
+    skippedAssets: number; // 当前无可用索引且无当前 epoch/内容版本排队或运行任务的素材
     totalAssets: number;
   };
   quota: {

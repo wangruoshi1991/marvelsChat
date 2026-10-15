@@ -1,13 +1,10 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import {
   AvatarConfigDTO,
-  ProfileDTO,
   StationContentDTO,
   StationComicDiaryDTO,
   StationFileAssetDTO,
-  StationSiteDraftDTO,
-  StationVideoDraftDTO,
   StationVisibility,
 } from '../../models/api';
 import { apiClient } from '../../services/apiClient';
@@ -31,21 +28,26 @@ export function useStationActions({
   token,
   avatarConfig,
   setStationContent,
-  setProfile,
 }: {
   token: string;
   avatarConfig: AvatarConfigDTO;
   setStationContent: Dispatch<SetStateAction<StationContentDTO>>;
-  setProfile: Dispatch<SetStateAction<ProfileDTO>>;
 }) {
-  const refreshStationContent = useCallback(async () => {
-    if (!token) {
-      return emptyStationContent;
-    }
-    const content = await apiClient.stationContent(token);
-    setStationContent(content);
-    return content;
-  }, [setStationContent, token]);
+  const contentRefresh = useRef(0);
+  const refreshStationContent = useCallback(
+    async (signal?: AbortSignal) => {
+      if (signal?.aborted) return emptyStationContent;
+      const request = ++contentRefresh.current;
+      if (!token) {
+        return emptyStationContent;
+      }
+      const content = await apiClient.stationContent(token);
+      if (!signal?.aborted && request === contentRefresh.current)
+        setStationContent(content);
+      return content;
+    },
+    [setStationContent, token],
+  );
 
   const listMiaoPointLedger = useCallback(async () => {
     if (!token) {
@@ -387,7 +389,6 @@ export function useStationActions({
       prompt: string;
       diaryEntryId?: string | null;
       mediaAssetIds?: string[];
-      fileAssetIds?: string[];
       style?: 'slice-of-life' | 'cute' | 'manga' | 'storyboard';
       frameCount?: number;
     }) => {
@@ -405,49 +406,11 @@ export function useStationActions({
   );
 
   const createStationSiteDraft = useCallback(
-    async (payload: { prompt: string; apply?: boolean }) => {
-      if (!token) {
-        throw new Error('请先登录。');
-      }
-      const result = await apiClient.createStationSiteDraft(token, payload);
-      setStationContent(current => ({
-        ...current,
-        siteDrafts: [
-          result.siteDraft,
-          ...current.siteDrafts.filter(
-            (item: StationSiteDraftDTO) => item.id !== result.siteDraft.id,
-          ),
-        ],
-      }));
-      if (result.profile) {
-        setProfile(result.profile);
-      }
-      return result;
+    async (payload: { prompt: string; idempotencyKey: string }) => {
+      if (!token) throw new Error('请先登录。');
+      return apiClient.createStationSiteDraft(token, payload);
     },
-    [setProfile, setStationContent, token],
-  );
-
-  const applyStationSiteDraft = useCallback(
-    async (draftId: string) => {
-      if (!token) {
-        throw new Error('请先登录。');
-      }
-      const result = await apiClient.applyStationSiteDraft(token, draftId);
-      setProfile(result.profile);
-      setStationContent(current => ({
-        ...current,
-        siteDrafts: current.siteDrafts.map((item: StationSiteDraftDTO) =>
-          item.id === result.siteDraft.id
-            ? result.siteDraft
-            : {
-                ...item,
-                status: item.status === 'applied' ? 'draft' : item.status,
-              },
-        ),
-      }));
-      return result;
-    },
-    [setProfile, setStationContent, token],
+    [token],
   );
 
   const createStationFileAsset = useCallback(
@@ -472,65 +435,6 @@ export function useStationActions({
         ],
       }));
       return asset;
-    },
-    [setStationContent, token],
-  );
-
-  const preprocessStationFileAsset = useCallback(
-    async (
-      fileAssetId: string,
-      payload: {
-        originalFilename?: string;
-        mimeType?: string;
-        byteSize?: number | null;
-        content?: string;
-        metadata?: Record<string, unknown>;
-      },
-    ) => {
-      if (!token) {
-        throw new Error('请先登录。');
-      }
-      const asset = await apiClient.preprocessStationFileAsset(
-        token,
-        fileAssetId,
-        payload,
-      );
-      setStationContent(current => ({
-        ...current,
-        fileAssets: current.fileAssets.map((item: StationFileAssetDTO) =>
-          item.id === asset.id ? asset : item,
-        ),
-      }));
-      return asset;
-    },
-    [setStationContent, token],
-  );
-
-  const createStationVideoDraft = useCallback(
-    async (payload: {
-      prompt: string;
-      diaryEntryId?: string | null;
-      comicDiaryId?: string | null;
-      mediaAssetIds?: string[];
-      fileAssetIds?: string[];
-      format?: 'short-clip' | 'vlog' | 'story' | 'promo';
-      aspectRatio?: '9:16' | '16:9' | '1:1';
-      durationSeconds?: number;
-    }) => {
-      if (!token) {
-        throw new Error('请先登录。');
-      }
-      const draft = await apiClient.createStationVideoDraft(token, payload);
-      setStationContent(current => ({
-        ...current,
-        videoDrafts: [
-          draft,
-          ...current.videoDrafts.filter(
-            (item: StationVideoDraftDTO) => item.id !== draft.id,
-          ),
-        ],
-      }));
-      return draft;
     },
     [setStationContent, token],
   );
@@ -578,12 +482,9 @@ export function useStationActions({
     deleteStationMediaAsset,
     createStationOutfit,
     createStationSiteDraft,
-    applyStationSiteDraft,
     createStationFileAsset,
-    preprocessStationFileAsset,
     createStationComicDiary,
     deleteStationComicDiary,
-    createStationVideoDraft,
     resolveLocation,
   };
 }

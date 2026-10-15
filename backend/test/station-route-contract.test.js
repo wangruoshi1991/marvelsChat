@@ -47,3 +47,19 @@ test("registers the station content routes used by the mobile client", () => {
     assert.ok(routes.has(route), `Missing route: ${route}`);
   }
 });
+
+test("video drafts are readable but the retired template generator is not a creation route", () => {
+  const routes = collectStationRoutes();
+  assert.ok(routes.has("GET /api/station/video-drafts"));
+  assert.ok(!routes.has("POST /api/station/video-drafts"));
+});
+
+test("manual media search and tags remain while metadata-rule album and tag suggestions are absent", () => {
+  const routes = collectStationRoutes();
+  assert.ok(routes.has("GET /api/station/media-assets/search"));
+  assert.ok(routes.has("PATCH /api/station/media-assets/:mediaAssetId/tags"));
+  assert.ok(routes.has("POST /api/station/media-assets"));
+  assert.ok(!routes.has("GET /api/station/album-suggestions"));
+  assert.ok(!routes.has("POST /api/station/album-suggestions/apply"));
+  assert.ok(!routes.has("POST /api/station/media-assets/:mediaAssetId/suggest-tags"));
+});

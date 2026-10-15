@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import {
@@ -8,7 +8,6 @@ import {
   ProfileDTO,
   StationContentDTO,
   StationFileAssetDTO,
-  StationVideoDraftDTO,
 } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
@@ -24,8 +23,13 @@ import { StationCapabilityWorkspace } from './StationCapabilityWorkspace';
 import { StationMetricBox } from './StationMetricBox';
 import { StationPageHeading } from './StationPageHeading';
 import { resolveStationColors } from './stationTheme';
+import { useAgentAccessConfirmation } from '../agents/useAgentAccessConfirmation';
+import { agentAccessMatchesDeclaration } from '../agents/agentAccess';
+import type { AlbumAIConsentVersion } from './albumAssistantAuthorization';
 
 export function StationAgentsPanel({
+  token,
+  active,
   palette,
   language,
   profile,
@@ -37,13 +41,13 @@ export function StationAgentsPanel({
   onOpenAgentThread,
   onSetAgentEnabled,
   onCreateSiteDraft,
-  onApplySiteDraft,
+  onRefreshTaskArtifacts,
   onCreateFileAsset,
-  onPreprocessFileAsset,
-  onCreateVideoDraft,
   onActionMessage,
   onActionError,
 }: {
+  token: string;
+  active: boolean;
   palette: Palette;
   language: Language;
   profile: ProfileDTO;
@@ -56,41 +60,41 @@ export function StationAgentsPanel({
   onSetAgentEnabled: (
     agentId: string,
     enabled: boolean,
+    grantedScopes?: string[],
+    albumAIConsentVersion?: AlbumAIConsentVersion,
   ) => Promise<OwnedAgentDTO>;
   onCreateSiteDraft: (payload: {
     prompt: string;
-    apply?: boolean;
-  }) => Promise<unknown>;
-  onApplySiteDraft: (draftId: string) => Promise<unknown>;
+    idempotencyKey: string;
+  }) => Promise<{ task: import('../../models/aiTask').AITaskDTO }>;
+  onRefreshTaskArtifacts: () => Promise<unknown>;
   onCreateFileAsset: (payload: {
     originalFilename: string;
     mimeType?: string;
     content?: string;
     metadata?: Record<string, unknown>;
   }) => Promise<StationFileAssetDTO>;
-  onPreprocessFileAsset: (
-    fileAssetId: string,
-    payload: {
-      originalFilename?: string;
-      mimeType?: string;
-      content?: string;
-      metadata?: Record<string, unknown>;
-    },
-  ) => Promise<StationFileAssetDTO>;
-  onCreateVideoDraft: (payload: {
-    prompt: string;
-    diaryEntryId?: string | null;
-    comicDiaryId?: string | null;
-    mediaAssetIds?: string[];
-    fileAssetIds?: string[];
-    format?: 'short-clip';
-    aspectRatio?: '9:16';
-    durationSeconds?: number;
-  }) => Promise<StationVideoDraftDTO>;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
-  const [updatingAgentId, setUpdatingAgentId] = useState<string | null>(null);
+  const { confirmAccess, updatingAgents } = useAgentAccessConfirmation({
+    accessToken: token,
+    active,
+    language,
+    agents,
+    ownedAgents,
+    onSetAgentEnabled,
+    onChanged: action =>
+      onActionMessage(
+        textFor(
+          language,
+          action === 'add' ? 'Agent 已添加' : 'Agent 已移除',
+          action === 'add' ? 'Agent added' : 'Agent removed',
+        ),
+      ),
+    onError: onActionError,
+  });
+  const updatingAgentId = [...updatingAgents][0] || null;
   const colors = resolveStationColors(palette);
   const registeredByKey = useMemo(
     () => new Map(agents.map(agent => [agent.key, agent])),
@@ -122,29 +126,6 @@ export function StationAgentsPanel({
     ? Math.round((ownedCards.length / visibleAgentCount) * 100)
     : 0;
   const hasCapability = (agentId: string) => ownedIds.has(agentId);
-
-  const updateAgent = (agentId: string, enabled: boolean) => {
-    if (updatingAgentId) {
-      return;
-    }
-    setUpdatingAgentId(agentId);
-    onSetAgentEnabled(agentId, enabled)
-      .then(() => {
-        onActionMessage(
-          enabled
-            ? textFor(language, 'Agent 已添加', 'Agent added')
-            : textFor(language, 'Agent 已移除', 'Agent removed'),
-        );
-      })
-      .catch(error => {
-        onActionMessage(
-          error instanceof Error
-            ? error.message
-            : textFor(language, 'Agent 状态更新失败', 'Agent update failed'),
-        );
-      })
-      .finally(() => setUpdatingAgentId(null));
-  };
 
   return (
     <View style={styles.stationPanelStack}>
@@ -251,10 +232,22 @@ export function StationAgentsPanel({
         )}
         updatingAgentId={updatingAgentId}
         onOpenAgentThread={onOpenAgentThread}
-        onRemoveAgent={agentId => updateAgent(agentId, false)}
+        onRemoveAgent={agentId => confirmAccess(agentId, 'remove')}
+        readdAgentIds={
+          new Set(
+            ownedCards
+              .filter(owned => {
+                const agent = registeredByKey.get(owned.id);
+                return agent && !agentAccessMatchesDeclaration(agent, owned);
+              })
+              .map(agent => agent.id),
+          )
+        }
       />
 
       <StationCapabilityWorkspace
+        token={token}
+        active={active}
         palette={palette}
         language={language}
         profile={profile}
@@ -262,11 +255,9 @@ export function StationAgentsPanel({
         agentReadiness={agentReadiness}
         hasCapability={hasCapability}
         onCreateSiteDraft={onCreateSiteDraft}
-        onApplySiteDraft={onApplySiteDraft}
+        onRefreshTaskArtifacts={onRefreshTaskArtifacts}
         onOpenAgentThread={onOpenAgentThread}
         onCreateFileAsset={onCreateFileAsset}
-        onPreprocessFileAsset={onPreprocessFileAsset}
-        onCreateVideoDraft={onCreateVideoDraft}
         onActionMessage={onActionMessage}
         onActionError={onActionError}
       />
@@ -291,7 +282,12 @@ export function StationAgentsPanel({
               <Pressable
                 key={agent.key}
                 accessibilityRole="button"
-                onPress={() => updateAgent(agent.key, true)}
+                accessibilityLabel={textFor(
+                  language,
+                  `添加${agent.name}`,
+                  `Add ${agent.name}`,
+                )}
+                onPress={() => confirmAccess(agent.key, 'add')}
                 disabled={updatingAgentId === agent.key}
                 style={[
                   styles.stationOwnedAgentCard,

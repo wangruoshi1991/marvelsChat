@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getAuthorizedMediaResults } from "../src/routes/message-routes.js";
+import { getAgent } from "../../agents/registry.js";
+
+const scopes = (await getAgent("album-manager")).permissions;
 
 const owner = "result-owner";
 const request = { userId: owner, threadId: "thread", messageId: "reply" };
@@ -11,7 +14,7 @@ function dependencies(overrides = {}) {
     } : null,
     queryFn: async (_sql, params) => {
       assert.deepEqual(params, [owner]);
-      return [{ enabled: true, granted_scopes: ["album:read"] }];
+      return [{ enabled: true, granted_scopes: scopes }];
     },
     retrievalRepository: {
       getMediaRetrievalProfile: async ({ userId }) => {
@@ -54,7 +57,8 @@ test("revoked cloud consent blocks reading existing Agent results", async () => 
 });
 
 test("disabled Agent and revoked album scope block reading existing results", async () => {
-  for (const access of [[], [{ enabled: false, granted_scopes: ["album:read"] }], [{ enabled: true, granted_scopes: [] }]]) {
+  for (const access of [[], [{ enabled: false, granted_scopes: scopes }], [{ enabled: true, granted_scopes: [] }],
+    [{ enabled: true, granted_scopes: scopes.filter(scope => scope !== "station:write") }]]) {
     await assert.rejects(getAuthorizedMediaResults({ ...request, ...dependencies({ queryFn: async () => access }) }), error => error.status === 403);
   }
 });

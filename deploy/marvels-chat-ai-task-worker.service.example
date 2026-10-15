@@ -1,0 +1,23 @@
+[Unit]
+Description=Miaoxun durable AI task worker
+Requires=postgresql@18-main.service
+After=network-online.target postgresql@18-main.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=marvels
+WorkingDirectory=/opt/projects/marvels-chat/app/backend
+EnvironmentFile=/opt/projects/marvels-chat/app/deploy/miaoxun-prod.env
+ExecStart=/usr/bin/npm run worker:ai-tasks
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=90s
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

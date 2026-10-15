@@ -51,6 +51,8 @@ export const AIAssistGestureSurface = forwardRef<
     onPress?: (event: GestureResponderEvent) => void;
     style?: StyleProp<ViewStyle>;
     testID?: string;
+    accessibilityLabel?: string;
+    accessibilityHint?: string;
   }
 >(function AIAssistGestureSurfaceComponent(
   {
@@ -61,6 +63,8 @@ export const AIAssistGestureSurface = forwardRef<
     onPress,
     style,
     testID = 'ai-assist-surface',
+    accessibilityLabel,
+    accessibilityHint,
   },
   ref,
 ) {
@@ -170,12 +174,14 @@ export const AIAssistGestureSurface = forwardRef<
       collapsable={false}
       style={style}
       testID={testID}
+      accessibilityRole="button"
       accessibilityLabel={
-        typeof object.metadata?.content === 'string' && object.metadata.content
+        accessibilityLabel ||
+        (typeof object.metadata?.content === 'string' && object.metadata.content
           ? object.metadata.content
-          : object.title
+          : object.title)
       }
-      accessibilityHint="长按查看内容操作"
+      accessibilityHint={accessibilityHint || '长按查看内容操作'}
       accessibilityActions={[{ name: 'show-menu', label: '内容操作' }]}
       onAccessibilityAction={() => activateAt()}
       delayLongPress={420}

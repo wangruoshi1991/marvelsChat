@@ -30,34 +30,25 @@ React Native 是当前正式移动端主线，iOS 上线能力通过 `MiaoxunRN/
 
 ## 当前状态
 
-- React Native 正式实现目录为 `MiaoxunRN/`，旧 SwiftUI 原型目录已从主工程移除。
-- `MiaoxunRN` 通过自有原生配置桥接 `MiaoxunConfigModule` 显式读取 API 地址；iOS 来源是 `Info.plist` 的 `MiaoxunAPIBaseURL`，Android 来源是 `BuildConfig.MIAOXUN_API_BASE_URL`。该值必须是无路径、查询或片段的 HTTP(S) origin，业务请求必须显式使用 `/api/*` 路径；配置缺失或格式错误会直接报错。
-- 未登录状态只展示登录/注册页，不展示原型账号、预览聊天或前端假会话。
-- 移动端注册使用唯一昵称作为用户名；用户可用昵称、手机号或邮箱登录。注册或改名时如果昵称已存在，后端返回“名称已使用”。
-- 消息页只展示数据库中的真实会话；不会为了贴近 Demo 继续补前端假聊天，也不再额外插入解释性统计卡。
-- App 已补齐设置页退出登录；退出会尝试撤销服务端会话，随后清理本机 Keychain token。网络失败仍可本机退出，但 Keychain 清理失败会明确报错。退出或切换账号后，旧请求不能再更新当前会话数据。
-- App 默认使用新版小站浅色视觉，设置中可切换深色模式；小站浅色页面统一使用 `#F8F7FD` 页面底色、`#FFFFFF` 内容板块、`#F4F6FF` 辅助底色和 `#2012D9` 主强调色。底部导航为“妙讯 / 小站”两栏整条底栏，动态发布入口位于小站“生活”页，不占用底栏中央位置，也不再提供悬浮“妙”入口。
-- 后端已提供健康检查、认证、应用启动数据、消息、事件采集和后台管理 API。
-- 后台管理系统位于 `admin/`，用于创建账号、管理用户状态/角色/资料/登录态/Agent 授权、重置密码，并查看活跃、消息、事件和 Agent 调用记录。
-- 后台管理页使用独立登录态，不复用 App 本地登录缓存；App 登录页也不再提供后台跳转。
-- Agent 已独立成 `agents/`，当前包含妙讯管家和建站、文件预处理、相册管理、漫画日记、视频制作等功能类 Agent；3D 形象顾问只提供准备建议，不调用或控制 3D 生成流程。当前候选通过相册管理 Agent 对话调用媒体检索：多轮补充条件、指定相册、图片卡片和视频匹配时间；已移除 App 独立“找素材”页面。添加相册 Agent 时统一取得云端 AI 同意，已有同意直接复用；手机相册权限不自动上传素材。授权、索引任务、Agent 与线程在同一事务中保存；内容版本与相册/描述变更分离，减少重复视觉模型调用。合同、迁移 035 和验证边界见 [相册对话检索](docs/agents/album-assistant.md)。
-- 2026-10-10 生产当前为 `retrieval-visual-20261010-03`（来源 `3b001b4`），API/Worker 同版本、迁移35项、health/ready200。检索对所有登录用户开放，保持 `limited_release`，无账号白名单与每日次数/费用上限，保留瞬时限流和用户主动云端AI同意。生产公开图片/运动视频已完成上传、索引、相册对话、鉴权预览、视频定位、幂等、空负例和撤回验证；两名临时账号、三个OSS对象和临时Simulator已清理。运行目录只保留当前03和回滚02，其余九个历史制品完整归档。证据和恢复路径见 [部署记录](docs/deployment.md)。
-- 检索已移除固定视觉词表、词汇排序和旧查询schema路径；解析复用管家模型，视觉使用原文向量及逐张当前原图片/精确视频帧判定。解析24/24、图片回归30/30、新六图首次评测30/30；最新相册对话工具将匹配结论与展示摘要分开，16/16回归通过，Simulator同一旧聊天的图片/视频回复复验通过。有限素材不证明任意媒体库质量。2026-10-10 TestFlight 1.0(45)已上传并显示“正在测试”，现有测试用户可更新；签名与协议阻塞已解除，三项第三方framework崩溃符号待补，见 [Build45发布记录](docs/reviews/2026-10-10-testflight-45.md)。代表性大库/视频、真机/Android、账单核对、完整恢复演练与独立发布复核尚待完成，见 [检索发布证据](docs/agents/media-retrieval/release-evidence.md)。
-- `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL` 配置完整时，妙讯管家会走后端模型接口。2026-09-16 核实线上运行配置为 DeepSeek `deepseek-v4-flash`；本地模板使用同一模型及 endpoint，开发 Key 必须单独配置。未配置时明确报告服务不可用。
-- 扫码看主页、关注、好友申请、好友通过通知和通知未读已接入真实后端表与 API；扫码结果必须经后端解析 AI ID 后才打开用户主页。
-- 小站社交页已展示真实关注、粉丝和好友列表；搜索页已接入真实用户搜索和最近搜索记录；设置页已接入主页展示开关，公开主页会按后端可见性策略隐藏字段。
-- 动态、相册、搜索、好友申请拒绝/取消和主页展示开关已接入真实链路；文件、长期记忆、收藏列表和群组仍有未完成能力，不能凭入口认定已交付。音乐不在新版设计范围，第一面已移除音乐入口。
-- 第一面资料卡可编辑昵称、头像文字和签名/个人简介并保存到现有 profile API；动态点赞/收藏已使用 `station_post_interactions` 的真实事务接口，后台总览同步展示动态、点赞、收藏、媒体资产和漫画日记计数。合作伙伴、综合评分和最终漫画媒体仍待真实业务闭环；旧统计及整体布局尚未满足新版设计。
-- 妙讯页左上角 `+` 菜单已改成手机壳级浮层，避免压住顶部内容；聊天抽屉也已按 demo 式头部 / 消息区 / 输入栏三段结构重排，头像和消息气泡保持固定网格。
-- 小站页的 AI ID 支持复制，并可打开按当前 AI ID 和两分钟有效期生成的标准 QR 动态码；二维码本体保持标准模块形态，外观装饰只允许放在二维码外框。妙讯管家只保留明确的会话入口，不通过悬浮球覆盖页面内容。
-- 小站页已接入位置建议。定位坐标来自 iOS CoreLocation / Android LocationManager，社区和活动区域由后端显式配置的 Nominatim-compatible 或高德 Web 服务解析；当前线上使用高德逆地理编码，后端负责把 WGS84 定位坐标转换为高德需要的 GCJ-02 坐标。用户只从真实候选中确认保存，不提供地图选点、默认位置或手输位置绕过；服务未配置或解析失败时会显示明确错误。
-- 小站“我的模样”已接入独立的 App 原生 3D 形象流程：照片选择、质量检查、参数、授权、任务状态、四视图确认和模型管理均在 React Native 内完成；Web 工具不嵌入 App，只有 Three.js 单模型画布通过受限 WebView 展示私有 GLB。该流程不调用 Agent，也不保留旧 Meshy、`generation_jobs` 或 `station_model_assets` 兼容接口。
-- 妙讯页保留点击进入聊天，同时支持会话项左滑进入、聊天页左滑返回；聊天实时连接按登录 token 管理，增量游标保存在 ref 中，游标前进或在线状态事件都不会重建连接。`connection.ready` 只触发一次增量补偿，不再重新请求完整 bootstrap；在线状态变化通过 `presence.changed` 事件增量更新聊天列表和社交列表。
-- 登录/注册页和设置页已按独立移动端页面重排：账号面板、表单、偏好、权限、数据和账户操作分区展示。
-- 小站页的日记、相册、可调用 Agent 和文件区块按实际后端能力展示真实内容或明确空状态；未补 schema/API/权限/审核前不展示示例列表、示例封面或示例文件。新版第一面模块结构仍需调整。
-- 小站内容已开始按真实闭环接入：个人日记写入 `station_diary_entries`，相册元数据写入 `station_albums`，今日穿搭写入 `station_outfits`，媒体资产元数据写入 `station_media_assets`；照片拍摄/选图、OSS 上传凭证、上传完成回写、相册封面读取和动态聚合已接入。公开媒体读取已有后端可见性校验；媒体审核等未完成环节见 [小站能力闭环方案](docs/station-feature-closure.md)。
+**妙讯仍处于开发阶段，完整协作与设计验收尚未完成。** 当前问题、证据和实施顺序只维护在[当前交接](docs/handoffs/CURRENT.md)，不以局部测试或部署成功代表整体交付。
 
-## 启动
+- 正式App为`MiaoxunRN/`，底栏“妙 / 讯 / 我”，固定iPhone17与真机连接正式HTTPS。用户已确认Build48恢复同步、可进入妙页；连续触摸、真机语音及完整成果续作仍未验收。
+- 2026-10-15只读核验：线上`dynamic-agents-20261014-48`、来源`232a1428`、迁移039、合同`aiTasks:1/siteDocuments:2/agentWorkspaces:3`；API与两个Worker同源，227个文件匹配发布清单，readiness及心跳正常。运行健康不代表用户链路完整。
+- 已有按需求选择Agent和依赖调度，执行器覆盖选材、页面生成及摘要/分镜/脚本等文字成果。本轮源码已接通成果聚合与打开，删除固定模板视频创建和管家关键词动作；尚未部署。完成后修改续作、独立Agent与任务统一仍有缺口；漫画成图、视频成片、文件解析和协作3D生成尚未接通。
+- 添加Agent与完整权限确认集中于“我 → AI伙伴”，二楼为账号隐私；旧不完整授权由用户移除重加，不自动补权。模型共享不代表共享私聊或自动扩权。
+- 本轮源码统一相册跨页面长按动作及共享色值，成果页改为实际内容入口；布局与连续手势仍需设备对照验收。正式媒体、登录、社交、建站与独立3D能力及各自边界见[文档索引](docs/README.md)。
+- 文本模型配置集中于`backend/src/agent-model-config.js`，当前供应商为浮生/vip `gpt-6.1-sol`；视觉/向量Qwen，3D独立。密钥只放受限环境配置。
+- 主工作区已包含Build48之后的本轮修复，当前不与线上源码一致；HEAD仍为`a4d90c3`并保留大量既有修改。必须核对实际文件及交接验证状态，不能仅凭分支或Build号认定版本。TestFlight46继续暂缓。
+
+## 日常客户端
+
+```sh
+node scripts/miaoxun-development.mjs ios
+```
+
+固定iPhone17、正式Bundle、正式HTTPS；无需本地API或数据库。以下独立后端启动仅用于明确的隔离验证，不是日常App运行步骤。
+
+## 隔离后端验证
 
 ```bash
 cp backend/.env.example backend/.env
@@ -96,7 +87,7 @@ http://127.0.0.1:4390/api/health
 http://127.0.0.1:4390/api/ready
 ```
 
-`MiaoxunRN` iOS API 地址来自 Xcode build setting，并通过 `MiaoxunConfigModule` 暴露给 JS。当前 Debug 指向本机后端，Release 使用 ECS 的受信任 IP HTTPS origin：
+`MiaoxunRN` iOS API 地址来自 Xcode build setting，并通过 `MiaoxunConfigModule` 暴露给 JS。当前 Debug 与 Release 默认均使用 ECS 的受信任 IP HTTPS origin：
 
 ```text
 MIAOXUN_API_BASE_URL=https://8.153.167.11
@@ -129,9 +120,9 @@ http://127.0.0.1:4390/api/agents
 妙讯管家模型配置：
 
 ```text
-NEW_API_BASE_URL=https://api.deepseek.com/chat/completions
+NEW_API_BASE_URL=https://fushengyunsuan.cn/v1
 NEW_API_KEY=
-NEW_API_MODEL=deepseek-v4-flash
+NEW_API_MODEL=gpt-6.1-sol
 ```
 
 这些值配置在 `backend/.env`，开发密钥只保存在被 Git 忽略的环境文件。三项任一缺失时，模型运行时拒绝调用；消息路由保存用户消息、`runtime-error` 失败记录和明确的服务失败提示，token 字段保持空值。配置完整后，后端调用指定 chat completions 接口并保存真实 token 用量。`NEW_API_*` 是既有配置名，不表示必须经过 New API 中转。
@@ -162,7 +153,6 @@ GEOCODING_EMAIL=contact@example.com
 
 - [文档索引](docs/README.md)：区分现行说明、上线检查和历史记录
 - [生产运维入口](docs/production-operations.md)
-- [项目结构说明](docs/project-structure.md)
-- [架构说明](docs/architecture.md)
+- [架构与项目结构](docs/architecture.md)
 - [部署说明](docs/deployment.md)
 - [移动端上线功能实施清单](docs/mobile-launch-checklist.md)

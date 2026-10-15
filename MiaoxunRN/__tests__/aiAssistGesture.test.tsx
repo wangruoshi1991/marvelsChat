@@ -1,5 +1,7 @@
 import React from 'react';
 import {
+  AccessibilityInfo,
+  Animated,
   AppState,
   AppStateStatus,
   BackHandler,
@@ -59,6 +61,7 @@ type MeasureCallback = (
 
 describe('global content actions', () => {
   let appStateChange: (state: AppStateStatus) => void;
+  let reduceMotionChange: (enabled: boolean) => void;
   let hardwareBack: Parameters<typeof BackHandler.addEventListener>[1];
   let measurements: Array<{ callback: MeasureCallback; source: boolean }>;
   let deferred: 'host' | 'surface' | null;
@@ -69,6 +72,16 @@ describe('global content actions', () => {
     measurements = [];
     deferred = null;
     renderers = [];
+    jest
+      .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
+      .mockImplementation(() => new Promise<boolean>(() => {}));
+    jest.spyOn(AccessibilityInfo, 'addEventListener').mockImplementation(((
+      _type: string,
+      listener: (enabled: boolean) => void,
+    ) => {
+      reduceMotionChange = listener;
+      return { remove: jest.fn() } as never;
+    }) as never);
     jest
       .spyOn(View.prototype, 'measureInWindow')
       .mockImplementation(function (
@@ -468,12 +481,10 @@ describe('global content actions', () => {
       const rightTarget = view.targetAt(pagePoint, 'right');
       act(() => view.surface().props.onTouchMove(touch(rightTarget)));
       expect(
-        StyleSheet.flatten(
-          view.renderer.root.findByProps({
-            testID: 'content-action-right',
-          }).props.style,
-        ).transform,
-      ).toEqual([{ scale: 1.12 }]);
+        view.renderer.root.findByProps({
+          testID: 'content-action-right',
+        }).props.accessibilityState.selected,
+      ).toBe(true);
       act(() => view.surface().props.onTouchEnd(touch(rightTarget)));
       expect(view.onSelect).toHaveBeenCalledTimes(1);
       expect(view.onSelect).toHaveBeenCalledWith(view.object);
@@ -497,15 +508,69 @@ describe('global content actions', () => {
     },
   );
 
-  it('keeps stationary release open for a separate button tap', () => {
+  it('dismisses a stationary hold immediately without selecting an action', () => {
     const view = mount();
     view.open();
     expect(NativeModules.MiaoxunHapticsModule.trigger).toHaveBeenCalledWith(
       'activation',
     );
     act(() => view.surface().props.onTouchEnd(touch(anchor)));
-    expect(view.overlay()).not.toHaveLength(0);
+    expect(view.overlay()).toHaveLength(0);
     expect(view.onSelect).not.toHaveBeenCalled();
+    act(() => view.surface().props.onTouchEnd(touch(anchor)));
+    expect(view.overlay()).toHaveLength(0);
+  });
+
+  it('removes a menu immediately when released during its entrance animation', async () => {
+    jest.useFakeTimers();
+    try {
+      jest
+        .mocked(AccessibilityInfo.isReduceMotionEnabled)
+        .mockResolvedValueOnce(false);
+      const timing = jest.spyOn(Animated, 'timing');
+      const view = mount();
+      await act(async () => {});
+      view.open();
+      expect(timing).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ duration: 120, toValue: 1 }),
+      );
+      act(() => view.surface().props.onTouchMove(touch(view.target)));
+      expect(timing).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ duration: 90, toValue: 1.12 }),
+      );
+      act(() => view.surface().props.onTouchEnd(touch(anchor)));
+      expect(view.overlay()).toHaveLength(0);
+      act(() => jest.runOnlyPendingTimers());
+      expect(view.overlay()).toHaveLength(0);
+      expect(view.onSelect).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('respects reduced motion when it changes while a menu is open', async () => {
+    const timing = jest.spyOn(Animated, 'timing');
+    const view = mount();
+    await act(async () => {});
+    view.open();
+    act(() => view.surface().props.onTouchMove(touch(view.target)));
+    expect(timing).not.toHaveBeenCalled();
+    act(() => reduceMotionChange(false));
+    expect(timing).toHaveBeenCalled();
+    timing.mockClear();
+    act(() => reduceMotionChange(true));
+    act(() => view.surface().props.onTouchMove(touch(anchor)));
+    expect(timing).not.toHaveBeenCalled();
+    act(() => view.surface().props.onTouchEnd(touch(anchor)));
+    expect(view.overlay()).toHaveLength(0);
+  });
+
+  it('keeps explicitly accessible actions available for a separate button tap', () => {
+    const view = mount();
+    act(() => view.surface().props.onAccessibilityAction());
+    expect(view.overlay()).not.toHaveLength(0);
     const action = view.renderer.root
       .findAllByProps({ testID: 'content-action-right' })
       .find(node => typeof node.props.onPress === 'function')!;
@@ -516,6 +581,31 @@ describe('global content actions', () => {
     expect(view.onSelect).toHaveBeenCalledWith(view.object);
     expect(view.onSelect).toHaveBeenCalledTimes(1);
     expect(view.overlay()).toHaveLength(0);
+  });
+
+  it.each(['host', 'surface'] as const)(
+    'does not retain a stationary 3D hold released while %s measurement is pending',
+    pending => {
+      const view = mount();
+      deferred = pending;
+      act(() => {
+        view.gestureRef.current!.activateAt(localAnchor);
+        view.gestureRef.current!.releaseAt(localAnchor);
+      });
+      flushMeasurement();
+      expect(view.overlay()).toHaveLength(0);
+      expect(view.onSelect).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not retain a native hold released before its host measurement resolves', () => {
+    const view = mount();
+    deferred = 'host';
+    view.open();
+    act(() => view.surface().props.onTouchEnd(touch(anchor)));
+    flushMeasurement();
+    expect(view.overlay()).toHaveLength(0);
+    expect(view.onSelect).not.toHaveBeenCalled();
   });
 
   it('selects the release target when a fast drag has no intermediate move event', () => {
@@ -544,7 +634,7 @@ describe('global content actions', () => {
       action.props.onPress();
     });
     expect(view.onSelect).not.toHaveBeenCalled();
-    expect(view.overlay()).not.toHaveLength(0);
+    expect(view.overlay()).toHaveLength(0);
     expect(NativeModules.MiaoxunHapticsModule.trigger.mock.calls).toEqual([
       ['activation'],
     ]);

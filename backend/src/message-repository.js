@@ -199,11 +199,14 @@ export async function completeAgentMessageOnce({
   latencyMs,
   tokenUsage = null,
   errorMessage = null,
+  prepareCompletion = null,
+  connection: transactionConnection = null,
 }) {
-  return withTransaction(async (connection) => {
+  const complete = async (connection) => {
     const [inputs] = await connection.execute(
       `SELECT id FROM chat_messages
        WHERE id = ? AND thread_id = ? AND user_id = ? AND sender_type = 'user'
+         AND deleted_at IS NULL AND recalled_at IS NULL
        FOR UPDATE`,
       [inputMessageId, threadId, userId],
     );
@@ -226,6 +229,14 @@ export async function completeAgentMessageOnce({
       };
     }
 
+    // Run side effects only after locking the original input and checking for
+    // a completion. A stale-message repair may already have won this race.
+    // The callback and reply commit share this transaction or roll back together.
+    if (prepareCompletion) {
+      const prepared = await prepareCompletion(connection);
+      content = prepared?.content ?? content;
+      metadata = { ...metadata, ...prepared?.metadata };
+    }
     const outputId = crypto.randomUUID();
     const runId = crypto.randomUUID();
     const [outputs] = await connection.execute(
@@ -259,7 +270,8 @@ export async function completeAgentMessageOnce({
       outputMessage: mapMessage(outputs[0]),
       created: true,
     };
-  });
+  };
+  return transactionConnection ? complete(transactionConnection) : withTransaction(complete);
 }
 
 export async function listThreadsForUser(userId, onlineUserIds = []) {
@@ -353,6 +365,23 @@ export async function listRecentMessagesForThread(userId, threadId, limit = 12) 
   );
 
   return rows.map(mapMessage);
+}
+
+// Resolve the input's ordering boundary inside PostgreSQL. Mapping its timestamp
+// to a JS Date loses microseconds, and text equality cannot identify a turn.
+export async function listAgentHistoryBeforeInput(userId, threadId, inputMessageId, limit = 12) {
+  const rows = await query(
+    `SELECT m.* FROM chat_messages m
+     JOIN chat_threads t ON t.id = m.thread_id
+     JOIN chat_messages input ON input.id = ? AND input.user_id = m.user_id AND input.thread_id = m.thread_id
+     WHERE t.user_id = ? AND m.user_id = ? AND m.thread_id = ?
+       AND input.sender_type = 'user' AND input.deleted_at IS NULL AND input.recalled_at IS NULL
+       AND (m.created_at, m.id) < (input.created_at, input.id)
+       AND m.deleted_at IS NULL AND m.recalled_at IS NULL
+     ORDER BY m.created_at DESC, m.id DESC LIMIT ?`,
+    [inputMessageId, userId, userId, threadId, sqlLimit(limit, 12, 30)],
+  );
+  return rows.reverse().map(mapMessage);
 }
 
 export async function listMessagesForThreadSince(userId, threadId, createdAfter = null) {
@@ -475,62 +504,72 @@ export async function deleteMessageForUser({ userId, threadId, messageId }) {
 }
 
 export async function recallMessageForUser({ userId, threadId, messageId }) {
-  const rows = await query(
-    `SELECT
-      m.*,
-      t.peer_user_id,
-      (m.created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 second')) AS within_recall_window
-    FROM chat_messages m
-    JOIN chat_threads t ON t.id = m.thread_id
-    WHERE t.user_id = ? AND t.id = ? AND m.id = ? AND m.deleted_at IS NULL
-    LIMIT 1`,
-    [Math.floor(recallWindowMs / 1000), userId, threadId, messageId],
-  );
-  if (!rows.length) throw new HttpError(404, "Message not found");
+  return withTransaction(async (connection) => {
+    const [row] = await connection.query(
+      `SELECT m.*, t.peer_user_id
+       FROM chat_messages m
+       JOIN chat_threads t ON t.id = m.thread_id
+       WHERE t.user_id = ? AND m.user_id = ? AND t.id = ? AND m.id = ? AND m.deleted_at IS NULL
+       FOR UPDATE OF m`,
+      [userId, userId, threadId, messageId],
+    );
+    if (!row) throw new HttpError(404, "Message not found");
 
-  const message = mapMessage(rows[0]);
-  const senderUserId =
-    typeof message.metadata?.senderUserId === "string" ? message.metadata.senderUserId : message.userId;
-  if (message.senderType !== "user" || senderUserId !== userId) {
-    throw new HttpError(403, "Only the sender can recall this message");
-  }
-  if (message.recalledAt) {
-    return { message, peerUserId: rows[0].peer_user_id || null, peerMessage: null };
-  }
-  if (rows[0].within_recall_window !== true) {
-    throw new HttpError(409, "消息发出超过 1 分钟，不能撤回");
-  }
+    const message = mapMessage(row);
+    const senderUserId = message.metadata?.senderUserId;
+    // Agent inputs use source=app without a direct-message sender marker. An
+    // incoming mirror must never inherit authorship from its local owner.
+    const authoredByUser = senderUserId === userId ||
+      (message.metadata?.source === "app" && senderUserId == null);
+    if (message.senderType !== "user" || !authoredByUser) {
+      throw new HttpError(403, "Only the sender can recall this message");
+    }
+    if (message.recalledAt) return { message, peerUserId: null, peerMessage: null };
+    if (!row.client_message_id) {
+      throw new HttpError(409, "This message was created before recall tracking was enabled");
+    }
 
-  const clientMessageId = rows[0].client_message_id;
-  if (!clientMessageId) {
-    throw new HttpError(409, "This message was created before recall tracking was enabled");
-  }
-  await query(
-    `UPDATE chat_messages
-    SET
-      recalled_at = CURRENT_TIMESTAMP,
-      content = '',
-      metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('recalledByUserId', ?)
-    WHERE client_message_id = ? AND metadata ->> 'senderUserId' = ? AND recalled_at IS NULL`,
-    [userId, clientMessageId, userId],
-  );
+    const [ownRow] = await connection.query(
+      `UPDATE chat_messages
+       SET recalled_at = clock_timestamp(), content = '',
+         metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('recalledByUserId', ?::text)
+       WHERE id = ? AND user_id = ? AND recalled_at IS NULL
+         AND created_at >= clock_timestamp() - (? * INTERVAL '1 second')
+       RETURNING *`,
+      [userId, messageId, userId, Math.floor(recallWindowMs / 1000)],
+    );
+    if (!ownRow) throw new HttpError(409, "消息发出超过 1 分钟，不能撤回");
 
-  const updatedRows = await query(
-    `SELECT m.*, t.user_id AS owner_user_id
-    FROM chat_messages m
-    JOIN chat_threads t ON t.id = m.thread_id
-    WHERE m.client_message_id = ? AND m.metadata ->> 'senderUserId' = ?
-    ORDER BY m.created_at ASC, m.id ASC`,
-    [clientMessageId, userId],
-  );
-  const ownRow = updatedRows.find((row) => row.owner_user_id === userId);
-  const peerRow = updatedRows.find((row) => row.owner_user_id !== userId);
-
-  return {
-    message: ownRow ? mapMessage(ownRow) : message,
-    peerUserId: peerRow?.owner_user_id || null,
-    peerMessage: peerRow ? mapMessage(peerRow) : null,
-  };
+    let peerRow = null;
+    if (row.peer_user_id) {
+      // Match the reciprocal conversation and original author, not a global
+      // client ID. Other users may legitimately choose the same client ID.
+      const [mirror] = await connection.query(
+        `SELECT m.* FROM chat_messages m
+         JOIN chat_threads t ON t.id = m.thread_id
+         WHERE m.user_id = ? AND t.user_id = ? AND t.peer_user_id = ? AND t.kind = 'direct'
+           AND m.client_message_id = ? AND m.sender_type = 'user'
+           AND m.metadata ->> 'source' = 'direct' AND m.metadata ->> 'senderUserId' = ?
+         FOR UPDATE OF m`,
+        [row.peer_user_id, row.peer_user_id, userId, row.client_message_id, userId],
+      );
+      if (mirror && !mirror.recalled_at) {
+        [peerRow] = await connection.query(
+          `UPDATE chat_messages SET recalled_at = ?::timestamptz, content = '',
+             metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('recalledByUserId', ?::text)
+           WHERE id = ? AND user_id = ? AND client_message_id = ?
+             AND metadata ->> 'senderUserId' = ? AND recalled_at IS NULL
+           RETURNING *`,
+          [ownRow.recalled_at, userId, mirror.id, row.peer_user_id, row.client_message_id, userId],
+        );
+      }
+    }
+    return {
+      message: mapMessage(ownRow),
+      peerUserId: peerRow ? row.peer_user_id : null,
+      peerMessage: peerRow ? mapMessage(peerRow) : null,
+    };
+  });
 }
 
 export async function markThreadReadForUser(userId, threadId) {

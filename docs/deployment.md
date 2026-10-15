@@ -1,11 +1,35 @@
 # 妙讯部署说明
 
+当前运行版本、数据库迁移、客户端配套及最近一次只读核验统一记录在[当前交接](handoffs/CURRENT.md)。本文保存部署方法和历史证据；带日期的发布章节只描述当时状态，不作为当前部署或恢复指令。
+
+039先锁`agent_workspace_nodes`再锁`station_site_drafts`，而在线草稿读取会先读草稿再读节点；并发可能形成PostgreSQL死锁。迁移窗口须先让Nginx进入503维护、停止API与两个Worker并排空在途请求/事务，在迁移连接显式设定`lock_timeout`和`statement_timeout`；失败时保持维护并确认事务回滚。新来源与任务写入后优先前向修复，禁止旧代码接新库或旧dump覆盖新数据。
+
+## 2026-10-13配套升级记录（历史）
+
+正式API、AI Worker及媒体Worker统一运行 `agent-preview-20261013-02`，来源 `c04385eb2583cd710735648b0380a9a67cb28ba1`；38项迁移，合同 `aiTasks:1 / siteDocuments:2 / agentWorkspaces:2`。451文件摘要一致，三个服务同源运行且零重启，双Worker持续推进，非终态任务及未知回执均为0，公网health/ready200。固定iPhone17已原位安装配套1.0(46)；TestFlight 1.0(46)在App Store Connect显示“正在测试”，已关联既有内部/外部群组，可在真机更新。详见[Build46发布记录](reviews/2026-10-13-testflight-46.md)。
+
+本轮维护窗口为11:10:04–11:10:44 CST。新的037停写恢复点实际恢复55表1125行，并在临时库验证038、重复执行和退回037；正式038保留54张旧业务表、身份授权和3条序列，提交结果账本回填0行。6份页面/3份当前副本/15动作及完整资源读取一致，没有重做页面迁移。升级后038在线同快照备份实际恢复56表1127行，owner/ACL/locale/schema/序列一致；临时恢复库已删除。
+
+受限恢复资料位于 `/opt/projects/marvels-chat/backups/agent-preview-20261013-02/`，旧f10495d runtime已完整归档并解压核对后移出releases。038入口已开放，后续须保留新增任务和提交回执并优先同合同前向修复；不能只退旧代码或用037 dump覆盖新写入。备份角色对新账本的只读权限及实际导出探针通过，既有定时备份保持启用。本轮本机恢复不代替OSS/异地完整灾难恢复。
+
+固定Simulator安装记录为 `~/Library/Application Support/MiaoxunDevelopment/76237d6f8986/builds/2026-10-13T03-11-38-877Z/build.json`，JS SHA256 `ff69255f0a587f693bd0b1a232f414d2e9f72194e63c410aaad418d0e1e42f80`。本轮服务器聚合证据位于 `~/Library/Application Support/MiaoxunReleasePreparations/paired-testflight46-20261013/production/`；日常入口见[固定iPhone17联调](local-development-preview.md)。完整素材设备链、连续触摸与真机录音仍按实际验收结果记录，不能由部署或上传成功代替。
+
+## 此前发布基线（2026-10-12 AI任务升级，历史）
+
+正式API、AI Task Worker及媒体Worker统一运行 `ai-tasks-20261012-01`，来源 `5cbc27c02ea44dbd9299bcd1c8408e3a1672a26a`；36项迁移、三个服务零重启、两类心跳持续推进，公网TLS health/ready200。415文件哈希与Linux依赖检查通过。固定iPhone17原妙讯已更新1.0(46)、正式HTTPS并沿用原登录；TestFlight仍为45，本轮未上传。
+
+维护停写后生成的新dump已实际恢复验证：51表摘要一致，原应用角色与ACL有效，临时恢复库已删除；036保留50张旧非账本表。恢复资料位于 `/opt/projects/marvels-chat/backups/ai-tasks-20261012-01/`。旧02/03已内容核验归档，releases只保留当前版本；新写入发生后不能恢复旧dump或仅切回03，应优先同合同前向修复。
+
+日常客户端不再使用另一套开发App/API/数据库，默认构建46及正式origin，见[固定iPhone17联调](local-development-preview.md)。旧本地服务停用、缓存和空QA清理、制品SHA及实际验证边界见[正式AI升级记录](reviews/2026-10-12-production-ai-upgrade.md)。本轮没有付费模型验收或Git推送；旧Build45的相册和建站明确要求更新。
+
 ## Runtime 制品来源约束
 
 `node scripts/prepare-runtime-release.mjs <release-id>` 只允许在无未提交、无未跟踪文件的
-Git 工作区执行。脚本先删除 `admin/dist` 与 `avatar-web/dist`，重新完成两项生产构建，再按
-明确白名单生成 runtime；`deploy/` 也只收录代码中逐项列出的 systemd、Nginx、数据库和环境
+Git 工作区执行。脚本从 `HEAD` 重建临时源码树，在该树内按锁文件安装依赖并完成两项生产
+构建，再按明确白名单生成 runtime；工作区的 `admin/dist` 与 `avatar-web/dist` 不会被读取或删除。
+`deploy/` 也只收录代码中逐项列出的 systemd、Nginx、数据库和环境
 模板。脚本不会将 `.env*`、凭据、数据库、`node_modules`、本地 storage 或整个工作目录打包。
+runtime 只包含服务源码、迁移、顶层 Agent 定义与运行时 helpers、两个共享数据合同、明确列出的数据库/Agent 运维入口及生产加固脚本；不包含测试、评测夹具、Agent CLI、本地开发启动器或备份/恢复客户端工具。制品中的后端 `package.json` 仅保留 API、两个 Worker 和已随包运维命令，Agent 包描述仅保留 ESM 与注册器导出。
 `release-manifest.json` 记录 `sourceHead`、`sourceTree`、固定构建命令及每个运行文件的
 SHA-256，并明确 `includesWorkingTreeChanges=false`。
 
@@ -13,9 +37,9 @@ SHA-256，并明确 `includesWorkingTreeChanges=false`。
 worktree、手工复制的 dist 或“HEAD 加本地修改”作为生产来源。`npm run test:release-package`
 在隔离的临时 Git 仓库中覆盖成功路径、前端重新构建、敏感配置排除、来源 revision 和清单哈希。
 
-## 当前发布基线（2026-10-10）
+## 此前发布基线（2026-10-10，历史）
 
-当前runtime为 `/opt/projects/marvels-chat/releases/retrieval-visual-20261010-03/runtime`，
+当时runtime为 `/opt/projects/marvels-chat/releases/retrieval-visual-20261010-03/runtime`，
 来源 `3b001b426518cd196ec17653738b117f23968987`。389文件哈希通过，干净来源制品SHA256
 `e291d1006b640d9386bd288e0f129781af74c77f4073555c9985ff3de93cc805`。
 Linux按锁文件安装依赖，官方registry审计0漏洞；Node22.22.1、ffmpeg、原有生产配置保留。
@@ -182,16 +206,13 @@ curl --fail --silent --show-error --dump-header - --output /dev/null https://8.1
 
 生产发布必须在明确的维护窗口内执行。移动端和管理台使用 IP HTTPS；数据库备份、安全开关、证书续期和 readiness 不得降级。不要直接覆盖当前目录后立即重启。
 
-1. 确认最新 custom dump、SHA-256 和恢复演练有效，并在变更前再创建一个可恢复点。
-2. 备份当前应用目录和环境文件；把新代码、依赖和 `avatar-web/dist` 完整暂存好。
-3. 切换 `app` symlink 后先运行 `sudo scripts/harden-production-release.sh`，确认代码为 root 只读、
-   环境文件为 `root:marvels 0640`，且只有 `backend/storage` 由应用用户写入。
-4. 将常驻环境改为 `TRUST_PROXY_HOPS=1`、`CREATE_FIRST_USER_AS_ADMIN=false`、
-   `ADMIN_EMAILS=`、`DEFAULT_ADMIN_ENABLED=false`，并清空默认管理员密码。
-5. 启动 `postgresql@18-main` 并确认本机连接正常，再停止后端和媒体检索 worker，加载同一份生产环境，执行 `npm run db:migrate`。
-6. 启动新后端、备份 timer 和独立 `marvels-chat-media-retrieval-worker`，依次验证 `/api/health`、`/api/ready`、worker 心跳、认证接口、OSS 媒体、3D 模型读取和一次手动备份。
-7. 任一关键检查失败时保持停写，停止新 worker，恢复变更前 custom dump 并恢复旧应用目录；仅恢复旧代码
-   不能撤销数据迁移。
+1. 冻结经验证的提交及制品，安装Linux锁文件依赖，验证哈希、配置与迁移的恢复边界；不覆盖当前运行目录。
+2. Nginx HTTP/HTTPS进入维护，实际验证503与Retry-After。停止API、AI Task Worker和媒体Worker，确认在途连接/任务结束，再创建新的停写dump并验证SHA/TOC及隔离恢复。
+3. 同步最新storage、受限env到新release，以明确的lock_timeout与statement_timeout执行待应用迁移；核验账本及旧业务数据。迁移失败保持维护，确认是否完整回滚。
+4. 加固项目/release父目录和新runtime：父目录/代码为root不可被服务改写，env为root:marvels0640，只有storage由应用用户写入。原子切换app，启动同一制品的API与两个Worker。
+5. 维护中检查health/ready、实际进程cwd、AI合同、任务摘要、Worker心跳及新表备份权限。验证通过后恢复Nginx并复核公网TLS和已有账号；不为冒烟新建生产测试账号或自动发起付费调用。
+6. 配套客户端更新并核对Bundle、Build、origin、JS摘要和正常会话。TestFlight/真机上传另行明确；清理旧运行制品前验证受限归档和恢复关联。
+7. 旧制品的严格迁移账本检查不能接受新增迁移，当前037来源f10495d也不能直接接038数据库。尚无新写入时可在维护中按已验证的匹配数据与制品受控恢复；已有新写入时保留任务、提交回执及用户数据，优先前向修复，不盲目恢复旧dump。
 
 当前 systemd 运行方式的检查命令：
 
@@ -199,9 +220,11 @@ curl --fail --silent --show-error --dump-header - --output /dev/null https://8.1
 sudo systemctl status marvels-chat-backend --no-pager
 sudo systemctl status postgresql@18-main --no-pager
 sudo systemctl status marvels-chat-media-retrieval-worker --no-pager
+sudo systemctl status marvels-chat-ai-task-worker --no-pager
 sudo systemctl status marvels-chat-database-backup.timer --no-pager
 sudo journalctl -u marvels-chat-backend -n 120 --no-pager
 sudo journalctl -u marvels-chat-media-retrieval-worker -n 120 --no-pager
+sudo journalctl -u marvels-chat-ai-task-worker -n 120 --no-pager
 curl http://127.0.0.1:4390/api/health
 curl --fail http://127.0.0.1:4390/api/ready
 ```
@@ -220,19 +243,13 @@ HTTP/WebSocket 接入和 3D Job Runner，等待在途工作结束，再关闭数
 `errorCode`，修复数据库、DNS 或对象存储等明确依赖故障，再执行 `systemctl reset-failed`
 和手动启动。不得通过提高重启上限掩盖持续故障，日志也不得输出连接地址或凭据。
 
-在维护窗口中执行迁移时，必须加载 systemd 使用的同一份环境文件：
+迁移必须使用与systemd相同的受限数据库配置，并显式为迁移连接配置锁等待及语句超时；不能依赖node-postgres未显式读取的PGOPTIONS。本轮038与恢复证据见[配套发布记录](reviews/2026-10-13-testflight-46.md)。以下仅是维护中的服务检查/启停命令，不代替上面的停写备份与迁移验证步骤：
 
 ```sh
-sudo systemctl stop marvels-chat-media-retrieval-worker marvels-chat-backend
-sudo systemctl start postgresql@18-main
-cd /opt/projects/marvels-chat/app/backend
-set -a
-. ../deploy/miaoxun-prod.env
-set +a
-npm run db:migrate
-sudo systemctl start marvels-chat-backend
-sudo systemctl start marvels-chat-media-retrieval-worker
-sudo systemctl enable --now marvels-chat-database-backup.timer
+sudo systemctl stop marvels-chat-ai-task-worker marvels-chat-media-retrieval-worker marvels-chat-backend
+# 完成停写备份、恢复验证、迁移、权限与同源切换后：
+sudo systemctl start marvels-chat-backend marvels-chat-ai-task-worker marvels-chat-media-retrieval-worker
+sudo systemctl status marvels-chat-database-backup.timer --no-pager
 ```
 
 `/api/health` 只检查进程存活；`/api/ready` 还会核对数据库连接、迁移文件、迁移账本和
@@ -448,7 +465,7 @@ Uploaded MiaoxunRN
 
 2026-07-07 已上传 iOS `1.0 (13)`，`CURRENT_PROJECT_VERSION=13`。该 build 用于验证去地图化位置确认、小站首页日记 4 格/相册 3 项展示、以及后端日记/相册/媒体资产更新和软删除接口。服务器已同步 `location-service.js`、`station-repository.js`、`station-routes.js`、`schemas.js` 到 `/opt/projects/marvels-chat/app/backend` 并重启 `marvels-chat-backend`；高德采样验证返回 `community=桂溪街道`、`activityArea=交子商圈`。本次 TestFlight 仍采用域名实名完成前的临时 API `http://8.153.167.11`，归档内确认 `CFBundleVersion=13` 和 `MiaoxunAPIBaseURL=http://8.153.167.11`；上传返回 `Uploaded MiaoxunRN` 和 `** EXPORT SUCCEEDED **`。上传仍出现 MapLibre、React、ReactNativeDependencies、hermesvm 第三方 framework dSYM warning，不阻止 TestFlight 安装，但会影响对应 framework 崩溃符号化。
 
-## 2026-07-10 Build 23 Foundation
+## 2026-07-10 Build 23 Foundation（历史）
 
 后端已从 `codex/build23-foundation` 部署到 `/opt/projects/marvels-chat/app/backend`。部署恢复日记、相册和媒体资产的 PATCH/DELETE 接口，以及媒体 `upload-url`、`upload-complete` 和鉴权文件读取接口；保留线上已有的 Agent 限流与自助授权 schema。无数据库迁移。
 
@@ -464,7 +481,7 @@ Uploaded MiaoxunRN
 
 回滚时恢复上述备份中的 4 个 source 文件并终止当前 Node 主进程；systemd 会在 5 秒后按现有 `Restart=always` 策略重新拉起。回滚后必须再次检查本机与外网 health。
 
-## 2026-07-11 iOS 1.0 (23)
+## 2026-07-11 iOS 1.0 (23)（历史）
 
 已将 PR #1 完整合入 `feat/miaoxun-scaffold`，发布 iOS TestFlight `1.0 (23)`。本次移动端同步修复使用 ref 保存增量同步游标，合并并发 bootstrap/sync 请求，并让 `connection.ready` 只触发 `incrementalSync(false)`，避免恢复会话后重复 bootstrap 和 WebSocket 重建。
 
@@ -491,7 +508,7 @@ MiaoxunAPIBaseURL = http://8.153.167.11/api
 
 正式上架 App Store 前，必须继续补 APNs 推送、隐私说明、账号找回/验证、内容审核和未接入模块的产品状态；当前阶段建议只走 TestFlight 给朋友测试。
 
-## 2026-07-28 App 3D 接入
+## 2026-07-28 App 3D 接入（历史）
 
 已在不修改伙伴建模核心的前提下，为妙讯 App 部署 Bearer 鉴权的 `/api/avatar-3d/app/*` 接口和私有 GLB 文件读取路由。线上 `avatar-3d-lifecycle-service.js`、Wan、Tripo、OSS 和多视图提示文件与 `origin/feat/avatar-3d-web-v1` 对应文件哈希一致；本次只新增 App 路由与公共路由辅助模块，并在服务器现有 `server.js` 中增加一次注册。
 
@@ -505,7 +522,7 @@ MiaoxunAPIBaseURL = http://8.153.167.11/api
 
 回滚时恢复备份中的 `src/server.js` 和 `miaoxun-prod.env`，重启 `marvels-chat-backend` 后重新检查 health。新增但未注册的 `avatar-3d-app-routes.js` 和 `avatar-3d-route-support.js` 不影响旧运行路径。
 
-## 2026-07-29 App 3D 查看器修复
+## 2026-07-29 App 3D 查看器修复（历史）
 
 App 内置查看器从 `file://` 页面读取私有 GLB，请求来源在 WebView 中表现为 `Origin: null`。后端仅对 `GET|HEAD|OPTIONS /api/avatar-3d/app/models/:uuid/file` 返回该来源的 CORS 授权，并且实际文件请求仍必须通过 Bearer 鉴权和模型归属校验；其他 API 继续使用 `CORS_ORIGIN`，不得全局允许 `null` 来源。
 
@@ -519,7 +536,7 @@ App 内置查看器从 `file://` 页面读取私有 GLB，请求来源在 WebVie
 
 iOS `1.0 (28)` 已完成 Release archive 并上传 App Store Connect，上传返回 `Uploaded MiaoxunRN` 和 `** EXPORT SUCCEEDED **`。MapLibre、React、ReactNativeDependencies 和 Hermes 的第三方 dSYM warning 仍存在，不阻止 TestFlight 分发。
 
-## 2026-07-30 App 媒体与 3D 加载优化
+## 2026-07-30 App 媒体与 3D 加载优化（历史）
 
 生产后端已启用 OSS 内网读取、私有媒体长期缓存、3D 缩略图占位和 App 专用轻量 GLB。伙伴生成的原始 GLB 保持不变；新增 Worker 将 App 版本限制为最多 25 万三角面、最大 2048 像素纹理，并使用 `KHR_mesh_quantization`。App 模型接口不回退到原始大文件，轻量资产缺失时会明确返回错误，避免手机静默下载数十 MB 原件。
 
@@ -534,7 +551,7 @@ iOS `1.0 (28)` 已完成 Release archive 并上传 App Store Connect，上传返
 
 服务端轻量模型对现有客户端直接生效；WebView 缓存和加载中缩略图属于客户端变更，必须随下一次 TestFlight 构建发布。上传前先确认 App Store Connect 已占用的最高 build 号，再递增 `CURRENT_PROJECT_VERSION`，不能仅依赖本文中的历史编号。
 
-## 2026-08-04 仓库发布审查基线
+## 2026-08-04 仓库发布审查基线（历史）
 
 本轮只完成本地代码审查、修复、构建验证和线上只读核查，没有上传 TestFlight、部署后端或修改生产数据库。iOS Release workspace archive 使用当前工程 `1.0 (30)` 成功生成，归档内 API 为域名审核期间的受控地址 `http://8.153.167.11`，ATS 只允许该 IP，`NSAllowsArbitraryLoads=false`。
 
@@ -544,7 +561,7 @@ MapLibre、地图票据、地图瓦片代理及其 iOS / Android 依赖已经从
 
 域名审核期间运行 `MIAOXUN_TEMP_IP_TESTFLIGHT=1 scripts/check-launch-readiness.sh`，域名、DNS 和 HTTPS 项按受控测试策略记录为 warning。其余发布检查保持严格：当前服务器仍需在下一次授权部署时上线 `/api/ready`，并设置 `TRUST_PROXY_HOPS=1`、`CREATE_FIRST_USER_AS_ADMIN=false`、`DEFAULT_ADMIN_ENABLED=false`；完成迁移后必须同时验证 `/api/health` 和 `/api/ready`。
 
-## 2026-08-31 Build 42 小站崩溃修复
+## 2026-08-31 Build 42 小站崩溃修复（历史）
 
 App Store Connect 的 Build 41 与 Build 42 真机报告均显示 `RCTExceptionsManager.reportFatal`，确认是 JavaScript 致命异常，不是 3D WebView 或 SVG 原生释放异常。线上 `/api/app/bootstrap` 的 `stationContent` 未返回 `posts`，而移动端生活页直接读取 `posts.length` 与 `posts.map`；Build 42 又同时挂载五个小站页签，因此故障从“切换生活时崩溃”扩大为“进入小站即崩溃”。
 
@@ -558,7 +575,7 @@ App Store Connect 的 Build 41 与 Build 42 真机报告均显示 `RCTExceptions
 
 移动端源码同时恢复为只挂载当前选中的小站面板，不再同时保留五棵原生视图树；`/api/app/bootstrap` 与 `/api/station/content` 增加严格运行时契约校验。缺少 `posts` 等字段时明确报告服务端版本不匹配，不再让 `undefined` 进入页面后触发致命异常。本轮未上传新的 TestFlight build；Build 42 需完全退出并重新打开，重新获取线上 bootstrap 后再验证现有包。
 
-## 2026-09-08 代码与依赖审查
+## 2026-09-08 代码与依赖审查（历史）
 
 本轮删除了已被小站真实建站 Agent 工作区替代的移动端占位建站页，妙讯管家的建站动作改为直接打开小站 `Agent` 页签；消息新建菜单不再展示尚未实现的创建群和独立添加好友入口。未被运行时消费的 `REDIS_URL` 已从后端配置与环境示例移除，Tair 只保留为尚未接入的基础设施记录。
 
@@ -566,7 +583,7 @@ App Store Connect 的 Build 41 与 Build 42 真机报告均显示 `RCTExceptions
 
 本轮只修改本地仓库，没有部署服务器。线上仍未包含 `/api/ready`，并且常驻环境需要在下一次授权部署前设置 `TRUST_PROXY_HOPS=1`、`CREATE_FIRST_USER_AS_ADMIN=false`、`DEFAULT_ADMIN_ENABLED=false`。域名实名审核、公共 DNS 和 HTTPS 继续作为正式上架前置条件。
 
-## 2026-09-09 自建数据库与 IP HTTPS
+## 2026-09-09 自建数据库与 IP HTTPS（历史）
 
 生产数据已从 PolarDB 恢复到同一 ECS 上由 systemd 管理的 PostgreSQL 18，并限制为 `127.0.0.1:5432`。移动端不直接连接数据库；公网请求通过 `https://8.153.167.11` 到 Nginx，再转发到本机后端。`/api/health`、`/api/ready`、29 个迁移、媒体检索 worker 和数据库备份任务均已验证。
 
@@ -574,7 +591,7 @@ IP HTTPS 证书使用 Let's Encrypt short-lived profile，自定义 `miaoxun-ip-
 
 Navicat 只允许通过 SSH 隧道查看生产库：SSH 连接 ECS 的 `22` 端口，数据库端填写 `127.0.0.1:5432`、数据库 `marvels_chat`、角色 `pize`。该角色默认只读、最多 3 个连接，并限制长查询；密码和 SSH 私钥不得写入仓库或共享文档。应用服务继续使用独立的 `marvels_chat` 数据库角色，不复用人工查看账号。
 
-## 2026-09-11 仓库质量门禁补齐
+## 2026-09-11 仓库质量门禁补齐（历史）
 
 `media-retrieval-web` 已纳入根 ESLint、`scripts/check-repository.sh` 和 GitHub Actions，CI 会安装其锁定依赖并执行语法检查、测试和生产构建。`avatar-web` 的 Vitest 已从 `4.1.10` 升级到修复安全公告的 `4.1.11`；完整依赖审计不再报告漏洞。
 
@@ -589,7 +606,7 @@ Navicat 只允许通过 SSH 隧道查看生产库：SSH 连接 ECS 的 `22` 端�
 `marvels-backup` 用户和 root 管理的 `/usr/local/libexec/marvels-chat`，但在专用 OSS 与恢复密钥
 准备完成前尚未替换线上 timer。
 
-## 2026-09-15 加密异地数据库备份上线
+## 2026-09-15 加密异地数据库备份上线（历史）
 
 生产数据库备份已从旧 root 任务切换为 `marvels-backup` 无登录系统账号，执行程序由 root 管理在
 `/usr/local/libexec/marvels-chat`，配置为 `/etc/marvels-chat/database-backup.env` 的
@@ -611,7 +628,7 @@ systemd 任务以新账号和新路径再次完成异地备份，timer 为 enabl
 PostgreSQL、后端、媒体检索 worker、Nginx、本机 `/api/ready` 和公网 HTTPS `/api/health` 均在
 切换后验证正常。
 
-## 2026-09-15 GitHub Android SDK 初始化修复
+## 2026-09-15 GitHub Android SDK 初始化修复（历史）
 
 Repository Quality 运行 `34931311492` 的 Android 任务在 `Set up Android SDK` 步骤失败，
 日志为 `Warning: Failed to find package 'tools'`。`android-actions/setup-android@v3` 默认安装
@@ -619,7 +636,7 @@ Repository Quality 运行 `34931311492` 的 Android 任务在 `Set up Android SD
 工作流现显式设置 `packages: platform-tools`，后续仍安装项目指定的 Android 36、Build Tools
 36.0.0 和 NDK 27.1.12297006，并执行原有 `assembleDebug`。其余质量检查与失败退出规则保持开启。
 
-## 2026-09-15 仓库审查后的发布检查补强
+## 2026-09-15 仓库审查后的发布检查补强（历史）
 
 本地审查修复记录见 [仓库审查与修复](reviews/2026-09-15-repository-audit.md)。后端镜像增加必需的
 `shared/` 目录；CI 在构建后实际启动隔离容器，验证健康接口、未配置数据库时的 503 就绪响应、
@@ -629,7 +646,7 @@ Repository Quality 运行 `34931311492` 的 Android 任务在 `Set up Android SD
 本轮没有生产部署和 App 上传。完整本地 Docker 构建因外部 Debian 包源返回 502 中止，需在网络
 恢复后完成镜像启动检查；不能把此前“仅镜像构建通过”的记录当作本轮运行验证。
 
-## 2026-09-22 3D 账号白名单修复
+## 2026-09-22 3D 账号白名单修复（历史）
 
 TestFlight 用户报告小站显示“3D建模服务未启用”。生产后端的 3D 总开关、Provider 配置和
 `/api/health`、`/api/ready` 均正常；该提示实际来自账号未命中生产白名单时的 bootstrap 404。
@@ -644,7 +661,7 @@ TestFlight 用户报告小站显示“3D建模服务未启用”。生产后端�
 未创建建模任务或调用付费 Provider；仍需用户在 TestFlight 中重新打开小站验收。下一次发布
 复制生产环境文件时须保留这两项账号授权，不能用仓库中的空白示例覆盖。
 
-## 2026-09-29 3D 对全部账号开放
+## 2026-09-29 3D 对全部账号开放（历史）
 
 用户明确选择全量开放后，复用活动后端已有的通配规则，将生产
 `AVATAR_3D_ALLOWLIST` 改为 `*` 并重启 `marvels-chat-backend.service`。
@@ -661,3 +678,31 @@ health、ready、账号访问范围；此配置变更不涉及数据库恢复。
 公网 ready 为 200，未登录 bootstrap 为 401，服务 active、NRestarts=0。
 本次没有建模任务、供应商调用、数据库写入、代码部署或 TestFlight 上传；
 当前无全局费用硬上限，实际消费随用户使用增加。后续发布须保留全员配置。
+
+## 037动态协作发布设计（历史）
+
+以下保留037阶段的发布设计与验证依据；038配套见历史[Build46发布记录](reviews/2026-10-13-testflight-46.md)，当前运行与验证状态统一见[当前交接](handoffs/CURRENT.md)。
+
+迁移037、`agentWorkspaces:1`、`siteDocuments:2`、管家0.2.2、相册0.3.0及建站0.3.1需要统一配套。协作节点复用现有AI Task Worker，未增加systemd服务；生产样例只保留 `AGENT_WORKSPACE_DEADLINE_SECONDS=1200` 执行时限，正式任务没有测试调用次数、节点数或费用配额。先冻结候选、盘点旧草稿/授权并验证备份恢复，再按明确授权升级API及两个既有Worker、迁移与同一客户端。不得先安装候选覆盖日常App再连旧生产合同。详细合同与验证见[协作闭环](reviews/2026-10-12-agent-collaboration.md)、[页面动作统一与迁移](reviews/2026-10-12-site-document-migration.md)。
+
+### 037发布、备份与回退边界
+
+正式运行单元仍是 `marvels-chat-backend`、`marvels-chat-media-retrieval-worker` 和 `marvels-chat-ai-task-worker`。同一AI Worker同时轮询原持久任务及协作节点，节点并发为2，心跳约30秒；这不是两个AI服务。发布制品必须包含新迁移、共享页面合同、全部Agent模块及相同后端运行代码。沿用现有制品白名单与 `scripts/harden-production-release.sh`：运行代码与父目录由root保护，环境文件为 `root:服务组 0640`，仅素材存储目录由服务账号写入。页面迁移计划保存在release之外的受限恢复目录，不放入应用制品。
+
+停止API及两个Worker后，先完成036完整备份及隔离恢复校验，再应用037和显式页面迁移，最后启动同一合同的三个运行单元并更新固定iPhone17。页面迁移中的两张表独占锁、时间戳触发器保护和精确恢复条件见[专项说明](reviews/2026-10-12-site-document-migration.md)。升级时保留现有授权和供应商配置，不以环境样例覆盖真实设置。
+
+新增 `agent_workspaces` 与 `agent_workspace_nodes` 属于完整数据库备份范围。仓库配置的独立备份角色通过有效的 `pg_read_all_data`、`INHERIT` 和 `BYPASSRLS` 取得只读导出能力，覆盖后续新增表，无需给037另加逐表GRANT。本轮生产只读复核确认上述能力有效、非超级用户，现有public表缺少SELECT权限的数量为0；这不代替升级后真实备份。发布后应核对新dump目录包含两张新表，并在受控恢复中验证行数、所有者及应用/备份角色访问能力，不能只凭备份任务退出成功判断恢复完整。
+
+原036来源 `5cbc27c` 的迁移账本检查会拒绝额外037记录；它也不能正确消费转换后的v2页面。**不可仅切换旧代码或只执行页面restore后启动旧服务。** 维护窗口内、尚未重新开放任何写入时，回到旧版本需要匹配的036完整数据库备份与旧制品。037开放写入后优先同合同前向修复；旧dump恢复可能覆盖新任务及用户修改，不能自动执行。未知供应商回执不能重放，恢复数据库也不代表外部调用未发生。
+
+### 双队列运维检查
+
+`npm --prefix backend run ops:ai-tasks` 使用可重复读只读事务及5秒单语句超时，先核对完整迁移账本，再返回原任务、协作目标、协作节点和模型回执的数值汇总。`ok:true` 表示查询完成；`workerLiveness:"not_checked"` 明确表示它没有验证Worker进程和心跳，不代表没有失败任务或供应商问题。
+
+协作目标一旦开始就会保持 `running`，即使后续节点仍在等待。因此需要同时查看 `workspaceNodes.queued`、`ready`、`waiting_dependencies` 和 `inactive_parent`；只看目标层的排队数会漏掉停滞节点。`ready` 按当前父任务状态、执行时限及依赖完成情况计算，不把正常依赖等待误报为可执行队列。`oldest_ready_seconds` 是当前可执行节点自创建以来的年龄，包含此前可能的依赖等待时间，不是精确的可执行等待时长。
+
+`workspaceCalls.dispatched` 表示已派发尚未收到回执，正常模型调用期间可以非零；`unknown` 与 `unknown_last_24h` 显示已转为结果未知的累计及近期调用。`dispatched_without_running_node` 表示仍未结算但节点已经不在运行，需要核对执行记录。汇总不返回目标原文、素材、用户或节点ID，不修改状态、不重新派发调用。
+
+复核实际systemd状态与近期 `ai_task_worker_heartbeat`，同时检查 `lastSuccessfulPollAt` 和 `workspaceLastSuccessfulPollAt` 是否继续推进，以及 `activeTask`、`activeNodes`、排队年龄、过期租约/审批/期限和近期失败/中断。进程存活、数据库可连和API ready都不能替代两条队列进度；暂时非零的活动数也不是错误。媒体检索Worker仍需独立核对它原有心跳与索引队列。
+
+本轮运维查询在空的隔离PostgreSQL应用37份迁移后4/4测试通过，覆盖运行中目标的待执行节点、依赖等待、未知回执、只读与连接释放，以及旧036来源不能认证037数据库。证据为 `/tmp/miaoxun-ai-operations-pg-tests.log`；清理后用户、协作目标及节点均为0，临时数据库已停止并删除。此记录不是生产部署证据。

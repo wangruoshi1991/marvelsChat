@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, TextInput } from 'react-native';
+import { Alert, Text, TextInput } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import { StationContentListScreen } from '../src/features/station/StationContentListScreen';
@@ -12,6 +12,10 @@ import {
 } from '../src/features/station/StationHomeModules';
 import { styles } from '../src/shared/styles';
 import { palettes } from '../src/shared/theme';
+import {
+  emptyProfile,
+  emptyStationContent,
+} from '../src/features/session/sessionDefaults';
 
 const diaryEntry = {
   id: 'diary-1',
@@ -126,6 +130,7 @@ describe('station module management', () => {
   });
 
   it('keeps Agent chat and removal as independent controls', async () => {
+    const confirmation = jest.spyOn(Alert, 'alert');
     const agent = {
       key: 'model-3d',
       name: '3D形象顾问 Agent',
@@ -160,17 +165,17 @@ describe('station module management', () => {
           language="zh"
           onActionError={jest.fn()}
           onActionMessage={onActionMessage}
-          onApplySiteDraft={jest.fn()}
+          token="unit-test"
+          active
+          onRefreshTaskArtifacts={jest.fn()}
           onCreateFileAsset={jest.fn()}
           onCreateSiteDraft={jest.fn()}
-          onCreateVideoDraft={jest.fn()}
           onOpenAgentThread={onOpenAgentThread}
-          onPreprocessFileAsset={jest.fn()}
           onSetAgentEnabled={onSetAgentEnabled}
           ownedAgents={[ownedAgent]}
           palette={palettes.light}
-          profile={{} as never}
-          stationContent={{} as never}
+          profile={emptyProfile}
+          stationContent={emptyStationContent}
           status="正常"
         />,
       );
@@ -188,10 +193,14 @@ describe('station module management', () => {
 
     await ReactTestRenderer.act(async () => {
       remove.props.onPress();
-      await new Promise<void>(resolve => setImmediate(resolve));
+    });
+    expect(onSetAgentEnabled).not.toHaveBeenCalled();
+    expect(confirmation).toHaveBeenCalledTimes(1);
+    await ReactTestRenderer.act(async () => {
+      await confirmation.mock.calls[0][2]?.[1].onPress?.();
     });
 
-    expect(onSetAgentEnabled).toHaveBeenCalledWith('model-3d', false);
+    expect(onSetAgentEnabled).toHaveBeenCalledWith('model-3d', false, []);
     expect(onOpenAgentThread).not.toHaveBeenCalled();
     expect(onActionMessage).toHaveBeenCalledWith('Agent 已移除');
 
@@ -200,6 +209,7 @@ describe('station module management', () => {
     expect(onSetAgentEnabled).toHaveBeenCalledTimes(1);
 
     await ReactTestRenderer.act(() => renderer!.unmount());
+    confirmation.mockRestore();
   });
 
   it('opens an existing diary in the shared editor and exposes swipe handlers', async () => {

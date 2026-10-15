@@ -10,10 +10,10 @@ export async function evaluateAlbumAssistant({ run = runAgent } = {}) {
   const albumId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   for (const example of suite) {
     const calls = [];
-    const tools = createAlbumAssistantTools({ userId: "synthetic-owner", inputMessageId: example.id,
+    const tools = createAlbumAssistantTools({ userId: "synthetic-owner", operationKey: `album-eval:${example.id}`,
       assertAccess: async () => {}, listAlbums: async () => [{ id: albumId, title: "旅行" }],
       service: {
-        getMediaRetrievalStatus: async () => ({ enabled: true, availability: { canStartRun: true }, backfill: { indexedAssets: 1, totalAssets: 1 } }),
+        getMediaRetrievalStatus: async () => ({ enabled: true, availability: { canStartRun: true }, backfill: { indexedAssets: 1, skippedAssets: 0, totalAssets: 1 } }),
         searchMediaRetrieval: async args => {
           calls.push(args);
           return { agentRunId: "synthetic-run", results: example.results || [] };

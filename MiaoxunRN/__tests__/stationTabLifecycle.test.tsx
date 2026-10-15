@@ -112,12 +112,7 @@ const session = {
   setAgentEnabled: asyncAction,
   deleteStationPost: asyncAction,
   createStationSiteDraft: asyncAction,
-  applyStationSiteDraft: asyncAction,
-  listStationAlbumSuggestions: asyncAction,
-  applyStationAlbumSuggestion: asyncAction,
   createStationFileAsset: asyncAction,
-  preprocessStationFileAsset: asyncAction,
-  createStationVideoDraft: asyncAction,
   listMiaoPointLedger: asyncAction,
 } as unknown as ReturnType<typeof useMiaoxunSession>;
 
@@ -131,6 +126,7 @@ function stationScreen(tab: StationTab, active = true) {
         onActionMessage={action}
         onCopyAIID={action}
         onOpenAgentThread={action}
+        onOpenWorkspace={action}
         onOpenFriendThread={action}
         onOpenLocation={action}
         onOpenPostComposer={action}
@@ -148,14 +144,18 @@ function stationScreen(tab: StationTab, active = true) {
 }
 
 describe('Station tab lifecycle', () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('keeps the home viewer mounted and makes only the selected panel interactive', () => {
-    let renderer: ReactTestRenderer.ReactTestRenderer;
+  afterEach(async () => {
+    await ReactTestRenderer.act(async () => renderer?.unmount());
+    renderer = undefined;
+  });
 
-    ReactTestRenderer.act(() => {
+  it('keeps the home viewer mounted and makes only the selected panel interactive', async () => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(stationScreen('station'));
     });
 
@@ -220,9 +220,8 @@ describe('Station tab lifecycle', () => {
     ).toBe(false);
   });
 
-  it('pauses the retained viewer when station is inactive without remounting it', () => {
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-    ReactTestRenderer.act(() => {
+  it('pauses the retained viewer when station is inactive without remounting it', async () => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(stationScreen('station'));
     });
     ReactTestRenderer.act(() => {
@@ -245,9 +244,8 @@ describe('Station tab lifecycle', () => {
     expect(mockPanelUnmounted).not.toHaveBeenCalled();
   });
 
-  it('does not create the home viewer before the home tab is first visited', () => {
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-    ReactTestRenderer.act(() => {
+  it('does not create the home viewer before the home tab is first visited', async () => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(stationScreen('posts'));
     });
     expect(
@@ -269,9 +267,8 @@ describe('Station tab lifecycle', () => {
     expect(posts.props.pointerEvents).toBe('none');
   });
 
-  it('opens the album conversation without creating a retrieval page', () => {
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-    ReactTestRenderer.act(() => {
+  it('opens the album conversation without creating a retrieval page', async () => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(stationScreen('station'));
     });
 

@@ -1,4 +1,5 @@
 #import <React/RCTBridgeModule.h>
+#import <React/RCTEventEmitter.h>
 
 @interface RCT_EXTERN_MODULE(MiaoxunConfigModule, NSObject)
 @end
@@ -17,10 +18,18 @@ RCT_EXTERN_METHOD(currentLocation:(RCTPromiseResolveBlock)resolve
 
 @end
 
-@interface RCT_EXTERN_MODULE(MiaoxunSpeechModule, NSObject)
+@interface RCT_EXTERN_MODULE(MiaoxunSpeechModule, RCTEventEmitter)
 
-RCT_EXTERN_METHOD(recognizeOnce:(NSString *)languageCode
+RCT_EXTERN_METHOD(recognize:(NSString *)requestId
+                  languageCode:(NSString *)languageCode
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(prepare:(NSString *)requestId
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(finish:(NSString *)requestId)
+RCT_EXTERN_METHOD(cancel:(NSString *)requestId)
 
 @end

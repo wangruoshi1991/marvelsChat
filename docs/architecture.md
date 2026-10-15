@@ -1,5 +1,11 @@
 # 架构说明
 
+## Agent 工作空间与运行边界
+
+移动端采用妙/讯/我三栏：妙围绕任务展示目标、真实参与Agent与进展，Agent添加管理位于我；讯保留对话/任务与独立通知入口，并可下拉进入二楼。我保留小站和独立3D流程，二楼复用真实内容API，只保留账号隐私入口。
+
+API和两个Worker共用版本、数据库与Agent注册声明。当前运行版本、迁移和设备配套统一见[当前交接](handoffs/CURRENT.md)；精确接口合同见[统一AI交互](ai-interaction-system.md)，长期能力边界见[工作空间方案](agent-workspace-architecture.md)。构建、部署或模拟器通过不能替代真机完整链路验收。
+
 妙讯采用单仓库多目录独立工程结构，当前阶段不拆多个 Git 仓库。
 
 根目录 `package.json` 只承载 ESLint 等仓库质量工具，不安装各业务工程的运行依赖。业务依赖分别放在：
@@ -17,6 +23,7 @@
 ```text
 MiaoxunRN/admin/avatar-web/media-retrieval-web -> backend -> PostgreSQL / agents / provider
 backend media-retrieval-worker -> PostgreSQL / OSS / configured provider
+backend ai-task-worker -> PostgreSQL tasks/workspaces/nodes / agents / configured provider
 ```
 
 - `MiaoxunRN`：正式移动端主线。采用 React Native，并通过 iOS 原生工程接入 Keychain、权限、启动配置和后续推送能力。
@@ -28,8 +35,26 @@ backend media-retrieval-worker -> PostgreSQL / OSS / configured provider
 - `avatar-web`：伙伴的 3D Web 工作台与 Three.js 查看器源码。App 只嵌入独立构建的单模型查看器，不嵌入整套 Web UI。
 - `media-retrieval-web`：媒体检索测试工具，不是正式 App 实现。
 - `backend/src/media-retrieval-worker.js`：独立进程消费数据库任务，与 HTTP 服务共享仓库、数据库和版本；3D runner 当前仍在 HTTP 进程内运行。
+- `backend/src/ai-task-worker.js`：同一独立Worker消费单Agent任务与动态协作节点；API和两个Worker使用同版代码与同一PostgreSQL，不按Agent拆服务。
 - `python`：当前没有 Python 工程；后续如接入媒体生成、文件解析、模型处理或长任务队列，应作为独立 worker/service 引入，不混入 RN 或 Node API 进程。
 - `docs`：任何结构和接口变化都要同步记录。
+
+## 工程入口与文件归属
+
+| 目录或入口 | 维护边界 |
+| --- | --- |
+| `MiaoxunRN/src/features/` | 按业务组织页面、会话状态和交互；容器管理副作用，展示组件不自行获取另一份业务状态 |
+| `MiaoxunRN/src/services/api/` | 按领域拆分API客户端；`apiClient.ts`只聚合这些入口，原生能力适配位于`services/` |
+| `MiaoxunRN/src/models/`、`src/shared/` | 公开DTO类型与共享UI；同一内容不按页面复制模型或执行逻辑 |
+| `backend/src/repositories.js` | 聚合账号、授权和启动读取；各领域查询留在对应repository/service，不继续堆入此文件 |
+| `backend/src/routes/` | 按领域注册路由；`station-routes.js`只组合小站子路由，3D保留独立领域 |
+| `agents/*.agent.js` | 由registry动态加载的能力定义；`agents/scripts/`、`agents/media-retrieval/`还有约定加载的CLI和评测文件，不能仅因无静态import删除 |
+| `avatar-web/src/app-viewer/` | App内嵌单模型查看器源码；生成的HTML由仓库门禁核对，不手工维护第二份实现 |
+| `scripts/`、`backend/scripts/` | 发布、数据库运维、隔离验证与评测入口；用途由包命令、CI、测试或运维文档确认 |
+
+根目录依赖只用于质量工具；各工程维护自己的锁文件。环境文件、`node_modules`、Web `dist`和本地日志不进入Git；可再生产物不作为源码来源。数据库迁移和内嵌查看器虽可能看似重复，仍有账本或构建约束，不能按目录大小删除。
+
+全仓检查入口是`./scripts/check-repository.sh`，其中`check-source-syntax.mjs`逐文件检查JS和Bash，避免一次命令只检查首个文件。`scripts/check-backend-image.sh`使用无网络、无业务凭据的临时镜像验证API和Worker入口；数据库升级重放与真实HTTP检查见[数据库验证](database.md#迁移与验证)。
 
 ## 移动端技术栈
 
@@ -90,9 +115,9 @@ src/services/location.ts
 
 相册管理会话的模型通过受控工具调用检索 Agent；工具按服务端 owner 查询已有素材与派生索引，结果卡片通过运行引用读取，不复制文件或建立第二份素材实体。授权、索引增量、API、迁移和验证边界见 [相册对话检索](agents/album-assistant.md)。RN 不再使用独立“找素材”页面或规则整理工作台。
 
-2026-10-10 本地候选将查询角色解析交给管家的 `NEW_API_*` 对话模型；schema v3 的 visual/identity/syntax 片段必须完整、按序还原经 NFKC/trim 的用户原句。不存在固定物体、颜色、动作词表或本地关键词排序；低置信度、缺少解析或旧 schema 明确阻断，不切换模型或降级查询。身份只能作为当前 owner 数据中的完整值精确约束，不能从画面识别人名。
+正式检索将查询角色解析交给管家的 `NEW_API_*` 对话模型；schema v3 的 visual/identity/syntax 片段必须完整、按序还原经 NFKC/trim 的用户原句。不存在固定物体、颜色、动作词表或本地关键词排序；低置信度、缺少解析或旧 schema 明确阻断，不切换模型或降级查询。身份只能作为当前 owner 数据中的完整值精确约束，不能从画面识别人名。
 
-视觉条件用原文生成向量，在当前 owner、相册、素材类型和向量 provenance 范围召回最多 20 个图片/视频帧候选。最终判定逐次发送一张当前原图片或精确视频帧，避免多个画面混用实体；只接受全部视觉条件明确成立的 high 匹配。每次判定独立校验同意、epoch、原文件版本并预留和记录费用；任何一次失败均不返回已完成的部分结果。画面仅在请求内存中处理，不建立持久化副本；结果不含原图、描述或模型证据。来源校验不能确定性证明模型语义判断正确。此候选尚未部署。
+视觉条件用原文生成向量，在当前 owner、相册、素材类型和向量 provenance 范围召回最多 20 个图片/视频帧候选。最终判定逐次发送一张当前原图片或精确视频帧，避免多个画面混用实体；只接受全部视觉条件明确成立的 high 匹配。每次判定独立校验同意、epoch、原文件版本并预留和记录费用；任何一次失败均不返回已完成的部分结果。画面仅在请求内存中处理，不建立持久化副本；结果不含原图、描述或模型证据。来源校验不能确定性证明模型语义判断正确，有限素材验证不代表大库/视频质量已完成验收。
 
 登录会话状态只接受当前 token 发起的更新。认证首屏数据必须在凭据持久化成功后发布；退出时清空进行中的同步引用，已结束会话的通知、社交、小站和聊天请求不得回写新会话。bootstrap 和增量同步的游标在读取数据前取值，避免跳过读取期间产生的更新。
 
@@ -102,6 +127,8 @@ src/services/location.ts
 用户注册/登录 -> users/auth_sessions
 App 启动 -> /api/app/bootstrap -> user_profiles/chat_threads/chat_messages/user_agents
 聊天发送 -> chat_messages -> agent runtime -> chat_messages/agent_runs
+相册消息 -> chat_messages/ai_tasks -> AI Worker -> 受控相册工具 -> 回复/任务成果
+妙协作目标 -> agent_workspaces/agent_workspace_nodes -> AI Worker -> 管家计划/专业能力 -> 素材交接/私有页面草稿
 扫码主页 -> /api/scan/resolve -> users/user_profiles/social_relationships/social_requests
 定位建议 -> CoreLocation/LocationManager -> /api/location/resolve -> configured geocoder
 资料保存 -> /api/me/profile -> user_profiles/avatar_config/community/activity_area
@@ -128,16 +155,16 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 
 - 配置 `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL` 后，所有已注册且已授权的 Agent 会话都通过统一模型运行时调用 OpenAI-compatible 或 Anthropic-compatible 接口。
 - Agent 会话在写入用户消息前校验 Agent 仍已注册且当前账号仍启用；聊天上下文按实际 scope 提供资料、模块、已授权 Agent 和当前小站内容，Agent 消息创建按账号限流且不影响好友 direct 消息。
-- Agent 注册声明的 `permissions` 是可授权上限，账号的 `granted_scopes` 是运行时实际权限；资料、历史消息、小站内容和 Agent 编排上下文均按实际 scope 注入。
+- Agent 注册声明的 `permissions` 与账号明确确认的 `granted_scopes` 在启用和执行时必须集合一致；缺少或超出声明均拒绝，旧授权由本人移除后重新添加。执行仍受任务原快照、对象归属、云端同意及当前权限约束；管家不能替专业Agent提供权限。
 - 未配置模型服务或供应商调用失败时，后端保存用户消息、明确的失败提示和 `runtime-error` 运行记录，不记录伪造 token，也不向客户端暴露供应商原始错误。
 
-后续多 Agent 接入建议分三层推进：
+当前Agent接入分三层：
 
 1. 注册层：每个 Agent 声明 `key`、能力、权限、可见范围、不可编辑的 `identity` 头像标识和默认提示词计划；registry 对 identity 做结构校验，缺失配置时拒绝注册。
-2. 编排层：由后端根据用户授权、会话上下文和任务类型选择单 Agent 或多 Agent 协作。
-3. 交互层：客户端展示 Agent 列表、授权状态、调用进度和结果，不关心底层模型供应商。
+2. 编排层：`agent-workspace-service.js` 调用管家提出结构化计划，服务端验证目录、授权快照和依赖后持久化节点；现有专业能力包括素材选择、页面草稿及显式文字贡献，完整目录与限制见[工作空间方案](agent-workspace-architecture.md#按需求组织协作合同3工作区)。其他普通Agent会话仍同步，不能据此视为完整协作执行器。
+3. 交互层：妙展示任务、参与者、进度和成果，我管理Agent；引用与确认使用共享组件。客户端不决定模型供应商，也不通过菜单或卡片扩大授权。
 
-需要长任务、流式输出或多 Agent 协作时，优先扩展后端接口，例如：
+主要现行后端接口与边界：
 
 - `GET /api/agents`：注册 Agent 列表。
 - `GET /api/health`：仅表示进程存活，不探测或暴露依赖状态。
@@ -154,8 +181,13 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 - 客户端发送状态是 UI 内存态，不是后端消息状态；只有 `POST /api/threads/:threadId/messages` 成功返回的 `chat_messages` 记录才表示真实已保存消息。后续如需已送达、已读、正在输入，必须新增后端字段或事件表并通过 API/WebSocket 发布。
 - `GET /api/app/sync`：按 `chat_threads.updated_at` 做增量同步。
 - `POST /api/threads/:threadId/read`：将当前线程未读数清零。
-- `POST /api/agent-runs`：后续可新增的显式任务入口。
-- `GET /api/agent-runs/:runId/events`：后续可新增的 SSE 事件流。
+- `GET /api/tasks`、`GET /api/tasks/:id/events`、`POST /api/tasks/:id/decision`：单Agent持久任务与阶段事件；提交从相册消息/建站接口发起。
+- `POST/GET /api/agent-workspaces`、`GET /api/agent-workspaces/:id`、`POST /api/agent-workspaces/:id/decision`：共同目标、协作节点与确认/取消/澄清。要求协作合同3，缺少或不同声明明确返回426。
+- `GET /api/agent-runs/:runId/events`：现行媒体检索专用事件接口，不能充作全体Agent事件流；通用流式输出仍待实现。
+
+协作接口的 `inputRequest` 区分内容澄清与 `agent_access`：后者的Agent、能力、必要范围和下一步由服务端实际能力目录生成，不解析模型文案猜测权限。旧任务授权快照不能扩大；用户确认授权后以保留目标和引用的新草稿主动创建任务。澄清回复通过037已有 `followups` 记录并传递至主管；新增授权不能借回复追加到旧快照。
+
+迁移038引入的 `agent_workspace_submissions` 用owner、幂等key与请求hash记录accepted/rejected终局。旧037成功提交一次性回填，业务savepoint中的明确拒绝保留为可恢复结果；5xx或连接失败继续以原key核对，不能仅凭HTTP 4xx清除提交键后重发。该账本补齐提交结果边界，不建立第二套任务或环境。
 
 ## 未接入模块的处理
 
@@ -165,7 +197,7 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 
 小站页承载位置、本人在线状态和 3D 形象展示，设置页不承载这些个人主页内容编辑。现有日记、相册、确定性内容整理工具和文件入口仍含旧版组织方式；新版第一面的“个人数字身份＋形象档案”结构尚未完整实现。2026-09-16 已移除第一面音乐板块，并恢复聊天设计对应的管家人物头像。未接入内容只展示明确空/未开放状态，不展示示例列表、封面或数量；旧统计不得作为新版合作伙伴/综合评分的替代，详见 [设计与伙伴集成核对](reviews/2026-09-16-partner-integration.md)。
 
-内容级长按属于移动端共享交互层，而不是某个业务模块的私有手势。`AIAssistProvider` 在 App 根部维护一个活动菜单，3D 舞台、聊天消息、动态、日记和相册卡片只提供对象引用、动作契约和来源 ID；原内容保持单份挂载，菜单取消、路由变化、后台或组件卸载会使待处理测量和动作失效。妙讯管家动作统一打开已有管家线程并写入待发送草稿，发送仍由用户确认；客户端不自动发送、复制媒体、暴露私有 URL 或伪造 Agent 生成结果。3D WebView 同时关闭网页文本选择和上下文菜单，隐藏时暂停渲染循环并取消长按计时器，避免页面切换后出现重复模块或延迟菜单。
+内容级长按属于移动端共享交互层。`AIAssistProvider` 在 App 根部维护一个活动菜单，3D舞台、聊天消息、动态、日记、相册和单Agent任务卡提供对象引用、动作契约及来源ID；原内容保持单份挂载，菜单取消、路由变化、后台或组件卸载使待处理测量和动作失效。协作卡接入同一菜单，保留选中时的目标、id/revision、状态和真实参与者快照；快照随可见草稿发送，不是可读取最新工作区或原素材的正式引用。相册在我页与二楼复用`AlbumContextActions`，妙管家动作先进入需求草稿，再由用户发送，不预设“理解/规划”策略；客户端不自动发送、复制媒体、暴露私有URL或伪造结果。3D WebView关闭网页文本选择和上下文菜单，隐藏时暂停渲染循环并取消长按计时器。
 
 `avatar_config` 只用于人类用户的小站资料和用户小头像。小站 3D 主舞台使用 App 内置的 Three.js `0.180.0`、GLTFLoader 和 OrbitControls，通过 `react-native-webview` 的本地页面（iOS `WKWebView` / Android WebView）加载 Bearer 鉴权的 `/api/avatar-3d/app/models/:modelId/file`，不加载伙伴 Web 工作台页面。上传照片、四视图生成与确认、Tripo 建模、任务状态和费用控制仍由伙伴的后端生命周期负责；App 只是该流程的移动端产品界面。
 
@@ -175,6 +207,6 @@ PostgreSQL 只保存任务、模型状态、字节数和 OSS object key，不保
 
 当前没有捏脸、骨骼动作或任意换装编辑器。后续升级商业素材库或动画时，必须继续保留原始生成资产与平台派生资产的边界，并完成授权、审核、移动端性能和跨平台验证。Agent 头像由 Agent 注册 identity 决定，不允许复用用户可编辑形象。收藏列表、签名动态码、群聊、已读回执、正在输入和媒体聊天消息记录在 [社交关系流程](social-graph.md)，后续必须继续按后端校验优先实现。
 
-App 通知列表只读取 `notifications` 表；通知创建、标题正文、通知种类集中在后端 `backend/src/notification-service.js`，社交关系仓储只返回创建结果，接口层负责实时推送刷新信号。当前标准通知种类为 `friend.request`、`friend.accepted`、`follow.created`，后续关注的人发布动态、收藏板块更新、系统审核等通知必须先扩展 `notification-service` 枚举和模板，再接入对应业务事件。`usage_events` 和 `agent_runs` 保持为后台审计与运行记录，不进入用户通知流。客户端在妙讯页 `聊天 / 通知` 切换中显示通知未读数，进入通知列表不会自动清空，点击单条、通过好友申请或显式标记已读才更新 `read_at`。妙讯管家当前聊天页内的同步回复不计入会话未读，只有用户未打开的会话消息才应显示未读数字。
+App 通知列表只读取 `notifications` 表；通知创建、标题正文、通知种类集中在后端 `backend/src/notification-service.js`，社交关系仓储只返回创建结果，接口层负责实时推送刷新信号。当前标准通知种类为 `friend.request`、`friend.accepted`、`follow.created`，后续关注的人发布动态、收藏板块更新、系统审核等通知必须先扩展 `notification-service` 枚举和模板，再接入对应业务事件。`usage_events` 和 `agent_runs` 保持为后台审计与运行记录，不进入用户通知流。讯页使用“对话 / 任务”分段及独立通知入口，进入通知列表不会自动清空，点击单条、通过好友申请或显式标记已读才更新 `read_at`。妙讯管家当前聊天页内的同步回复不计入会话未读，只有用户未打开的会话消息才应显示未读数字。
 
 2026-06-24 真机回归修复：登录流程必须在 `login` 和首屏 `bootstrap` 都成功后才写入本地 token 并进入主界面，避免网络超时时出现按钮持续刷新、二次点击后半同步进入的状态；登录页本地提交锁防止 React 状态尚未刷新时重复发起登录。小站在线/离线/隐藏菜单使用 RN `Modal` 透明浮层，按点击位置计算弹层坐标，不再放在滚动内容内部的固定 absolute 层，避免 iPhone 真机上被 AI ID 或资料区遮挡。当前小站 3D 舞台使用内嵌 Three.js 查看器加载 App 专用 GLB，并以稳定的资源 ID、缩略图占位和私有缓存控制减少重复下载与空白等待；早期 Filament 真机问题仅保留在 iOS 历史记录中。好友聊天页不再展示“实时聊天未连接 / 正在连接实时聊天”顶部横幅，实时连接状态保留在 session 内部，用户只在具体发送失败或重试时看到操作结果。WebSocket 生命周期只绑定登录 token，presence 事件直接更新本地公开在线状态并触发增量同步，不能因本人 `presenceMode` 变化重建连接。妙讯页会话左滑进入聊天，聊天页左滑退出，动画位移必须跟手并按距离或速度完成。

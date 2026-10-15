@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 
 import { StationFileAssetDTO } from '../../models/api';
@@ -8,14 +8,11 @@ import { Palette } from '../../shared/theme';
 import { Language } from '../session/useMiaoxunSession';
 import { StationModule } from './StationHomeModules';
 
-const defaultContent = '今天的照片、日记和视频草稿可以围绕同一个生活片段联动。';
-
 export function StationFileAgentPanel({
   palette,
   language,
   fileAssets,
   onCreateFileAsset,
-  onPreprocessFileAsset,
   onActionMessage,
   onActionError,
 }: {
@@ -28,21 +25,13 @@ export function StationFileAgentPanel({
     content?: string;
     metadata?: Record<string, unknown>;
   }) => Promise<StationFileAssetDTO>;
-  onPreprocessFileAsset: (
-    fileAssetId: string,
-    payload: {
-      originalFilename?: string;
-      mimeType?: string;
-      content?: string;
-      metadata?: Record<string, unknown>;
-    },
-  ) => Promise<StationFileAssetDTO>;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
-  const [filename, setFilename] = useState('小站素材笔记.md');
-  const [content, setContent] = useState(defaultContent);
+  const [filename, setFilename] = useState('');
+  const [content, setContent] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const pending = useRef(false);
   const latestFiles = useMemo(
     () =>
       [...fileAssets]
@@ -57,28 +46,25 @@ export function StationFileAgentPanel({
 
   const processFile = async () => {
     const safeFilename = filename.trim();
-    const safeContent = content.trim();
-    if (!safeFilename || !safeContent || isProcessing) {
+    if (!safeFilename || !content.trim() || pending.current) {
       return;
     }
+    pending.current = true;
     setIsProcessing(true);
     try {
       const asset = await onCreateFileAsset({
         originalFilename: safeFilename,
         mimeType: mimeTypeForFilename(safeFilename),
-        content: safeContent,
+        content,
         metadata: { source: 'station-text-material' },
       });
-      await onPreprocessFileAsset(asset.id, {
-        originalFilename: safeFilename,
-        mimeType: mimeTypeForFilename(safeFilename),
-        content: safeContent,
-        metadata: { source: 'station-text-material' },
-      });
-      onActionMessage(textFor(language, '素材已整理', 'Material processed'));
+      setFilename('');
+      setContent('');
+      onActionMessage(statusText(language, asset.status));
     } catch (error) {
       onActionError(error);
     } finally {
+      pending.current = false;
       setIsProcessing(false);
     }
   };
@@ -86,13 +72,14 @@ export function StationFileAgentPanel({
   return (
     <StationModule
       palette={palette}
-      title={textFor(language, '素材预处理', 'Material Preprocessing')}
+      title={textFor(language, '文字素材', 'Text material')}
       action={
         isProcessing
-          ? textFor(language, '整理中', 'Processing')
-          : textFor(language, '整理', 'Process')
+          ? textFor(language, '登记中', 'Registering')
+          : textFor(language, '登记预览', 'Register preview')
       }
       onAction={processFile}
+      actionDisabled={isProcessing || !filename.trim() || !content.trim()}
     >
       <View style={styles.stationAgentLoopStack}>
         <View
@@ -108,15 +95,15 @@ export function StationFileAgentPanel({
                 { color: palette.secondaryText },
               ]}
             >
-              {textFor(language, '素材整理', 'Material Processing')}
+              {textFor(language, '文字预览', 'Text preview')}
             </Text>
             <Text
               style={[styles.stationAgentLoopTitle, { color: palette.text }]}
             >
               {textFor(
                 language,
-                '文字整理可用，文件上传待开放',
-                'Text processing ready; file upload pending',
+                '仅登记文字预览，设备文件上传尚未开放',
+                'Register text previews; device file upload is not available',
               )}
             </Text>
           </View>
@@ -133,6 +120,8 @@ export function StationFileAgentPanel({
         <TextInput
           value={filename}
           onChangeText={setFilename}
+          accessibilityLabel={textFor(language, '素材名称', 'Material name')}
+          editable={!isProcessing}
           maxLength={180}
           placeholder={textFor(language, '素材名称', 'Material name')}
           placeholderTextColor={palette.secondaryText}
@@ -148,12 +137,14 @@ export function StationFileAgentPanel({
         <TextInput
           value={content}
           onChangeText={setContent}
+          accessibilityLabel={textFor(language, '素材内容', 'Material text')}
+          editable={!isProcessing}
           multiline
-          maxLength={2000}
+          maxLength={1000}
           placeholder={textFor(
             language,
-            '输入要整理的文字素材',
-            'Enter text material to process',
+            '输入文字预览，最多1000字符',
+            'Enter a text preview, up to 1,000 characters',
           )}
           placeholderTextColor={palette.secondaryText}
           style={[
@@ -182,18 +173,17 @@ export function StationFileAgentPanel({
               <Text
                 style={[styles.stationAgentLoopTitle, { color: palette.text }]}
               >
-                {asset.preprocessingResult?.title
-                  ? String(asset.preprocessingResult.title)
-                  : asset.originalFilename}
+                {asset.originalFilename}
               </Text>
               <Text
+                selectable
                 style={[
                   styles.stationAgentLoopBody,
                   { color: palette.secondaryText },
                 ]}
               >
-                {asset.preprocessingResult?.summary
-                  ? String(asset.preprocessingResult.summary)
+                {typeof asset.preprocessingResult?.textPreview === 'string'
+                  ? asset.preprocessingResult.textPreview
                   : statusText(language, asset.status)}
               </Text>
               <View style={styles.stationAgentLoopChipRow}>
@@ -222,8 +212,8 @@ export function StationFileAgentPanel({
           >
             {textFor(
               language,
-              '暂无素材。整理后的摘要、标签和预览会显示在这里。',
-              'No material yet. Processed summaries, tags, and previews will appear here.',
+              '暂无文字预览。需要摘要时，请在对话中提供要整理的文字。',
+              'No text previews yet. To request a summary, provide the text in a conversation.',
             )}
           </Text>
         )}
@@ -240,6 +230,9 @@ function mimeTypeForFilename(filename: string) {
   if (lower.endsWith('.csv')) {
     return 'text/csv';
   }
+  if (lower.endsWith('.tsv')) {
+    return 'text/tab-separated-values';
+  }
   if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
     return 'text/markdown';
   }
@@ -248,10 +241,10 @@ function mimeTypeForFilename(filename: string) {
 
 function statusText(language: Language, status: string) {
   if (status === 'processed') {
-    return textFor(language, '已整理', 'Processed');
+    return textFor(language, '文字预览已登记', 'Text preview registered');
   }
   if (status === 'unsupported') {
     return textFor(language, '暂不支持', 'Unsupported');
   }
-  return textFor(language, '等待整理', 'Pending');
+  return textFor(language, '尚无文字预览', 'No text preview');
 }

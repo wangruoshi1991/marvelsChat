@@ -1,10 +1,15 @@
+import type { AIContextReference } from '../../models/aiTask';
 import {
   ButlerClientContextPayload,
-  ButlerLocalActionResultPayload,
   MessageDTO,
   SendMessageResponse,
 } from '../../models/api';
 import { request } from './http';
+import {
+  agentWorkspaceHeaders,
+  assertAgentWorkspaceContract,
+  assertAIContract,
+} from '../aiContract';
 
 export const messageApi = {
   messages(threadId: string, token: string) {
@@ -18,24 +23,28 @@ export const messageApi = {
     content: string,
     token: string,
     clientContext?: ButlerClientContextPayload | null,
-    localActionResult?: ButlerLocalActionResultPayload | null,
     replyToMessageId?: string | null,
     clientMessageId?: string,
     timeoutMs = 45000,
+    contextRefs: AIContextReference[] = [],
+    butlerContextReset?: boolean,
   ) {
+    if (clientContext || butlerContextReset === true)
+      assertAgentWorkspaceContract(token);
+    else if (contextRefs.length) assertAIContract(token);
     const body: {
       content: string;
+      contextRefs: AIContextReference[];
+      butlerContextReset?: boolean;
       clientContext?: ButlerClientContextPayload;
-      localActionResult?: ButlerLocalActionResultPayload;
       replyToMessageId?: string;
       clientMessageId?: string;
-    } = { content };
+    } = { content, contextRefs };
+
+    if (butlerContextReset === true) body.butlerContextReset = true;
 
     if (clientContext) {
       body.clientContext = clientContext;
-    }
-    if (localActionResult) {
-      body.localActionResult = localActionResult;
     }
     if (replyToMessageId) {
       body.replyToMessageId = replyToMessageId;
@@ -49,6 +58,7 @@ export const messageApi = {
       token,
       body,
       timeoutMs,
+      headers: agentWorkspaceHeaders,
     });
   },
 

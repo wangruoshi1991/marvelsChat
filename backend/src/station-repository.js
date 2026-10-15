@@ -39,7 +39,6 @@ export {
   listStationAlbumMediaAssetsForUser,
   listStationMediaAssetsForUser,
   markStationMediaAssetUploaded,
-  moveMediaAssetsToAlbum,
   prepareStationMediaAssetUpload,
   updateStationAlbum,
   updateStationDiaryEntry,
@@ -51,16 +50,13 @@ export {
   createFileAsset,
   createStationComicDiary,
   createStationSiteDraft,
-  createStationVideoDraft,
   deleteStationComicDiaryForUser,
-  getFileAssetForUser,
   getStationComicDiaryForUser,
   listFileAssetsByIdsForUser,
   listFileAssetsForUser,
   listStationComicDiariesForUser,
   listStationSiteDraftsForUser,
   listStationVideoDraftsForUser,
-  updateFileAssetPreprocessing,
 } from "./station-agent-repository.js";
 
 export function createStationPostViewerLister({ runQuery, listInteractions }) {

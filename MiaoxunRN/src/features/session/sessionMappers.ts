@@ -47,8 +47,26 @@ export function mergeMessages(
   incoming: ChatMessage[],
 ) {
   const incomingIds = new Set(incoming.map(message => message.id));
+  const acceptedClientIds = new Set(
+    incoming
+      .filter(message => message.clientMessageId && !message.localStatus)
+      .map(
+        message =>
+          `${message.threadId}:${message.senderType}:${message.clientMessageId}`,
+      ),
+  );
   return sortMessages([
-    ...existing.filter(message => !incomingIds.has(message.id)),
+    ...existing.filter(
+      message =>
+        !incomingIds.has(message.id) &&
+        !(
+          message.localStatus &&
+          message.clientMessageId &&
+          acceptedClientIds.has(
+            `${message.threadId}:${message.senderType}:${message.clientMessageId}`,
+          )
+        ),
+    ),
     ...incoming,
   ]);
 }

@@ -1,97 +1,73 @@
-import { replaceControlCharacters } from "./text-sanitization.js";
+import { z } from "zod";
+import { comicDiaryOptionsSchema } from "./schemas.js";
 import { getModelRuntimeStatus, runAgent } from "./agent-runtime.js";
 import { HttpError } from "./http-error.js";
 
-const maxFrames = 8;
-const minFrames = 2;
-
 const styleLabels = {
-  "slice-of-life": "生活四格",
+  "slice-of-life": "生活漫画",
   cute: "可爱漫画",
   manga: "黑白漫画",
   storyboard: "分镜草稿",
 };
 
-const sanitizeComicText = (value, max = 600) =>
-  replaceControlCharacters(value)
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\b(script|iframe|javascript:|onerror|onload|alert)\b/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, max);
+// Rendered as plain text. Invalid markup, hidden controls and oversized output
+// are rejected rather than stripped or truncated into an apparently valid draft.
+const comicText = max => z.string().refine(
+  // eslint-disable-next-line no-control-regex -- Reject hidden controls rather than silently stripping them.
+  value => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value) && !/<\/?[a-z][^>]*>/i.test(value),
+  "Comic text must be plain text without hidden control characters.",
+).transform(value => value.trim()).pipe(z.string().max(max));
+const frameSchema = z.object({
+  title: comicText(80).refine(value => value.length > 0),
+  scene: comicText(220),
+  caption: comicText(220),
+  dialogue: comicText(160),
+  mood: comicText(40),
+  camera: comicText(40),
+  mediaAssetIds: z.array(z.string().min(1)).max(4).refine(ids => new Set(ids).size === ids.length),
+}).strict().refine(frame => Boolean(frame.scene || frame.caption || frame.dialogue), "A storyboard frame needs content.");
+const draftSchema = z.object({
+  title: comicText(120).refine(value => value.length > 0),
+  summary: comicText(280).refine(value => value.length > 0),
+  frames: z.array(frameSchema).min(2).max(8),
+}).strict();
 
-const normalizeFrameCount = (value) => {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed)) return 4;
-  return Math.min(Math.max(parsed, minFrames), maxFrames);
-};
+function comicOptions(style, frameCount) {
+  const checked = comicDiaryOptionsSchema.safeParse({ style, frameCount });
+  if (!checked.success) throw new HttpError(400, "漫画风格或分镜数量无效，请重新选择。", { code: "COMIC_DIARY_INVALID_OPTIONS" });
+  return checked.data;
+}
 
-const normalizeStyle = (style) =>
-  Object.prototype.hasOwnProperty.call(styleLabels, style) ? style : "slice-of-life";
+function invalidDraft() {
+  return new HttpError(502, "漫画助手未返回完整有效的分镜，请重新提出需求。", { code: "COMIC_DIARY_INVALID_RESPONSE" });
+}
 
-const parseJsonReply = (reply) => {
-  const text = String(reply || "").trim();
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced ? fenced[1].trim() : text;
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start < 0 || end < start) {
-    throw new Error("comic-diary did not return a JSON object");
-  }
-  return JSON.parse(candidate.slice(start, end + 1));
-};
-
-const normalizeAgentFrame = (frame, index, allowedMediaIds) => ({
-  index: index + 1,
-  title: sanitizeComicText(frame?.title, 80) || `第 ${index + 1} 格`,
-  scene: sanitizeComicText(frame?.scene, 220),
-  caption: sanitizeComicText(frame?.caption, 220),
-  dialogue: sanitizeComicText(frame?.dialogue, 160),
-  mood: sanitizeComicText(frame?.mood, 40),
-  camera: sanitizeComicText(frame?.camera, 40),
-  mediaAssetIds: Array.from(new Set(Array.isArray(frame?.mediaAssetIds) ? frame.mediaAssetIds : []))
-    .filter((id) => allowedMediaIds.has(id))
-    .slice(0, 4),
-});
+function parseJsonReply(reply) {
+  if (typeof reply !== "string" || !reply.trim()) throw invalidDraft();
+  try { return JSON.parse(reply); }
+  catch { throw invalidDraft(); }
+}
 
 export function normalizeComicDiaryAgentDraft(
   rawDraft,
-  { diaryEntry, mediaAssets = [], fileAssets = [], style, frameCount },
+  { diaryEntry, mediaAssets = [], style, frameCount },
 ) {
-  const count = normalizeFrameCount(frameCount);
-  const allowedMediaIds = new Set(mediaAssets.map((asset) => asset.id).filter(Boolean));
-  const rawFrames = Array.isArray(rawDraft?.frames) ? rawDraft.frames : [];
-  if (rawFrames.length !== count) {
-    throw new HttpError(502, "Comic diary Agent returned an invalid frame count.", {
-      code: "COMIC_DIARY_INVALID_RESPONSE",
-    });
-  }
-  const frames = rawFrames.map((frame, index) =>
-    normalizeAgentFrame(frame, index, allowedMediaIds),
-  );
-  if (frames.some((frame) => !frame.scene && !frame.caption && !frame.dialogue)) {
-    throw new HttpError(502, "Comic diary Agent returned an empty frame.", {
-      code: "COMIC_DIARY_INVALID_RESPONSE",
-    });
-  }
+  const options = comicOptions(style, frameCount);
+  const checked = draftSchema.safeParse(rawDraft);
+  if (!checked.success || checked.data.frames.length !== options.frameCount) throw invalidDraft();
+  const allowedMediaIds = new Set(mediaAssets.map(asset => asset.id));
+  if (checked.data.frames.some(frame => frame.mediaAssetIds.some(id => !allowedMediaIds.has(id)))) throw invalidDraft();
+  const frames = checked.data.frames.map((frame, index) => ({ index: index + 1, ...frame }));
   return {
     version: 2,
-    title:
-      sanitizeComicText(rawDraft?.title, 120) ||
-      sanitizeComicText(diaryEntry?.title, 120) ||
-      "漫画日记",
-    style: normalizeStyle(style),
+    title: checked.data.title,
+    style: options.style,
     source: "comic-diary-agent",
-    summary: sanitizeComicText(rawDraft?.summary, 280),
+    summary: checked.data.summary,
     frames,
     sourceRefs: {
       diaryEntryId: diaryEntry?.id || null,
-      mediaAssetIds: Array.from(
-        new Set(frames.flatMap((frame) => frame.mediaAssetIds)),
-      ),
-      fileAssetIds: fileAssets.map((asset) => asset.id).filter(Boolean),
+      mediaAssetIds: [...new Set(frames.flatMap(frame => frame.mediaAssetIds))],
     },
   };
 }
@@ -101,12 +77,13 @@ export async function buildComicDiaryAgentResponse({
   user,
   diaryEntry,
   mediaAssets = [],
-  fileAssets = [],
-  style = "slice-of-life",
-  frameCount = 4,
-  modelStatus = getModelRuntimeStatus(),
+  style,
+  frameCount,
+  beforeModelCall,
+  modelStatus = getModelRuntimeStatus({ role: "planning" }),
   runAgent: runAgentFn = runAgent,
 } = {}) {
+  const options = comicOptions(style, frameCount);
   if (!modelStatus.configured) {
     throw new HttpError(503, "Comic diary Agent is not configured.", {
       code: "COMIC_DIARY_UNAVAILABLE",
@@ -115,16 +92,19 @@ export async function buildComicDiaryAgentResponse({
   try {
     const result = await runAgentFn({
       agentId: "comic-diary",
+      mode: "plan",
       input: [
-        `生成 ${normalizeFrameCount(frameCount)} 格${styleLabels[normalizeStyle(style)]}分镜。`,
+        `生成 ${options.frameCount} 格${styleLabels[options.style]}分镜。`,
         prompt,
-      ].filter(Boolean).join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
       user,
+      beforeModelCall,
       appContext: {
         stationContent: {
           diaryEntries: diaryEntry ? [diaryEntry] : [],
           mediaAssets,
-          fileAssets,
         },
       },
     });
@@ -132,21 +112,24 @@ export async function buildComicDiaryAgentResponse({
       draft: normalizeComicDiaryAgentDraft(parseJsonReply(result.reply), {
         diaryEntry,
         mediaAssets,
-        fileAssets,
-        style,
-        frameCount,
+        ...options,
       }),
       model: {
         provider: result.provider,
-        model: modelStatus.model || "",
+        model: result.model || modelStatus.model || "",
+        servedModel: result.servedModel ?? null,
         tokenUsage: result.tokenUsage || null,
         latencyMs: result.latencyMs ?? null,
       },
     };
   } catch (error) {
     if (error instanceof HttpError) throw error;
-    throw new HttpError(502, "Comic diary Agent could not create a valid storyboard.", {
-      code: "COMIC_DIARY_FAILED",
-    });
+    throw new HttpError(
+      502,
+      "Comic diary Agent could not create a valid storyboard.",
+      {
+        code: "COMIC_DIARY_FAILED",
+      },
+    );
   }
 }

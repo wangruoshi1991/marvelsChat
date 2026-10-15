@@ -14,8 +14,15 @@ import {
   updateUserStatus,
 } from "../admin-repository.js";
 import { getModelRuntimeStatus, testModelRuntime } from "../agent-runtime.js";
-import { assertAdminAccountMutationAllowed, hasAdminPermission, hashPassword } from "../auth.js";
+import {
+  assertAdminAccountMutationAllowed,
+  hasAdminPermission,
+  hashPassword,
+} from "../auth.js";
 import { HttpError } from "../http-error.js";
+import { withTransaction } from "../db.js";
+import { createAlbumAssistantAccessService } from "../album-assistant-access-service.js";
+import { buildMediaRetrievalRuntimeStatus } from "../media-retrieval-runtime-status.js";
 import {
   createManagedUser,
   createUsageEvent,
@@ -25,6 +32,7 @@ import {
   hashRequestIp,
   revokeSessionsForUser,
   setUserAgentAccess,
+  resolveAgentGrantedScopes,
 } from "../repositories.js";
 import {
   adminPermissionsSchema,
@@ -38,15 +46,82 @@ import {
   userStatusSchema,
 } from "../schemas.js";
 
-export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAdmin }) {
-  registerAdminMediaRetrievalRoutes(app, { authenticate, asyncHandler, requireAdmin });
+const setAlbumAssistantAccess = createAlbumAssistantAccessService({
+  withTransaction,
+  getRuntimeStatus: buildMediaRetrievalRuntimeStatus,
+});
+
+export function createAdminAgentAccessHandler({
+  findUser = getRawUserById,
+  listRegisteredAgents = listAgents,
+  setAccess = setUserAgentAccess,
+  setAlbumAccess = setAlbumAssistantAccess,
+  recordEvent = createUsageEvent,
+} = {}) {
+  return async (req, res) => {
+    const body = agentAccessSchema.parse(req.body);
+    const target = await findUser(req.params.userId);
+    if (!target) throw new HttpError(404, "User not found");
+    assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
+    const agent = (await listRegisteredAgents()).find(
+      (item) => item.key === req.params.agentId
+    );
+    if (!agent) throw new HttpError(404, "Agent not found");
+    if (body.enabled) resolveAgentGrantedScopes(agent, body.grantedScopes);
+    if (agent.key === "album-manager" && body.enabled) {
+      throw new HttpError(409, "相册 AI 需账户本人从 App 添加授权。", {
+        code: "ALBUM_OWNER_CONSENT_REQUIRED",
+      });
+    }
+    const [access] =
+      agent.key === "album-manager"
+        ? await setAlbumAccess({
+            userId: target.id,
+            agent,
+            body,
+            idempotencyKey: req.get("Idempotency-Key"),
+          })
+        : await setAccess({
+            userId: target.id,
+            agent,
+            enabled: body.enabled,
+            alias: body.alias,
+            grantedScopes: body.grantedScopes,
+          });
+    await recordEvent({
+      userId: req.user.id,
+      eventType: "admin.user.agent",
+      targetType: "user",
+      targetId: target.id,
+      payload: {
+        agentId: agent.key,
+        enabled: body.enabled,
+        targetEmail: target.email,
+        targetLoginName: target.login_name || null,
+      },
+      ipHash: hashRequestIp(req.ip),
+      userAgent: req.get("user-agent") || "",
+    });
+    res.json({ data: { agent: access } });
+  };
+}
+
+export function registerAdminRoutes(
+  app,
+  { authenticate, asyncHandler, requireAdmin }
+) {
+  registerAdminMediaRetrievalRoutes(app, {
+    authenticate,
+    asyncHandler,
+    requireAdmin,
+  });
   app.get(
     "/api/admin/overview",
     authenticate,
     requireAdmin("users:read"),
     asyncHandler(async (_req, res) => {
       res.json({ data: await adminOverview() });
-    }),
+    })
   );
 
   app.get(
@@ -56,7 +131,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
     asyncHandler(async (req, res) => {
       const { limit } = limitSchema.parse(req.query);
       res.json({ data: await adminUsers({ limit }) });
-    }),
+    })
   );
 
   app.post(
@@ -69,7 +144,8 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       const existed = await findUserByEmail(body.email);
       if (existed) throw new HttpError(409, "Email already registered");
       const existedName = await findUserByDisplayName(body.displayName);
-      if (existedName) throw new HttpError(409, "Display name already registered");
+      if (existedName)
+        throw new HttpError(409, "Display name already registered");
 
       const user = await createManagedUser({
         email: body.email,
@@ -83,13 +159,18 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
         eventType: "admin.user.create",
         targetType: "user",
         targetId: user.id,
-        payload: { email: user.email, displayName: user.displayName, role: user.role, status: user.status },
+        payload: {
+          email: user.email,
+          displayName: user.displayName,
+          role: user.role,
+          status: user.status,
+        },
         ipHash: hashRequestIp(req.ip),
         userAgent: req.get("user-agent") || "",
       });
 
       res.status(201).json({ data: { user } });
-    }),
+    })
   );
 
   app.get(
@@ -107,7 +188,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       });
       if (!detail) throw new HttpError(404, "User not found");
       res.json({ data: detail });
-    }),
+    })
   );
 
   app.patch(
@@ -129,13 +210,17 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
         eventType: "admin.user.status",
         targetType: "user",
         targetId: target.id,
-        payload: { status, targetEmail: target.email, targetLoginName: target.login_name || null },
+        payload: {
+          status,
+          targetEmail: target.email,
+          targetLoginName: target.login_name || null,
+        },
         ipHash: hashRequestIp(req.ip),
         userAgent: req.get("user-agent") || "",
       });
 
       res.json({ data: { user } });
-    }),
+    })
   );
 
   app.patch(
@@ -146,7 +231,10 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       const { role } = userRoleSchema.parse(req.body);
       const target = await getRawUserById(req.params.userId);
       if (!target) throw new HttpError(404, "User not found");
-      assertAdminAccountMutationAllowed(req.user, { targetRole: target.role, requestedRole: role });
+      assertAdminAccountMutationAllowed(req.user, {
+        targetRole: target.role,
+        requestedRole: role,
+      });
       if (target.id === req.user.id && role !== "admin") {
         throw new HttpError(400, "You cannot remove your own admin permission");
       }
@@ -157,13 +245,17 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
         eventType: "admin.user.role",
         targetType: "user",
         targetId: target.id,
-        payload: { role, targetEmail: target.email, targetLoginName: target.login_name || null },
+        payload: {
+          role,
+          targetEmail: target.email,
+          targetLoginName: target.login_name || null,
+        },
         ipHash: hashRequestIp(req.ip),
         userAgent: req.get("user-agent") || "",
       });
 
       res.json({ data: { user } });
-    }),
+    })
   );
 
   app.patch(
@@ -176,10 +268,16 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       if (!target) throw new HttpError(404, "User not found");
       assertAdminAccountMutationAllowed(req.user, { targetRole: "admin" });
       if (target.role !== "admin") {
-        throw new HttpError(400, "Only admin users can receive admin permissions");
+        throw new HttpError(
+          400,
+          "Only admin users can receive admin permissions"
+        );
       }
       if (target.id === req.user.id && !permissions.includes("*")) {
-        throw new HttpError(400, "You cannot reduce your own super admin permission");
+        throw new HttpError(
+          400,
+          "You cannot reduce your own super admin permission"
+        );
       }
 
       const user = await updateUserAdminPermissions(target.id, permissions);
@@ -198,7 +296,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       });
 
       res.json({ data: { user } });
-    }),
+    })
   );
 
   app.patch(
@@ -211,7 +309,10 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       if (!target) throw new HttpError(404, "User not found");
       assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
 
-      const profile = await updateUserProfileAdmin({ userId: target.id, ...body });
+      const profile = await updateUserProfileAdmin({
+        userId: target.id,
+        ...body,
+      });
       await createUsageEvent({
         userId: req.user.id,
         eventType: "admin.user.profile",
@@ -227,7 +328,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       });
 
       res.json({ data: { profile } });
-    }),
+    })
   );
 
   app.post(
@@ -239,7 +340,10 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       if (!target) throw new HttpError(404, "User not found");
       assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
       if (target.id === req.user.id) {
-        throw new HttpError(400, "Use logout to revoke your current admin session");
+        throw new HttpError(
+          400,
+          "Use logout to revoke your current admin session"
+        );
       }
 
       await revokeSessionsForUser(target.id);
@@ -248,43 +352,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
         eventType: "admin.user.revoke_sessions",
         targetType: "user",
         targetId: target.id,
-        payload: { targetEmail: target.email, targetLoginName: target.login_name || null },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
-      });
-
-      res.json({ data: { ok: true } });
-    }),
-  );
-
-  app.patch(
-    "/api/admin/users/:userId/agents/:agentId",
-    authenticate,
-    requireAdmin("agents:manage"),
-    asyncHandler(async (req, res) => {
-      const body = agentAccessSchema.parse(req.body);
-      const target = await getRawUserById(req.params.userId);
-      if (!target) throw new HttpError(404, "User not found");
-      assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
-
-      const agent = (await listAgents()).find((item) => item.key === req.params.agentId);
-      if (!agent) throw new HttpError(404, "Agent not found");
-
-      const [access] = await setUserAgentAccess({
-        userId: target.id,
-        agent,
-        enabled: body.enabled,
-        alias: body.alias,
-        grantedScopes: body.grantedScopes,
-      });
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "admin.user.agent",
-        targetType: "user",
-        targetId: target.id,
         payload: {
-          agentId: agent.key,
-          enabled: body.enabled,
           targetEmail: target.email,
           targetLoginName: target.login_name || null,
         },
@@ -292,8 +360,15 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
         userAgent: req.get("user-agent") || "",
       });
 
-      res.json({ data: { agent: access } });
-    }),
+      res.json({ data: { ok: true } });
+    })
+  );
+
+  app.patch(
+    "/api/admin/users/:userId/agents/:agentId",
+    authenticate,
+    requireAdmin("agents:manage"),
+    asyncHandler(createAdminAgentAccessHandler())
   );
 
   app.post(
@@ -306,22 +381,31 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       if (!target) throw new HttpError(404, "User not found");
       assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
       if (target.id === req.user.id) {
-        throw new HttpError(400, "Use account settings to change your own password");
+        throw new HttpError(
+          400,
+          "Use account settings to change your own password"
+        );
       }
 
-      const user = await updateUserPassword(target.id, await hashPassword(password));
+      const user = await updateUserPassword(
+        target.id,
+        await hashPassword(password)
+      );
       await createUsageEvent({
         userId: req.user.id,
         eventType: "admin.user.password_reset",
         targetType: "user",
         targetId: target.id,
-        payload: { targetEmail: target.email, targetLoginName: target.login_name || null },
+        payload: {
+          targetEmail: target.email,
+          targetLoginName: target.login_name || null,
+        },
         ipHash: hashRequestIp(req.ip),
         userAgent: req.get("user-agent") || "",
       });
 
       res.json({ data: { user } });
-    }),
+    })
   );
 
   app.get(
@@ -331,7 +415,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
     asyncHandler(async (req, res) => {
       const { limit } = limitSchema.parse(req.query);
       res.json({ data: await adminEvents({ limit }) });
-    }),
+    })
   );
 
   app.get(
@@ -341,7 +425,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
     asyncHandler(async (req, res) => {
       const { limit } = limitSchema.parse(req.query);
       res.json({ data: await adminAgentRuns({ limit }) });
-    }),
+    })
   );
 
   app.get(
@@ -356,17 +440,23 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       const runCounts = recentRuns.reduce((groups, run) => {
         groups[run.agentId] ||= { total: 0, success: 0, error: 0, pending: 0 };
         groups[run.agentId].total += 1;
-        groups[run.agentId][run.status] = (groups[run.agentId][run.status] || 0) + 1;
+        groups[run.agentId][run.status] =
+          (groups[run.agentId][run.status] || 0) + 1;
         return groups;
       }, {});
 
       res.json({
         data: registered.map((agent) => ({
           ...agent,
-          runs: runCounts[agent.key] || { total: 0, success: 0, error: 0, pending: 0 },
+          runs: runCounts[agent.key] || {
+            total: 0,
+            success: 0,
+            error: 0,
+            pending: 0,
+          },
         })),
       });
-    }),
+    })
   );
 
   app.get(
@@ -375,7 +465,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
     requireAdmin("agents:manage"),
     asyncHandler(async (_req, res) => {
       res.json({ data: await buildAgentReadiness() });
-    }),
+    })
   );
 
   app.get(
@@ -384,7 +474,7 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
     requireAdmin("model:operate"),
     asyncHandler(async (_req, res) => {
       res.json({ data: getModelRuntimeStatus() });
-    }),
+    })
   );
 
   app.post(
@@ -393,7 +483,10 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
     requireAdmin("model:operate"),
     asyncHandler(async (req, res) => {
       const body = modelTestSchema.parse(req.body);
-      const result = await testModelRuntime({ input: body.input });
+      const result = await testModelRuntime({
+        input: body.input,
+        role: body.role,
+      });
       await createUsageEvent({
         userId: req.user.id,
         eventType: "admin.model_test",
@@ -401,6 +494,8 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
         targetId: result.model,
         payload: {
           provider: result.provider,
+          modelRole: result.modelRole,
+          servedModel: result.servedModel,
           latencyMs: result.latencyMs,
           tokenTotal: result.tokenUsage.total,
         },
@@ -409,6 +504,6 @@ export function registerAdminRoutes(app, { authenticate, asyncHandler, requireAd
       });
 
       res.json({ data: result });
-    }),
+    })
   );
 }

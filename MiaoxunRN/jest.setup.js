@@ -4,6 +4,7 @@ const ReactNative = require('react-native');
 
 ReactNative.NativeModules.MiaoxunConfigModule = {
   apiBaseURL: 'http://127.0.0.1:4390',
+  bundleIdentifier: 'com.wangruoshi.miaoxun',
   buildNumber: '45',
 };
 ReactNative.NativeModules.QRCodeScannerModule = {

@@ -2,24 +2,14 @@ import crypto from "crypto";
 import { createAiId } from "./ai-id.js";
 import { hashPassword } from "./auth.js";
 
-const adminScopes = JSON.stringify([
-  "profile:read",
-  "messages:read",
-  "agents:invoke",
-]);
 const adminPermissions = JSON.stringify(["*"]);
-const welcomeMessage =
-  "欢迎来到妙讯。我会先承接你的消息、账号和小站能力，后续新的 Agent 会逐步接入这里。";
 
-async function ensureAdminExperience(connection, { userId, displayName }) {
+async function ensureAdminProfile(connection, { userId, displayName }) {
   await connection.execute(
     `INSERT INTO user_profiles
       (user_id, nickname, avatar_text, bio, community, activity_area, miao_points)
     VALUES (?, ?, '妙', '妙讯管理平台默认账号。', '', '', 0)
-    ON CONFLICT (user_id) DO UPDATE
-    SET nickname = EXCLUDED.nickname,
-        avatar_text = EXCLUDED.avatar_text,
-        bio = EXCLUDED.bio`,
+    ON CONFLICT (user_id) DO NOTHING`,
     [userId, displayName],
   );
   await connection.execute(
@@ -28,75 +18,6 @@ async function ensureAdminExperience(connection, { userId, displayName }) {
     ON CONFLICT (user_id) DO NOTHING`,
     [userId],
   );
-  await connection.execute(
-    `INSERT INTO user_agents
-      (user_id, agent_id, alias, enabled, granted_scopes)
-    VALUES (?, 'miaoxun-butler', '妙讯管家', TRUE, ?::jsonb)
-    ON CONFLICT (user_id, agent_id) DO UPDATE
-    SET alias = EXCLUDED.alias,
-        enabled = EXCLUDED.enabled,
-        granted_scopes = EXCLUDED.granted_scopes`,
-    [userId, adminScopes],
-  );
-
-  const [threadRows] = await connection.execute(
-    `SELECT id
-    FROM chat_threads
-    WHERE user_id = ? AND agent_id = 'miaoxun-butler'
-    ORDER BY created_at ASC
-    LIMIT 1`,
-    [userId],
-  );
-  const threadId = threadRows[0]?.id || crypto.randomUUID();
-
-  if (threadRows.length) {
-    await connection.execute(
-      `UPDATE chat_threads
-      SET title = '妙讯管家',
-          status_text = '在线 · 管家中枢',
-          avatar_text = '妙',
-          kind = 'agent',
-          pinned = TRUE
-      WHERE id = ?`,
-      [threadId],
-    );
-  } else {
-    await connection.execute(
-      `INSERT INTO chat_threads
-        (id, user_id, title, status_text, avatar_text, agent_id, kind, pinned)
-      VALUES (?, ?, '妙讯管家', '在线 · 管家中枢', '妙', 'miaoxun-butler', 'agent', TRUE)`,
-      [threadId, userId],
-    );
-  }
-
-  const [messageRows] = await connection.execute(
-    `SELECT id
-    FROM chat_messages
-    WHERE thread_id = ?
-      AND metadata ->> 'source' = 'default_admin_seed'
-    ORDER BY created_at ASC
-    LIMIT 1`,
-    [threadId],
-  );
-
-  if (messageRows.length) {
-    await connection.execute(
-      `UPDATE chat_messages
-      SET user_id = ?,
-          sender_type = 'agent',
-          sender_name = '妙讯管家',
-          content = ?
-      WHERE id = ?`,
-      [userId, welcomeMessage, messageRows[0].id],
-    );
-  } else {
-    await connection.execute(
-      `INSERT INTO chat_messages
-        (id, thread_id, user_id, sender_type, sender_name, content, metadata)
-      VALUES (?, ?, ?, 'agent', '妙讯管家', ?, jsonb_build_object('source', 'default_admin_seed'))`,
-      [crypto.randomUUID(), threadId, userId, welcomeMessage],
-    );
-  }
 }
 
 export async function bootstrapDefaultAdmin(connection, defaultAdmin) {
@@ -157,7 +78,7 @@ export async function bootstrapDefaultAdmin(connection, defaultAdmin) {
       );
     }
 
-    await ensureAdminExperience(connection, {
+    await ensureAdminProfile(connection, {
       userId,
       displayName: defaultAdmin.displayName,
     });
@@ -185,7 +106,7 @@ export async function bootstrapDefaultAdmin(connection, defaultAdmin) {
       adminPermissions,
     ],
   );
-  await ensureAdminExperience(connection, {
+  await ensureAdminProfile(connection, {
     userId,
     displayName: defaultAdmin.displayName,
   });

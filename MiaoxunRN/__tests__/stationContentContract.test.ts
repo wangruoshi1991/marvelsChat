@@ -1,5 +1,6 @@
 import { appApi } from '../src/services/api/appApi';
 import { stationContentApi } from '../src/services/api/stationContentApi';
+import { stationAgentApi } from '../src/services/api/stationAgentApi';
 
 const response = (data: unknown) =>
   ({
@@ -19,6 +20,14 @@ const validStationContent = {
   fileAssets: [],
   comicDiaries: [],
   videoDrafts: [],
+};
+const draftMetadata = {
+  id: 'site-1',
+  title: '周末页面',
+  source: 'model',
+  status: 'draft',
+  createdAt: '2026-10-14T00:00:00Z',
+  updatedAt: '2026-10-14T00:00:00Z',
 };
 
 describe('station content API contract', () => {
@@ -103,4 +112,66 @@ describe('station content API contract', () => {
       stationContent: validStationContent,
     });
   });
+
+  test('bootstrap, station refresh and draft list accept the same metadata without content', async () => {
+    const stationContent = {
+      ...validStationContent,
+      siteDrafts: [draftMetadata],
+    };
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(response({ stationContent }))
+      .mockResolvedValueOnce(response(stationContent))
+      .mockResolvedValueOnce(response([draftMetadata]));
+    await expect(appApi.bootstrap('token')).resolves.toMatchObject({
+      stationContent,
+    });
+    await expect(stationContentApi.stationContent('token')).resolves.toEqual(
+      stationContent,
+    );
+    await expect(stationAgentApi.stationSiteDrafts('token')).resolves.toEqual([
+      draftMetadata,
+    ]);
+  });
+
+  test.each([
+    {
+      ...draftMetadata,
+      draft: { title: '旧标题', sections: [{ body: '私有正文' }] },
+    },
+    { ...draftMetadata, prompt: '原始私有需求' },
+    { ...draftMetadata, summary: '派生正文摘要' },
+    { ...draftMetadata, userId: 'internal' },
+    { ...draftMetadata, modelProvider: 'internal' },
+    { ...draftMetadata, title: '' },
+    { ...draftMetadata, title: '题'.repeat(161) },
+    { ...draftMetadata, source: 'agent' },
+    { ...draftMetadata, status: 'unknown' },
+    { ...draftMetadata, createdAt: 'invalid' },
+    {
+      id: 'site-1',
+      draft: { title: '旧嵌套标题' },
+      prompt: '旧需求',
+      source: 'model',
+    },
+  ])(
+    'all public draft list paths reject old body data or invalid metadata: %p',
+    async draft => {
+      const stationContent = { ...validStationContent, siteDrafts: [draft] };
+      globalThis.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(response({ stationContent }))
+        .mockResolvedValueOnce(response(stationContent))
+        .mockResolvedValueOnce(response([draft]));
+      await expect(appApi.bootstrap('token')).rejects.toMatchObject({
+        code: 'STATION_CONTENT_CONTRACT_MISMATCH',
+      });
+      await expect(
+        stationContentApi.stationContent('token'),
+      ).rejects.toMatchObject({ code: 'STATION_CONTENT_CONTRACT_MISMATCH' });
+      await expect(stationAgentApi.stationSiteDrafts('token')).rejects.toThrow(
+        '草稿列表格式不受支持',
+      );
+    },
+  );
 });

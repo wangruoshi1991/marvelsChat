@@ -18,6 +18,10 @@ import { parseArgs } from "node:util";
 import express from "express";
 import { authenticate, hashToken, createPlainToken } from "../src/auth.js";
 import { registerMessageRoutes } from "../src/routes/message-routes.js";
+import { registerAITaskRoutes } from "../src/routes/ai-task-routes.js";
+import { createAITaskRunner } from "../src/ai-task-runner.js";
+import { createMessageTaskExecutor } from "../src/ai-message-task-service.js";
+import { albumAssistantE2EHeaders, sendAlbumMessageAndWait } from "./album-assistant-e2e.js";
 import { registerStationMediaRetrievalRoutes } from "../src/routes/station-media-retrieval-routes.js";
 import { createRequestErrorHandler } from "../src/request-observability.js";
 import { RERANK_PROMPT_VERSION, RERANK_TEMPERATURE } from "../src/media-retrieval-prompts.js";
@@ -35,6 +39,7 @@ const report = { type: "isolated-db-real-model-service-and-agent", storageTransp
   runtimeGate: "injected-service-test-not-production-readiness", passed: [], providerCalls: [], failure: null };
 const owner = crypto.randomUUID(), outsider = crypto.randomUUID(), albumId = crypto.randomUUID();
 let server;
+let taskRunner;
 let httpResultRoute;
 let originalControls;
 const ownerToken = createPlainToken(), outsiderToken = createPlainToken();
@@ -124,7 +129,7 @@ try {
       [definition.id, owner, definition.kind, storageKey, definition.caption, definition.mimeType, bytes.length, index === 0 ? albumId : null]);
   }
   const agent = await getAgent("album-manager");
-  await access({ userId: owner, agent, body: { enabled: true, albumAIConsentVersion: "media-retrieval-consent-v1" }, idempotencyKey: crypto.randomUUID() });
+  await access({ userId: owner, agent, body: { enabled: true, grantedScopes: agent.permissions, albumAIConsentVersion: "media-retrieval-consent-v1" }, idempotencyKey: crypto.randomUUID() });
   report.passed.push("transactional-consent-agent-thread-and-index-queue");
   const workerId = "public-service-qa";
   for (let count = 0; count < 3; count += 1) {
@@ -162,6 +167,7 @@ try {
   const logger = { error: () => {} };
   registerMessageRoutes(app, { authenticate, asyncHandler, getOnlineUserIds: () => [],
     sendRealtimeToUser: () => {}, logger, retrievalRepository: repository, retrievalService: service });
+  registerAITaskRoutes(app, { authenticate, asyncHandler });
   registerStationMediaRetrievalRoutes(app, { authenticate, asyncHandler, service });
   app.use(createRequestErrorHandler({ production: true, logger }));
   server = app.listen(0, "127.0.0.1");
@@ -170,9 +176,9 @@ try {
     await query("INSERT INTO auth_sessions(id,user_id,token_hash,expires_at) VALUES(?,?,?,CURRENT_TIMESTAMP+INTERVAL '1 hour')", [crypto.randomUUID(), id, hashToken(token)]);
   }
   const base = "http://127.0.0.1:" + server.address().port;
-  const api = async (route, { token = ownerToken, body, expected = 200 } = {}) => {
-    const response = await nativeFetch(base + route, { method: body ? "POST" : "GET", headers: {
-      Authorization: "Bearer " + token, "Content-Type": "application/json", "X-Miaoxun-Retrieval-Contract": "2",
+  const api = async (route, { token = ownerToken, method = "GET", body, expected = 200 } = {}) => {
+    const response = await nativeFetch(base + route, { method, headers: {
+      Authorization: "Bearer " + token, "Content-Type": "application/json", ...albumAssistantE2EHeaders,
     }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(180000) });
     const result = await response.json();
     report.httpStatus = response.status;
@@ -182,8 +188,12 @@ try {
   const thread = (await query("SELECT id FROM chat_threads WHERE user_id=? AND agent_id='album-manager'", [owner]))[0];
   const messageBody = { content: input, clientMessageId: crypto.randomUUID() };
   const messageRoute = "/api/threads/" + thread.id + "/messages";
+  taskRunner = createAITaskRunner({
+    executors: { agent_message: createMessageTaskExecutor({ retrievalService: service }) }, logger,
+  });
+  taskRunner.start();
   report.httpStage = "message-post";
-  const conversation = await api(messageRoute, { body: messageBody, expected: 201 });
+  const conversation = await sendAlbumMessageAndWait({ api, token: ownerToken, threadId: thread.id, ...messageBody });
   report.httpStage = "agent-found";
   const agentMessage = conversation.messages.find(message => message.senderType === "agent");
   assert.equal(agentMessage.metadata.albumAssistant.outcome, "found");
@@ -193,17 +203,18 @@ try {
   assert.deepEqual(actualResults.map(item => item.mediaAssetId), [fixtureDefinitions[0].id]);
   const beforeHttpReplay = report.providerCalls.length;
   report.httpStage = "message-replay";
-  const replay = await api(messageRoute, { body: messageBody, expected: 200 });
+  const replay = await api(messageRoute, { method: "POST", body: messageBody, expected: 200 });
+  assert.equal(replay.task.id, conversation.task.id);
   assert.equal(replay.messages.find(message => message.senderType === "agent").id, agentMessage.id);
   assert.equal(report.providerCalls.length, beforeHttpReplay);
   report.httpStage = "cross-owner-read";
   await api(httpResultRoute, { token: outsiderToken, expected: 404 });
   await api("/api/station/media-retrieval/status", { token: "", expected: 401 });
-  report.passed.push("authenticated-chat-HTTP-result-read-replay-and-cross-owner-denial");
+  report.passed.push("authenticated-async-chat-task-result-read-replay-and-cross-owner-denial");
   const empty = await service.searchMediaRetrieval({ userId: owner, query: "a passenger airplane above clouds", idempotencyKey: crypto.randomUUID() });
   assert.deepEqual(empty.results, []);
   report.passed.push("unrelated-query-empty-without-fabricated-result");
-  await access({ userId: owner, agent, body: { enabled: false }, idempotencyKey: crypto.randomUUID() });
+  await access({ userId: owner, agent, body: { enabled: false, grantedScopes: [] }, idempotencyKey: crypto.randomUUID() });
   const beforeRevokedSearch = report.providerCalls.length;
   await assert.rejects(service.searchMediaRetrieval({ userId: owner, query: "a black pug", idempotencyKey: crypto.randomUUID() }),
     error => error.code === "retrieval_consent_required");
@@ -219,6 +230,7 @@ try {
     assertionExpected: typeof error.expected === "number" || ["found", "empty", "error"].includes(error.expected) ? error.expected : null };
   process.exitCode = 2;
 } finally {
+  if (taskRunner) await taskRunner.stop();
   if (server) await new Promise(resolve => server.close(resolve));
   report.ledger = await query("SELECT operation,disposition,COUNT(*)::int AS count FROM media_retrieval_cost_ledger WHERE user_id=? GROUP BY operation,disposition ORDER BY operation,disposition", [owner]);
   await query("DELETE FROM agent_runs WHERE user_id IN (?,?)", [owner, outsider]);

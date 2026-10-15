@@ -1,5 +1,7 @@
 # Agent 接入说明
 
+更新：2026-10-15。本页描述当前工作区代码能力，运行共用同一API、两个Worker和数据库，不为Agent建立单独服务。正式部署、安装包与验收证据见[当前交接](handoffs/CURRENT.md)；代码已实现不等于产品链路已通过真机验收。
+
 Agent 独立放在 `agents/` 目录。文件名使用：
 
 ```text
@@ -18,6 +20,12 @@ export default {
   name: "Agent 名称",
   version: "0.1.0",
   category: "orchestrator",
+  identity: {
+    avatarKind: "agent-mark",
+    mark: "助",
+    shape: "squircle",
+    colors: { background: "#12352c", foreground: "#ffffff", accent: "#f5c449" }
+  },
   description: "Agent 做什么",
   capabilities: ["ability-a"],
   permissions: ["scope:read"],
@@ -32,22 +40,26 @@ export default {
 
 ## 当前 Agent
 
-- `miaoxun-butler`：妙讯管家，负责 App 上下文理解和后续编排入口。
+- `miaoxun-butler`：妙讯管家，按需求决定回答、澄清或创建协作任务，运行时依据真实能力目录动态选人、规划与汇总；前端不按关键词拦截需求或预先声称已完成操作。
 - `virtual-character`：形象顾问，基于当前形象配置提供建议，不直接修改资料。
-- `site-builder`：生成经过校验的结构化个人主页草稿。
+- `site-builder`：生成经过严格校验的私有结构页面草稿；完整预览并确认后保存，参与协作时只消费本次所选/交付素材。
 - `model-3d`：提供照片准备、形象设定和模型理解建议，不发起 3D 任务或扣费。
-- `album-manager`：基于后端已有相册和媒体元数据提供整理、标签和筛选建议。
-- `file-preprocessor`：提供文件登记、摘要、标签和索引准备建议；解析器仍需按格式接入。
-- `comic-diary`：生成并持久化可审查的漫画分镜结构，不生成最终漫画图片。
-- `video-production`：当前只定义视频脚本和镜头计划；视频供应商与渲染队列尚未接入，readiness 固定为不可用。
+- `album-manager`：通过受控工具检索真实图片/视频，在协作中交付绑定内容版本的精确素材选择；云端同意、owner与授权按调用重验。原按固定关键词/文件名推标签、分组并生成置信度的建议服务已删除；上传与编辑仅使用用户明确标签。原生视觉索引直接处理获准的原图/视频帧，不依赖这些旧规则。
+- `file-preprocessor`：普通会话提供文件处理建议，协作`text.summarize`对本次明确提供的聊天文字或前序文字成果做模型摘要。素材登记只记录类型、字节数、哈希、字符/行数和最多1000字符的原样预览，不生成规则摘要、标签或语言猜测。尚未保存完整文件原文，登记文件不能直接进入摘要能力；设备上传和格式解析仍需接入。
+- `comic-diary`：普通对话使用自然文字；协作能力`comic.storyboard`交付可读文字分镜；日记详情另有保存结构化分镜草稿的明确流程。尚无最终生图。草稿接口要求完整声明授权，只发送本次明确选定的日记/媒体窄字段；无选择不读取全库，不接未声明的文件来源；调用及保存前重验授权、原声明和来源，成功审计与保存同事务，公共结果不返回模型审计元数据。
+- `video-production`：普通对话及协作能力`video.script`提供文字脚本和镜头计划，配置文本模型后即可执行，不依赖OSS。视频供应商与渲染队列尚未接入，不生成成片；旧的不可用生成接口和面板已移除，已有草稿只保留读取。
+
+漫画日记的结构化保存接口只接受一个完整JSON对象，严格检查字段、字数、指定格数和媒体归属。模型缺字段、围栏/混合文字、超长输出、重复或未选素材都明确失败，不补标题、截断文字或抽取JSON后伪装成功。用户省略风格/格数时采用`slice-of-life`/4格，显式无效值直接拒绝。此契约仅用于保存分镜；普通聊天和协作文字成果不套固定结构。
 
 当前后端通过 `backend/src/agent-runtime.js` 调用 Agent。
 
 - `backend/.env` 中 `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL` 都存在时，聊天线程可调用模型服务。
-- `POST /api/threads/:threadId/messages` 根据线程的 `agent_id` 加载对应 Agent，按账号授权把资料、模块、已授权 Agent 与当前小站内容传入 plan，再调用模型并写入消息与 `agent_runs`。
+- `POST /api/threads/:threadId/messages` 根据线程 `agent_id` 加载Agent，按实际授权传入上下文。普通Agent仍同步调用；相册消息先原子保存输入/持久任务，再由AI Worker执行并写入回复。协作由 `/api/agent-workspaces` 创建共同目标与节点，不以普通消息冒充协作运行。
+- 普通会话必须实现`chat`，不再回落到结构化生成的`plan`；管家使用`dispatch`，相册通过专门的持久任务与工具执行。供应商返回值必须具有合法的结束原因；缺失、未知或截断结果不会被标记为成功，不自动切模型或供应商。
 - Agent 会话在写入用户消息前校验注册状态和当前账号授权；已移除或已注销的 Agent 不能通过旧会话继续调用。
 - Agent 消息创建按账号执行独立限流，避免旧会话、脚本或异常客户端无限触发模型调用；好友 direct 消息不使用这个模型调用限额。
-- `permissions` 是 Agent 注册层允许申请的 scope 上限，`user_agents.granted_scopes` 是账号实际授权。后端拒绝声明外 scope，并只按实际授权注入资料、聊天历史、小站内容和编排上下文。
+- `permissions` 是 Agent 注册声明的完整授权范围，`user_agents.granted_scopes` 保存账号明确确认的范围。二者集合一致才可启用或执行；旧不完整或声明已变化的授权要求移除后重新添加，不自动补权。资料、历史消息、小站内容及编排上下文仍由后端按当前权限和任务范围提供。
+- `PATCH /api/me/agents/:agentId` 与 `PATCH /api/admin/users/:userId/agents/:agentId` 在 `enabled:true` 时必须显式传完整 `grantedScopes` 数组；省略、`null`、非数组、空/部分范围及声明外范围均拒绝且不写授权或创建会话。声明本身为空时可明确确认空数组。`enabled:false` 可省略范围，最终统一撤回为空范围。注册账号不创建Agent授权或会话；相册云端同意仅由本人确认，后台不能代签。
 - 未配置模型或调用失败时，用户消息、失败审计和明确的服务失败提示会写入 PostgreSQL；App 不接收供应商原始错误信息，也不会伪造成功回复或 token 用量。
 - 接入真实模型供应商后，后端会写入 `token_prompt`、`token_completion`、`token_total`。
 
@@ -55,27 +67,36 @@ export default {
 `agentReadiness` 用于公开配置和能力缺口；3D 生成、漫画出图、视频渲染等独立业务流程不能用
 Agent 注册状态代替。
 
-## 多 Agent 接入方向
+## 多 Agent 接入与后续能力
 
-后续不要让前端直接决定“调用哪个模型、拼什么提示词、用什么密钥”。推荐保持这条链路：
+前端不决定模型、提示词或密钥。当前链路为：
 
 ```text
-iOS/admin -> backend API -> agent runtime -> registered agent -> model/tool provider -> PostgreSQL audit log
+MiaoxunRN/admin -> backend API -> PostgreSQL任务/协作节点
+                              -> AI Worker -> registered agent/runtime -> model/tool provider -> 回执与成果
 ```
 
-客户端可以管理 Agent 交互状态，例如 Agent 列表、授权状态、运行中任务、流式回复和错误提示；但 Agent 的注册、权限判断、模型调用和审计必须留在后端。
+客户端管理需求草稿、Agent目录与授权展示、运行任务、完整预览和错误提示；注册、权限判断、模型调用与审计留在后端。当前任务/协作以API恢复和轮询展示状态，通用流式回复尚未完成。
 
-建议分阶段实现：
+已落地与后续边界：
 
-1. 单 Agent 会话：继续沿用当前 `POST /api/threads/:threadId/messages`，由线程绑定 `agent_id`。
-2. Agent 授权：后台管理按用户开启/关闭 Agent，并配置 scopes。
-3. 显式任务：新增 `agent_runs` 创建接口，支持非聊天类任务，例如发布、整理文件、生成小站内容。
-4. 实时事件：为长任务新增 SSE 或 WebSocket，前端订阅进度，不轮询数据库。
-5. 多 Agent 编排：由后端 orchestrator 选择子 Agent，记录每一步调用和权限确认。
+1. 单Agent会话与任务：会话按线程绑定Agent，相册和建站复用036持久任务；`agent_runs` 是运行审计，不作为新通用任务创建入口。
+2. 授权：App“我 → 生态”添加AI伙伴时确认完整声明范围，确认后原子添加/授权；移除即撤权，不完整授权要求移除后重新添加。二楼只管理账号隐私。后台仍有独立权限接口，历史授权不自动扩大。
+3. 动态协作：037工作空间保存共同目标、授权快照和依赖节点，由主管选择实际已接入且授权的专业能力；执行前与成果交接时再次校验。
+4. 结构页面：私有草稿与当前页面使用相同严格渲染器；支持查看绑定素材/日记，链接/消息/关注仅保存未接通意图。外部发布或发送需要另行实现工具、权限、确认与回执。
+5. 后续能力：通用流式输出、递归委派、定时任务、可管理长期记忆和任意工具断点恢复仍未交付，不以注册文件或提示词替代。
 
 ## 原则
 
 - 前端不直接引入 Agent 文件。
 - 后端通过 `agents/registry.js` 加载 Agent。
-- 每次调用需要写入 `agent_runs`，便于后台管理平台查看成功、失败、耗时和真实 token。
+- 每次调用保留可追溯运行记录：现有会话使用 `agent_runs`，协作节点使用持久调用回执，记录成功、失败、耗时和真实用量；不能伪造供应商未报告的字段。
 - Agent 涉及发布、外部发送、长期记忆或敏感权限时，必须走用户确认。
+
+## 可执行协作能力与合同3工作区
+
+Agent独立模块通过 `workspaceCapabilities` 声明输入引用类型、依赖成果、输出类型与必要权限。registry严格验证声明，后端执行器必须实现匹配合同；名称或提示词本身不具备执行权。管家可协调相册选材与建站页面，并通过明确的`contribute`运行模式交付`text_result`，包括文件文字摘要、漫画分镜、视频脚本、形象建议和管家汇总，不以普通聊天作为执行器兜底。各Agent可声明多个真实能力，逐个匹配执行合同。
+
+当前App/API/Worker使用协作合同3，保留`request_access`与038提交结果账本，039固定未确认页面的任务来源，不新增服务环境。内容澄清使用`clarify`与`followups`；缺权不能通过回复扩大旧任务快照。仅我页添加时确认全部声明权限；已有不完整授权移除重加，新权限只在新任务生效。文本成果继承全部明确来源，下游以自己的范围重验，不共享私聊或全库。公开成果只投影`kind/id/title`，正文通过`GET /api/agent-workspaces/:workspaceId/text/:nodeId`重新校验当前授权与原始来源后读取；列表、取消或重放不携带正文。文件原文解析、生图与成片仍未接入，详见[需求驱动协作](agent-workspace-architecture.md#按需求组织协作合同3工作区)。
+
+运行共用现有Node API、AI Worker与PostgreSQL。架构决策与初版合同可参考[协作闭环历史](reviews/2026-10-12-agent-collaboration.md)；现行合同见[统一AI交互](ai-interaction-system.md#任务1页面2与协作3合同)，部署状态只以[当前交接](handoffs/CURRENT.md)中的运行证据为准。

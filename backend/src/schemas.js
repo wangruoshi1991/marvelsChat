@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { aiContextReferencesSchema } from "./ai-context.js";
 import {
   avatar3dCostVersion,
   avatar3dQualityPresetIds,
@@ -53,6 +54,8 @@ export const accountDeletionSchema = z.object({
 
 export const messageSchema = z.object({
   content: z.string().trim().min(1).max(2000),
+  contextRefs: aiContextReferencesSchema,
+  butlerContextReset: z.boolean().optional(),
   clientMessageId: z.string().uuid().optional(),
   replyToMessageId: z.string().uuid().optional(),
   clientContext: z.object({
@@ -68,12 +71,7 @@ export const messageSchema = z.object({
     }).optional(),
     enabledAgentIds: z.array(z.string().trim().min(1).max(80)).max(64).optional(),
   }).optional(),
-  localActionResult: z.object({
-    type: z.string().trim().min(1).max(80),
-    status: z.enum(["applied", "rejected", "unsupported"]),
-    message: z.string().trim().min(1).max(300),
-  }).optional(),
-});
+}).strict();
 
 export const threadPreferencesSchema = z.object({
   muted: z.boolean(),
@@ -385,28 +383,12 @@ export const mediaRetrievalAdminControlsSchema = z
     message: "At least one control is required.",
   });
 
-export const stationAlbumSuggestionApplySchema = z.object({
-  title: z.string().trim().min(1).max(120),
-  description: z.string().trim().max(1000).optional().default(""),
-  visibility: stationVisibilitySchema.optional().default("private"),
-  mediaAssetIds: z.array(z.string().uuid()).min(1).max(80),
-});
-
 export const stationOutfitSchema = z.object({
   title: z.string().trim().min(1).max(120),
   note: z.string().trim().max(1000).optional().default(""),
   avatarConfig: avatarConfigSchema.optional().default({}),
   mediaAssetId: z.string().uuid().optional().nullable(),
   visibility: stationVisibilitySchema.optional().default("private"),
-});
-
-export const stationSiteDraftRequestSchema = z.object({
-  prompt: z.string().trim().min(1).max(1200),
-  apply: z.boolean().optional().default(false),
-});
-
-export const stationSiteDraftParamsSchema = z.object({
-  draftId: z.string().uuid(),
 });
 
 const avatar3dPhotoUploadLimit = 10 * 1024 * 1024;
@@ -464,32 +446,21 @@ export const stationFileAssetSchema = z.object({
   metadata: z.record(z.any()).optional().default({}),
 });
 
-export const fileAssetParamsSchema = z.object({
-  fileAssetId: z.string().uuid(),
-});
+export const comicDiaryOptionsSchema = z.object({
+  style: z.enum(["slice-of-life", "cute", "manga", "storyboard"]).default("slice-of-life"),
+  frameCount: z.number().int().min(2).max(8).default(4),
+}).strict();
 
 export const stationComicDiaryRequestSchema = z.object({
   prompt: z.string().trim().min(1).max(1200),
   diaryEntryId: z.string().uuid().optional().nullable(),
   mediaAssetIds: z.array(z.string().uuid()).max(20).optional().default([]),
   fileAssetIds: z.array(z.string().uuid()).max(10).optional().default([]),
-  style: z.enum(["slice-of-life", "cute", "manga", "storyboard"]).optional().default("slice-of-life"),
-  frameCount: z.number().int().min(2).max(8).optional().default(4),
-});
+  ...comicDiaryOptionsSchema.shape,
+}).strict();
 
 export const stationComicDiaryParamsSchema = z.object({
   comicDiaryId: z.string().uuid(),
-});
-
-export const stationVideoDraftRequestSchema = z.object({
-  prompt: z.string().trim().min(1).max(1200),
-  diaryEntryId: z.string().uuid().optional().nullable(),
-  comicDiaryId: z.string().uuid().optional().nullable(),
-  mediaAssetIds: z.array(z.string().uuid()).max(50).optional().default([]),
-  fileAssetIds: z.array(z.string().uuid()).max(10).optional().default([]),
-  format: z.enum(["short-clip", "vlog", "story", "promo"]).optional().default("short-clip"),
-  aspectRatio: z.enum(["9:16", "16:9", "1:1"]).optional().default("9:16"),
-  durationSeconds: z.number().int().min(10).max(180).optional().default(45),
 });
 
 export const locationResolveSchema = z.object({
@@ -614,8 +585,17 @@ export const agentAccessSchema = z.object({
   alias: z.string().trim().max(80).optional().default(""),
   grantedScopes: z.array(z.string().trim().min(1).max(80)).optional(),
   albumAIConsentVersion: z.literal(MEDIA_RETRIEVAL_CONSENT_VERSION).optional(),
-});
+}).superRefine((body, context) => {
+  if (body.enabled && body.grantedScopes === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["grantedScopes"],
+      message: "Enabling an Agent requires explicitly confirmed grantedScopes.",
+    });
+  }
+}).transform(body => ({ ...body, grantedScopes: body.enabled ? body.grantedScopes : [] }));
 
 export const modelTestSchema = z.object({
   input: z.string().trim().min(1).max(500).optional(),
+  role: z.enum(["chat", "planning"]).optional().default("chat"),
 });

@@ -1,3 +1,4 @@
+import { AgentWorkspace } from '../../models/agentWorkspace';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Modal, ScrollView, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -46,6 +47,7 @@ export function StationScreen({
   onOpenQRCode,
   onOpenFriendThread,
   onOpenAgentThread,
+  onOpenWorkspace,
   onOpenPostComposer,
   onOpenPublicProfileByAiId,
   onActionMessage,
@@ -65,6 +67,7 @@ export function StationScreen({
   onOpenQRCode: () => void;
   onOpenFriendThread: (friendUserId: string) => void;
   onOpenAgentThread: (agentId: string) => void;
+  onOpenWorkspace: (workspace: AgentWorkspace) => void;
   onOpenPostComposer: () => void;
   onOpenPublicProfileByAiId: (aiId: string) => void;
   onActionMessage: (message: string) => void;
@@ -393,6 +396,7 @@ export function StationScreen({
             renderUserAvatar={renderUserAvatar}
             relationships={session.relationships}
             stationContent={session.stationContent}
+            onRefreshStationContent={session.refreshStationContent}
             avatar3d={avatar3d.bootstrap}
             avatar3dStatus={avatar3d.status}
             avatar3dError={avatar3d.errorMessage}
@@ -413,14 +417,24 @@ export function StationScreen({
             onOpenCreateSheet={openStationCreate}
             onOpenDiaryDetail={openDiaryDetail}
             onOpenAlbumDetail={openAlbumDetail}
+            onEditAlbum={id => {
+              setContentListKind('album');
+              setContentListDetail({
+                type: 'edit',
+                target: { kind: 'album', id },
+                returnTo: 'home',
+                backTo: 'detail',
+              });
+            }}
+            onOpenWorkspace={onOpenWorkspace}
             onDeletePost={session.deleteStationPost}
             onSetStationPostInteraction={session.setStationPostInteraction}
             onCreateSiteDraft={session.createStationSiteDraft}
-            onApplySiteDraft={session.applyStationSiteDraft}
+            onRefreshTaskArtifacts={() =>
+              session.refreshBootstrap(undefined, false)
+            }
             onOpenAvatar3d={openAvatar3d}
             onCreateFileAsset={session.createStationFileAsset}
-            onPreprocessFileAsset={session.preprocessStationFileAsset}
-            onCreateVideoDraft={session.createStationVideoDraft}
             onActionMessage={onActionMessage}
             onActionError={onActionError}
             onOpenPoints={() => setIsPointsOpen(true)}

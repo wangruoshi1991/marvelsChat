@@ -6,7 +6,6 @@ import {
   Avatar3DBootstrapDTO,
   OwnedAgentDTO,
   StationContentDTO,
-  StationSiteSectionDTO,
 } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
@@ -45,6 +44,7 @@ type StationHomeProps = {
   onOpenCreateSheet: (kind: StationCreateKind) => void;
   onOpenDiaryDetail: (entryId: string) => void;
   onOpenAlbumDetail: (albumId: string) => void;
+  onEditAlbum: (albumId: string) => void;
   onOpenAgentThread: (agentId: string) => void;
   onOpenContentList: (kind: StationContentListKind) => void;
   onActionMessage: (message: string) => void;
@@ -55,7 +55,6 @@ export function StationHome({
   palette,
   language,
   token,
-  profile,
   stationContent,
   avatar3d,
   avatar3dStatus,
@@ -68,6 +67,7 @@ export function StationHome({
   onOpenCreateSheet,
   onOpenDiaryDetail,
   onOpenAlbumDetail,
+  onEditAlbum,
   onOpenAgentThread,
   onOpenContentList,
   onActionMessage,
@@ -94,9 +94,6 @@ export function StationHome({
     );
     onSelectStationTab('agents');
   };
-  const orderedModuleKeys = orderedStationModuleKeys(
-    profile.stationConfig.siteLayout?.sections,
-  );
   const moduleViews: Record<string, React.ReactNode> = {
     diary: (
       <StationModule
@@ -140,6 +137,7 @@ export function StationHome({
             mediaAssets={stationContent.mediaAssets}
             token={token}
             onOpenAlbum={onOpenAlbumDetail}
+            onEditAlbum={onEditAlbum}
           />
         </View>
       </StationModule>
@@ -188,24 +186,7 @@ export function StationHome({
         onOpenCallable={openCallableFlow}
       />
 
-      {orderedModuleKeys.map(key => moduleViews[key])}
+      {['diary', 'gallery', 'agents'].map(key => moduleViews[key])}
     </View>
   );
-}
-
-function orderedStationModuleKeys(sections?: StationSiteSectionDTO[]) {
-  const defaults = ['diary', 'gallery', 'agents'];
-  const sectionMap: Record<string, string> = {
-    diary: 'diary',
-    gallery: 'gallery',
-    contact: 'agents',
-  };
-  const mapped = normalizeSections(sections)
-    .map(section => sectionMap[String(section.type || '')])
-    .filter(Boolean);
-  return Array.from(new Set([...mapped, ...defaults]));
-}
-
-function normalizeSections(sections?: StationSiteSectionDTO[]) {
-  return Array.isArray(sections) ? sections : [];
 }

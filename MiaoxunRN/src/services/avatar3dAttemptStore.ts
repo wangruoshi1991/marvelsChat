@@ -1,8 +1,10 @@
 import * as Keychain from 'react-native-keychain';
+import { keychainService } from './keychainService';
 
 import { Avatar3DPhotoDTO, Avatar3DQualityPresetId } from '../models/api';
 
-const service = 'com.gary.miaoxun.rn.avatar3d.pending-submission';
+const service = () =>
+  keychainService('com.gary.miaoxun.rn.avatar3d.pending-submission');
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -50,12 +52,14 @@ export const avatar3dAttemptStore = {
     await Keychain.setGenericPassword(
       submission.userId,
       JSON.stringify(submission),
-      { service },
+      { service: service() },
     );
   },
 
   async read(userId: string) {
-    const credentials = await Keychain.getGenericPassword({ service });
+    const credentials = await Keychain.getGenericPassword({
+      service: service(),
+    });
     if (!credentials || credentials.username !== userId) {
       return null;
     }
@@ -68,6 +72,6 @@ export const avatar3dAttemptStore = {
   },
 
   async clear() {
-    await Keychain.resetGenericPassword({ service });
+    await Keychain.resetGenericPassword({ service: service() });
   },
 };

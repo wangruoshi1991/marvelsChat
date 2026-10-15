@@ -25,6 +25,7 @@ import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { AIAssistGestureSurface } from '../assist/AIAssistGestureSurface';
+import { AlbumContextActions } from '../assist/AlbumContextActions';
 import { useAIAssist } from '../assist/AIAssistProvider';
 import {
   AIAssistAction,
@@ -253,6 +254,7 @@ export function AlbumGrid({
   mediaAssets,
   token,
   onOpenAlbum,
+  onEditAlbum,
 }: {
   palette: Palette;
   language: Language;
@@ -260,6 +262,7 @@ export function AlbumGrid({
   mediaAssets: StationMediaAssetDTO[];
   token: string;
   onOpenAlbum: (albumId: string) => void;
+  onEditAlbum: (albumId: string) => void;
 }) {
   const colors = resolveStationColors(palette);
 
@@ -295,17 +298,18 @@ export function AlbumGrid({
 
           return (
             <View key={album.id} style={styles.stationAlbumTile}>
-              <HomeContentActionCard
+              <AlbumContextActions
                 language={language}
                 palette={palette}
                 onOpen={() => onOpenAlbum(album.id)}
-                object={{
-                  kind: 'station-album',
-                  id: album.id,
-                  title: album.title,
-                  metadata: {
-                    content: album.description || '',
-                    mediaCount: album.mediaCount,
+                onEdit={() => onEditAlbum(album.id)}
+                album={album}
+                scene={{
+                  page: 'station.station',
+                  label: textFor(language, '我 · 主页', 'Me · Home'),
+                  module: {
+                    key: 'album-grid',
+                    label: textFor(language, '相册列表', 'Album list'),
                   },
                 }}
                 style={[
@@ -334,7 +338,7 @@ export function AlbumGrid({
                       : textFor(language, '空分类', 'Empty')}
                   </Text>
                 )}
-              </HomeContentActionCard>
+              </AlbumContextActions>
               <Text
                 style={[styles.stationAlbumTitle, { color: colors.text }]}
                 numberOfLines={1}

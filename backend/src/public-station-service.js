@@ -17,11 +17,21 @@ const sanitizeLayoutSectionReferences = ({ siteLayout, visibleMediaIds, visibleD
   const layout = cloneJson(siteLayout, null);
   if (!layout || !Array.isArray(layout.sections)) return layout;
 
-  layout.sections = layout.sections.map((section) => ({
-    ...section,
-    assetIds: (Array.isArray(section.assetIds) ? section.assetIds : []).filter((id) => visibleMediaIds.has(id)),
-    diaryEntryIds: (Array.isArray(section.diaryEntryIds) ? section.diaryEntryIds : []).filter((id) => visibleDiaryIds.has(id)),
-  }));
+  layout.sections = layout.sections.map((section) => {
+    const assetIds = (Array.isArray(section.assetIds) ? section.assetIds : []).filter((id) => visibleMediaIds.has(id));
+    const diaryEntryIds = (Array.isArray(section.diaryEntryIds) ? section.diaryEntryIds : []).filter((id) => visibleDiaryIds.has(id));
+    return {
+      ...section,
+      assetIds,
+      diaryEntryIds,
+      ...(layout.schemaVersion === 2 ? {
+        actions: (Array.isArray(section.actions) ? section.actions : []).filter((action) =>
+          action.kind === "interaction-intent" ||
+          (action.kind === "view-media" && assetIds.includes(action.targetId)) ||
+          (action.kind === "view-diary" && diaryEntryIds.includes(action.targetId))),
+      } : {}),
+    };
+  });
   return layout;
 };
 
@@ -37,10 +47,10 @@ const publicFileAssets = ({ publicProfile, stationContent, relation }) => {
       preprocessingResult: asset.preprocessingResult
         ? {
           kind: asset.preprocessingResult.kind,
-          title: asset.preprocessingResult.title,
-          summary: asset.preprocessingResult.summary,
-          tags: Array.isArray(asset.preprocessingResult.tags) ? asset.preprocessingResult.tags.slice(0, 8) : [],
-          stats: asset.preprocessingResult.stats || {},
+          stats: asset.preprocessingResult.stats ? {
+            charCount: asset.preprocessingResult.stats.charCount,
+            lineCount: asset.preprocessingResult.stats.lineCount,
+          } : {},
         }
         : {},
     }));
@@ -102,11 +112,15 @@ export function buildPublicStationView({ publicProfile, ownerProfile = {}, stati
     : [];
   const visibleDiaryIds = new Set(diaryEntries.map((entry) => entry.id));
 
-  const siteLayout = sanitizeLayoutSectionReferences({
-    siteLayout: ownerProfile?.stationConfig?.siteLayout || null,
-    visibleMediaIds,
-    visibleDiaryIds,
-  });
+  // Generated copy can contain private source text even after resource IDs are
+  // filtered. Applying a layout saves an owner-only page; it is not publication.
+  const siteLayout = relation.isSelf === true
+    ? sanitizeLayoutSectionReferences({
+      siteLayout: ownerProfile?.stationConfig?.siteLayout || null,
+      visibleMediaIds,
+      visibleDiaryIds,
+    })
+    : null;
 
   return {
     user: cloneJson(publicProfile?.user || {}, {}),

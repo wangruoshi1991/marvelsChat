@@ -15,6 +15,23 @@ services:
     networks:
       - miaoxun
 
+  ai-task-worker:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: "on-failure:5"
+    init: true
+    stop_grace_period: 90s
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - ./miaoxun-prod.env
+    command: ["node", "src/ai-task-worker.js"]
+    healthcheck:
+      disable: true
+    networks:
+      - miaoxun
+
   media-retrieval-worker:
     build:
       context: ..

@@ -1,6 +1,7 @@
 import { normalizeAvatarConfig } from "./avatar-service.js";
 import { projectAvatarPhotoQuality } from "./avatar-3d-photo-quality.js";
 import { normalizeLocationText } from "./location-labels.js";
+import { HttpError } from "./http-error.js";
 
 export const toIso = (value) => (value instanceof Date ? value.toISOString() : value || null);
 
@@ -170,7 +171,7 @@ export const mapStationOutfit = (row) => ({
   updatedAt: toIso(row.updated_at),
 });
 
-export const mapStationSiteDraft = (row) => ({
+export const mapStationSiteDraftRecord = (row) => ({
   id: row.id,
   userId: row.user_id,
   prompt: row.prompt || "",
@@ -183,6 +184,18 @@ export const mapStationSiteDraft = (row) => ({
   createdAt: toIso(row.created_at),
   updatedAt: toIso(row.updated_at),
 });
+
+export const mapStationSiteDraft = (row) => {
+  const title = parseJson(row.draft)?.title;
+  const createdAt = toIso(row.created_at), updatedAt = toIso(row.updated_at);
+  if (typeof row.id !== "string" || !row.id.trim() || typeof title !== "string" ||
+    !title.trim() || title.trim().length > 160 || row.source !== "model" ||
+    !["draft", "applied", "archived"].includes(row.status) ||
+    [createdAt, updatedAt].some(value => value !== null && (typeof value !== "string" || !Number.isFinite(Date.parse(value))))) {
+    throw new HttpError(409, "The saved page metadata is invalid.", { code: "SITE_DRAFT_METADATA_INVALID" });
+  }
+  return { id: row.id, title: title.trim(), status: row.status, source: row.source, createdAt, updatedAt };
+};
 
 export const mapAvatar3dJob = (row) => ({
   id: row.id,
@@ -266,7 +279,6 @@ export const mapStationComicDiary = (row) => ({
   frames: parseJson(row.frames, []),
   summary: row.summary || "",
   status: row.status || "draft",
-  metadata: parseJson(row.metadata, {}),
   createdAt: toIso(row.created_at),
   updatedAt: toIso(row.updated_at),
 });

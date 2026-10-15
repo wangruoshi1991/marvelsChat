@@ -1,46 +1,51 @@
+import { AITaskDTO, assertAITask } from '../../models/aiTask';
 import {
-  ProfileDTO,
   StationComicDiaryDTO,
   StationFileAssetDTO,
-  StationSiteDraftDTO,
   StationVideoDraftDTO,
 } from '../../models/api';
 import { longRequestTimeoutMs, request } from './http';
+import { assertSiteDocumentContract, siteDocumentHeaders } from '../aiContract';
+import { assertSiteDocumentView } from '../../models/siteDocument';
+import { assertStationSiteDraftList } from '../../models/siteDraftMetadata';
 
 export const stationAgentApi = {
-  stationSiteDrafts(token: string, limit = 10) {
-    return request<StationSiteDraftDTO[]>(
+  async siteDocument(token: string, draftId: string) {
+    assertSiteDocumentContract(token);
+    const view = await request<unknown>(
+      `/api/station/site-drafts/${encodeURIComponent(draftId)}/document`,
+      { token, headers: siteDocumentHeaders },
+    );
+    assertSiteDocumentView(view, draftId);
+    return view;
+  },
+  async stationSiteDrafts(token: string, limit = 10) {
+    const drafts = await request<unknown>(
       `/api/station/site-drafts?limit=${limit}`,
       {
         token,
       },
     );
+    assertStationSiteDraftList(drafts);
+    return drafts;
   },
 
-  createStationSiteDraft(
+  async createStationSiteDraft(
     token: string,
-    payload: { prompt: string; apply?: boolean },
+    payload: { prompt: string; idempotencyKey: string },
   ) {
-    return request<{
-      siteDraft: StationSiteDraftDTO;
-      profile: ProfileDTO | null;
-      generation: Record<string, unknown>;
-    }>('/api/station/site-drafts', {
-      method: 'POST',
-      token,
-      body: payload,
-      timeoutMs: longRequestTimeoutMs,
-    });
-  },
-
-  applyStationSiteDraft(token: string, draftId: string) {
-    return request<{ siteDraft: StationSiteDraftDTO; profile: ProfileDTO }>(
-      `/api/station/site-drafts/${draftId}/apply`,
+    assertSiteDocumentContract(token);
+    const result = await request<{ task: AITaskDTO }>(
+      '/api/station/site-drafts',
       {
         method: 'POST',
         token,
+        body: payload,
+        headers: siteDocumentHeaders,
       },
     );
+    assertAITask(result.task);
+    return result;
   },
 
   stationFileAssets(token: string, limit = 10) {
@@ -69,27 +74,6 @@ export const stationAgentApi = {
     });
   },
 
-  preprocessStationFileAsset(
-    token: string,
-    fileAssetId: string,
-    payload: {
-      originalFilename?: string;
-      mimeType?: string;
-      byteSize?: number | null;
-      content?: string;
-      metadata?: Record<string, unknown>;
-    },
-  ) {
-    return request<StationFileAssetDTO>(
-      `/api/station/file-assets/${fileAssetId}/preprocess`,
-      {
-        method: 'POST',
-        token,
-        body: payload,
-      },
-    );
-  },
-
   stationComicDiaries(token: string, limit = 10) {
     return request<StationComicDiaryDTO[]>(
       `/api/station/comic-diaries?limit=${limit}`,
@@ -103,7 +87,6 @@ export const stationAgentApi = {
       prompt: string;
       diaryEntryId?: string | null;
       mediaAssetIds?: string[];
-      fileAssetIds?: string[];
       style?: 'slice-of-life' | 'cute' | 'manga' | 'storyboard';
       frameCount?: number;
     },
@@ -128,26 +111,5 @@ export const stationAgentApi = {
       `/api/station/video-drafts?limit=${limit}`,
       { token },
     );
-  },
-
-  createStationVideoDraft(
-    token: string,
-    payload: {
-      prompt: string;
-      diaryEntryId?: string | null;
-      comicDiaryId?: string | null;
-      mediaAssetIds?: string[];
-      fileAssetIds?: string[];
-      format?: 'short-clip' | 'vlog' | 'story' | 'promo';
-      aspectRatio?: '9:16' | '16:9' | '1:1';
-      durationSeconds?: number;
-    },
-  ) {
-    return request<StationVideoDraftDTO>('/api/station/video-drafts', {
-      method: 'POST',
-      token,
-      body: payload,
-      timeoutMs: longRequestTimeoutMs,
-    });
   },
 };

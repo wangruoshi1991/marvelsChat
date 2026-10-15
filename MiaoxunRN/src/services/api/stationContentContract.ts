@@ -1,4 +1,5 @@
 import type { StationContentDTO } from '../../models/api';
+import { isStationSiteDraftMetadata } from '../../models/siteDraftMetadata';
 import { MiaoxunApiError } from './http';
 
 const stationContentArrayFields = [
@@ -40,6 +41,17 @@ export function assertStationContentContract(
         }
       }
     });
+  }
+  if (record && Array.isArray(record.siteDrafts)) {
+    record.siteDrafts.forEach((draft, index) => {
+      if (!isStationSiteDraftMetadata(draft))
+        invalidFields.push(`siteDrafts[${index}]`);
+    });
+    if (
+      new Set(record.siteDrafts.map(draft => draft?.id)).size !==
+      record.siteDrafts.length
+    )
+      invalidFields.push('siteDrafts');
   }
 
   if (invalidFields.length === 0) {

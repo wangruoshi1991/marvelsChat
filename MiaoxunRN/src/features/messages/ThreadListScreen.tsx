@@ -2,25 +2,25 @@ import React, { useCallback, useMemo, useRef } from 'react';
 import {
   Animated,
   FlatList,
-  Image,
   PanResponder,
   Pressable,
+  StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
-import Svg, {
-  Defs,
-  LinearGradient as SvgLinearGradient,
-  Rect,
-  Stop,
-} from 'react-native-svg';
-
-import { messageIconAssets } from '../../assets/icons';
+import {
+  ArrowLeft,
+  Bell,
+  ChevronDown,
+  Plus,
+  Search,
+} from 'lucide-react-native';
 import { AgentDTO } from '../../models/api';
+import { AITaskDTO } from '../../models/aiTask';
 import { displayText, textFor } from '../../shared/i18n';
-import { styles } from '../../shared/styles';
-import { Palette, palettes } from '../../shared/theme';
+import { Palette } from '../../shared/theme';
+import { workspacePalette } from '../../shared/workspacePalette';
 import {
   ChatThread,
   Language,
@@ -30,10 +30,10 @@ import { NoticeList } from './NoticeList';
 import { MessageTab, UserAvatarRenderer } from './messageTypes';
 import { relativeTimeText } from './messageUtils';
 import { AgentIconAvatar } from './AgentIconAvatar';
-import { resolveMessagePalette } from './messagePalette';
-
-const chatSwipeOpenThreshold = -72;
-const mutedUnreadColor = '#A8A8B0';
+import { useAIAssist } from '../assist/AIAssistProvider';
+import { AITaskInbox } from '../ai/AITaskInbox';
+import { agentReplyPresentation } from './agentReplyPresentation';
+import { messageTextPreview } from './messageTextPresentation';
 
 function ThreadSwipeRow({
   thread,
@@ -50,20 +50,26 @@ function ThreadSwipeRow({
   renderUserAvatar: UserAvatarRenderer;
   onOpenThread: (thread: ChatThread) => void;
 }) {
-  const agent = thread.agentId
-    ? agents.find(item => item.key === thread.agentId)
-    : null;
-  const agentIdentity = agent?.identity || null;
+  const agent = agents.find(item => item.key === thread.agentId);
+  const latestMessage = thread.messages[thread.messages.length - 1];
+  const previewMessage =
+    latestMessage &&
+    !latestMessage.deletedAt &&
+    !latestMessage.recalledAt &&
+    latestMessage.content === thread.lastContent
+      ? latestMessage
+      : null;
+  const presentedContent = previewMessage
+    ? agentReplyPresentation(previewMessage, thread.agentId, language)
+    : thread.lastContent;
+  const preview =
+    previewMessage?.senderType === 'agent'
+      ? messageTextPreview(presentedContent)
+      : presentedContent;
   const translateX = useRef(new Animated.Value(0)).current;
-  const openedRef = useRef(false);
-  const windowSize = useWindowDimensions();
-  const isLightPalette = palette.text === palettes.light.text;
-  const threadTitleColor = isLightPalette ? '#000000' : palette.text;
-  const threadSecondaryColor = isLightPalette
-    ? 'rgba(0,0,0,0.6)'
-    : palette.secondaryText;
-
-  const resetPosition = useCallback(() => {
+  const opened = useRef(false);
+  const { width } = useWindowDimensions();
+  const reset = useCallback(() => {
     Animated.spring(translateX, {
       toValue: 0,
       useNativeDriver: true,
@@ -71,114 +77,105 @@ function ThreadSwipeRow({
       bounciness: 6,
     }).start();
   }, [translateX]);
-
-  const openFromSwipe = useCallback(() => {
-    if (openedRef.current) {
-      return;
-    }
-    openedRef.current = true;
-    Animated.timing(translateX, {
-      toValue: -Math.max(windowSize.width, 320),
-      duration: 180,
-      useNativeDriver: true,
-    }).start(() => {
-      onOpenThread(thread);
-      translateX.setValue(0);
-      openedRef.current = false;
-    });
-  }, [onOpenThread, thread, translateX, windowSize.width]);
-
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onMoveShouldSetPanResponder: (_event, gesture) =>
           gesture.dx < -8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
-        onPanResponderMove: (_event, gesture) => {
-          translateX.setValue(
-            Math.max(
-              Math.min(gesture.dx, 0),
-              -Math.max(windowSize.width, 320) * 0.46,
-            ),
-          );
-        },
+        onPanResponderMove: (_event, gesture) =>
+          translateX.setValue(Math.max(Math.min(gesture.dx, 0), -width * 0.46)),
         onPanResponderRelease: (_event, gesture) => {
           if (
-            (gesture.dx <= chatSwipeOpenThreshold || gesture.vx <= -0.55) &&
+            (gesture.dx <= -72 || gesture.vx <= -0.55) &&
             Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25
           ) {
-            openFromSwipe();
-            return;
-          }
-          resetPosition();
+            if (opened.current) return;
+            opened.current = true;
+            Animated.timing(translateX, {
+              toValue: -width,
+              duration: 180,
+              useNativeDriver: true,
+            }).start(({ finished }) => {
+              if (finished) onOpenThread(thread);
+              translateX.setValue(0);
+              opened.current = false;
+            });
+          } else reset();
         },
-        onPanResponderTerminate: resetPosition,
+        onPanResponderTerminate: reset,
       }),
-    [openFromSwipe, resetPosition, translateX, windowSize.width],
+    [onOpenThread, reset, thread, translateX, width],
   );
-
   return (
     <Animated.View
       {...panResponder.panHandlers}
-      style={[
-        { borderBottomColor: palette.border, transform: [{ translateX }] },
-      ]}
+      style={{ transform: [{ translateX }] }}
     >
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={displayText(language, thread.title)}
         onPress={() => onOpenThread(thread)}
-        style={[styles.threadRow, { borderBottomColor: palette.border }]}
+        style={({ pressed }) => [
+          s.thread,
+          {
+            backgroundColor: pressed ? palette.soft : palette.surface,
+            borderColor: palette.border,
+          },
+        ]}
       >
-        <View style={styles.threadAvatarWrap}>
-          {thread.agentId ? (
-            <AgentIconAvatar
-              agentId={thread.agentId}
-              category={agent?.category}
-              identity={agentIdentity}
-              palette={palette}
-            />
-          ) : (
-            renderUserAvatar({
-              text: thread.avatarText,
-              config: thread.avatarConfig || undefined,
-            })
-          )}
-          {thread.unreadCount > 0 ? (
-            <View
-              style={[
-                styles.unread,
-                styles.threadAvatarUnread,
-                {
-                  backgroundColor: thread.muted
-                    ? mutedUnreadColor
-                    : palette.rose,
-                  borderColor: palette.background,
-                },
-              ]}
-            >
-              <Text style={styles.unreadText}>
-                {thread.unreadCount > 99 ? '99+' : thread.unreadCount}
-              </Text>
+        {thread.agentId ? (
+          <View style={s.agentAvatar}>
+            <View style={s.scaledAvatar}>
+              <AgentIconAvatar
+                agentId={thread.agentId}
+                category={agent?.category}
+                identity={agent?.identity || null}
+                palette={palette}
+              />
             </View>
-          ) : null}
-        </View>
-        <View style={styles.threadMain}>
+          </View>
+        ) : (
+          renderUserAvatar({
+            text: thread.avatarText,
+            config: thread.avatarConfig || undefined,
+            size: 44,
+          })
+        )}
+        <View style={s.threadMain}>
           <Text
             numberOfLines={1}
-            style={[styles.threadTitle, { color: threadTitleColor }]}
+            style={[s.threadTitle, { color: palette.text }]}
           >
             {displayText(language, thread.title)}
           </Text>
           <Text
             numberOfLines={1}
-            style={[styles.threadPreview, { color: threadSecondaryColor }]}
+            style={[s.preview, { color: palette.secondaryText }]}
           >
-            {displayText(language, thread.lastContent) ||
+            {displayText(language, preview) ||
               textFor(language, '暂无消息', 'No messages yet')}
           </Text>
         </View>
-        <View style={styles.threadTrailing}>
-          <Text style={[styles.threadTime, { color: threadSecondaryColor }]}>
+        <View style={s.trailing}>
+          <Text style={[s.time, { color: palette.secondaryText }]}>
             {relativeTimeText(thread.lastMessageAt)}
           </Text>
+          {thread.unreadCount > 0 ? (
+            <View
+              style={[
+                s.badge,
+                {
+                  backgroundColor: thread.muted
+                    ? palette.secondaryText
+                    : palette.text,
+                },
+              ]}
+            >
+              <Text style={[s.badgeText, { color: palette.surface }]}>
+                {thread.unreadCount > 99 ? '99+' : thread.unreadCount}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </Pressable>
     </Animated.View>
@@ -186,6 +183,8 @@ function ThreadSwipeRow({
 }
 
 export function ThreadListScreen({
+  token = '',
+  active = true,
   palette,
   language,
   threads,
@@ -201,7 +200,11 @@ export function ThreadListScreen({
   onMarkNotificationRead,
   onAcceptFriendRequest,
   onRejectFriendRequest,
+  onOpenSecondFloor,
+  onOpenTask,
 }: {
+  token?: string;
+  active?: boolean;
   palette: Palette;
   language: Language;
   threads: ChatThread[];
@@ -214,127 +217,276 @@ export function ThreadListScreen({
   onOpenMessageActions: () => void;
   onOpenSearch: () => void;
   onSelectMessageTab: (tab: MessageTab) => void;
-  onMarkNotificationRead: (notificationId: string) => Promise<void>;
-  onAcceptFriendRequest: (requestId: string) => Promise<void>;
-  onRejectFriendRequest: (requestId: string) => Promise<void>;
+  onMarkNotificationRead: (id: string) => Promise<void>;
+  onAcceptFriendRequest: (id: string) => Promise<void>;
+  onRejectFriendRequest: (id: string) => Promise<void>;
+  onOpenSecondFloor?: () => void;
+  onOpenTask?: (task: AITaskDTO) => void;
 }) {
-  const messagePalette = useMemo(
-    () => resolveMessagePalette(palette),
-    [palette],
-  );
-  const isLightPalette = palette.text === palettes.light.text;
-  const visibleThreads = useMemo(
-    () => threads.filter(thread => thread.agentId !== 'media-retrieval'),
-    [threads],
-  );
-  const unreadChatCount = useMemo(
+  const assist = useAIAssist();
+  const colors = useMemo(() => workspacePalette(palette), [palette]);
+  const { height } = useWindowDimensions();
+  const scrollOffset = useRef(0);
+  const pullStartAtTop = useRef(false);
+  const opening = useRef(false);
+  const pullOffset = useRef(new Animated.Value(0)).current;
+  const resetPull = useCallback(() => {
+    Animated.spring(pullOffset, {
+      toValue: 0,
+      useNativeDriver: true,
+      speed: 22,
+      bounciness: 3,
+    }).start();
+  }, [pullOffset]);
+  const pullResponder = useMemo(
     () =>
-      visibleThreads.reduce((total, thread) => total + thread.unreadCount, 0),
-    [visibleThreads],
+      PanResponder.create({
+        onStartShouldSetPanResponderCapture: () => {
+          pullStartAtTop.current = scrollOffset.current <= 0;
+          return false;
+        },
+        onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+          Boolean(onOpenSecondFloor) &&
+          !opening.current &&
+          !assist.isActive &&
+          selectedMessageTab === 'chat' &&
+          pullStartAtTop.current &&
+          gesture.dy > 12 &&
+          gesture.dy > Math.abs(gesture.dx) * 1.4,
+        onPanResponderMove: (_event, gesture) =>
+          pullOffset.setValue(Math.min(132, Math.max(0, gesture.dy * 0.56))),
+        onPanResponderRelease: (_event, gesture) => {
+          if (
+            gesture.dy * 0.56 >= 86 &&
+            gesture.dy > Math.abs(gesture.dx) * 1.4
+          ) {
+            opening.current = true;
+            Animated.timing(pullOffset, {
+              toValue: height,
+              duration: 240,
+              useNativeDriver: true,
+            }).start(({ finished }) => {
+              opening.current = false;
+              if (finished) onOpenSecondFloor?.();
+            });
+          } else resetPull();
+        },
+        onPanResponderTerminate: resetPull,
+      }),
+    [
+      assist.isActive,
+      height,
+      onOpenSecondFloor,
+      pullOffset,
+      resetPull,
+      selectedMessageTab,
+    ],
   );
-
+  React.useEffect(() => {
+    scrollOffset.current = 0;
+  }, [selectedMessageTab]);
+  const visibleThreads = threads.filter(
+    thread => thread.agentId !== 'media-retrieval',
+  );
+  const unread = visibleThreads.reduce(
+    (total, thread) => total + thread.unreadCount,
+    0,
+  );
+  const noticeMode = selectedMessageTab === 'notice';
   return (
     <View
-      style={[styles.screen, { backgroundColor: messagePalette.background }]}
+      {...pullResponder.panHandlers}
+      testID="messages-pull-surface"
+      style={[s.screen, { backgroundColor: colors.background }]}
     >
-      <View
+      <Animated.View
+        pointerEvents="none"
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
         style={[
-          styles.messageTopBar,
+          s.pullCue,
           {
-            backgroundColor: messagePalette.soft,
-            borderBottomColor: messagePalette.border,
+            opacity: pullOffset.interpolate({
+              inputRange: [0, 28, 80],
+              outputRange: [0, 0.5, 1],
+              extrapolate: 'clamp',
+            }),
           },
         ]}
       >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={textFor(language, '新建', 'New')}
-          onPress={onOpenMessageActions}
-          style={styles.messageHeaderIcon}
-        >
-          <Image
-            source={messageIconAssets.actionAdd}
-            style={styles.messageHeaderAddIcon}
-            resizeMode="contain"
-          />
-        </Pressable>
-
-        <View style={styles.messageTabGroup}>
-          {[
-            {
-              label: textFor(language, '聊天', 'Chats'),
-              value: 'chat' as const,
-              badge: unreadChatCount,
-            },
-            {
-              label: textFor(language, '通知', 'Notices'),
-              value: 'notice' as const,
-              badge: unreadNoticeCount,
-            },
-          ].map(option => {
-            const selected = selectedMessageTab === option.value;
-            return (
-              <Pressable
-                key={option.value}
-                accessibilityRole="button"
-                onPress={() => onSelectMessageTab(option.value)}
-                style={styles.messageTabButton}
-              >
-                <Text
-                  style={[
-                    styles.messageTabText,
+        <ChevronDown color={colors.secondaryText} size={18} />
+      </Animated.View>
+      <Animated.View
+        style={[
+          s.screen,
+          {
+            backgroundColor: colors.background,
+            transform: [{ translateY: pullOffset }],
+          },
+        ]}
+      >
+        <View style={s.topBar}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={textFor(
+              language,
+              noticeMode ? '返回对话' : '新建',
+              noticeMode ? 'Back to conversations' : 'New',
+            )}
+            accessibilityActions={
+              onOpenSecondFloor && !noticeMode
+                ? [
                     {
-                      color: selected
-                        ? messagePalette.text
-                        : messagePalette.secondaryText,
+                      name: 'openSecondFloor',
+                      label: textFor(language, '打开二楼', 'Open second floor'),
                     },
-                    selected && styles.messageTabTextActive,
-                  ]}
-                >
-                  {option.label}
-                </Text>
-                {option.badge && option.badge > 0 ? (
-                  <View
+                  ]
+                : undefined
+            }
+            onAccessibilityAction={event => {
+              if (event.nativeEvent.actionName === 'openSecondFloor')
+                onOpenSecondFloor?.();
+            }}
+            hitSlop={4}
+            onPress={() =>
+              noticeMode ? onSelectMessageTab('chat') : onOpenMessageActions()
+            }
+            style={[
+              s.iconButton,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            {noticeMode ? (
+              <ArrowLeft size={20} color={colors.text} />
+            ) : (
+              <Plus size={20} color={colors.text} />
+            )}
+          </Pressable>
+          {noticeMode ? (
+            <Text
+              accessibilityRole="header"
+              style={[s.noticeTitle, { color: colors.text }]}
+            >
+              {textFor(language, '通知', 'Notices')}
+            </Text>
+          ) : (
+            <View
+              style={[
+                s.switch,
+                { backgroundColor: colors.soft, borderColor: colors.border },
+              ]}
+            >
+              {(['chat', 'tasks'] as const).map(tab => {
+                const selected = selectedMessageTab === tab;
+                return (
+                  <Pressable
+                    key={tab}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected }}
+                    onPress={() => onSelectMessageTab(tab)}
                     style={[
-                      styles.messageTabBadge,
-                      { backgroundColor: messagePalette.rose },
+                      s.switchButton,
+                      selected && { backgroundColor: colors.surface },
                     ]}
                   >
-                    <Text style={styles.messageTabBadgeText}>
-                      {option.badge > 99 ? '99+' : option.badge}
+                    <Text
+                      style={[
+                        s.switchText,
+                        {
+                          color: selected ? colors.text : colors.secondaryText,
+                        },
+                      ]}
+                    >
+                      {textFor(
+                        language,
+                        tab === 'chat' ? '对话' : '任务',
+                        tab === 'chat' ? 'Chats' : 'Tasks',
+                      )}
+                    </Text>
+                    {tab === 'chat' && unread > 0 ? (
+                      <View style={[s.badge, { backgroundColor: colors.text }]}>
+                        <Text style={[s.badgeText, { color: colors.surface }]}>
+                          {unread > 99 ? '99+' : unread}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={textFor(language, '搜索', 'Search')}
+            hitSlop={4}
+            onPress={onOpenSearch}
+            style={[
+              s.iconButton,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Search size={20} color={colors.text} />
+          </Pressable>
+        </View>
+        {selectedMessageTab === 'chat' ? (
+          <FlatList
+            onScroll={event => {
+              scrollOffset.current = event.nativeEvent.contentOffset.y;
+            }}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={false}
+            data={visibleThreads}
+            keyExtractor={item => item.id}
+            contentContainerStyle={s.list}
+            style={s.screen}
+            ListHeaderComponent={
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={textFor(
+                  language,
+                  `应用通知，${unreadNoticeCount}条未读`,
+                  `App notices, ${unreadNoticeCount} unread`,
+                )}
+                onPress={() => onSelectMessageTab('notice')}
+                style={[
+                  s.noticeRow,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Bell size={18} color={colors.secondaryText} />
+                <Text style={[s.noticeLabel, { color: colors.secondaryText }]}>
+                  {textFor(language, '应用通知', 'App notices')}
+                </Text>
+                {unreadNoticeCount > 0 ? (
+                  <View style={[s.badge, { backgroundColor: colors.text }]}>
+                    <Text style={[s.badgeText, { color: colors.surface }]}>
+                      {unreadNoticeCount > 99 ? '99+' : unreadNoticeCount}
                     </Text>
                   </View>
                 ) : null}
               </Pressable>
-            );
-          })}
-        </View>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={textFor(language, '搜索', 'Search')}
-          onPress={onOpenSearch}
-          style={styles.messageHeaderIcon}
-        >
-          <Image
-            source={messageIconAssets.actionSearchContacts}
-            style={styles.messageHeaderSearchIcon}
-            resizeMode="contain"
-          />
-        </Pressable>
-      </View>
-
-      <View style={styles.messageContent}>
-        {selectedMessageTab === 'chat' ? (
-          <FlatList
-            data={visibleThreads}
-            keyExtractor={item => item.id}
-            contentContainerStyle={styles.threadList}
-            style={styles.messageListViewport}
+            }
+            ListEmptyComponent={
+              <View style={s.empty}>
+                <Text style={{ color: colors.secondaryText }}>
+                  {textFor(language, '还没有对话', 'No conversations yet')}
+                </Text>
+                <Text style={[s.preview, { color: colors.secondaryText }]}>
+                  {textFor(
+                    language,
+                    '从左上角发起聊天，或前往我页添加 Agent。',
+                    'Start a chat or add an agent in Me.',
+                  )}
+                </Text>
+              </View>
+            }
             renderItem={({ item }) => (
               <ThreadSwipeRow
                 thread={item}
-                palette={messagePalette}
+                palette={colors}
                 language={language}
                 agents={agents}
                 renderUserAvatar={renderUserAvatar}
@@ -342,9 +494,18 @@ export function ThreadListScreen({
               />
             )}
           />
+        ) : selectedMessageTab === 'tasks' ? (
+          <AITaskInbox
+            token={token}
+            active={active}
+            palette={colors}
+            language={language}
+            agents={agents}
+            onOpenTask={task => onOpenTask?.(task)}
+          />
         ) : (
           <NoticeList
-            palette={messagePalette}
+            palette={colors}
             language={language}
             notices={notices}
             onMarkNotificationRead={onMarkNotificationRead}
@@ -352,27 +513,100 @@ export function ThreadListScreen({
             onRejectFriendRequest={onRejectFriendRequest}
           />
         )}
-
-        {isLightPalette ? (
-          <View pointerEvents="none" style={styles.messageBottomFade}>
-            <Svg height="100%" width="100%">
-              <Defs>
-                <SvgLinearGradient
-                  id="messageBottomFade"
-                  x1="0"
-                  x2="0"
-                  y1="0"
-                  y2="1"
-                >
-                  <Stop offset="0" stopColor="#FFFFFF" />
-                  <Stop offset="1" stopColor="#F1EFFA" />
-                </SvgLinearGradient>
-              </Defs>
-              <Rect fill="url(#messageBottomFade)" height="100%" width="100%" />
-            </Svg>
-          </View>
-        ) : null}
-      </View>
+      </Animated.View>
     </View>
   );
 }
+const s = StyleSheet.create({
+  screen: { flex: 1 },
+  pullCue: { position: 'absolute', top: 22, alignSelf: 'center' },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingTop: 14,
+    paddingBottom: 10,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  switch: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 3,
+    borderWidth: 1,
+    borderRadius: 7,
+    padding: 3,
+  },
+  switchButton: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 5,
+  },
+  switchText: { fontSize: 14, fontWeight: '600' },
+  noticeTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  list: { paddingHorizontal: 4, paddingBottom: 90, gap: 3 },
+  thread: {
+    minHeight: 76,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    borderWidth: 1,
+    borderRadius: 7,
+  },
+  agentAvatar: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scaledAvatar: { transform: [{ scale: 44 / 54 }] },
+  threadMain: { flex: 1, minWidth: 0, gap: 6 },
+  threadTitle: { fontSize: 15, fontWeight: '600' },
+  preview: { fontSize: 12, lineHeight: 18 },
+  trailing: {
+    minWidth: 30,
+    alignItems: 'flex-end',
+    alignSelf: 'stretch',
+    justifyContent: 'space-between',
+    gap: 4,
+  },
+  time: { fontSize: 10 },
+  badge: {
+    minWidth: 18,
+    minHeight: 18,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { fontSize: 10, fontWeight: '700' },
+  noticeRow: {
+    minHeight: 46,
+    paddingHorizontal: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 7,
+    borderWidth: 1,
+  },
+  noticeLabel: { flex: 1, fontSize: 12 },
+  empty: { alignItems: 'center', padding: 28, paddingTop: 60, gap: 8 },
+});

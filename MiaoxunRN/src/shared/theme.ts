@@ -1,5 +1,27 @@
 export type Appearance = 'light' | 'dark';
 
+// Product colors live here; screen palettes compose these roles rather than
+// redeclaring the same brand or workspace values in each feature.
+export const productColors = {
+  accent: '#2012D9',
+  background: '#F8F7FD',
+  surface: '#FFFFFF',
+  soft: '#F4F6FF',
+  border: '#F0EBFD',
+  chipBorder: '#DBE2FF',
+  text: '#000000',
+  secondaryText: 'rgba(0,0,0,0.60)',
+};
+
+export const workspaceColors = {
+  background: '#F6F6F8',
+  surface: productColors.surface,
+  soft: '#ECECEF',
+  border: '#E9E9ED',
+  text: '#151515',
+  secondaryText: '#66666F',
+};
+
 export type Palette = {
   background: string;
   surface: string;
@@ -16,17 +38,17 @@ export type Palette = {
 
 export const palettes: Record<Appearance, Palette> = {
   light: {
-    background: '#f6f6f3',
-    surface: '#fffffb',
-    soft: '#ecefe9',
-    text: '#1a1f1c',
-    secondaryText: 'rgba(26,31,28,0.62)',
-    border: 'rgba(0,0,0,0.08)',
+    background: productColors.background,
+    surface: productColors.surface,
+    soft: productColors.soft,
+    text: productColors.text,
+    secondaryText: productColors.secondaryText,
+    border: productColors.border,
     shadow: 'rgba(0,0,0,0.04)',
-    mint: '#2ead85',
+    mint: productColors.accent,
     rose: '#f2576b',
     sun: '#f5c449',
-    input: '#fffffb',
+    input: productColors.surface,
   },
   dark: {
     background: '#0e100f',

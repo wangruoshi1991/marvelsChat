@@ -44,8 +44,8 @@ const agentModuleBindings: Record<string, { zh: string; en: string }> = {
     en: 'Diary / Comic Diary',
   },
   'video-production': {
-    zh: '我的动态 / 视频草稿',
-    en: 'Posts / Video Drafts',
+    zh: '视频脚本 / 协作任务',
+    en: 'Video Scripts / Collaborative Tasks',
   },
 };
 
@@ -80,6 +80,7 @@ export function AgentSection({
   updatingAgentId,
   onOpenAgentThread,
   onRemoveAgent,
+  readdAgentIds,
 }: {
   palette: Palette;
   language: Language;
@@ -90,6 +91,7 @@ export function AgentSection({
   updatingAgentId: string | null;
   onOpenAgentThread: (agentId: string) => void;
   onRemoveAgent: (agentId: string) => void;
+  readdAgentIds?: ReadonlySet<string>;
 }) {
   const colors = resolveStationColors(palette);
 
@@ -121,61 +123,75 @@ export function AgentSection({
                 },
               ]}
             >
-              <Pressable
-                accessibilityLabel={agent.name}
-                accessibilityRole="button"
-                onPress={() => onOpenAgentThread(agent.id)}
-                style={styles.stationOwnedAgentOpenButton}
-              >
-                <AgentMark palette={palette} agent={agent} />
-                <View style={styles.stationOwnedAgentCopy}>
+              <View style={styles.stationOwnedAgentCopy}>
+                <Pressable
+                  accessibilityLabel={agent.name}
+                  accessibilityRole="button"
+                  onPress={() => onOpenAgentThread(agent.id)}
+                  style={styles.stationOwnedAgentOpenButton}
+                >
+                  <AgentMark palette={palette} agent={agent} />
+                  <View style={styles.stationOwnedAgentCopy}>
+                    <Text
+                      style={[
+                        styles.stationOwnedAgentName,
+                        { color: colors.text },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {agent.name}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.stationOwnedAgentDesc,
+                        { color: colors.secondaryText },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {moduleBindingForAgent(agent.id, language)}
+                    </Text>
+                  </View>
                   <Text
                     style={[
-                      styles.stationOwnedAgentName,
-                      { color: colors.text },
+                      styles.stationOwnedAgentStatus,
+                      { backgroundColor: colors.soft, color: colors.accent },
                     ]}
-                    numberOfLines={1}
                   >
-                    {agent.name}
+                    {textFor(language, '进入对话', 'Chat')}
                   </Text>
+                </Pressable>
+                {readdAgentIds?.has(agent.id) ? (
                   <Text
                     style={[
                       styles.stationOwnedAgentDesc,
-                      { color: colors.secondaryText },
+                      { color: colors.accent },
                     ]}
-                    numberOfLines={1}
                   >
-                    {moduleBindingForAgent(agent.id, language)}
+                    {textFor(
+                      language,
+                      '授权范围不同，请移除后重新添加。',
+                      'Access scopes differ. Remove and add this agent again.',
+                    )}
                   </Text>
-                </View>
-                <Text
-                  style={[
-                    styles.stationOwnedAgentStatus,
-                    { backgroundColor: colors.soft, color: colors.accent },
-                  ]}
-                >
-                  {textFor(language, '进入对话', 'Chat')}
-                </Text>
+                ) : null}
+              </View>
+              <Pressable
+                accessibilityLabel={textFor(
+                  language,
+                  `移除 ${agent.name}`,
+                  `Remove ${agent.name}`,
+                )}
+                accessibilityRole="button"
+                disabled={updatingAgentId === agent.id}
+                onPress={() => onRemoveAgent(agent.id)}
+                style={[
+                  styles.stationAgentRemoveButton,
+                  updatingAgentId === agent.id &&
+                    styles.stationAgentCardDisabled,
+                ]}
+              >
+                <X color={colors.secondaryText} size={15} strokeWidth={2} />
               </Pressable>
-              {agent.id === 'miaoxun-butler' ? null : (
-                <Pressable
-                  accessibilityLabel={textFor(
-                    language,
-                    `移除 ${agent.name}`,
-                    `Remove ${agent.name}`,
-                  )}
-                  accessibilityRole="button"
-                  disabled={updatingAgentId === agent.id}
-                  onPress={() => onRemoveAgent(agent.id)}
-                  style={[
-                    styles.stationAgentRemoveButton,
-                    updatingAgentId === agent.id &&
-                      styles.stationAgentCardDisabled,
-                  ]}
-                >
-                  <X color={colors.secondaryText} size={15} strokeWidth={2} />
-                </Pressable>
-              )}
             </View>
           ))}
         </View>

@@ -1,10 +1,17 @@
-import { Dispatch, SetStateAction, useCallback } from 'react';
-import {
-  ButlerClientContextPayload,
-  ButlerLocalActionResultPayload,
-} from '../../models/api';
+import type { AIContextReference } from '../../models/aiTask';
+import { Dispatch, SetStateAction, useCallback, useRef } from 'react';
+import { ButlerClientContextPayload } from '../../models/api';
 import { apiClient } from '../../services/apiClient';
+import { MiaoxunApiError } from '../../services/api/http';
+import {
+  assertAgentWorkspaceContract,
+  assertAIContract,
+} from '../../services/aiContract';
 import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
+import {
+  AssistMessageSource,
+  normalizeAssistMessageSource,
+} from '../assist/assistMessageSource';
 import { appErrorMessage } from './sessionDefaults';
 import { mapMessage, mergeMessages, mergeThreads } from './sessionMappers';
 import { ChatMessage, ChatThread } from './sessionTypes';
@@ -26,19 +33,43 @@ export function useMessageActions({
   setThreads,
   setErrorMessage,
 }: UseMessageActionsOptions) {
+  const refreshes = useRef(new Map<string, Promise<void>>());
   const sendMessage = useCallback(
     async (
       threadId: string,
       content: string,
-      appActionResult?: ButlerLocalActionResultPayload | null,
       retryMessageId?: string,
       replyToMessageId?: string | null,
+      contextRefs: AIContextReference[] = [],
+      assistSource?: AssistMessageSource,
+      butlerContextReset?: boolean,
     ) => {
       const thread = threads.find(item => item.id === threadId);
       const isButler = thread?.agentId === 'miaoxun-butler';
       const retryMessage = thread?.messages.find(
         message => message.id === retryMessageId,
       );
+      const submittedReferences = retryMessage
+        ? retryMessage.metadata?.contextRefs || []
+        : contextRefs;
+      const submittedReset =
+        isButler &&
+        (retryMessage
+          ? retryMessage.metadata?.butlerContextReset === true
+          : butlerContextReset === true);
+      let submittedSource: AssistMessageSource | undefined;
+      try {
+        // Retries keep the original location even if the user has navigated
+        // elsewhere. A new caller cannot replace an accepted request's source.
+        submittedSource = normalizeAssistMessageSource(
+          retryMessage ? retryMessage.metadata?.assistSource : assistSource,
+        );
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : 'AI 请求来源无效。',
+        );
+        return false;
+      }
       const clientMessageId =
         retryMessage?.clientMessageId || createIdempotencyKey();
       const optimisticId = retryMessageId || `local-${clientMessageId}`;
@@ -49,9 +80,14 @@ export function useMessageActions({
         senderName: currentUserName || '我',
         content,
         clientMessageId,
-        metadata: replyToMessageId
-          ? { replyTo: { messageId: replyToMessageId } }
-          : {},
+        metadata: {
+          contextRefs: submittedReferences,
+          ...(submittedReset ? { butlerContextReset: true } : {}),
+          ...(submittedSource ? { assistSource: submittedSource } : {}),
+          ...(replyToMessageId
+            ? { replyTo: { messageId: replyToMessageId } }
+            : {}),
+        },
         localStatus: 'sending',
       };
 
@@ -63,7 +99,11 @@ export function useMessageActions({
                 messages: retryMessageId
                   ? item.messages.map(message =>
                       message.id === retryMessageId
-                        ? { ...message, localStatus: 'sending' }
+                        ? {
+                            ...message,
+                            localStatus: 'sending',
+                            localFailure: undefined,
+                          }
                         : message,
                     )
                   : [...item.messages, optimistic],
@@ -106,15 +146,23 @@ export function useMessageActions({
       }
 
       try {
+        if (isButler) assertAgentWorkspaceContract(token);
+        else if (thread?.agentId || submittedReferences.length)
+          assertAIContract(token);
         const response = await apiClient.sendMessage(
           threadId,
           content,
           token,
-          isButler ? makeButlerContext('messages.butler') : null,
-          appActionResult,
+          isButler
+            ? makeButlerContext(
+                submittedSource?.currentPage || 'messages.butler',
+              )
+            : null,
           replyToMessageId,
           clientMessageId,
-          thread?.agentId === 'album-manager' ? 180000 : 45000,
+          45000,
+          submittedReferences,
+          ...(submittedReset ? ([true] as const) : []),
         );
         const incoming = response.messages.map(mapMessage);
         setThreads(current =>
@@ -146,7 +194,19 @@ export function useMessageActions({
                   ...item,
                   messages: item.messages.map(message =>
                     message.id === optimisticId
-                      ? { ...message, localStatus: 'failed' }
+                      ? {
+                          ...message,
+                          localStatus: 'failed',
+                          localFailure: {
+                            message:
+                              error instanceof Error
+                                ? error.message
+                                : '消息发送失败。',
+                            ...(error instanceof MiaoxunApiError && error.code
+                              ? { code: error.code }
+                              : {}),
+                          },
+                        }
                       : message,
                   ),
                 }
@@ -164,6 +224,37 @@ export function useMessageActions({
       threads,
       token,
     ],
+  );
+
+  const refreshThreadMessages = useCallback(
+    (threadId: string) => {
+      if (!token) return Promise.resolve();
+      const key = `${token}:${threadId}`;
+      const running = refreshes.current.get(key);
+      if (running) return running;
+      const refresh = apiClient
+        .messages(threadId, token)
+        .then(messages => {
+          setThreads(current =>
+            current.map(thread =>
+              thread.id === threadId
+                ? {
+                    ...thread,
+                    messages: mergeMessages(
+                      thread.messages,
+                      messages.map(mapMessage),
+                    ),
+                    lastContent: messages.at(-1)?.content || thread.lastContent,
+                  }
+                : thread,
+            ),
+          );
+        })
+        .finally(() => refreshes.current.delete(key));
+      refreshes.current.set(key, refresh);
+      return refresh;
+    },
+    [setThreads, token],
   );
 
   const deleteMessage = useCallback(
@@ -320,6 +411,7 @@ export function useMessageActions({
 
   return {
     sendMessage,
+    refreshThreadMessages,
     deleteMessage,
     recallMessage,
     markThreadRead,

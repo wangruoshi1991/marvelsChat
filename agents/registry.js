@@ -15,11 +15,13 @@ async function loadAgentDefinitions() {
       if (!agent || typeof agent.key !== "string" || !agent.key.trim()) {
         throw new Error(`Agent file ${file} must export a non-empty key`);
       }
+      if (Object.hasOwn(agent, "runtimeModes")) throw new Error(`Agent ${agent.key} cannot declare derived runtime modes`);
       if (file !== `${agent.key}.agent.js`) {
         throw new Error(`Agent file ${file} must match key ${agent.key}`);
       }
       validateAgentIdentity(agent);
       validateAgentPermissions(agent);
+      validateAgentWorkspaceCapabilities(agent);
       return agent;
     })
   );
@@ -65,6 +67,35 @@ export function validateAgentPermissions(agent) {
   return permissions;
 }
 
+// Display capabilities do not authorize execution. Only this typed declaration
+// can be matched to a backend executor with the same contract and scopes.
+export function validateAgentWorkspaceCapabilities(agent, { runtimeModes = null } = {}) {
+  if (agent.workspaceCapabilities === undefined) return [];
+  if (!Array.isArray(agent.workspaceCapabilities) || !agent.workspaceCapabilities.length ||
+    !/^\d+\.\d+\.\d+$/.test(agent.version || "")) {
+    throw new Error(`Agent ${agent.key} must declare valid versioned workspace capabilities`);
+  }
+  const seen = new Set();
+  const fields = ["capability", "description", "inputKinds", "dependencyKinds", "outputKind", "requiredScopes"];
+  for (const entry of agent.workspaceCapabilities) {
+    if (!entry || Object.keys(entry).length !== fields.length || fields.some(key => !Object.hasOwn(entry, key)) ||
+      !/^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/.test(entry.capability) || seen.has(entry.capability) ||
+      typeof entry.description !== "string" || !entry.description.trim() || entry.description.length > 500 ||
+      !["media_selection", "site_draft", "text_result", "workspace_decision"].includes(entry.outputKind) ||
+      !Array.isArray(entry.inputKinds) || entry.inputKinds.some(kind => !["station-album", "station-photo", "station-diary", "chat-message"].includes(kind)) ||
+      !Array.isArray(entry.dependencyKinds) || entry.dependencyKinds.some(kind => !["media_selection", "site_draft", "text_result"].includes(kind)) ||
+      !Array.isArray(entry.requiredScopes) || !entry.requiredScopes.length ||
+      entry.requiredScopes.some(scope => !agent.permissions.includes(scope)) ||
+      [entry.inputKinds, entry.dependencyKinds, entry.requiredScopes].some(values => new Set(values).size !== values.length) ||
+      (entry.outputKind === "workspace_decision" && typeof agent.coordinate !== "function") ||
+      (entry.outputKind === "text_result" && typeof agent.contribute !== "function" && !runtimeModes?.includes("contribute"))) {
+      throw new Error(`Agent ${agent.key} has an invalid workspace capability declaration`);
+    }
+    seen.add(entry.capability);
+  }
+  return agent.workspaceCapabilities;
+}
+
 export async function listAgents() {
   const agents = await loadAgentDefinitions();
 
@@ -76,6 +107,8 @@ export async function listAgents() {
     description: agent.description,
     capabilities: agent.capabilities,
     permissions: agent.permissions,
+    workspaceCapabilities: agent.workspaceCapabilities || [],
+    runtimeModes: ["plan", "chat", "dispatch", "coordinate", "contribute"].filter(mode => typeof agent[mode] === "function"),
     identity: agent.identity,
     status: "registered"
   }));

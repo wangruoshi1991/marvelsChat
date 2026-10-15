@@ -36,7 +36,7 @@ export function StationContentEditorHeader({
         <Image
           resizeMode="contain"
           source={contactIconAssets.back}
-          style={styles.stationEditorBackIcon}
+          style={[styles.stationEditorBackIcon, { tintColor: palette.text }]}
         />
       </Pressable>
       <Text

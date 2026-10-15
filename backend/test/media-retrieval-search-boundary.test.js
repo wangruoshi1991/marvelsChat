@@ -801,3 +801,71 @@ test("actual search service persists provider failures only through the canonica
     assert.equal(safeOutput.includes(providerMessage), false, scenario.label);
   }
 });
+
+test("workspace reservations and receipts cover every parse, embedding and visual model call", async () => {
+  const events = [], receipts = [], transitions = [];
+  const rows = Array.from({ length: 2 }, (_, index) => ({ mediaAssetId: `owned-${index}`, kind: "image", matchedFrameTimestampMs: null,
+    summary: "a ceramic bowl", score: 0.9 }));
+  let reservationCount = 0;
+  const capture = (operation, onModelResponse) => {
+    events.push(`provider:${operation}`);
+    onModelResponse({ provider: "test-provider", model: operation, servedModel: `served-${operation}`,
+      tokenUsage: { prompt: 2, completion: 1, total: 3 }, latencyMs: 7 });
+  };
+  const service = createMediaRetrievalUserService({
+    repository: { ...repositoryForSearch({ transitions }), searchMediaRetrievalSegments: async () => rows,
+      reserveProviderBudget: async ({ operation }) => { events.push(`budget:${operation}`); return { reserved: true, reservationId: String(++reservationCount), amountFen: 1 }; },
+      settleProviderBudget: async ({ disposition }) => { events.push(`settle:${disposition}`); } },
+    provider: { getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }), getIndexingProvenance: getTestIndexingProvenance,
+      parseRetrievalQuery: async ({ query, onModelResponse }) => { capture("parse", onModelResponse); return { spans: [{ text: query, role: "visual" }], parseConfidence: "high" }; },
+      embedText: async ({ onModelResponse }) => { capture("embed", onModelResponse); return VECTOR; },
+      rerankMediaCandidates: async ({ candidates, onModelResponse }) => { capture("rerank", onModelResponse); return candidates.map(candidate => ({ ...candidate, score: 0.8,
+        matchReasons: ["semantic-match"], constraintEvidence: [{ constraintIndex: 0, citations: [{ field: "image", itemIndex: 0 }] }] })); } },
+  });
+  const response = await service.searchMediaRetrieval({ userId: USER_ID, query: "a ceramic bowl",
+    beforeModelCall: async () => { events.push("workspace:reserve"); return { nodeModelCalls: reservationCount }; },
+    afterModelCall: async receipt => { events.push("workspace:received"); receipts.push(receipt); } });
+  assert.equal(response.results.length, 2);
+  assert.equal(receipts.length, 4);
+  assert.deepEqual(receipts.map(item => item.receipt.nodeModelCalls), [1, 2, 3, 4]);
+  assert.deepEqual(receipts.map(item => item.model), ["parse", "embed", "rerank", "rerank"]);
+  assert.deepEqual(receipts.map(item => item.servedModel), ["served-parse", "served-embed", "served-rerank", "served-rerank"]);
+  for (let index = 0; index < events.length; index += 5) {
+    assert.match(events[index], /^budget:/); assert.equal(events[index + 1], "workspace:reserve");
+    assert.match(events[index + 2], /^provider:/); assert.equal(events[index + 3], "settle:estimated"); assert.equal(events[index + 4], "workspace:received");
+  }
+});
+
+test("workspace guard errors release retrieval reservation and survive the retrieval boundary", async () => {
+  const events = [];
+  const denied = Object.assign(new Error("workspace cancelled"), { details: { code: "WORKSPACE_STATE_CHANGED" } });
+  const service = createMediaRetrievalUserService({ repository: { ...repositoryForSearch(),
+    reserveProviderBudget: async () => { events.push("retrieval-reserved"); return { reserved: true, reservationId: "r", amountFen: 1 }; },
+    settleProviderBudget: async value => events.push(value.disposition) },
+    provider: { getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }),
+      parseRetrievalQuery: async () => assert.fail("provider must never be called") } });
+  await assert.rejects(service.searchMediaRetrieval({ userId: USER_ID, query: "照片",
+    beforeModelCall: async () => { events.push("workspace-rejected"); throw denied; }, afterModelCall: async () => assert.fail("no response exists") }), error => error === denied);
+  assert.deepEqual(events, ["retrieval-reserved", "workspace-rejected", "released"]);
+});
+
+test("receipt persistence failure or missing response stops retrieval without subsequent dispatch", async () => {
+  for (const missingResponse of [false, true]) {
+    const receipts = [], calls = [], settlements = [];
+    const rejected = new Error("workspace receipt store failed");
+    const service = createMediaRetrievalUserService({ repository: { ...repositoryForSearch(), settleProviderBudget: async value => settlements.push(value.disposition) },
+      provider: { getRuntimeStatus: () => ({ configured: true, enabled: true, providerCallsEnabled: true }), getIndexingProvenance: getTestIndexingProvenance,
+        parseRetrievalQuery: async ({ query, onModelResponse }) => {
+          calls.push("parse");
+          if (missingResponse) throw new TypeError("provider connection interrupted");
+          onModelResponse({ provider: "test-provider", model: "parser", tokenUsage: { prompt: 1, completion: 1, total: 2 }, latencyMs: 2 });
+          return { spans: [{ text: query, role: "visual" }], parseConfidence: "high" };
+        }, embedText: async () => assert.fail("must not dispatch another model") } });
+    await assert.rejects(service.searchMediaRetrieval({ userId: USER_ID, query: "照片", beforeModelCall: async () => 1,
+      afterModelCall: async receipt => { receipts.push(receipt); throw rejected; } }),
+    error => missingResponse ? error.details.code === "WORKSPACE_MODEL_RESULT_UNKNOWN" : error === rejected);
+    assert.deepEqual(calls, ["parse"]);
+    assert.deepEqual(settlements, [missingResponse ? "unknown" : "estimated"]);
+    assert.equal(receipts.length, missingResponse ? 0 : 1);
+  }
+});

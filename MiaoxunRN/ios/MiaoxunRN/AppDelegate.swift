@@ -15,6 +15,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
 #if DEBUG
+    // Debug builds use the embedded bundle without a Metro server.
+    RCTBundleURLProviderAllowPackagerServerAccess(false)
     RCTDevLoadingViewSetEnabled(false)
 #endif
 

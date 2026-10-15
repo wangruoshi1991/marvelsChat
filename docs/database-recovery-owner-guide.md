@@ -349,7 +349,7 @@ sudo systemctl is-active marvels-chat-backend
 sudo systemctl is-active marvels-chat-media-retrieval-worker
 ```
 
-两个服务都必须显示 inactive。不要用 `SIGKILL` 作为常规停服方式。
+部署了036配套AI任务Worker时，还必须停止并核对 `marvels-chat-ai-task-worker` 为inactive；尚未安装的旧35环境不启动这个单元。所有业务写入进程都必须停止，恢复脚本会拒绝仍在运行的AI Worker。不要用 `SIGKILL` 作为常规停服方式。
 
 ### 3. 保存事故现场
 
@@ -385,6 +385,8 @@ npm run db:migrate
 
 迁移必须使用当前 systemd 服务使用的同一份生产环境文件。不要手工修改表来代替迁移。
 
+036升级事故不能仅切回旧03：旧制品缺036文件会使ready503，旧建站接口也不理解新审批。已有新写入时优先保留36前向修复；停写窗口内回退及数据边界见[正式AI升级准备](reviews/2026-10-12-production-ai-upgrade.md)。
+
 ### 7. 启动并验证
 
 ```sh
@@ -402,6 +404,8 @@ curl --fail https://8.153.167.11/api/ready
 `/api/health` 只表示进程存活；`/api/ready` 才会检查数据库连接、迁移文件、迁移账本和历史校验和。
 两者都通过后，再验证登录、聊天、媒体读取、3D 模型和一个只读业务查询。确认稳定后才能结束维护
 窗口。
+
+恢复目标包含036合同且已安装AI Worker时，启动 `marvels-chat-ai-task-worker` 并单独核对心跳和 `npm run ops:ai-tasks`；API ready不能代替Worker检查。恢复35和旧03时不得启动新Worker。
 
 ### 8. 清理恢复临时文件
 

@@ -95,11 +95,11 @@ export async function buildAgentReadiness({
       providers: { model },
     }),
     "video-production": readiness({
-      configured: false,
-      requiredEnv: [...modelRequired, ...ossRequired],
-      missingEnv: [...model.missing, ...oss.missing],
+      configured: model.configured,
+      requiredEnv: modelRequired,
+      missingEnv: model.missing,
       capabilityNeeds: ["video_generation_provider", "render_queue"],
-      providers: { model, oss },
+      providers: { model },
     }),
     "media-retrieval": readiness({
       configured: retrieval.readiness.state === "ready",

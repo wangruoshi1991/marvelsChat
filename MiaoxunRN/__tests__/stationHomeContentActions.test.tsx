@@ -16,6 +16,7 @@ import {
   DiaryComicGrid,
 } from '../src/features/station/StationHomeModules';
 import { StationHome } from '../src/features/station/StationHome';
+import { SecondFloorAlbumList } from '../src/features/second-floor/SecondFloorAlbumList';
 import { moduleBindingForAgent } from '../src/features/station/StationAgentCards';
 import {
   AgentDTO,
@@ -122,6 +123,7 @@ describe('Station home content actions', () => {
           language="zh"
           palette={palettes.light}
           onOpenAlbum={onOpenAlbum}
+          onEditAlbum={jest.fn()}
         />,
       );
     });
@@ -131,18 +133,29 @@ describe('Station home content actions', () => {
     expect(image.props.source.headers.Authorization).toBe(
       'Bearer test-authorization-secret',
     );
+    const alert = jest.spyOn(Alert, 'alert');
     await ReactTestRenderer.act(() =>
-      actions[0].onSelect(surface.props.object),
+      actions
+        .find(action => action.direction === 'left')!
+        .onSelect(surface.props.object),
     );
+    const buttons = alert.mock.calls[0][2]!;
+    await ReactTestRenderer.act(() => buttons[0].onPress?.());
     expect(share).toHaveBeenCalledWith({ message: '相册标题\n\n真实相册描述' });
     await ReactTestRenderer.act(() =>
-      actions[1].onSelect(surface.props.object),
+      actions
+        .find(action => action.direction === 'right')!
+        .onSelect(surface.props.object),
     );
     expect(mockAssist.askButler).toHaveBeenCalledWith({
       kind: 'station-album',
       id: album.id,
       title: album.title,
-      metadata: { content: album.description, mediaCount: 1 },
+      scene: {
+        page: 'station.station',
+        label: '我 · 主页',
+        module: { key: 'album-grid', label: '相册列表' },
+      },
     });
     const transferred = JSON.stringify(mockAssist.askButler.mock.calls);
     expect(transferred).not.toContain('test-authorization-secret');
@@ -177,6 +190,125 @@ describe('Station home content actions', () => {
     expect(Clipboard.setString).toHaveBeenCalledWith(
       '日记标题\n\n真实日记正文',
     );
+  });
+
+  it('uses identical album actions on home and second floor, preserving edit, origin and cancellation', async () => {
+    const open = jest.fn();
+    const edit = jest.fn();
+    const alert = jest.spyOn(Alert, 'alert');
+    const menuFor = async (page: 'home' | 'second-floor') => {
+      await ReactTestRenderer.act(() => {
+        renderer?.unmount();
+        renderer = ReactTestRenderer.create(
+          page === 'home' ? (
+            <AlbumGrid
+              albums={[album]}
+              mediaAssets={[]}
+              token=""
+              language="zh"
+              palette={palettes.light}
+              onOpenAlbum={open}
+              onEditAlbum={edit}
+            />
+          ) : (
+            <SecondFloorAlbumList
+              albums={[album]}
+              mediaAssets={[]}
+              token=""
+              language="zh"
+              palette={palettes.light}
+              onOpen={open}
+              onEdit={edit}
+              onBack={jest.fn()}
+              onCreate={jest.fn()}
+            />
+          ),
+        );
+      });
+      return renderer.root.findAllByType(AIAssistGestureSurface)[0];
+    };
+
+    const menus = [];
+    for (const page of ['home', 'second-floor'] as const) {
+      const surface = await menuFor(page);
+      const actions: AIAssistAction[] = surface.props.actions;
+      menus.push(actions.map(({ direction, label }) => ({ direction, label })));
+      expect(mockAssist.askButler).not.toHaveBeenCalled();
+      await ReactTestRenderer.act(() =>
+        actions
+          .find(action => action.direction === 'down')!
+          .onSelect(surface.props.object),
+      );
+      expect(edit).toHaveBeenLastCalledWith(album.id);
+      await ReactTestRenderer.act(() =>
+        actions
+          .find(action => action.direction === 'right')!
+          .onSelect(surface.props.object),
+      );
+      expect(mockAssist.askButler).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          kind: 'station-album',
+          id: album.id,
+          scene: expect.objectContaining({
+            page: page === 'home' ? 'station.station' : 'second-floor.albums',
+          }),
+        }),
+      );
+      expect(mockAssist.askButler.mock.calls.at(-1)![0]).not.toHaveProperty(
+        'intent',
+      );
+      await ReactTestRenderer.act(() =>
+        actions
+          .find(action => action.direction === 'left')!
+          .onSelect(surface.props.object),
+      );
+      const cancel = alert.mock.calls
+        .at(-1)![2]!
+        .find(button => button.style === 'cancel')!;
+      expect(cancel.onPress).toBeUndefined();
+      expect(open).not.toHaveBeenCalled();
+      mockAssist.askButler.mockClear();
+    }
+    expect(menus[0]).toEqual(menus[1]);
+    expect(menus[0]).toEqual([
+      { direction: 'up', label: '查看相册' },
+      { direction: 'right', label: '妙管家' },
+      { direction: 'down', label: '编辑相册' },
+      { direction: 'left', label: '更多' },
+    ]);
+    expect(edit).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let an obsolete album More menu share or copy text after leaving its account or page', async () => {
+    const alert = jest.spyOn(Alert, 'alert');
+    const share = jest.spyOn(Share, 'share');
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <AlbumGrid
+          albums={[album]}
+          mediaAssets={[]}
+          token=""
+          language="zh"
+          palette={palettes.light}
+          onOpenAlbum={jest.fn()}
+          onEditAlbum={jest.fn()}
+        />,
+      );
+    });
+    const surface = renderer.root.findByType(AIAssistGestureSurface);
+    await ReactTestRenderer.act(() =>
+      surface.props.actions
+        .find((action: AIAssistAction) => action.direction === 'left')
+        .onSelect(surface.props.object),
+    );
+    const buttons = alert.mock.calls[0][2]!;
+    await ReactTestRenderer.act(() => renderer.unmount());
+    await ReactTestRenderer.act(() => {
+      buttons[0].onPress?.();
+      buttons[1].onPress?.();
+    });
+    expect(share).not.toHaveBeenCalled();
+    expect(Clipboard.setString).not.toHaveBeenCalled();
   });
 
   it('uses the Butler chat portrait while preserving home card and other Agent identities', async () => {
@@ -229,6 +361,7 @@ describe('Station home content actions', () => {
           onActionMessage={jest.fn()}
           onOpenAgentThread={jest.fn()}
           onOpenAlbumDetail={jest.fn()}
+          onEditAlbum={jest.fn()}
           onOpenAvatar3d={jest.fn()}
           onOpenContentList={jest.fn()}
           onOpenCreateSheet={jest.fn()}

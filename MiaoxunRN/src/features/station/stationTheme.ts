@@ -1,17 +1,19 @@
-import { Palette, palettes } from '../../shared/theme';
+import { Palette, palettes, productColors } from '../../shared/theme';
 
 export function resolveStationColors(palette: Palette) {
   const isLight = palette.text === palettes.light.text;
 
   return {
     isLight,
-    accent: isLight ? '#2012D9' : palette.mint,
-    background: isLight ? '#F8F7FD' : palette.background,
-    border: isLight ? '#F0EBFD' : palette.border,
-    chipBorder: isLight ? '#DBE2FF' : palette.border,
-    secondaryText: isLight ? 'rgba(0,0,0,0.60)' : palette.secondaryText,
-    soft: isLight ? '#F4F6FF' : palette.soft,
-    surface: isLight ? '#FFFFFF' : palette.surface,
-    text: isLight ? '#000000' : palette.text,
+    accent: isLight ? productColors.accent : palette.mint,
+    background: isLight ? productColors.background : palette.background,
+    border: isLight ? productColors.border : palette.border,
+    chipBorder: isLight ? productColors.chipBorder : palette.border,
+    secondaryText: isLight
+      ? productColors.secondaryText
+      : palette.secondaryText,
+    soft: isLight ? productColors.soft : palette.soft,
+    surface: isLight ? productColors.surface : palette.surface,
+    text: isLight ? productColors.text : palette.text,
   };
 }

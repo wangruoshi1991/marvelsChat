@@ -1,27 +1,10 @@
 import crypto from "crypto";
 import path from "path";
 import { HttpError } from "./http-error.js";
-import { replaceControlCharacters } from "./text-sanitization.js";
 
 const maxInlineChars = 200_000;
 const supportedTextKinds = new Set(["text", "markdown", "json", "csv", "tsv"]);
-const stopWords = new Set([
-  "the", "and", "for", "with", "this", "that", "from", "have", "will", "your",
-  "about", "into", "file", "data", "计划", "文件", "一个", "这个", "我们", "你们",
-]);
-const domainKeywords = [
-  "相册",
-  "漫画日记",
-  "日记",
-  "视频脚本",
-  "视频",
-  "摄影",
-  "拍照",
-  "主页",
-  "3D",
-  "模型",
-  "文件",
-];
+const maxPreviewChars = 1000;
 
 const extensionKindMap = {
   ".txt": "text",
@@ -54,19 +37,6 @@ const mimeKindMap = {
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "spreadsheet",
 };
 
-const stripUnsafeText = (value) =>
-  replaceControlCharacters(value)
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const baseTitle = (originalFilename) => {
-  const parsed = path.parse(String(originalFilename || "未命名文件").trim());
-  return (parsed.name || "未命名文件").slice(0, 120);
-};
-
 function normalizeFileKind({ originalFilename = "", mimeType = "" } = {}) {
   const normalizedMime = String(mimeType || "").trim().toLowerCase().split(";")[0];
   if (mimeKindMap[normalizedMime]) return mimeKindMap[normalizedMime];
@@ -75,103 +45,32 @@ function normalizeFileKind({ originalFilename = "", mimeType = "" } = {}) {
   return extensionKindMap[ext] || "unknown";
 }
 
-const hashFileContent = (content) =>
-  crypto.createHash("sha256").update(String(content || ""), "utf8").digest("hex");
-
-function detectLanguage(text) {
-  const zhCount = (text.match(/[\u3400-\u9fff]/g) || []).length;
-  const enCount = (text.match(/[a-zA-Z]/g) || []).length;
-  if (zhCount > enCount * 0.3) return "zh";
-  if (enCount > 0) return "en";
-  return "unknown";
-}
-
-function countWords(text) {
-  const englishWords = text.match(/[a-zA-Z0-9][a-zA-Z0-9_-]{1,}/g) || [];
-  const zhChars = text.match(/[\u3400-\u9fff]/g) || [];
-  return englishWords.length + Math.ceil(zhChars.length / 2);
-}
-
-function splitSentences(text) {
-  return text
-    .split(/(?<=[。！？!?；;.\n])\s+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function buildSummary(text, title) {
-  const compact = stripUnsafeText(text);
-  const sentences = splitSentences(compact);
-  const selected = sentences.slice(0, 2).join(" ");
-  return (selected || compact || `${title} 暂无可提取文本。`).slice(0, 280);
-}
-
-function extractTags(text, kind) {
-  const domainTags = domainKeywords.filter((keyword) => text.includes(keyword));
-  const candidates = [
-    ...(text.match(/[\u3400-\u9fff]{2,8}/g) || []),
-    ...(text.toLowerCase().match(/[a-z0-9][a-z0-9_-]{2,24}/g) || []),
-  ];
-  const counts = new Map();
-  for (const candidate of candidates) {
-    if (stopWords.has(candidate)) continue;
-    counts.set(candidate, (counts.get(candidate) || 0) + 1);
-  }
-  const ranked = Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([tag]) => tag)
-    .slice(0, 7);
-  return Array.from(new Set([kind, ...domainTags, ...ranked])).slice(0, 8);
-}
-
 export function preprocessFileContent({
   originalFilename = "未命名文件",
   mimeType = "",
   content = "",
 } = {}) {
   const kind = normalizeFileKind({ originalFilename, mimeType });
-  const title = baseTitle(originalFilename);
-  const rawContent = String(content || "");
-
-  if (rawContent.length > maxInlineChars) {
+  if (typeof content !== "string" || content.includes("\0")) {
+    throw new HttpError(400, "文件文字包含无效内容，无法登记。", { code: "FILE_TEXT_INVALID" });
+  }
+  if (content.length > maxInlineChars) {
     throw new HttpError(413, "Inline file content is too large");
   }
-
-  if (!supportedTextKinds.has(kind)) {
-    return {
-      status: "unsupported",
-      kind,
-      title,
-      summary: `${kind === "unknown" ? "该文件类型" : kind} 暂未接入自动解析。`,
-      tags: [kind],
-      language: "unknown",
-      textPreview: "",
-      checksumSha256: rawContent ? hashFileContent(rawContent) : "",
-      stats: {
-        charCount: 0,
-        wordCount: 0,
-        lineCount: 0,
-      },
-      warnings: ["unsupported_file_type"],
-    };
-  }
-
-  const safeContent = stripUnsafeText(rawContent);
-  const lineCount = rawContent ? rawContent.split(/\r?\n/).length : 0;
+  const supported = supportedTextKinds.has(kind);
+  const characters = supported ? Array.from(content) : [];
+  // This is a bounded literal preview, not a summary or parsed document.
+  // Consumers render it as plain text; formatting and markup stay untouched.
   return {
-    status: "processed",
+    status: !supported ? "unsupported" : content ? "processed" : "pending_upload",
     kind,
-    title,
-    summary: buildSummary(safeContent, title),
-    tags: extractTags(safeContent, kind),
-    language: detectLanguage(safeContent),
-    textPreview: safeContent.slice(0, 1000),
-    checksumSha256: hashFileContent(rawContent),
+    textPreview: characters.slice(0, maxPreviewChars).join(""),
+    textPreviewTruncated: characters.length > maxPreviewChars,
+    checksumSha256: content ? crypto.createHash("sha256").update(content, "utf8").digest("hex") : "",
     stats: {
-      charCount: safeContent.length,
-      wordCount: countWords(safeContent),
-      lineCount,
+      charCount: characters.length,
+      lineCount: supported && content ? content.split(/\r\n|\r|\n/).length : 0,
     },
-    warnings: [],
+    warnings: supported ? [] : ["unsupported_file_type"],
   };
 }

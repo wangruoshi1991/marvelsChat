@@ -27,6 +27,7 @@ test("model-backed Agents are unavailable until every model setting exists", asy
     "album-manager",
     "file-preprocessor",
     "comic-diary",
+    "video-production",
   ]) {
     assert.equal(readiness[agentId].configured, false);
     assert.deepEqual(readiness[agentId].missingEnv, ["NEW_API_KEY"]);
@@ -53,9 +54,24 @@ test("model-backed Agents become ready only with a configured provider", async (
     "album-manager",
     "file-preprocessor",
     "comic-diary",
+    "video-production",
   ]) {
     assert.equal(readiness[agentId].configured, true);
     assert.deepEqual(readiness[agentId].missingEnv, []);
   }
-  assert.equal(readiness["video-production"].configured, false);
+  assert.deepEqual(readiness["video-production"].capabilityNeeds, ["video_generation_provider", "render_queue"]);
+});
+
+test("video script readiness depends on text configuration without claiming rendering or requiring media storage", async () => {
+  const readiness = await buildAgentReadiness({
+    modelStatus: { provider: "test-provider", configured: true, missing: [] },
+    ossStatus: { provider: "oss", configured: false, missing: ["OSS_BUCKET"] },
+    mediaRetrievalStatus,
+  });
+  const video = readiness["video-production"];
+  assert.equal(video.configured, true);
+  assert.deepEqual(video.requiredEnv, ["NEW_API_BASE_URL", "NEW_API_KEY", "NEW_API_MODEL"]);
+  assert.deepEqual(video.missingEnv, []);
+  assert.deepEqual(Object.keys(video.providers), ["model"]);
+  assert.deepEqual(video.capabilityNeeds, ["video_generation_provider", "render_queue"]);
 });

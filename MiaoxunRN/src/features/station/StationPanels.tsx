@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AgentWorkspace } from '../../models/agentWorkspace';
 import { StyleSheet, View } from 'react-native';
 import {
   AgentDTO,
@@ -19,6 +20,7 @@ import type {
   StationTab,
 } from './stationTypes';
 import { Avatar3DLoadState } from './useAvatar3d';
+import type { AlbumAIConsentVersion } from './albumAssistantAuthorization';
 
 export function StationPanel({
   active,
@@ -30,6 +32,7 @@ export function StationPanel({
   renderUserAvatar,
   relationships,
   stationContent,
+  onRefreshStationContent,
   avatar3d,
   avatar3dStatus,
   avatar3dError,
@@ -48,14 +51,14 @@ export function StationPanel({
   onOpenCreateSheet,
   onOpenDiaryDetail,
   onOpenAlbumDetail,
+  onEditAlbum,
+  onOpenWorkspace,
   onDeletePost,
   onSetStationPostInteraction,
   onCreateSiteDraft,
-  onApplySiteDraft,
+  onRefreshTaskArtifacts,
   onOpenAvatar3d,
   onCreateFileAsset,
-  onPreprocessFileAsset,
-  onCreateVideoDraft,
   onActionMessage,
   onActionError,
   onOpenPoints,
@@ -70,6 +73,9 @@ export function StationPanel({
   renderUserAvatar: UserAvatarRenderer;
   relationships: ReturnType<typeof useMiaoxunSession>['relationships'];
   stationContent: ReturnType<typeof useMiaoxunSession>['stationContent'];
+  onRefreshStationContent: ReturnType<
+    typeof useMiaoxunSession
+  >['refreshStationContent'];
   avatar3d: Avatar3DBootstrapDTO | null;
   avatar3dStatus: Avatar3DLoadState;
   avatar3dError: string;
@@ -85,12 +91,16 @@ export function StationPanel({
   onSetAgentEnabled: (
     agentId: string,
     enabled: boolean,
+    grantedScopes?: string[],
+    albumAIConsentVersion?: AlbumAIConsentVersion,
   ) => Promise<OwnedAgentDTO>;
   onOpenPublicProfileByAiId: (aiId: string) => void;
   onSelectStationTab: (tab: StationTab) => void;
   onOpenCreateSheet: (kind: StationCreateKind) => void;
   onOpenDiaryDetail: (entryId: string) => void;
   onOpenAlbumDetail: (albumId: string) => void;
+  onEditAlbum: (albumId: string) => void;
+  onOpenWorkspace: (workspace: AgentWorkspace) => void;
   onDeletePost: ReturnType<typeof useMiaoxunSession>['deleteStationPost'];
   onSetStationPostInteraction: ReturnType<
     typeof useMiaoxunSession
@@ -98,19 +108,11 @@ export function StationPanel({
   onCreateSiteDraft: ReturnType<
     typeof useMiaoxunSession
   >['createStationSiteDraft'];
-  onApplySiteDraft: ReturnType<
-    typeof useMiaoxunSession
-  >['applyStationSiteDraft'];
+  onRefreshTaskArtifacts: () => Promise<unknown>;
   onOpenAvatar3d: () => void;
   onCreateFileAsset: ReturnType<
     typeof useMiaoxunSession
   >['createStationFileAsset'];
-  onPreprocessFileAsset: ReturnType<
-    typeof useMiaoxunSession
-  >['preprocessStationFileAsset'];
-  onCreateVideoDraft: ReturnType<
-    typeof useMiaoxunSession
-  >['createStationVideoDraft'];
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
   onOpenPoints: () => void;
@@ -124,6 +126,8 @@ export function StationPanel({
     if (selectedTab === 'agents') {
       return (
         <StationAgentsPanel
+          token={token}
+          active={active}
           palette={palette}
           language={language}
           profile={profile}
@@ -135,10 +139,8 @@ export function StationPanel({
           onOpenAgentThread={onOpenAgentThread}
           onSetAgentEnabled={onSetAgentEnabled}
           onCreateSiteDraft={onCreateSiteDraft}
-          onApplySiteDraft={onApplySiteDraft}
+          onRefreshTaskArtifacts={onRefreshTaskArtifacts}
           onCreateFileAsset={onCreateFileAsset}
-          onPreprocessFileAsset={onPreprocessFileAsset}
-          onCreateVideoDraft={onCreateVideoDraft}
           onActionMessage={onActionMessage}
           onActionError={onActionError}
         />
@@ -148,6 +150,10 @@ export function StationPanel({
     if (selectedTab === 'outcomes') {
       return (
         <StationOutcomesPanel
+          token={token}
+          active={active}
+          onRefreshStationContent={onRefreshStationContent}
+          onOpenWorkspace={onOpenWorkspace}
           language={language}
           palette={palette}
           stationContent={stationContent}
@@ -204,6 +210,7 @@ export function StationPanel({
             onOpenCreateSheet={onOpenCreateSheet}
             onOpenDiaryDetail={onOpenDiaryDetail}
             onOpenAlbumDetail={onOpenAlbumDetail}
+            onEditAlbum={onEditAlbum}
             onOpenAgentThread={onOpenAgentThread}
             onOpenContentList={onOpenContentList}
             onActionMessage={onActionMessage}
