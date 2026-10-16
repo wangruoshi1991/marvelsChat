@@ -12,10 +12,7 @@ import {
 } from '../src/features/station/StationHomeModules';
 import { styles } from '../src/shared/styles';
 import { palettes } from '../src/shared/theme';
-import {
-  emptyProfile,
-  emptyStationContent,
-} from '../src/features/session/sessionDefaults';
+import {} from '../src/features/session/sessionDefaults';
 
 const diaryEntry = {
   id: 'diary-1',
@@ -160,23 +157,16 @@ describe('station module management', () => {
     await ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(
         <StationAgentsPanel
-          agentReadiness={{}}
           agents={[agent]}
           language="zh"
           onActionError={jest.fn()}
           onActionMessage={onActionMessage}
           token="unit-test"
           active
-          onRefreshTaskArtifacts={jest.fn()}
-          onCreateFileAsset={jest.fn()}
-          onCreateSiteDraft={jest.fn()}
           onOpenAgentThread={onOpenAgentThread}
           onSetAgentEnabled={onSetAgentEnabled}
           ownedAgents={[ownedAgent]}
           palette={palettes.light}
-          profile={emptyProfile}
-          stationContent={emptyStationContent}
-          status="正常"
         />,
       );
     });

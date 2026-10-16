@@ -524,7 +524,10 @@ describe('station avatar layout', () => {
     );
 
     expect(labels).not.toContain('今日穿搭');
-    expect(labels).toContain('生成形象');
+    // The design puts no generate/manage button inside the avatar cell: 3D
+    // generation runs through the `model-3d` Agent, not this surface.
+    expect(labels).not.toContain('生成形象');
+    expect(labels).not.toContain('管理形象');
     expect(stageStyle.backgroundColor).toBe('#F7F8FC');
     expect(emptyStyle.flex).toBe(1);
   });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AgentDTO } from '../../models/api';
 import { Palette } from '../../shared/theme';
 import { Language } from '../session/sessionTypes';
@@ -34,6 +34,10 @@ export function MiaoTaskCard({
   const detailText = detail?.trim();
   const showDetail =
     detailText && detailText !== goal.trim() && detailText !== status.trim();
+  const participants = participantIds.map(id => ({
+    id,
+    agent: agents.find(candidate => candidate.key === id),
+  }));
   return (
     <AIContextActions
       {...actions}
@@ -45,11 +49,42 @@ export function MiaoTaskCard({
         { backgroundColor: palette.surface, borderColor: palette.border },
       ]}
     >
+      {participants.length ? (
+        <View style={s.head}>
+          <ScrollView
+            horizontal
+            contentContainerStyle={s.strip}
+            scrollEnabled={participants.length > 3}
+            showsHorizontalScrollIndicator={false}
+          >
+            {participants.map(({ id, agent }) => (
+              <MiaoTaskAgent
+                key={id}
+                agentId={id}
+                agent={agent}
+                palette={palette}
+                language={language}
+              />
+            ))}
+          </ScrollView>
+          <Text
+            style={[
+              s.statusPill,
+              {
+                backgroundColor: failed ? palette.rose : palette.soft,
+                color: failed ? palette.surface : palette.secondaryText,
+              },
+            ]}
+          >
+            {status}
+          </Text>
+        </View>
+      ) : null}
       <Text
         numberOfLines={grid ? 5 : 3}
-        style={[s.goal, { color: palette.text }]}
+        style={[s.description, { color: palette.text }]}
       >
-        {goal}
+        {highlightTaskNumbers(goal)}
       </Text>
       {showDetail ? (
         <Text
@@ -60,68 +95,65 @@ export function MiaoTaskCard({
         </Text>
       ) : null}
       {children}
-      <View style={[s.meta, grid && s.gridMeta]}>
-        <Text
-          style={[
-            s.status,
-            { color: failed ? palette.rose : palette.secondaryText },
-          ]}
-        >
-          {status}
-        </Text>
-        {participantIds.length ? (
-          <View style={s.participants}>
-            {participantIds.map(id => (
-              <MiaoTaskAgent
-                key={id}
-                compact
-                agentId={id}
-                agent={agents.find(agent => agent.key === id)}
-                palette={palette}
-                language={language}
-              />
-            ))}
-          </View>
-        ) : null}
-      </View>
     </AIContextActions>
   );
 }
 
+/**
+ * Prototype `task-number`: digits inside the description read larger than the
+ * surrounding sentence. Only digit runs are split so ordinary text keeps its
+ * exact string form for callers that compare it.
+ */
+export function highlightTaskNumbers(text: string) {
+  const parts = text.split(/(\d+(?:[.,]\d+)*)/g);
+  if (parts.length === 1) return text;
+  return parts.map((part, index) =>
+    index % 2 === 1 ? (
+      <Text key={`${part}-${index}`} style={s.taskNumber}>
+        {part}
+      </Text>
+    ) : (
+      part
+    ),
+  );
+}
+
 const s = StyleSheet.create({
+  // Prototype `.task-card`: its own bordered, rounded, shadowed card rather
+  // than a full-bleed row with a separator line.
   card: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderRadius: 0,
-    paddingHorizontal: 4,
-    paddingVertical: 18,
+    borderRadius: 7,
+    borderWidth: StyleSheet.hairlineWidth,
     gap: 7,
+    padding: 18,
   },
   grid: {
     flex: 1,
     maxWidth: '50%',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-    padding: 13,
+    borderRadius: 7,
   },
-  status: { fontSize: 11, lineHeight: 16, fontWeight: '500' },
-  goal: {
-    fontSize: 17,
-    lineHeight: 25,
+  head: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  // The strip scrolls horizontally rather than wrapping, matching the design.
+  strip: { alignItems: 'flex-start', gap: 12, paddingRight: 4 },
+  statusPill: {
+    borderRadius: 99,
+    flexShrink: 0,
+    fontSize: 11,
+    fontWeight: '700',
+    overflow: 'hidden',
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+  },
+  description: {
+    fontSize: 15,
+    lineHeight: 23,
     fontWeight: '600',
   },
+  taskNumber: { fontSize: 18, fontWeight: '800' },
   detail: { fontSize: 13, lineHeight: 20 },
-  meta: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 5,
-  },
-  gridMeta: { flexDirection: 'column', alignItems: 'flex-start', gap: 8 },
-  participants: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    flexShrink: 1,
-    gap: 12,
-  },
 });

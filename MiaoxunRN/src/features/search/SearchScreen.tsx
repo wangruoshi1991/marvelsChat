@@ -92,7 +92,7 @@ function SectionHeader({
   const titleColor = isLightPalette ? '#000000' : palette.text;
   const actionColor = onAction
     ? isLightPalette
-      ? '#2012D9'
+      ? '#0B8271'
       : palette.mint
     : isLightPalette
     ? 'rgba(0,0,0,0.6)'
@@ -377,9 +377,9 @@ export function SearchScreen({
                         : textFor(language, '展开', 'Show all')}
                     </Text>
                     {isHistoryExpanded ? (
-                      <ChevronUp color="#2012D9" size={14} strokeWidth={2} />
+                      <ChevronUp color="#0B8271" size={14} strokeWidth={2} />
                     ) : (
-                      <ChevronDown color="#2012D9" size={14} strokeWidth={2} />
+                      <ChevronDown color="#0B8271" size={14} strokeWidth={2} />
                     )}
                   </Pressable>
                 ) : null}

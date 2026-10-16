@@ -267,7 +267,7 @@ export function Avatar3DViewer({
           testID="avatar3d-viewer-loading"
         >
           <View style={localStyles.loadingIndicator}>
-            <ActivityIndicator color="#2012D9" />
+            <ActivityIndicator color="#0B8271" />
           </View>
         </View>
       ) : null}

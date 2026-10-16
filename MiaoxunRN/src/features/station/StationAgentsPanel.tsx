@@ -1,27 +1,16 @@
 import React, { useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import {
-  AgentDTO,
-  AgentReadinessDTO,
-  OwnedAgentDTO,
-  ProfileDTO,
-  StationContentDTO,
-  StationFileAssetDTO,
-} from '../../models/api';
+import { AgentDTO, OwnedAgentDTO } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { Language } from '../session/useMiaoxunSession';
 import {
+  AgentList,
   AgentMark,
-  AgentSection,
-  isAssistantAgent,
   moduleBindingForAgent,
 } from './StationAgentCards';
-import { StationCapabilityWorkspace } from './StationCapabilityWorkspace';
-import { StationMetricBox } from './StationMetricBox';
-import { StationPageHeading } from './StationPageHeading';
 import { resolveStationColors } from './stationTheme';
 import { useAgentAccessConfirmation } from '../agents/useAgentAccessConfirmation';
 import { agentAccessMatchesDeclaration } from '../agents/agentAccess';
@@ -32,17 +21,10 @@ export function StationAgentsPanel({
   active,
   palette,
   language,
-  profile,
-  stationContent,
   agents,
-  agentReadiness,
   ownedAgents,
-  status,
   onOpenAgentThread,
   onSetAgentEnabled,
-  onCreateSiteDraft,
-  onRefreshTaskArtifacts,
-  onCreateFileAsset,
   onActionMessage,
   onActionError,
 }: {
@@ -50,12 +32,8 @@ export function StationAgentsPanel({
   active: boolean;
   palette: Palette;
   language: Language;
-  profile: ProfileDTO;
-  stationContent: StationContentDTO;
   agents: AgentDTO[];
-  agentReadiness: Record<string, AgentReadinessDTO>;
   ownedAgents: OwnedAgentDTO[];
-  status: string;
   onOpenAgentThread: (agentId: string) => void;
   onSetAgentEnabled: (
     agentId: string,
@@ -63,17 +41,6 @@ export function StationAgentsPanel({
     grantedScopes?: string[],
     albumAIConsentVersion?: AlbumAIConsentVersion,
   ) => Promise<OwnedAgentDTO>;
-  onCreateSiteDraft: (payload: {
-    prompt: string;
-    idempotencyKey: string;
-  }) => Promise<{ task: import('../../models/aiTask').AITaskDTO }>;
-  onRefreshTaskArtifacts: () => Promise<unknown>;
-  onCreateFileAsset: (payload: {
-    originalFilename: string;
-    mimeType?: string;
-    content?: string;
-    metadata?: Record<string, unknown>;
-  }) => Promise<StationFileAssetDTO>;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
@@ -107,129 +74,20 @@ export function StationAgentsPanel({
       ...agent,
       identity: registeredByKey.get(agent.id)?.identity || null,
     }));
-  const displayedAssistants = ownedCards.filter(agent =>
-    isAssistantAgent(agent.id, agent.category),
-  );
-  const assistantKeys = new Set(displayedAssistants.map(agent => agent.id));
-  const displayedCapabilities = ownedCards.filter(
-    agent => !assistantKeys.has(agent.id),
-  );
-  const ownedIds = new Set(ownedCards.map(agent => agent.id));
-  const recommendedAgents = agents.filter(
-    agent => agent.key !== 'media-retrieval' && !ownedIds.has(agent.key),
-  );
-  const availableCount = recommendedAgents.length;
-  const visibleAgentCount = agents.filter(
-    agent => agent.key !== 'media-retrieval',
-  ).length;
-  const connectionRate = visibleAgentCount
-    ? Math.round((ownedCards.length / visibleAgentCount) * 100)
-    : 0;
-  const hasCapability = (agentId: string) => ownedIds.has(agentId);
-
+  // A disabled Agent returns to 「推荐添加」, so the filter keys off the
+  // *enabled* cards rather than every owned row.
+  const recommendedAgents = useMemo(() => {
+    const enabledIds = new Set(ownedCards.map(agent => agent.id));
+    return agents.filter(
+      agent => agent.key !== 'media-retrieval' && !enabledIds.has(agent.key),
+    );
+  }, [agents, ownedCards]);
   return (
     <View style={styles.stationPanelStack}>
-      <StationPageHeading
-        detail={textFor(language, '能力与协作', 'Capabilities')}
-        palette={palette}
-        title={textFor(language, '我的生态', 'My Ecosystem')}
-        watermark="ECOSYSTEM"
-      />
-      <View
-        style={[
-          styles.stationEcosystemHero,
-          !colors.isLight && { backgroundColor: colors.soft },
-        ]}
-      >
-        <View style={styles.stationEcosystemScoreBlock}>
-          <Text
-            style={[
-              styles.stationEcosystemEyebrow,
-              { color: colors.secondaryText },
-            ]}
-          >
-            {textFor(language, '能力接入率', 'Capability coverage')}
-          </Text>
-          <Text style={[styles.stationEcosystemScore, { color: colors.text }]}>
-            {connectionRate}%
-          </Text>
-          <Text
-            style={[
-              styles.stationEcosystemScoreLabel,
-              { color: colors.accent },
-            ]}
-          >
-            {status}
-          </Text>
-        </View>
-        <View style={styles.stationEcosystemProgressBlock}>
-          <Text
-            style={[
-              styles.stationEcosystemProgressTitle,
-              { color: colors.text },
-            ]}
-          >
-            {textFor(
-              language,
-              `已接入 ${ownedCards.length} / ${visibleAgentCount}`,
-              `${ownedCards.length} / ${visibleAgentCount} connected`,
-            )}
-          </Text>
-          <View style={styles.stationEcosystemProgressTrack}>
-            <View
-              style={[
-                styles.stationEcosystemProgressFill,
-                { width: `${connectionRate}%` },
-              ]}
-            />
-          </View>
-          <Text
-            style={[
-              styles.stationEcosystemProgressMeta,
-              { color: colors.secondaryText },
-            ]}
-          >
-            {textFor(
-              language,
-              `仍可添加 ${availableCount} 个 Agent`,
-              `${availableCount} agents available`,
-            )}
-          </Text>
-        </View>
-        <View style={styles.stationPartnerMetrics}>
-          <StationMetricBox
-            palette={palette}
-            value={displayedAssistants.length}
-            label={textFor(language, '我的助理', 'Assistants')}
-          />
-          <StationMetricBox
-            palette={palette}
-            value={displayedCapabilities.length}
-            label={textFor(language, '我的能力', 'Capabilities')}
-          />
-          <StationMetricBox
-            palette={palette}
-            value={availableCount}
-            label={textFor(language, '可添加', 'Available')}
-          />
-        </View>
-      </View>
-
-      <AgentSection
+      <AgentList
         palette={palette}
         language={language}
-        title={textFor(language, 'AI Agent能力', 'AI Agent capabilities')}
-        detail={textFor(
-          language,
-          `${ownedCards.length} 个已接入`,
-          `${ownedCards.length} connected`,
-        )}
         agents={ownedCards}
-        empty={textFor(
-          language,
-          '暂无已接入 Agent。',
-          'No connected agents yet.',
-        )}
         updatingAgentId={updatingAgentId}
         onOpenAgentThread={onOpenAgentThread}
         onRemoveAgent={agentId => confirmAccess(agentId, 'remove')}
@@ -245,37 +103,13 @@ export function StationAgentsPanel({
         }
       />
 
-      <StationCapabilityWorkspace
-        token={token}
-        active={active}
-        palette={palette}
-        language={language}
-        profile={profile}
-        stationContent={stationContent}
-        agentReadiness={agentReadiness}
-        hasCapability={hasCapability}
-        onCreateSiteDraft={onCreateSiteDraft}
-        onRefreshTaskArtifacts={onRefreshTaskArtifacts}
-        onOpenAgentThread={onOpenAgentThread}
-        onCreateFileAsset={onCreateFileAsset}
-        onActionMessage={onActionMessage}
-        onActionError={onActionError}
-      />
-
+      {/*
+       * The prototype's `#me-agents-panel` shows only the owned grid, so the
+       * 「能力工作区」 block is gone. This 「推荐添加」 row stays: it is the app's
+       * only way to add an Agent, and the access-confirmation contract is
+       * pinned to it by 18 tests.
+       */}
       <View style={styles.stationRecommendAgents}>
-        <View style={styles.stationSectionTitleRow}>
-          <Text style={[styles.stationSectionTitle, { color: colors.text }]}>
-            {textFor(language, '推荐添加', 'Recommended')}
-          </Text>
-          <Text
-            style={[
-              styles.stationSectionDetail,
-              { color: colors.secondaryText },
-            ]}
-          >
-            {textFor(language, '为你的小站补充新能力', 'Add new capabilities')}
-          </Text>
-        </View>
         {recommendedAgents.length ? (
           <View style={styles.stationOwnedAgentGrid}>
             {recommendedAgents.map(agent => (
@@ -287,8 +121,8 @@ export function StationAgentsPanel({
                   `添加${agent.name}`,
                   `Add ${agent.name}`,
                 )}
-                onPress={() => confirmAccess(agent.key, 'add')}
                 disabled={updatingAgentId === agent.key}
+                onPress={() => confirmAccess(agent.key, 'add')}
                 style={[
                   styles.stationOwnedAgentCard,
                   {
@@ -302,20 +136,20 @@ export function StationAgentsPanel({
                 <AgentMark palette={palette} agent={agent} />
                 <View style={styles.stationOwnedAgentCopy}>
                   <Text
+                    numberOfLines={1}
                     style={[
                       styles.stationOwnedAgentName,
                       { color: colors.text },
                     ]}
-                    numberOfLines={1}
                   >
                     {agent.name}
                   </Text>
                   <Text
+                    numberOfLines={1}
                     style={[
                       styles.stationOwnedAgentDesc,
                       { color: colors.secondaryText },
                     ]}
-                    numberOfLines={1}
                   >
                     {moduleBindingForAgent(agent.key, language)}
                   </Text>
@@ -323,10 +157,7 @@ export function StationAgentsPanel({
                 <Text
                   style={[
                     styles.stationOwnedAgentStatus,
-                    {
-                      backgroundColor: colors.accent,
-                      color: colors.surface,
-                    },
+                    { backgroundColor: colors.accent, color: colors.surface },
                   ]}
                 >
                   {updatingAgentId === agent.key

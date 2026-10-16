@@ -72,7 +72,7 @@ export function StationPostComposerContent({
   };
   const unselectedAgentChipStyle = {
     backgroundColor: softColor,
-    borderColor: isDark ? borderColor : '#DBE2FF',
+    borderColor: isDark ? borderColor : '#C3E6DE',
   };
   const locationTextStyle = {
     color: locationLabel ? accentColor : secondaryTextColor,

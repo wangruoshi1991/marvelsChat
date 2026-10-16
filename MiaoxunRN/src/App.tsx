@@ -8,6 +8,8 @@ import React, {
   useState,
 } from 'react';
 import {
+  Animated,
+  Easing,
   Modal,
   Platform,
   StatusBar,
@@ -42,7 +44,9 @@ import { StationTab } from './features/station/stationTypes';
 import { AvatarConfigDTO } from './models/api';
 import { appErrorText, textFor } from './shared/i18n';
 import { styles } from './shared/styles';
-import { palettes } from './shared/theme';
+import { isLightPalette, pageGradientStops, palettes } from './shared/theme';
+import { PageGradient } from './shared/PageGradient';
+import { entranceCurve, useReduceMotion } from './shared/useReduceMotion';
 import { BottomBar, RootTab } from './shared/ui';
 import { AIAssistProvider } from './features/assist/AIAssistProvider';
 import {
@@ -77,7 +81,7 @@ function App(): React.JSX.Element {
     useState<SecondFloorTool | null>(null);
   const closeSecondFloor = useCallback(() => setSecondFloorOpen(false), []);
   const [selectedStationTab, setSelectedStationTab] =
-    useState<StationTab>('station');
+    useState<StationTab>('posts');
   const [isPostComposerOpen, setIsPostComposerOpen] = useState(false);
   const [modalRoute, setModalRoute] = useState<ModalRoute>(null);
   const [activeThread, setActiveThread] = useState<ChatThread | null>(null);
@@ -97,6 +101,29 @@ function App(): React.JSX.Element {
   const [miaoVoiceExpanded, setMiaoVoiceExpanded] = useState(false);
   const [miaoWaterfall, setMiaoWaterfall] = useState(false);
   const [navigationHeight, setNavigationHeight] = useState(76);
+  // Prototype `.tabbar` transitions `opacity .28s ease, transform .34s
+  // cubic-bezier(.2,.8,.2,1)`, and its hidden state is `opacity: 0;
+  // transform: translate(-50%, 34px)` — not an instant disappear.
+  const navigationHideProgress = useRef(new Animated.Value(1)).current;
+  const reduceMotion = useReduceMotion();
+  useEffect(() => {
+    navigationHideProgress.stopAnimation();
+    const target = miaoVoiceExpanded ? 0 : 1;
+    if (reduceMotion) {
+      navigationHideProgress.setValue(target);
+      return;
+    }
+    const animation = Animated.parallel([
+      Animated.timing(navigationHideProgress, {
+        toValue: target,
+        duration: 340,
+        easing: Easing.bezier(...entranceCurve),
+        useNativeDriver: true,
+      }),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [miaoVoiceExpanded, navigationHideProgress, reduceMotion]);
   const workspaceOwner = `${session.user?.id || ''}:${session.token || ''}`;
   const workspaceOwnerRef = useRef(workspaceOwner);
   workspaceOwnerRef.current = workspaceOwner;
@@ -224,6 +251,10 @@ function App(): React.JSX.Element {
         assets: t('资产', 'Assets'),
         information: t('信息海', 'Inbox'),
         permissions: t('权限', 'Access'),
+        // Added by the user's decision: publishing and personal settings moved
+        // onto this floor from the 我 page.
+        publish: t('发布', 'Publish'),
+        settings: t('设置', 'Settings'),
       };
       const label = secondFloorTool
         ? names[secondFloorTool]
@@ -241,11 +272,8 @@ function App(): React.JSX.Element {
       };
     if (selectedTab === 'station') {
       const names = {
-        station: t('主页', 'Home'),
-        posts: t('生活', 'Life'),
-        outcomes: t('成果', 'Results'),
-        agents: t('Agent', 'Agents'),
-        social: t('关系', 'People'),
+        posts: t('动态', 'Posts'),
+        agents: t('我的 Agent', 'My Agents'),
       };
       return {
         page: `station.${selectedStationTab}`,
@@ -540,26 +568,29 @@ function App(): React.JSX.Element {
     Boolean(openedThread) && (modalRoute === 'butler' || modalRoute === 'chat');
   const isRootTabRoute = Boolean(session.token) && !isChatRoute;
   const voiceDockBottomOffset = navigationHeight + 64;
+  // In light mode the root tabs paint `PageGradient` instead of a flat fill, so
+  // the safe-area strips have to match the gradient's own ends or they read as
+  // two extra bands above and below it.
+  const lightTheme = isLightPalette(palette);
+  const pageGradientTop = pageGradientStops[0].color;
+  const pageGradientBottom =
+    pageGradientStops[pageGradientStops.length - 1].color;
   const topSafeAreaColor = isChatRoute
     ? messagePalette.background
+    : isRootTabRoute && lightTheme
+    ? pageGradientTop
     : isRootTabRoute && selectedTab !== 'station'
     ? workspacePalette(palette).background
-    : isRootTabRoute &&
-      selectedTab === 'station' &&
-      session.appearance === 'light'
-    ? '#FFFFFF'
     : palette.background;
   const bottomSafeAreaColor = isChatRoute
     ? messagePalette.surface
+    : isRootTabRoute && lightTheme
+    ? pageGradientBottom
     : isRootTabRoute &&
       ((selectedTab === 'messages' && secondFloorOpen) ||
         (miaoVoiceExpanded && selectedTab !== 'station'))
     ? workspacePalette(palette).background
-    : isRootTabRoute
-    ? session.appearance === 'light'
-      ? '#FFFFFF'
-      : palette.surface
-    : palette.background;
+    : palette.surface;
 
   return (
     <SafeAreaProvider>
@@ -774,6 +805,7 @@ function App(): React.JSX.Element {
                     isChatRoute ? 'no-hide-descendants' : 'auto'
                   }
                 >
+                  {lightTheme ? <PageGradient /> : null}
                   {selectedTab === 'agents' ? (
                     <MiaoTaskFeed
                       key={workspaceOwner}
@@ -816,9 +848,21 @@ function App(): React.JSX.Element {
                       onOpenFriendThread={openFriendThread}
                       onOpenProfile={profileFlows.openPublicProfileByAiId}
                       onOpenSettings={() => setModalRoute('settings')}
+                      onOpenDeleteAccount={() =>
+                        setModalRoute('delete-account')
+                      }
+                      onOpenPostComposer={() => setIsPostComposerOpen(true)}
                       onOpenNotices={() => {
                         setSecondFloorOpen(false);
                         setSelectedMessageTab('notice');
+                      }}
+                      onOpenWorkspace={workspace => {
+                        if (workspaceOwnerRef.current !== workspaceOwner)
+                          return;
+                        setSelectedWorkspace({
+                          owner: workspaceOwner,
+                          workspace,
+                        });
                       }}
                     />
                   ) : null}
@@ -927,27 +971,13 @@ function App(): React.JSX.Element {
                         selectedStationTab={selectedStationTab}
                         onSelectStationTab={setSelectedStationTab}
                         renderUserAvatar={renderUserAvatar}
-                        onOpenSettings={() => setModalRoute('settings')}
                         onOpenLocation={() => setModalRoute('station-location')}
                         onOpenProfileEdit={() =>
                           setModalRoute('station-profile-edit')
                         }
                         onCopyAIID={copyAIID}
                         onOpenQRCode={profileFlows.openQRCode}
-                        onOpenFriendThread={openFriendThread}
                         onOpenAgentThread={openAgentThread}
-                        onOpenWorkspace={workspace => {
-                          if (workspaceOwnerRef.current !== workspaceOwner)
-                            return;
-                          setSelectedWorkspace({
-                            owner: workspaceOwner,
-                            workspace,
-                          });
-                        }}
-                        onOpenPostComposer={() => setIsPostComposerOpen(true)}
-                        onOpenPublicProfileByAiId={
-                          profileFlows.openPublicProfileByAiId
-                        }
                         onActionMessage={showToast}
                         onActionError={error =>
                           showToast(
@@ -964,14 +994,22 @@ function App(): React.JSX.Element {
                   ) : null}
 
                   {!(selectedTab === 'messages' && secondFloorOpen) ? (
-                    <View
+                    <Animated.View
                       testID="root-navigation"
                       onLayout={event =>
                         setNavigationHeight(event.nativeEvent.layout.height)
                       }
-                      style={
-                        miaoVoiceExpanded ? appStyles.invisible : undefined
-                      }
+                      style={{
+                        opacity: navigationHideProgress,
+                        transform: [
+                          {
+                            translateY: navigationHideProgress.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [34, 0],
+                            }),
+                          },
+                        ],
+                      }}
                       pointerEvents={miaoVoiceExpanded ? 'none' : 'auto'}
                       accessibilityElementsHidden={miaoVoiceExpanded}
                       importantForAccessibility={
@@ -987,7 +1025,7 @@ function App(): React.JSX.Element {
                           setSelectedTab(tab);
                         }}
                       />
-                    </View>
+                    </Animated.View>
                   ) : null}
                   {selectedTab === 'messages' && !secondFloorOpen ? (
                     <VoiceShortcutDock
@@ -1286,6 +1324,5 @@ export default App;
 
 const appStyles = StyleSheet.create({
   hidden: { display: 'none' },
-  invisible: { opacity: 0 },
   retained: { flex: 1 },
 });

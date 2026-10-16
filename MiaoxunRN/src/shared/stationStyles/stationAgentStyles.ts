@@ -70,14 +70,6 @@ export const stationAgentStyles = {
   stationComicFrameIndex: { fontSize: 13, fontWeight: '900' },
   stationComicFrameTitle: { fontSize: 12, fontWeight: '900', lineHeight: 16 },
   stationComicFrameBody: { fontSize: 11, lineHeight: 15 },
-  stationAgentMark: {
-    alignItems: 'center',
-    borderRadius: 999,
-    height: 42,
-    justifyContent: 'center',
-    width: 42,
-  },
-  stationAgentMarkText: { fontSize: 14, fontWeight: '900' },
   stationAgentLoopStack: { gap: 10 },
   stationAgentLoopStatus: {
     alignItems: 'center',
@@ -188,6 +180,46 @@ export const stationAgentStyles = {
     paddingTop: 7,
   },
   stationOwnedAgentGrid: { gap: 9 },
+  // S48 vertical "My Agents" list: head row, then an action row.
+  stationAgentList: { gap: 9 },
+  stationAgentListCard: {
+    borderRadius: 4,
+    borderWidth: 0,
+    gap: 10,
+    padding: 12,
+  },
+  stationAgentListHead: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 11,
+  },
+  // Prototype `me-agent-meta`: three equal data cells.
+  stationAgentListMeta: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  stationAgentListMetaCell: {
+    backgroundColor: '#F4F4F6',
+    borderRadius: 4,
+    flex: 1,
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  stationAgentListMetaLabel: { fontSize: 9, fontWeight: '600' },
+  stationAgentListMetaValue: { fontSize: 11, fontWeight: '700' },
+  stationAgentListFoot: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
+  stationAgentListRemove: {
+    alignItems: 'center',
+    height: 30,
+    justifyContent: 'center',
+    width: 30,
+  },
   stationOwnedAgentCard: {
     alignItems: 'center',
     borderRadius: 4,
@@ -214,7 +246,6 @@ export const stationAgentStyles = {
     padding: 12,
     paddingRight: 4,
   },
-  stationAgentImage: { borderRadius: 999, height: 46, width: 46 },
   stationAgentCardDisabled: { opacity: 0.62 },
   stationOwnedAgentCopy: { flex: 1, gap: 4, minWidth: 0 },
   stationOwnedAgentName: { fontSize: 14, fontWeight: '700' },

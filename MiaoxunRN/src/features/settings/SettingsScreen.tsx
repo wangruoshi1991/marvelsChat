@@ -37,6 +37,7 @@ export function SettingsScreen({
   onActionError,
   onSignOut,
   onDeleteAccount,
+  embedded = false,
 }: {
   palette: Palette;
   userName: string;
@@ -53,6 +54,12 @@ export function SettingsScreen({
   onActionError: (message: string) => void;
   onSignOut: () => Promise<void>;
   onDeleteAccount: () => void;
+  /**
+   * Renders inside the second floor's `.xun-floor-panel` body: no large title,
+   * no dismiss button — the floor owns those. The rows and fields are the same
+   * component either way.
+   */
+  embedded?: boolean;
 }) {
   const updateVisibility = (
     key: keyof ProfileVisibilityDTO,
@@ -69,24 +76,29 @@ export function SettingsScreen({
 
   return (
     <ScrollView
-      style={{ backgroundColor: palette.background }}
-      contentContainerStyle={styles.settingsContent}
+      style={embedded ? undefined : { backgroundColor: palette.background }}
+      contentContainerStyle={[
+        styles.settingsContent,
+        embedded && styles.settingsContentEmbedded,
+      ]}
     >
-      <View style={styles.settingsHeader}>
-        <Pressable
-          accessibilityLabel="返回"
-          onPress={onBack}
-          style={[
-            styles.settingsDismissButton,
-            { backgroundColor: palette.surface, borderColor: palette.border },
-          ]}
-        >
-          <ChevronDown color={palette.mint} size={22} strokeWidth={3} />
-        </Pressable>
-        <Text style={[styles.settingsLargeTitle, { color: palette.text }]}>
-          {textFor(language, '设置', 'Settings')}
-        </Text>
-      </View>
+      {embedded ? null : (
+        <View style={styles.settingsHeader}>
+          <Pressable
+            accessibilityLabel="返回"
+            onPress={onBack}
+            style={[
+              styles.settingsDismissButton,
+              { backgroundColor: palette.surface, borderColor: palette.border },
+            ]}
+          >
+            <ChevronDown color={palette.mint} size={22} strokeWidth={3} />
+          </Pressable>
+          <Text style={[styles.settingsLargeTitle, { color: palette.text }]}>
+            {textFor(language, '设置', 'Settings')}
+          </Text>
+        </View>
+      )}
 
       <View
         style={[

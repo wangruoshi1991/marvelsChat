@@ -52,16 +52,16 @@ export function StationPostComposerScreen({
     uploadedCount,
   } = composer;
   const isDark = session.appearance === 'dark';
-  const screenColor = isDark ? palette.background : '#F8F7FD';
+  const screenColor = isDark ? palette.background : '#E6F4F0';
   const backgroundColor = isDark ? palette.surface : '#FFFFFF';
-  const headerColor = isDark ? palette.surface : '#F8F7FD';
-  const borderColor = isDark ? palette.border : '#F0EBFD';
-  const softColor = isDark ? palette.soft : '#F4F6FF';
+  const headerColor = isDark ? palette.surface : '#E6F4F0';
+  const borderColor = isDark ? palette.border : '#D6EDE7';
+  const softColor = isDark ? palette.soft : '#E9F6F2';
   const textColor = isDark ? palette.text : '#000000';
   const secondaryTextColor = isDark
     ? palette.secondaryText
     : 'rgba(0,0,0,0.60)';
-  const accentColor = isDark ? palette.mint : '#2012D9';
+  const accentColor = isDark ? palette.mint : '#0B8271';
 
   return (
     <Modal

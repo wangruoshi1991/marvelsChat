@@ -42,7 +42,6 @@ export function StationSocialPanel({
         detail={textFor(language, '关系与连接', 'Relationships')}
         palette={palette}
         title={textFor(language, '其他', 'More')}
-        watermark="CONNECTIONS"
       />
       <View
         style={[

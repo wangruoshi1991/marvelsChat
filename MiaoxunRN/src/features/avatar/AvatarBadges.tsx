@@ -1,66 +1,86 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { Image, Text, View } from 'react-native';
 
 import { AvatarConfigDTO } from '../../models/api';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
-import { avatarAccentColors, normalizeAvatarConfig } from './avatarConfig';
-import { MiaoShowAvatar } from './AvatarViews';
 
+/**
+ * The prototype renders identity avatars as a letter on a tinted disc —
+ * `.xun-avatar` is `44px`, white text at `.72rem`/`800`, and `.me-agent-avatar`
+ * is the same shape. It never draws a character: the previous implementation
+ * generated one procedurally from `avatarConfig` and dropped `text` entirely.
+ *
+ * So this renders the initial of the account's `avatarText` (the server already
+ * stores `left(display_name, 1)`), on one default plate, and prefers a real
+ * uploaded image whenever the server supplies one. `config` is still accepted so
+ * existing call sites keep compiling, but it no longer decides anything here.
+ */
 export function UserAvatar({
-  text: _text,
-  config,
+  text,
+  imageUrl,
   palette,
   small,
   size,
 }: {
   text: string;
+  /** An uploaded avatar beats the generated default whenever it exists. */
+  imageUrl?: string | null;
   config?: AvatarConfigDTO;
   palette: Palette;
   small?: boolean;
   size?: number;
 }) {
-  const resolvedConfig = normalizeAvatarConfig(config);
-  const colors = avatarAccentColors[resolvedConfig.accent];
   const avatarSize = size || (small ? 36 : 48);
-  const characterSize = Math.round(avatarSize * 1.875);
+  const initial = firstGlyph(text);
+
   return (
     <View
       style={[
         styles.avatar,
         small && styles.avatarSmall,
         {
-          backgroundColor: colors.primary,
+          backgroundColor: palette.mint,
           borderColor: palette.border,
-          borderRadius: size ? avatarSize / 2 : undefined,
+          borderRadius: avatarSize / 2,
           height: avatarSize,
           width: avatarSize,
         },
       ]}
     >
-      <View
-        style={[
-          styles.avatarMiniCharacter,
-          small && styles.avatarMiniCharacterSmall,
-          size
-            ? {
-                height: Math.round(avatarSize * 1.46),
-                marginTop: Math.round(avatarSize * 0.375),
-                width: Math.round(avatarSize * 1.46),
-              }
-            : null,
-        ]}
-      >
-        <MiaoShowAvatar
-          config={{ ...resolvedConfig, action: 'stand' }}
-          size={size ? characterSize : small ? 72 : 90}
+      {imageUrl ? (
+        <Image
+          accessibilityIgnoresInvertColors
+          resizeMode="cover"
+          source={{ uri: imageUrl }}
+          style={{
+            borderRadius: avatarSize / 2,
+            height: avatarSize,
+            width: avatarSize,
+          }}
         />
-      </View>
-      {resolvedConfig.accessory === 'spark' ? (
-        <Text style={[styles.avatarAccent, { color: colors.secondary }]}>
-          *
+      ) : (
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.avatarInitial,
+            { fontSize: Math.round(avatarSize * 0.4) },
+          ]}
+        >
+          {initial}
         </Text>
-      ) : null}
+      )}
     </View>
   );
+}
+
+/**
+ * `avatarText` may be blank on an account that never set one, and a nickname
+ * with a surrogate pair or a leading space would otherwise yield a broken or
+ * invisible glyph, so the first real character is taken by code point.
+ */
+export function firstGlyph(value: string) {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  return Array.from(trimmed)[0];
 }

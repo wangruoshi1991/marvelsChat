@@ -1,33 +1,39 @@
+import { Check, MapPin } from 'lucide-react-native';
+import React, { useEffect, useState } from 'react';
 import {
-  Award,
-  CircleDot,
-  Link2,
-  MoreHorizontal,
-  Network,
-  Pencil,
-  QrCode,
-  UserRound,
-} from 'lucide-react-native';
-import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+  Animated,
+  Pressable,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 
-import {
-  AvatarConfigDTO,
-  ProfileIdentityDTO,
-  PublicPresenceStatus,
-} from '../../models/api';
-import { publicPresenceText, textFor } from '../../shared/i18n';
+import { AvatarConfigDTO, PublicPresenceStatus } from '../../models/api';
+import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { UserAvatarRenderer } from '../messages/messageTypes';
 import { Language } from '../session/useMiaoxunSession';
 import { resolveStationColors } from './stationTheme';
-import { StationTabBar } from './StationTabBar';
-import type { StationTabBarItem } from './StationTabBar';
 import { StationTab } from './stationTypes';
-import { profileIdentityTags } from './stationProfileIdentity';
 
+/** Prototype `.me-profile` collapse transition: `.34s cubic-bezier(.2,.8,.2,1)`. */
+export const STATION_COLLAPSE_DURATION = 340;
+
+/**
+ * Prototype `.me-profile`: the card holds exactly five items in the right
+ * column — kicker, name, ID pill, bio, location — plus the 3D block on the
+ * left and the online badge on its corner. QR, profile edit and tags are not
+ * part of the card; their entries live in the page-level overflow menu.
+ *
+ * Collapsing animates this one card. `.me-profile.is-collapsed` keeps
+ * `.me-avatar-wrap` as the *same* element and shrinks it to a 46px circle, so
+ * the 3D stage is resized rather than swapped out — the WebView never reloads.
+ */
 export function StationProfileHeader({
+  collapsed = false,
+  collapseProgress,
+  stage,
   palette,
   language,
   nickname,
@@ -35,18 +41,18 @@ export function StationProfileHeader({
   avatarText,
   avatarConfig,
   bio,
-  identity,
   presenceStatus,
-  followingCount,
-  followersCount,
-  likesCount,
-  collectionsCount,
+  locationLabel,
   renderUserAvatar,
   onCopyAIID,
-  onShowQRCode,
-  onOpenSocial,
-  onOpenProfileEdit,
+  onOpenLocation,
 }: {
+  /** `.me-profile.is-collapsed`: 64px card, 46px round avatar, name only. */
+  collapsed?: boolean;
+  /** 0 = expanded, 1 = collapsed; drives every geometry interpolation. */
+  collapseProgress: Animated.Value;
+  /** The 3D stage replaces the avatar cell inside the info card. */
+  stage?: React.ReactNode;
   palette: Palette;
   language: Language;
   nickname: string;
@@ -54,268 +60,345 @@ export function StationProfileHeader({
   avatarText: string;
   avatarConfig: AvatarConfigDTO;
   bio: string;
-  identity: ProfileIdentityDTO;
   presenceStatus?: PublicPresenceStatus;
-  followingCount: number;
-  followersCount: number;
-  likesCount: number;
-  collectionsCount: number;
+  /** Display region only (city / province); never a full street address. */
+  locationLabel: string;
   renderUserAvatar: UserAvatarRenderer;
   onCopyAIID: () => void;
-  onShowQRCode: () => void;
-  onOpenSocial: () => void;
-  onOpenProfileEdit?: () => void;
+  onOpenLocation?: () => void;
 }) {
   const colors = resolveStationColors(palette);
   const textColor = colors.text;
   const secondaryTextColor = colors.secondaryText;
   const isOnline = presenceStatus === 'online';
-  const tags = profileIdentityTags(identity, language);
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  // Prototype `.me-profile { min-height: 35dvh }` and
+  // `.me-avatar-wrap { height: min(25dvh, 220px) }`.
+  const expandedCardMinHeight = windowHeight * 0.35;
+  const expandedStageHeight = Math.min(windowHeight * 0.25, 220);
+  const idLabel = aiIdLabel(aiId);
+
+  // `.me-avatar-wrap` is 42% of the card's inner width when expanded and 46px
+  // once collapsed, so the percentage is resolved against the measured row.
+  const [rowWidth, setRowWidth] = useState(windowWidth - 64);
+  const expandedStageWidth = Math.max(rowWidth * 0.42, 64);
+
+  // Content unmounts only after the fade finishes, so collapsing reads as one
+  // motion instead of a jump.
+  const [detailMounted, setDetailMounted] = useState(true);
+  useEffect(() => {
+    if (!collapsed) {
+      setDetailMounted(true);
+      return;
+    }
+    // Unmount the detail rows only once the fade has finished.
+    const timer = setTimeout(
+      () => setDetailMounted(false),
+      STATION_COLLAPSE_DURATION,
+    );
+    return () => clearTimeout(timer);
+  }, [collapsed]);
 
   return (
-    <View
-      style={[styles.stationIdentityCard, { backgroundColor: colors.surface }]}
+    <Animated.View
+      style={[
+        styles.stationIdentityCard,
+        {
+          backgroundColor: colors.surface,
+          borderRadius: collapseProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [12, 10],
+          }),
+          minHeight: collapseProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [expandedCardMinHeight, 64],
+          }),
+          paddingHorizontal: collapseProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [18, 12],
+          }),
+          paddingVertical: collapseProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [18, 8],
+          }),
+        },
+      ]}
+      testID="station-profile-card"
     >
-      <View style={styles.stationIdentityTopRow}>
-        <View style={styles.stationIdentityAvatar}>
-          {renderUserAvatar({
-            text: avatarText,
-            config: avatarConfig,
-            size: 60,
-          })}
-        </View>
-        <View style={styles.stationIdentityCopy}>
-          <Text
-            numberOfLines={1}
-            style={[styles.stationIdentityName, { color: textColor }]}
-          >
-            {nickname}
-          </Text>
-          <View style={styles.stationIdentityIdRow}>
-            <Pressable
-              accessibilityLabel={textFor(language, '复制 AI ID', 'Copy AI ID')}
-              accessibilityRole="button"
-              onPress={onCopyAIID}
-            >
-              <Text
-                numberOfLines={1}
+      <View
+        onLayout={event => setRowWidth(event.nativeEvent.layout.width)}
+        style={styles.stationIdentityTopRowWithStage}
+      >
+        <Animated.View
+          style={[
+            styles.stationIdentityStage,
+            {
+              borderRadius: collapseProgress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [9, 23],
+              }),
+              height: collapseProgress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [expandedStageHeight, 46],
+              }),
+              width: collapseProgress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [expandedStageWidth, 46],
+              }),
+            },
+          ]}
+        >
+          {stage ? (
+            <>
+              <Animated.View
                 style={[
-                  styles.stationIdentityId,
-                  { color: secondaryTextColor },
+                  styles.stationIdentityStageFiller,
+                  {
+                    opacity: collapseProgress.interpolate({
+                      inputRange: [0, 0.45],
+                      outputRange: [1, 0],
+                      extrapolate: 'clamp' as const,
+                    }),
+                  },
                 ]}
               >
-                @{aiId}
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityLabel={textFor(language, '我的二维码', 'My QR code')}
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={onShowQRCode}
-              style={styles.stationIdentityQr}
-            >
-              <QrCode color={secondaryTextColor} size={14} strokeWidth={2} />
-            </Pressable>
-          </View>
-          <View style={styles.stationIdentityPresenceRow}>
-            <View
+                {stage}
+              </Animated.View>
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.stationIdentityAvatarFiller,
+                  {
+                    opacity: collapseProgress.interpolate({
+                      inputRange: [0.45, 1],
+                      outputRange: [0, 1],
+                      extrapolate: 'clamp' as const,
+                    }),
+                  },
+                ]}
+              >
+                {renderUserAvatar({
+                  text: avatarText,
+                  config: avatarConfig,
+                  size: 46,
+                })}
+              </Animated.View>
+            </>
+          ) : null}
+          {isOnline ? (
+            <Animated.View
+              accessibilityLabel={textFor(
+                language,
+                '数字形象在线',
+                'Digital avatar online',
+              )}
               style={[
-                styles.stationIdentityPresenceDot,
-                isOnline
-                  ? styles.stationIdentityPresenceDotOnline
-                  : styles.stationIdentityPresenceDotOffline,
-              ]}
-            />
-            <Text
-              style={[
-                styles.stationIdentityPresenceText,
-                { color: secondaryTextColor },
-                isOnline && styles.stationIdentityPresenceTextOnline,
-              ]}
-            >
-              {publicPresenceText(language, presenceStatus)}
-            </Text>
-          </View>
-        </View>
-        <Pressable
-          accessibilityLabel={textFor(
-            language,
-            '编辑小站资料',
-            'Edit station profile',
-          )}
-          accessibilityRole="button"
-          hitSlop={10}
-          onPress={onOpenProfileEdit}
-          style={styles.stationIdentityEditButton}
-        >
-          <Pencil color={secondaryTextColor} size={18} strokeWidth={2.2} />
-        </Pressable>
-      </View>
-
-      <View style={styles.stationIdentityStats}>
-        <IdentityStat
-          label={textFor(language, '关注', 'Following')}
-          value={followingCount}
-          textColor={textColor}
-          secondaryTextColor={secondaryTextColor}
-          onPress={onOpenSocial}
-        />
-        <IdentityStat
-          label={textFor(language, '粉丝', 'Followers')}
-          value={followersCount}
-          textColor={textColor}
-          secondaryTextColor={secondaryTextColor}
-          onPress={onOpenSocial}
-        />
-        <IdentityStat
-          label={textFor(language, '获赞与收藏', 'Likes & saves')}
-          value={likesCount + collectionsCount}
-          textColor={textColor}
-          secondaryTextColor={secondaryTextColor}
-        />
-      </View>
-
-      {identity.headline ? (
-        <Text style={[styles.stationIdentityHeadline, { color: textColor }]}>
-          {identity.headline}
-        </Text>
-      ) : null}
-      {bio ? (
-        <Text style={[styles.stationIdentityBio, { color: textColor }]}>
-          {bio}
-        </Text>
-      ) : null}
-
-      {tags.length ? (
-        <View style={styles.stationIdentityTags}>
-          {tags.map(tag => (
-            <View
-              key={tag}
-              style={[
-                styles.stationIdentityTag,
+                styles.stationIdentityStageBadge,
                 {
-                  backgroundColor: colors.soft,
-                  borderColor: colors.chipBorder,
+                  opacity: collapseProgress.interpolate({
+                    inputRange: [0, 0.4],
+                    outputRange: [1, 0],
+                    extrapolate: 'clamp' as const,
+                  }),
                 },
               ]}
             >
-              <Text
+              <Check color="#FFFFFF" size={12} strokeWidth={3.4} />
+            </Animated.View>
+          ) : null}
+        </Animated.View>
+
+        <View style={styles.stationIdentityCopy}>
+          {detailMounted ? (
+            <Animated.Text
+              style={[
+                styles.stationIdentityKicker,
+                {
+                  opacity: collapseProgress.interpolate({
+                    inputRange: [0, 0.5],
+                    outputRange: [1, 0],
+                    extrapolate: 'clamp' as const,
+                  }),
+                },
+              ]}
+            >
+              {textFor(language, '我的信息', 'My info')}
+            </Animated.Text>
+          ) : null}
+          <Animated.Text
+            numberOfLines={1}
+            style={[
+              styles.stationIdentityName,
+              {
+                color: textColor,
+                fontSize: collapseProgress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [21, 16],
+                }),
+                letterSpacing: collapseProgress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, -0.3],
+                }),
+              },
+            ]}
+          >
+            {nickname}
+          </Animated.Text>
+          {detailMounted && idLabel ? (
+            <Animated.View
+              style={{
+                opacity: collapseProgress.interpolate({
+                  inputRange: [0, 0.5],
+                  outputRange: [1, 0],
+                  extrapolate: 'clamp' as const,
+                }),
+              }}
+            >
+              <Pressable
+                accessibilityLabel={textFor(
+                  language,
+                  '复制 AI ID',
+                  'Copy AI ID',
+                )}
+                accessibilityRole="button"
+                onPress={onCopyAIID}
                 style={[
-                  styles.stationIdentityTagText,
-                  { color: secondaryTextColor },
+                  styles.stationIdentityIdPill,
+                  { backgroundColor: colors.soft },
                 ]}
               >
-                {tag}
-              </Text>
-            </View>
-          ))}
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.stationIdentityId,
+                    { color: secondaryTextColor },
+                  ]}
+                >
+                  {idLabel}
+                </Text>
+              </Pressable>
+            </Animated.View>
+          ) : null}
+          {detailMounted && bio ? (
+            <Animated.Text
+              style={[
+                styles.stationIdentityBio,
+                {
+                  opacity: collapseProgress.interpolate({
+                    inputRange: [0, 0.5],
+                    outputRange: [1, 0],
+                    extrapolate: 'clamp' as const,
+                  }),
+                },
+              ]}
+            >
+              {bio}
+            </Animated.Text>
+          ) : null}
+
+          {detailMounted && onOpenLocation ? (
+            <Animated.View
+              style={{
+                opacity: collapseProgress.interpolate({
+                  inputRange: [0, 0.5],
+                  outputRange: [1, 0],
+                  extrapolate: 'clamp' as const,
+                }),
+              }}
+            >
+              <Pressable
+                accessibilityLabel={textFor(
+                  language,
+                  '社区与活动区域',
+                  'Community and activity area',
+                )}
+                accessibilityRole="button"
+                hitSlop={6}
+                onPress={onOpenLocation}
+                style={styles.stationIdentityLocation}
+              >
+                <MapPin color={secondaryTextColor} size={14} strokeWidth={2} />
+                <Text
+                  numberOfLines={1}
+                  style={styles.stationIdentityLocationText}
+                >
+                  {locationLabel ||
+                    textFor(language, '设置社区与活动区域', 'Set your area')}
+                </Text>
+              </Pressable>
+            </Animated.View>
+          ) : null}
         </View>
-      ) : null}
-    </View>
+      </View>
+    </Animated.View>
   );
 }
 
-function IdentityStat({
-  label,
-  value,
-  textColor,
-  secondaryTextColor,
-  onPress,
-}: {
-  label: string;
-  value: number;
-  textColor: string;
-  secondaryTextColor: string;
-  onPress?: () => void;
-}) {
-  const content = (
-    <>
-      <Text style={[styles.stationIdentityStatValue, { color: textColor }]}>
-        {formatCompactNumber(value)}
-      </Text>
-      <Text
-        numberOfLines={1}
-        style={[styles.stationIdentityStatLabel, { color: secondaryTextColor }]}
-      >
-        {label}
-      </Text>
-    </>
-  );
-  return onPress ? (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={styles.stationIdentityStat}
-    >
-      {content}
-    </Pressable>
-  ) : (
-    <View style={styles.stationIdentityStat}>{content}</View>
-  );
-}
-
-function formatCompactNumber(value: number) {
-  if (value >= 10000) return `${(value / 10000).toFixed(1)}w`;
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
-  return String(Number.isFinite(value) ? value : 0);
-}
-
+/** Prototype `.me-switch`: two equal segments, nothing else in the trough. */
 export function StationTabs({
   palette,
   language,
   value,
   onChange,
-  onOpenSettings,
 }: {
   palette: Palette;
   language: Language;
   value: StationTab;
   onChange: (tab: StationTab) => void;
-  onOpenSettings: () => void;
 }) {
   const colors = resolveStationColors(palette);
   const textColor = colors.text;
-  const tabs: StationTabBarItem[] = [
-    {
-      Icon: UserRound,
-      label: textFor(language, '第一面', 'Front'),
-      value: 'station',
-    },
-    {
-      Icon: CircleDot,
-      label: textFor(language, '生活', 'Life'),
-      value: 'posts',
-    },
-    {
-      Icon: Award,
-      label: textFor(language, '成果', 'Outcomes'),
-      value: 'outcomes',
-    },
-    {
-      Icon: Network,
-      label: textFor(language, '生态', 'Ecosystem'),
-      value: 'agents',
-    },
-    { Icon: Link2, label: textFor(language, '其他', 'More'), value: 'social' },
+  const tabs: { label: string; value: StationTab }[] = [
+    { label: textFor(language, '动态', 'Posts'), value: 'posts' },
+    { label: textFor(language, '我的 Agent', 'My Agents'), value: 'agents' },
   ];
 
   return (
-    <View style={styles.stationNavRow}>
-      <StationTabBar
-        items={tabs}
-        onChange={onChange}
-        palette={palette}
-        value={value}
-      />
-      <Pressable
-        accessibilityLabel={textFor(language, '设置', 'Settings')}
-        accessibilityRole="button"
-        hitSlop={8}
-        onPress={onOpenSettings}
-        style={styles.stationNavSettings}
-      >
-        <MoreHorizontal color={textColor} size={27} strokeWidth={3} />
-      </Pressable>
+    <View
+      accessibilityRole="tablist"
+      style={[
+        styles.stationSwitch,
+        { backgroundColor: colors.soft, borderColor: colors.border },
+      ]}
+    >
+      {tabs.map(item => {
+        const isSelected = item.value === value;
+        return (
+          <Pressable
+            accessibilityRole="tab"
+            accessibilityState={{ selected: isSelected }}
+            key={item.value}
+            onPress={() => onChange(item.value)}
+            style={({ pressed }) => [
+              styles.stationSwitchButton,
+              isSelected && [
+                styles.stationSwitchButtonSelected,
+                { backgroundColor: colors.surface },
+              ],
+              // Prototype `.me-switch-button:active { transform: scale(.97) }`.
+              pressed && styles.stationSwitchButtonPressed,
+            ]}
+            testID={`station-tab-${item.value}`}
+          >
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.stationSwitchText,
+                { color: isSelected ? textColor : colors.secondaryText },
+              ]}
+            >
+              {item.label}
+            </Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
+}
+
+/** Prototype shows `ID · MIAO_0001`; use the real account AI ID, never a fake one. */
+export function aiIdLabel(aiId: string) {
+  const value = aiId.trim();
+  if (!value || value === '--') return '';
+  return `ID · ${value}`;
 }

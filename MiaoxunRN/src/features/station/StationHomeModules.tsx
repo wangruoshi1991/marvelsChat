@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 
-import { stationPartnerIconAssets } from '../../assets/icons';
 import {
   AgentDTO,
   OwnedAgentDTO,
@@ -21,6 +20,7 @@ import {
   StationMediaAssetDTO,
 } from '../../models/api';
 import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
+import { AgentGlyphAvatar } from '../messages/AgentGlyphAvatar';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
@@ -571,32 +571,11 @@ export function AIPartnerGrid({
             { backgroundColor: colors.soft },
           ]}
         >
-          {agent.id === 'miaoxun-butler' ? (
-            <Image
-              source={stationPartnerIconAssets.miaoxunButler}
-              resizeMode="contain"
-              style={styles.stationAgentImage}
-            />
-          ) : (
-            <View
-              style={[
-                styles.stationAgentMark,
-                {
-                  backgroundColor:
-                    agent.identity?.colors.background || palette.rose,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.stationAgentMarkText,
-                  { color: agent.identity?.colors.foreground || '#ffffff' },
-                ]}
-              >
-                {agent.identity?.mark || agent.name.slice(0, 1)}
-              </Text>
-            </View>
-          )}
+          <AgentGlyphAvatar
+            agentId={agent.id}
+            identity={agent.identity}
+            size={46}
+          />
           <View style={styles.stationAIPartnerCopy}>
             <Text
               style={[styles.stationAIPartnerName, { color: colors.text }]}

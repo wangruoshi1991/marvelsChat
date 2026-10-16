@@ -45,13 +45,13 @@ export function MiaoPointsScreen({
   const [contentWidth, setContentWidth] = useState(0);
   const requestIdRef = useRef(0);
   const heroWidth = Math.max(contentWidth - 16, 0);
-  const pageBackgroundColor = isDark ? palette.background : '#F8F7FD';
+  const pageBackgroundColor = isDark ? palette.background : '#E6F4F0';
   const surfaceColor = isDark ? palette.surface : '#FFFFFF';
   const textColor = isDark ? palette.text : '#000000';
   const secondaryTextColor = isDark
     ? palette.secondaryText
     : 'rgba(0,0,0,0.60)';
-  const accentColor = isDark ? palette.mint : '#2012D9';
+  const accentColor = isDark ? palette.mint : '#0B8271';
 
   const loadEntries = useCallback(async () => {
     const requestId = ++requestIdRef.current;
@@ -109,9 +109,9 @@ export function MiaoPointsScreen({
                 y1="0"
                 y2="1"
               >
-                <Stop offset="0" stopColor="#F8F7FD" />
+                <Stop offset="0" stopColor="#E6F4F0" />
                 <Stop offset="0.62" stopColor="#FFFFFF" />
-                <Stop offset="1" stopColor="#F8F7FD" />
+                <Stop offset="1" stopColor="#E6F4F0" />
               </SvgLinearGradient>
             </Defs>
             <Rect
@@ -286,7 +286,7 @@ function PointLedgerRow({
     ? palette.secondaryText
     : 'rgba(0,0,0,0.60)';
   const surfaceColor = isDark ? palette.surface : '#FFFFFF';
-  const amountColor = isIncrease ? '#2012D9' : '#D94A61';
+  const amountColor = isIncrease ? '#0B8271' : '#D94A61';
 
   return (
     <View style={[styles.miaoPointRow, { backgroundColor: surfaceColor }]}>

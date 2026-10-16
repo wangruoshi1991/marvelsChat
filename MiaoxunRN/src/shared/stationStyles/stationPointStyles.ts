@@ -53,7 +53,7 @@ export const stationPointStyles = {
     lineHeight: 21,
   },
   miaoPointsHeroValue: {
-    color: '#2012D9',
+    color: '#0B8271',
     fontSize: 30,
     fontWeight: '500',
     lineHeight: 42,
@@ -136,7 +136,7 @@ export const stationPointStyles = {
     shadowRadius: 5,
   },
   miaoPointsEmptyAmount: {
-    color: '#2012D9',
+    color: '#0B8271',
     fontSize: 15,
     fontWeight: '600',
     lineHeight: 21,

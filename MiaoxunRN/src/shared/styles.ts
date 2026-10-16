@@ -159,6 +159,8 @@ export const styles = StyleSheet.create({
     width: 48,
   },
   avatarSmall: { height: 36, width: 36 },
+  // Prototype `.xun-avatar`: white initial on the plate, `800` weight.
+  avatarInitial: { color: '#FFFFFF', fontWeight: '800' },
   avatarAccent: {
     fontSize: 13,
     fontWeight: '900',
@@ -294,9 +296,9 @@ export const styles = StyleSheet.create({
   searchChip: {
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#F4F6FF',
+    backgroundColor: '#E9F6F2',
     borderRadius: 999,
-    borderColor: '#DBE2FF',
+    borderColor: '#C3E6DE',
     borderWidth: 1,
     flexDirection: 'row',
     gap: 4,
@@ -336,7 +338,7 @@ export const styles = StyleSheet.create({
     minHeight: 24,
   },
   searchHistoryToggleText: {
-    color: '#2012D9',
+    color: '#0B8271',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -478,6 +480,12 @@ export const styles = StyleSheet.create({
   },
   avatarStageStation: { height: 238 },
   settingsContent: { gap: 14, paddingBottom: 28 },
+  // Prototype `.xun-floor-panel-body`: 14px 12px 12px, inside the panel card.
+  settingsContentEmbedded: {
+    paddingBottom: 12,
+    paddingHorizontal: 12,
+    paddingTop: 14,
+  },
   settingsHeader: { gap: 14, paddingHorizontal: 14, paddingTop: 2 },
   settingsDismissButton: {
     alignItems: 'center',

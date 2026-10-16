@@ -15,6 +15,7 @@ import {
   Share,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -22,7 +23,7 @@ import { Avatar3DBootstrapDTO } from '../../models/api';
 import { avatar3dModelThumbnailUrl } from '../../services/api/avatar3dApi';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
-import { Palette } from '../../shared/theme';
+import { Palette, productColors } from '../../shared/theme';
 import {
   AIAssistGestureHandle,
   AIAssistGestureSurface,
@@ -37,6 +38,7 @@ import { avatar3dCreationUnavailableReason } from './avatar3dAvailability';
 
 export function StationAvatarSpace({
   active = true,
+  embedded = false,
   palette,
   language,
   token,
@@ -52,6 +54,9 @@ export function StationAvatarSpace({
   onOpenOotd,
 }: {
   active?: boolean;
+  /** Embedded mode drops the standalone card chrome so the stage can sit
+   *  inside the profile card as a ~35% height region. */
+  embedded?: boolean;
   palette: Palette;
   language: Language;
   token: string;
@@ -67,6 +72,7 @@ export function StationAvatarSpace({
   onOpenOotd?: () => void;
 }) {
   const [viewerError, setViewerError] = useState('');
+  const { height: windowHeight } = useWindowDimensions();
   const { askButler } = useAIAssist();
   const [viewerRevision, setViewerRevision] = useState(0);
   const assistGestureRef = useRef<AIAssistGestureHandle>(null);
@@ -122,7 +128,7 @@ export function StationAvatarSpace({
         direction: 'right',
         label: textFor(language, '妙管家', 'Butler'),
         Icon: Bot,
-        accent: '#2012D9',
+        accent: productColors.accent,
         onSelect: askButler,
       },
       {
@@ -225,17 +231,21 @@ export function StationAvatarSpace({
     <View
       style={[
         styles.avatarSpace,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          shadowColor: palette.shadow,
-        },
+        embedded
+          ? localStyles.embeddedSpace
+          : {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              shadowColor: palette.shadow,
+            },
       ]}
     >
       <View
         style={[
           styles.avatarStage,
-          styles.avatarStageStation,
+          embedded
+            ? { height: Math.min(Math.round(windowHeight * 0.25), 220) }
+            : styles.avatarStageStation,
           { backgroundColor: stageBackgroundColor },
         ]}
         testID="avatar3d-stage"
@@ -335,7 +345,7 @@ export function StationAvatarSpace({
             }}
             style={[styles.avatar3dRetryButton, localStyles.retryOverlay]}
           >
-            <RotateCcw color="#2012D9" size={15} strokeWidth={2} />
+            <RotateCcw color={productColors.accent} size={15} strokeWidth={2} />
             <Text style={styles.avatar3dRetryButtonText}>
               {textFor(language, '重新加载', 'Reload')}
             </Text>
@@ -343,69 +353,64 @@ export function StationAvatarSpace({
         ) : null}
       </View>
 
-      <View style={styles.avatarSpaceCopy}>
-        <View style={styles.avatarSpaceTitleRow}>
-          <View style={styles.avatarSpaceTitleCopy}>
-            <Text style={[styles.avatarSpaceEyebrow, { color: colors.accent }]}>
-              {latestModel
-                ? textFor(language, '拖拽换视角', 'Drag to rotate')
-                : textFor(language, '3D个人形象', '3D avatar')}
-            </Text>
-            <Text style={[styles.avatarSpaceTitle, { color: colors.text }]}>
-              {textFor(language, '我的模样', 'My Look')}
-            </Text>
+      {embedded ? null : (
+        <View style={styles.avatarSpaceCopy}>
+          <View style={styles.avatarSpaceTitleRow}>
+            <View style={styles.avatarSpaceTitleCopy}>
+              <Text
+                style={[styles.avatarSpaceEyebrow, { color: colors.accent }]}
+              >
+                {latestModel
+                  ? textFor(language, '拖拽换视角', 'Drag to rotate')
+                  : textFor(language, '3D个人形象', '3D avatar')}
+              </Text>
+              <Text style={[styles.avatarSpaceTitle, { color: colors.text }]}>
+                {textFor(language, '我的模样', 'My Look')}
+              </Text>
+            </View>
           </View>
-        </View>
-        <Text style={[styles.avatarSpaceBody, { color: colors.secondaryText }]}>
-          {textFor(
-            language,
-            '让我的形象与穿搭、日记和个人能力一起呈现在小站中。',
-            'Bring your avatar, outfits, diary, and personal capabilities together in your station.',
-          )}
-        </Text>
-        <View style={styles.avatar3dActionRow}>
-          <Pressable
-            accessibilityRole="button"
-            disabled={!canOpenGenerator}
-            onPress={onOpenGenerator}
-            style={[
-              styles.avatar3dGenerateButton,
-              { backgroundColor: colors.text },
-              !canOpenGenerator && styles.avatar3dGenerateButtonDisabled,
-            ]}
+          <Text
+            style={[styles.avatarSpaceBody, { color: colors.secondaryText }]}
           >
-            <Box color={colors.surface} size={15} strokeWidth={2.2} />
+            {textFor(
+              language,
+              '让我的形象与穿搭、日记和个人能力一起呈现在小站中。',
+              'Bring your avatar, outfits, diary, and personal capabilities together in your station.',
+            )}
+          </Text>
+          {!latestModel &&
+          avatar3dStatus === 'ready' &&
+          creationUnavailableReason ? (
             <Text
               style={[
-                styles.avatar3dGenerateButtonText,
-                { color: colors.surface },
+                localStyles.availabilityText,
+                { color: colors.secondaryText },
               ]}
             >
-              {latestModel
-                ? textFor(language, '管理形象', 'Manage avatar')
-                : textFor(language, '生成形象', 'Create avatar')}
+              {creationUnavailableReason}
             </Text>
-          </Pressable>
+          ) : null}
         </View>
-        {!latestModel &&
-        avatar3dStatus === 'ready' &&
-        creationUnavailableReason ? (
-          <Text
-            style={[
-              localStyles.availabilityText,
-              { color: colors.secondaryText },
-            ]}
-          >
-            {creationUnavailableReason}
-          </Text>
-        ) : null}
-      </View>
+      )}
     </View>
   );
 }
 
 const localStyles = StyleSheet.create({
   availabilityText: { fontSize: 12, marginTop: 8 },
+  embeddedSpace: {
+    borderWidth: 0,
+    borderRadius: 0,
+    flex: 1,
+    overflow: 'hidden',
+    shadowOpacity: 0,
+  },
+  embeddedActions: {
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+  },
   assistSurface: { flex: 1, width: '100%' },
   preparingPreview: {
     bottom: 0,

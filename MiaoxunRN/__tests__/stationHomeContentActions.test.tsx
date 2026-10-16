@@ -3,13 +3,10 @@ import { Alert, Image, Share } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import ReactTestRenderer from 'react-test-renderer';
 
-import {
-  messageIconAssets,
-  stationPartnerIconAssets,
-} from '../src/assets/icons';
 import { AIAssistGestureSurface } from '../src/features/assist/AIAssistGestureSurface';
 import { AIAssistAction } from '../src/features/assist/aiAssistTypes';
-import { resolveAgentThreadIcon } from '../src/features/messages/threadIconRegistry';
+import { AgentGlyphAvatar } from '../src/features/messages/AgentGlyphAvatar';
+import { resolveAgentGlyph } from '../src/features/messages/threadIconRegistry';
 import {
   AIPartnerGrid,
   AlbumGrid,
@@ -311,7 +308,7 @@ describe('Station home content actions', () => {
     expect(Clipboard.setString).not.toHaveBeenCalled();
   });
 
-  it('uses the Butler chat portrait while preserving home card and other Agent identities', async () => {
+  it('renders every Agent through the one shared glyph, whatever its identity', async () => {
     const agent = {
       key: 'miaoxun-butler',
       name: '妙讯管家',
@@ -337,15 +334,20 @@ describe('Station home content actions', () => {
         />,
       );
     });
-    expect(renderer.root.findByType(Image).props.source).toBe(
-      stationPartnerIconAssets.miaoxunButler,
-    );
-    expect(resolveAgentThreadIcon(agent.key).imageSource).toBe(
-      messageIconAssets.agentAvatars.butler,
-    );
-    expect(
-      resolveAgentThreadIcon('new-agent', 'generation').imageSource,
-    ).toBeUndefined();
+    // The partner grid no longer swaps in a Butler portrait: every Agent goes
+    // through the same glyph so one screen cannot show two icon languages.
+    const glyphs = renderer.root.findAllByType(AgentGlyphAvatar);
+    expect(glyphs).toHaveLength(1);
+    expect(glyphs[0].props.agentId).toBe('miaoxun-butler');
+    expect(glyphs[0].props.identity).toBe(agent.identity);
+    // A near-black brand colour still yields a legible glyph rather than a
+    // glyph indistinguishable from its own disc.
+    const butler = resolveAgentGlyph('miaoxun-butler');
+    expect(butler.Icon).toBeDefined();
+    expect(butler.accent).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    // An Agent this build has never seen still resolves, by category first.
+    expect(resolveAgentGlyph('new-agent', 'generation').Icon).toBeDefined();
+    expect(resolveAgentGlyph('new-agent').Icon).toBeDefined();
   });
 
   it('uses the album conversation and has no separate Find media shortcut', async () => {

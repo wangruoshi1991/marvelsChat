@@ -3,10 +3,7 @@ import { Alert, Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { StationAgentsPanel } from '../src/features/station/StationAgentsPanel';
 import { AgentDTO, OwnedAgentDTO } from '../src/models/api';
-import {
-  emptyProfile,
-  emptyStationContent,
-} from '../src/features/session/sessionDefaults';
+import {} from '../src/features/session/sessionDefaults';
 import { palettes } from '../src/shared/theme';
 import { mediaRetrievalApi } from '../src/services/api/mediaRetrievalApi';
 import {
@@ -72,19 +69,7 @@ const renderSurface = (
   values: AccessProps,
   token = 'first-session',
   active = true,
-) => (
-  <StationAgentsPanel
-    {...values}
-    token={token}
-    active={active}
-    profile={emptyProfile}
-    stationContent={emptyStationContent}
-    status=""
-    onCreateSiteDraft={jest.fn()}
-    onRefreshTaskArtifacts={jest.fn()}
-    onCreateFileAsset={jest.fn()}
-  />
-);
+) => <StationAgentsPanel {...values} token={token} active={active} />;
 const accessButton = (label: string) =>
   renderer.root
     .findAll(item => typeof item.props.onPress === 'function')

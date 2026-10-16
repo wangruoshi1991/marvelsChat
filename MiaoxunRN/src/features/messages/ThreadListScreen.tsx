@@ -19,7 +19,7 @@ import {
 import { AgentDTO } from '../../models/api';
 import { AITaskDTO } from '../../models/aiTask';
 import { displayText, textFor } from '../../shared/i18n';
-import { Palette } from '../../shared/theme';
+import { isLightPalette, Palette } from '../../shared/theme';
 import { workspacePalette } from '../../shared/workspacePalette';
 import {
   ChatThread,
@@ -225,6 +225,10 @@ export function ThreadListScreen({
 }) {
   const assist = useAIAssist();
   const colors = useMemo(() => workspacePalette(palette), [palette]);
+  // Light mode paints the page gradient behind the tabs, so the list must not
+  // cover it with a flat fill; dark mode keeps its own background.
+  const lightTheme = isLightPalette(palette);
+  const pageBackground = lightTheme ? 'transparent' : colors.background;
   const { height } = useWindowDimensions();
   const scrollOffset = useRef(0);
   const pullStartAtTop = useRef(false);
@@ -297,7 +301,7 @@ export function ThreadListScreen({
     <View
       {...pullResponder.panHandlers}
       testID="messages-pull-surface"
-      style={[s.screen, { backgroundColor: colors.background }]}
+      style={[s.screen, { backgroundColor: pageBackground }]}
     >
       <Animated.View
         pointerEvents="none"
@@ -320,7 +324,7 @@ export function ThreadListScreen({
         style={[
           s.screen,
           {
-            backgroundColor: colors.background,
+            backgroundColor: pageBackground,
             transform: [{ translateY: pullOffset }],
           },
         ]}

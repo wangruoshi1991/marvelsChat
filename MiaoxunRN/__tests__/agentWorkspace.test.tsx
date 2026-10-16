@@ -68,7 +68,10 @@ test('second floor starts with no selected panel, opens all six tools and return
         onOpenFriendThread={jest.fn()}
         onOpenProfile={jest.fn()}
         onOpenSettings={jest.fn()}
+        onOpenDeleteAccount={jest.fn()}
+        onOpenPostComposer={jest.fn()}
         onOpenNotices={jest.fn()}
+        onOpenWorkspace={jest.fn()}
       />,
     );
   });
@@ -131,6 +134,7 @@ test('text material begins empty, prevents double submission and retains user in
         palette={palettes.light}
         language="zh"
         session={sessionForFloor({ createStationFileAsset: save })}
+        onOpenWorkspace={jest.fn()}
       />,
     );
   });

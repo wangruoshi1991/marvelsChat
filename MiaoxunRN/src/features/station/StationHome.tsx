@@ -167,7 +167,6 @@ export function StationHome({
         detail={textFor(language, '个人形象记录', 'Personal archive')}
         palette={palette}
         title={textFor(language, '形象档案', 'Visual Archive')}
-        watermark="VISUAL ARCHIVE"
       />
       <StationAvatarSpace
         active={active}

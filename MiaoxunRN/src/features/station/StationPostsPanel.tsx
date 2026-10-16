@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
+  Easing,
   Image,
   type ImageSourcePropType,
   Pressable,
@@ -9,10 +11,10 @@ import {
   View,
 } from 'react-native';
 import {
+  BookOpen,
   Bot,
   Copy,
   LayoutGrid,
-  MapPin,
   Play,
   Share2,
 } from 'lucide-react-native';
@@ -29,15 +31,15 @@ import {
   OwnedAgentDTO,
   ProfileDTO,
   StationContentDTO,
+  StationDiaryEntryDTO,
   StationPostDTO,
 } from '../../models/api';
 import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
-import { textFor } from '../../shared/i18n';
+import { displayText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { Language } from '../session/useMiaoxunSession';
 import { UserAvatarRenderer } from '../messages/messageTypes';
-import { StationPageHeading } from './StationPageHeading';
 import { resolveStationColors } from './stationTheme';
 
 export function StationPostsPanel({
@@ -52,7 +54,7 @@ export function StationPostsPanel({
   onSetStationPostInteraction,
   onActionMessage,
   onActionError,
-  onOpenPostComposer,
+  onOpenDiaryDetail,
 }: {
   palette: Palette;
   language: Language;
@@ -75,63 +77,15 @@ export function StationPostsPanel({
   }>;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
-  onOpenPostComposer: () => void;
+  onOpenDiaryDetail: (entryId: string) => void;
 }) {
   const posts = stationContent.posts;
+  const timeline = postTimeline(posts, stationContent.diaryEntries);
   const colors = resolveStationColors(palette);
 
-  const composer = (
-    <View
-      style={[styles.stationLifeComposer, { backgroundColor: colors.surface }]}
-    >
-      <View style={styles.stationLifeComposerAvatar}>
-        {renderUserAvatar({
-          text: profile.avatarText,
-          config: profile.avatarConfig,
-          size: 46,
-        })}
-      </View>
-      <View style={styles.stationLifeComposerCopy}>
-        <Text style={[styles.stationLifeComposerTitle, { color: colors.text }]}>
-          {textFor(language, '正在发生', 'Happening now')}
-        </Text>
-        <Text
-          style={[
-            styles.stationLifeComposerSubtitle,
-            { color: colors.secondaryText },
-          ]}
-        >
-          {textFor(language, '分享此刻的生活', 'Share what is happening')}
-        </Text>
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={textFor(language, '发布动态', 'New Post')}
-        onPress={onOpenPostComposer}
-        style={styles.stationLifeComposerButton}
-      >
-        <Image
-          source={stationPostIconAssets.add}
-          resizeMode="contain"
-          style={styles.stationLifeComposerIcon}
-        />
-      </Pressable>
-    </View>
-  );
-  const heading = (
-    <StationPageHeading
-      detail={textFor(language, '私人时间线', 'Private timeline')}
-      palette={palette}
-      title={textFor(language, '我的生活', 'My Life')}
-      watermark="LIFE STREAM"
-    />
-  );
-
-  if (!posts.length) {
+  if (!timeline.length) {
     return (
       <View style={styles.stationFeedStack}>
-        {heading}
-        {composer}
         <View
           style={[styles.stationFeedEmpty, { backgroundColor: colors.surface }]}
         >
@@ -145,23 +99,128 @@ export function StationPostsPanel({
 
   return (
     <View style={styles.stationFeedStack}>
-      {heading}
-      {composer}
-      {posts.map(post => (
-        <StationPostCard
-          key={post.id}
-          language={language}
-          ownedAgents={ownedAgents}
-          palette={palette}
-          post={post}
-          token={token}
-          onActionError={onActionError}
-          onActionMessage={onActionMessage}
-          onDeletePost={onDeletePost}
-          onSetStationPostInteraction={onSetStationPostInteraction}
-        />
-      ))}
+      {timeline.map(item =>
+        item.kind === 'diary' ? (
+          <StationDiaryCard
+            key={`diary:${item.entry.id}`}
+            entry={item.entry}
+            language={language}
+            palette={palette}
+            onOpen={() => onOpenDiaryDetail(item.entry.id)}
+          />
+        ) : (
+          <StationPostCard
+            key={item.post.id}
+            language={language}
+            ownedAgents={ownedAgents}
+            palette={palette}
+            post={item.post}
+            profile={profile}
+            renderUserAvatar={renderUserAvatar}
+            token={token}
+            onActionError={onActionError}
+            onActionMessage={onActionMessage}
+            onDeletePost={onDeletePost}
+            onSetStationPostInteraction={onSetStationPostInteraction}
+          />
+        ),
+      )}
     </View>
+  );
+}
+
+type TimelineItem =
+  | { kind: 'post'; post: StationPostDTO; time: number }
+  | { kind: 'diary'; entry: StationDiaryEntryDTO; time: number };
+
+/** Posts and diary entries share one newest-first timeline; undated items sink. */
+function postTimeline(
+  posts: StationPostDTO[],
+  diaryEntries: StationDiaryEntryDTO[],
+): TimelineItem[] {
+  const time = (value?: string | null) =>
+    parsePostDate(value)?.getTime() ?? Number.NEGATIVE_INFINITY;
+  return [
+    ...posts.map(post => ({
+      kind: 'post' as const,
+      post,
+      time: time(post.createdAt),
+    })),
+    ...diaryEntries.map(entry => ({
+      kind: 'diary' as const,
+      entry,
+      time: time(entry.createdAt),
+    })),
+  ].sort((a, b) => b.time - a.time);
+}
+
+// Interim diary card: opens the existing diary detail. Final styling lands
+// with the poll work so all post kinds are designed together.
+function StationDiaryCard({
+  entry,
+  language,
+  palette,
+  onOpen,
+}: {
+  entry: StationDiaryEntryDTO;
+  language: Language;
+  palette: Palette;
+  onOpen: () => void;
+}) {
+  const colors = resolveStationColors(palette);
+  return (
+    <Pressable
+      testID={`station-diary-${entry.id}`}
+      accessibilityRole="button"
+      accessibilityLabel={textFor(
+        language,
+        `打开日记${entry.title}`,
+        `Open diary ${entry.title}`,
+      )}
+      onPress={onOpen}
+      style={[styles.stationFeedCard, { backgroundColor: colors.surface }]}
+    >
+      <View style={styles.stationFeedHeader}>
+        <View style={styles.stationFeedDateCopy}>
+          <Text
+            numberOfLines={1}
+            style={[styles.stationFeedDay, { color: colors.text }]}
+          >
+            {formatPostDay(entry.createdAt, language)}
+          </Text>
+          <View style={styles.stationFeedMetaRow}>
+            <View style={styles.stationFeedMetaItem}>
+              <BookOpen color={colors.secondaryText} size={13} />
+              <Text
+                style={[
+                  styles.stationFeedMetaText,
+                  { color: colors.secondaryText },
+                ]}
+              >
+                {textFor(language, '日记', 'Diary')}
+                {entry.createdAt
+                  ? ` · ${formatPostClock(entry.createdAt, language)}`
+                  : ''}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+      <Text
+        numberOfLines={1}
+        style={[styles.stationFeedDay, { color: colors.text }]}
+      >
+        {entry.title}
+      </Text>
+      {entry.body ? (
+        <Text
+          numberOfLines={3}
+          style={[styles.stationFeedMetaText, { color: colors.secondaryText }]}
+        >
+          {entry.body}
+        </Text>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -170,6 +229,8 @@ function StationPostCard({
   ownedAgents,
   palette,
   post,
+  profile,
+  renderUserAvatar,
   token,
   onDeletePost,
   onSetStationPostInteraction,
@@ -180,6 +241,8 @@ function StationPostCard({
   ownedAgents: OwnedAgentDTO[];
   palette: Palette;
   post: StationPostDTO;
+  profile: ProfileDTO;
+  renderUserAvatar: UserAvatarRenderer;
   token: string;
   onDeletePost: (postId: string) => Promise<void>;
   onSetStationPostInteraction: (
@@ -342,176 +405,119 @@ function StationPostCard({
 
   return (
     <View style={[styles.stationFeedCard, { backgroundColor: colors.surface }]}>
-      <View style={styles.stationFeedHeader}>
-        <View style={styles.stationFeedDateCopy}>
-          <Text
-            numberOfLines={1}
-            style={[styles.stationFeedDay, { color: colors.text }]}
-          >
-            {formatPostDay(post.createdAt, language)}
-          </Text>
-          <View style={styles.stationFeedMetaRow}>
-            <View style={styles.stationFeedMetaItem}>
-              <PostMetaIcon
-                color={colors.secondaryText}
-                source={stationPostIconAssets.time}
-              />
-              <Text
-                style={[
-                  styles.stationFeedMetaText,
-                  { color: colors.secondaryText },
-                ]}
-              >
-                {formatPostClock(post.createdAt, language)}
-              </Text>
-            </View>
-            <View style={styles.stationFeedMetaItem}>
-              <PostKindIcon
-                color={colors.secondaryText}
-                kind={post.media[0]?.kind || 'text'}
-              />
-              <Text
-                style={[
-                  styles.stationFeedMetaText,
-                  { color: colors.secondaryText },
-                ]}
-              >
-                {postKindLabel(post, language)}
-              </Text>
-            </View>
-            {post.visibility !== 'public' ? (
-              <Text
-                style={[
-                  styles.stationFeedMetaText,
-                  { color: colors.secondaryText },
-                ]}
-              >
-                {visibilityLabel(post, language)}
-              </Text>
-            ) : null}
+      <View style={styles.stationFeedBody}>
+        <View style={styles.stationFeedAuthorRow}>
+          <View style={styles.stationFeedAuthorAvatar}>
+            {renderUserAvatar({
+              text: profile.avatarText,
+              config: profile.avatarConfig,
+              size: 34,
+            })}
           </View>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={textFor(language, '更多', 'More')}
-          disabled={isDeleting}
-          onPress={event =>
-            assist.open({
-              object,
-              actions,
-              point: {
-                x: event.nativeEvent.pageX,
-                y: event.nativeEvent.pageY,
-              },
-            })
-          }
-          style={styles.stationFeedMore}
-        >
-          <Image
-            resizeMode="contain"
-            source={stationPostIconAssets.more}
-            style={styles.stationFeedMoreIcon}
-          />
-        </Pressable>
-      </View>
-
-      <AIAssistGestureSurface
-        object={object}
-        actions={actions}
-        palette={palette}
-        testID={`station-post-assist-${post.id}`}
-        style={styles.stationFeedContextContent}
-      >
-        {post.body ? (
-          <Text style={[styles.stationFeedBody, { color: colors.text }]}>
-            {post.body}
-          </Text>
-        ) : null}
-
-        {post.locationLabel ? (
-          <View style={styles.stationFeedLocation}>
-            <MapPin color={colors.secondaryText} size={13} strokeWidth={2} />
+          <View style={styles.stationFeedAuthorCopy}>
+            <Text
+              numberOfLines={1}
+              style={[styles.stationFeedAuthorName, { color: colors.text }]}
+            >
+              {displayText(language, profile.nickname)}
+            </Text>
             <Text
               numberOfLines={1}
               style={[
-                styles.stationFeedLocationText,
+                styles.stationFeedAuthorMeta,
                 { color: colors.secondaryText },
               ]}
             >
-              {post.locationLabel}
+              {postMetaLine(post, language)}
             </Text>
           </View>
-        ) : null}
+          <Text
+            style={[
+              styles.stationFeedKindPill,
+              { backgroundColor: colors.soft, color: colors.accent },
+            ]}
+          >
+            {postKindLabel(post, language)}
+          </Text>
+        </View>
 
-        {post.media.length ? (
-          <View style={styles.stationFeedMediaGrid}>
-            {previewMedia.map((asset, index) => (
-              <View
-                key={asset.id}
-                style={[
-                  styles.stationFeedMediaItem,
-                  post.media.length === 1 && styles.stationFeedMediaItemSingle,
-                  post.media.length === 2 && styles.stationFeedMediaItemDouble,
-                  { backgroundColor: colors.soft },
-                ]}
-              >
-                {asset.kind === 'image' ? (
-                  <Image
-                    resizeMode="cover"
-                    source={{
-                      uri: buildStationMediaFileUrl(asset.id),
-                      headers: { Authorization: `Bearer ${token}` },
-                    }}
-                    style={styles.stationFeedMediaImage}
-                  />
-                ) : (
-                  <View style={styles.stationFeedVideo}>
-                    <View style={styles.stationFeedVideoPlay}>
-                      <Play color="#FFFFFF" fill="#FFFFFF" size={21} />
-                    </View>
-                    <Text
-                      numberOfLines={1}
-                      style={[
-                        styles.stationFeedVideoText,
-                        { color: colors.secondaryText },
-                      ]}
-                    >
-                      {textFor(language, '视频', 'Video')}
-                    </Text>
-                  </View>
-                )}
-                {index === 2 && post.media.length > previewMedia.length ? (
-                  <View style={styles.stationFeedMediaMore}>
-                    <Text style={styles.stationFeedMediaMoreText}>
-                      +{post.media.length - previewMedia.length}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            ))}
-          </View>
-        ) : null}
+        <AIAssistGestureSurface
+          object={object}
+          actions={actions}
+          palette={palette}
+          testID={`station-post-assist-${post.id}`}
+          style={styles.stationFeedContextContent}
+        >
+          {post.body ? (
+            <Text style={[styles.stationFeedBodyText, { color: colors.text }]}>
+              {post.body}
+            </Text>
+          ) : null}
 
-        {agentTags.length ? (
-          <View style={styles.stationFeedAgents}>
-            {agentTags.map(agent => (
-              <View
-                key={agent.id}
-                style={[
-                  styles.stationFeedAgentChip,
-                  { backgroundColor: colors.soft },
-                ]}
-              >
-                <Text
-                  style={[styles.stationFeedAgentText, { color: colors.text }]}
+          {agentTags.length ? (
+            <View style={styles.stationFeedAgents}>
+              {agentTags.map(agent => (
+                <View
+                  key={agent.id}
+                  style={[
+                    styles.stationFeedAgentChip,
+                    { backgroundColor: colors.soft },
+                  ]}
                 >
-                  {agent.name}
-                </Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-      </AIAssistGestureSurface>
+                  <Text
+                    style={[
+                      styles.stationFeedAgentText,
+                      { color: colors.text },
+                    ]}
+                  >
+                    {agent.name}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </AIAssistGestureSurface>
+      </View>
+
+      {post.media.length ? (
+        <View style={styles.stationFeedMediaGrid}>
+          {previewMedia.map((asset, index) => (
+            <View
+              key={asset.id}
+              style={[
+                styles.stationFeedMediaItem,
+                post.media.length === 1 && styles.stationFeedMediaItemSingle,
+                post.media.length === 2 && styles.stationFeedMediaItemDouble,
+                { backgroundColor: colors.soft },
+              ]}
+            >
+              {asset.kind === 'image' ? (
+                <Image
+                  resizeMode="cover"
+                  source={{
+                    uri: buildStationMediaFileUrl(asset.id),
+                    headers: { Authorization: `Bearer ${token}` },
+                  }}
+                  style={styles.stationFeedMediaImage}
+                />
+              ) : (
+                <View style={styles.stationFeedVideo}>
+                  <View style={styles.stationFeedVideoPlay}>
+                    <Play color="#FFFFFF" fill="#FFFFFF" size={21} />
+                  </View>
+                </View>
+              )}
+              {index === 2 && post.media.length > previewMedia.length ? (
+                <View style={styles.stationFeedMediaMore}>
+                  <Text style={styles.stationFeedMediaMoreText}>
+                    +{post.media.length - previewMedia.length}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       <View style={styles.stationFeedActions}>
         <PostMetricButton
@@ -590,69 +596,57 @@ function PostMetricButton({
   palette: Palette;
   value: number;
 }) {
+  // The prototype defines no like animation, so this is our own lightweight
+  // feedback: the button dips and its plate fills while pressed (`aria-pressed`
+  // in the prototype is the `#fff0f2` plate).
+  const scale = useRef(new Animated.Value(1)).current;
+  const press = (to: number) =>
+    Animated.timing(scale, {
+      toValue: to,
+      duration: 120,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
-    >
-      <PostMetric icon={icon} palette={palette} value={value} />
-    </Pressable>
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ selected: active }}
+        onPress={onPress}
+        onPressIn={() => press(0.94)}
+        onPressOut={() => press(1)}
+        style={({ pressed }) => [
+          styles.stationFeedAction,
+          (pressed || active) && styles.stationFeedActionPressed,
+        ]}
+      >
+        <PostMetric icon={icon} palette={palette} value={value} />
+      </Pressable>
+    </Animated.View>
   );
 }
 
-function visibilityLabel(post: StationPostDTO, language: Language) {
-  if (post.visibility === 'friends') {
-    return textFor(language, '好友可见', 'Friends');
-  }
-  if (post.visibility === 'private') {
-    return textFor(language, '仅自己可见', 'Only Me');
-  }
-  return textFor(language, '公开', 'Public');
-}
-
-function PostKindIcon({
-  color,
-  kind,
-}: {
-  color: string;
-  kind: 'image' | 'video' | 'text';
-}) {
-  if (kind === 'video') {
-    return <PostMetaIcon color={color} source={stationPostIconAssets.video} />;
-  }
-  if (kind === 'image') {
-    return <PostMetaIcon color={color} source={stationPostIconAssets.photo} />;
-  }
-  return <PostMetaIcon color={color} source={stationPostIconAssets.text} />;
-}
-
-function PostMetaIcon({
-  color,
-  source,
-}: {
-  color: string;
-  source: ImageSourcePropType;
-}) {
-  return (
-    <Image
-      accessibilityIgnoresInvertColors
-      resizeMode="contain"
-      source={source}
-      style={[styles.stationFeedMetaIcon, { tintColor: color }]}
-    />
-  );
-}
-
+/**
+ * Prototype `me-post-kind` has exactly three values: 图文 / 视频 / 互动.
+ * Polls are not implemented yet, so only the first two are reachable today.
+ */
 function postKindLabel(post: StationPostDTO, language: Language) {
   if (post.media[0]?.kind === 'video') {
     return textFor(language, '视频', 'Video');
   }
-  if (post.media.length) {
-    return textFor(language, '照片', 'Photos');
-  }
-  return textFor(language, '文字', 'Text');
+  return textFor(language, '图文', 'Post');
+}
+
+/** Prototype `me-post-author-copy span`: 「今天 10:32 · 上海」. */
+function postMetaLine(post: StationPostDTO, language: Language) {
+  return [
+    formatPostDay(post.createdAt, language),
+    formatPostClock(post.createdAt, language),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .concat(post.locationLabel ? ` · ${post.locationLabel}` : '');
 }
 
 function parsePostDate(value: string | null | undefined) {

@@ -28,8 +28,14 @@ jest.mock('../src/features/station/StationHeader', () => {
   const ReactModule = require('react');
   const { View: NativeView } = require('react-native');
   return {
-    StationProfileHeader: () =>
-      ReactModule.createElement(NativeView, { testID: 'station-profile' }),
+    // The real card renders the 3D stage inside its avatar cell; keep that
+    // relationship so these lifecycle assertions stay meaningful.
+    StationProfileHeader: ({ stage }: { stage?: unknown }) =>
+      ReactModule.createElement(
+        NativeView,
+        { testID: 'station-profile' },
+        stage as never,
+      ),
     StationTabs: () =>
       ReactModule.createElement(NativeView, { testID: 'station-tabs' }),
   };
@@ -44,35 +50,48 @@ jest.mock('../src/features/station/StationPageHeading', () => {
   };
 });
 
-jest.mock('../src/features/station/StationHome', () => {
+jest.mock('../src/features/station/StationAvatarSpace', () => {
   const ReactModule = require('react');
   const {
     Pressable: NativePressable,
     View: NativeView,
   } = require('react-native');
   return {
-    StationHome: ({
+    StationAvatarSpace: ({
       active,
-      onOpenAgentThread,
+      onOpenCoreAgent,
     }: {
       active: boolean;
-      onOpenAgentThread?: (agentId: string) => void;
+      onOpenCoreAgent?: () => void;
     }) => {
       ReactModule.useEffect(() => {
-        mockPanelMounted('station');
-        return () => mockPanelUnmounted('station');
+        mockPanelMounted('avatar');
+        return () => mockPanelUnmounted('avatar');
       }, []);
       return ReactModule.createElement(
         NativeView,
-        {
-          testID: 'station-panel-station',
-          active,
-        },
+        { testID: 'station-avatar', active },
         ReactModule.createElement(NativePressable, {
-          onPress: () => onOpenAgentThread?.('album-manager'),
-          testID: 'station-home-album-agent',
+          onPress: onOpenCoreAgent,
+          testID: 'station-avatar-agent',
         }),
       );
+    },
+  };
+});
+
+jest.mock('../src/features/station/StationAgentsPanel', () => {
+  const ReactModule = require('react');
+  const { View: NativeView } = require('react-native');
+  return {
+    StationAgentsPanel: () => {
+      ReactModule.useEffect(() => {
+        mockPanelMounted('agents');
+        return () => mockPanelUnmounted('agents');
+      }, []);
+      return ReactModule.createElement(NativeView, {
+        testID: 'station-panel-agents',
+      });
     },
   };
 });
@@ -126,13 +145,8 @@ function stationScreen(tab: StationTab, active = true) {
         onActionMessage={action}
         onCopyAIID={action}
         onOpenAgentThread={action}
-        onOpenWorkspace={action}
-        onOpenFriendThread={action}
         onOpenLocation={action}
-        onOpenPostComposer={action}
-        onOpenPublicProfileByAiId={action}
         onOpenQRCode={action}
-        onOpenSettings={action}
         onSelectStationTab={action}
         palette={palettes.light}
         renderUserAvatar={() => <View />}
@@ -154,109 +168,31 @@ describe('Station tab lifecycle', () => {
     renderer = undefined;
   });
 
-  it('keeps the home viewer mounted and makes only the selected panel interactive', async () => {
-    await ReactTestRenderer.act(async () => {
-      renderer = ReactTestRenderer.create(stationScreen('station'));
-    });
-
-    expect(mockPanelMounted.mock.calls.map(([tab]) => tab)).toEqual([
-      'station',
-    ]);
-    expect(mockPanelUnmounted).not.toHaveBeenCalled();
-    expect(
-      renderer!.root.findByProps({
-        testID: 'station-panel-scroll-station',
-      }),
-    ).toBeTruthy();
-
-    ReactTestRenderer.act(() => {
-      renderer!.update(stationScreen('posts'));
-    });
-
-    expect(mockPanelMounted.mock.calls.map(([tab]) => tab)).toEqual([
-      'station',
-      'posts',
-    ]);
-    expect(mockPanelUnmounted).not.toHaveBeenCalledWith('station');
-    expect(
-      renderer!.root.findAllByProps({
-        testID: 'station-panel-scroll-station',
-      }),
-    ).toHaveLength(0);
-    expect(
-      renderer!.root.findByProps({ testID: 'station-panel-scroll-posts' }),
-    ).toBeTruthy();
-    const home = renderer!.root.findByProps({
-      testID: 'station-home-retained',
-    });
-    expect(home.props.accessibilityElementsHidden).toBe(true);
-    expect(home.props.importantForAccessibility).toBe('no-hide-descendants');
-    expect(home.props.pointerEvents).toBe('none');
-    expect(
-      renderer!.root.findByProps({ testID: 'station-panel-station' }).props
-        .active,
-    ).toBe(false);
-    ReactTestRenderer.act(() => {
-      renderer!.update(stationScreen('station'));
-    });
-    expect(mockPanelMounted.mock.calls.map(([tab]) => tab)).toEqual([
-      'station',
-      'posts',
-    ]);
-    expect(mockPanelUnmounted).not.toHaveBeenCalled();
-    const posts = renderer!.root.findByProps({
-      testID: 'station-posts-retained',
-    });
-    expect(posts.props.accessibilityElementsHidden).toBe(true);
-    expect(posts.props.importantForAccessibility).toBe('no-hide-descendants');
-    expect(posts.props.pointerEvents).toBe('none');
-    expect(
-      renderer!.root.findByProps({ testID: 'station-panel-station' }).props
-        .active,
-    ).toBe(true);
-    expect(
-      renderer!.root.findByProps({ testID: 'station-home-retained' }).props
-        .accessibilityElementsHidden,
-    ).toBe(false);
-  });
-
-  it('pauses the retained viewer when station is inactive without remounting it', async () => {
-    await ReactTestRenderer.act(async () => {
-      renderer = ReactTestRenderer.create(stationScreen('station'));
-    });
-    ReactTestRenderer.act(() => {
-      renderer!.update(stationScreen('station', false));
-    });
-    expect(
-      renderer!.root.findByProps({ testID: 'station-panel-station' }).props
-        .active,
-    ).toBe(false);
-    ReactTestRenderer.act(() => {
-      renderer!.update(stationScreen('station', true));
-    });
-    expect(
-      renderer!.root.findByProps({ testID: 'station-panel-station' }).props
-        .active,
-    ).toBe(true);
-    expect(mockPanelMounted.mock.calls.map(([tab]) => tab)).toEqual([
-      'station',
-    ]);
-    expect(mockPanelUnmounted).not.toHaveBeenCalled();
-  });
-
-  it('does not create the home viewer before the home tab is first visited', async () => {
+  it('keeps the profile card and 3D avatar above both tabs', async () => {
     await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(stationScreen('posts'));
     });
     expect(
-      renderer!.root.findAllByProps({ testID: 'station-panel-station' }),
-    ).toHaveLength(0);
-    ReactTestRenderer.act(() => {
-      renderer!.update(stationScreen('station'));
-    });
+      renderer!.root.findByProps({ testID: 'station-profile' }),
+    ).toBeTruthy();
     expect(mockPanelMounted.mock.calls.map(([tab]) => tab)).toEqual([
+      'avatar',
       'posts',
-      'station',
+    ]);
+    expect(
+      renderer!.root.findByProps({ testID: 'station-panel-scroll-posts' }),
+    ).toBeTruthy();
+
+    ReactTestRenderer.act(() => {
+      renderer!.update(stationScreen('agents'));
+    });
+    expect(
+      renderer!.root.findByProps({ testID: 'station-profile' }),
+    ).toBeTruthy();
+    expect(mockPanelMounted.mock.calls.map(([tab]) => tab)).toEqual([
+      'avatar',
+      'posts',
+      'agents',
     ]);
     expect(mockPanelUnmounted).not.toHaveBeenCalled();
     const posts = renderer!.root.findByProps({
@@ -265,14 +201,53 @@ describe('Station tab lifecycle', () => {
     expect(posts.props.accessibilityElementsHidden).toBe(true);
     expect(posts.props.importantForAccessibility).toBe('no-hide-descendants');
     expect(posts.props.pointerEvents).toBe('none');
+
+    ReactTestRenderer.act(() => {
+      renderer!.update(stationScreen('posts'));
+    });
+    expect(mockPanelUnmounted.mock.calls.map(([tab]) => tab)).toEqual([
+      'agents',
+    ]);
+    expect(
+      renderer!.root.findByProps({ testID: 'station-posts-retained' }).props
+        .accessibilityElementsHidden,
+    ).toBe(false);
   });
 
-  it('opens the album conversation without creating a retrieval page', async () => {
+  it('pauses the 3D avatar when station is inactive without remounting it', async () => {
     await ReactTestRenderer.act(async () => {
-      renderer = ReactTestRenderer.create(stationScreen('station'));
+      renderer = ReactTestRenderer.create(stationScreen('posts'));
+    });
+    ReactTestRenderer.act(() => {
+      renderer!.update(stationScreen('posts', false));
+    });
+    expect(
+      renderer!.root.findByProps({ testID: 'station-avatar' }).props.active,
+    ).toBe(false);
+    ReactTestRenderer.act(() => {
+      renderer!.update(stationScreen('agents', true));
+    });
+    expect(
+      renderer!.root.findByProps({ testID: 'station-avatar' }).props.active,
+    ).toBe(true);
+    expect(mockPanelUnmounted).not.toHaveBeenCalledWith('avatar');
+  });
+
+  it('does not mount the agents panel before it is selected', async () => {
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(stationScreen('posts'));
+    });
+    expect(
+      renderer!.root.findAllByProps({ testID: 'station-panel-agents' }),
+    ).toHaveLength(0);
+  });
+
+  it('opens the 3D agent conversation without creating a content page', async () => {
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(stationScreen('posts'));
     });
 
-    const retrievalModal = () =>
+    const contentModal = () =>
       renderer!.root
         .findAllByType(Modal)
         .find(
@@ -280,15 +255,15 @@ describe('Station tab lifecycle', () => {
             modal.props.animationType === 'fade' &&
             modal.props.presentationStyle === 'fullScreen',
         );
-    expect(retrievalModal()?.props.visible).toBe(false);
+    expect(contentModal()?.props.visible).toBe(false);
 
     ReactTestRenderer.act(() => {
       renderer!.root
-        .findByProps({ testID: 'station-home-album-agent' })
+        .findByProps({ testID: 'station-avatar-agent' })
         .props.onPress();
     });
 
-    expect(retrievalModal()?.props.visible).toBe(false);
-    expect(action).toHaveBeenCalledWith('album-manager');
+    expect(contentModal()?.props.visible).toBe(false);
+    expect(action).toHaveBeenCalledWith('model-3d');
   });
 });

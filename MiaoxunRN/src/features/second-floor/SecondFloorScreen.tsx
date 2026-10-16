@@ -8,6 +8,7 @@ import React, {
 import {
   Animated,
   BackHandler,
+  Easing,
   Keyboard,
   KeyboardAvoidingView,
   PanResponder,
@@ -22,7 +23,9 @@ import {
   FileText,
   Images,
   ListFilter,
+  Settings,
   ShieldCheck,
+  Send,
   Users,
   Wallet,
 } from 'lucide-react-native';
@@ -31,20 +34,32 @@ import { Palette } from '../../shared/theme';
 import { textFor } from '../../shared/i18n';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { workspacePalette } from '../../shared/workspacePalette';
+import { entranceCurve, useReduceMotion } from '../../shared/useReduceMotion';
+import { AgentWorkspace } from '../../models/agentWorkspace';
 import { SecondFloorAlbums } from './SecondFloorAlbums';
 import { SecondFloorFiles } from './SecondFloorFiles';
 import { SecondFloorRelationships } from './SecondFloorRelationships';
 import { SecondFloorAssets } from './SecondFloorAssets';
 import { SecondFloorInformation } from './SecondFloorInformation';
 import { SecondFloorPermissions } from './SecondFloorPermissions';
+import { SecondFloorPublish } from './SecondFloorPublish';
+import { SecondFloorSettings } from './SecondFloorSettings';
 
+/**
+ * The prototype's floor holds six tools. `publish` and `settings` are the
+ * user's own additions — publishing was moved here from the 我 page, and the
+ * personal-settings entry was moved off that page's profile card. Both are
+ * marked so they stay easy to trace back to that decision.
+ */
 const tools = [
   { key: 'albums', label: ['相册', 'Albums'], icon: Images },
   { key: 'files', label: ['文件', 'Files'], icon: FileText },
   { key: 'relationships', label: ['关系', 'People'], icon: Users },
   { key: 'assets', label: ['资产', 'Assets'], icon: Wallet },
   { key: 'information', label: ['信息海', 'Inbox'], icon: ListFilter },
-  { key: 'permissions', label: ['隐私', 'Privacy'], icon: ShieldCheck },
+  { key: 'permissions', label: ['权限', 'Permissions'], icon: ShieldCheck },
+  { key: 'publish', label: ['发布', 'Publish'], icon: Send },
+  { key: 'settings', label: ['设置', 'Settings'], icon: Settings },
 ] as const;
 export type SecondFloorTool = (typeof tools)[number]['key'];
 
@@ -58,7 +73,10 @@ export function SecondFloorScreen({
   onOpenFriendThread,
   onOpenProfile,
   onOpenSettings,
+  onOpenDeleteAccount,
   onOpenNotices,
+  onOpenPostComposer,
+  onOpenWorkspace,
 }: {
   active?: boolean;
   palette: Palette;
@@ -69,7 +87,12 @@ export function SecondFloorScreen({
   onOpenFriendThread: (id: string) => void;
   onOpenProfile: (aiId: string) => void;
   onOpenSettings: () => void;
+  /** Account deletion keeps its own confirmation screen in the app shell. */
+  onOpenDeleteAccount: () => void;
   onOpenNotices: () => void;
+  /** Opens the app-shell post composer from the floor's publish panel. */
+  onOpenPostComposer: () => void;
+  onOpenWorkspace: (workspace: AgentWorkspace) => void;
 }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -78,6 +101,27 @@ export function SecondFloorScreen({
   const toolStep = toolWidth + 6;
   const toolScroll = useRef(new Animated.Value(0)).current;
   const [selected, setSelected] = useState<SecondFloorTool | null>(null);
+  // Prototype `.xun-floor-panel` runs `xun-floor-panel-in .24s
+  // cubic-bezier(.2,.8,.2,1)` — `opacity 0 → 1` with `translateY(12px) → 0`.
+  const panelEntrance = useRef(new Animated.Value(1)).current;
+  const reduceMotion = useReduceMotion();
+  useEffect(() => {
+    if (selected === null) return;
+    panelEntrance.stopAnimation();
+    if (reduceMotion) {
+      panelEntrance.setValue(1);
+      return;
+    }
+    panelEntrance.setValue(0);
+    const animation = Animated.timing(panelEntrance, {
+      toValue: 1,
+      duration: 240,
+      easing: Easing.bezier(...entranceCurve),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [selected, panelEntrance, reduceMotion]);
   useEffect(() => {
     onToolChange?.(selected);
   }, [selected, onToolChange]);
@@ -156,74 +200,128 @@ export function SecondFloorScreen({
           },
         ]}
       >
-        {visited.includes('albums') ? (
-          <View
-            style={[s.screen, selected !== 'albums' && s.hidden]}
-            pointerEvents={selected === 'albums' ? 'auto' : 'none'}
-            accessibilityElementsHidden={selected !== 'albums'}
-            importantForAccessibility={
-              selected === 'albums' ? 'auto' : 'no-hide-descendants'
-            }
-          >
-            <SecondFloorAlbums
+        <Animated.View
+          style={[
+            s.screen,
+            {
+              opacity: panelEntrance,
+              transform: [
+                {
+                  translateY: panelEntrance.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [12, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          {visited.includes('albums') ? (
+            <View
+              style={[s.screen, selected !== 'albums' && s.hidden]}
+              pointerEvents={selected === 'albums' ? 'auto' : 'none'}
+              accessibilityElementsHidden={selected !== 'albums'}
+              importantForAccessibility={
+                selected === 'albums' ? 'auto' : 'no-hide-descendants'
+              }
+            >
+              <SecondFloorAlbums
+                palette={panelPalette}
+                language={language}
+                session={session}
+                onBack={() => setSelected(null)}
+                onBusyChange={onBusyChange}
+              />
+            </View>
+          ) : null}
+          {visited.includes('files') ? (
+            <View
+              style={[s.screen, selected !== 'files' && s.hidden]}
+              pointerEvents={selected === 'files' ? 'auto' : 'none'}
+              accessibilityElementsHidden={selected !== 'files'}
+              importantForAccessibility={
+                selected === 'files' ? 'auto' : 'no-hide-descendants'
+              }
+            >
+              <SecondFloorFiles
+                palette={panelPalette}
+                language={language}
+                session={session}
+                active={active && selected === 'files'}
+                onBusyChange={onBusyChange}
+                onOpenWorkspace={onOpenWorkspace}
+              />
+            </View>
+          ) : null}
+          {selected === 'relationships' ? (
+            <SecondFloorRelationships
               palette={panelPalette}
               language={language}
               session={session}
-              onBack={() => setSelected(null)}
-              onBusyChange={onBusyChange}
+              onOpenFriendThread={onOpenFriendThread}
+              onOpenProfile={onOpenProfile}
             />
-          </View>
-        ) : null}
-        {visited.includes('files') ? (
-          <View
-            style={[s.screen, selected !== 'files' && s.hidden]}
-            pointerEvents={selected === 'files' ? 'auto' : 'none'}
-            accessibilityElementsHidden={selected !== 'files'}
-            importantForAccessibility={
-              selected === 'files' ? 'auto' : 'no-hide-descendants'
-            }
-          >
-            <SecondFloorFiles
+          ) : null}
+          {selected === 'assets' ? (
+            <SecondFloorAssets
               palette={panelPalette}
               language={language}
-              session={session}
-              onBusyChange={onBusyChange}
+              miaoPoints={session.profile.miaoPoints}
+              onLoadEntries={session.listMiaoPointLedger}
             />
-          </View>
-        ) : null}
-        {selected === 'relationships' ? (
-          <SecondFloorRelationships
-            palette={panelPalette}
-            language={language}
-            session={session}
-            onOpenFriendThread={onOpenFriendThread}
-            onOpenProfile={onOpenProfile}
-          />
-        ) : null}
-        {selected === 'assets' ? (
-          <SecondFloorAssets
-            palette={panelPalette}
-            language={language}
-            miaoPoints={session.profile.miaoPoints}
-            onLoadEntries={session.listMiaoPointLedger}
-          />
-        ) : null}
-        {selected === 'information' ? (
-          <SecondFloorInformation
-            palette={panelPalette}
-            language={language}
-            notices={session.notices}
-            unreadCount={session.unreadNoticeCount}
-            onOpenNotices={onOpenNotices}
-          />
-        ) : null}
-        {selected === 'permissions' ? (
-          <SecondFloorPermissions
-            palette={panelPalette}
-            language={language}
-            onOpenSettings={onOpenSettings}
-          />
-        ) : null}
+          ) : null}
+          {selected === 'information' ? (
+            <SecondFloorInformation
+              palette={panelPalette}
+              language={language}
+              notices={session.notices}
+              unreadCount={session.unreadNoticeCount}
+              onOpenNotices={onOpenNotices}
+            />
+          ) : null}
+          {selected === 'permissions' ? (
+            <SecondFloorPermissions
+              palette={panelPalette}
+              language={language}
+              onOpenSettings={onOpenSettings}
+            />
+          ) : null}
+          {visited.includes('publish') ? (
+            <View
+              style={[s.screen, selected !== 'publish' && s.hidden]}
+              pointerEvents={selected === 'publish' ? 'auto' : 'none'}
+              accessibilityElementsHidden={selected !== 'publish'}
+              importantForAccessibility={
+                selected === 'publish' ? 'auto' : 'no-hide-descendants'
+              }
+            >
+              <SecondFloorPublish
+                palette={panelPalette}
+                language={language}
+                session={session}
+                onOpenPostComposer={onOpenPostComposer}
+                onBusyChange={onBusyChange}
+              />
+            </View>
+          ) : null}
+          {visited.includes('settings') ? (
+            <View
+              style={[s.screen, selected !== 'settings' && s.hidden]}
+              pointerEvents={selected === 'settings' ? 'auto' : 'none'}
+              accessibilityElementsHidden={selected !== 'settings'}
+              importantForAccessibility={
+                selected === 'settings' ? 'auto' : 'no-hide-descendants'
+              }
+            >
+              <SecondFloorSettings
+                palette={panelPalette}
+                language={language}
+                session={session}
+                onOpenDeleteAccount={onOpenDeleteAccount}
+              />
+            </View>
+          ) : null}
+        </Animated.View>
       </View>
       <View
         onLayout={event => {

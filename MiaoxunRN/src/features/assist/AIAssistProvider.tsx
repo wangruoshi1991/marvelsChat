@@ -8,7 +8,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  AccessibilityInfo,
   Animated,
   AppState,
   BackHandler,
@@ -19,6 +18,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useReduceMotion } from '../../shared/useReduceMotion';
 import {
   AIAssistAction,
   AIAssistObjectReference,
@@ -155,22 +155,9 @@ export function AIAssistProvider({
   const selectedRef = useRef<string | null>(null);
   const movedRef = useRef(false);
   const reveal = useRef(new Animated.Value(0)).current;
-  // Keep motion disabled until the system preference has been read.
-  const [reduceMotion, setReduceMotion] = useState(true);
-  useEffect(() => {
-    let mounted = true;
-    const subscription = AccessibilityInfo.addEventListener(
-      'reduceMotionChanged',
-      setReduceMotion,
-    );
-    AccessibilityInfo.isReduceMotionEnabled().then(value => {
-      if (mounted) setReduceMotion(value);
-    });
-    return () => {
-      mounted = false;
-      subscription.remove();
-    };
-  }, []);
+  // Shared with every other animated surface, so the preference is read once
+  // and answered the same way everywhere.
+  const reduceMotion = useReduceMotion();
   useEffect(() => {
     reveal.stopAnimation();
     if (!request) {

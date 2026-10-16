@@ -22,7 +22,7 @@ import { ChatMessageMenu } from '../src/features/messages/ChatMessageMenu';
 import { ChatScreen } from '../src/features/messages/MessagesScreen';
 import { ChatMessage, ChatThread } from '../src/features/session/sessionTypes';
 import { emptyProfile } from '../src/features/session/sessionDefaults';
-import { palettes } from '../src/shared/theme';
+import { palettes, productColors } from '../src/shared/theme';
 import { MessageInlineAction } from '../src/shared/ui';
 
 const mockAssist = {
@@ -201,9 +201,11 @@ describe('Chat content actions', () => {
     expect(body.props.numberOfLines).toBeUndefined();
     expect(StyleSheet.flatten(body.props.style).height).toBeUndefined();
     const surface = renderer.root.findByType(AIAssistGestureSurface);
+    // Asserted against the token rather than a literal, so a palette pass
+    // cannot leave this test asserting a colour the app no longer uses.
     expect(StyleSheet.flatten(surface.props.style)).toMatchObject({
       width: '100%',
-      backgroundColor: '#F0EBFD',
+      backgroundColor: productColors.border,
     });
     const texts = renderer.root
       .findAllByType(Text)

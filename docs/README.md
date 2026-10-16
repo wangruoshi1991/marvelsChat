@@ -7,6 +7,7 @@
 当前为Build48配套、039和合同1/2/3；2026-10-15只读运行核验正常，整体产品仍有协作续作、成果展示和设计一致性缺口。详细结论、清理结果及后续完成标准见[当前交接](handoffs/CURRENT.md)。
 
 - **[项目地图](project-map.md)**：页面/模块清单、Agent功能现状、设计对照、清理候选及改动范围估计。完整了解项目从这里开始。
+- **[设计状态清单](design-state-checklist.md)**：原型 33 个状态的逐条对照（状态名 / 现有实现文件 / 一致·不一致·缺失），后续按设计逐项验收的依据。
 - [架构与项目结构](architecture.md)、[开发规范](development-standards.md)：目录职责、服务边界与真实数据原则。
 - [Agent工作空间](agent-workspace-architecture.md)：动态选人、授权、交接及尚未实现的能力。
 - [统一AI交互](ai-interaction-system.md)：消息、持久任务、澄清、成果预览和确认合同。

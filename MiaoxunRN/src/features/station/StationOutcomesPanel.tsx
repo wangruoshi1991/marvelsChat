@@ -127,7 +127,6 @@ export function StationOutcomesPanel({
           '查看最近的创作与协作产出',
           'Recent creations and task results',
         )}
-        watermark="OUTCOMES"
       />
       {contentError || workspaces.error ? (
         <View style={s.stack}>

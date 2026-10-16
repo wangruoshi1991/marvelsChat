@@ -77,12 +77,12 @@ export function Avatar3DCreateScreen({
 
   const isDark = palette.text === palettes.dark.text;
   const colors = {
-    accent: isDark ? '#8F86FF' : '#2012D9',
-    background: isDark ? palette.background : '#F8F7FD',
-    border: isDark ? palette.border : '#F0EBFD',
+    accent: isDark ? '#4FD1B5' : '#0B8271',
+    background: isDark ? palette.background : '#E6F4F0',
+    border: isDark ? palette.border : '#D6EDE7',
     danger: '#E8435A',
     muted: isDark ? palette.secondaryText : 'rgba(0,0,0,0.60)',
-    soft: isDark ? palette.soft : '#F4F6FF',
+    soft: isDark ? palette.soft : '#E9F6F2',
     surface: isDark ? palette.surface : '#FFFFFF',
     text: isDark ? palette.text : '#000000',
   };

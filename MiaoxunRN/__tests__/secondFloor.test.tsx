@@ -31,6 +31,10 @@ import { useMiaoxunSession } from '../src/features/session/useMiaoxunSession';
 import { palettes } from '../src/shared/theme';
 import { AIAssistGestureSurface } from '../src/features/assist/AIAssistGestureSurface';
 
+// The files panel lists app-generated outcomes; keep these tests off the network.
+jest.mock('../src/services/api/agentWorkspaceApi', () => ({
+  agentWorkspaceApi: { list: jest.fn(() => new Promise(() => undefined)) },
+}));
 jest.mock('../src/features/assist/AIAssistProvider', () => ({
   useAIAssist: () => mockAssist,
 }));
@@ -67,6 +71,28 @@ const sessionForFloor = (overrides = {}) =>
   ({
     token: 'unit-test',
     appearance: 'light',
+    // The settings panel reads visibility and the language setter, so the
+    // session stub carries them rather than leaving them undefined.
+    language: 'zh',
+    profileVisibility: {
+      showBio: true,
+      showAiId: true,
+      showCounts: true,
+      showCommunity: true,
+      showActivityArea: true,
+      showCollections: true,
+      showPosts: true,
+      showAlbum: true,
+      showDiary: true,
+      showMusic: true,
+      showFiles: true,
+      showFollowingList: true,
+      showFollowersList: true,
+    },
+    setAppearance: jest.fn(),
+    setLanguage: jest.fn(),
+    updateProfileVisibility: jest.fn(async () => undefined),
+    signOut: jest.fn(async () => undefined),
     profile: emptyProfile,
     stationContent: emptyStationContent,
     agents: [],
@@ -87,7 +113,10 @@ const floorProps = (session = sessionForFloor()) => ({
   onOpenFriendThread: jest.fn(),
   onOpenProfile: jest.fn(),
   onOpenSettings: jest.fn(),
+  onOpenDeleteAccount: jest.fn(),
   onOpenNotices: jest.fn(),
+  onOpenPostComposer: jest.fn(),
+  onOpenWorkspace: jest.fn(),
 });
 let renderer: TestRenderer.ReactTestRenderer;
 const text = () =>
@@ -186,6 +215,32 @@ test('blank floor has no panel; tools toggle independently and keep file drafts 
   act(() => tool('files').props.onPress());
   expect(tool('files').props.accessibilityState.selected).toBe(false);
   expect(dismiss).toHaveBeenCalled();
+});
+
+test('publish opens its panel and settings acts instead of selecting a panel', async () => {
+  const props = floorProps();
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+
+  // The design's floor has six tools; 发布 and 设置 are the user's additions.
+  act(() => tool('publish').props.onPress());
+  expect(tool('publish').props.accessibilityState.selected).toBe(true);
+  expect(text()).toContain('发布动态');
+  expect(text()).toContain('写日记');
+  // 写日记 moved here with the composer; it must open the diary sheet.
+  act(() => button('写日记').props.onPress());
+  expect(text()).toContain('今天想记录什么');
+
+  // Switching tools leaves the diary sheet; settings is reached the same way.
+  // Settings is now a floor panel too, not a punt to the full-screen modal.
+  act(() => tool('albums').props.onPress());
+  act(() => tool('settings').props.onPress());
+  expect(tool('settings').props.accessibilityState.selected).toBe(true);
+  expect(props.onOpenSettings).not.toHaveBeenCalled();
+  expect(text()).toContain('主页展示');
+  expect(text()).toContain('展示社区');
+  expect(text()).toContain('展示活动区域');
 });
 
 test('file save gates every floor exit and tool switch until failure, preserving the draft', async () => {
@@ -523,6 +578,7 @@ test('file detail shows actual preview and explicit unsupported/unknown states, 
   const props = {
     palette: palettes.light,
     language: 'zh' as const,
+    onOpenWorkspace: jest.fn(),
     session: sessionForFloor({
       stationContent: {
         ...emptyStationContent,

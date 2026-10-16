@@ -235,10 +235,14 @@ test.each(['header', 'system'])(
     await act(async () => {
       renderer = TestRenderer.create(<App />);
     });
-    act(() => renderer.root.findByType(BottomBar).props.onSelectTab('station'));
     const station = () =>
       renderer.root.findByProps({ testID: 'retained-station-screen' });
-    await act(async () => station().props.onOpenWorkspace(w));
+    // A task's workspace covers the retained station; the station no longer
+    // opens workspaces itself now that outcomes live in the second floor.
+    await act(async () =>
+      renderer.root.findByType(MiaoTaskFeed).props.onOpenWorkspace(w),
+    );
+    act(() => renderer.root.findByType(BottomBar).props.onSelectTab('station'));
     expect(station().props.active).toBe(false);
     await act(async () => {
       if (exit === 'header')

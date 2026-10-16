@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  AccessibilityInfo,
   ActivityIndicator,
   Animated,
   AppState,
@@ -23,6 +22,12 @@ import {
   startSpeechRecognition,
 } from '../../services/speechToText';
 import { workspacePalette } from '../../shared/workspacePalette';
+import {
+  easeOutCss,
+  entranceCurve,
+  radialCurve,
+  useReduceMotion,
+} from '../../shared/useReduceMotion';
 import { triggerAIAssistHaptic } from '../assist/assistHaptics';
 
 type Action = 'keyboard' | 'butler' | 'feed';
@@ -75,10 +80,21 @@ export function VoiceShortcutDock({
   const colors = workspacePalette(palette);
   const triggerBackgroundColor = tone === 'xun' ? '#079FA4' : colors.text;
   const options = shortcutOptions;
-  const reveal = useRef(new Animated.Value(0)).current;
+  // Opacity and position ease on different curves in the prototype, and the
+  // third option alone lags .035s, so each option owns its own pair of values.
+  const optionFade = useRef(
+    shortcutOptions.map(() => new Animated.Value(0)),
+  ).current;
+  const optionSlide = useRef(
+    shortcutOptions.map(() => new Animated.Value(0)),
+  ).current;
+  // Prototype `.voice-input-panel` enters from `translateY(-12px) scale(.98)`
+  // over `opacity .22s ease` + `transform .28s cubic-bezier(.2,.8,.2,1)`.
+  const statusFade = useRef(new Animated.Value(0)).current;
+  const statusSlide = useRef(new Animated.Value(0)).current;
   const [expanded, setExpanded] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
-  const [reduceMotion, setReduceMotion] = useState(false);
+  const reduceMotion = useReduceMotion();
   const [phase, setPhase] = useState<Phase>('idle');
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
@@ -86,6 +102,39 @@ export function VoiceShortcutDock({
     'prepare' | 'settings' | null
   >(null);
   const [selected, setSelected] = useState<Action | null>(null);
+  const statusShown =
+    (expanded && phase !== 'idle') ||
+    ['error', 'authorizing', 'permissionReady', 'finishing'].includes(phase);
+  useEffect(() => {
+    statusFade.stopAnimation();
+    statusSlide.stopAnimation();
+    if (!statusShown) {
+      statusFade.setValue(0);
+      statusSlide.setValue(0);
+      return;
+    }
+    if (reduceMotion) {
+      statusFade.setValue(1);
+      statusSlide.setValue(1);
+      return;
+    }
+    const animation = Animated.parallel([
+      Animated.timing(statusFade, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+        useNativeDriver: true,
+      }),
+      Animated.timing(statusSlide, {
+        toValue: 1,
+        duration: 280,
+        easing: Easing.bezier(...entranceCurve),
+        useNativeDriver: true,
+      }),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [statusShown, statusFade, statusSlide, reduceMotion]);
   const callbacksRef = useRef(callbacks);
   callbacksRef.current = callbacks;
   const expandedRef = useRef(false);
@@ -103,6 +152,7 @@ export function VoiceShortcutDock({
   const lastPoint = useRef({ x: 0, y: 0 });
   const pendingAction = useRef<Action | null>(null);
   const pulse = useRef(new Animated.Value(0)).current;
+  const pulseLate = useRef(new Animated.Value(0)).current;
   const changePhase = (value: Phase) => {
     phaseRef.current = value;
     setPhase(value);
@@ -334,46 +384,54 @@ export function VoiceShortcutDock({
     }),
   ).current;
   useEffect(() => {
-    let mounted = true;
-    const subscription = AccessibilityInfo.addEventListener(
-      'reduceMotionChanged',
-      setReduceMotion,
-    );
-    AccessibilityInfo.isReduceMotionEnabled().then(value => {
-      if (mounted) setReduceMotion(value);
-    });
-    return () => {
-      mounted = false;
-      subscription.remove();
-    };
-  }, []);
-  useEffect(() => {
     if (!menuVisible) return;
-    reveal.stopAnimation();
+    optionFade.forEach(value => value.stopAnimation());
+    optionSlide.forEach(value => value.stopAnimation());
     if (reduceMotion) {
-      reveal.setValue(expanded ? 1 : 0);
+      optionFade.forEach(value => value.setValue(expanded ? 1 : 0));
+      optionSlide.forEach(value => value.setValue(expanded ? 1 : 0));
       if (!expanded) setMenuVisible(false);
       return;
     }
-    const animation = expanded
-      ? Animated.spring(reveal, {
-          toValue: 1,
-          damping: 24,
-          stiffness: 420,
-          mass: 0.65,
+    // Prototype `.radial-option` is `opacity .18s ease` + `transform .38s
+    // cubic-bezier(.18,.88,.28,1.18)`, and collapse starts from `scale(.42)`.
+    // Only the third option declares `transition-delay: .035s`; the `.07s` rule
+    // targets `:nth-of-type(4)`, which is the trigger, so it matches nothing.
+    const target = expanded ? 1 : 0;
+    const fade = (value: Animated.Value, delay: number) =>
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(value, {
+          toValue: target,
+          duration: 180,
+          easing: Easing.bezier(0.25, 0.1, 0.25, 1),
           useNativeDriver: true,
-        })
-      : Animated.timing(reveal, {
-          toValue: 0,
-          duration: 140,
-          easing: Easing.out(Easing.cubic),
+        }),
+      ]);
+    const slide = (value: Animated.Value, delay: number) =>
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(value, {
+          toValue: target,
+          duration: 380,
+          easing: Easing.bezier(...radialCurve),
           useNativeDriver: true,
-        });
+        }),
+      ]);
+    const animation = Animated.parallel(
+      options.flatMap((_option, index) => {
+        const delay = index === 2 ? 35 : 0;
+        return [
+          fade(optionFade[index], delay),
+          slide(optionSlide[index], delay),
+        ];
+      }),
+    );
     animation.start(({ finished }) => {
       if (finished && !expandedRef.current) setMenuVisible(false);
     });
     return () => animation.stop();
-  }, [expanded, menuVisible, reduceMotion, reveal]);
+  }, [expanded, menuVisible, options, optionFade, optionSlide, reduceMotion]);
   useEffect(() => {
     if (!active) actionsRef.current.close();
   }, [active]);
@@ -400,44 +458,87 @@ export function VoiceShortcutDock({
   useEffect(() => {
     if (phase !== 'listening' || reduceMotion) {
       pulse.setValue(0);
+      pulseLate.setValue(0);
       return;
     }
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
+    // Prototype draws two rings on the same `voice-pulse 1.45s ease-out infinite`
+    // (`::before` and `::after`), and only the `::after` carries
+    // `animation-delay: .55s`. A CSS delay applies to the first iteration only,
+    // so the second ring is a delay followed by its own loop.
+    const ring = (value: Animated.Value) =>
+      Animated.loop(
+        Animated.timing(value, {
           toValue: 1,
-          duration: 900,
+          duration: 1450,
+          easing: Easing.bezier(...easeOutCss),
           useNativeDriver: true,
         }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [phase, pulse, reduceMotion]);
+      );
+    const first = ring(pulse);
+    const second = Animated.sequence([Animated.delay(550), ring(pulseLate)]);
+    first.start();
+    second.start();
+    return () => {
+      first.stop();
+      second.stop();
+    };
+  }, [phase, pulse, pulseLate, reduceMotion]);
   if (!active) return null;
-  const optionText = (action: Action) =>
-    textFor(
+  // Prototype `#miaoVoiceCluster` reads 键盘 / 妙管家 / 瀑布, while
+  // `#xunVoiceCluster` reads 直接说 / 总结未读 / 替我规划 — the same three
+  // directions carry different meanings on each tab.
+  const optionText = (action: Action) => {
+    if (tone === 'xun') {
+      return textFor(
+        language,
+        action === 'keyboard'
+          ? '直接说'
+          : action === 'butler'
+          ? '总结未读'
+          : '替我规划',
+        action === 'keyboard'
+          ? 'Speak'
+          : action === 'butler'
+          ? 'Summarize unread'
+          : 'Plan for me',
+      );
+    }
+    return textFor(
+      language,
+      action === 'keyboard' ? '键盘' : action === 'butler' ? '妙管家' : '瀑布',
+      action === 'keyboard' ? 'Type' : action === 'butler' ? 'Butler' : 'Feed',
+    );
+  };
+  const optionAccessibilityLabel = (action: Action) => {
+    if (tone === 'xun') {
+      return textFor(
+        language,
+        action === 'keyboard'
+          ? '直接说'
+          : action === 'butler'
+          ? '总结未读'
+          : '替我规划',
+        action === 'keyboard'
+          ? 'Speak'
+          : action === 'butler'
+          ? 'Summarize unread'
+          : 'Plan for me',
+      );
+    }
+    return textFor(
       language,
       action === 'keyboard'
-        ? '键盘'
+        ? '切换到键盘'
         : action === 'butler'
-        ? '妙管家'
-        : tone === 'xun'
-        ? '任务'
-        : '瀑布',
+        ? '打开妙管家'
+        : '切换到瀑布',
       action === 'keyboard'
-        ? 'Type'
+        ? 'Switch to keyboard'
         : action === 'butler'
-        ? 'Butler'
-        : tone === 'xun'
-        ? 'Tasks'
-        : 'Feed',
+        ? 'Open Miao butler'
+        : 'Switch task feed layout',
     );
+  };
   const status =
     error ||
     draft ||
@@ -476,15 +577,29 @@ export function VoiceShortcutDock({
           onPress={close}
         />
       ) : null}
-      {(expanded && phase !== 'idle') ||
-      ['error', 'authorizing', 'permissionReady', 'finishing'].includes(
-        phase,
-      ) ? (
-        <View
+      {statusShown ? (
+        <Animated.View
           accessibilityLiveRegion="polite"
           style={[
             s.status,
             { backgroundColor: colors.surface, borderColor: colors.border },
+            {
+              opacity: statusFade,
+              transform: [
+                {
+                  translateY: statusSlide.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-12, 0],
+                  }),
+                },
+                {
+                  scale: statusSlide.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.98, 1],
+                  }),
+                },
+              ],
+            },
           ]}
         >
           <View style={[s.statusIcon, { backgroundColor: colors.soft }]}>
@@ -577,11 +692,11 @@ export function VoiceShortcutDock({
           >
             <X size={18} color={colors.secondaryText} />
           </Pressable>
-        </View>
+        </Animated.View>
       ) : null}
       <View pointerEvents="box-none" style={s.cluster}>
         {menuVisible
-          ? options.map(option => (
+          ? options.map((option, index) => (
               <Animated.View
                 key={option.action}
                 pointerEvents={expanded ? 'auto' : 'none'}
@@ -593,14 +708,24 @@ export function VoiceShortcutDock({
                   s.optionPosition,
                   {
                     bottom: bottomOffset - 1,
-                    opacity: reveal,
+                    opacity: optionFade[index],
                     transform: [
-                      { translateX: Animated.multiply(reveal, option.x) },
-                      { translateY: Animated.multiply(reveal, option.y) },
                       {
-                        scale: reveal.interpolate({
+                        translateX: Animated.multiply(
+                          optionSlide[index],
+                          option.x,
+                        ),
+                      },
+                      {
+                        translateY: Animated.multiply(
+                          optionSlide[index],
+                          option.y,
+                        ),
+                      },
+                      {
+                        scale: optionSlide[index].interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0.65, 1],
+                          outputRange: [0.42, 1],
                         }),
                       },
                     ],
@@ -610,23 +735,7 @@ export function VoiceShortcutDock({
                 <Pressable
                   key={option.action}
                   accessibilityRole="button"
-                  accessibilityLabel={textFor(
-                    language,
-                    option.action === 'keyboard'
-                      ? '切换到键盘'
-                      : option.action === 'butler'
-                      ? '打开妙管家'
-                      : tone === 'xun'
-                      ? '查看任务'
-                      : '切换到瀑布',
-                    option.action === 'keyboard'
-                      ? 'Switch to keyboard'
-                      : option.action === 'butler'
-                      ? 'Open Miao butler'
-                      : tone === 'xun'
-                      ? 'View tasks'
-                      : 'Switch task feed layout',
-                  )}
+                  accessibilityLabel={optionAccessibilityLabel(option.action)}
                   accessibilityState={{
                     selected: selected === option.action,
                     disabled: !expanded,
@@ -675,31 +784,37 @@ export function VoiceShortcutDock({
               </Animated.View>
             ))
           : null}
-        {phase === 'listening' ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              s.pulse,
-              {
-                bottom: bottomOffset + 2,
-                borderColor: colors.text,
-                opacity: pulse.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.35, 0],
-                }),
-                transform: [
-                  { rotate: '45deg' },
+        {phase === 'listening'
+          ? [pulse, pulseLate].map((value, index) => (
+              // Prototype `voice-pulse`: `from { opacity: .8; scale(.82) }` →
+              // `to { opacity: 0; scale(1.38) }`, drawn twice with the second
+              // ring delayed .55s.
+              <Animated.View
+                key={index === 0 ? 'pulse-first' : 'pulse-late'}
+                pointerEvents="none"
+                style={[
+                  s.pulse,
                   {
-                    scale: pulse.interpolate({
+                    bottom: bottomOffset + 2,
+                    borderColor: colors.text,
+                    opacity: value.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [1, 1.6],
+                      outputRange: [0.8, 0],
                     }),
+                    transform: [
+                      { rotate: '45deg' },
+                      {
+                        scale: value.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.82, 1.38],
+                        }),
+                      },
+                    ],
                   },
-                ],
-              },
-            ]}
-          />
-        ) : null}
+                ]}
+              />
+            ))
+          : null}
         <View
           {...responder.panHandlers}
           accessible

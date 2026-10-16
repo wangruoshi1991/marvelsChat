@@ -7,8 +7,19 @@ export const stationLayoutStyles = {
     paddingBottom: 8,
     paddingHorizontal: 14,
     paddingTop: 10,
+    // Both this card and the switch dock as sticky headers. The switch wrapper
+    // carries `zIndex: 10`, so without a higher zIndex here its opaque
+    // background paints over the 64px collapsed card.
+    zIndex: 20,
   },
   stationPanelWrap: { paddingHorizontal: 14, paddingTop: 8 },
+  // Page-level overflow: the card and the switch keep only design elements.
+  stationOverflowRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    minHeight: 28,
+  },
   stationTabHeader: {
     borderBottomWidth: 0,
     paddingHorizontal: 8,
@@ -197,7 +208,7 @@ export const stationLayoutStyles = {
     minWidth: 54,
     paddingHorizontal: 10,
   },
-  stationEditorPrimaryBackground: { backgroundColor: '#2012D9' },
+  stationEditorPrimaryBackground: { backgroundColor: '#0B8271' },
   stationEditorSaveText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   stationEditorBody: { paddingBottom: 40 },
   stationCreateComposer: {
@@ -331,9 +342,9 @@ export const stationLayoutStyles = {
     justifyContent: 'center',
     minHeight: 34,
   },
-  stationContentFilterSelected: { backgroundColor: '#F4F6FF' },
+  stationContentFilterSelected: { backgroundColor: '#E9F6F2' },
   stationContentFilterText: { fontSize: 12, fontWeight: '700' },
-  stationContentFilterTextSelected: { color: '#2012D9' },
+  stationContentFilterTextSelected: { color: '#0B8271' },
   stationContentMonthGroup: { gap: 8 },
   stationContentMonthTitle: { fontSize: 12, fontWeight: '700', paddingLeft: 2 },
   stationContentMonthItems: { gap: 8 },
@@ -451,7 +462,7 @@ export const stationLayoutStyles = {
   stationEcosystemEyebrow: { color: 'rgba(0,0,0,0.56)', fontSize: 12 },
   stationEcosystemScore: { color: '#000000', fontSize: 46, fontWeight: '500' },
   stationEcosystemScoreLabel: {
-    color: '#2012D9',
+    color: '#0B8271',
     fontSize: 12,
     fontWeight: '700',
   },

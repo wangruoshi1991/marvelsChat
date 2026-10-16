@@ -110,7 +110,7 @@ const postInteractionTree = ({
         likedByMe: false,
         favoritedByMe: false,
       }))}
-      onOpenPostComposer={jest.fn()}
+      onOpenDiaryDetail={jest.fn()}
     />
   </AIAssistProvider>
 );
@@ -125,7 +125,7 @@ describe('Station post experience', () => {
     jest.restoreAllMocks();
   });
 
-  it('maps the five station tabs to the new information architecture', async () => {
+  it('maps the station tabs to the prototype: posts and my agents', async () => {
     const onChange = jest.fn();
 
     await ReactTestRenderer.act(async () => {
@@ -133,14 +133,13 @@ describe('Station post experience', () => {
         <StationTabs
           language="zh"
           palette={palettes.light}
-          value="station"
+          value="posts"
           onChange={onChange}
-          onOpenSettings={jest.fn()}
         />,
       );
     });
 
-    const tabValues = ['station', 'posts', 'outcomes', 'agents', 'social'];
+    const tabValues = ['posts', 'agents'];
     const tabs = tabValues.map(value =>
       renderer!.root
         .findAllByProps({ testID: `station-tab-${value}` })
@@ -149,20 +148,14 @@ describe('Station post experience', () => {
     const labels = renderer!.root
       .findAllByType(Text)
       .map(node => node.props.children);
-    expect(labels).toEqual(
-      expect.arrayContaining(['第一面', '生活', '成果', '生态', '其他']),
-    );
+    expect(labels).toEqual(expect.arrayContaining(['动态', '我的 Agent']));
+    for (const removed of ['第一面', '生活', '成果', '生态', '其他'])
+      expect(labels).not.toContain(removed);
 
     ReactTestRenderer.act(() => {
       tabs.forEach(tab => tab!.props.onPress());
     });
-    expect(onChange.mock.calls.map(([value]) => value)).toEqual([
-      'station',
-      'posts',
-      'outcomes',
-      'agents',
-      'social',
-    ]);
+    expect(onChange.mock.calls.map(([value]) => value)).toEqual(tabValues);
   });
 
   it('shows actionable real records without fabricated total or AI output statistics', async () => {
@@ -247,7 +240,6 @@ describe('Station post experience', () => {
   });
 
   it('matches the compact design and caps the image preview at three items', async () => {
-    const onOpenPostComposer = jest.fn();
     await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <AIAssistProvider onAskButler={jest.fn()} routeKey="station-posts">
@@ -269,18 +261,19 @@ describe('Station post experience', () => {
               likedByMe: false,
               favoritedByMe: false,
             }))}
-            onOpenPostComposer={onOpenPostComposer}
+            onOpenDiaryDetail={jest.fn()}
           />
         </AIAssistProvider>,
       );
     });
 
-    ReactTestRenderer.act(() => {
-      renderer!.root
-        .findByProps({ accessibilityLabel: '发布动态' })
-        .props.onPress();
-    });
-    expect(onOpenPostComposer).toHaveBeenCalledTimes(1);
+    // Publishing moved to the second floor, so the 我 page renders the timeline
+    // with no composer row above it.
+    expect(
+      renderer!.root.findAll(
+        node => node.props.accessibilityLabel === '发布动态',
+      ),
+    ).toHaveLength(0);
 
     const remoteImages = renderer!.root
       .findAllByType(Image)
@@ -297,20 +290,26 @@ describe('Station post experience', () => {
       .map(node => node.props.source);
 
     expect(remoteImages).toHaveLength(3);
-    expect(textValues).toContain('今天');
-    expect(textValues).toContain('照片');
-    expect(textValues).not.toContain('图片');
+    // me-post-author-copy: one 「今天 10:32」 line, with the city appended only
+    // when the post carries one.
+    expect(
+      textValues.some(
+        value =>
+          typeof value === 'string' && /^今天 \d{1,2}:\d{2}$/.test(value),
+      ),
+    ).toBe(true);
+    // me-post-kind pill replaces the old date-first header.
+    expect(textValues).toContain('图文');
+    expect(textValues).not.toContain('照片');
     expect(textValues).toContain('+2');
     expect(textValues).toContain(32);
     expect(textValues).toContain(6);
     expect(textValues).toContain(8);
-    expect(imageSources).toContain(stationPostIconAssets.time);
-    expect(imageSources).toContain(stationPostIconAssets.photo);
+    expect(imageSources).not.toContain(stationPostIconAssets.time);
+    expect(imageSources).not.toContain(stationPostIconAssets.photo);
   });
 
   it('keeps the life composer available when there are no posts', async () => {
-    const onOpenPostComposer = jest.fn();
-
     await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <AIAssistProvider onAskButler={jest.fn()} routeKey="station-posts">
@@ -332,19 +331,15 @@ describe('Station post experience', () => {
               likedByMe: false,
               favoritedByMe: false,
             }))}
-            onOpenPostComposer={onOpenPostComposer}
+            onOpenDiaryDetail={jest.fn()}
           />
         </AIAssistProvider>,
       );
     });
 
-    expect(renderer!.root.findByProps({ children: '正在发生' })).toBeTruthy();
-    ReactTestRenderer.act(() => {
-      renderer!.root
-        .findByProps({ accessibilityLabel: '发布动态' })
-        .props.onPress();
-    });
-    expect(onOpenPostComposer).toHaveBeenCalledTimes(1);
+    expect(
+      renderer!.root.findAll(node => node.props.children === '正在发生'),
+    ).toHaveLength(0);
   });
 
   it('refreshes interaction state when the same post receives new server props', async () => {
@@ -420,7 +415,7 @@ describe('Station post experience', () => {
             onActionMessage={jest.fn()}
             onDeletePost={jest.fn(async () => undefined)}
             onSetStationPostInteraction={onSetStationPostInteraction}
-            onOpenPostComposer={jest.fn()}
+            onOpenDiaryDetail={jest.fn()}
           />
         </AIAssistProvider>,
       );
@@ -503,7 +498,7 @@ describe('Station post experience', () => {
     ).toHaveLength(0);
   });
 
-  it('opens the action menu from more and deletes only after explicit confirmation', async () => {
+  it('opens the long-press action menu and deletes only after explicit confirmation', async () => {
     jest
       .spyOn(View.prototype, 'measureInWindow')
       .mockImplementation(callback => callback(0, 59, 393, 760));
@@ -514,10 +509,12 @@ describe('Station post experience', () => {
         postInteractionTree({ onAskButler: jest.fn(), onDeletePost }),
       );
     });
+    // The design has no visible "more" button; the card's long-press menu is
+    // the only route to delete, so open it the way a person would.
     ReactTestRenderer.act(() => {
       renderer!.root
-        .findByProps({ accessibilityLabel: '更多' })
-        .props.onPress(pressPoint);
+        .find(node => typeof node.props.onLongPress === 'function')!
+        .props.onLongPress(pressPoint);
     });
     expect(alert).not.toHaveBeenCalled();
     expect(onDeletePost).not.toHaveBeenCalled();
@@ -585,5 +582,122 @@ describe('Station post experience', () => {
       renderer!.root.findAllByType(Text).map(node => node.props.children),
     ).toContain('动态服务暂时不可用');
     expect(onActionError).toHaveBeenCalledWith(publishError);
+  });
+});
+
+describe('Station posts timeline with diary entries', () => {
+  it('merges diary entries into the posts timeline newest first and opens the diary detail', async () => {
+    const diary = {
+      id: 'diary-1',
+      userId: 'user-1',
+      title: '周末散步',
+      body: '江边的风很舒服。',
+      mood: 'calm',
+      visibility: 'private' as const,
+      source: 'manual' as const,
+      createdAt: '2026-10-15T10:00:00.000Z',
+      updatedAt: '2026-10-15T10:00:00.000Z',
+    };
+    const olderPost = {
+      ...post,
+      id: 'post-old',
+      media: [],
+      createdAt: '2026-10-14T10:00:00.000Z',
+    };
+    const onOpenDiaryDetail = jest.fn();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AIAssistProvider onAskButler={jest.fn()} routeKey="station-posts">
+          <StationPostsPanel
+            language="zh"
+            ownedAgents={[]}
+            palette={palettes.light}
+            profile={emptyProfile}
+            renderUserAvatar={renderUserAvatar}
+            stationContent={{
+              ...emptyStationContent,
+              posts: [olderPost],
+              diaryEntries: [diary],
+            }}
+            token="token"
+            onActionError={jest.fn()}
+            onActionMessage={jest.fn()}
+            onDeletePost={jest.fn(async () => undefined)}
+            onSetStationPostInteraction={jest.fn()}
+            onOpenDiaryDetail={onOpenDiaryDetail}
+          />
+        </AIAssistProvider>,
+      );
+    });
+    const texts = renderer!.root
+      .findAllByType(Text)
+      .map(node => node.props.children)
+      .flat()
+      .filter(value => typeof value === 'string');
+    expect(texts.indexOf('周末散步')).toBeGreaterThan(-1);
+    expect(texts.indexOf('周末散步')).toBeLessThan(
+      texts.indexOf(olderPost.body),
+    );
+
+    ReactTestRenderer.act(() => {
+      renderer!.root
+        .findByProps({ testID: 'station-diary-diary-1' })
+        .props.onPress();
+    });
+    expect(onOpenDiaryDetail).toHaveBeenCalledWith('diary-1');
+
+    // The diary entry point moved to the second floor's publish panel.
+    expect(
+      renderer!.root.findAll(
+        node =>
+          node.props.accessibilityLabel === '写日记' &&
+          typeof node.props.onPress === 'function',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('shows the diary timeline instead of the empty state when only diaries exist', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AIAssistProvider onAskButler={jest.fn()} routeKey="station-posts">
+          <StationPostsPanel
+            language="zh"
+            ownedAgents={[]}
+            palette={palettes.light}
+            profile={emptyProfile}
+            renderUserAvatar={renderUserAvatar}
+            stationContent={{
+              ...emptyStationContent,
+              diaryEntries: [
+                {
+                  id: 'diary-only',
+                  userId: 'user-1',
+                  title: '只有日记',
+                  body: '',
+                  mood: '',
+                  visibility: 'private',
+                  source: 'manual',
+                  createdAt: null,
+                  updatedAt: null,
+                },
+              ],
+            }}
+            token="token"
+            onActionError={jest.fn()}
+            onActionMessage={jest.fn()}
+            onDeletePost={jest.fn(async () => undefined)}
+            onSetStationPostInteraction={jest.fn()}
+            onOpenDiaryDetail={jest.fn()}
+          />
+        </AIAssistProvider>,
+      );
+    });
+    const texts = renderer!.root
+      .findAllByType(Text)
+      .map(node => node.props.children);
+    expect(texts).toContain('只有日记');
+    expect(texts).not.toContain('还没有动态');
   });
 });

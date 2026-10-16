@@ -124,12 +124,12 @@ agents/
 
 | 设计元素 | 代码实现 | 状态 |
 |---|---|---|
-| 相册（查看/选择图片视频） | `SecondFloorAlbum.tsx` | ✅ 已有且一致 |
+| 相册（查看/选择图片视频） | PDF **26**；`SecondFloorAlbums.tsx` | ✅ 已有且一致 |
 | 文件（查看/选择文件） | `SecondFloorFiles.tsx` | ✅ 已有且一致 |
 | 关系（好友列表，非亲密度） | `SecondFloorRelationships.tsx` | ✅ 已有且一致（显示好友列表） |
 | 资产（积分/会员/钱包） | `SecondFloorAssets.tsx` | ✅ 已有且一致 |
-| 信息海（知识库/笔记） | `SecondFloorOcean.tsx` | ✅ 已有且一致 |
-| 权限（隐私/授权管理） | `SecondFloorPermissions.tsx` | ✅ 已有且一致 |
+| 信息海（知识库/笔记） | `SecondFloorInformation.tsx` | ✅ 已有且一致 |
+| 权限（隐私/授权管理） | PDF **31**；`SecondFloorPermissions.tsx` | ✅ 已有且一致 |
 | 横向滑动切换 | `SecondFloorPanelHost.tsx` | ✅ 已有且一致 |
 | 下拉关闭二楼 | `AIAssistGestureSurface.tsx` 手势 | ✅ 已有且一致 |
 
@@ -139,14 +139,19 @@ agents/
 
 #### 2.4.1 小站整体结构（page-me）
 
+页码：PDF **33**（动态）/ **34**（收缩状态）/ **35**（我的 Agent）。
+（注意：PDF **31** 是二楼「权限」，不属于「我」页。）
+
 | 设计元素 | 代码实现 | 状态 |
 |---|---|---|
-| 顶部个人信息卡（头像/昵称/简介/关注数/粉丝数/获赞数） | `StationAvatarSpace.tsx` + `StationPageHeading.tsx` | ✅ 已有且一致 |
-| 两个 Tab：「动态 / 我的 Agent」 | 设计原型为两个 Tab | 🔴 代码实现为 **5 个 Tab** |
-| 动态 Tab 内容：图文/视频/投票帖子 | 设计原型明确包含三种帖子类型 | 🟡 代码支持图文/视频，**不支持投票** |
-| Agent Tab 内容：卡片含原创标记、添加时间、等级、星标数 | 设计原型明确字段 | 🔴 代码 `OwnedAgentDTO` **缺失 level/star/original/addedAt** |
+| 信息卡：「我的信息」小标 + 3D 形象区（约 35% 高度）+ `ID · <真实 AI ID>` + 位置行 | PDF 33；`StationHeader.tsx` + `StationAvatarSpace.tsx`（`embedded`） | ✅ 本轮已按 33 页调整 |
+| 上滑收缩为头像 + 名称 | PDF 34；`StationScreen.tsx`（`profileCollapsed`） | ✅ 本轮已实现 |
+| 两个 Tab：「动态 / 我的 Agent」 | PDF 33 / 35 | ✅ 本轮已改为两项 |
+| 动态 Tab 内容：图文/视频/投票帖子 | PDF 33；`StationPostsPanel.tsx` | 🟡 支持图文/视频与日记，**不支持投票** |
+| 动态无区块标题、无浅色大字水印 | PDF 33 | ✅ 本轮已移除 |
+| Agent Tab 为纵向列表（原创标记/添加时间/等级/星标数） | PDF 35；`StationAgentCards.tsx` | 🟡 已改为纵向；`OwnedAgentDTO` 仍**缺失 level/star/original/addedAt** |
 
-#### 2.4.2 小站当前 5 Tab 实现（`StationPanels.tsx`）
+#### 2.4.2 小站 Tab 实现（`StationPanels.tsx`）——本轮改动前
 
 | Tab 名称（代码） | 内容 | 设计对应 |
 |---|---|---|
@@ -156,7 +161,18 @@ agents/
 | **生态**（agents） | `StationAgentsPanel.tsx`：我的 Agent 列表 | ✅ 对应设计「我的 Agent Tab」 |
 | **其他**（social） | `StationSocialPanel.tsx`：关注/粉丝/获赞列表 | 🔴 设计中此为信息卡，非独立 Tab |
 
-**结论**：代码比设计多 3 个 Tab（第一面/成果/其他），需要按设计合并为「动态 / 我的 Agent」两 Tab 结构。
+**结论**：本轮已把 Tab 收敛为「动态 / 我的 Agent」两项。上表的「第一面」「成果」「其他」内容按 PDF 重新落位：
+
+| 原内容 | 现位置 | 设计依据 |
+|---|---|---|
+| 资料头部、3D 形象 | 信息卡（常驻切换栏上方） | PDF 33 |
+| 个人日记 | 动态（与图文/视频并列，过渡卡片） | 无直接对应页，按「动态」归并 |
+| 个人相册 | 二楼 · 相册 | PDF 26 |
+| AI 伙伴宫格 | 我的 Agent | PDF 35 |
+| 成果（页面/分镜/脚本/穿搭） | 二楼 · 文件 →「App 生成文件」 | PDF 27 |
+| 关注/粉丝/获赞、妙点、位置 | 二楼 · 关系 / 资产；信息卡位置行 | PDF 28 / 29 / 33 |
+
+`StationHome.tsx`、`StationSocialPanel.tsx` 与 `StationOutcomesPanel` 的旧 Tab 分支已不再被引用，待清理阶段处理。
 
 #### 2.4.3 小站子功能
 

@@ -159,7 +159,12 @@ test('task cards show only their recorded executor and open the original task wi
   expect(text()).toContain(recorded.goal);
   expect(text()).toContain('相册管理');
   expect(text()).toContain('正在执行');
-  expect(text().indexOf(recorded.goal)).toBeLessThan(
+  // The design puts the Agent strip (with its status pill) above the task
+  // description, so the goal now reads after both.
+  expect(text().indexOf('相册管理')).toBeLessThan(
+    text().indexOf(recorded.goal),
+  );
+  expect(text().indexOf(recorded.goal)).toBeGreaterThan(
     text().indexOf('正在执行'),
   );
   expect(text()).not.toMatch(

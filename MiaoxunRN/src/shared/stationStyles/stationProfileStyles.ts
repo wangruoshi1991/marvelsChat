@@ -1,89 +1,138 @@
 import { spacing } from '../theme';
 
 export const stationProfileStyles = {
+  // Prototype `.me-profile`: 12px radius, 18px padding. Its `min-height:
+  // 35dvh` is applied at render time, where the window height is known.
   stationIdentityCard: {
-    borderRadius: 4,
-    gap: 12,
-    padding: 12,
+    borderRadius: 12,
+    gap: 0,
+    padding: 18,
   },
-  stationIdentityTopRow: {
+  // Prototype `.me-profile-kicker`: teal eyebrow. Its colour is the design's
+  // own `#15938e`, not the product accent.
+  stationIdentityKicker: {
+    color: '#15938E',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.9,
+    marginBottom: 8,
+  },
+  // Prototype `.me-profile-main`: two columns — the avatar cell at 42%, the
+  // identity copy filling the rest — with an 18px gap.
+  stationIdentityTopRowWithStage: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 12,
+    gap: 18,
   },
-  stationIdentityAvatar: {
-    borderRadius: 4,
-    height: 60,
+  // Prototype `.me-avatar-wrap`: 9px radius, pale teal plate. Its width and
+  // height are animated against the measured row, so no flex basis here — a
+  // `flexBasis` would outrank the animated `width` in Yoga.
+  stationIdentityStage: {
+    backgroundColor: '#C8F0EF',
+    flexGrow: 0,
+    minWidth: 0,
     overflow: 'hidden',
-    width: 60,
+    position: 'relative',
   },
-  stationIdentityCopy: { flex: 1, gap: 3, minWidth: 0 },
-  stationIdentityEditButton: {
+  // The 3D stage and the 46px fallback occupy the same box, cross-fading as
+  // the card collapses, so the WebView is resized rather than remounted.
+  stationIdentityStageFiller: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  stationIdentityAvatarFiller: {
     alignItems: 'center',
-    borderRadius: 999,
-    height: 36,
+    bottom: 0,
     justifyContent: 'center',
-    width: 36,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
   },
-  stationIdentityName: { fontSize: 16, fontWeight: '600', lineHeight: 22 },
-  stationIdentityIdRow: {
+  // Prototype `.me-avatar-badge`: 23px online check on the block's corner.
+  stationIdentityStageBadge: {
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: 5,
-    minWidth: 0,
-  },
-  stationIdentityId: { fontSize: 11, lineHeight: 15 },
-  stationIdentityQr: {
-    alignItems: 'center',
-    height: 18,
-    justifyContent: 'center',
-    width: 18,
-  },
-  stationIdentityPresenceRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 4,
-  },
-  stationIdentityPresenceDot: { borderRadius: 999, height: 6, width: 6 },
-  stationIdentityPresenceDotOnline: { backgroundColor: '#20B26B' },
-  stationIdentityPresenceDotOffline: { backgroundColor: '#E24B4B' },
-  stationIdentityPresenceText: { fontSize: 10, fontWeight: '600' },
-  stationIdentityPresenceTextOnline: { color: '#2012D9' },
-  stationIdentityStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  stationIdentityStat: {
-    alignItems: 'baseline',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    flex: 1,
-    gap: 6,
-    minWidth: 0,
-  },
-  stationIdentityStatValue: { fontSize: 18, fontWeight: '600' },
-  stationIdentityStatLabel: { fontSize: 10, lineHeight: 14 },
-  stationIdentityHeadline: { fontSize: 12, fontWeight: '500', lineHeight: 17 },
-  stationIdentityBio: { fontSize: 12, lineHeight: 18 },
-  stationIdentityTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  stationIdentityTag: {
-    alignItems: 'center',
+    backgroundColor: '#129B96',
+    borderColor: '#FFFFFF',
     borderRadius: 999,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 4,
-    minHeight: 26,
+    borderWidth: 2,
+    bottom: 7,
+    height: 23,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 7,
+    width: 23,
+  },
+  stationIdentityCopy: { flex: 1, gap: 0, minWidth: 0 },
+  // Prototype `.me-identity h1`: 1.35rem, tight tracking.
+  stationIdentityName: { fontSize: 21, fontWeight: '700', lineHeight: 25 },
+  // Prototype `.me-id`: a 99px pill, not bare text.
+  stationIdentityIdPill: {
+    alignSelf: 'flex-start',
+    borderRadius: 99,
+    marginTop: 7,
     maxWidth: '100%',
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  stationIdentityTagText: {
-    fontSize: 11,
-    fontWeight: '400',
-    flexShrink: 1,
+  stationIdentityId: { fontSize: 12, lineHeight: 16 },
+  // Prototype `.me-location`: 6px gap, 10px above, muted small text.
+  stationIdentityLocation: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 10,
+    minHeight: 20,
+  },
+  // Prototype `.me-location`: `#8d8d94`.
+  stationIdentityLocationText: {
+    color: '#8D8D94',
+    fontSize: 12,
     lineHeight: 16,
   },
-  stationNavRow: { alignItems: 'stretch', flexDirection: 'row' },
+  // Prototype `.me-bio`: 12px above, 0.9rem, 1.55 line height, `#4f4f56`.
+  stationIdentityBio: {
+    color: '#4F4F56',
+    fontSize: 14,
+    lineHeight: 22,
+    marginTop: 12,
+  },
+  // Prototype `.me-switch`: 2 equal segments in one rounded trough, sitting
+  // directly under the profile card.
+  stationSwitch: {
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 3,
+    marginHorizontal: 14,
+    marginVertical: 8,
+    padding: 4,
+  },
+  stationSwitchButton: {
+    alignItems: 'center',
+    borderRadius: 7,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: 12,
+  },
+  // Prototype `.me-switch-button[aria-selected="true"]`:
+  // `box-shadow: 0 3px 12px rgba(28,28,36,.08)` — a barely-there lift, not a
+  // heavy drop. RN has no `rgba()` shadow, so the colour and the 8% alpha are
+  // set separately.
+  stationSwitchButtonSelected: {
+    shadowColor: '#1C1C24',
+    shadowOffset: { height: 3, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+  },
+  // Prototype `.me-switch-button:active { transform: scale(.97) }`.
+  stationSwitchButtonPressed: { transform: [{ scale: 0.97 }] },
+  stationSwitchText: { fontSize: 14, fontWeight: '700' },
   stationTabsViewport: { flex: 1, minWidth: 0 },
   stationTabs: {
     alignItems: 'stretch',
@@ -109,7 +158,7 @@ export const stationProfileStyles = {
   stationTabTextActive: { fontSize: 12, fontWeight: '700' },
   stationTabTextInactive: { fontSize: 11, fontWeight: '400' },
   stationTabIndicator: {
-    backgroundColor: '#2012D9',
+    backgroundColor: '#0B8271',
     borderRadius: 2,
     bottom: 3,
     height: 3,

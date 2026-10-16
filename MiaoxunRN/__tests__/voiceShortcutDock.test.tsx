@@ -75,7 +75,7 @@ const listening = () =>
     update({ requestId: 'current', state: 'listening', text: '整理周末照片' }),
   );
 
-beforeEach(() => {
+beforeEach(async () => {
   jest.useFakeTimers();
   jest.clearAllMocks();
   jest
@@ -106,7 +106,10 @@ beforeEach(() => {
       cancel,
     };
   });
-  act(() => {
+  // The dock now reads the system "reduce motion" preference through a shared
+  // hook that starts disabled and enables motion once the read resolves, so the
+  // mount has to flush that promise inside `act`.
+  await act(async () => {
     renderer = TestRenderer.create(<VoiceShortcutDock {...props} />);
   });
 });
@@ -329,7 +332,11 @@ test('xun shares the compact target geometry and opens tasks without leaving an 
   act(() => renderer.update(<VoiceShortcutDock {...props} tone="xun" />));
   hold();
   listening();
-  expect(action('查看任务')).toBeDefined();
+  // Prototype `#xunVoiceCluster` labels the same three directions
+  // 直接说 / 总结未读 / 替我规划 rather than the 妙 page's wording.
+  expect(action('替我规划')).toBeDefined();
+  expect(action('查看任务')).toBeUndefined();
+  expect(action('切换' + '到瀑布')).toBeUndefined();
   expect(voiceShortcutActionAt(0, -56)).toBe('keyboard');
   expect(voiceShortcutActionAt(-56, 0)).toBe('butler');
   release(0, 64);

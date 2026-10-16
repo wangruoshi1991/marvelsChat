@@ -14,6 +14,8 @@ import { StationOutfitDTO } from '../src/models/api';
 import { stationContentApi } from '../src/services/api/stationContentApi';
 import { SiteDocumentMedia } from '../src/features/site-document/SiteDocumentMedia';
 import { StationMediaPreviewScreen } from '../src/features/station/StationMediaPreviewScreen';
+import { SecondFloorFiles } from '../src/features/second-floor/SecondFloorFiles';
+import { useMiaoxunSession } from '../src/features/session/useMiaoxunSession';
 
 jest.mock('../src/features/workspaces/useAgentWorkspaces', () => ({
   useAgentWorkspaces: () => mockWorkspaces,
@@ -476,4 +478,31 @@ test('shows retrieval failure and retry rather than claiming there are no result
     renderer.root.findByType(WorkspaceButton).props.onPress(),
   );
   expect(mockWorkspaces.refresh).toHaveBeenCalledTimes(1);
+});
+
+test('second floor files lists app-generated outcomes and opens their task', async () => {
+  const session = {
+    token: 'account-a',
+    stationContent: { ...emptyStationContent, siteDrafts: [draft] },
+    refreshStationContent: jest.fn(async () => emptyStationContent),
+    createStationFileAsset: jest.fn(),
+  } as unknown as ReturnType<typeof useMiaoxunSession>;
+  await act(async () => {
+    renderer = Renderer.create(
+      <SecondFloorFiles
+        palette={palettes.light}
+        language="zh"
+        session={session}
+        onOpenWorkspace={open}
+      />,
+    );
+  });
+  const texts = renderer.root
+    .findAllByType(Text)
+    .map(node => node.props.children);
+  expect(texts).toContain('App 生成文件');
+  expect(session.refreshStationContent).toHaveBeenCalled();
+  act(() => card('text:text-1').props.onPress());
+  expect(open).toHaveBeenCalledWith(workspace);
+  expect(card('site:page-1')).toBeTruthy();
 });

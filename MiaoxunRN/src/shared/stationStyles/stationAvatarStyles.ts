@@ -48,7 +48,7 @@ export const stationAvatarStyles = {
     paddingHorizontal: 8,
   },
   avatar3dRetryButtonText: {
-    color: '#2012D9',
+    color: '#0B8271',
     fontSize: 12,
     fontWeight: '700',
   },

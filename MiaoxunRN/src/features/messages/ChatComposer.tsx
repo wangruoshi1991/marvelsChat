@@ -5,7 +5,6 @@ import React, { useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Pressable,
   Share,
   StyleSheet,
@@ -22,11 +21,11 @@ import {
 } from 'lucide-react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 
-import { stationPartnerIconAssets } from '../../assets/icons';
 import { displayText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette, palettes, productColors } from '../../shared/theme';
 import { useAIAssist } from '../assist/AIAssistProvider';
+import { AgentGlyphAvatar } from './AgentGlyphAvatar';
 import {
   AIAssistAction,
   AIAssistObjectReference,
@@ -352,11 +351,7 @@ export function ChatComposer({
           ]}
           testID="chat-draft-assist"
         >
-          <Image
-            source={stationPartnerIconAssets.miaoxunButler}
-            resizeMode="contain"
-            style={chatLayoutStyles.assistIcon}
-          />
+          <AgentGlyphAvatar agentId="miaoxun-butler" size={28} />
         </Pressable>
         <Pressable
           accessibilityRole="button"

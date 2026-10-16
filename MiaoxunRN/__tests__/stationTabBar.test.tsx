@@ -10,13 +10,14 @@ import {
 import type { StationTab } from '../src/features/station/stationTypes';
 import { palettes } from '../src/shared/theme';
 
-const items: StationTabBarItem[] = [
-  { value: 'station', label: '第一面', Icon: CircleDot },
-  { value: 'posts', label: '生活', Icon: CircleDot },
-  { value: 'outcomes', label: '成果', Icon: CircleDot },
-  { value: 'agents', label: '生态', Icon: CircleDot },
-  { value: 'social', label: '其他', Icon: CircleDot },
-];
+// The bar is a generic horizontal scroller. Five synthetic options exercise
+// scrolling that the current two station tabs never trigger.
+const tab = (value: string) => value as StationTab;
+const items: StationTabBarItem[] = ['a', 'b', 'c', 'd', 'e'].map(value => ({
+  value: tab(value),
+  label: value,
+  Icon: CircleDot,
+}));
 
 function layout(x: number, width: number) {
   return { nativeEvent: { layout: { x, y: 0, width, height: 46 } } };
@@ -32,19 +33,17 @@ describe('Station tab navigation', () => {
           items={items}
           onChange={onChange}
           palette={palettes.light}
-          value="station"
+          value={tab('a')}
         />,
       );
     });
     expect(renderer!.root.findByType(ScrollView).props.horizontal).toBe(true);
     ReactTestRenderer.act(() => {
-      renderer!.root
-        .findByProps({ testID: 'station-tab-social' })
-        .props.onPress();
+      renderer!.root.findByProps({ testID: 'station-tab-e' }).props.onPress();
     });
-    expect(onChange).toHaveBeenCalledWith('social');
+    expect(onChange).toHaveBeenCalledWith('e');
     expect(
-      renderer!.root.findByProps({ testID: 'station-tab-station' }).props
+      renderer!.root.findByProps({ testID: 'station-tab-a' }).props
         .accessibilityState,
     ).toEqual({ selected: true });
   });
@@ -60,7 +59,7 @@ describe('Station tab navigation', () => {
       />
     );
     ReactTestRenderer.act(() => {
-      renderer = ReactTestRenderer.create(renderTabs('station'));
+      renderer = ReactTestRenderer.create(renderTabs(tab('a')));
     });
     const scroll = renderer!.root.findByType(ScrollView);
     const scrollTo = jest.spyOn(scroll.instance, 'scrollTo');
@@ -76,7 +75,7 @@ describe('Station tab navigation', () => {
       scroll.props.onContentSizeChange(450, 46);
     });
     ReactTestRenderer.act(() => {
-      renderer!.update(renderTabs('social'));
+      renderer!.update(renderTabs(tab('e')));
     });
     expect(scrollTo).toHaveBeenLastCalledWith({ x: 170, animated: true });
     ReactTestRenderer.act(() => {
@@ -86,7 +85,7 @@ describe('Station tab navigation', () => {
     });
     expect(scrollTo).toHaveBeenLastCalledWith({ x: 50, animated: true });
     ReactTestRenderer.act(() => {
-      renderer!.update(renderTabs('station'));
+      renderer!.update(renderTabs(tab('a')));
     });
     expect(scrollTo).toHaveBeenLastCalledWith({ x: 0, animated: true });
     scrollTo.mockRestore();

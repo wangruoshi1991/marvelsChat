@@ -1,4 +1,4 @@
-export type StationTab = 'station' | 'posts' | 'outcomes' | 'agents' | 'social';
+export type StationTab = 'posts' | 'agents';
 
 export type StationCreateKind = 'diary' | 'album' | 'outfit';
 

@@ -1,3 +1,5 @@
+import { productColors } from '../theme';
+
 export const stationPostStyles = {
   postComposerScreen: { flex: 1 },
   postComposerKeyboard: { flex: 1 },
@@ -261,7 +263,8 @@ export const stationPostStyles = {
   },
   stationLifeComposerAvatar: {
     alignItems: 'center',
-    backgroundColor: '#F4F6FF',
+    // Read the token rather than repeating the old pre-mint literal.
+    backgroundColor: productColors.soft,
     borderRadius: 4,
     height: 46,
     justifyContent: 'center',
@@ -286,13 +289,40 @@ export const stationPostStyles = {
   },
   stationFeedEmptyTitle: { fontSize: 16, fontWeight: '600' },
   stationFeedCard: {
-    borderRadius: 4,
-    gap: 8,
-    paddingBottom: 8,
-    paddingHorizontal: 12,
-    paddingTop: 12,
+    borderRadius: 8,
+    overflow: 'hidden',
   },
   stationFeedContextContent: { gap: 8 },
+  // Prototype `me-post-body` plus the author row it contains.
+  stationFeedBody: { paddingBottom: 12, paddingHorizontal: 14, paddingTop: 13 },
+  stationFeedAuthorRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 9,
+  },
+  stationFeedAuthorAvatar: {
+    borderRadius: 999,
+    height: 34,
+    overflow: 'hidden',
+    width: 34,
+  },
+  stationFeedAuthorCopy: { flex: 1, minWidth: 0 },
+  stationFeedAuthorName: { fontSize: 13, fontWeight: '700' },
+  stationFeedAuthorMeta: { fontSize: 11, marginTop: 3 },
+  stationFeedKindPill: {
+    borderRadius: 99,
+    flexShrink: 0,
+    fontSize: 11,
+    fontWeight: '700',
+    overflow: 'hidden',
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+  },
+  stationFeedBodyText: {
+    fontSize: 14,
+    lineHeight: 22,
+    marginTop: 11,
+  },
   stationFeedHeader: {
     alignItems: 'flex-start',
     flexDirection: 'row',
@@ -321,7 +351,6 @@ export const stationPostStyles = {
     width: 36,
   },
   stationFeedMoreIcon: { height: 7, width: 27 },
-  stationFeedBody: { fontSize: 12, lineHeight: 17 },
   stationFeedLocation: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -332,14 +361,16 @@ export const stationPostStyles = {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 5,
+    paddingHorizontal: 14,
   },
+  // Prototype `me-post-media` is a full-width 16/10 block.
   stationFeedMediaItem: {
     aspectRatio: 1,
     borderRadius: 3,
     overflow: 'hidden',
     width: '32.2%',
   },
-  stationFeedMediaItemSingle: { aspectRatio: 4 / 3, width: '100%' },
+  stationFeedMediaItemSingle: { aspectRatio: 16 / 10, width: '100%' },
   stationFeedMediaItemDouble: { width: '49.2%' },
   stationFeedMediaImage: { height: '100%', width: '100%' },
   stationFeedMediaMore: {
@@ -365,12 +396,12 @@ export const stationPostStyles = {
   },
   stationFeedVideoPlay: {
     alignItems: 'center',
-    backgroundColor: 'rgba(32,18,217,0.88)',
+    backgroundColor: 'rgba(20,20,24,0.6)',
     borderRadius: 999,
-    height: 46,
+    height: 52,
     justifyContent: 'center',
     paddingLeft: 3,
-    width: 46,
+    width: 52,
   },
   stationFeedVideoText: { fontSize: 12 },
   stationFeedAgents: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
@@ -382,17 +413,26 @@ export const stationPostStyles = {
   stationFeedAgentText: { fontSize: 11, fontWeight: '500' },
   stationFeedActions: {
     alignItems: 'center',
+    borderTopWidth: 1,
     flexDirection: 'row',
-    gap: 14,
-    justifyContent: 'flex-end',
-    minHeight: 28,
+    gap: 6,
+    minHeight: 32,
+    paddingBottom: 10,
+    paddingHorizontal: 12,
+    paddingTop: 9,
   },
+  // Prototype `.me-post-action`: `gap: 5px`, `padding: 0 8px`, 17px icon,
+  // `.72rem` label, and a `#fff0f2` plate while pressed.
   stationFeedAction: {
     alignItems: 'center',
+    borderRadius: 7,
     flexDirection: 'row',
-    gap: 4,
+    gap: 5,
     justifyContent: 'center',
+    minHeight: 32,
+    paddingHorizontal: 8,
   },
-  stationFeedActionIcon: { height: 18, width: 18 },
-  stationFeedActionText: { fontSize: 10 },
+  stationFeedActionPressed: { backgroundColor: '#FFF0F2' },
+  stationFeedActionIcon: { height: 17, width: 17 },
+  stationFeedActionText: { fontSize: 11.5 },
 } as const;
