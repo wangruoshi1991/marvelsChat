@@ -1,10 +1,12 @@
 # 妙讯当前交接入口
 
-更新：2026-10-15。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。这里仅保留现状、已证实问题和下一步；[Build48及此前历史证据](2026-10-14-build48-history.md)不作为新操作指令。保留已有修改，不写入密钥、生产身份或私人内容。
+更新：2026-10-19。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。这里仅保留现状、已证实问题和下一步；[Build48及此前历史证据](2026-10-14-build48-history.md)不作为新操作指令。保留已有修改，不写入密钥、生产身份或私人内容。
 
 ## 当前判断
 
-**整体产品尚未达到用户要求。** 动态选人、依赖调度和部分专业执行已有实现，但持续协作、成果续作、统一展示及设计一致性存在代码证实的缺口。运行健康、单测通过和局部模型评测都不能替代这些产品要求。
+**整体产品尚未达到用户要求。** 2026-10-19 已按设计稿完成一轮视觉对齐（渐变、头像、底栏、默认入口），并清理了全部死文件与死图片；代码位于分支 `feature/redesign-by-prototype`，HEAD `3755098`。TestFlight 未上传：本机 Xcode 无 App Store Connect 登录账号，`exportArchive` 报 `Failed to Use Accounts`；归档 1.0(49) 已产出但未使用，构建号已回退到 48 以免与线上冲突。
+
+动态选人、依赖调度和部分专业执行已有实现，但持续协作、成果续作、统一展示及设计一致性存在代码证实的缺口。运行健康、单测通过和局部模型评测都不能替代这些产品要求。
 
 本轮在审计后已实际修改产品代码，并删除确定无用的实现与文档；尚未部署、上传TestFlight、调用真实模型或写入生产业务数据。当前源码与线上Build48不一致。修复范围与仍未闭环项分列如下，不把局部清理称为整体交付。
 
@@ -57,6 +59,15 @@ Build48同步事故是维护503及runtime根目录0700导致服务无法启动�
 这些是当前代码边界，不需要再等真机才能确认。独立聊天历史还存在按Agent及JSON形状重写旧漫画/页面输出的展示器；旧调用未记录真实mode，不能把猜测移到后端、隐藏全部历史或误删正常JSON回答来宣称清除。需要对受影响历史记录完成明确数据整治后删除该展示器。设计资料有9月蓝湖与10月布局稿，尚未整理成明确逐页对照，不能宣称已还原设计。
 
 ## 清理结果与剩余事项
+
+**2026-10-19 本轮代码清理**（经 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0 验证）：
+
+- 删除 6 个零引用源文件：`StationSocialPanel.tsx`(261 行)、`StationCapabilityWorkspace.tsx`(121 行)、`stationModuleStatus.ts`(35 行)，以及被它们删除后失去唯一引用方的 `StationShared.tsx`(49 行)、`StationMetricBox.tsx`(35 行)、`StationAlbumAgentPanel.tsx`(36 行)。
+- 删除 5 个零引用导出：`assistPageLabel`、`isAssistantAgent`（连同只为它存在的两个 Set）、`workspaceIsTerminal`、`messageIconAssets`、`stationPartnerIconAssets`。
+- 删除 16 张零引用 PNG（5 张 Agent 角色头像、5 张 settings 图标、2 张 tab 图标等），并移除因此变空的 `assets/icons/settings`、`assets/icons/messages`、`assets/icons/station/partners` 三个目录。
+- 合并两处完全相同的头像白环样式：`AgentGlyphAvatar` 的 `ring` 改为引用 `shared/styles.ts` 的 `avatarRing`。
+- 重新生成过期的 `MiaoxunRN/src/assets/avatar-viewer/avatar-viewer.html`；它此前使 `check-repository.sh` 的 `cmp` 步骤失败。
+- 复核结果：全仓零死源码、零死图片。
 
 - 已删除主树旧Build47 `MiaoxunDevelopment/76237d6f8986/DerivedData`：2,107,432 KiB，约2.01 GiB；删除前确认无构建进程、缓存App为47。保留当前构建缓存、构建记录、签名制品、日志、数据库和备份。
 - 新构建安装后，已删除被替代的`MiaoxunDevelopment/69e1bb93ddda/DerivedData`（1,114,824 KiB，约1.06 GiB）和本轮重新生成的三个Web dist；先确认无xcodebuild进程、新App来自76237d6f8986且安装摘要一致，dist均为无跟踪可重建输出。精确清单为仓库外同证据目录`final-cache-cleanup.json`。当前新DerivedData保留；不能将旧47缓存删除量当作重建后的净节省。

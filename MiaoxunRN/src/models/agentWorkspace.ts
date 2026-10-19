@@ -360,5 +360,3 @@ export const workspaceReviewKey = (w: AgentWorkspace) =>
   w.approval
     ? `${w.id}:${w.revision}:${w.approval.id}:${w.approval.draftHash}:${w.approval.resourcesHash}`
     : '';
-export const workspaceIsTerminal = (w: AgentWorkspace) =>
-  ['succeeded', 'failed', 'interrupted', 'cancelled'].includes(w.status);

@@ -49,15 +49,6 @@ const agentModuleBindings: Record<string, { zh: string; en: string }> = {
   },
 };
 
-const assistantAgentIds = new Set(['miaoxun-butler', 'virtual-character']);
-const assistantAgentCategories = new Set([
-  'orchestrator',
-  'character-management',
-]);
-
-export const isAssistantAgent = (agentId: string, category: string) =>
-  assistantAgentIds.has(agentId) || assistantAgentCategories.has(category);
-
 export const moduleBindingForAgent = (agentKey: string, language: Language) => {
   const binding = agentModuleBindings[agentKey];
   if (!binding) {

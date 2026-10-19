@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AgentIdentityDTO } from '../../models/api';
+import { styles as sharedStyles } from '../../shared/styles';
 import { agentGlyphColors } from '../../shared/theme';
 import { resolveAgentGlyph } from './threadIconRegistry';
 
@@ -42,7 +43,7 @@ export function AgentGlyphAvatar({
     <View
       style={[
         styles.disc,
-        styles.ring,
+        sharedStyles.avatarRing,
         { backgroundColor: disc, borderRadius, height: size, width: size },
       ]}
       testID={testID}
@@ -54,15 +55,4 @@ export function AgentGlyphAvatar({
 
 const styles = StyleSheet.create({
   disc: { alignItems: 'center', justifyContent: 'center' },
-  // Prototype `.agent-avatar` / `.xun-avatar`: `border: 3px solid #fff` with a
-  // soft shadow. The white ring is what reads as a transparent halo against the
-  // pale page; without it the disc sits flat on the card.
-  ring: {
-    borderColor: '#FFFFFF',
-    borderWidth: 3,
-    shadowColor: '#1E1E2A',
-    shadowOffset: { height: 2, width: 0 },
-    shadowOpacity: 0.14,
-    shadowRadius: 6,
-  },
 });

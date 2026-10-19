@@ -159,7 +159,7 @@ agents/
 | **生活**（posts） | `StationPostsPanel.tsx`：动态帖子列表（图文/视频） | ✅ 对应设计「动态 Tab」 |
 | **成果**（outcomes） | `StationOutcomesPanel.tsx`：页面/文字/漫画/视频草稿 | 🔴 设计中无此 Tab |
 | **生态**（agents） | `StationAgentsPanel.tsx`：我的 Agent 列表 | ✅ 对应设计「我的 Agent Tab」 |
-| **其他**（social） | `StationSocialPanel.tsx`：关注/粉丝/获赞列表 | 🔴 设计中此为信息卡，非独立 Tab |
+| **其他**（social） | 原 `StationSocialPanel.tsx`（关注/粉丝/获赞列表）——**已删除**，内容按设计归入二楼·关系 | 🔴 设计中此为信息卡，非独立 Tab |
 
 **结论**：本轮已把 Tab 收敛为「动态 / 我的 Agent」两项。上表的「第一面」「成果」「其他」内容按 PDF 重新落位：
 
@@ -172,7 +172,9 @@ agents/
 | 成果（页面/分镜/脚本/穿搭） | 二楼 · 文件 →「App 生成文件」 | PDF 27 |
 | 关注/粉丝/获赞、妙点、位置 | 二楼 · 关系 / 资产；信息卡位置行 | PDF 28 / 29 / 33 |
 
-`StationHome.tsx`、`StationSocialPanel.tsx` 与 `StationOutcomesPanel` 的旧 Tab 分支已不再被引用，待清理阶段处理。
+`StationHome.tsx` 与 `StationOutcomesPanel` 的旧 Tab 分支已不再被引用，待清理阶段处理。
+`StationSocialPanel.tsx`、`StationMetricBox.tsx`、`StationShared.tsx`、
+`StationAlbumAgentPanel.tsx` 与 `stationModuleStatus.ts` 已于 2026-10-19 删除（全仓零引用）。
 
 #### 2.4.3 小站子功能
 
@@ -182,7 +184,7 @@ agents/
 | 动态发布编辑器 | `StationPostComposer.tsx` | ✅ 已有且一致（支持图文/视频） |
 | 结构页面编辑器 | `StationSiteEditor.tsx` + `useStationSiteEditor.ts` | ✅ 已有且一致 |
 | 漫画日记详情 | `StationComicDiaryPanel.tsx` | ✅ 已有且一致 |
-| 相册管理 | `StationAlbumAgentPanel.tsx` | ✅ 已有且一致 |
+| 相册管理 | `SecondFloorAlbums.tsx` → `SecondFloorAlbumList.tsx` | ✅ 已有且一致 |
 
 ---
 
@@ -381,14 +383,12 @@ features/station/
 ├── StationPostsPanel.tsx       # 生活 Tab（动态列表）
 ├── StationOutcomesPanel.tsx    # 成果 Tab
 ├── StationAgentsPanel.tsx      # 生态 Tab（我的 Agent）
-├── StationSocialPanel.tsx      # 其他 Tab（关注/粉丝）
 ├── StationAvatarSpace.tsx      # 个人信息卡（头像/昵称/简介）
 ├── StationPageHeading.tsx      # 关注/粉丝/获赞数统计
 ├── StationPostComposer.tsx     # 动态发布编辑器
 ├── StationSiteEditor.tsx       # 结构页面编辑器
 ├── StationAvatarEditor.tsx     # 3D 形象编辑器
 ├── StationComicDiaryPanel.tsx  # 漫画日记详情
-├── StationAlbumAgentPanel.tsx  # 相册管理
 └── stationPalette.ts           # 小站配色
 ```
 

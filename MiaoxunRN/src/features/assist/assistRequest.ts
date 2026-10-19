@@ -7,41 +7,6 @@ import { AIAssistObjectReference, AIAssistScene } from './aiAssistTypes';
 
 export const assistMessageLimit = 2000;
 
-export function assistPageLabel(page: string, language: Language) {
-  const pages: Record<string, [string, string]> = {
-    'miao.feed': ['妙 · 任务动态', 'Miao · Tasks'],
-    'miao.task': ['妙 · 任务详情', 'Miao · Task details'],
-    'miao.workspace': ['妙 · 协作详情', 'Miao · Workspace details'],
-    'messages.chat': ['讯 · 对话', 'Xun · Conversation'],
-    'messages.butler': ['讯 · 妙管家', 'Xun · Assistant'],
-    'messages.tasks': ['讯 · 任务', 'Xun · Tasks'],
-    'messages.notice': ['讯 · 通知', 'Xun · Notices'],
-    'station.station': ['我 · 主页', 'Me · Home'],
-    'station.posts': ['我 · 动态', 'Me · Posts'],
-    'station.agents': ['我 · 我的 Agent', 'Me · My Agents'],
-    'second-floor.home': ['讯 · 二楼', 'Xun · Second floor'],
-    'second-floor.albums': ['讯 · 二楼 · 相册', 'Xun · Second floor · Albums'],
-    'second-floor.files': ['讯 · 二楼 · 文件', 'Xun · Second floor · Files'],
-    'second-floor.relationships': [
-      '讯 · 二楼 · 关系',
-      'Xun · Second floor · People',
-    ],
-    'second-floor.assets': ['讯 · 二楼 · 资产', 'Xun · Second floor · Assets'],
-    'second-floor.information': [
-      '讯 · 二楼 · 信息海',
-      'Xun · Second floor · Inbox',
-    ],
-    'second-floor.permissions': [
-      '讯 · 二楼 · 权限',
-      'Xun · Second floor · Access',
-    ],
-  };
-  const labels = pages[page];
-  return labels
-    ? textFor(language, labels[0], labels[1])
-    : textFor(language, '所选内容页面', 'Selected content page');
-}
-
 export function assistContextSummary(
   _scene: AIAssistScene | undefined,
   object: AIAssistObjectReference | undefined,
