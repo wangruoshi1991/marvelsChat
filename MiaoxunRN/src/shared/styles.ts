@@ -152,13 +152,22 @@ export const styles = StyleSheet.create({
   avatar: {
     alignItems: 'center',
     borderRadius: 14,
-    borderWidth: 1,
     height: 48,
     justifyContent: 'center',
-    overflow: 'hidden',
     width: 48,
   },
   avatarSmall: { height: 36, width: 36 },
+  // Prototype `.xun-avatar` / `.agent-avatar`: `border: 3px solid #fff` with a
+  // soft shadow. The ring is what reads as a halo against the pale page, and it
+  // must match `AgentGlyphAvatar` — the two sit side by side in the list.
+  avatarRing: {
+    borderColor: '#FFFFFF',
+    borderWidth: 3,
+    shadowColor: '#1E1E2A',
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+  },
   // Prototype `.xun-avatar`: white initial on the plate, `800` weight.
   avatarInitial: { color: '#FFFFFF', fontWeight: '800' },
   avatarAccent: {

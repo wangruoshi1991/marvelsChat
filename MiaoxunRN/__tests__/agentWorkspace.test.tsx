@@ -56,7 +56,7 @@ const sessionForFloor = (overrides = {}) =>
     ...overrides,
   } as unknown as ReturnType<typeof useMiaoxunSession>);
 
-test('second floor starts with no selected panel, opens all six tools and returns explicitly', async () => {
+test('second floor starts on albums, opens all six tools and returns explicitly', async () => {
   const onClose = jest.fn();
   await act(async () => {
     renderer = TestRenderer.create(
@@ -85,11 +85,16 @@ test('second floor starts with no selected panel, opens all six tools and return
       'permissions',
     ].map(key => renderer.root.findByProps({ testID: `floor-tool-${key}` }));
   expect(tools()).toHaveLength(6);
-  expect(tools().some(node => node.props.accessibilityState.selected)).toBe(
-    false,
+  // The floor opens on 相册, so exactly one tool starts selected.
+  const selected = tools().filter(
+    node => node.props.accessibilityState.selected,
   );
+  expect(selected.map(node => node.props.testID)).toEqual([
+    'floor-tool-albums',
+  ]);
+  // 相册 already starts open; pressing it would toggle it shut, so the loop
+  // covers the other five and checks each takes over as the only selection.
   for (const key of [
-    'albums',
     'files',
     'relationships',
     'assets',

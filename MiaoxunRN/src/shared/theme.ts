@@ -37,14 +37,78 @@ export const workspaceColors = {
  * `productColors.background` stays the flat equivalent for surfaces that cannot
  * take a gradient (modals, sheets, dark mode).
  */
+export const pageGradientWash = {
+  left: '#E6F6F1',
+  right: '#EDFBEA',
+} as const;
+
 export const pageGradientStops = [
-  { offset: 0, color: '#E6F5F1' },
-  { offset: 0.25, color: '#EAF8F3' },
-  { offset: 0.45, color: '#EDF7F3' },
-  { offset: 0.62, color: '#F1F8F6' },
-  { offset: 0.8, color: '#F2FBF8' },
-  { offset: 1, color: '#FFFFFF' },
+  // Solved per stop from the reference stack. Vertical sampling of the design
+  // shows mint 0–16%, white 20–58%, a second mint band 60–88% peaking near
+  // 76–84% at `#F0FAF9`, then white again. Each opacity below is the white
+  // veil needed over `pageGradientWash` to land on that colour.
+  { offset: 0, color: '#FFFFFF', opacity: 0.1 },
+  { offset: 0.16, color: '#FFFFFF', opacity: 0.84 },
+  { offset: 0.21, color: '#FFFFFF', opacity: 1 },
+  { offset: 0.58, color: '#FFFFFF', opacity: 1 },
+  { offset: 0.63, color: '#FFFFFF', opacity: 0.12 },
+  { offset: 0.7, color: '#FFFFFF', opacity: 0.3 },
+  { offset: 0.76, color: '#FFFFFF', opacity: 0.4 },
+  { offset: 0.84, color: '#FFFFFF', opacity: 0.38 },
+  { offset: 0.88, color: '#FFFFFF', opacity: 0.32 },
+  { offset: 0.92, color: '#FFFFFF', opacity: 0.95 },
+  { offset: 1, color: '#FFFFFF', opacity: 1 },
 ] as const;
+
+/** The flat tint the gradient starts from; safe-area strips use it. */
+export const pageGradientTop = pageGradientWash.left;
+export const pageGradientBottom = '#FFFFFF';
+
+/**
+ * Default avatar plates. The prototype gives each avatar category its own
+ * gradient and never one shared colour, so an account gets one of these picked
+ * from its own name — stable across renders, varied across a list. Every entry
+ * clears 3:1 against white at the avatar's bold size.
+ *
+ * Twelve entries rather than six: with six, common two-character names collided
+ * often enough that a list of eight accounts showed the same plate twice.
+ */
+export const avatarPlateColors = [
+  '#D73F86',
+  '#1476A7',
+  '#24283B',
+  '#5168D9',
+  '#EF476F',
+  '#3972CD',
+  '#9B5DE5',
+  '#B45309',
+  '#1F9D55',
+  '#B03A7A',
+  '#0E7490',
+  '#7C4DFF',
+] as const;
+
+/**
+ * A non-linear mix over the name's code points, not a plain `*31 + code`. The
+ * linear version put every single-character name through `codePoint % 12`, so
+ * `S` (83) and `妙` (22937) — both ≡ 5 mod 6 — landed on the same plate.
+ * Squaring the running value between characters breaks that relation without
+ * bitwise operators, which this codebase's lint rules disallow.
+ */
+export function avatarPlateColor(seed: string): string {
+  const name = seed || '妙';
+  let hash = 0;
+  // `for…of` walks code points, so an emoji name hashes once rather than twice.
+  let index = 0;
+  for (const char of name) {
+    const code = char.codePointAt(0)!;
+    hash = (hash * 131 + code + Math.floor(hash / 101)) % 1000003;
+    hash = (hash * hash + 17 + code * index) % 1000003;
+    hash = (hash * 61 + 23) % 1000003;
+    index += 1;
+  }
+  return avatarPlateColors[hash % avatarPlateColors.length];
+}
 
 /** True for the light theme, the only one the page gradient applies to. */
 export function isLightPalette(palette: Palette): boolean {
@@ -202,10 +266,13 @@ export function agentGlyphColors(hex: string): {
     return { disc: '#E6F4F0', glyph: '#0B8271' };
   }
   if (resolved.achromatic) {
-    return { disc: mixWithWhite(hex, 0.92), glyph: mixWithWhite(hex, 0.2) };
+    return { disc: mixWithWhite(hex, 0.945), glyph: mixWithWhite(hex, 0.2) };
   }
   return {
-    disc: hslToHex(resolved.hue, 0.46, 0.92),
+    // Sampled off the reference: the disc sits around `#E9FAF7` — a 94.7%
+    // lightness tint, not the 92% the first pass used, which read too strong
+    // next to the white card.
+    disc: hslToHex(resolved.hue, 0.5, 0.945),
     glyph: hslToHex(resolved.hue, 0.58, 0.38),
   };
 }

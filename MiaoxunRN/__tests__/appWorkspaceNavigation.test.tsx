@@ -86,6 +86,9 @@ test('three root tabs retain the station, hide navigation in second floor, and r
   await act(async () => {
     renderer = TestRenderer.create(<App />);
   });
+  // A cold start lands on 讯; 妙 is one tap away.
+  expect(renderer.root.findByType(ThreadListScreen)).toBeTruthy();
+  act(() => renderer.root.findByType(BottomBar).props.onSelectTab('agents'));
   expect(renderer.root.findByType(MiaoTaskFeed)).toBeTruthy();
   const labels = renderer.root
     .findByType(BottomBar)
@@ -117,7 +120,10 @@ test('three root tabs retain the station, hide navigation in second floor, and r
   mockSession = { ...mockSession, user: { id: 'account-2' } };
   await act(async () => renderer.update(<App />));
   expect(renderer.root.findAllByType(SecondFloorScreen)).toHaveLength(0);
-  expect(renderer.root.findByType(BottomBar).props.selectedTab).toBe('agents');
+  // A different account starts fresh on 讯, the same page a cold start opens.
+  expect(renderer.root.findByType(BottomBar).props.selectedTab).toBe(
+    'messages',
+  );
 });
 
 test('pull-down opens only from the top, and short or horizontal gestures preserve the conversation list', async () => {
@@ -183,6 +189,9 @@ test('voice hides the retained navigation without shifting its anchor and drafts
     renderer = TestRenderer.create(<App />);
   });
   const dock = () => renderer.root.findByType(VoiceShortcutDock);
+  // The app opens on 讯; switch to 妙 first so the offsets below compare the
+  // two tones rather than 讯 against itself.
+  act(() => renderer.root.findByType(BottomBar).props.onSelectTab('agents'));
   const miaoOffset = dock().props.bottomOffset;
   expect(miaoOffset).toBe(140);
   act(() => renderer.root.findByType(BottomBar).props.onSelectTab('messages'));
@@ -222,6 +231,9 @@ test('voice hides the retained navigation without shifting its anchor and drafts
   };
   await act(async () => renderer.update(<App />));
   expect(renderer.root.findAllByType(AIRequestComposer)).toHaveLength(0);
+  // The new account starts on 讯, whose dock composes into a butler thread
+  // rather than the request composer; the draft claim is about 妙's dock.
+  act(() => renderer.root.findByType(BottomBar).props.onSelectTab('agents'));
   await act(async () => dock().props.onCompose());
   expect(renderer.root.findByType(AIRequestComposer).props.draft).toBe('');
 });
@@ -235,6 +247,7 @@ test.each(['header', 'system'])(
     await act(async () => {
       renderer = TestRenderer.create(<App />);
     });
+    act(() => renderer.root.findByType(BottomBar).props.onSelectTab('agents'));
     const station = () =>
       renderer.root.findByProps({ testID: 'retained-station-screen' });
     // A task's workspace covers the retained station; the station no longer
@@ -279,6 +292,7 @@ test('workspace recovery opens existing agent management or an editable draft wi
   await act(async () => {
     renderer = TestRenderer.create(<App />);
   });
+  act(() => renderer.root.findByType(BottomBar).props.onSelectTab('agents'));
   await act(async () =>
     renderer.root.findByType(MiaoTaskFeed).props.onOpenWorkspace(w),
   );

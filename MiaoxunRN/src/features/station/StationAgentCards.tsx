@@ -248,7 +248,7 @@ export function AgentMark({
       agentId={agent.id || agent.key || ''}
       category={agent.category}
       identity={agent.identity}
-      size={42}
+      size={48}
     />
   );
 }

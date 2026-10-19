@@ -100,7 +100,9 @@ export function SecondFloorScreen({
   const toolWidth = (toolsWidth - 24 - 6 * 4) / 5;
   const toolStep = toolWidth + 6;
   const toolScroll = useRef(new Animated.Value(0)).current;
-  const [selected, setSelected] = useState<SecondFloorTool | null>(null);
+  // The floor opens straight on 相册 rather than on an empty tool row: it is
+  // the panel people come up here for.
+  const [selected, setSelected] = useState<SecondFloorTool | null>('albums');
   // Prototype `.xun-floor-panel` runs `xun-floor-panel-in .24s
   // cubic-bezier(.2,.8,.2,1)` — `opacity 0 → 1` with `translateY(12px) → 0`.
   const panelEntrance = useRef(new Animated.Value(1)).current;

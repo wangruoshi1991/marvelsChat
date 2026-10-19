@@ -181,11 +181,21 @@ test.each([320, 402, 768])(
   },
 );
 
-test('blank floor has no panel; tools toggle independently and keep file drafts on panel switch', async () => {
+test('floor opens on albums; tools toggle independently and keep file drafts on panel switch', async () => {
   const dismiss = jest.spyOn(Keyboard, 'dismiss');
   await act(async () => {
     renderer = TestRenderer.create(<SecondFloorScreen {...floorProps()} />);
   });
+  // The floor opens on 相册, so its panel is already mounted and bordered.
+  expect(tool('albums').props.accessibilityState.selected).toBe(true);
+  expect(
+    StyleSheet.flatten(
+      renderer.root.findByProps({ testID: 'floor-content' }).props.style,
+    ).borderWidth,
+  ).toBe(1);
+  // Toggling the same tool closes the panel, which is what leaves the floor
+  // blank — the state the rest of this test relies on.
+  act(() => tool('albums').props.onPress());
   expect(
     StyleSheet.flatten(
       renderer.root.findByProps({ testID: 'floor-content' }).props.style,

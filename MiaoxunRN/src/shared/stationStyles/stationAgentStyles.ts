@@ -181,38 +181,51 @@ export const stationAgentStyles = {
   },
   stationOwnedAgentGrid: { gap: 9 },
   // S48 vertical "My Agents" list: head row, then an action row.
-  stationAgentList: { gap: 9 },
+  // Prototype `.me-agent-grid { gap: 4px }` — the cards sit almost flush.
+  stationAgentList: { gap: 4 },
+  // Prototype `.me-agent-card`: `padding: 14px 14px 13px; border-radius: 8px`
+  // plus the shared card border and `0 8px 24px rgba(28,28,36,.045)` shadow.
   stationAgentListCard: {
-    borderRadius: 4,
-    borderWidth: 0,
-    gap: 10,
-    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 0,
+    paddingBottom: 13,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    shadowColor: '#1C1C24',
+    shadowOffset: { height: 8, width: 0 },
+    shadowOpacity: 0.045,
+    shadowRadius: 24,
   },
   stationAgentListHead: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: 11,
   },
-  // Prototype `me-agent-meta`: three equal data cells.
+  // Prototype `.me-agent-meta`: three cells at `1.25fr .8fr .9fr`, `gap: 5px`,
+  // `margin-top: 12px`; each cell `padding: 9px 10px; border-radius: 7px` on
+  // `#f7f7f9`.
   stationAgentListMeta: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 5,
+    marginTop: 12,
   },
   stationAgentListMetaCell: {
-    backgroundColor: '#F4F4F6',
-    borderRadius: 4,
+    backgroundColor: '#F7F7F9',
+    borderRadius: 7,
     flex: 1,
-    gap: 3,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
   },
-  stationAgentListMetaLabel: { fontSize: 9, fontWeight: '600' },
-  stationAgentListMetaValue: { fontSize: 11, fontWeight: '700' },
+  stationAgentListMetaLabel: { fontSize: 10, fontWeight: '600' },
+  stationAgentListMetaValue: { fontSize: 12, fontWeight: '700' },
   stationAgentListFoot: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'space-between',
+    marginTop: 10,
   },
   stationAgentListRemove: {
     alignItems: 'center',
@@ -248,8 +261,15 @@ export const stationAgentStyles = {
   },
   stationAgentCardDisabled: { opacity: 0.62 },
   stationOwnedAgentCopy: { flex: 1, gap: 4, minWidth: 0 },
-  stationOwnedAgentName: { fontSize: 14, fontWeight: '700' },
-  stationOwnedAgentDesc: { fontSize: 11, fontWeight: '500' },
+  // Prototype `.me-agent-title h2`: `.92rem` at `1.3` line height.
+  stationOwnedAgentName: { fontSize: 15, fontWeight: '700', lineHeight: 20 },
+  // Prototype `.me-agent-title p`: `.75rem`, `4px` above, `#7d7d85`.
+  stationOwnedAgentDesc: {
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 17,
+    marginTop: 4,
+  },
   stationOwnedAgentStatus: {
     borderRadius: 999,
     fontSize: 12,

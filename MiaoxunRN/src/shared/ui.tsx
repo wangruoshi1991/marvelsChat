@@ -267,10 +267,22 @@ export function BottomBar({
         ] as const
       ).map(({ key, label, icon: Icon }) => {
         const selected = selectedTab === key;
-        const tint = selected
+        // Prototype `.tab[aria-selected="true"]`: the selected icon takes the
+        // mint accent while its label stays ink; unselected icons sit on a pale
+        // grey-green and their labels on muted grey. Colouring icon and label
+        // the same dark ink (the earlier behaviour) is what made the bar read
+        // flat compared with the design.
+        const iconTint = selected
+          ? light
+            ? '#35D5C6'
+            : palette.mint
+          : light
+          ? '#CBD9D5'
+          : palette.secondaryText;
+        const labelTint = selected
           ? color
           : light
-          ? '#9D9DA5'
+          ? '#8E9A97'
           : palette.secondaryText;
         return (
           <Pressable
@@ -280,13 +292,12 @@ export function BottomBar({
             onPress={() => onSelectTab(key)}
             style={navigationStyles.tab}
           >
-            {selected ? (
-              <View
-                style={[navigationStyles.indicator, { backgroundColor: color }]}
-              />
-            ) : null}
-            <Icon size={25} color={tint} strokeWidth={selected ? 2.25 : 1.8} />
-            <Text style={[navigationStyles.label, { color: tint }]}>
+            <Icon
+              size={25}
+              color={iconTint}
+              strokeWidth={selected ? 2.25 : 1.8}
+            />
+            <Text style={[navigationStyles.label, { color: labelTint }]}>
               {label}
             </Text>
           </Pressable>
@@ -308,13 +319,6 @@ const navigationStyles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 10,
-  },
-  indicator: {
-    position: 'absolute',
-    top: 0,
-    width: 22,
-    height: 2,
-    borderRadius: 2,
   },
   label: { fontSize: 13, fontWeight: '600' },
 });

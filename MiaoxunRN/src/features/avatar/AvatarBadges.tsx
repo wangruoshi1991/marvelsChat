@@ -3,7 +3,7 @@ import { Image, Text, View } from 'react-native';
 
 import { AvatarConfigDTO } from '../../models/api';
 import { styles } from '../../shared/styles';
-import { Palette } from '../../shared/theme';
+import { avatarPlateColor, Palette } from '../../shared/theme';
 
 /**
  * The prototype renders identity avatars as a letter on a tinted disc —
@@ -19,7 +19,6 @@ import { Palette } from '../../shared/theme';
 export function UserAvatar({
   text,
   imageUrl,
-  palette,
   small,
   size,
 }: {
@@ -39,9 +38,9 @@ export function UserAvatar({
       style={[
         styles.avatar,
         small && styles.avatarSmall,
+        styles.avatarRing,
         {
-          backgroundColor: palette.mint,
-          borderColor: palette.border,
+          backgroundColor: avatarPlateColor(text || '妙'),
           borderRadius: avatarSize / 2,
           height: avatarSize,
           width: avatarSize,

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { Keyboard, Mic, X } from 'lucide-react-native';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { Palette } from '../../shared/theme';
 import { appErrorText, textFor } from '../../shared/i18n';
 import { Language } from '../session/sessionTypes';
@@ -78,7 +79,6 @@ export function VoiceShortcutDock({
   ...callbacks
 }: Props) {
   const colors = workspacePalette(palette);
-  const triggerBackgroundColor = tone === 'xun' ? '#079FA4' : colors.text;
   const options = shortcutOptions;
   // Opacity and position ease on different curves in the prototype, and the
   // third option alone lags .035s, so each option owns its own pair of values.
@@ -95,6 +95,14 @@ export function VoiceShortcutDock({
   const [expanded, setExpanded] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
   const reduceMotion = useReduceMotion();
+  // Prototype `.voice-cluster.xun-voice-cluster .voice-trigger` is a green
+  // gradient in both states, not a flat fill:
+  //   normal   linear-gradient(145deg, #25c8b5, #078f98)
+  //   expanded linear-gradient(145deg, #19b9aa, #057c88)
+  const triggerGradient = expanded
+    ? ['#19B9AA', '#057C88']
+    : ['#25C8B5', '#078F98'];
+  const triggerGradientId = `voiceTrigger-${useId().replace(/:/g, '')}`;
   const [phase, setPhase] = useState<Phase>('idle');
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
@@ -857,10 +865,27 @@ export function VoiceShortcutDock({
           }}
           style={[s.triggerTouch, { bottom: bottomOffset }]}
         >
-          <View
-            pointerEvents="none"
-            style={[s.trigger, { backgroundColor: triggerBackgroundColor }]}
-          >
+          <View pointerEvents="none" style={s.trigger}>
+            <Svg height="100%" style={StyleSheet.absoluteFill} width="100%">
+              <Defs>
+                <LinearGradient
+                  id={triggerGradientId}
+                  x1="0"
+                  x2="1"
+                  y1="0"
+                  y2="1"
+                >
+                  <Stop offset="0" stopColor={triggerGradient[0]} />
+                  <Stop offset="1" stopColor={triggerGradient[1]} />
+                </LinearGradient>
+              </Defs>
+              <Rect
+                fill={`url(#${triggerGradientId})`}
+                height="100%"
+                rx={11}
+                width="100%"
+              />
+            </Svg>
             <View style={s.triggerIcon}>
               {phase === 'preparing' || phase === 'finishing' ? (
                 <ActivityIndicator size="small" color={colors.surface} />
@@ -891,11 +916,13 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     transform: [{ rotate: '45deg' }],
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 5 },
+    // Prototype `box-shadow: 0 8px 22px rgba(7,143,152,.28)`.
+    shadowColor: '#078F98',
+    shadowOpacity: 0.28,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 8 },
     elevation: 5,
+    overflow: 'hidden',
   },
   triggerIcon: { transform: [{ rotate: '-45deg' }] },
   optionPosition: {

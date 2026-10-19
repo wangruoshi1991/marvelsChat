@@ -44,7 +44,12 @@ import { StationTab } from './features/station/stationTypes';
 import { AvatarConfigDTO } from './models/api';
 import { appErrorText, textFor } from './shared/i18n';
 import { styles } from './shared/styles';
-import { isLightPalette, pageGradientStops, palettes } from './shared/theme';
+import {
+  isLightPalette,
+  pageGradientBottom,
+  pageGradientTop,
+  palettes,
+} from './shared/theme';
 import { PageGradient } from './shared/PageGradient';
 import { entranceCurve, useReduceMotion } from './shared/useReduceMotion';
 import { BottomBar, RootTab } from './shared/ui';
@@ -75,7 +80,10 @@ function App(): React.JSX.Element {
   const session = useMiaoxunSession();
   const palette = palettes[session.appearance];
   const messagePalette = resolveMessagePalette(palette);
-  const [selectedTab, setSelectedTab] = useState<RootTab>('agents');
+  // The app opens on 讯 (messages): the conversations are what the user comes
+  // back to, and the prototype's first tab is 妙 only because the sheet lays
+  // the states out in that order.
+  const [selectedTab, setSelectedTab] = useState<RootTab>('messages');
   const [secondFloorOpen, setSecondFloorOpen] = useState(false);
   const [secondFloorTool, setSecondFloorTool] =
     useState<SecondFloorTool | null>(null);
@@ -189,7 +197,9 @@ function App(): React.JSX.Element {
   }, [selectedTab]);
   useEffect(() => {
     setStationVisited(false);
-    setSelectedTab('agents');
+    // Signing in or switching accounts lands on 讯, the same page a cold start
+    // opens on — not back on 妙.
+    setSelectedTab('messages');
     setSecondFloorOpen(false);
     setButlerDraft('');
     setButlerReferences([]);
@@ -572,9 +582,6 @@ function App(): React.JSX.Element {
   // the safe-area strips have to match the gradient's own ends or they read as
   // two extra bands above and below it.
   const lightTheme = isLightPalette(palette);
-  const pageGradientTop = pageGradientStops[0].color;
-  const pageGradientBottom =
-    pageGradientStops[pageGradientStops.length - 1].color;
   const topSafeAreaColor = isChatRoute
     ? messagePalette.background
     : isRootTabRoute && lightTheme

@@ -11,9 +11,6 @@ import {
   albumAssistantConsent,
 } from '../src/features/station/albumAssistantAuthorization';
 
-jest.mock('../src/features/station/StationCapabilityWorkspace', () => ({
-  StationCapabilityWorkspace: () => null,
-}));
 jest.mock('../src/services/api/mediaRetrievalApi', () => ({
   mediaRetrievalApi: { status: jest.fn() },
 }));

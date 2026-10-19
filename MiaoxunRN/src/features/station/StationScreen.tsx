@@ -19,7 +19,7 @@ import {
 } from '../../services/stationMediaPicker';
 import { displayText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
-import { pageGradientStops, Palette } from '../../shared/theme';
+import { pageGradientTop, Palette } from '../../shared/theme';
 import { useAIAssist } from '../assist/AIAssistProvider';
 import { UserAvatarRenderer } from '../messages/messageTypes';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
@@ -380,7 +380,7 @@ export function StationScreen({
   // transparent one would let scrolled cards show through its padding. It takes
   // the gradient's top stop so the block and the wash read as one surface.
   const stationTopBackground = stationColors.isLight
-    ? pageGradientStops[0].color
+    ? pageGradientTop
     : stationColors.background;
 
   return (

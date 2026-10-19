@@ -228,6 +228,8 @@ async function openWorkspaceMenu() {
   await act(async () => {
     renderer = TestRenderer.create(<App />);
   });
+  // The app opens on 讯; the workspace cards live on 妙.
+  act(() => root().findByType(BottomBar).props.onSelectTab('agents'));
   const card = root().findAll(
     node =>
       node.props.testID === 'miao-workspace-workspace-context' &&
@@ -354,6 +356,7 @@ test('a restarted access request retains edited followups and remaining referenc
   await act(async () => {
     renderer = TestRenderer.create(<App />);
   });
+  act(() => root().findByType(BottomBar).props.onSelectTab('agents'));
   await act(async () =>
     root().findByType(MiaoTaskFeed).props.onOpenWorkspace(workspace),
   );
