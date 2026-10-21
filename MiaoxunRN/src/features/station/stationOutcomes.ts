@@ -19,6 +19,7 @@ export type StationOutcome = {
   summary: string;
   updatedAt: string | null;
   target: OutcomeTarget;
+  sourceWorkspace?: AgentWorkspace;
 };
 const textParts = (...values: unknown[]) =>
   values.filter(
@@ -50,24 +51,24 @@ export function stationOutcomes(
   for (const workspace of workspaces) {
     for (const step of workspace.steps) {
       const result = step.result;
-      if (
-        step.status !== 'succeeded' ||
-        !result ||
-        result.kind === 'media_selection'
-      )
-        continue;
+      if (step.status !== 'succeeded' || !result) continue;
       const key =
         result.kind === 'site_draft'
           ? `site:${result.id}`
+          : result.kind === 'media_selection'
+          ? `media:${workspace.id}:${step.id}`
           : `text:${result.id}`;
       const pendingReview =
         result.kind === 'site_draft' &&
         workspace.status === 'awaiting_confirmation' &&
         workspace.approval?.draftId === result.id;
-      // Saved pages retain their direct document entry. A pending page opens
-      // its task, which owns the review and confirmation operation.
-      if (result.kind === 'site_draft' && results.has(key) && !pendingReview)
+      // The document entry and its task are different destinations: opening a
+      // saved page must not lose the real task's history and revision controls.
+      const existingPage = results.get(key);
+      if (result.kind === 'site_draft' && existingPage && !pendingReview) {
+        results.set(key, { ...existingPage, sourceWorkspace: workspace });
         continue;
+      }
       results.set(key, {
         key,
         title: result.title,
@@ -77,12 +78,17 @@ export function stationOutcomes(
             ? pendingReview
               ? t('待确认页面', 'Page to review')
               : t('页面成果', 'Page result')
+            : result.kind === 'media_selection'
+            ? t('选材结果', 'Selected media')
             : t('文字成果', 'Text result'),
         updatedAt: step.updatedAt,
         target:
           result.kind === 'site_draft' && !pendingReview
             ? { kind: 'site', id: result.id }
             : { kind: 'workspace', workspace },
+        ...(result.kind === 'site_draft' && !pendingReview
+          ? { sourceWorkspace: workspace }
+          : {}),
       });
     }
   }

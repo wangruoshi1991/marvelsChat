@@ -12,6 +12,7 @@ export type AIAssistObjectKind =
   | 'chat-message'
   | 'station-post'
   | 'chat-draft'
+  | 'station-file'
   | 'station-photo'
   | 'station-diary'
   | 'station-album'
@@ -32,7 +33,10 @@ export type AIAssistScene = {
     | 'revision'
     | 'inputMessageId'
   >;
-  workspace?: Pick<AgentWorkspace, 'id' | 'goal' | 'status' | 'revision'> & {
+  workspace?: Pick<
+    AgentWorkspace,
+    'id' | 'goal' | 'status' | 'revision' | 'currentRound'
+  > & {
     participants: { agentId: string; name: string }[];
   };
 };

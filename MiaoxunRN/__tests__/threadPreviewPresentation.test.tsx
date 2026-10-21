@@ -38,6 +38,18 @@ test.each([
   ['user JSON', { ...reply, senderType: 'user' }, content, false],
   ['unmarked reply', { ...reply, metadata: {} }, content, true],
   [
+    'new dispatch reply',
+    { ...reply, metadata: { agentDispatch: { version: 1, kind: 'reply' } } },
+    content,
+    false,
+  ],
+  [
+    'new dispatch clarification',
+    { ...reply, metadata: { agentDispatch: { version: 1, kind: 'clarify' } } },
+    content,
+    false,
+  ],
+  [
     'unknown schema',
     { ...reply, content: '{"frames":[]}' },
     '{"frames":[]}',

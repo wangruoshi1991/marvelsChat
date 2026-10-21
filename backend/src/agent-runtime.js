@@ -267,7 +267,7 @@ export async function testModelRuntime({ input = "请用一句话回复：妙讯
 }
 
 export function assertAgentExecutionMode(agent, mode, tools = null) {
-  if (!["plan", "coordinate", "dispatch", "chat", "contribute"].includes(mode) ||
+  if (!["plan", "coordinate", "dispatch", "chat", "contribute", "discussWorkspace"].includes(mode) ||
       typeof agent?.[mode] !== "function" || (mode !== "plan" && tools)) {
     throw new HttpError(422, mode === "chat" ? "此 Agent 当前不支持普通对话。" : "Agent does not support the requested execution mode.", { code: "AI_AGENT_MODE_UNSUPPORTED" });
   }
@@ -277,6 +277,9 @@ export async function runAgent({ agentId, input, user, thread = null, messages =
   const agent = await getAgent(agentId);
   if (!agent) throw new HttpError(404, `Agent ${agentId} is not registered`);
   assertAgentExecutionMode(agent, mode, tools);
+  if (mode === "discussWorkspace" && appContext?.resolvedReferences?.length) {
+    throw new HttpError(422, "Workspace discussion accepts task metadata only.", { code: "WORKSPACE_DISCUSSION_CONTEXT_INVALID" });
+  }
   const startedAt = Date.now();
   // Share the same execution time boundary with workspace nodes. Standalone
   // album tasks also renew their lease, so a per-request timeout alone would

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { AgentWorkspace } from '../../models/agentWorkspace';
+import { isAgentDispatch, usesAgentDispatch } from '../../models/agentDispatch';
 import { agentWorkspaceApi } from '../../services/api/agentWorkspaceApi';
 import { appErrorText, textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
@@ -13,10 +14,15 @@ const workspaceIdPattern =
 export function messageWorkspaceId(
   message: ChatMessage,
   agentId?: string | null,
+  threadId?: string,
 ) {
   const reference: unknown = message.metadata?.agentWorkspace;
   if (
-    agentId !== 'miaoxun-butler' ||
+    (agentId !== 'miaoxun-butler' &&
+      (!usesAgentDispatch(agentId) ||
+        !isAgentDispatch(message.metadata?.agentDispatch) ||
+        message.metadata?.agentDispatch?.kind !== 'workspace')) ||
+    (threadId !== undefined && message.threadId !== threadId) ||
     message.senderType !== 'agent' ||
     message.deletedAt ||
     message.recalledAt ||
@@ -40,12 +46,14 @@ export function WorkspaceMessageAction({
   palette,
   language,
   onOpen,
+  origin,
 }: {
   token: string;
   workspaceId: string;
   palette: Palette;
   language: Language;
   onOpen: (workspace: AgentWorkspace) => void;
+  origin?: { threadId: string; agentId: string };
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -64,6 +72,15 @@ export function WorkspaceMessageAction({
     setError('');
     try {
       const workspace = await agentWorkspaceApi.get(token, workspaceId);
+      if (
+        origin &&
+        (workspace.executionMode !== 'direct' ||
+          workspace.origin?.threadId !== origin.threadId ||
+          workspace.origin?.agentId !== origin.agentId)
+      )
+        throw new Error(
+          '任务来源与当前专业 Agent 会话不一致，请重新读取原会话。',
+        );
       if (alive.current) onOpen(workspace);
     } catch (issue) {
       if (alive.current)

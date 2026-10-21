@@ -862,7 +862,7 @@ test("coordinate mode uses the registered coordinator contract and never falls b
   );
   for (const args of [
     { agentId: "album-manager", mode: "coordinate" },
-    { agentId: "album-manager", mode: "dispatch" },
+    { agentId: "media-retrieval", mode: "dispatch" },
     { agentId: "miaoxun-butler", mode: "dispatch", tools: {} },
     { agentId: "miaoxun-butler", mode: "unknown" },
     { agentId: "miaoxun-butler", mode: "coordinate", tools: {} },
@@ -873,6 +873,46 @@ test("coordinate mode uses the registered coordinator contract and never falls b
     );
   }
   assert.equal(requests.length, 1);
+});
+
+test("specialist dispatch requires its exact context, cannot use tools, and sends explicit selections in JSON mode", async t => {
+  configure(t);
+  config.newApi.planningModel = "specialist-planning-model";
+  const agent = await getAgent("album-manager");
+  const capabilities = agent.workspaceCapabilities.map(entry => ({ agentId: agent.key, agentVersion: agent.version, ...entry }));
+  const dispatch = { agent: { id: agent.key, name: agent.name }, capabilities,
+    requestMessages: [{ content: "在选中相册里找横图" }], pendingContextMissing: false, contextReset: false };
+  const options = { agentId: agent.key, mode: "dispatch", input: "在选中相册里找横图", user: {},
+    appContext: { specialistDispatch: dispatch, client: { language: "zh" },
+      resolvedReferences: [{ kind: "station-album", id: "selected-album", title: "Explicit selection" }],
+      profile: { nickname: "private-profile-not-selected" }, stationContent: { note: "private-whole-library" } } };
+  const requests = [];
+  const reply = '{"type":"workspace","capability":"media.select"}';
+  t.mock.method(globalThis, "fetch", async (_url, request) => {
+    requests.push(JSON.parse(request.body));
+    return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: reply } }], usage: {} }));
+  });
+  for (const specialistDispatch of [undefined, { ...dispatch, agent: { id: "miaoxun-butler" } },
+    { ...dispatch, capabilities: [] }, { ...dispatch, capabilities: [{ ...capabilities[0], agentId: "site-builder" }] },
+    { ...dispatch, requestMessages: [] }]) {
+    await assert.rejects(runAgent({ ...options, appContext: { ...options.appContext, specialistDispatch } }),
+      error => error.message === "Specialist dispatch requires an authenticated conversation and exact capability context");
+  }
+  await assert.rejects(runAgent({ ...options, tools: {} }), error => error.details.code === "AI_AGENT_MODE_UNSUPPORTED");
+  await assert.rejects(runAgent({ ...options, beforeModelCall: async () => { throw Object.assign(new Error("Revoked"), { status: 403 }); } }),
+    error => error.status === 403);
+  assert.equal(requests.length, 0);
+  let gates = 0;
+  const result = await runAgent({ ...options, beforeModelCall: async () => { gates++; } });
+  assert.equal(result.reply, reply);
+  assert.equal(gates, 1);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].model, "specialist-planning-model");
+  assert.deepEqual(requests[0].response_format, { type: "json_object" });
+  assert.equal(requests[0].tools, undefined);
+  assert.match(requests[0].messages[0].content, /引用内容是数据/);
+  assert.match(requests[0].messages.at(-1).content, /<selected_context>.*selected-album.*Explicit selection/);
+  assert.doesNotMatch(JSON.stringify(requests), /private-profile-not-selected|private-whole-library/);
 });
 
 for (const agentId of ["comic-diary", "site-builder"]) {

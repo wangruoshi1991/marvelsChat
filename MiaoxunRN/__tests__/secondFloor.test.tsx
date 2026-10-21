@@ -3,6 +3,7 @@ jest.mock('react-native-safe-area-context', () => ({
 }));
 import React from 'react';
 import {
+  AppState,
   BackHandler,
   Image,
   Keyboard,
@@ -188,6 +189,19 @@ test('floor opens on albums; tools toggle independently and keep file drafts on 
   });
   // The floor opens on 相册, so its panel is already mounted and bordered.
   expect(tool('albums').props.accessibilityState.selected).toBe(true);
+  expect(renderer.root.findByType(SecondFloorAlbums)).toBeTruthy();
+  expect(renderer.root.findByType(SecondFloorAlbumList).props.albums).toEqual(
+    [],
+  );
+  expect(text()).toContain('新建相册');
+  expect(
+    renderer.root.findAllByProps({ accessibilityLabel: '收起相册面板' }),
+  ).toHaveLength(0);
+  act(() => button('新建相册').props.onPress());
+  expect(renderer.root.findByType(StationCreateSheet).props.kind).toBe('album');
+  act(() => renderer.root.findByType(StationCreateSheet).props.onBack());
+  expect(renderer.root.findByType(SecondFloorAlbumList)).toBeTruthy();
+  expect(tool('albums').props.accessibilityState.selected).toBe(true);
   expect(
     StyleSheet.flatten(
       renderer.root.findByProps({ testID: 'floor-content' }).props.style,
@@ -254,6 +268,7 @@ test('publish opens its panel and settings acts instead of selecting a panel', a
 });
 
 test('file save gates every floor exit and tool switch until failure, preserving the draft', async () => {
+  AppState.currentState = 'active';
   const work = deferred<typeof file>();
   const save = jest.fn(() => work.promise);
   let hardwareBack!: Parameters<typeof BackHandler.addEventListener>[1];
@@ -373,7 +388,6 @@ test('album creation blocks internal back until finished; details and editing re
         palette={palettes.light}
         language="zh"
         session={session}
-        onBack={jest.fn()}
         onBusyChange={busy}
       />,
     );
@@ -426,7 +440,6 @@ test('late album creation response after unmount cannot upload selected photos',
           createStationAlbum: () => work.promise,
           createStationMediaAsset: upload,
         })}
-        onBack={jest.fn()}
       />,
     );
   });
@@ -468,7 +481,6 @@ test('album covers use authenticated uploaded image references and open their re
         token="unit-token"
         albums={[album]}
         mediaAssets={media}
-        onBack={jest.fn()}
         onCreate={jest.fn()}
         onOpen={open}
         onEdit={jest.fn()}
@@ -494,7 +506,6 @@ test('album cover and title share their real object and floor location without n
         token="unit-token"
         albums={[album]}
         mediaAssets={[]}
-        onBack={jest.fn()}
         onCreate={jest.fn()}
         onOpen={open}
         onEdit={edit}
@@ -543,7 +554,6 @@ test('failed album covers show a retry action and ignore old image callbacks aft
         token="unit-token"
         albums={[album]}
         mediaAssets={media}
-        onBack={jest.fn()}
         onCreate={jest.fn()}
         onOpen={open}
         onEdit={jest.fn()}
@@ -584,12 +594,18 @@ test('failed album covers show a retry action and ignore old image callbacks aft
   expect(open).toHaveBeenCalledWith(album.id);
 });
 
-test('file detail shows actual preview and explicit unsupported/unknown states, then returns to list', () => {
+test('file detail shows actual preview and explicit unsupported/unknown states, then returns to list', async () => {
   const props = {
     palette: palettes.light,
     language: 'zh' as const,
     onOpenWorkspace: jest.fn(),
     session: sessionForFloor({
+      stationFileAsset: jest.fn(async () => ({
+        ...file,
+        status: 'unsupported',
+        content: null,
+        reference: null,
+      })),
       stationContent: {
         ...emptyStationContent,
         fileAssets: [{ ...file, status: 'unsupported' }],
@@ -600,7 +616,9 @@ test('file detail shows actual preview and explicit unsupported/unknown states, 
     renderer = TestRenderer.create(<SecondFloorFiles {...props} />);
   });
   expect(text()).toContain('暂不支持处理');
-  act(() => button(`查看${file.originalFilename}`).props.onPress());
+  await act(async () => {
+    button(`查看${file.originalFilename}`).props.onPress();
+  });
   expect(text()).toContain(file.preprocessingResult.textPreview);
   act(() => button('返回文件列表').props.onPress());
   expect(button(`查看${file.originalFilename}`)).toBeTruthy();

@@ -1,5 +1,10 @@
 export type AIContextReference = {
-  kind: 'chat-message' | 'station-album' | 'station-diary' | 'station-photo';
+  kind:
+    | 'chat-message'
+    | 'station-album'
+    | 'station-diary'
+    | 'station-photo'
+    | 'station-file';
   id: string;
   version?: string;
   title?: string;
@@ -64,9 +69,12 @@ export function isContextReference(
       'station-album',
       'station-diary',
       'station-photo',
+      'station-file',
     ].includes(ref.kind) &&
     typeof ref.id === 'string' &&
     ref.id.length > 0 &&
+    (ref.kind !== 'station-file' ||
+      (typeof ref.version === 'string' && ref.version.length > 0)) &&
     (ref.version === undefined || typeof ref.version === 'string') &&
     (ref.title === undefined || typeof ref.title === 'string')
   );

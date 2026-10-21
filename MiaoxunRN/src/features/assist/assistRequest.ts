@@ -57,8 +57,8 @@ export function assistContextSummary(
         ),
         textFor(
           language,
-          '这里只带入选中时的内容，请先讨论建议；需要原素材时先询问，不继续执行原任务。',
-          'Discuss the selected snapshot first. Ask before accessing original materials; do not resume the task.',
+          `关联第 ${workspace.currentRound} 轮任务。进入管家前会重新读取任务；发送消息只讨论，修改需回到任务详情确认。`,
+          `Linked to round ${workspace.currentRound}. The task is checked before opening Butler. Messages discuss it; revisions require confirmation in task details.`,
         ),
       );
     }
@@ -95,7 +95,9 @@ export function buildAssistMessage(
 ) {
   return [
     draft.trim(),
-    object && !persistentAssistReference(object)
+    object &&
+    object.kind !== 'agent-workspace' &&
+    !persistentAssistReference(object)
       ? assistContextSummary(scene, object, language)
       : '',
   ]

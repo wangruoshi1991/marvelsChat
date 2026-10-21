@@ -1,3 +1,4 @@
+import { specialistDispatchPlan } from "./specialist-dispatch.js";
 import { agentChatHistory } from "./chat-history.js";
 
 export default {
@@ -25,6 +26,10 @@ export default {
     inputKinds: ["station-album"], dependencyKinds: [], outputKind: "media_selection",
     requiredScopes: ["album:read"],
   }],
+
+  async dispatch(args) {
+    return specialistDispatchPlan(args, this);
+  },
 
   async plan({ input, messages = [], appContext = null }) {
     return {

@@ -181,7 +181,7 @@ test('Butler scope reset is sent only when explicitly true and requires both aut
     ),
   ).toThrow('Agent 协作');
   expect(mockedRequest).not.toHaveBeenCalled();
-  setAIContractSession('owner', { aiTasks: 1, agentWorkspaces: 3 });
+  setAIContractSession('owner', { aiTasks: 1, agentWorkspaces: 6 });
   await messageApi.sendMessage(
     'thread',
     'Continue',
@@ -231,8 +231,8 @@ const butlerContext: ButlerClientContextPayload = {
   enabledAgentIds: [],
 };
 
-test('a Butler chat without references sends both AI1 and workspace3 declarations', async () => {
-  setAIContractSession('owner', { aiTasks: 1, agentWorkspaces: 3 });
+test('a Butler chat without references sends both AI1 and workspace6 declarations', async () => {
+  setAIContractSession('owner', { aiTasks: 1, agentWorkspaces: 6 });
   mockedRequest.mockResolvedValue({ messages: [] });
   await messageApi.sendMessage('butler-thread', '你好', 'owner', butlerContext);
   expect(mockedRequest).toHaveBeenCalledWith(
@@ -241,7 +241,7 @@ test('a Butler chat without references sends both AI1 and workspace3 declaration
       token: 'owner',
       headers: {
         'X-Miaoxun-AI-Contract': '1',
-        'X-Miaoxun-Agent-Workspace': '3',
+        'X-Miaoxun-Agent-Workspace': '6',
       },
       body: { content: '你好', contextRefs: [], clientContext: butlerContext },
     }),
@@ -253,9 +253,12 @@ test.each([
   { aiTasks: 1 },
   { aiTasks: 1, agentWorkspaces: 1 },
   { aiTasks: 1, agentWorkspaces: 2 },
+  { aiTasks: 1, agentWorkspaces: 3 },
   { aiTasks: 1, agentWorkspaces: 4 },
-  { aiTasks: 1, agentWorkspaces: '3' },
-  { agentWorkspaces: 3 },
+  { aiTasks: 1, agentWorkspaces: 5 },
+  { aiTasks: 1, agentWorkspaces: 7 },
+  { aiTasks: 1, agentWorkspaces: '4' },
+  { agentWorkspaces: 6 },
 ])(
   'an unknown or older server cannot receive a reference-free Butler request: %p',
   contracts => {
@@ -287,7 +290,7 @@ test('workspace declarations do not impose a workspace gate on friends or other 
     expect.objectContaining({
       headers: {
         'X-Miaoxun-AI-Contract': '1',
-        'X-Miaoxun-Agent-Workspace': '3',
+        'X-Miaoxun-Agent-Workspace': '6',
       },
       body: {
         content: '查找照片',
@@ -299,7 +302,7 @@ test('workspace declarations do not impose a workspace gate on friends or other 
 });
 
 test('another login cannot reuse an accepted Butler workspace contract', () => {
-  setAIContractSession('another-owner', { aiTasks: 1, agentWorkspaces: 3 });
+  setAIContractSession('another-owner', { aiTasks: 1, agentWorkspaces: 6 });
   expect(() =>
     messageApi.sendMessage('butler-thread', '你好', 'owner', butlerContext),
   ).toThrow();

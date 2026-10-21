@@ -33,6 +33,7 @@ export function ContextReference({
     'station-album': ['相册', 'Album'],
     'station-diary': ['日记', 'Diary'],
     'station-photo': ['素材', 'Media'],
+    'station-file': ['文件', 'File'],
   };
   if (!references.length) return null;
   return (

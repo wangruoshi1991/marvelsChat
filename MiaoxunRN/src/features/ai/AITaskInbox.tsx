@@ -10,6 +10,9 @@ import {
 import { ChevronRight, RefreshCw } from 'lucide-react-native';
 import { AgentDTO } from '../../models/api';
 import { AITaskDTO } from '../../models/aiTask';
+import { AgentWorkspace } from '../../models/agentWorkspace';
+import { useAgentWorkspaces } from '../workspaces/useAgentWorkspaces';
+import { AgentWorkspaceCard } from '../workspaces/AgentWorkspaceCard';
 import { textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
 import { AgentIconAvatar } from '../messages/AgentIconAvatar';
@@ -24,6 +27,7 @@ type AITaskInboxProps = {
   language: Language;
   agents: AgentDTO[];
   onOpenTask: (task: AITaskDTO) => void;
+  onOpenWorkspace?: (workspace: AgentWorkspace) => void;
 };
 
 function updatedTime(value: string, language: Language) {
@@ -44,17 +48,38 @@ export function AITaskInbox({
   language,
   agents,
   onOpenTask,
+  onOpenWorkspace,
 }: AITaskInboxProps) {
-  const { tasks, loading, hasLoaded, error, refresh } = useAITasks({
+  const legacy = useAITasks({
     token,
     active,
   });
-  const initialLoading = Boolean(token) && !hasLoaded && !error;
+  const collaboration = useAgentWorkspaces({
+    token,
+    active: active && Boolean(onOpenWorkspace),
+  });
+  const error = legacy.error || collaboration.error;
+  const loading =
+    legacy.loading ||
+    Boolean(onOpenWorkspace && !collaboration.loaded && !error);
+  const refresh = () =>
+    Promise.all([legacy.refresh(), collaboration.refresh()]);
+  const entries = [
+    ...legacy.tasks.map(task => ({ kind: 'task' as const, task })),
+    ...collaboration.workspaces.map(workspace => ({
+      kind: 'workspace' as const,
+      task: workspace,
+    })),
+  ].sort((a, b) => b.task.createdAt.localeCompare(a.task.createdAt));
+  const initialLoading =
+    Boolean(token) &&
+    (!legacy.hasLoaded || (onOpenWorkspace && !collaboration.loaded)) &&
+    !error;
   return (
     <FlatList
       testID="ai-task-inbox"
-      data={tasks}
-      keyExtractor={task => task.id}
+      data={entries}
+      keyExtractor={entry => `${entry.kind}:${entry.task.id}`}
       style={[s.list, { backgroundColor: palette.background }]}
       contentContainerStyle={s.content}
       ListHeaderComponent={
@@ -122,10 +147,10 @@ export function AITaskInbox({
                 {textFor(
                   language,
                   token
-                    ? '相册查询和建站任务会显示在这里。'
+                    ? 'Agent 执行任务、进展和成果会显示在这里。'
                     : '你的任务状态和成果会随账号保存。',
                   token
-                    ? 'Album searches and site tasks will appear here.'
+                    ? 'Agent tasks, progress and results will appear here.'
                     : 'Task progress and results are saved to your account.',
                 )}
               </Text>
@@ -133,8 +158,31 @@ export function AITaskInbox({
           ) : null}
         </View>
       }
-      renderItem={({ item: task }) => {
-        const agent = agents.find(item => item.key === task.agentId);
+      ListFooterComponent={
+        legacy.tasks.length === 30 || collaboration.workspaces.length === 30 ? (
+          <Text style={[s.caption, { color: palette.secondaryText }]}>
+            {textFor(
+              language,
+              '分别显示最近 30 项 Agent 任务和历史任务',
+              'Showing up to 30 recent Agent tasks and 30 legacy tasks',
+            )}
+          </Text>
+        ) : null
+      }
+      renderItem={({ item }) => {
+        if (item.kind === 'workspace')
+          return (
+            <AgentWorkspaceCard
+              workspace={item.task}
+              agents={agents}
+              palette={palette}
+              language={language}
+              grid={false}
+              onOpen={() => onOpenWorkspace?.(item.task)}
+            />
+          );
+        const task = item.task;
+        const agent = agents.find(entry => entry.key === task.agentId);
         const agentName =
           agent?.name ||
           textFor(

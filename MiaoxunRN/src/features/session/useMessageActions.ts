@@ -1,4 +1,11 @@
 import type { AIContextReference } from '../../models/aiTask';
+import { usesAgentDispatch } from '../../models/agentDispatch';
+import {
+  WorkspaceContextSelector,
+  WorkspaceDiscussionContext,
+  isWorkspaceDiscussionContext,
+  workspaceContextSelector,
+} from '../../models/workspaceContext';
 import { Dispatch, SetStateAction, useCallback, useRef } from 'react';
 import { ButlerClientContextPayload } from '../../models/api';
 import { apiClient } from '../../services/apiClient';
@@ -43,22 +50,72 @@ export function useMessageActions({
       contextRefs: AIContextReference[] = [],
       assistSource?: AssistMessageSource,
       butlerContextReset?: boolean,
+      workspaceContext?: WorkspaceDiscussionContext,
+      agentContextReset?: boolean,
     ) => {
       const thread = threads.find(item => item.id === threadId);
       const isButler = thread?.agentId === 'miaoxun-butler';
+      const isProfessional = usesAgentDispatch(thread?.agentId);
       const retryMessage = thread?.messages.find(
         message => message.id === retryMessageId,
       );
-      const submittedReferences = retryMessage
-        ? retryMessage.metadata?.contextRefs || []
-        : contextRefs;
-      const submittedReset =
-        isButler &&
-        (retryMessage
-          ? retryMessage.metadata?.butlerContextReset === true
-          : butlerContextReset === true);
+      if (
+        retryMessageId &&
+        (!retryMessage ||
+          retryMessage.senderType !== 'user' ||
+          retryMessage.localStatus !== 'failed' ||
+          !retryMessage.clientMessageId)
+      ) {
+        setErrorMessage('原失败消息已不可重试，请刷新会话后核对原提交。');
+        return false;
+      }
+      const originalReply = retryMessage?.metadata?.replyTo;
+      const submittedReplyToMessageId = retryMessage
+        ? originalReply &&
+          typeof originalReply === 'object' &&
+          'messageId' in originalReply &&
+          typeof originalReply.messageId === 'string'
+          ? originalReply.messageId
+          : null
+        : replyToMessageId;
+      const submittedContent = retryMessage?.content ?? content;
+      const submittedReferences = (
+        retryMessage ? retryMessage.metadata?.contextRefs || [] : contextRefs
+      ).map(reference => ({ ...reference }));
+      const submittedResetValue = retryMessage
+        ? retryMessage.metadata?.butlerContextReset
+        : butlerContextReset;
+      const submittedReset = isButler && submittedResetValue === true;
+      const submittedAgentResetValue = retryMessage
+        ? retryMessage.metadata?.agentContextReset
+        : agentContextReset;
+      const submittedAgentReset =
+        isProfessional && submittedAgentResetValue === true;
+      const submittedWorkspace = retryMessage
+        ? retryMessage.metadata?.workspaceContext
+        : workspaceContext;
       let submittedSource: AssistMessageSource | undefined;
       try {
+        if (
+          submittedAgentResetValue !== undefined &&
+          (!isProfessional ||
+            submittedResetValue !== undefined ||
+            submittedWorkspace !== undefined)
+        )
+          throw new Error('专业 Agent 的新需求不能混用管家或任务讨论上下文。');
+        if (submittedResetValue !== undefined && !isButler)
+          throw new Error('专业 Agent 不能使用管家上下文重置。');
+        if (
+          submittedWorkspace !== undefined &&
+          (!isButler ||
+            !isWorkspaceDiscussionContext(submittedWorkspace) ||
+            submittedReferences.length ||
+            submittedReplyToMessageId ||
+            submittedResetValue !== undefined)
+        )
+          throw new Error(
+            '任务讨论关联无效，不能同时附加其他素材或回复。请重新打开原任务。',
+          );
         // Retries keep the original location even if the user has navigated
         // elsewhere. A new caller cannot replace an accepted request's source.
         submittedSource = normalizeAssistMessageSource(
@@ -78,14 +135,18 @@ export function useMessageActions({
         threadId,
         senderType: 'user',
         senderName: currentUserName || '我',
-        content,
+        content: submittedContent,
         clientMessageId,
         metadata: {
           contextRefs: submittedReferences,
           ...(submittedReset ? { butlerContextReset: true } : {}),
+          ...(submittedAgentReset ? { agentContextReset: true } : {}),
           ...(submittedSource ? { assistSource: submittedSource } : {}),
-          ...(replyToMessageId
-            ? { replyTo: { messageId: replyToMessageId } }
+          ...(submittedWorkspace
+            ? { workspaceContext: { ...submittedWorkspace } }
+            : {}),
+          ...(submittedReplyToMessageId
+            ? { replyTo: { messageId: submittedReplyToMessageId } }
             : {}),
         },
         localStatus: 'sending',
@@ -107,7 +168,7 @@ export function useMessageActions({
                         : message,
                     )
                   : [...item.messages, optimistic],
-                lastContent: content,
+                lastContent: submittedContent,
               }
             : item,
         ),
@@ -146,23 +207,29 @@ export function useMessageActions({
       }
 
       try {
-        if (isButler) assertAgentWorkspaceContract(token);
+        if (isButler || isProfessional) assertAgentWorkspaceContract(token);
         else if (thread?.agentId || submittedReferences.length)
           assertAIContract(token);
         const response = await apiClient.sendMessage(
           threadId,
-          content,
+          submittedContent,
           token,
           isButler
             ? makeButlerContext(
                 submittedSource?.currentPage || 'messages.butler',
               )
             : null,
-          replyToMessageId,
+          submittedReplyToMessageId,
           clientMessageId,
           45000,
           submittedReferences,
-          ...(submittedReset ? ([true] as const) : []),
+          ...((submittedAgentReset
+            ? [undefined, undefined, true]
+            : submittedWorkspace
+            ? [undefined, workspaceContextSelector(submittedWorkspace)]
+            : submittedReset
+            ? [true]
+            : []) as [boolean?, WorkspaceContextSelector?, boolean?]),
         );
         const incoming = response.messages.map(mapMessage);
         setThreads(current =>

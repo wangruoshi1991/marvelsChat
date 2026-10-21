@@ -19,7 +19,11 @@ const labels: Record<WorkspaceStatus, [string, string]> = {
 export const workspaceStatusLabel = (
   status: WorkspaceStatus | WorkspaceStep['status'],
   language: Language,
-) => textFor(language, ...labels[status]);
+  executionMode: AgentWorkspace['executionMode'] = 'coordinated',
+) =>
+  status === 'running' && executionMode === 'direct'
+    ? textFor(language, '执行中', 'Working')
+    : textFor(language, ...labels[status]);
 
 export function workspaceCardPresentation(
   workspace: AgentWorkspace,

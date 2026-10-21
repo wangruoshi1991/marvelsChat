@@ -1,3 +1,4 @@
+import { specialistDispatchPlan } from "./specialist-dispatch.js";
 import { workspaceContributionPlan } from "./workspace-contribution.js";
 import { agentChatHistory } from "./chat-history.js";
 
@@ -35,6 +36,10 @@ export default {
     return workspaceContributionPlan(args, { name: "3D形象顾问",
       expertise: "给出3D照片准备、形象设定和结果理解的文字建议。",
       boundary: "3D生成仍是独立产品流程；不能发起、控制或代替3D任务，不生成模型、不扣费或保存模型。" });
+  },
+
+  async dispatch(args) {
+    return specialistDispatchPlan(args, this);
   },
 
   async chat({ input, user, messages = [], appContext = null }) {

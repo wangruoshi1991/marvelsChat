@@ -5,21 +5,24 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { pageGradientStops, pageGradientWash } from './theme';
 
 /**
- * The light theme's page background, built from the reference rather than a
- * single straight ramp. Sampling the reference down one column gives mint at the
- * top, white through the middle, a faint second mint band low on the page, then
- * white again — and sampling across a row shows the left edge leaning teal and
- * the right edge leaning lime at every height.
+ * The light theme's shared page background. A horizontal wash supplies the
+ * existing left/right hue shift, while a white veil fades near the top and
+ * bottom without covering the main content area in white.
  *
  * So it is two passes: a horizontal wash that carries the left/right hue shift,
  * and a vertical veil of white that opens and closes the two mint bands. A plain
  * top-to-bottom gradient loses both, which is what made the earlier attempts
  * read as "not quite the design".
  *
- * Rendered once behind the root tab content; screens on top must stay transparent
- * in light mode.
+ * Rendered once behind the root tabs and their safe areas; screens on top stay
+ * transparent in light mode.
  */
-export function PageGradient() {
+export function PageGradient({
+  verticalFade = true,
+}: {
+  /** False for sticky header backplates that must stay opaque while scrolling. */
+  verticalFade?: boolean;
+} = {}) {
   // Screens can be mounted side by side (a tab kept alive under another), so the
   // ids have to be unique per instance or one would borrow the other's stops.
   const id = useId().replace(/:/g, '');
@@ -46,7 +49,9 @@ export function PageGradient() {
           </LinearGradient>
         </Defs>
         <Rect fill={`url(#${washId})`} height="100%" width="100%" />
-        <Rect fill={`url(#${veilId})`} height="100%" width="100%" />
+        {verticalFade ? (
+          <Rect fill={`url(#${veilId})`} height="100%" width="100%" />
+        ) : null}
       </Svg>
     </View>
   );

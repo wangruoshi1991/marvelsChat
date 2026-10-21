@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -54,7 +55,6 @@ test("packages only a clean committed source tree with fresh frontend builds", (
       "agents/registry.js",
       "agents/chat-history.js",
       "agents/workspace-contribution.js",
-      "agents/example.agent.js",
       "agents/scripts/agent-test.js",
       "agents/test/registry.test.js",
       "agents/evals/workspace/plan.jsonl",
@@ -82,6 +82,13 @@ test("packages only a clean committed source tree with fresh frontend builds", (
       "deploy/miaoxun-prod.env.example",
     ]) {
       write(fixture, path, "export default true;\n");
+    }
+    // Exercise the real registry import graph in the extracted artifact, so a
+    // newly used runtime helper cannot silently disappear from the allowlist.
+    const agentSources = readdirSync(join(repositoryRoot, "agents"))
+      .filter(name => name.endsWith(".js"));
+    for (const name of agentSources) {
+      copyFileSync(join(repositoryRoot, "agents", name), join(fixture, "agents", name));
     }
     write(fixture, "backend/package.json", `${JSON.stringify({
       name: "@miaoxun/backend",
@@ -202,7 +209,12 @@ test("packages only a clean committed source tree with fresh frontend builds", (
     assert.equal(existsSync(join(runtime, "scripts/check-repository.sh")), false);
     assert.equal(existsSync(join(runtime, "scripts/backup-production-database.sh")), false);
     assert.equal(existsSync(join(runtime, "scripts/miaoxun-development.mjs")), false);
-    assert.ok(existsSync(join(runtime, "agents/example.agent.js")));
+    const packagedAgents = JSON.parse(run("node", ["--input-type=module", "--eval",
+      'import { listAgents } from "./agents/registry.js"; console.log(JSON.stringify((await listAgents()).map(agent => agent.key).sort()));',
+    ], runtime));
+    assert.deepEqual(packagedAgents, agentSources
+      .filter(name => name.endsWith(".agent.js"))
+      .map(name => name.slice(0, -".agent.js".length)).sort());
     assert.ok(existsSync(join(runtime, "agents/chat-history.js")));
     assert.ok(existsSync(join(runtime, "agents/workspace-contribution.js")));
     assert.ok(existsSync(join(runtime, "shared/site-document.js")));

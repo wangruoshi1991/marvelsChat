@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, TextInput } from 'react-native';
+import { AppState, Text, TextInput } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { palettes } from '../src/shared/theme';
 import { SecondFloorScreen } from '../src/features/second-floor/SecondFloorScreen';
@@ -126,6 +126,7 @@ test('second floor starts on albums, opens all six tools and returns explicitly'
 });
 
 test('text material begins empty, prevents double submission and retains user input after failure', async () => {
+  AppState.currentState = 'active';
   let reject!: (error: Error) => void;
   const save = jest.fn(
     () =>
@@ -187,7 +188,6 @@ test('partial photo upload preserves the created album and opens its real detail
         palette={palettes.light}
         language="zh"
         session={session}
-        onBack={jest.fn()}
       />,
     );
   });

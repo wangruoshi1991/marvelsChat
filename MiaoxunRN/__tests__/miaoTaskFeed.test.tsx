@@ -650,7 +650,7 @@ test('closing and reopening the controlled composer preserves the edited draft w
   );
 });
 
-test('blank requests stay disabled and continuing passes only the user draft for review', () => {
+test('blank requests stay disabled and continuing passes only the user draft for review', async () => {
   const proceed = jest.fn(() => true);
   act(() => {
     renderer = TestRenderer.create(
@@ -665,19 +665,19 @@ test('blank requests stay disabled and continuing passes only the user draft for
   );
   expect(button('交给妙管家').props.disabled).toBe(false);
   expect(proceed).not.toHaveBeenCalled();
-  act(() => button('交给妙管家').props.onPress());
+  await act(async () => button('交给妙管家').props.onPress());
   expect(proceed).toHaveBeenCalledWith('整理我的旅行记录');
   expect(text()).toContain('妙管家会按需邀请你的 AI 伙伴协作。');
 });
 
-test('failed navigation leaves an explicit inline error and retains the editable draft for retry', () => {
+test('failed navigation leaves an explicit inline error and retains the editable draft for retry', async () => {
   const proceed = jest.fn(() => false);
   act(() => {
     renderer = TestRenderer.create(
       <ComposerHarness initial="仍需处理的需求" proceed={proceed} />,
     );
   });
-  act(() => button('交给妙管家').props.onPress());
+  await act(async () => button('交给妙管家').props.onPress());
   expect(proceed).toHaveBeenCalledWith('仍需处理的需求');
   expect(renderer!.root.findByType(TextInput).props.value).toBe(
     '仍需处理的需求',
@@ -690,6 +690,6 @@ test('failed navigation leaves an explicit inline error and retains the editable
     renderer!.root.findByType(TextInput).props.onChangeText('修改后再次尝试'),
   );
   proceed.mockReturnValueOnce(true);
-  act(() => button('交给妙管家').props.onPress());
+  await act(async () => button('交给妙管家').props.onPress());
   expect(proceed).toHaveBeenLastCalledWith('修改后再次尝试');
 });

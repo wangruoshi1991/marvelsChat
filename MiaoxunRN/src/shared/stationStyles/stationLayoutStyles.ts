@@ -1,15 +1,15 @@
 import { spacing } from '../theme';
 
 export const stationLayoutStyles = {
-  stationPanelScroll: { flex: 1 },
+  stationPanelScroll: { flex: 1, overflow: 'hidden' },
   stationScrollContent: { paddingBottom: 118 },
   stationTopContent: {
     paddingBottom: 8,
     paddingHorizontal: 14,
     paddingTop: 10,
-    // Both this card and the switch dock as sticky headers. The switch wrapper
-    // carries `zIndex: 10`, so without a higher zIndex here its opaque
-    // background paints over the 64px collapsed card.
+    // Keep the collapsing profile card and its tab switch outside the panel's
+    // ScrollView. Native sticky headers relayout their children as the card
+    // shrinks and can let the panel paint across the switch.
     zIndex: 20,
   },
   stationPanelWrap: { paddingHorizontal: 14, paddingTop: 8 },

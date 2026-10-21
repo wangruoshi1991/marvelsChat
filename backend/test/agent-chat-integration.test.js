@@ -6,6 +6,7 @@ import { getAgent } from "../../agents/registry.js";
 import { authenticate, hashToken } from "../src/auth.js";
 import { closeDatabase, query } from "../src/db.js";
 import { registerMessageRoutes } from "../src/routes/message-routes.js";
+import { assertAgentExecutionMode } from "../src/agent-runtime.js";
 import { createRequestErrorHandler } from "../src/request-observability.js";
 
 const enabled = process.env.RUN_AI_TASK_INTEGRATION === "1";
@@ -41,7 +42,7 @@ before(async () => {
       const agent = await getAgent(options.agentId);
       const prompt = await agent[options.mode](options);
       calls.push({ agentId: options.agentId, mode: options.mode, prompt });
-      return { reply: "可以先讨论风格和内容。", provider: "isolated-chat-fixture", latencyMs: 1 };
+      return { reply: JSON.stringify({ type: "reply", reply: "可以先讨论风格和内容。" }), provider: "isolated-chat-fixture", latencyMs: 1 };
     } });
   app.use(createRequestErrorHandler({ production: true, logger: { error() {} } }));
   await new Promise(resolve => { server = app.listen(0, "127.0.0.1", resolve); });
@@ -58,48 +59,57 @@ after(async () => {
 
 const send = async (key, overrides = {}) => {
   const response = await fetch(`${origin}/api/threads/${threads.get(key)}/messages`, {
-    method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Miaoxun-AI-Contract": "1" },
+    method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": "6" },
     body: JSON.stringify({ content: "我们先讨论一下风格", clientMessageId: crypto.randomUUID(), ...overrides }),
   });
   return { status: response.status, ...await response.json() };
 };
 
 for (const key of ["virtual-character", "site-builder"]) {
-  integration(`${key} ordinary messages use its explicit conversation method`, async () => {
+  integration(`${key} ordinary messages use its own dispatch and return an explicit consultation receipt`, async () => {
     const result = await send(key);
     assert.equal(result.status, 201);
     assert.equal(result.data.messages.at(-1).content, "可以先讨论风格和内容。");
     assert.equal(calls.length, 1);
     assert.equal(calls[0].agentId, key);
-    assert.equal(calls[0].mode, "chat");
+    assert.equal(calls[0].mode, "dispatch");
+    assert.deepEqual(result.data.messages.at(-1).metadata.agentDispatch, { version: 1, kind: "reply" });
     assert.match(calls[0].prompt.system, /自然/);
     assert.doesNotMatch(calls[0].prompt.system, /只返回一个合法 JSON 对象/);
   });
 }
 
-integration("missing chat support is rejected before storing a message or invoking a generation plan", async t => {
+test("missing explicit chat support still cannot fall back to a generation plan", async () => {
   const agent = await getAgent("site-builder");
-  const original = agent.chat;
-  agent.chat = undefined;
-  t.after(() => { agent.chat = original; });
+  assert.throws(() => assertAgentExecutionMode({ ...agent, chat: undefined }, "chat"), error =>
+    error.status === 422 && error.details.code === "AI_AGENT_MODE_UNSUPPORTED" && error.message === "此 Agent 当前不支持普通对话。");
+});
+
+integration("missing dispatch support is rejected before storing a professional message or invoking a generation plan", async t => {
+  const agent = await getAgent("site-builder");
+  const original = agent.dispatch;
+  agent.dispatch = undefined;
+  t.after(() => { agent.dispatch = original; });
   const clientMessageId = crypto.randomUUID();
   const result = await send(agent.key, { clientMessageId });
   assert.equal(result.status, 422);
   assert.equal(result.error.details.code, "AI_AGENT_MODE_UNSUPPORTED");
-  assert.equal(result.error.message, "此 Agent 当前不支持普通对话。");
+  assert.equal(result.error.message, "Agent does not support the requested execution mode.");
   assert.equal(calls.length, 0);
   assert.deepEqual(await query("SELECT id FROM chat_messages WHERE user_id = ? AND client_message_id = ?", [owner, clientMessageId]), []);
 });
 
-integration("album messages keep their queued task entry and never reach ordinary synchronous chat", async () => {
+integration("album consultation uses its own dispatch without queuing a legacy search task", async () => {
   const result = await send("album-manager");
-  assert.equal(result.status, 202);
-  assert.equal(result.data.task.kind, "agent_message");
-  assert.equal(result.data.task.agentId, "album-manager");
-  assert.equal(result.data.task.status, "queued");
-  assert.equal(result.data.messages.length, 1);
+  assert.equal(result.status, 201);
+  assert.equal(result.data.task, undefined);
+  assert.equal(result.data.messages.length, 2);
   assert.equal(result.data.messages[0].senderType, "user");
-  assert.equal(calls.length, 0);
-  const [stored] = await query("SELECT input_message_id FROM ai_tasks WHERE id = ? AND user_id = ?", [result.data.task.id, owner]);
-  assert.equal(stored.input_message_id, result.data.messages[0].id);
+  assert.equal(result.data.messages.at(-1).content, "可以先讨论风格和内容。");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].agentId, "album-manager");
+  assert.equal(calls[0].mode, "dispatch");
+  assert.deepEqual(result.data.messages.at(-1).metadata.agentDispatch, { version: 1, kind: "reply" });
+  assert.deepEqual(await query("SELECT id FROM ai_tasks WHERE user_id = ?", [owner]), []);
+  assert.deepEqual(await query("SELECT id FROM agent_workspaces WHERE user_id = ?", [owner]), []);
 });

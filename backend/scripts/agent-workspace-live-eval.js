@@ -14,7 +14,8 @@ const hash = value => crypto.createHash("sha256").update(typeof value === "strin
 const boundedText = (min, max) => z.string().min(min).max(max);
 const catalogueEntrySchema = z.object({
   agentId: boundedText(1, 120), agentVersion: z.string().regex(/^\d+\.\d+\.\d+$/), capability: boundedText(1, 120),
-  description: boundedText(1, 500), inputKinds: z.array(boundedText(1, 60)).max(4), dependencyKinds: z.array(boundedText(1, 60)).max(2),
+  description: boundedText(1, 500), inputKinds: z.array(boundedText(1, 60)).max(4),
+  dependencyKinds: z.array(z.enum(["media_selection", "text_result", "site_draft"])).max(3),
   outputKind: z.enum(["media_selection", "site_draft", "text_result"]), requiredScopes: z.array(boundedText(1, 60)).min(1).max(10),
 }).strict();
 const unavailableCapabilitySchema = z.object({ agentId: boundedText(1, 120), capability: boundedText(1, 120), requiredScopes: z.array(boundedText(1, 120)).min(1).max(40), agentName: boundedText(1, 120), description: boundedText(1, 500),

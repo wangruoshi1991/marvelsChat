@@ -7,9 +7,16 @@ import { AITaskDTO } from '../src/models/aiTask';
 import { AgentDTO } from '../src/models/api';
 import { aiTaskApi } from '../src/services/api/aiTaskApi';
 import { palettes } from '../src/shared/theme';
+import { agentWorkspace, workspaceStep } from '../__fixtures__/agentWorkspace';
+import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
+import { AIAssistProvider } from '../src/features/assist/AIAssistProvider';
+import { AgentWorkspaceCard } from '../src/features/workspaces/AgentWorkspaceCard';
 
 jest.mock('../src/services/api/aiTaskApi', () => ({
   aiTaskApi: { list: jest.fn(), decide: jest.fn() },
+}));
+jest.mock('../src/services/api/agentWorkspaceApi', () => ({
+  agentWorkspaceApi: { list: jest.fn() },
 }));
 const list = jest.mocked(aiTaskApi.list);
 const task = (changes: Partial<AITaskDTO> = {}): AITaskDTO => ({
@@ -106,6 +113,7 @@ beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
   list.mockResolvedValue([]);
+  jest.mocked(agentWorkspaceApi.list).mockResolvedValue([]);
 });
 afterEach(() => {
   if (renderer) act(() => renderer!.unmount());
@@ -163,6 +171,45 @@ test('loads both task kinds, shows real goals and opens their original workspace
   expect(aiTaskApi.decide).not.toHaveBeenCalled();
   await act(async () => renderer!.update(inbox({ onOpenTask: jest.fn() })));
   expect(list).toHaveBeenCalledTimes(1);
+});
+
+test('the task inbox includes direct workspaces alongside legacy tasks and opens their canonical IDs', async () => {
+  const workspace = agentWorkspace({
+    id: 'direct-site',
+    goal: '专业会话创建的页面',
+    executionMode: 'direct',
+    origin: {
+      kind: 'agent_conversation',
+      threadId: 'site-thread',
+      inputMessageId: 'input',
+      agentId: 'site-builder',
+      agentVersion: '1',
+      capability: 'site.compose',
+    },
+    steps: [
+      workspaceStep({
+        agentId: 'site-builder',
+        agentVersion: '1',
+        capability: 'site.compose',
+      }),
+    ],
+  });
+  list.mockResolvedValue([task()]);
+  jest.mocked(agentWorkspaceApi.list).mockResolvedValue([workspace]);
+  const open = jest.fn();
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <AIAssistProvider routeKey="inbox" onAskButler={jest.fn()}>
+        {inbox({ onOpenWorkspace: open })}
+      </AIAssistProvider>,
+    );
+  });
+  expect(text()).toContain(workspace.goal);
+  expect(text()).toContain(task().goal);
+  expect(renderer!.root.findAllByType(AgentWorkspaceCard)).toHaveLength(1);
+  act(() => renderer!.root.findByType(AgentWorkspaceCard).props.onOpen());
+  expect(open).toHaveBeenCalledWith(workspace);
+  expect(aiTaskApi.decide).not.toHaveBeenCalled();
 });
 
 test('shows loading until the real empty response and never creates sample tasks', async () => {
@@ -248,11 +295,11 @@ test('all-kind and filtered scopes discard stale requests and expose accurate lo
 });
 
 test('the inbox pauses polling offscreen and in background and does not read signed-out data', async () => {
-  let changeState!: (state: AppStateStatus) => void;
+  const listeners: Array<(state: AppStateStatus) => void> = [];
   jest
     .spyOn(AppState, 'addEventListener')
     .mockImplementation((_event, listener) => {
-      changeState = listener;
+      listeners.push(listener);
       return { remove: jest.fn() };
     });
   await act(async () => {
@@ -262,7 +309,7 @@ test('the inbox pauses polling offscreen and in background and does not read sig
   await act(async () => jest.advanceTimersByTime(9000));
   expect(list).toHaveBeenCalledTimes(1);
   await act(async () => renderer!.update(inbox()));
-  await act(async () => changeState('background'));
+  await act(async () => listeners.forEach(listener => listener('background')));
   const paused = list.mock.calls.length;
   await act(async () => jest.advanceTimersByTime(9000));
   expect(list).toHaveBeenCalledTimes(paused);

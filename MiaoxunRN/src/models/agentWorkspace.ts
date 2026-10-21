@@ -1,6 +1,11 @@
 import { AIContextReference, isContextReference } from './aiTask';
 
-export type WorkspaceOperation = 'cancel' | 'confirm' | 'reject' | 'reply';
+export type WorkspaceOperation =
+  | 'cancel'
+  | 'confirm'
+  | 'reject'
+  | 'reply'
+  | 'continue';
 export type WorkspaceStatus =
   | 'queued'
   | 'running'
@@ -32,6 +37,7 @@ export type WorkspaceTextDocument = {
 };
 export type WorkspaceStep = {
   id: string;
+  round: number;
   key: string;
   agentId: string;
   agentVersion: string;
@@ -71,10 +77,43 @@ export type WorkspaceInputRequest =
       }[];
       nextAction: 'manage_agents_then_restart' | 'restart';
     };
+export type WorkspaceContinuationAttempt = {
+  workspaceId: string;
+  revision: number;
+  currentRound: number;
+  text: string;
+  idempotencyKey: string;
+};
+export type WorkspaceRound = {
+  number: number;
+  instruction: string;
+  baseResultNodeId: string | null;
+  resultNodeId: string | null;
+  status: WorkspaceStatus;
+  summary: string;
+  result: WorkspaceArtifact | null;
+  createdAt: string;
+  completedAt: string | null;
+};
 export type AgentWorkspace = WorkspaceRequest & {
+  readAccess?: {
+    state: 'unavailable';
+    code: 'WORKSPACE_FILE_SOURCE_UNAVAILABLE';
+  };
   id: string;
+  executionMode: 'coordinated' | 'direct';
+  origin: {
+    kind: 'agent_conversation';
+    threadId: string;
+    inputMessageId: string;
+    agentId: string;
+    agentVersion: string;
+    capability: string;
+  } | null;
   status: WorkspaceStatus;
   revision: number;
+  currentRound: number;
+  rounds: WorkspaceRound[];
   summary: string;
   question: string | null;
   inputRequest: WorkspaceInputRequest | null;
@@ -110,6 +149,31 @@ const error = (v: unknown) =>
 const unique = (v: unknown[]): boolean => new Set(v).size === v.length;
 const exactKeys = (v: Record<string, unknown>, keys: string[]) =>
   Object.keys(v).length === keys.length && keys.every(key => key in v);
+export function isWorkspaceContinuationAttempt(
+  value: unknown,
+): value is WorkspaceContinuationAttempt {
+  return (
+    record(value) &&
+    exactKeys(value, [
+      'workspaceId',
+      'revision',
+      'currentRound',
+      'text',
+      'idempotencyKey',
+    ]) &&
+    nonempty(value.workspaceId) &&
+    integer(value.revision) &&
+    Number(value.revision) > 0 &&
+    integer(value.currentRound) &&
+    Number(value.currentRound) > 0 &&
+    nonempty(value.text) &&
+    value.text === value.text.trim() &&
+    value.text.length <= 2000 &&
+    nonempty(value.idempotencyKey) &&
+    value.idempotencyKey.length >= 8 &&
+    value.idempotencyKey.length <= 160
+  );
+}
 export function isWorkspaceInputRequest(
   v: unknown,
 ): v is WorkspaceInputRequest {
@@ -204,6 +268,23 @@ export function isWorkspaceArtifact(v: unknown): v is WorkspaceArtifact {
     v.retrievalRunIds.every(nonempty)
   );
 }
+// Object property order is not part of the wire contract. Compare only the
+// validated public artifact fields, while preserving meaningful array order.
+export function workspaceArtifactsMatch(
+  left: WorkspaceArtifact | null,
+  right: WorkspaceArtifact | null,
+) {
+  const fields = [
+    'kind',
+    'title',
+    'id',
+    'assets',
+    'version',
+    'matchedFrameTimestampMs',
+    'retrievalRunIds',
+  ];
+  return JSON.stringify(left, fields) === JSON.stringify(right, fields);
+}
 export function assertWorkspaceTextDocument(
   value: unknown,
   expectedId: string,
@@ -239,8 +320,36 @@ export function assertAgentWorkspace(v: unknown): asserts v is AgentWorkspace {
   const w = v as unknown as AgentWorkspace;
   if (
     !nonempty(w.id) ||
+    !['coordinated', 'direct'].includes(w.executionMode) ||
+    (w.executionMode === 'coordinated'
+      ? w.origin !== null
+      : !record(w.origin) ||
+        !exactKeys(w.origin, [
+          'kind',
+          'threadId',
+          'inputMessageId',
+          'agentId',
+          'agentVersion',
+          'capability',
+        ]) ||
+        w.origin.kind !== 'agent_conversation' ||
+        ![
+          'threadId',
+          'inputMessageId',
+          'agentId',
+          'agentVersion',
+          'capability',
+        ].every(key =>
+          nonempty(
+            w.origin?.[key as keyof NonNullable<AgentWorkspace['origin']>],
+          ),
+        )) ||
     !statuses.includes(w.status) ||
     !integer(w.revision) ||
+    !integer(w.currentRound) ||
+    w.currentRound < 1 ||
+    !Array.isArray(w.rounds) ||
+    w.rounds.length !== w.currentRound ||
     !string(w.summary) ||
     !(w.question === null || nonempty(w.question)) ||
     !(w.inputRequest === null || isWorkspaceInputRequest(w.inputRequest)) ||
@@ -252,7 +361,7 @@ export function assertAgentWorkspace(v: unknown): asserts v is AgentWorkspace {
     !Array.isArray(w.allowedActions) ||
     !unique(w.allowedActions) ||
     !w.allowedActions.every(a =>
-      ['cancel', 'confirm', 'reject', 'reply'].includes(a),
+      ['cancel', 'confirm', 'reject', 'reply', 'continue'].includes(a),
     ) ||
     'remainingLimits' in v ||
     !record(w.limits) ||
@@ -267,9 +376,39 @@ export function assertAgentWorkspace(v: unknown): asserts v is AgentWorkspace {
     (w.result !== null && !isWorkspaceArtifact(w.result))
   )
     throw invalid();
+  const unavailable = w.readAccess !== undefined;
+  if (
+    unavailable &&
+    (!record(w.readAccess) ||
+      !exactKeys(w.readAccess, ['state', 'code']) ||
+      w.readAccess.state !== 'unavailable' ||
+      w.readAccess.code !== 'WORKSPACE_FILE_SOURCE_UNAVAILABLE' ||
+      !w.contextRefs.some(ref => ref.kind === 'station-file') ||
+      w.result !== null ||
+      w.steps.some(
+        step =>
+          !record(step) || step.result !== null || step.summary !== w.summary,
+      ) ||
+      w.rounds.some(
+        round =>
+          !record(round) ||
+          round.result !== null ||
+          round.summary !== w.summary,
+      ) ||
+      w.allowedActions.includes('continue') ||
+      !nonempty(w.summary))
+  )
+    throw invalid();
   for (const s of w.steps) {
     if (
       !record(s) ||
+      (w.executionMode === 'direct' &&
+        (s.agentId !== w.origin?.agentId ||
+          s.agentVersion !== w.origin.agentVersion ||
+          s.capability !== w.origin.capability)) ||
+      !integer(s.round) ||
+      s.round < 1 ||
+      s.round > w.currentRound ||
       !['id', 'key', 'agentId', 'agentVersion', 'capability', 'goal'].every(k =>
         nonempty(s[k as keyof WorkspaceStep]),
       ) ||
@@ -299,6 +438,58 @@ export function assertAgentWorkspace(v: unknown): asserts v is AgentWorkspace {
     )
       throw invalid();
   }
+  for (const [index, round] of w.rounds.entries()) {
+    if (
+      !record(round) ||
+      round.number !== index + 1 ||
+      !nonempty(round.instruction) ||
+      round.instruction.length > 2000 ||
+      !(round.baseResultNodeId === null || nonempty(round.baseResultNodeId)) ||
+      !(round.resultNodeId === null || nonempty(round.resultNodeId)) ||
+      !statuses.includes(round.status) ||
+      !string(round.summary) ||
+      !date(round.createdAt) ||
+      !(round.completedAt === null || date(round.completedAt)) ||
+      (round.result !== null && !isWorkspaceArtifact(round.result)) ||
+      (!unavailable &&
+        (round.result === null) !== (round.resultNodeId === null))
+    )
+      throw invalid();
+    if (
+      unavailable &&
+      round.resultNodeId !== null &&
+      !w.steps.some(
+        step =>
+          step.id === round.resultNodeId &&
+          step.round === round.number &&
+          step.status === 'succeeded',
+      )
+    )
+      throw invalid();
+    if (
+      round.result !== null &&
+      !w.steps.some(
+        step =>
+          step.id === round.resultNodeId &&
+          step.round === round.number &&
+          step.status === 'succeeded' &&
+          workspaceArtifactsMatch(step.result, round.result),
+      )
+    )
+      throw invalid();
+    if (
+      round.baseResultNodeId !==
+      (index === 0 ? null : w.rounds[index - 1].resultNodeId)
+    )
+      throw invalid();
+  }
+  const latestRound = w.rounds[w.currentRound - 1];
+  if (
+    latestRound.status !== w.status ||
+    latestRound.summary !== w.summary ||
+    !workspaceArtifactsMatch(latestRound.result, w.result)
+  )
+    throw invalid();
   const visited = new Set<string>();
   const visiting = new Set<string>();
   const byKey = new Map(w.steps.map(step => [step.key, step]));
@@ -349,6 +540,11 @@ export function assertAgentWorkspace(v: unknown): asserts v is AgentWorkspace {
   if (
     w.allowedActions.includes('reply') &&
     (w.status !== 'waiting_input' || w.inputRequest?.kind !== 'clarification')
+  )
+    throw invalid();
+  if (
+    w.allowedActions.includes('continue') &&
+    (!['succeeded', 'awaiting_confirmation'].includes(w.status) || !w.result)
   )
     throw invalid();
   if (w.status === 'waiting_input') {

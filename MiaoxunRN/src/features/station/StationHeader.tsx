@@ -1,8 +1,9 @@
 import { Check, MapPin } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Pressable,
+  StyleSheet,
   Text,
   View,
   useWindowDimensions,
@@ -17,8 +18,14 @@ import { Language } from '../session/useMiaoxunSession';
 import { resolveStationColors } from './stationTheme';
 import { StationTab } from './stationTypes';
 
-/** Prototype `.me-profile` collapse transition: `.34s cubic-bezier(.2,.8,.2,1)`. */
-export const STATION_COLLAPSE_DURATION = 340;
+/**
+ * The profile card follows the station scroll position over this distance.
+ * Keeping the range explicit makes the gesture work even when the selected
+ * panel has no records: the scroll container reserves enough empty space for
+ * the same header gesture instead of depending on panel content height.
+ */
+export const STATION_COLLAPSE_SCROLL_DISTANCE = 72;
+export const STATION_EXPAND_SCROLL_DISTANCE = 16;
 
 /**
  * Prototype `.me-profile`: the card holds exactly five items in the right
@@ -83,21 +90,19 @@ export function StationProfileHeader({
   const [rowWidth, setRowWidth] = useState(windowWidth - 64);
   const expandedStageWidth = Math.max(rowWidth * 0.42, 64);
 
-  // Content unmounts only after the fade finishes, so collapsing reads as one
-  // motion instead of a jump.
-  const [detailMounted, setDetailMounted] = useState(true);
+  // Keep the detail rows mounted for reverse gestures, but stop exposing
+  // their controls as soon as the scroll-driven fade makes them invisible.
+  const detailsHiddenRef = useRef(collapsed);
+  const [detailsHidden, setDetailsHidden] = useState(collapsed);
   useEffect(() => {
-    if (!collapsed) {
-      setDetailMounted(true);
-      return;
-    }
-    // Unmount the detail rows only once the fade has finished.
-    const timer = setTimeout(
-      () => setDetailMounted(false),
-      STATION_COLLAPSE_DURATION,
-    );
-    return () => clearTimeout(timer);
-  }, [collapsed]);
+    const listener = collapseProgress.addListener(({ value }) => {
+      const nextHidden = value >= 0.5;
+      if (detailsHiddenRef.current === nextHidden) return;
+      detailsHiddenRef.current = nextHidden;
+      setDetailsHidden(nextHidden);
+    });
+    return () => collapseProgress.removeListener(listener);
+  }, [collapseProgress]);
 
   return (
     <Animated.View
@@ -128,6 +133,7 @@ export function StationProfileHeader({
       <View
         onLayout={event => setRowWidth(event.nativeEvent.layout.width)}
         style={styles.stationIdentityTopRowWithStage}
+        testID="station-profile-main-row"
       >
         <Animated.View
           style={[
@@ -151,6 +157,11 @@ export function StationProfileHeader({
           {stage ? (
             <>
               <Animated.View
+                accessibilityElementsHidden={detailsHidden}
+                importantForAccessibility={
+                  detailsHidden ? 'no-hide-descendants' : 'auto'
+                }
+                pointerEvents={detailsHidden ? 'none' : 'auto'}
                 style={[
                   styles.stationIdentityStageFiller,
                   {
@@ -208,25 +219,19 @@ export function StationProfileHeader({
           ) : null}
         </Animated.View>
 
-        <View style={styles.stationIdentityCopy}>
-          {detailMounted ? (
-            <Animated.Text
-              style={[
-                styles.stationIdentityKicker,
-                {
-                  opacity: collapseProgress.interpolate({
-                    inputRange: [0, 0.5],
-                    outputRange: [1, 0],
-                    extrapolate: 'clamp' as const,
-                  }),
-                },
-              ]}
-            >
+        <View style={styles.stationIdentityCopy} testID="station-profile-copy">
+          <StationProfileDetailGroup
+            collapseProgress={collapseProgress}
+            hidden={detailsHidden}
+            rootTestID="station-profile-kicker"
+          >
+            <Text style={styles.stationIdentityKicker}>
               {textFor(language, '我的信息', 'My info')}
-            </Animated.Text>
-          ) : null}
+            </Text>
+          </StationProfileDetailGroup>
           <Animated.Text
             numberOfLines={1}
+            testID="station-profile-name"
             style={[
               styles.stationIdentityName,
               {
@@ -244,16 +249,12 @@ export function StationProfileHeader({
           >
             {nickname}
           </Animated.Text>
-          {detailMounted && idLabel ? (
-            <Animated.View
-              style={{
-                opacity: collapseProgress.interpolate({
-                  inputRange: [0, 0.5],
-                  outputRange: [1, 0],
-                  extrapolate: 'clamp' as const,
-                }),
-              }}
-            >
+          <StationProfileDetailGroup
+            collapseProgress={collapseProgress}
+            hidden={detailsHidden}
+            rootTestID="station-profile-details"
+          >
+            {idLabel ? (
               <Pressable
                 accessibilityLabel={textFor(
                   language,
@@ -277,35 +278,10 @@ export function StationProfileHeader({
                   {idLabel}
                 </Text>
               </Pressable>
-            </Animated.View>
-          ) : null}
-          {detailMounted && bio ? (
-            <Animated.Text
-              style={[
-                styles.stationIdentityBio,
-                {
-                  opacity: collapseProgress.interpolate({
-                    inputRange: [0, 0.5],
-                    outputRange: [1, 0],
-                    extrapolate: 'clamp' as const,
-                  }),
-                },
-              ]}
-            >
-              {bio}
-            </Animated.Text>
-          ) : null}
+            ) : null}
+            {bio ? <Text style={styles.stationIdentityBio}>{bio}</Text> : null}
 
-          {detailMounted && onOpenLocation ? (
-            <Animated.View
-              style={{
-                opacity: collapseProgress.interpolate({
-                  inputRange: [0, 0.5],
-                  outputRange: [1, 0],
-                  extrapolate: 'clamp' as const,
-                }),
-              }}
-            >
+            {onOpenLocation ? (
               <Pressable
                 accessibilityLabel={textFor(
                   language,
@@ -326,13 +302,70 @@ export function StationProfileHeader({
                     textFor(language, '设置社区与活动区域', 'Set your area')}
                 </Text>
               </Pressable>
-            </Animated.View>
-          ) : null}
+            ) : null}
+          </StationProfileDetailGroup>
         </View>
       </View>
     </Animated.View>
   );
 }
+
+function StationProfileDetailGroup({
+  children,
+  collapseProgress,
+  hidden,
+  rootTestID,
+}: {
+  children: React.ReactNode;
+  collapseProgress: Animated.Value;
+  hidden: boolean;
+  rootTestID: string;
+}) {
+  const [contentHeight, setContentHeight] = useState<number | null>(null);
+
+  return (
+    <Animated.View
+      accessibilityElementsHidden={hidden}
+      importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}
+      pointerEvents={hidden ? 'none' : 'auto'}
+      style={[
+        profileDetailStyles.clip,
+        {
+          height:
+            contentHeight === null
+              ? undefined
+              : collapseProgress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [contentHeight, 0],
+                  extrapolate: 'clamp',
+                }),
+          opacity: collapseProgress.interpolate({
+            inputRange: [0, 0.5],
+            outputRange: [1, 0],
+            extrapolate: 'clamp',
+          }),
+        },
+      ]}
+      testID={rootTestID}
+    >
+      <View
+        collapsable={false}
+        onLayout={event => setContentHeight(event.nativeEvent.layout.height)}
+        style={profileDetailStyles.content}
+        testID={`${rootTestID}-content`}
+      >
+        {children}
+      </View>
+    </Animated.View>
+  );
+}
+
+const profileDetailStyles = StyleSheet.create({
+  clip: { overflow: 'hidden' },
+  // Keep measuring the full, naturally wrapped detail content while the
+  // outer group shrinks. An opacity-only fade would still hold the card open.
+  content: { flexShrink: 0 },
+});
 
 /** Prototype `.me-switch`: two equal segments, nothing else in the trough. */
 export function StationTabs({

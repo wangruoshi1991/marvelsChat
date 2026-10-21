@@ -1,5 +1,12 @@
 import React from 'react';
-import { FlatList, Modal, PanResponder, Text, View } from 'react-native';
+import {
+  FlatList,
+  Modal,
+  PanResponder,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import App from '../src/App';
 import { BottomBar } from '../src/shared/ui';
@@ -15,6 +22,7 @@ import {
   emptyStationContent,
 } from '../src/features/session/sessionDefaults';
 import { palettes } from '../src/shared/theme';
+import { workspacePalette } from '../src/shared/workspacePalette';
 import { AgentWorkspaceScreen } from '../src/features/workspaces/AgentWorkspaceScreen';
 import { WorkspaceSubmissionRecovery } from '../src/features/workspaces/WorkspaceSubmission';
 import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
@@ -110,7 +118,18 @@ test('three root tabs retain the station, hide navigation in second floor, and r
   );
   expect(renderer.root.findByType(SecondFloorScreen)).toBeTruthy();
   expect(renderer.root.findAllByType(BottomBar)).toHaveLength(0);
+  for (const testID of ['app-top-safe-area', 'app-bottom-safe-area']) {
+    expect(
+      StyleSheet.flatten(renderer.root.findByProps({ testID }).props.style)
+        .backgroundColor,
+    ).toBe(workspacePalette(palettes.light).background);
+  }
   act(() => renderer.root.findByType(SecondFloorScreen).props.onClose());
+  expect(
+    StyleSheet.flatten(
+      renderer.root.findByProps({ testID: 'app-bottom-safe-area' }).props.style,
+    ).backgroundColor,
+  ).toBe('transparent');
   expect(renderer.root.findByType(BottomBar).props.selectedTab).toBe(
     'messages',
   );

@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +20,13 @@ import {
 } from '../../shared/workspaceUi';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { workspacePalette } from '../../shared/workspacePalette';
+import { AIContextReference } from '../../models/aiTask';
+import { StationFileAssetDTO } from '../../models/api';
+import {
+  pickStationFile,
+  releaseStationFile,
+  PickedStationFile,
+} from '../../services/stationFilePicker';
 import { AgentWorkspace } from '../../models/agentWorkspace';
 import { StationOutcomesPanel } from '../station/StationOutcomesPanel';
 
@@ -54,7 +63,7 @@ function fileStatusText(status: string, language: Language) {
   const labels: Record<string, [string, string]> = {
     pending_upload: ['等待上传', 'Waiting for upload'],
     uploaded: ['已上传', 'Uploaded'],
-    processed: ['文字预览已登记', 'Text preview registered'],
+    processed: ['文字已登记', 'Text registered'],
     unsupported: ['暂不支持处理', 'Processing unsupported'],
     failed: ['处理失败', 'Processing failed'],
     deleted: ['已删除', 'Deleted'],
@@ -72,6 +81,7 @@ export function SecondFloorFiles({
   active = true,
   onBusyChange,
   onOpenWorkspace,
+  onOpenFileAgent,
 }: {
   palette: Palette;
   language: Language;
@@ -79,8 +89,23 @@ export function SecondFloorFiles({
   active?: boolean;
   onBusyChange?: (busy: boolean) => void;
   onOpenWorkspace: (workspace: AgentWorkspace) => void;
+  onOpenFileAgent?: (reference: AIContextReference) => void;
 }) {
   const colors = workspacePalette(palette);
+  const [detail, setDetail] = useState<
+    (StationFileAssetDTO & { content: string | null }) | null
+  >(null);
+  const [uploadFile, setUploadFile] = useState<PickedStationFile | null>(null);
+  const latest = useRef({ active, token: session.token, epoch: 0 });
+  if (
+    latest.current.active !== active ||
+    latest.current.token !== session.token
+  )
+    latest.current = {
+      active,
+      token: session.token,
+      epoch: latest.current.epoch + 1,
+    };
   const [editing, setEditing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filename, setFilename] = useState('');
@@ -88,6 +113,9 @@ export function SecondFloorFiles({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const alive = useRef(true);
+  const foreground = useRef(AppState.currentState === 'active');
+  // Invalidate reads/navigation without invalidating the native picker round trip.
+  const foregroundEpoch = useRef(0);
   const pending = useRef(false);
   useEffect(() => {
     alive.current = true;
@@ -95,9 +123,33 @@ export function SecondFloorFiles({
       alive.current = false;
     };
   }, []);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      foreground.current = state === 'active';
+      if (state !== 'active') foregroundEpoch.current += 1;
+    });
+    return () => subscription.remove();
+  }, []);
+  useEffect(() => {
+    setDetail(null);
+    setSelectedId(null);
+    setFilename('');
+    setContent('');
+    setEditing(false);
+    setError('');
+    setUploadFile(null);
+  }, [session.token]);
+  useEffect(() => {
+    if (!active) {
+      setDetail(null);
+      setSelectedId(null);
+    }
+  }, [active]);
   const save = async () => {
+    const epoch = latest.current.epoch;
     if (
       !alive.current ||
+      !foreground.current ||
       !filename.trim() ||
       !content.trim() ||
       pending.current
@@ -116,14 +168,22 @@ export function SecondFloorFiles({
         content,
         metadata: { source: 'second-floor-text' },
       });
-      if (alive.current) {
+      if (
+        alive.current &&
+        latest.current.active &&
+        latest.current.epoch === epoch
+      ) {
         setEditing(false);
         setFilename('');
         setContent('');
         if (file?.id) setSelectedId(file.id);
       }
     } catch (cause) {
-      if (alive.current)
+      if (
+        alive.current &&
+        latest.current.active &&
+        latest.current.epoch === epoch
+      )
         setError(
           appErrorText(
             language,
@@ -140,9 +200,113 @@ export function SecondFloorFiles({
       }
     }
   };
-  const selectedFile = session.stationContent.fileAssets.find(
-    file => file.id === selectedId,
+  const perform = async (action: () => Promise<void>) => {
+    if (pending.current || !foreground.current) return;
+    const owner = session.token;
+    const epoch = latest.current.epoch;
+    pending.current = true;
+    setBusy(true);
+    setError('');
+    onBusyChange?.(true);
+    try {
+      await action();
+    } catch (cause) {
+      if (
+        alive.current &&
+        latest.current.active &&
+        latest.current.token === owner &&
+        latest.current.epoch === epoch
+      )
+        setError(
+          appErrorText(
+            language,
+            cause,
+            '操作失败，请重试',
+            'Operation failed. Try again.',
+          ),
+        );
+    } finally {
+      pending.current = false;
+      if (alive.current) {
+        setBusy(false);
+        onBusyChange?.(false);
+      }
+    }
+  };
+  const loadDetail = async (id: string) => {
+    const epoch = latest.current.epoch;
+    const appEpoch = foregroundEpoch.current;
+    const owner = session.token;
+    let result;
+    try {
+      result = await session.stationFileAsset(id);
+    } catch (cause) {
+      if (
+        alive.current &&
+        latest.current.token === owner &&
+        latest.current.epoch === epoch &&
+        foregroundEpoch.current === appEpoch
+      ) {
+        setDetail(null);
+        setSelectedId(null);
+        throw cause;
+      }
+      return null;
+    }
+    if (
+      alive.current &&
+      latest.current.active &&
+      latest.current.token === owner &&
+      latest.current.epoch === epoch &&
+      foregroundEpoch.current === appEpoch
+    ) {
+      setDetail(result);
+      setSelectedId(id);
+    }
+    if (
+      !alive.current ||
+      !foreground.current ||
+      !latest.current.active ||
+      latest.current.epoch !== epoch ||
+      foregroundEpoch.current !== appEpoch
+    )
+      return null;
+    return result;
+  };
+  const upload = () =>
+    perform(async () => {
+      const owner = session.token;
+      const epoch = latest.current.epoch;
+      const file = uploadFile || (await pickStationFile());
+      if (!file) return;
+      if (
+        !alive.current ||
+        !latest.current.active ||
+        latest.current.token !== owner ||
+        latest.current.epoch !== epoch
+      ) {
+        await releaseStationFile(file);
+        return;
+      }
+      setUploadFile(file);
+      await session.uploadStationFileAsset(file);
+      await releaseStationFile(file);
+      if (alive.current && latest.current.token === owner) setUploadFile(null);
+      await session.refreshStationContent();
+    });
+  useEffect(
+    () => () => {
+      if (uploadFile)
+        releaseStationFile(uploadFile).catch(() => {
+          console.warn('Temporary file cleanup failed');
+        });
+    },
+    [uploadFile],
   );
+  const selectedFile =
+    detail?.id === selectedId
+      ? detail
+      : session.stationContent.fileAssets.find(file => file.id === selectedId);
   if (selectedId) {
     return (
       <ScrollView
@@ -150,6 +314,9 @@ export function SecondFloorFiles({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={s.panel}
       >
+        {error ? (
+          <WorkspaceState palette={colors} tone="error" title={error} />
+        ) : null}
         <WorkspaceButton
           palette={colors}
           variant="secondary"
@@ -173,17 +340,104 @@ export function SecondFloorFiles({
             </Text>
             <Text style={[s.body, { color: colors.secondaryText }]}>
               {textFor(language, '状态：', 'Status: ')}
-              {fileStatusText(selectedFile.status, language)}
+              {selectedFile.reference
+                ? textFor(language, '可用于摘要', 'Ready for summary')
+                : fileStatusText(selectedFile.status, language)}
             </Text>
-            <Text selectable style={[s.body, { color: colors.text }]}>
-              {typeof selectedFile.preprocessingResult?.textPreview ===
-                'string' && selectedFile.preprocessingResult.textPreview
-                ? selectedFile.preprocessingResult.textPreview
-                : textFor(
+            {detail && !detail.reference ? (
+              <Text style={[s.body, { color: colors.secondaryText }]}>
+                {textFor(
+                  language,
+                  '旧记录没有完整正文，请重新上传后用于摘要。',
+                  'This older record has no full content. Upload it again to request a summary.',
+                )}
+              </Text>
+            ) : null}
+            <WorkspaceButton
+              palette={colors}
+              variant="secondary"
+              label={textFor(language, '重新读取正文', 'Reload content')}
+              busy={busy}
+              onPress={() =>
+                perform(async () => {
+                  await loadDetail(selectedFile.id);
+                })
+              }
+            />
+            {detail?.reference && detail.content !== null && onOpenFileAgent ? (
+              <WorkspaceButton
+                palette={colors}
+                label={textFor(language, '交给文件Agent', 'Ask File Agent')}
+                disabled={busy}
+                onPress={() =>
+                  perform(async () => {
+                    const epoch = latest.current.epoch;
+                    const appEpoch = foregroundEpoch.current;
+                    const file = await loadDetail(selectedFile.id);
+                    if (
+                      !file ||
+                      !alive.current ||
+                      !foreground.current ||
+                      !latest.current.active ||
+                      latest.current.token !== session.token ||
+                      latest.current.epoch !== epoch ||
+                      foregroundEpoch.current !== appEpoch
+                    )
+                      return;
+                    if (!file.reference || file.content === null)
+                      throw new Error('文件暂无完整正文，不能引用。');
+                    onOpenFileAgent(file.reference);
+                  })
+                }
+              />
+            ) : null}
+            <WorkspaceButton
+              palette={colors}
+              variant="ghost"
+              label={textFor(language, '删除文件', 'Delete file')}
+              disabled={busy}
+              onPress={() =>
+                Alert.alert(
+                  textFor(language, '删除文件？', 'Delete file?'),
+                  textFor(
                     language,
-                    '该素材暂无文字预览',
-                    'No text preview is available for this material.',
-                  )}
+                    '删除后正文及原有引用将失效。',
+                    'Content and existing references will become unavailable.',
+                  ),
+                  [
+                    {
+                      text: textFor(language, '取消', 'Cancel'),
+                      style: 'cancel',
+                    },
+                    {
+                      text: textFor(language, '删除', 'Delete'),
+                      style: 'destructive',
+                      onPress: () =>
+                        perform(async () => {
+                          await session.deleteStationFileAsset(selectedFile.id);
+                          if (
+                            alive.current &&
+                            latest.current.token === session.token
+                          ) {
+                            setSelectedId(null);
+                            setDetail(null);
+                          }
+                        }),
+                    },
+                  ],
+                )
+              }
+            />
+            <Text selectable style={[s.body, { color: colors.text }]}>
+              {detail?.content ??
+                (typeof selectedFile.preprocessingResult?.textPreview ===
+                  'string' && selectedFile.preprocessingResult.textPreview
+                  ? selectedFile.preprocessingResult.textPreview
+                  : textFor(
+                      language,
+                      '该素材暂无文字预览',
+                      'No text preview is available for this material.',
+                    ))}
             </Text>
           </>
         ) : (
@@ -207,6 +461,37 @@ export function SecondFloorFiles({
     >
       <WorkspaceButton
         palette={colors}
+        label={
+          uploadFile
+            ? textFor(language, '重试上传同一文件', 'Retry same file')
+            : textFor(language, '选择并上传文件', 'Choose and upload file')
+        }
+        busy={busy}
+        onPress={upload}
+      />
+      {uploadFile && !busy ? (
+        <WorkspaceButton
+          palette={colors}
+          variant="ghost"
+          label={textFor(language, '放弃本次上传', 'Discard upload')}
+          onPress={() => {
+            perform(async () => {
+              await releaseStationFile(uploadFile);
+              if (alive.current && latest.current.token === session.token)
+                setUploadFile(null);
+            });
+          }}
+        />
+      ) : null}
+      <Text style={[s.body, { color: colors.secondaryText }]}>
+        {textFor(
+          language,
+          '支持UTF-8 TXT、Markdown、JSON、CSV、TSV；不超过256KiB和50000字符。JSON和表格文件按文本读取。',
+          'UTF-8 TXT, Markdown, JSON, CSV and TSV, up to 256KiB and 50,000 characters. JSON and tabular files are read as text.',
+        )}
+      </Text>
+      <WorkspaceButton
+        palette={colors}
         label={textFor(
           language,
           editing ? '收起编辑' : '添加文字素材',
@@ -223,8 +508,8 @@ export function SecondFloorFiles({
       <Text style={[s.body, { color: colors.secondaryText }]}>
         {textFor(
           language,
-          '登记最多1000字符的文字预览。设备文件上传尚未开放。',
-          'Register text previews up to 1,000 characters. Device file upload is not available.',
+          '也可直接登记最多1000字符的文字，读取正文后交给文件Agent。',
+          'Register up to 1,000 characters directly, then read the content before sending it to File Agent.',
         )}
       </Text>
       {editing ? (
@@ -301,7 +586,13 @@ export function SecondFloorFiles({
             disabled={busy}
             accessibilityState={{ disabled: busy }}
             onPress={() => {
-              if (!pending.current) setSelectedId(file.id);
+              if (!pending.current) {
+                setDetail(null);
+                setSelectedId(file.id);
+                perform(async () => {
+                  await loadDetail(file.id);
+                });
+              }
             }}
             style={[
               s.file,

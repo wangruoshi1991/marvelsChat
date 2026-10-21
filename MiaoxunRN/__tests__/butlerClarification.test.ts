@@ -1,4 +1,7 @@
-import { pendingButlerClarification } from '../src/features/messages/butlerClarification';
+import {
+  pendingButlerClarification,
+  pendingConversationClarification,
+} from '../src/features/messages/butlerClarification';
 import { ChatMessage, ChatThread } from '../src/features/session/sessionTypes';
 
 const references = [
@@ -108,3 +111,73 @@ test('Agent clarification behavior stays intact and other Agent conversations do
     }),
   ).toBeNull();
 });
+
+const professionalQuestion: ChatMessage = {
+  ...question,
+  metadata: {
+    agentDispatch: { version: 1, kind: 'clarify' },
+    agentClarification: snapshot,
+  },
+};
+test('professional clarification accepts only its explicit dispatch kind, including a question without selected resources', () => {
+  const professional = {
+    ...thread(question),
+    agentId: 'site-builder',
+    messages: [professionalQuestion],
+  };
+  expect(pendingConversationClarification(professional)?.references).toEqual(
+    references,
+  );
+  expect(
+    pendingConversationClarification({
+      ...professional,
+      messages: [
+        {
+          ...professionalQuestion,
+          metadata: {
+            agentDispatch: { version: 1, kind: 'clarify' },
+            agentClarification: { ...snapshot, contextRefs: [] },
+          },
+        },
+      ],
+    })?.references,
+  ).toEqual([]);
+  expect(
+    pendingConversationClarification({
+      ...professional,
+      messages: [
+        {
+          ...professionalQuestion,
+          metadata: {
+            agentDispatch: { version: 1, kind: 'reply' },
+            agentClarification: snapshot,
+          },
+        },
+      ],
+    }),
+  ).toBeNull();
+});
+test.each([
+  { deletedAt: '2026-10-20T00:00:00Z' },
+  { recalledAt: '2026-10-20T00:00:00Z' },
+  { localStatus: 'failed' as const },
+  { threadId: 'another-private-thread' },
+])(
+  'a professional %o boundary never revives the previous clarification',
+  change => {
+    expect(
+      pendingConversationClarification({
+        ...thread(question),
+        agentId: 'site-builder',
+        messages: [
+          professionalQuestion,
+          {
+            ...professionalQuestion,
+            id: 'latest',
+            ...change,
+          },
+        ],
+      }),
+    ).toBeNull();
+  },
+);

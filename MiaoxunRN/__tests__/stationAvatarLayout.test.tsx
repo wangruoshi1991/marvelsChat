@@ -532,6 +532,79 @@ describe('station avatar layout', () => {
     expect(emptyStyle.flex).toBe(1);
   });
 
+  it('offers a real creation entry point for an empty embedded stage', async () => {
+    const onOpenGenerator = jest.fn();
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AIAssistProvider onAskButler={jest.fn()} routeKey="station">
+          <StationAvatarSpace
+            avatar3d={bootstrap}
+            avatar3dError=""
+            avatar3dStatus="ready"
+            embedded
+            selectedModelId={null}
+            language="zh"
+            onOpenGenerator={onOpenGenerator}
+            palette={palettes.light}
+            token="token"
+          />
+        </AIAssistProvider>,
+      );
+    });
+
+    const stageStyle = StyleSheet.flatten(
+      renderer!.root.findByProps({ testID: 'avatar3d-stage' }).props.style,
+    );
+    const emptyStyle = StyleSheet.flatten(
+      renderer!.root.findByProps({ testID: 'avatar3d-empty-state' }).props
+        .style,
+    );
+    expect(stageStyle.backgroundColor).toBe('transparent');
+    expect(stageStyle.flex).toBe(1);
+    expect(stageStyle.height).toBeUndefined();
+    expect(emptyStyle.paddingHorizontal).toBe(8);
+    expect(emptyStyle.paddingVertical).toBe(8);
+    expect(
+      renderer!.root.findByProps({ testID: 'avatar3d-create-empty' }),
+    ).toBeTruthy();
+
+    await ReactTestRenderer.act(async () => {
+      renderer!.root
+        .findByProps({ testID: 'avatar3d-create-empty' })
+        .props.onPress();
+    });
+    expect(onOpenGenerator).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps unavailable 3D service explicit and hides creation action', async () => {
+    const unavailable = {
+      ...bootstrap,
+      feature: { ...bootstrap.feature, generationAvailable: false },
+    };
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AIAssistProvider onAskButler={jest.fn()} routeKey="station">
+          <StationAvatarSpace
+            avatar3d={unavailable}
+            avatar3dError=""
+            avatar3dStatus="ready"
+            embedded
+            selectedModelId={null}
+            language="zh"
+            onOpenGenerator={jest.fn()}
+            palette={palettes.light}
+            token="token"
+          />
+        </AIAssistProvider>,
+      );
+    });
+
+    expect(
+      renderer!.root.findAllByProps({ testID: 'avatar3d-create-empty' }),
+    ).toHaveLength(0);
+    expect(renderedText(renderer!)).toContain('3D建模服务暂时不可用');
+  });
+
   it('matches the designed 3D long-press actions and keeps legacy entries under More', async () => {
     const onAskButler = jest.fn();
     const onOpenGenerator = jest.fn();

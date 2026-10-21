@@ -8,11 +8,14 @@ import { requireAIClientContract, requireAgentWorkspaceContract, requireSiteDocu
 const params = z.object({ workspaceId: z.string().uuid() }).strict();
 const list = z.object({ limit: z.coerce.number().int().min(1).max(50).default(30) }).strict();
 export const workspaceActionSchema = z.object({
-  revision: z.number().int().positive(), operation: z.enum(["cancel", "confirm", "reject", "reply"]),
+  revision: z.number().int().positive(), operation: z.enum(["cancel", "confirm", "reject", "reply", "continue"]),
   approvalId: z.string().uuid().optional(), text: z.string().trim().min(1).max(2000).optional(),
+  idempotencyKey: z.string().min(8).max(160).optional(),
 }).strict().superRefine((value, context) => {
-  if ((value.operation === "confirm") !== Boolean(value.approvalId) || (value.operation === "reply") !== Boolean(value.text)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "Only confirm requires approvalId; only reply requires text" });
+  if ((value.operation === "confirm") !== Boolean(value.approvalId)
+      || (["reply", "continue"].includes(value.operation)) !== Boolean(value.text)
+      || (value.operation === "continue") !== Boolean(value.idempotencyKey)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Only confirm requires approvalId; reply and continue require text; only continue requires idempotencyKey" });
   }
 });
 const submitLimit = createRateLimitMiddleware({ action: "agent_workspace.submit", limit: 10, windowMs: 60000, message: "协作任务提交过于频繁，请稍后重试。" });

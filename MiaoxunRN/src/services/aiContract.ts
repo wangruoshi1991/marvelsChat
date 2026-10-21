@@ -26,7 +26,7 @@ export function setAIContractSession(token: string, contracts?: unknown) {
           contracts !== null &&
           typeof contracts === 'object' &&
           'agentWorkspaces' in contracts &&
-          contracts.agentWorkspaces === 3,
+          contracts.agentWorkspaces === 6,
         siteDocuments:
           contracts !== null &&
           typeof contracts === 'object' &&
@@ -66,7 +66,7 @@ export function assertSiteDocumentContract(token: string) {
 
 export const agentWorkspaceHeaders = {
   ...aiContractHeaders,
-  'X-Miaoxun-Agent-Workspace': '3',
+  'X-Miaoxun-Agent-Workspace': '6',
 };
 export function supportsAgentWorkspaces(token: string) {
   return Boolean(
@@ -79,5 +79,7 @@ export function supportsAgentWorkspaces(token: string) {
 export function assertAgentWorkspaceContract(token: string) {
   assertAIContract(token);
   if (!supportsAgentWorkspaces(token))
-    throw new Error('当前服务器尚未支持 Agent 协作，请在服务更新后重试。');
+    throw new Error(
+      '当前服务器尚未支持此版本的 Agent 协作与任务续作，请在服务更新后重试。',
+    );
 }

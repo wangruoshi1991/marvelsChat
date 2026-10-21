@@ -1,10 +1,11 @@
+import { specialistDispatchPlan } from "./specialist-dispatch.js";
 import { workspaceContributionPlan } from "./workspace-contribution.js";
 import { agentChatHistory } from "./chat-history.js";
 
 export default {
   key: "file-preprocessor",
   name: "文件预处理 Agent",
-  version: "0.1.3",
+  version: "0.2.0",
   category: "preprocessing",
   identity: {
     avatarKind: "agent-mark",
@@ -21,6 +22,11 @@ export default {
   permissions: ["messages:read", "files:read", "files:write", "station:read", "station:write"],
 
   workspaceCapabilities: [{
+    capability: "file.summary",
+    description: "对明确选中并成功解析的 UTF-8 文本文件及消息交付摘要，保留完整来源授权。",
+    inputKinds: ["station-file", "chat-message"], dependencyKinds: ["text_result"],
+    outputKind: "text_result", requiredScopes: ["files:read", "messages:read"],
+  }, {
     capability: "text.summarize",
     description: "对本次提供的文本和明确选中消息做摘要、整理与标签建议，不解析未提供的文件。",
     inputKinds: ["chat-message"], dependencyKinds: ["text_result"],
@@ -30,7 +36,11 @@ export default {
   async contribute(args) {
     return workspaceContributionPlan(args, { name: "文件内容助手",
       expertise: "整理用户本次提供的文字和消息，给出准确摘要、结构与标签建议。",
-      boundary: "不能读取本机文件、解析未上传文件、OCR、写文件或写长期记忆。" });
+      boundary: "仅能读取本节点明确交付的完整 UTF-8 文件正文、消息及前序成果；不能读取本机文件、解析未上传文件、OCR、写文件或写长期记忆。" });
+  },
+
+  async dispatch(args) {
+    return specialistDispatchPlan(args, this);
   },
 
   async chat({ input, user, messages = [], appContext = null }) {

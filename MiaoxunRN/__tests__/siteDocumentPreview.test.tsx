@@ -1,6 +1,14 @@
 jest.mock('react-native-safe-area-context', () => {
+  const React = require('react');
   const { View } = require('react-native');
-  return { SafeAreaProvider: View, SafeAreaView: View };
+  return {
+    SafeAreaProvider: ({ children }: { children: React.ReactNode }) => (
+      <View>{children}</View>
+    ),
+    SafeAreaView: (props: React.ComponentProps<typeof View>) => (
+      <View {...props} />
+    ),
+  };
 });
 jest.mock('../src/services/api/http', () => ({
   ...jest.requireActual('../src/services/api/http'),
@@ -9,6 +17,7 @@ jest.mock('../src/services/api/http', () => ({
 
 import React from 'react';
 import { AppState, AppStateStatus, Image, Modal, Text } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import TestRenderer, { act } from 'react-test-renderer';
 import { SiteDocumentPreview } from '../src/features/site-document/SiteDocumentPreview';
 import { SiteDocumentRenderer } from '../src/features/site-document/SiteDocumentRenderer';
@@ -21,6 +30,7 @@ import {
 } from '../src/services/aiContract';
 import { MiaoxunApiError, request } from '../src/services/api/http';
 import { palettes } from '../src/shared/theme';
+import { Header } from '../src/shared/ui';
 
 const mockedRequest = jest.mocked(request);
 const id = (n: number) =>
@@ -131,6 +141,34 @@ afterEach(() => {
   clearAIContractSession();
   jest.restoreAllMocks();
 });
+
+test.each([true, false])(
+  'a preview keeps its title and close control in its own full-screen safe area (current approval: %s)',
+  async currentApproval => {
+    mockedRequest.mockResolvedValue(view());
+    await mount({ expected: currentApproval ? expected : undefined });
+    const modal = renderer!.root.findByType(Modal);
+    expect(modal.props.presentationStyle).toBe('fullScreen');
+    const safeArea = modal
+      .findByType(SafeAreaProvider)
+      .findByType(SafeAreaView);
+    const header = safeArea.findByType(Header);
+    expect(header.props.title).toBe('页面预览 · 仅自己可见');
+    const closeButton = header.findAll(
+      node =>
+        node.props.accessibilityLabel === '关闭页面预览' &&
+        typeof node.props.onPress === 'function',
+    )[0];
+    expect(closeButton.props.accessibilityRole).toBe('button');
+    expect(closeButton.props.accessibilityLabel).toBe('关闭页面预览');
+    expect(safeArea.findByType(SiteDocumentRenderer).props.view).toEqual(
+      view(),
+    );
+    act(() => closeButton.props.onPress());
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    expect(props.onReviewed).toHaveBeenCalledTimes(currentApproval ? 1 : 0);
+  },
+);
 
 test('actual app background clears preview content and late reads, then foreground checks access again', async () => {
   let appState!: (state: AppStateStatus) => void;

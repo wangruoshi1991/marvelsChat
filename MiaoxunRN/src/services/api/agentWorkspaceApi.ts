@@ -2,6 +2,8 @@ import {
   AgentWorkspace,
   WorkspaceOperation,
   WorkspaceRequest,
+  WorkspaceContinuationAttempt,
+  isWorkspaceContinuationAttempt,
   assertAgentWorkspace,
   assertWorkspaceTextDocument,
   isWorkspaceRequest,
@@ -19,6 +21,37 @@ function accept(value: unknown, id?: string): AgentWorkspace {
   assertAgentWorkspace(value);
   if (id && value.id !== id) throw new Error('协作工作空间与请求不一致。');
   return value;
+}
+async function continueWorkspace(
+  token: string,
+  attempt: WorkspaceContinuationAttempt,
+) {
+  assertAgentWorkspaceContract(token);
+  if (!isWorkspaceContinuationAttempt(attempt))
+    throw new Error('修改提交记录格式不受支持，请重新读取。');
+  const accepted = accept(
+    await request<unknown>(
+      `${path}/${encodeURIComponent(attempt.workspaceId)}/decision`,
+      {
+        token,
+        method: 'POST',
+        headers: agentWorkspaceHeaders,
+        body: {
+          revision: attempt.revision,
+          operation: 'continue',
+          text: attempt.text,
+          idempotencyKey: attempt.idempotencyKey,
+        },
+      },
+    ),
+    attempt.workspaceId,
+  );
+  if (
+    accepted.currentRound <= attempt.currentRound ||
+    accepted.revision <= attempt.revision
+  )
+    throw new Error('续作提交结果尚未确认，请核对本次提交。');
+  return accepted;
 }
 export const agentWorkspaceApi = {
   async list(token: string) {
@@ -65,12 +98,21 @@ export const agentWorkspaceApi = {
     workspace: AgentWorkspace,
     operation: WorkspaceOperation,
     text?: string,
+    idempotencyKey?: string,
   ) {
     assertAgentWorkspaceContract(token);
     if (!workspace.allowedActions.includes(operation))
       throw new Error('当前状态不允许此操作，请刷新协作进展。');
     if (operation === 'confirm') assertSiteDocumentContract(token);
-    return accept(
+    if (operation === 'continue')
+      return continueWorkspace(token, {
+        workspaceId: workspace.id,
+        revision: workspace.revision,
+        currentRound: workspace.currentRound,
+        text: text?.trim() || '',
+        idempotencyKey: idempotencyKey || '',
+      });
+    const accepted = accept(
       await request<unknown>(
         `${path}/${encodeURIComponent(workspace.id)}/decision`,
         {
@@ -92,6 +134,15 @@ export const agentWorkspaceApi = {
       ),
       workspace.id,
     );
+    return accepted;
+  },
+  // A persisted pending request carries no current permissions. The server
+  // rechecks ownership and authorization before replaying the exact key.
+  async recoverContinuation(
+    token: string,
+    attempt: WorkspaceContinuationAttempt,
+  ) {
+    return continueWorkspace(token, attempt);
   },
   async media(token: string, workspaceId: string, assetId: string) {
     assertAgentWorkspaceContract(token);

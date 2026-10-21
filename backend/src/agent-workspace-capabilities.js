@@ -8,9 +8,10 @@ import { runAgent } from "./agent-runtime.js";
 import { createAlbumAssistantTools } from "./album-assistant-tools.js";
 import { mediaRetrievalUserService } from "./media-retrieval-default-service.js";
 import { buildSiteDraftResponse, validateSiteDraftContent } from "./site-builder-service.js";
-import { hashSiteDocumentValue } from "./site-document-repository.js";
+import { hashSiteDocumentValue, validateStoredSiteDocument } from "./site-document-repository.js";
 import { collectSiteDocumentReferences } from "../../shared/site-document.js";
 import { agentScopesMatchDeclaration } from "./ai-agent-access.js";
+import { canonicalReferenceTitle } from "./file-content.js";
 
 const fail = (status, code, message) => { throw new HttpError(status, message, { code }); };
 const executorContracts = Object.freeze({
@@ -18,8 +19,11 @@ const executorContracts = Object.freeze({
     inputKinds: ["station-album"], dependencyKinds: [], outputKind: "media_selection", requiredScopes: ["album:read"],
   },
   "site-builder/site.compose": {
-    inputKinds: ["chat-message", "station-photo", "station-diary"], dependencyKinds: ["media_selection", "text_result"], outputKind: "site_draft",
+    inputKinds: ["chat-message", "station-photo", "station-diary"], dependencyKinds: ["media_selection", "text_result", "site_draft"], outputKind: "site_draft",
     requiredScopes: ["profile:read", "messages:read", "station:read", "station:write", "album:read"],
+  },
+  "file-preprocessor/file.summary": {
+    inputKinds: ["station-file", "chat-message"], dependencyKinds: ["text_result"], outputKind: "text_result", requiredScopes: ["files:read", "messages:read"],
   },
   "file-preprocessor/text.summarize": {
     inputKinds: ["chat-message"], dependencyKinds: ["text_result"], outputKind: "text_result", requiredScopes: ["messages:read"],
@@ -119,6 +123,7 @@ async function resolveReferences(connection, userId, refs, scopes) {
     references.push(...resolved.references);
     context.push(...resolved.context);
   }
+  if (context.filter(item => item.kind === 'station-file').reduce((sum, item) => sum + Array.from(item.content).length, 0) > 50_000) fail(413, 'FILE_CONTEXT_TOO_LARGE', '所选文件正文总计不能超过50000字符。');
   return { references, context };
 }
 
@@ -140,9 +145,13 @@ async function readExactSiteSources(connection, userId, sourceReferences) {
 
 // Called inside the workspace's finish/confirm transaction. This neither saves
 // a draft nor applies profile changes; the owning service commits atomically.
-export async function validateWorkspaceSiteSources(connection, userId, expected) {
-  const current = { ...await profileForSources(connection, userId), ...await readExactSiteSources(connection, userId, expected.sourceReferences) };
-  if (current.profileHash !== expected.profileHash) fail(409, "SITE_TASK_PROFILE_CHANGED", "小站资料已变化，请重新创建任务。");
+export async function validateWorkspaceSiteSources(connection, userId, expected, { checkProfile = true } = {}) {
+  // The profile (including the currently saved page) is a generation/save
+  // baseline, not the identity of a historical document. A prior document can
+  // be handed off with today's profile; its original resource lineage remains
+  // mandatory. Current generation and confirmation always check both.
+  const current = { ...(checkProfile ? await profileForSources(connection, userId) : {}), ...await readExactSiteSources(connection, userId, expected.sourceReferences) };
+  if (checkProfile && current.profileHash !== expected.profileHash) fail(409, "SITE_TASK_PROFILE_CHANGED", "小站资料或当前页面已变化，请基于现有成果继续修改。");
   if (current.sourceHash !== expected.sourceHash) fail(409, "SITE_TASK_RESOURCES_CHANGED", "生成引用已变化，请重新创建任务。");
   return current;
 }
@@ -227,7 +236,7 @@ export function parseWorkspaceTextArtifact(value) {
   if (!checked.success) fail(422, "WORKSPACE_TEXT_INVALID", "文字成果无效。");
   return checked.data;
 }
-const sourceScope = { "chat-message": "messages:read", "station-album": "album:read", "station-photo": "album:read", "station-diary": "station:read" };
+const sourceScope = { "station-file": "files:read", "chat-message": "messages:read", "station-album": "album:read", "station-photo": "album:read", "station-diary": "station:read" };
 
 function exactSourceReferences(value) {
   const checked = z.array(aiContextReferenceSchema.extend({ version: z.string().regex(/^[a-f0-9]{64}$/) })).max(48).safeParse(value);
@@ -244,7 +253,7 @@ function sourceIdentity(refs) {
 
 // Used by the executor and the save transaction with authoritative node data.
 // Derived text retains every original data boundary across explicit handoffs.
-export async function collectWorkspaceTextSources(connection, userId, { sourceReferences, dependencyResults }, requiredScopes) {
+export async function collectWorkspaceTextSources(connection, userId, { sourceReferences, dependencyResults }, requiredScopes, { allowSiteDrafts = false } = {}) {
   const sources = new Map();
   const add = refs => {
     for (const ref of exactSourceReferences(refs)) {
@@ -269,6 +278,13 @@ export async function collectWorkspaceTextSources(connection, userId, { sourceRe
       add(delivered.references);
       dependencies.push({ kind: "media_selection", title: dependency.result.title,
         assets: delivered.context.map(({ title, kind, caption }) => ({ title, kind, caption })) });
+    } else if (allowSiteDrafts && dependency.result?.kind === "site_draft") {
+      if (!dependency.document || !requiredScopes.includes("profile:read") || !requiredScopes.includes("station:read")) {
+        fail(422, "WORKSPACE_DEPENDENCY_INVALID", "页面交接缺少经服务端校验的原版内容。");
+      }
+      const document = validateStoredSiteDocument(dependency.document, dependency.result.id);
+      add(dependency.sourceReferences);
+      dependencies.push({ kind: "site_draft", document });
     } else fail(422, "WORKSPACE_DEPENDENCY_INVALID", "此文字能力不接受该成果类型。");
   }
   const references = exactSourceReferences([...sources.values()]);
@@ -314,7 +330,7 @@ export function createWorkspaceCapabilityExecutor({ transaction = withTransactio
         thread: null, messages: [], appContext: { workspaceContribution: { selectedContext: selected.context, dependencies: selected.dependencies } },
         beforeModelCall: beforeContributionCall, afterModelCall });
       await assertAccess();
-      const checked = textArtifactSchema.safeParse({ kind: "text_result", title: node.goal.trim().slice(0, 160), content: result.reply });
+      const checked = textArtifactSchema.safeParse({ kind: "text_result", title: canonicalReferenceTitle(node.goal.trim()), content: result.reply });
       if (!checked.success) fail(502, "WORKSPACE_TEXT_INVALID", "Agent 未交付有效文字成果。");
       const output = { artifact: checked.data, sourceReferences: selected.references };
       const current = await inputs();
@@ -371,8 +387,9 @@ export function createWorkspaceCapabilityExecutor({ transaction = withTransactio
       fail(422, "WORKSPACE_CONTEXT_INVALID", "建站节点不能忽略用户所选素材后改为文字页面。");
     }
     const handoffs = await transaction(connection => collectWorkspaceTextSources(connection, user.id,
-      { sourceReferences: refs, dependencyResults: dependencies }, contract.requiredScopes));
+      { sourceReferences: refs, dependencyResults: dependencies }, contract.requiredScopes, { allowSiteDrafts: true }));
     const textHandoffs = handoffs.dependencies.filter(item => item.kind === "text_result");
+    const siteHandoffs = handoffs.dependencies.filter(item => item.kind === "site_draft");
     for (const source of handoffs.context.filter(item => item.kind === "chat-message" && refs.some(ref => ref.kind === item.kind && ref.id === item.id))) {
       textHandoffs.push({ kind: "text_result", title: source.title, content: source.content });
     }
@@ -383,13 +400,13 @@ export function createWorkspaceCapabilityExecutor({ transaction = withTransactio
     const beforeSiteCall = async () => {
       await assertAccess();
       await transaction(async connection => {
-        await collectWorkspaceTextSources(connection, user.id, { sourceReferences: refs, dependencyResults: dependencies }, contract.requiredScopes);
+        await collectWorkspaceTextSources(connection, user.id, { sourceReferences: refs, dependencyResults: dependencies }, contract.requiredScopes, { allowSiteDrafts: true });
         await validateWorkspaceSiteSources(connection, user.id, context);
       });
       return beforeModelCall ? beforeModelCall() : null;
     };
     const generation = await generateSite({ prompt: node.goal, user, profile: context.profile,
-      stationContent: context.stationContent, textHandoffs, beforeModelCall: beforeSiteCall, afterModelCall });
+      stationContent: context.stationContent, textHandoffs, siteHandoffs, beforeModelCall: beforeSiteCall, afterModelCall });
     validateSiteDraftContent(generation.draft);
     await assertAccess();
     const used = collectSiteDocumentReferences(generation.draft);

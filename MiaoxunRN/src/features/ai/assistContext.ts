@@ -7,6 +7,7 @@ export const contextReferenceScope: Record<AIContextReference['kind'], string> =
     'station-album': 'album:read',
     'station-photo': 'album:read',
     'station-diary': 'station:read',
+    'station-file': 'files:read',
   };
 
 export function missingContextScopes(
@@ -34,6 +35,17 @@ export function persistentAssistReference(
   object: AIAssistObjectReference,
 ): AIContextReference | null {
   if (!object.id || object.id.startsWith('local-')) return null;
+  if (object.kind === 'station-file') {
+    const version = object.metadata?.version;
+    return typeof version === 'string' && version
+      ? {
+          kind: 'station-file',
+          id: object.id,
+          version,
+          title: referenceTitle(object.title),
+        }
+      : null;
+  }
   if (object.kind === 'ai-task') {
     const id = object.scene?.task?.inputMessageId;
     return id && !id.startsWith('local-')

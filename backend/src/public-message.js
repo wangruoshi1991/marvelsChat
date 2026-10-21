@@ -1,3 +1,5 @@
+import { publicWorkspaceContext } from "./workspace-discussion-contract.js";
+
 const record = (value) =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
 const text = (value) => typeof value === "string";
@@ -20,8 +22,15 @@ function contextReferences(value) {
 function publicMetadata(value) {
   if (!record(value)) return {};
   const metadata = {};
+  const workspaceContext = publicWorkspaceContext(value.workspaceContext);
+  if (workspaceContext) metadata.workspaceContext = workspaceContext;
   if (text(value.senderUserId)) metadata.senderUserId = value.senderUserId;
   if (value.butlerContextReset === true) metadata.butlerContextReset = true;
+  if (value.agentContextReset === true) metadata.agentContextReset = true;
+  if (record(value.agentDispatch) && value.agentDispatch.version === 1 &&
+      ["reply", "clarify", "workspace"].includes(value.agentDispatch.kind)) {
+    metadata.agentDispatch = { version: 1, kind: value.agentDispatch.kind };
+  }
   if (record(value.assistSource) && text(value.assistSource.currentPage)) {
     metadata.assistSource = { currentPage: value.assistSource.currentPage };
   }
@@ -48,6 +57,13 @@ function publicMetadata(value) {
   }
   if (record(value.agentWorkspace) && text(value.agentWorkspace.id)) {
     metadata.agentWorkspace = { id: value.agentWorkspace.id };
+  }
+  if (record(value.agentClarification)) {
+    const clarificationReferences = contextReferences(value.agentClarification.contextRefs);
+    const source = value.agentClarification.source;
+    if (clarificationReferences && record(source) && text(source.currentPage)) {
+      metadata.agentClarification = { contextRefs: clarificationReferences, source: { currentPage: source.currentPage } };
+    }
   }
   if (
     record(value.albumAssistant) &&

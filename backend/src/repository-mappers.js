@@ -1,3 +1,4 @@
+import { fileReference } from './file-content.js';
 import { normalizeAvatarConfig } from "./avatar-service.js";
 import { projectAvatarPhotoQuality } from "./avatar-3d-photo-quality.js";
 import { normalizeLocationText } from "./location-labels.js";
@@ -251,6 +252,8 @@ export const mapAvatar3dModel = (row) => ({
 });
 
 export const mapFileAsset = (row) => ({
+  parseVersion: row.parse_version || null,
+  reference: fileReference(row),
   id: row.id,
   userId: row.user_id,
   originalFilename: row.original_filename,

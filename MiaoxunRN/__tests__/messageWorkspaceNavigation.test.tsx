@@ -7,7 +7,7 @@ import { ChatMessage, ChatThread } from '../src/features/session/sessionTypes';
 import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
 import { WorkspaceButton, WorkspaceState } from '../src/shared/workspaceUi';
 import { palettes } from '../src/shared/theme';
-import { agentWorkspace } from '../__fixtures__/agentWorkspace';
+import { agentWorkspace, workspaceStep } from '../__fixtures__/agentWorkspace';
 
 jest.mock('../src/features/assist/AIAssistProvider', () => ({
   useAIAssist: () => ({ isActive: false, dismiss: jest.fn() }),
@@ -86,6 +86,96 @@ test('only a Butler agent reply with a UUID exposes a workspace reference', () =
   expect(messageWorkspaceId(message, 'site-builder')).toBeNull();
   expect(messageWorkspaceId(message)).toBeNull();
 });
+
+const professionalMessage: ChatMessage = {
+  ...message,
+  threadId: 'professional-thread',
+  metadata: {
+    agentDispatch: { version: 1, kind: 'workspace' },
+    agentWorkspace: { id: workspaceId },
+  },
+};
+const professionalThread = {
+  ...thread,
+  id: professionalMessage.threadId,
+  agentId: 'site-builder',
+  messages: [professionalMessage],
+};
+const directWorkspace = () =>
+  agentWorkspace({
+    id: workspaceId,
+    executionMode: 'direct',
+    origin: {
+      kind: 'agent_conversation',
+      threadId: professionalThread.id,
+      inputMessageId: 'input',
+      agentId: 'site-builder',
+      agentVersion: '1',
+      capability: 'site.compose',
+    },
+    steps: [
+      workspaceStep({
+        agentId: 'site-builder',
+        agentVersion: '1',
+        capability: 'site.compose',
+      }),
+    ],
+  });
+test('professional dispatch links need matching message thread and a fresh authenticated task origin', async () => {
+  expect(
+    messageWorkspaceId(
+      professionalMessage,
+      'site-builder',
+      professionalThread.id,
+    ),
+  ).toBe(workspaceId);
+  expect(
+    messageWorkspaceId(professionalMessage, 'site-builder', 'different-thread'),
+  ).toBeNull();
+  expect(
+    messageWorkspaceId(
+      {
+        ...professionalMessage,
+        metadata: {
+          ...professionalMessage.metadata,
+          agentDispatch: { version: 1, kind: 'reply' },
+        },
+      },
+      'site-builder',
+    ),
+  ).toBeNull();
+  const workspace = directWorkspace();
+  api.get.mockResolvedValue(workspace);
+  await render({ item: professionalMessage, thread: professionalThread });
+  await act(async () => press());
+  expect(api.get).toHaveBeenCalledWith('token-a', workspaceId);
+  expect(props.onOpenWorkspace).toHaveBeenCalledWith(workspace);
+});
+test.each(['thread', 'agent', 'coordinated'])(
+  'professional links reject a fetched task with a mismatching %s origin',
+  async mismatch => {
+    const workspace = directWorkspace();
+    api.get.mockResolvedValue(
+      mismatch === 'coordinated'
+        ? agentWorkspace({ id: workspaceId })
+        : {
+            ...workspace,
+            origin: {
+              ...workspace.origin!,
+              ...(mismatch === 'thread'
+                ? { threadId: 'private-other-thread' }
+                : { agentId: 'comic-diary' }),
+            },
+          },
+    );
+    await render({ item: professionalMessage, thread: professionalThread });
+    await act(async () => press());
+    expect(props.onOpenWorkspace).not.toHaveBeenCalled();
+    expect(tree!.root.findByType(WorkspaceState).props.title).toContain(
+      '来源与当前专业 Agent 会话不一致',
+    );
+  },
+);
 test('the task button reads with the current session and opens only the server result', async () => {
   const workspace = agentWorkspace({ id: workspaceId });
   api.get.mockResolvedValueOnce(workspace);

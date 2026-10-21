@@ -37,7 +37,11 @@ export function AgentWorkspaceCard({
       language,
     ),
   }));
-  const status = workspaceStatusLabel(workspace.status, language);
+  const status = workspaceStatusLabel(
+    workspace.status,
+    language,
+    workspace.executionMode,
+  );
   const activityText = activities.map(
     activity => `${activity.name} · ${activity.description}`,
   );
@@ -57,7 +61,11 @@ export function AgentWorkspaceCard({
       failed={Boolean(workspace.error)}
       palette={palette}
       language={language}
-      openLabel={textFor(language, '查看协作', 'View workspace')}
+      openLabel={
+        workspace.executionMode === 'direct'
+          ? textFor(language, '查看任务', 'View task')
+          : textFor(language, '查看协作', 'View workspace')
+      }
       accessibilityLabel={[
         workspace.goal,
         status,

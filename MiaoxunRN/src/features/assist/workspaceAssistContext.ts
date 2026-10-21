@@ -27,6 +27,7 @@ export function workspaceAssistContext(
         goal: workspace.goal,
         status: workspace.status,
         revision: workspace.revision,
+        currentRound: workspace.currentRound,
         participants: [
           ...new Set(workspace.steps.map(step => step.agentId)),
         ].map(agentId => ({

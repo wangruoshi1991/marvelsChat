@@ -1,7 +1,7 @@
 import { getModelRuntimeStatus, runAgent } from "./agent-runtime.js";
 import { HttpError } from "./http-error.js";
 import { z } from "zod";
-import { assertSiteDocumentContent, collectSiteDocumentReferences, SiteDocumentValidationError } from "../../shared/site-document.js";
+import { assertSiteDocument, assertSiteDocumentContent, collectSiteDocumentReferences, SiteDocumentValidationError } from "../../shared/site-document.js";
 
 export function validateSiteDraftContent(rawDraft) {
   try {
@@ -26,6 +26,7 @@ export async function buildSiteDraftResponse({
   profile,
   stationContent = {},
   textHandoffs = [],
+  siteHandoffs = [],
   modelStatus = getModelRuntimeStatus({ role: "planning" }),
   beforeModelCall = null,
   afterModelCall = null,
@@ -41,13 +42,18 @@ export async function buildSiteDraftResponse({
     const checkedHandoffs = z.array(z.object({ kind: z.literal("text_result"), title: z.string().trim().min(1).max(160),
       content: z.string().trim().min(1).max(16000) }).strict()).max(26).safeParse(textHandoffs);
     if (!checkedHandoffs.success) throw new HttpError(422, "Site builder received an invalid text handoff.", { code: "SITE_BUILDER_INVALID_HANDOFF" });
+    if (!Array.isArray(siteHandoffs) || siteHandoffs.length > 20 || siteHandoffs.some(item =>
+      !item || item.kind !== "site_draft" || Object.keys(item).sort().join(",") !== "document,kind")) {
+      throw new HttpError(422, "Site builder received an invalid page handoff.", { code: "SITE_BUILDER_INVALID_HANDOFF" });
+    }
+    for (const item of siteHandoffs) assertSiteDocument(item.document);
     let result;
     try {
       result = await runAgentFn({
         agentId: "site-builder",
         input: prompt,
         user,
-        appContext: { profile, stationContent, textHandoffs: checkedHandoffs.data },
+        appContext: { profile, stationContent, textHandoffs: checkedHandoffs.data, siteHandoffs },
         beforeModelCall, afterModelCall,
       });
     } catch (error) {

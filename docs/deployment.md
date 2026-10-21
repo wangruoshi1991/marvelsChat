@@ -2,6 +2,8 @@
 
 当前运行版本、数据库迁移、客户端配套及最近一次只读核验统一记录在[当前交接](handoffs/CURRENT.md)。本文保存部署方法和历史证据；带日期的发布章节只描述当时状态，不作为当前部署或恢复指令。
 
+当前本地合同6/040–043的升级顺序、旧客户端兼容边界和恢复条件见[2026-10-21配套发布准备](reviews/2026-10-21-contract6-release-preparation.md)。尚未执行该发布；新源码正式runtime须先冻结为经审查的干净提交。
+
 039先锁`agent_workspace_nodes`再锁`station_site_drafts`，而在线草稿读取会先读草稿再读节点；并发可能形成PostgreSQL死锁。迁移窗口须先让Nginx进入503维护、停止API与两个Worker并排空在途请求/事务，在迁移连接显式设定`lock_timeout`和`statement_timeout`；失败时保持维护并确认事务回滚。新来源与任务写入后优先前向修复，禁止旧代码接新库或旧dump覆盖新数据。
 
 ## 2026-10-13配套升级记录（历史）
@@ -29,13 +31,13 @@ Git 工作区执行。脚本从 `HEAD` 重建临时源码树，在该树内按�
 构建，再按明确白名单生成 runtime；工作区的 `admin/dist` 与 `avatar-web/dist` 不会被读取或删除。
 `deploy/` 也只收录代码中逐项列出的 systemd、Nginx、数据库和环境
 模板。脚本不会将 `.env*`、凭据、数据库、`node_modules`、本地 storage 或整个工作目录打包。
-runtime 只包含服务源码、迁移、顶层 Agent 定义与运行时 helpers、两个共享数据合同、明确列出的数据库/Agent 运维入口及生产加固脚本；不包含测试、评测夹具、Agent CLI、本地开发启动器或备份/恢复客户端工具。制品中的后端 `package.json` 仅保留 API、两个 Worker 和已随包运维命令，Agent 包描述仅保留 ESM 与注册器导出。
+runtime 只包含服务源码、迁移、顶层 Agent 定义与运行时 helpers（含专业分派`specialist-dispatch.js`）、两个共享数据合同、明确列出的数据库/Agent 运维入口及生产加固脚本；不包含测试、评测夹具、Agent CLI、本地开发启动器或备份/恢复客户端工具。制品中的后端 `package.json` 仅保留 API、两个 Worker 和已随包运维命令，Agent 包描述仅保留 ESM 与注册器导出。
 `release-manifest.json` 记录 `sourceHead`、`sourceTree`、固定构建命令及每个运行文件的
 SHA-256，并明确 `includesWorkingTreeChanges=false`。
 
 发布前必须先把经审查的修改提交为一个可定位的 Git revision，再生成制品；不能以 dirty
 worktree、手工复制的 dist 或“HEAD 加本地修改”作为生产来源。`npm run test:release-package`
-在隔离的临时 Git 仓库中覆盖成功路径、前端重新构建、敏感配置排除、来源 revision 和清单哈希。
+在隔离的临时 Git 仓库中覆盖成功路径、前端重新构建、敏感配置排除、来源 revision 和清单哈希，并在解包产物中实际加载当前全部Agent，验证运行时依赖没有漏包。
 
 ## 此前发布基线（2026-10-10，历史）
 

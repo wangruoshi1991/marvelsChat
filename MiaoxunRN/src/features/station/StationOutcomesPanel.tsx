@@ -160,40 +160,67 @@ export function StationOutcomesPanel({
         </Text>
       ) : null}
       {outcomes.map(item => (
-        <Pressable
+        <View
           key={item.key}
-          testID={`outcome-${item.key}`}
-          accessibilityRole="button"
-          accessibilityLabel={t(`打开${item.title}`, `Open ${item.title}`)}
-          disabled={!active}
-          onPress={() => {
-            if (item.target.kind === 'workspace')
-              onOpenWorkspace(item.target.workspace);
-            else setSelection({ token, key: item.key });
-          }}
           style={[
-            s.card,
+            s.cardGroup,
             { backgroundColor: colors.surface, borderColor: colors.border },
           ]}
         >
-          <View style={s.copy}>
-            <Text style={[s.label, { color: colors.secondaryText }]}>
-              {item.label}
-            </Text>
-            <Text numberOfLines={2} style={[s.title, { color: colors.text }]}>
-              {item.title}
-            </Text>
-            {item.summary && item.summary !== item.title ? (
-              <Text
-                numberOfLines={2}
-                style={[s.body, { color: colors.secondaryText }]}
-              >
-                {item.summary}
+          <Pressable
+            testID={`outcome-${item.key}`}
+            accessibilityRole="button"
+            accessibilityLabel={t(`打开${item.title}`, `Open ${item.title}`)}
+            disabled={!active || !foreground}
+            onPress={() => {
+              const scope = visibleScope.current;
+              if (scope.token !== token || !scope.active || !scope.foreground)
+                return;
+              if (item.target.kind === 'workspace')
+                onOpenWorkspace(item.target.workspace);
+              else setSelection({ token, key: item.key });
+            }}
+            style={s.card}
+          >
+            <View style={s.copy}>
+              <Text style={[s.label, { color: colors.secondaryText }]}>
+                {item.label}
               </Text>
-            ) : null}
-          </View>
-          <ChevronRight size={18} color={colors.secondaryText} />
-        </Pressable>
+              <Text numberOfLines={2} style={[s.title, { color: colors.text }]}>
+                {item.title}
+              </Text>
+              {item.summary && item.summary !== item.title ? (
+                <Text
+                  numberOfLines={2}
+                  style={[s.body, { color: colors.secondaryText }]}
+                >
+                  {item.summary}
+                </Text>
+              ) : null}
+            </View>
+            <ChevronRight size={18} color={colors.secondaryText} />
+          </Pressable>
+          {item.sourceWorkspace ? (
+            <View style={s.taskLink}>
+              <WorkspaceButton
+                palette={palette}
+                label={t('查看原任务', 'View original task')}
+                disabled={!active || !foreground}
+                onPress={() => {
+                  const scope = visibleScope.current;
+                  if (
+                    scope.token !== token ||
+                    !scope.active ||
+                    !scope.foreground
+                  )
+                    return;
+                  if (item.sourceWorkspace)
+                    onOpenWorkspace(item.sourceWorkspace);
+                }}
+              />
+            </View>
+          ) : null}
+        </View>
       ))}
       {contentStatus === 'loaded' &&
       workspaces.loaded &&
@@ -203,8 +230,8 @@ export function StationOutcomesPanel({
           palette={palette}
           title={t('暂无成果', 'No outcomes yet')}
           description={t(
-            '完成的文字成果、页面、分镜和穿搭记录会显示在这里。',
-            'Text results, pages, storyboards and outfits appear here.',
+            '完成的文字成果、选材结果、页面、分镜和穿搭记录会显示在这里。',
+            'Text results, selected media, pages, storyboards and outfits appear here.',
           )}
         />
       ) : null}
@@ -293,9 +320,12 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     padding: 16,
+  },
+  cardGroup: {
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
   },
+  taskLink: { paddingHorizontal: 16, paddingBottom: 12 },
   copy: { flex: 1, gap: 6 },
   title: { fontSize: 17, lineHeight: 24, fontWeight: '600' },
   label: { fontSize: 12, lineHeight: 18 },

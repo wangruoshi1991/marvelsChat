@@ -25,3 +25,11 @@ test("AI references fail closed for scope, missing/foreign resources and unknown
   assert.equal(aiContextReferencesSchema.safeParse([{ kind: "url", id }]).success, false);
   assert.equal(aiContextReferencesSchema.safeParse([{ kind: "station-photo", id, content: "client body" }]).success, false);
 });
+
+test("file resolver uses the same canonical Unicode title as upload metadata", async () => {
+  const row = { id, original_filename: 'a'.repeat(159) + '😀.md', mime_type: 'text/markdown', checksum_sha256: 'hash', extracted_text: '完整正文', parse_version: 'utf8-text-v1', status: 'processed' };
+  const result = await resolveAIContextReferences({ userId: 'owner', refs: [{ kind: 'station-file', id }], grantedScopes: ['files:read'], queryFn: async () => [row] });
+  assert.equal(result.references[0].title, 'a'.repeat(159));
+  assert.equal(aiContextReferencesSchema.safeParse(result.references).success, true);
+  assert.equal(Buffer.from(JSON.stringify(result.references)).toString(), JSON.stringify(result.references));
+});

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -57,11 +57,20 @@ export function AIRequestComposer({
   onRemoveContext?: () => void;
   onChangeDraft: (draft: string) => void;
   onClose: () => void;
-  onContinue: (draft: string) => boolean;
+  onContinue: (draft: string) => boolean | Promise<boolean>;
   recovery?: React.ReactNode;
 }) {
   const colors = workspacePalette(palette);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const alive = useRef(true);
+  const submitting = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   const summary = assistContextSummary(scene, context, language);
   const reference = context ? persistentAssistReference(context) : null;
   const message = buildAssistMessage(draft, scene, context, language);
@@ -160,11 +169,11 @@ export function AIRequestComposer({
           placeholderTextColor={colors.secondaryText}
           value={draft}
           onChangeText={text => {
-            setError(false);
+            setError('');
             onChangeDraft(text);
           }}
           multiline
-          editable
+          editable={!busy}
           autoFocus={!context}
           maxLength={
             draft.length > assistMessageLimit ? undefined : assistMessageLimit
@@ -185,15 +194,7 @@ export function AIRequestComposer({
       </ScrollView>
       <View style={s.footer}>
         {error ? (
-          <WorkspaceState
-            palette={colors}
-            tone="error"
-            title={textFor(
-              language,
-              '妙管家会话不可用，请到我页添加后重试。草稿已保留。',
-              'The assistant chat is unavailable. Add it in Me and retry. Your draft is retained.',
-            )}
-          />
+          <WorkspaceState palette={colors} tone="error" title={error} />
         ) : null}
         <Text
           style={[
@@ -211,8 +212,39 @@ export function AIRequestComposer({
           palette={colors}
           label={textFor(language, '交给妙管家', 'Review with Butler')}
           icon={<ArrowUpRight color={colors.surface} size={19} />}
-          disabled={!draft.trim() || tooLong}
-          onPress={() => setError(!onContinue(message))}
+          disabled={!draft.trim() || tooLong || busy}
+          busy={busy}
+          onPress={async () => {
+            if (submitting.current || !draft.trim() || tooLong) return;
+            submitting.current = true;
+            setBusy(true);
+            setError('');
+            try {
+              const accepted = await onContinue(message);
+              if (alive.current && !accepted)
+                setError(
+                  textFor(
+                    language,
+                    '妙管家会话不可用，请到我页添加后重试。草稿已保留。',
+                    'The assistant chat is unavailable. Add it in Me and retry. Your draft is retained.',
+                  ),
+                );
+            } catch (issue) {
+              if (alive.current)
+                setError(
+                  issue instanceof Error
+                    ? issue.message
+                    : textFor(
+                        language,
+                        '无法打开任务讨论，请重试。',
+                        'Unable to open task discussion. Try again.',
+                      ),
+                );
+            } finally {
+              submitting.current = false;
+              if (alive.current) setBusy(false);
+            }
+          }}
         />
       </View>
     </KeyboardAvoidingView>

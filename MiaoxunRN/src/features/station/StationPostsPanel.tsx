@@ -154,8 +154,8 @@ function postTimeline(
   ].sort((a, b) => b.time - a.time);
 }
 
-// Interim diary card: opens the existing diary detail. Final styling lands
-// with the poll work so all post kinds are designed together.
+// Diary cards open the existing diary detail while keeping the timeline
+// compact enough to show several records in the station feed.
 function StationDiaryCard({
   entry,
   language,
@@ -178,50 +178,60 @@ function StationDiaryCard({
         `Open diary ${entry.title}`,
       )}
       onPress={onOpen}
-      style={[styles.stationFeedCard, { backgroundColor: colors.surface }]}
+      style={[styles.stationDiaryCard, { backgroundColor: colors.surface }]}
     >
-      <View style={styles.stationFeedHeader}>
-        <View style={styles.stationFeedDateCopy}>
-          <Text
-            numberOfLines={1}
-            style={[styles.stationFeedDay, { color: colors.text }]}
-          >
+      <View style={styles.stationDiaryMeta}>
+        {entry.createdAt ? (
+          <Text style={[styles.stationDiaryMetaText, { color: colors.text }]}>
             {formatPostDay(entry.createdAt, language)}
           </Text>
-          <View style={styles.stationFeedMetaRow}>
-            <View style={styles.stationFeedMetaItem}>
-              <BookOpen color={colors.secondaryText} size={13} />
-              <Text
-                style={[
-                  styles.stationFeedMetaText,
-                  { color: colors.secondaryText },
-                ]}
-              >
-                {textFor(language, '日记', 'Diary')}
-                {entry.createdAt
-                  ? ` · ${formatPostClock(entry.createdAt, language)}`
-                  : ''}
-              </Text>
-            </View>
-          </View>
-        </View>
+        ) : null}
+        <BookOpen color={colors.secondaryText} size={13} />
+        <Text
+          style={[styles.stationDiaryMetaText, { color: colors.secondaryText }]}
+        >
+          {textFor(language, '日记', 'Diary')}
+          {entry.createdAt
+            ? ` · ${formatPostClock(entry.createdAt, language)}`
+            : ''}
+        </Text>
       </View>
       <Text
-        numberOfLines={1}
-        style={[styles.stationFeedDay, { color: colors.text }]}
+        numberOfLines={2}
+        style={[styles.stationDiaryTitle, { color: colors.text }]}
       >
-        {entry.title}
+        {diaryDisplayTitle(entry)}
       </Text>
       {entry.body ? (
         <Text
           numberOfLines={3}
-          style={[styles.stationFeedMetaText, { color: colors.secondaryText }]}
+          style={[styles.stationDiaryBody, { color: colors.secondaryText }]}
         >
           {entry.body}
         </Text>
       ) : null}
     </Pressable>
   );
+}
+
+/** Remove a timestamp only when it duplicates this diary's creation time. */
+function diaryDisplayTitle(entry: StationDiaryEntryDTO) {
+  const timestampSuffix = entry.title.match(
+    /\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)$/,
+  );
+  if (!timestampSuffix || !entry.createdAt) {
+    return entry.title;
+  }
+  const titleTime = Date.parse(timestampSuffix[1]);
+  const createdTime = Date.parse(entry.createdAt);
+  if (
+    timestampSuffix.index === undefined ||
+    !Number.isFinite(titleTime) ||
+    titleTime !== createdTime
+  ) {
+    return entry.title;
+  }
+  return entry.title.slice(0, timestampSuffix.index).trimEnd();
 }
 
 function StationPostCard({

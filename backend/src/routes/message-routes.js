@@ -16,9 +16,12 @@ import {
   agentScopesMatchDeclaration,
 } from "../ai-agent-access.js";
 import { resolveAIContextReferences } from "../ai-context.js";
-import { submitAlbumMessageTask } from "../ai-message-task-service.js";
 import { getAITask } from "../ai-task-repository.js";
 import { submitAgentWorkspace } from "../agent-workspace-service.js";
+import { createWorkspaceDiscussionService } from "../workspace-discussion-service.js";
+import { createSpecialistMessageService } from "../specialist-message-service.js";
+import { assertMatchingMessageRetry, messageRequestFingerprint } from "../message-request.js";
+export { assertMatchingMessageRetry, messageRequestFingerprint } from "../message-request.js";
 import {
   buildButlerDispatchContext,
   validateButlerDispatch,
@@ -104,35 +107,6 @@ export function agentRuntimeFailureDiagnostic(error) {
   };
 }
 
-export function assertMatchingMessageRetry(message, fingerprint) {
-  if (
-    message.metadata?.source !== "app" ||
-    message.metadata?.requestFingerprint !== fingerprint
-  ) {
-    throw new HttpError(
-      409,
-      "Client message ID already belongs to a different request",
-    );
-  }
-}
-
-export function messageRequestFingerprint(body) {
-  const semanticInput = [body.content, body.replyToMessageId || null];
-  // Empty references do not change a message's meaning or its persisted key.
-  // Keep existing production messages replayable without trying a second hash.
-  if (body.contextRefs.length) {
-    semanticInput.push(
-      body.contextRefs.map(({ kind, id, version }) => ({ kind, id, version })),
-    );
-  }
-  if (body.butlerContextReset === true)
-    semanticInput.push({ butlerContextReset: true });
-  return crypto
-    .createHash("sha256")
-    .update(JSON.stringify(semanticInput))
-    .digest("hex");
-}
-
 function assertMatchingPeerMirror(message, fingerprint, senderUserId) {
   if (
     message.metadata?.source !== "direct" ||
@@ -214,6 +188,8 @@ export function registerMessageRoutes(
     runAgentRuntime = runAgent,
   },
 ) {
+  const discussWorkspace = createWorkspaceDiscussionService({ runAgentRuntime });
+  const sendSpecialistMessage = createSpecialistMessageService({ runAgentRuntime });
   app.get(
     "/api/threads/:threadId/messages/:messageId/media-results",
     authenticate,
@@ -359,6 +335,19 @@ export function registerMessageRoutes(
         requireAIClientContract(req);
       const clientMessageId = body.clientMessageId || crypto.randomUUID();
       const requestFingerprint = messageRequestFingerprint(body);
+      if (body.workspaceContext) {
+        requireAIClientContract(req);
+        requireAgentWorkspaceContract(req);
+        enforceAgentMessageCreateLimit(req, res);
+        const result = await discussWorkspace({ userId: req.user.id, threadId: thread.id, body });
+        if (!result.reused) await createUsageEvent({ userId: req.user.id, eventType: "message.send",
+          targetType: "thread", targetId: thread.id, payload: { agentId: thread.agentId },
+          ipHash: hashRequestIp(req.ip), userAgent: req.get("user-agent") || "" });
+        return res.status(result.reused ? 200 : 201).json({ data: { messages: result.messages.map(publicMessage) } });
+      }
+      if (body.agentContextReset !== undefined && (!thread.agentId || thread.agentId === "miaoxun-butler")) {
+        throw new HttpError(400, "仅专业 Agent 会话支持清除专业待续需求。", { code: "SPECIALIST_CONTEXT_INVALID" });
+      }
       const replay = async (message) => {
         assertMatchingMessageRetry(message, requestFingerprint);
         if (message.deletedAt) {
@@ -469,13 +458,27 @@ export function registerMessageRoutes(
           .status(200)
           .json({ data: { messages: messages.map(publicMessage) } });
       };
+      const specialist = async () => {
+        requireAIClientContract(req);
+        requireAgentWorkspaceContract(req);
+        enforceAgentMessageCreateLimit(req, res);
+        const result = await sendSpecialistMessage({ userId: req.user.id, threadId: thread.id, body });
+        // An older server may have admitted this key before the cutover. Its
+        // durable target wins; never create a second album or workspace task.
+        if (result.legacy) return replay(result.legacy);
+        if (!result.reused) await createUsageEvent({ userId: req.user.id, eventType: "message.send",
+          targetType: "thread", targetId: thread.id, payload: { agentId: thread.agentId },
+          ipHash: hashRequestIp(req.ip), userAgent: req.get("user-agent") || "" });
+        return res.status(result.reused ? 200 : 201).json({ data: { messages: result.messages.map(publicMessage) } });
+      };
       const existing = await getMessageByClientId({
         userId: req.user.id,
         threadId: thread.id,
         clientMessageId,
         source: "app",
       });
-      if (existing) return replay(existing);
+      if (existing) return existing.metadata?.specialistMessage ? specialist() : replay(existing);
+      if (thread.agentId && thread.agentId !== "miaoxun-butler") return specialist();
       if (body.butlerContextReset && thread.agentId !== "miaoxun-butler") {
         throw new HttpError(400, "仅妙管家支持清除待续需求上下文。", {
           code: "BUTLER_CONTEXT_INVALID",
@@ -523,22 +526,6 @@ export function registerMessageRoutes(
           400,
           "AI context references require an Agent conversation",
         );
-      if (thread.agentId === "album-manager") {
-        const result = await submitAlbumMessageTask({
-          user: req.user,
-          thread,
-          body: { ...body, clientMessageId },
-          requestFingerprint,
-          replyMetadata,
-          agentAccess,
-        });
-        return res.status(result.reused ? 200 : 202).json({
-          data: {
-            task: result.task,
-            messages: [publicMessage(result.message)],
-          },
-        });
-      }
       const messageMode = thread.agentId === "miaoxun-butler" ? "dispatch" : "chat";
       if (thread.agentId) {
         // A generation plan is not a conversation. Reject unsupported chat
@@ -553,10 +540,17 @@ export function registerMessageRoutes(
           })
         : { references: [], context: [] };
 
-      const butlerHistory =
-        thread.agentId === "miaoxun-butler"
-          ? await listRecentMessagesForThread(req.user.id, thread.id, 12)
-          : [];
+      const rawButlerHistory = thread.agentId === "miaoxun-butler"
+        ? await listRecentMessagesForThread(req.user.id, thread.id, 12)
+        : [];
+      // A linked task discussion is a hard boundary for the ordinary Butler
+      // clarification chain. Starting a new ordinary request after it (the
+      // client sends butlerContextReset) must not resurrect an older pending
+      // question or carry its source references across the boundary.
+      const latestLinkedIndex = rawButlerHistory.findLastIndex(message => Boolean(message.metadata?.workspaceContext));
+      const butlerHistory = latestLinkedIndex >= 0
+        ? rawButlerHistory.slice(latestLinkedIndex + 1)
+        : rawButlerHistory;
       const previousButlerMessage = butlerHistory.at(-1);
       // A different message can arrive while the preceding answer is still
       // running. Its source=app snapshot was written below by this server, not
@@ -568,6 +562,7 @@ export function registerMessageRoutes(
           previousButlerMessage.metadata?.butlerContextReset !== true);
       const pendingClarification =
         !body.butlerContextReset &&
+        !previousButlerMessage?.metadata?.workspaceContext &&
         carriesPendingContext &&
         !previousButlerMessage.recalledAt
           ? previousButlerMessage.metadata?.butlerClarification
@@ -686,7 +681,7 @@ export function registerMessageRoutes(
             user: req.user,
             thread,
             messages: agentAccess.grantedScopes.includes("messages:read")
-              ? isButler
+                ? isButler
                 ? butlerHistory
                 : await listAgentHistoryBeforeInput(req.user.id, thread.id, userMessage.id, 12)
               : [],

@@ -587,16 +587,17 @@ describe('Station post experience', () => {
 
 describe('Station posts timeline with diary entries', () => {
   it('merges diary entries into the posts timeline newest first and opens the diary detail', async () => {
+    const createdAt = '2026-10-15T10:00:00.000Z';
     const diary = {
       id: 'diary-1',
       userId: 'user-1',
-      title: '周末散步',
+      title: `周末散步 ${createdAt}`,
       body: '江边的风很舒服。',
       mood: 'calm',
       visibility: 'private' as const,
       source: 'manual' as const,
-      createdAt: '2026-10-15T10:00:00.000Z',
-      updatedAt: '2026-10-15T10:00:00.000Z',
+      createdAt,
+      updatedAt: createdAt,
     };
     const olderPost = {
       ...post,
@@ -636,6 +637,7 @@ describe('Station posts timeline with diary entries', () => {
       .flat()
       .filter(value => typeof value === 'string');
     expect(texts.indexOf('周末散步')).toBeGreaterThan(-1);
+    expect(texts).not.toContain(`周末散步 ${createdAt}`);
     expect(texts.indexOf('周末散步')).toBeLessThan(
       texts.indexOf(olderPost.body),
     );
@@ -655,6 +657,50 @@ describe('Station posts timeline with diary entries', () => {
           typeof node.props.onPress === 'function',
       ),
     ).toHaveLength(0);
+  });
+
+  it('keeps a meaningful title suffix when it is not a duplicate timestamp', async () => {
+    const createdAt = '2026-10-15T10:00:00.000Z';
+    const title = '版本说明 2026-10-14T10:00:00.000Z';
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AIAssistProvider onAskButler={jest.fn()} routeKey="station-posts">
+          <StationPostsPanel
+            language="zh"
+            ownedAgents={[]}
+            palette={palettes.light}
+            profile={emptyProfile}
+            renderUserAvatar={renderUserAvatar}
+            stationContent={{
+              ...emptyStationContent,
+              diaryEntries: [
+                {
+                  id: 'diary-suffix',
+                  userId: 'user-1',
+                  title,
+                  body: '',
+                  mood: '',
+                  visibility: 'private',
+                  source: 'manual',
+                  createdAt,
+                  updatedAt: createdAt,
+                },
+              ],
+            }}
+            token="token"
+            onActionError={jest.fn()}
+            onActionMessage={jest.fn()}
+            onDeletePost={jest.fn(async () => undefined)}
+            onSetStationPostInteraction={jest.fn()}
+            onOpenDiaryDetail={jest.fn()}
+          />
+        </AIAssistProvider>,
+      );
+    });
+    expect(
+      renderer!.root.findAllByType(Text).map(node => node.props.children),
+    ).toContain(title);
   });
 
   it('shows the diary timeline instead of the empty state when only diaries exist', async () => {

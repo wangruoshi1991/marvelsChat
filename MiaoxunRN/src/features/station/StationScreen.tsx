@@ -1,14 +1,16 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
-  Easing,
   Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  PanResponder,
   Pressable,
   ScrollView,
+  StyleSheet,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { MoreHorizontal } from 'lucide-react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -19,7 +21,8 @@ import {
 } from '../../services/stationMediaPicker';
 import { displayText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
-import { pageGradientTop, Palette } from '../../shared/theme';
+import { Palette } from '../../shared/theme';
+import { PageGradient } from '../../shared/PageGradient';
 import { useAIAssist } from '../assist/AIAssistProvider';
 import { UserAvatarRenderer } from '../messages/messageTypes';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
@@ -30,7 +33,8 @@ import { StationContentListScreen } from './StationContentListScreen';
 import { StationCreateSheet } from './StationCreateSheet';
 import type { StationCreatePayload } from './StationCreateSheet';
 import {
-  STATION_COLLAPSE_DURATION,
+  STATION_COLLAPSE_SCROLL_DISTANCE,
+  STATION_EXPAND_SCROLL_DISTANCE,
   StationProfileHeader,
   StationTabs,
 } from './StationHeader';
@@ -78,6 +82,8 @@ export function StationScreen({
   onActionError: (error: unknown) => void;
 }) {
   const { isActive: isAssistActive } = useAIAssist();
+  const { height: windowHeight } = useWindowDimensions();
+  const [panelViewportHeight, setPanelViewportHeight] = useState(windowHeight);
   const [isPointsOpen, setIsPointsOpen] = useState(false);
   const [isAvatar3dOpen, setIsAvatar3dOpen] = useState(false);
   const [createKind, setCreateKind] = useState<StationCreateKind | null>(null);
@@ -314,51 +320,97 @@ export function StationScreen({
     setContentListDetail(null);
   };
 
-  // S48-style collapse. The prototype animates `.me-profile` over
-  // `.34s cubic-bezier(.2,.8,.2,1)`, so the card interpolates instead of
-  // flipping between two layouts.
+  // Keep profile geometry continuous while the panel scrolls. The header is a
+  // sibling of the clipped panel viewport, so its changing height cannot
+  // move a native sticky-header wrapper over the list.
   const collapseProgress = useRef(new Animated.Value(0)).current;
   const collapsedRef = useRef(false);
+  const panelScrollRef = useRef<ScrollView>(null);
+  const panelScrollOffset = useRef(0);
+  const panelContentHeight = useRef(0);
+  const panelViewportHeightRef = useRef(windowHeight);
   const [profileCollapsed, setProfileCollapsed] = useState(false);
-  const lastScrollY = useRef(0);
-  const upwardTravel = useRef(0);
-  const setCollapsed = useCallback(
-    (next: boolean) => {
-      if (collapsedRef.current === next) return;
-      collapsedRef.current = next;
-      setProfileCollapsed(next);
-      Animated.timing(collapseProgress, {
-        toValue: next ? 1 : 0,
-        duration: STATION_COLLAPSE_DURATION,
-        easing: Easing.bezier(0.2, 0.8, 0.2, 1),
-        // Layout properties (height, padding, radius) are animated, so the
-        // native driver cannot carry this.
-        useNativeDriver: false,
-      }).start();
+  const setCollapsed = useCallback((next: boolean) => {
+    if (collapsedRef.current === next) return;
+    collapsedRef.current = next;
+    setProfileCollapsed(next);
+  }, []);
+  const applyPanelScrollPosition = useCallback(
+    (position: number) => {
+      const y = Number.isFinite(position) ? Math.max(position, 0) : 0;
+      panelScrollOffset.current = y;
+      // Drive the card continuously from the finger's scroll position. The old
+      // threshold-only timing animation started after the gesture and could
+      // visibly lag or jump, especially on short/empty panels.
+      collapseProgress.setValue(
+        Math.min(y / STATION_COLLAPSE_SCROLL_DISTANCE, 1),
+      );
+      if (y >= STATION_COLLAPSE_SCROLL_DISTANCE) {
+        setCollapsed(true);
+      } else if (y <= STATION_EXPAND_SCROLL_DISTANCE) {
+        setCollapsed(false);
+      }
     },
-    [collapseProgress],
+    [collapseProgress, setCollapsed],
   );
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const y = event.nativeEvent.contentOffset.y;
-    const delta = y - lastScrollY.current;
-    lastScrollY.current = y;
-    // Hysteresis in both directions: collapse once 24px have accumulated
-    // upward, expand again near the top. The old 2px comparison flipped state
-    // on a single finger tremor, which is what read as "rough".
-    if (y <= 8) {
-      upwardTravel.current = 0;
-      setCollapsed(false);
-      return;
-    }
-    if (delta > 0) {
-      upwardTravel.current += delta;
-      if (upwardTravel.current >= 24) setCollapsed(true);
-      return;
-    }
-    if (delta < 0) {
-      upwardTravel.current = 0;
-    }
+    applyPanelScrollPosition(event.nativeEvent.contentOffset.y);
   };
+  const headerScrollOrigin = useRef(0);
+  const headerVerticalGesture = useMemo(
+    () =>
+      PanResponder.create({
+        // The profile and tabs are fixed siblings of the panel ScrollView.
+        // Capture only a clear vertical drag, after child taps have had a
+        // chance to start, then drive the same native offset as panel scrolling.
+        onMoveShouldSetPanResponder: (_event, gesture) => {
+          const maxOffset = Math.max(
+            panelContentHeight.current - panelViewportHeightRef.current,
+            0,
+          );
+          return (
+            active &&
+            !isAssistActive &&
+            Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.4 &&
+            ((gesture.dy < -8 && panelScrollOffset.current < maxOffset) ||
+              (gesture.dy > 8 && panelScrollOffset.current > 0))
+          );
+        },
+        onPanResponderGrant: () => {
+          headerScrollOrigin.current = panelScrollOffset.current;
+        },
+        onPanResponderMove: (_event, gesture) => {
+          const maxOffset = Math.max(
+            panelContentHeight.current - panelViewportHeightRef.current,
+            0,
+          );
+          const nextOffset = Math.min(
+            maxOffset,
+            Math.max(0, headerScrollOrigin.current - gesture.dy),
+          );
+          applyPanelScrollPosition(nextOffset);
+          panelScrollRef.current?.scrollTo({ y: nextOffset, animated: false });
+        },
+        onPanResponderRelease: (_event, gesture) => {
+          const maxOffset = Math.max(
+            panelContentHeight.current - panelViewportHeightRef.current,
+            0,
+          );
+          const nextOffset = Math.min(
+            maxOffset,
+            Math.max(0, headerScrollOrigin.current - gesture.dy),
+          );
+          panelScrollRef.current?.scrollTo({ y: nextOffset, animated: true });
+        },
+        onPanResponderTerminate: () => {
+          panelScrollRef.current?.scrollTo({
+            y: panelScrollOffset.current,
+            animated: false,
+          });
+        },
+      }),
+    [active, applyPanelScrollPosition, isAssistActive],
+  );
 
   const isDark = session.appearance === 'dark';
   const stationColors = resolveStationColors(palette);
@@ -376,100 +428,121 @@ export function StationScreen({
   const stationBackground = stationColors.isLight
     ? 'transparent'
     : stationColors.background;
-  // The card and switch dock as a sticky block, so it stays opaque — a
-  // transparent one would let scrolled cards show through its padding. It takes
-  // the gradient's top stop so the block and the wash read as one surface.
+  // Keep the fixed card and switch aligned with the root-page horizontal wash.
   const stationTopBackground = stationColors.isLight
-    ? pageGradientTop
+    ? 'transparent'
     : stationColors.background;
 
   return (
     <View style={[styles.screen, { backgroundColor: stationBackground }]}>
+      <View
+        {...headerVerticalGesture.panHandlers}
+        testID="station-top-header"
+        style={[
+          styles.stationTopContent,
+          { backgroundColor: stationTopBackground },
+        ]}
+      >
+        {stationColors.isLight ? (
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <PageGradient verticalFade={false} />
+          </View>
+        ) : null}
+        <View style={styles.stationOverflowRow}>
+          <Pressable
+            accessibilityLabel={textFor(language, '更多', 'More')}
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={openStationOverflow}
+            testID="station-overflow"
+          >
+            <MoreHorizontal
+              color={stationColors.secondaryText}
+              size={24}
+              strokeWidth={2.6}
+            />
+          </Pressable>
+        </View>
+        <StationProfileHeader
+          collapsed={profileCollapsed}
+          collapseProgress={collapseProgress}
+          stage={
+            <StationAvatarSpace
+              active={isPanelActive}
+              embedded
+              palette={palette}
+              language={language}
+              token={session.token}
+              avatar3d={avatar3d.bootstrap}
+              avatar3dStatus={avatar3d.status}
+              avatar3dError={avatar3d.errorMessage}
+              selectedModelId={selectedAvatar3dModelId}
+              onOpenGenerator={openAvatar3d}
+              onOpenCoreAgent={() => onOpenAgentThread('model-3d')}
+              onOpenOotd={() => openStationCreate('outfit')}
+              onOpenDiary={() => openStationCreate('diary')}
+              onOpenAgents={() => onSelectStationTab('agents')}
+              onOpenCallable={() => onSelectStationTab('agents')}
+            />
+          }
+          palette={palette}
+          language={language}
+          nickname={displayText(language, session.profile.nickname)}
+          aiId={session.user?.aiId || '--'}
+          avatarText={session.profile.avatarText}
+          avatarConfig={session.profile.avatarConfig}
+          bio={displayText(language, session.profile.bio)}
+          presenceStatus={
+            session.user?.presenceMode === 'online' ? 'online' : 'offline'
+          }
+          locationLabel={stationDisplayRegionLabel(session.profile)}
+          renderUserAvatar={renderUserAvatar}
+          onCopyAIID={onCopyAIID}
+          onOpenLocation={onOpenLocation}
+        />
+        <StationTabs
+          palette={palette}
+          language={language}
+          value={selectedStationTab}
+          onChange={onSelectStationTab}
+        />
+      </View>
       <ScrollView
+        ref={panelScrollRef}
         // The screen already sits inside the app's safe-area view. Automatic
         // inset adjustment would add the status-bar inset a second time and
-        // shift the sticky headers up under the dynamic island.
+        // shift the page under the dynamic island.
         contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={styles.stationScrollContent}
+        // A panel with no posts or agents still needs a small scroll range so
+        // the profile card can collapse. The space is intentionally empty;
+        // it represents the missing content state rather than fake records.
+        contentContainerStyle={[
+          styles.stationScrollContent,
+          {
+            minHeight: panelViewportHeight + STATION_COLLAPSE_SCROLL_DISTANCE,
+          },
+        ]}
+        onLayout={event => {
+          const height = event.nativeEvent.layout.height;
+          if (height > 0) {
+            panelViewportHeightRef.current = height;
+            setPanelViewportHeight(height);
+          }
+        }}
+        onContentSizeChange={(_width, height) => {
+          panelContentHeight.current = height;
+        }}
         onScroll={handleScroll}
         scrollEventThrottle={16}
         scrollEnabled={!isAssistActive}
-        // Prototype sticks the card at top 0 and the switch at top 72. RN's
-        // `stickyHeaderIndices` has no per-header offset — two entries would
-        // both dock at 0 and the switch would paint over the collapsed card —
-        // so the card and the switch share one sticky block, which reproduces
-        // the prototype's stacking.
-        stickyHeaderIndices={[0]}
         style={styles.stationPanelScroll}
         testID={`station-panel-scroll-${selectedStationTab}`}
       >
         <View
-          style={[
-            styles.stationTopContent,
-            { backgroundColor: stationTopBackground },
-          ]}
+          collapsable={false}
+          style={styles.stationPanelWrap}
+          testID="station-panel-wrap"
         >
-          <View style={styles.stationOverflowRow}>
-            <Pressable
-              accessibilityLabel={textFor(language, '更多', 'More')}
-              accessibilityRole="button"
-              hitSlop={10}
-              onPress={openStationOverflow}
-              testID="station-overflow"
-            >
-              <MoreHorizontal
-                color={stationColors.secondaryText}
-                size={24}
-                strokeWidth={2.6}
-              />
-            </Pressable>
-          </View>
-          <StationProfileHeader
-            collapsed={profileCollapsed}
-            collapseProgress={collapseProgress}
-            stage={
-              <StationAvatarSpace
-                active={isPanelActive}
-                embedded
-                palette={palette}
-                language={language}
-                token={session.token}
-                avatar3d={avatar3d.bootstrap}
-                avatar3dStatus={avatar3d.status}
-                avatar3dError={avatar3d.errorMessage}
-                selectedModelId={selectedAvatar3dModelId}
-                onOpenGenerator={openAvatar3d}
-                onOpenCoreAgent={() => onOpenAgentThread('model-3d')}
-                onOpenOotd={() => openStationCreate('outfit')}
-                onOpenDiary={() => openStationCreate('diary')}
-                onOpenAgents={() => onSelectStationTab('agents')}
-                onOpenCallable={() => onSelectStationTab('agents')}
-              />
-            }
-            palette={palette}
-            language={language}
-            nickname={displayText(language, session.profile.nickname)}
-            aiId={session.user?.aiId || '--'}
-            avatarText={session.profile.avatarText}
-            avatarConfig={session.profile.avatarConfig}
-            bio={displayText(language, session.profile.bio)}
-            presenceStatus={
-              session.user?.presenceMode === 'online' ? 'online' : 'offline'
-            }
-            locationLabel={stationDisplayRegionLabel(session.profile)}
-            renderUserAvatar={renderUserAvatar}
-            onCopyAIID={onCopyAIID}
-            onOpenLocation={onOpenLocation}
-          />
-          <StationTabs
-            palette={palette}
-            language={language}
-            value={selectedStationTab}
-            onChange={onSelectStationTab}
-          />
-        </View>
-
-        <View collapsable={false} style={styles.stationPanelWrap}>
           <StationPanel
             active={isPanelActive}
             palette={palette}

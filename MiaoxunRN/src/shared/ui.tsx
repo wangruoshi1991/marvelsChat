@@ -204,14 +204,18 @@ export function Header({
   palette,
   title,
   onBack,
+  backAccessibilityLabel,
 }: {
   palette: Palette;
   title: string;
   onBack: () => void;
+  backAccessibilityLabel?: string;
 }) {
   return (
     <View style={[styles.header, { borderBottomColor: palette.border }]}>
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={backAccessibilityLabel}
         onPress={onBack}
         style={[styles.backButton, { backgroundColor: palette.soft }]}
       >

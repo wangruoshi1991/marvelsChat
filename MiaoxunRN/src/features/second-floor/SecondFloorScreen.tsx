@@ -77,6 +77,7 @@ export function SecondFloorScreen({
   onOpenNotices,
   onOpenPostComposer,
   onOpenWorkspace,
+  onOpenFileAgent,
 }: {
   active?: boolean;
   palette: Palette;
@@ -93,6 +94,9 @@ export function SecondFloorScreen({
   /** Opens the app-shell post composer from the floor's publish panel. */
   onOpenPostComposer: () => void;
   onOpenWorkspace: (workspace: AgentWorkspace) => void;
+  onOpenFileAgent?: (
+    reference: import('../../models/aiTask').AIContextReference,
+  ) => void;
 }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -127,7 +131,7 @@ export function SecondFloorScreen({
   useEffect(() => {
     onToolChange?.(selected);
   }, [selected, onToolChange]);
-  const [visited, setVisited] = useState<SecondFloorTool[]>([]);
+  const [visited, setVisited] = useState<SecondFloorTool[]>(['albums']);
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const colors = useMemo(() => workspacePalette(palette), [palette]);
@@ -231,7 +235,6 @@ export function SecondFloorScreen({
                 palette={panelPalette}
                 language={language}
                 session={session}
-                onBack={() => setSelected(null)}
                 onBusyChange={onBusyChange}
               />
             </View>
@@ -252,6 +255,7 @@ export function SecondFloorScreen({
                 active={active && selected === 'files'}
                 onBusyChange={onBusyChange}
                 onOpenWorkspace={onOpenWorkspace}
+                onOpenFileAgent={onOpenFileAgent}
               />
             </View>
           ) : null}

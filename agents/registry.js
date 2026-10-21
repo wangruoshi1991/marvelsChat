@@ -82,7 +82,7 @@ export function validateAgentWorkspaceCapabilities(agent, { runtimeModes = null 
       !/^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/.test(entry.capability) || seen.has(entry.capability) ||
       typeof entry.description !== "string" || !entry.description.trim() || entry.description.length > 500 ||
       !["media_selection", "site_draft", "text_result", "workspace_decision"].includes(entry.outputKind) ||
-      !Array.isArray(entry.inputKinds) || entry.inputKinds.some(kind => !["station-album", "station-photo", "station-diary", "chat-message"].includes(kind)) ||
+      !Array.isArray(entry.inputKinds) || entry.inputKinds.some(kind => !["station-album", "station-photo", "station-diary", "chat-message", "station-file"].includes(kind)) ||
       !Array.isArray(entry.dependencyKinds) || entry.dependencyKinds.some(kind => !["media_selection", "site_draft", "text_result"].includes(kind)) ||
       !Array.isArray(entry.requiredScopes) || !entry.requiredScopes.length ||
       entry.requiredScopes.some(scope => !agent.permissions.includes(scope)) ||
@@ -108,7 +108,7 @@ export async function listAgents() {
     capabilities: agent.capabilities,
     permissions: agent.permissions,
     workspaceCapabilities: agent.workspaceCapabilities || [],
-    runtimeModes: ["plan", "chat", "dispatch", "coordinate", "contribute"].filter(mode => typeof agent[mode] === "function"),
+    runtimeModes: ["plan", "chat", "dispatch", "coordinate", "contribute", "discussWorkspace"].filter(mode => typeof agent[mode] === "function"),
     identity: agent.identity,
     status: "registered"
   }));

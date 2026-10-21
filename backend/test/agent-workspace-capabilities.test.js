@@ -82,7 +82,7 @@ test("catalogue contains only typed registered and granted executors, without au
   const agents = await listAgents();
   const grants = agents.map(agent => ({ agentId: agent.key, enabled: true, grantedScopes: agent.permissions }));
   const catalogue = listExecutableWorkspaceCapabilities({ registeredAgents: agents, grants });
-  assert.deepEqual(catalogue.map(item => item.capability).sort(), ["character.advise", "comic.storyboard", "media.select", "model.advise", "site.compose", "text.summarize", "text.synthesize", "video.script"]);
+  assert.deepEqual(catalogue.map(item => item.capability).sort(), ["character.advise", "comic.storyboard", "file.summary", "media.select", "model.advise", "site.compose", "text.summarize", "text.synthesize", "video.script"]);
   assert.deepEqual(listExecutableWorkspaceCapabilities({ registeredAgents: agents, grants: [] }), []);
   // A partial added Agent declaration is never sufficient authority.
   const partial = agents.filter(agent => agent.workspaceCapabilities?.length && agent.key !== "miaoxun-butler")
@@ -94,7 +94,7 @@ test("catalogue contains only typed registered and granted executors, without au
   changed.find(agent => agent.key === "site-builder").workspaceCapabilities[0].requiredScopes.pop();
   assert.throws(() => listExecutableWorkspaceCapabilities({ registeredAgents: changed, grants }), { details: { code: "WORKSPACE_CAPABILITY_UNAVAILABLE" } });
   const albumOnly = grants.map(grant => ({ ...grant, grantedScopes: grant.grantedScopes.filter(scope => scope !== "album:read") }));
-  assert.deepEqual(listExecutableWorkspaceCapabilities({ registeredAgents: agents, grants: albumOnly }).map(entry => entry.capability).sort(), ["character.advise", "model.advise", "text.summarize"]);
+  assert.deepEqual(listExecutableWorkspaceCapabilities({ registeredAgents: agents, grants: albumOnly }).map(entry => entry.capability).sort(), ["character.advise", "file.summary", "model.advise", "text.summarize"]);
 });
 
 test("unavailable diagnostics use the same executor validation and expose only supported capability identities and requirements without private grant data", async () => {
@@ -370,6 +370,16 @@ test("empty, nontext and oversized model contributions fail with a receipt rathe
   assert.equal(f.calls.length, 1);
 });
 
+test("text contribution titles truncate without splitting a Unicode character", async () => {
+  const f = textFixture();
+  const goal = "文".repeat(159) + "😀请摘要";
+  const args = await task("file-preprocessor");
+  args.node.goal = goal;
+  const output = await f.execute(args);
+  assert.equal(output.artifact.title, "文".repeat(159));
+  assert.equal(Buffer.from(output.artifact.title, "utf8").toString("utf8"), output.artifact.title);
+});
+
 test("text registrations cannot invent contribution mode or use a chat method as an executor", async () => {
   const agents = await listAgents();
   const invalid = structuredClone(agents);
@@ -401,4 +411,21 @@ test("site selected messages become explicit textual data while missing dependen
   const incomplete = fixture({ siteDocument: document() });
   await assert.rejects(incomplete.execute(await task("site-builder", [], { dependencyResults: [{ key: "proposal", result: { kind: "text_result", title: "文字方案", content: "正文" } }] })), error => error.details.code === "WORKSPACE_TEXT_SOURCES_INVALID");
   assert.equal(incomplete.contextCalls.length, 0);
+});
+
+test("page continuation passes the complete prior document only to the supported recipient", async () => {
+  const prior = { ...document(), schemaVersion: 2, documentId: ids.extra, revision: 1, visibility: "private" };
+  prior.sections = prior.sections.map(section => ({ ...section, id: ids.run, body: "必须保留的原版段落" }));
+  const handoff = { key: "prior", result: { kind: "site_draft", id: ids.extra, title: prior.title }, sourceReferences: [], document: prior };
+  const f = fixture({ siteDocument: document() });
+  await f.execute(await task("site-builder", [], { dependencyResults: [handoff] }));
+  assert.deepEqual(f.contextCalls[0].siteHandoffs, [{ kind: "site_draft", document: prior }]);
+  const unsupported = textFixture();
+  await assert.rejects(unsupported.execute(await task("file-preprocessor", [], { dependencyResults: [handoff] })),
+    error => error.details?.code === "WORKSPACE_DEPENDENCY_INVALID");
+  assert.equal(unsupported.calls.length, 0);
+  const missing = fixture({ siteDocument: document() });
+  await assert.rejects(missing.execute(await task("site-builder", [], { dependencyResults: [{ ...handoff, document: undefined }] })),
+    error => error.details?.code === "WORKSPACE_DEPENDENCY_INVALID");
+  assert.equal(missing.contextCalls.length, 0);
 });

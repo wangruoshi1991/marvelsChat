@@ -8,8 +8,10 @@ import { registerMessageRoutes } from "../src/routes/message-routes.js";
 import { registerAppRoutes } from "../src/routes/app-routes.js";
 import { registerAITaskRoutes } from "../src/routes/ai-task-routes.js";
 import { registerStationSiteRoutes } from "../src/routes/station-site-routes.js";
+import { messageSchema } from "../src/schemas.js";
+import { messageRequestFingerprint } from "../src/message-request.js";
 import { createRequestErrorHandler } from "../src/request-observability.js";
-import { createMessageTaskExecutor } from "../src/ai-message-task-service.js";
+import { createMessageTaskExecutor, submitAlbumMessageTask } from "../src/ai-message-task-service.js";
 import { createSiteTaskService } from "../src/ai-site-task-service.js";
 import { createAITaskRunner } from "../src/ai-task-runner.js";
 import * as repository from "../src/ai-task-repository.js";
@@ -169,7 +171,7 @@ const request = async (path, body, authToken = token, contract = "1") => {
         : {
             "X-Miaoxun-AI-Contract": contract,
             "X-Miaoxun-Site-Document": "2",
-            "X-Miaoxun-Agent-Workspace": "3",
+            "X-Miaoxun-Agent-Workspace": "6",
           }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -186,12 +188,18 @@ const request = async (path, body, authToken = token, contract = "1") => {
     ...(typeof payload === "object" ? payload : { text: payload }),
   };
 };
-const sendAlbum = (extra = {}) =>
-  request(`/api/threads/${threadId}/messages`, {
-    content: "Find selected media",
-    clientMessageId: crypto.randomUUID(),
-    ...extra,
-  });
+// These fixtures represent tasks accepted before professional conversations
+// moved to direct workspaces. The retained admission service creates real rows;
+// all subsequent reads/retries still exercise the current HTTP replay path.
+const admitAndReplayLegacyAlbum = async (extra = {}) => {
+  const body = messageSchema.parse({ content: "Find selected media", clientMessageId: crypto.randomUUID(), ...extra });
+  const agent = await getAgent("album-manager");
+  const accepted = await submitAlbumMessageTask({ user: { id: owner, displayName: "Owner" },
+    thread: { id: threadId, agentId: agent.key }, body,
+    requestFingerprint: messageRequestFingerprint(body), replyMetadata: {},
+    agentAccess: { agent, grantedScopes: agent.permissions } });
+  return { ...await request(`/api/threads/${threadId}/messages`, body), legacyAdmissionCreated: !accepted.reused };
+};
 
 integration("App addition rejects a partial declaration without changing existing access or creating a conversation", async () => {
   const before = await query("SELECT enabled, granted_scopes FROM user_agents WHERE user_id = ? AND agent_id = 'site-builder'", [owner]);
@@ -206,8 +214,9 @@ integration("App addition rejects a partial declaration without changing existin
 });
 
 integration("a queued Album task stops when a declared non-search permission is removed", async () => {
-  const accepted = await sendAlbum();
-  assert.equal(accepted.status, 202);
+  const accepted = await admitAndReplayLegacyAlbum();
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.legacyAdmissionCreated, true);
   await query("UPDATE user_agents SET granted_scopes = ?::jsonb WHERE user_id = ? AND agent_id = 'album-manager'",
     [JSON.stringify(albumScopes.filter(scope => scope !== "station:write")), owner]);
   let modelCalls = 0;
@@ -309,11 +318,9 @@ integration(
     assert.equal(await runner.runOnce(), false);
     assert.equal(calls, 0);
 
-    const accepted = await request(
-      `/api/threads/${threadId}/messages`,
-      albumBody,
-    );
-    assert.equal(accepted.status, 202);
+    const accepted = await admitAndReplayLegacyAlbum(albumBody);
+    assert.equal(accepted.status, 200);
+    assert.equal(accepted.legacyAdmissionCreated, true);
     const replay = await request(
       `/api/threads/${threadId}/messages`,
       albumBody,
@@ -424,8 +431,9 @@ for (const mode of ["chat", "task"]) {
     let task;
     let runner;
     if (mode === "task") {
-      const accepted = await request(`/api/threads/${selectedThreadId}/messages`, body);
-      assert.equal(accepted.status, 202);
+      const accepted = await admitAndReplayLegacyAlbum(body);
+      assert.equal(accepted.status, 200);
+      assert.equal(accepted.legacyAdmissionCreated, true);
       input = accepted.data.messages[0];
       task = accepted.data.task;
       runner = createAITaskRunner({ executors: { agent_message: createMessageTaskExecutor({
@@ -486,21 +494,22 @@ for (const mode of ["chat", "task"]) {
 }
 
 integration(
-  "HTTP album submit is atomic/idempotent, worker completion survives client disconnect and owner checks",
+  "legacy album admission remains atomic/idempotent and HTTP replay preserves worker completion and owner checks",
   async () => {
     const clientMessageId = crypto.randomUUID();
     const [first, repeat] = await Promise.all([
-      sendAlbum({ clientMessageId }),
-      sendAlbum({ clientMessageId }),
+      admitAndReplayLegacyAlbum({ clientMessageId }),
+      admitAndReplayLegacyAlbum({ clientMessageId }),
     ]);
-    assert.deepEqual([first.status, repeat.status].sort(), [200, 202]);
+    assert.deepEqual([first.status, repeat.status], [200, 200]);
+    assert.deepEqual([first.legacyAdmissionCreated, repeat.legacyAdmissionCreated].sort(), [false, true]);
     const task = first.data.task;
     assert.equal(task.id, repeat.data.task.id);
     assert.equal(first.data.messages[0].metadata.taskId, undefined);
     assertPublicMessages(first.data.messages);
     assertPublicMessages(repeat.data.messages);
     assert.equal(
-      (await sendAlbum({ clientMessageId, content: "Changed request" })).status,
+      (await request(`/api/threads/${threadId}/messages`, { clientMessageId, content: "Changed request" })).status,
       409,
     );
     assert.equal(
@@ -543,7 +552,7 @@ integration(
     const history = (await request(`/api/threads/${threadId}/messages`)).data;
     assert.equal(history.length, 2);
     assertPublicMessages(history);
-    const replay = await sendAlbum({ clientMessageId });
+    const replay = await admitAndReplayLegacyAlbum({ clientMessageId });
     assert.equal(replay.data.messages.length, 2);
     assert.equal(replay.data.task.status, "succeeded");
     assertPublicMessages(replay.data.messages);
@@ -657,7 +666,7 @@ integration(
       logger,
     });
 
-    const denied = await sendAlbum();
+    const denied = await request(`/api/threads/${threadId}/messages`, { content: "Find selected media", clientMessageId: crypto.randomUUID() });
     assert.equal(denied.status, 403);
     assert.equal(denied.error.details.code, "AI_ACCESS_REVOKED");
     assert.equal(await runner.runOnce(), false);
@@ -669,7 +678,7 @@ integration(
     );
     await insertTurn("user", "Earlier authorized request");
     await insertTurn("agent", "Earlier authorized response");
-    await sendAlbum({ content: "Current authorized question" });
+    await admitAndReplayLegacyAlbum({ content: "Current authorized question" });
     assert.equal(await runner.runOnce(), true);
     assert.ok(
       observed[0].some(
@@ -695,7 +704,7 @@ integration(
 integration(
   "queued cancellation is idempotent; running cancellation and late completion are fenced",
   async () => {
-    const queued = (await sendAlbum()).data.task;
+    const queued = (await admitAndReplayLegacyAlbum()).data.task;
     const decision = { revision: queued.revision, operation: "cancel" };
     const cancelled = await request(
       `/api/tasks/${queued.id}/decision`,
@@ -708,7 +717,7 @@ integration(
       cancelled.data.revision,
     );
     assert.equal(await repository.claimAITask(), null);
-    const next = (await sendAlbum()).data.task;
+    const next = (await admitAndReplayLegacyAlbum()).data.task;
     const running = await repository.claimAITask();
     assert.equal(running.id, next.id);
     assert.equal(
@@ -752,7 +761,7 @@ integration(
     const contextRefs = [
       { kind: "station-album", id: albumId, title: "Client title ignored" },
     ];
-    const queued = (await sendAlbum({ contextRefs })).data.task;
+    const queued = (await admitAndReplayLegacyAlbum({ contextRefs })).data.task;
     assert.equal(queued.contextRefs[0].title, "Task context album");
     await query(
       "UPDATE station_albums SET description = 'Changed context' WHERE id = ?",
@@ -774,7 +783,7 @@ integration(
       (await request(`/api/tasks/${queued.id}`)).data.error.code,
       "AI_CONTEXT_CHANGED",
     );
-    const revoked = (await sendAlbum()).data.task;
+    const revoked = (await admitAndReplayLegacyAlbum()).data.task;
     await query(
       "UPDATE user_agents SET enabled = false WHERE user_id = ? AND agent_id = 'album-manager'",
       [owner],
@@ -1088,14 +1097,14 @@ integration(
 );
 
 integration(
-  "ordinary comic and site messages select chat from executable definitions rather than registry DTOs",
+  "ordinary comic and site messages select their own dispatch from executable definitions rather than registry DTOs",
   async () => {
     const calls = [];
     syncRuntime = async (options) => {
       calls.push({ agentId: options.agentId, mode: options.mode });
       await options.beforeModelCall();
       return {
-        reply: "Discuss the idea in ordinary language",
+        reply: JSON.stringify({ type: "reply", reply: "Discuss the idea in ordinary language" }),
         provider: "test-only",
         latencyMs: 1,
       };
@@ -1119,10 +1128,11 @@ integration(
         response.data.messages.at(-1).content,
         "Discuss the idea in ordinary language",
       );
+      assert.deepEqual(response.data.messages.at(-1).metadata.agentDispatch, { version: 1, kind: "reply" });
     }
     assert.deepEqual(calls, [
-      { agentId: "comic-diary", mode: "chat" },
-      { agentId: "site-builder", mode: "chat" },
+      { agentId: "comic-diary", mode: "dispatch" },
+      { agentId: "site-builder", mode: "dispatch" },
     ]);
   },
 );

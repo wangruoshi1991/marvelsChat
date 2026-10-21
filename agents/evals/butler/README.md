@@ -1,5 +1,9 @@
 # 妙管家分派验收 v1
 
+## 原任务讨论 `workspace-discussion-v1`
+
+公开夹具覆盖绑定同一原任务时的普通咨询、用户明确提出修改、页面待确认、任务进行中、英文请求、提示注入及尚未接入的漫画成图能力。文件是合成的边界/语言验收案例，不含真实用户对话、私聊、任务成果正文或授权。`agents/test/workspace-discussion.test.js` 离线验证输入/结果未变、只构造白名单任务元数据、历史消息隔离；实际对话质量仍须使用单独授权的模型评测，不由夹具通过推断。
+
 `dispatch-v1.jsonl` 是八个公开合成案例，测试当前妙管家的 `dispatch` 决策质量。固定相册 UUID 和描述均为公开夹具，没有真实照片、私人正文或生产授权。执行器目录从当前注册定义生成；缺建站权限案例只构造权限诊断夹具，不能授权任何工具。
 
 | 案例 | 固定判定 |
@@ -37,7 +41,7 @@ node backend/scripts/butler-dispatch-live-eval.js \
   --report /absolute/private/directory/new-dispatch-report.jsonl
 ```
 
-这是命令形状示例，不是新的付费授权。直连 DeepSeek 验收必须按实际授权填写预算和价格。命名供应商 profile 限定已核实 HTTPS endpoint 与模型，不接受任意中转 URL。两套 runner 也支持 `fusheng-gpt-6.1-sol`，精确端点为 `https://fushengyunsuan.cn/v1/chat/completions`，请求和回执模型均须为 `gpt-6.1-sol`。用户已指定 vip 并取消本轮费用上限，浮生使用显式 `--max-cost-fen none` 且不填写价格；报告费用字段为 `null`，保留真实 usage，不将未知价格伪报为零。
+这是命令形状示例，不是新的付费授权。直连 DeepSeek 验收必须按实际授权填写预算和价格。命名供应商 profile 限定已核实 HTTPS endpoint 与模型，不接受任意中转 URL。两套 runner 也支持 `fusheng-gpt-6.1-sol`，精确端点为 `https://fushengyunsuan.cn/v1/chat/completions`，请求和回执模型均须为 `gpt-6.1-sol`。此前批次“用户已指定 vip 并取消本轮费用上限”仅为历史授权快照，不适用于任何新批次；新批次须重新取得明确供应商、调用/token上限及未知价格安排的授权。浮生无价格模式使用显式 `--max-cost-fen none` 且不填写价格；报告费用字段为 `null`，保留真实 usage，不将未知价格伪报为零。
 
 两套 runner 共用 `backend/scripts/live-eval-provider.js`：输出、响应体、超时及每次有限案例批次（最多16次调用）有界，这些不是正式 Agent 的调用次数限制。直连价格模式按请求 UTF-8 字节保守预留，不计缓存折扣，续答在首个请求前按完整请求上限预留；浮生无价格模式不计算费用预留。每次发送前追加并 fsync dispatch。报告仅以新文件 `wx`/`0600` 创建，保存提示词摘要、实际模型、usage、原始输出、延迟、失败与总计，不包含凭据。未知响应、usage或网络中断不重试、不继续后续请求，`unknownCalls` 明确计数；直连模式保留该次费用预留。不会覆盖旧报告或在同一报告自动重放。
 

@@ -1,3 +1,4 @@
+import { specialistDispatchPlan } from "./specialist-dispatch.js";
 import { workspaceContributionPlan } from "./workspace-contribution.js";
 import { agentChatHistory } from "./chat-history.js";
 
@@ -43,6 +44,10 @@ export default {
     return workspaceContributionPlan(args, { name: "漫画分镜助手",
       expertise: "编写故事、场景、镜头、旁白和对白，按本次目标自然组织分镜。",
       boundary: "此次只交付文字分镜，不生成最终漫画图片或保存漫画日记。" });
+  },
+
+  async dispatch(args) {
+    return specialistDispatchPlan(args, this);
   },
 
   async chat({ input, messages = [], appContext = null }) {

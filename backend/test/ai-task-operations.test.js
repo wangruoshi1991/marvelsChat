@@ -48,10 +48,13 @@ if (process.env.RUN_AI_TASK_OPERATIONS_INTEGRATION !== "1") {
   const secretText = "Fixture private goal must not appear in an operational summary";
   const workspace = async ({ status = "running", expired = false, tracked = true } = {}) => {
     const id = crypto.randomUUID();
-    await pool.query(`INSERT INTO agent_workspaces
+    await pool.query(`WITH created AS (INSERT INTO agent_workspaces
       (id,user_id,goal,status,coordinator_version,source,context_refs,authority,input,limits,deadline_at,idempotency_key,request_hash,question)
       VALUES ($1::text,$2,$3,$4,'test','{"page":"miao","module":null}','[]','{}','{}','{"deadlineSeconds":1200}',
-        CURRENT_TIMESTAMP + $5::interval,$1,$6,$7)`,
+        CURRENT_TIMESTAMP + $5::interval,$1,$6,$7)
+      RETURNING id,user_id,goal,status,created_at)
+      INSERT INTO agent_workspace_rounds(workspace_id,user_id,round_number,instruction,status,created_at)
+      SELECT id,user_id,1,goal,status,created_at FROM created`,
     [id, owner, secretText, status, expired ? "-1 minute" : "20 minutes", "a".repeat(64), status === "waiting_input" ? secretText : null]);
     if (tracked) await pool.query(`INSERT INTO agent_workspace_submissions
       (user_id,idempotency_key,request_hash,outcome,workspace_id) VALUES ($1,$2::text,$3,'accepted',$2::text)`, [owner, id, "a".repeat(64)]);

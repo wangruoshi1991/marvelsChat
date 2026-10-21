@@ -5,47 +5,90 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
-import { aiClientContracts, aiContractHeader } from "../src/ai-client-contract.js";
+import { aiClientContracts, aiContractHeader, agentWorkspaceContractHeader } from "../src/ai-client-contract.js";
 
 export const albumAssistantE2EHeaders = Object.freeze({
   "X-Miaoxun-Retrieval-Contract": "2",
   [aiContractHeader]: String(aiClientContracts.aiTasks),
+  [agentWorkspaceContractHeader]: String(aiClientContracts.agentWorkspaces),
 });
 
-// Both real-provider checks use the current durable task contract. Polling never
-// submits another message; the single final replay verifies the saved reply.
+const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+function albumDispatch(response, threadId) {
+  assert.ok(Array.isArray(response.messages), "The professional message must return its saved messages");
+  const inputs = response.messages.filter(message => message.senderType === "user");
+  const replies = response.messages.filter(message => message.senderType === "agent");
+  assert.equal(inputs.length, 1, "The response must identify the exact user input");
+  assert.equal(replies.length, 1, "The response must contain one saved Agent reply");
+  const input = inputs[0], reply = replies[0];
+  for (const message of [input, reply]) {
+    assert.match(message.id, uuidPattern);
+    assert.equal(message.threadId, threadId);
+    assert.ok(!message.deletedAt && !message.recalledAt, "A deleted or recalled message is not a valid task receipt");
+  }
+  assert.deepEqual(reply.metadata?.agentDispatch, { version: 1, kind: "workspace" },
+    "A reply or clarification must not be treated as an executed selection");
+  assert.match(reply.metadata?.agentWorkspace?.id || "", uuidPattern, "The saved reply must reference its durable workspace");
+  assert.ok(reply.content.trim(), "The saved task reply must not be empty");
+  return { input, reply, workspaceId: reply.metadata.agentWorkspace.id };
+}
+
+// Both real-provider checks use professional dispatch + direct workspaces.
+// Polling never sends another message. A real empty search is the explicit
+// WORKSPACE_MEDIA_NOT_FOUND failure, not a successful empty media artifact.
 export async function sendAlbumMessageAndWait({ api, token, threadId, content,
   clientMessageId = crypto.randomUUID(), timeoutMs = 20 * 60 * 1000, pollMs = 2000,
-  pause = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now }) {
+  expectedOutcome = "selected", pause = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now }) {
+  assert.ok(["selected", "empty"].includes(expectedOutcome), "Unknown expected album outcome");
   const route = `/api/threads/${threadId}/messages`;
   const body = { content, clientMessageId };
-  const accepted = await api(route, { token, method: "POST", expected: 202, body });
-  const taskId = accepted.task?.id;
-  assert.ok(taskId, "The accepted message must have a durable task");
+  const accepted = await api(route, { token, method: "POST", expected: 201, body });
+  const dispatched = albumDispatch(accepted, threadId);
+  assert.equal(dispatched.input.clientMessageId, clientMessageId);
+  assert.equal(dispatched.input.content, content);
   const deadline = now() + timeoutMs;
-  let task = accepted.task;
+  let workspace;
   for (;;) {
-    assert.equal(task.id, taskId);
-    assert.equal(task.kind, "agent_message");
-    assert.equal(task.agentId, "album-manager");
-    assert.equal(task.threadId, threadId);
-    if (task.status === "succeeded") break;
-    assert.ok(["queued", "running"].includes(task.status),
-      `Album task ended without a result: ${task.status}`);
-    assert.ok(now() < deadline, "Album task did not finish before the QA deadline; no message was resubmitted");
+    workspace = await api(`/api/agent-workspaces/${dispatched.workspaceId}`, { token });
+    assert.equal(workspace.id, dispatched.workspaceId);
+    assert.equal(workspace.executionMode, "direct");
+    assert.equal(workspace.origin?.kind, "agent_conversation");
+    assert.equal(workspace.origin?.threadId, threadId);
+    assert.equal(workspace.origin?.inputMessageId, dispatched.input.id);
+    assert.equal(workspace.origin?.agentId, "album-manager");
+    assert.equal(workspace.origin?.capability, "media.select");
+    if (expectedOutcome === "empty" && workspace.status === "failed") {
+      assert.equal(workspace.error?.code, "WORKSPACE_MEDIA_NOT_FOUND");
+      assert.equal(workspace.result, null, "An empty search must not invent a successful media artifact");
+      break;
+    }
+    if (workspace.status === "succeeded") {
+      assert.equal(expectedOutcome, "selected", "The negative fixture must not produce a selection");
+      assert.equal(workspace.result?.kind, "media_selection");
+      assert.ok(workspace.result.assets.length > 0, "Successful selection requires real media");
+      assert.equal(new Set(workspace.result.assets.map(asset => asset.id)).size, workspace.result.assets.length);
+      assert.equal(workspace.result.retrievalRunIds.length, 1, "Selection must retain its actual retrieval provenance");
+      assert.match(workspace.result.retrievalRunIds[0], uuidPattern);
+      for (const asset of workspace.result.assets) {
+        assert.match(asset.id, uuidPattern);
+        assert.match(asset.version, /^[a-f0-9]{64}$/);
+        assert.ok(["image", "video"].includes(asset.kind));
+        assert.ok(asset.kind === "image" ? asset.matchedFrameTimestampMs === null
+          : Number.isSafeInteger(asset.matchedFrameTimestampMs) && asset.matchedFrameTimestampMs >= 0);
+      }
+      break;
+    }
+    assert.ok(["queued", "running"].includes(workspace.status),
+      `Album workspace ended without a result: ${workspace.status}`);
+    assert.ok(now() < deadline, "Album workspace did not finish before the QA deadline; no message was resubmitted");
     await pause(Math.min(pollMs, deadline - now()));
-    task = await api(`/api/tasks/${taskId}`, { token });
   }
-  const artifacts = task.artifacts.filter(item => item.kind === "message" && item.threadId === threadId);
-  assert.equal(artifacts.length, 1, "Successful Album task must deliver one saved reply");
   const replay = await api(route, { token, method: "POST", expected: 200, body });
-  assert.equal(replay.task?.id, taskId);
-  assert.equal(replay.task?.status, "succeeded");
-  const reply = replay.messages.find(message => message.id === artifacts[0].id);
-  assert.equal(reply?.senderType, "agent");
-  assert.equal(reply?.threadId, threadId);
-  assert.ok(reply.content.trim(), "A successful task must not have an empty reply");
-  return replay;
+  const repeated = albumDispatch(replay, threadId);
+  assert.equal(repeated.workspaceId, dispatched.workspaceId);
+  assert.deepEqual(repeated.input, dispatched.input);
+  assert.deepEqual(repeated.reply, dispatched.reply, "Replay must return the exact saved reply without dispatching again");
+  return { ...replay, workspace };
 }
 
 async function main() {
@@ -85,8 +128,8 @@ async function main() {
     await api(`/api/station/media-assets/${asset.id}/upload-complete`, { token, method: "POST", body: { storageKey: ticket.objectKey } });
     return { ...asset, storageKey: ticket.objectKey };
   }
-  async function chat(account, threadId, content, clientMessageId = crypto.randomUUID()) {
-    return sendAlbumMessageAndWait({ api, token: account.session.token, threadId, content, clientMessageId });
+  async function chat(account, threadId, content, clientMessageId = crypto.randomUUID(), expectedOutcome = "selected") {
+    return sendAlbumMessageAndWait({ api, token: account.session.token, threadId, content, clientMessageId, expectedOutcome });
   }
 
   async function cleanup(account) {
@@ -148,28 +191,27 @@ async function main() {
     const content = "在公开测试相册帮我找自行车的照片";
     const found = await chat(owner, threadId, content, clientMessageId);
     const reply = found.messages.at(-1);
-    assert.equal(reply.metadata.albumAssistant.outcome, "found");
-    assert.deepEqual(reply.metadata.albumAssistant, { outcome: "found" });
-    const resultsRoute = `/api/threads/${threadId}/messages/${reply.id}/media-results`;
-    const results = await api(resultsRoute, { token });
-    assert.ok(results.some(result => result.mediaAssetId === bicycle.id));
+    assert.ok(found.workspace.result.assets.some(asset => asset.id === bicycle.id));
+    const resultsRoute = `/api/agent-workspaces/${found.workspace.id}/media/${bicycle.id}`;
+    assert.equal((await api(resultsRoute, { token })).id, bicycle.id);
     const replay = await api(`/api/threads/${threadId}/messages`, { token, method: "POST", expected: 200, body: { content, clientMessageId } });
     assert.equal(replay.messages.at(-1).id, reply.id);
+    assert.equal(replay.messages.at(-1).metadata.agentWorkspace.id, found.workspace.id);
     await api(resultsRoute, { token: outsider.session.token, expected: 404 });
-    report.passed.push("conversation-tool-real-search-album-scope-replay-owner-isolation");
+    report.passed.push("professional-dispatch-direct-selection-album-scope-replay-owner-isolation");
     const followup = await chat(owner, threadId, "继续找自行车，但这次在所有已上传素材里找视频，不限相册");
-    const followupResults = await api(`/api/threads/${threadId}/messages/${followup.messages.at(-1).id}/media-results`, { token });
-    const hit = followupResults.find(result => result.mediaAssetId === video.id);
+    const hit = followup.workspace.result.assets.find(asset => asset.id === video.id);
     assert.ok(hit && hit.matchedFrameTimestampMs >= 3000 && hit.matchedFrameTimestampMs < 6000);
-    report.passed.push("multi-turn-video-result-with-match-time");
+    assert.equal((await api(`/api/agent-workspaces/${followup.workspace.id}/media/${video.id}`, { token })).id, video.id);
+    assert.notEqual(followup.workspace.id, found.workspace.id, "A new selection must have its own workspace");
+    report.passed.push("new-selection-video-result-with-match-time");
     const preview = await fetch(`${base}/api/station/media-assets/${bicycle.id}/file`, { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(preview.status, 200); assert.ok((await preview.arrayBuffer()).byteLength);
     await api(`/api/station/media-assets/${bicycle.id}/file`, { token: outsider.session.token, expected: 404 });
-    const negative = await chat(owner, threadId, "在全部相册里找雨伞的照片");
-    const negativeReply = negative.messages.at(-1);
-    assert.equal(negativeReply.metadata.albumAssistant, undefined);
-    assert.deepEqual(await api(`/api/threads/${threadId}/messages/${negativeReply.id}/media-results`, { token }), []);
-    report.passed.push("authenticated-image-preview-and-real-empty-result");
+    const negative = await chat(owner, threadId, "在全部已上传素材里找雨伞的照片", crypto.randomUUID(), "empty");
+    assert.equal(negative.workspace.error.code, "WORKSPACE_MEDIA_NOT_FOUND");
+    assert.equal(negative.workspace.result, null);
+    report.passed.push("authenticated-image-preview-and-explicit-empty-selection-failure");
     await api("/api/me/agents/album-manager", { token, method: "PATCH", body: { enabled: true, grantedScopes }, key: crypto.randomUUID() });
     const finalStatus = await api("/api/station/media-retrieval/status", { token });
     assert.equal(finalStatus.enabled, true);

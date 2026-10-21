@@ -18,3 +18,24 @@ for (const item of cases) test(`planner contract eval ${item.id} [${item.tags.jo
     if (decision.type === "plan") assert.ok(decision.nodes.every(node => /^\d+\.\d+\.\d+$/.test(node.agentVersion)));
   } else assert.throws(evaluate, error => error.details?.code === "WORKSPACE_PLAN_INVALID");
 });
+
+test("continuation cannot complete an old result or omit its actual handoff", () => {
+  const artifact = { kind: "text_result", title: "原稿", content: "原版内容" };
+  const base = { id: "base-id", key: "original", round: 1, status: "succeeded", capability: "text.summarize", dependencies: [], result: { artifact } };
+  const revised = { id: "new-id", key: "revised", round: 2, status: "succeeded", capability: "text.summarize", dependencies: [base.key], result: { artifact: { ...artifact, content: "修改后的内容" } } };
+  const workspace = { currentRound: 2, rounds: [{ number: 2, baseResultNodeId: base.id }], contextRefs: [], nodes: [base, revised] };
+  const catalogue = [{ agentId: "file-preprocessor", agentVersion: "0.3.0", capability: "text.summarize", inputKinds: [], dependencyKinds: ["text_result"], outputKind: "text_result" }];
+  const validate = (candidate, overrides = {}) => validateWorkspaceDecision(candidate, { workspace: { ...workspace, ...overrides }, catalogue });
+  const complete = resultKey => ({ type: "complete", summary: "已修改", resultKey });
+  assert.equal(validate(complete(revised.key)).type, "complete");
+  for (const [candidate, overrides] of [
+    [complete(base.key), {}],
+    [complete(revised.key), { nodes: [base, { ...revised, dependencies: [] }] }],
+    [complete(revised.key), { nodes: [base, { ...revised, round: 1 }] }],
+    [complete(revised.key), { rounds: [{ number: 2, baseResultNodeId: "missing" }] }],
+  ]) assert.throws(() => validate(candidate, overrides), error => error.details?.code === "WORKSPACE_PLAN_INVALID");
+  const plan = dependencies => ({ type: "plan", summary: "修改原稿", steps: [{ key: "third", agentId: "file-preprocessor", capability: "text.summarize", goal: "缩短内容", dependsOn: dependencies, contextRefIndexes: [] }] });
+  assert.equal(validate(plan([base.key])).type, "plan");
+  assert.equal(validate(plan([revised.key])).type, "plan");
+  assert.throws(() => validate(plan([])), error => error.details?.code === "WORKSPACE_PLAN_INVALID");
+});

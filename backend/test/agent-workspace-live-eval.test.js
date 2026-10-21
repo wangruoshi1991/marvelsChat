@@ -207,7 +207,7 @@ test("registered evaluation catalogue is derived from executable contracts and i
   const snapshot = await createRegisteredEvaluationCatalogueSnapshot();
   assert.equal(snapshot.source, "registered-evaluation");
   assert.deepEqual(snapshot.entries.map(entry => entry.capability).sort(), [
-    "character.advise", "comic.storyboard", "media.select", "model.advise", "site.compose",
+    "character.advise", "comic.storyboard", "file.summary", "media.select", "model.advise", "site.compose",
     "text.summarize", "text.synthesize", "video.script",
   ]);
   assert.deepEqual(snapshot.unavailableCapabilities, []);
@@ -227,7 +227,7 @@ test("current authorized missing-site case uses only actual supplied grants and 
       calls++;
       const context = JSON.parse(JSON.parse(request.body).messages[1].content);
       assert.deepEqual(context.availableCapabilities.map(entry => entry.capability).sort(), [
-        "character.advise", "comic.storyboard", "media.select", "model.advise",
+        "character.advise", "comic.storyboard", "file.summary", "media.select", "model.advise",
         "text.summarize", "text.synthesize", "video.script",
       ]);
       assert.deepEqual(context.unavailableCapabilities.map(entry => ({ agentName: entry.agentName, reason: entry.reason })), [{ agentName: "建站 Agent", reason: "authorization_required" }]);
@@ -366,7 +366,7 @@ test("explicit Fusheng text planning records exact receipts with null cost and k
       const context = JSON.parse(body.messages[1].content);
       assert.deepEqual(context.steps, []); assert.deepEqual(context.contextRefs, []);
       assert.deepEqual(context.selectedContext, []); assert.deepEqual(context.unavailableCapabilities, []);
-      assert.equal(context.availableCapabilities.length, 8);
+      assert.equal(context.availableCapabilities.length, 9);
       return response(textOutputs[calls++], { model: "gpt-6.1-sol" });
     } });
   assert.equal(summary.passed, true); assert.equal(calls, 5); assert.equal(summary.completedCases, 5);

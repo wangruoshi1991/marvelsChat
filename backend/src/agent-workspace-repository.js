@@ -1,3 +1,6 @@
+import { getAgent } from '../../agents/registry.js';
+import { agentScopesMatchDeclaration } from './ai-agent-access.js';
+import { fileReference } from './file-content.js';
 import crypto from "node:crypto";
 import { z } from "zod";
 import { query, withTransaction } from "./db.js";
@@ -9,8 +12,14 @@ const id = z.string().uuid();
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const key = z.string().regex(/^[a-z][a-z0-9_-]{0,79}$/);
 const sourceSchema = z.object({ page: z.string().min(1).max(80), module: z.string().min(1).max(120).nullable() }).strict();
+export const workspaceOriginSchema = z.object({
+  kind: z.literal("agent_conversation"), threadId: id, inputMessageId: id,
+  agentId: z.string().min(1).max(120), agentVersion: z.string().min(1).max(80),
+  capability: z.string().min(1).max(120),
+}).strict();
+const executionModeSchema = z.enum(["coordinated", "direct"]);
 const referenceSchema = z.object({
-  kind: z.enum(["chat-message", "station-album", "station-diary", "station-photo"]),
+  kind: z.enum(["chat-message", "station-album", "station-diary", "station-photo", "station-file"]),
   id, version: hash, title: z.string().max(160),
 }).strict();
 const limitsSchema = z.object({
@@ -38,9 +47,14 @@ const approvalSchema = z.object({ id, draftId: id, draftHash: hash, profileHash:
 const createSchema = z.object({
   userId: id, goal: z.string().min(1).max(2000), source: sourceSchema,
   contextRefs: z.array(referenceSchema).max(6), authority: z.record(z.unknown()),
-  input: z.record(z.unknown()).optional().default({}), coordinatorVersion: z.string().min(1).max(80),
+  input: z.record(z.unknown()).optional().default({}), coordinatorVersion: z.string().min(1).max(80).nullable(),
+  executionMode: executionModeSchema.default("coordinated"), origin: workspaceOriginSchema.nullable().default(null),
   limits: limitsSchema, idempotencyKey: z.string().min(8).max(160), requestHash: hash,
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (value.executionMode === "direct" ? !value.origin || value.coordinatorVersion !== null : value.origin !== null || value.coordinatorVersion === null) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Workspace execution identity is inconsistent" });
+  }
+});
 const nodeSchema = z.object({
   key, agentId: z.string().min(1).max(120), agentVersion: z.string().min(1).max(80),
   capability: z.string().min(1).max(120), goal: z.string().min(1).max(2000),
@@ -55,8 +69,11 @@ const patchSchema = z.object({
 const json = JSON.stringify;
 const nullableJson = value => value == null ? null : json(value);
 const iso = value => value instanceof Date ? value.toISOString() : value;
+const roundTime = value => value == null ? null : new Date(value).toISOString();
 const activeStates = ["queued", "running", "waiting_input"];
-const rowFields = "*, clock_timestamp() AS database_now";
+const rowFields = `*, clock_timestamp() AS database_now,
+  (SELECT jsonb_agg(round_record ORDER BY round_record.round_number)
+   FROM agent_workspace_rounds round_record WHERE round_record.workspace_id = agent_workspaces.id) AS workspace_rounds`;
 const missing = () => new HttpError(404, "Agent workspace not found.", { code: "WORKSPACE_NOT_FOUND" });
 const conflict = (code, message) => new HttpError(409, message, { code });
 const stoppedError = { code: "WORKSPACE_INTERRUPTED", message: "协作执行中断，可能已发生模型调用；不会自动重新执行。" };
@@ -84,6 +101,7 @@ const uncertainReceipts = (receipts, now) => receipts.map(receipt => receipt.sta
 
 function nodeRecord(row) {
   return { id: row.id, workspaceId: row.workspace_id, userId: row.user_id, key: row.node_key,
+    round: z.number().int().positive().parse(row.round_number),
     agentId: row.agent_id, agentVersion: row.agent_version, capability: row.capability, goal: row.goal,
     dependencies: z.array(key).parse(row.dependencies), contextRefIndexes: z.array(z.number().int()).parse(row.context_ref_indexes),
     status: row.status, summary: row.summary, result: row.result, error: row.error ? errorSchema.parse(row.error) : null,
@@ -93,35 +111,77 @@ function nodeRecord(row) {
 
 function nodeDTO(row) {
   const record = nodeRecord(row);
-  return { id: record.id, key: record.key, agentId: record.agentId, agentVersion: record.agentVersion,
+  return { id: record.id, key: record.key, round: record.round, agentId: record.agentId, agentVersion: record.agentVersion,
     capability: record.capability, goal: record.goal, dependencies: record.dependencies, status: record.status,
     summary: record.summary, error: record.error, result: publicArtifact(record.result, record.id),
     createdAt: record.createdAt, updatedAt: record.updatedAt };
 }
 
+const currentSummary = row => ({ cancelling: "正在停止协作任务，已发出的调用仍可能完成", cancelled: "协作任务已取消",
+  failed: "协作任务未完成，请查看失败原因", interrupted: "协作任务已中断，不会自动重新执行" })[row.status] ?? row.summary;
+
+function workspaceRounds(row, nodes, publicView = false) {
+  const currentRound = z.number().int().positive().parse(row.current_round);
+  if (!Array.isArray(row.workspace_rounds) || row.workspace_rounds.length !== currentRound) {
+    throw new TypeError("Workspace has no complete persisted round history");
+  }
+  return row.workspace_rounds.map((stored, index) => {
+    if (stored.round_number !== index + 1) throw new TypeError("Workspace round history is not contiguous");
+    const current = stored.round_number === currentRound;
+    const result = current ? row.result : stored.result;
+    const resultNodeId = current ? nodes.find(node => node.node_key === result?.resultKey)?.id ?? null : stored.result_node_id;
+    return { number: stored.round_number, instruction: stored.instruction, baseResultNodeId: stored.base_result_node_id,
+      resultNodeId, status: current ? row.status : stored.status,
+      summary: current ? currentSummary(row) : currentSummary(stored),
+      result: publicView ? publicArtifact(result, resultNodeId) : result,
+      ...(!publicView && { approval: current ? row.approval ?? stored.approval : stored.approval }),
+      createdAt: roundTime(stored.created_at), completedAt: current
+        ? (["succeeded", "failed", "interrupted", "cancelled"].includes(row.status) ? roundTime(row.updated_at) : null)
+        : roundTime(stored.completed_at) };
+  });
+}
+
 function workspaceDTO(row, nodes) {
+  const executionMode = executionModeSchema.parse(row.execution_mode);
+  const origin = workspaceOriginSchema.nullable().parse(row.origin);
+  if (executionMode === "direct" ? !origin || row.coordinator_version !== null : origin !== null || !row.coordinator_version) {
+    throw new TypeError("Workspace execution identity is inconsistent");
+  }
   const approval = row.approval == null ? null : approvalSchema.parse(row.approval);
   const inputRequest = workspaceInputRequest(row, nodes);
   const now = new Date(row.database_now).getTime();
   const beforeDeadline = new Date(row.deadline_at).getTime() > now;
+  const continuation = canContinueWorkspace(row) ? ["continue"] : [];
   const allowedActions = row.status === "awaiting_confirmation"
-    ? ["cancel", ...(approval && Date.parse(approval.expiresAt) > now ? ["confirm"] : []), "reject"]
+    ? ["cancel", ...(approval && Date.parse(approval.expiresAt) > now ? ["confirm"] : []), "reject", ...continuation]
     : row.status === "waiting_input" ? ["cancel", ...(beforeDeadline && inputRequest.kind === "clarification" ? ["reply"] : [])]
-      : ["queued", "running"].includes(row.status) ? ["cancel"] : [];
-  const currentSummary = { cancelling: "正在停止协作任务，已发出的调用仍可能完成", cancelled: "协作任务已取消",
-    failed: "协作任务未完成，请查看失败原因", interrupted: "协作任务已中断，不会自动重新执行" };
+      : ["queued", "running"].includes(row.status) ? ["cancel"] : row.status === "succeeded" ? continuation : [];
   return { id: row.id, goal: row.goal, status: row.status, revision: row.revision,
+    executionMode, origin,
+    currentRound: row.current_round, rounds: workspaceRounds(row, nodes, true),
     source: sourceSchema.parse(row.source), contextRefs: z.array(referenceSchema).max(6).parse(row.context_refs),
     followups: z.array(z.object({ text: z.string().min(1).max(2000) }).passthrough()).parse(row.followups).map(item => item.text),
-    summary: currentSummary[row.status] ?? row.summary, question: inputRequest?.question ?? null, inputRequest,
+    summary: currentSummary(row), question: inputRequest?.question ?? null, inputRequest,
     error: row.error == null ? null : errorSchema.parse(row.error),
     createdAt: iso(row.created_at), updatedAt: iso(row.updated_at), allowedActions,
     limits: limitsSchema.parse(row.limits), usage: usageSchema.parse(row.usage), steps: nodes.map(nodeDTO),
     result: publicArtifact(row.result, nodes.find(node => node.node_key === row.result?.resultKey)?.id), approval };
 }
 
+// A button never grants permission. This static capability check avoids
+// offering a continuation that the immutable task boundary cannot consume;
+// the service additionally rechecks the current registry, grants and sources.
+function canContinueWorkspace(row) {
+  if (row.execution_mode !== "direct") return true;
+  const origin = workspaceOriginSchema.parse(row.origin);
+  const entry = row.authority?.capabilities?.find(item => item.agentId === origin.agentId &&
+    item.agentVersion === origin.agentVersion && item.capability === origin.capability);
+  return Boolean(entry?.dependencyKinds?.includes(row.result?.artifact?.kind));
+}
+
 function workspaceRecord(row, nodes) {
   return { ...workspaceDTO(row, nodes), userId: row.user_id, input: row.input, authority: row.authority,
+    rounds: workspaceRounds(row, nodes),
     followups: row.followups, coordinatorVersion: row.coordinator_version, deadlineAt: iso(row.deadline_at),
     databaseNow: iso(row.database_now), result: row.result, nodes: nodes.map(nodeRecord) };
 }
@@ -130,10 +190,22 @@ async function readNodes(connection, workspaceId) {
   return connection.query("SELECT * FROM agent_workspace_nodes WHERE workspace_id = ? ORDER BY created_at, id", [workspaceId]);
 }
 
+async function refreshLockedRounds(connection, rows) {
+  if (!rows.length) return;
+  // SELECT ... FOR UPDATE/SHARE may wait for a continuation transaction. Its
+  // correlated subquery can retain the statement's older MVCC snapshot while
+  // the locked workspace row advances. Read the history after the lock, using
+  // a fresh statement snapshot, and batch list responses rather than N+1 reads.
+  const rounds = await connection.query(`SELECT * FROM agent_workspace_rounds
+    WHERE workspace_id = ANY(?::text[]) ORDER BY workspace_id,round_number`, [rows.map(row => row.id)]);
+  for (const row of rows) row.workspace_rounds = rounds.filter(round => round.workspace_id === row.id);
+}
+
 async function lockWorkspace(connection, workspaceId, userId) {
   const rows = await connection.query(`SELECT ${rowFields} FROM agent_workspaces WHERE id = ?${userId === undefined ? "" : " AND user_id = ?"} FOR UPDATE`,
     userId === undefined ? [workspaceId] : [workspaceId, userId]);
   if (!rows[0]) throw missing();
+  await refreshLockedRounds(connection, rows);
   return rows[0];
 }
 
@@ -141,7 +213,7 @@ async function lockClaim(connection, nodeId, claimToken) {
   const locator = (await connection.query("SELECT workspace_id FROM agent_workspace_nodes WHERE id = ?", [nodeId]))[0];
   if (!locator) throw missing();
   const workspace = await lockWorkspace(connection, locator.workspace_id);
-  const node = (await connection.query(`SELECT ${rowFields} FROM agent_workspace_nodes WHERE id = ? FOR UPDATE`, [nodeId]))[0];
+  const node = (await connection.query("SELECT *, clock_timestamp() AS database_now FROM agent_workspace_nodes WHERE id = ? FOR UPDATE", [nodeId]))[0];
   if (!node || node.status !== "running" || node.claim_token !== claimToken ||
     new Date(node.lease_until) <= new Date(node.database_now)) {
     throw conflict("WORKSPACE_LEASE_LOST", "This workspace step no longer owns its execution lease.");
@@ -163,6 +235,7 @@ export async function readOwnedWorkspaceRecord(connection, { userId, workspaceId
   id.parse(userId); id.parse(workspaceId);
   const [row] = await connection.query(`SELECT ${rowFields} FROM agent_workspaces WHERE id = ? AND user_id = ? FOR SHARE`, [workspaceId, userId]);
   if (!row) throw missing();
+  await refreshLockedRounds(connection, [row]);
   const nodes = await connection.query("SELECT * FROM agent_workspace_nodes WHERE workspace_id = ? ORDER BY created_at, id FOR SHARE", [workspaceId]);
   return workspaceRecord(row, nodes);
 }
@@ -206,6 +279,18 @@ async function insertNodes(connection, workspace, definitions, coordinator = fal
   if (!["queued", "running", "waiting_input"].includes(row.status)) throw conflict("WORKSPACE_STATE_CHANGED", "Workspace is not accepting new steps.");
   if (new Date(row.deadline_at) <= new Date(row.database_now)) throw conflict("WORKSPACE_DEADLINE_EXCEEDED", expiredError.message);
   const existing = await readNodes(connection, workspace.id);
+  if (row.execution_mode === "direct") {
+    const origin = workspaceOriginSchema.parse(row.origin);
+    const round = workspaceRounds(row, existing).find(item => item.number === row.current_round);
+    const base = existing.find(item => item.id === round.baseResultNodeId);
+    const node = nodes[0];
+    if (coordinator || nodes.length !== 1 || existing.some(item => item.round_number === row.current_round) ||
+      node.agentId !== origin.agentId || node.agentVersion !== origin.agentVersion || node.capability !== origin.capability ||
+      node.goal !== round.instruction || JSON.stringify(node.dependencies) !== JSON.stringify(base ? [base.node_key] : []) ||
+      JSON.stringify(node.contextRefIndexes) !== JSON.stringify(row.context_refs.map((_ref, index) => index))) {
+      throw conflict("WORKSPACE_CONTEXT_INVALID", "Direct execution cannot replace its specialist, inputs or result lineage.");
+    }
+  }
   const existingByKey = new Map(existing.map(item => [item.node_key, item]));
   const newByKey = new Map(nodes.map(item => [item.key, item]));
   if (newByKey.size !== nodes.length || nodes.some(item => existingByKey.has(item.key))) {
@@ -239,9 +324,9 @@ async function insertNodes(connection, workspace, definitions, coordinator = fal
   const inserted = [];
   for (const node of nodes) {
     const rows = await connection.query(`INSERT INTO agent_workspace_nodes
-      (id,workspace_id,user_id,node_key,agent_id,agent_version,capability,goal,dependencies,context_ref_indexes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb) RETURNING *`,
-    [crypto.randomUUID(), row.id, row.user_id, node.key, node.agentId, node.agentVersion, node.capability,
+      (id,workspace_id,user_id,round_number,node_key,agent_id,agent_version,capability,goal,dependencies,context_ref_indexes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb) RETURNING *`,
+    [crypto.randomUUID(), row.id, row.user_id, row.current_round, node.key, node.agentId, node.agentVersion, node.capability,
       node.goal, json(node.dependencies), json(node.contextRefIndexes)]);
     inserted.push(nodeRecord(rows[0]));
   }
@@ -252,16 +337,37 @@ export const insertWorkspaceNodes = (connection, workspace, nodes) => insertNode
 
 export async function queueWorkspaceCoordinator(connection, workspace, { dependencies = [] } = {}) {
   const row = await lockWorkspace(connection, workspace.id, workspace.userId);
+  if (row.execution_mode !== "coordinated") throw new TypeError("A direct workspace cannot dispatch a coordinator");
   const existing = await readNodes(connection, workspace.id);
   if (existing.some(item => item.capability === "workspace.coordinate" && ["queued", "running"].includes(item.status))) {
     throw conflict("WORKSPACE_COORDINATOR_PENDING", "A coordinator turn is already pending.");
   }
   const count = existing.filter(item => item.capability === "workspace.coordinate").length;
+  const round = workspaceRounds(row, existing).find(item => item.number === row.current_round);
   const [node] = await insertNodes(connection, workspace, [{ key: `coordinate-${count + 1}`, agentId: "miaoxun-butler",
-    agentVersion: row.coordinator_version, capability: "workspace.coordinate", goal: row.goal,
+    agentVersion: row.coordinator_version, capability: "workspace.coordinate", goal: round.instruction,
     dependencies, contextRefIndexes: [] }], true);
   return node;
 }
+
+async function queueDirectWorkspaceNode(connection, workspace) {
+  const row = await lockWorkspace(connection, workspace.id, workspace.userId);
+  if (row.execution_mode !== "direct") throw new TypeError("A coordinated workspace cannot dispatch a fixed specialist");
+  const origin = workspaceOriginSchema.parse(row.origin);
+  const nodes = await readNodes(connection, row.id);
+  if (nodes.some(node => node.round_number === row.current_round)) throw conflict("WORKSPACE_STEPS_PENDING", "This direct round already has an execution node.");
+  const round = workspaceRounds(row, nodes).find(item => item.number === row.current_round);
+  const base = round.baseResultNodeId ? nodes.find(node => node.id === round.baseResultNodeId) : null;
+  if (round.baseResultNodeId && !base) throw conflict("WORKSPACE_RESULT_UNAVAILABLE", "The previous direct result is unavailable.");
+  const [node] = await insertNodes(connection, workspace, [{ key: `direct-${row.current_round}`,
+    agentId: origin.agentId, agentVersion: origin.agentVersion, capability: origin.capability,
+    goal: round.instruction, dependencies: base ? [base.node_key] : [],
+    contextRefIndexes: row.context_refs.map((_ref, index) => index) }]);
+  return node;
+}
+
+const queueWorkspaceRound = (connection, workspace, executionMode) => executionMode === "direct"
+  ? queueDirectWorkspaceNode(connection, workspace) : queueWorkspaceCoordinator(connection, workspace);
 
 export async function createWorkspaceInTransaction(connection, args) {
   const input = createSchema.parse(args);
@@ -269,17 +375,19 @@ export async function createWorkspaceInTransaction(connection, args) {
   const previous = await findWorkspaceSubmission(connection, input);
   if (previous) return { workspace: previous, reused: true };
   const rows = await connection.query(`INSERT INTO agent_workspaces
-    (id,user_id,goal,coordinator_version,source,context_refs,authority,input,limits,deadline_at,idempotency_key,request_hash)
-    VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb,
+    (id,user_id,goal,coordinator_version,execution_mode,origin,source,context_refs,authority,input,limits,deadline_at,idempotency_key,request_hash)
+    VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb,
       clock_timestamp() + (?::integer * INTERVAL '1 second'), ?, ?)
     RETURNING ${rowFields}`,
-  [crypto.randomUUID(), input.userId, input.goal, input.coordinatorVersion, json(input.source), json(input.contextRefs),
+  [crypto.randomUUID(), input.userId, input.goal, input.coordinatorVersion, input.executionMode, nullableJson(input.origin), json(input.source), json(input.contextRefs),
     json(input.authority), json(input.input), json(input.limits), input.limits.deadlineSeconds, input.idempotencyKey, input.requestHash]);
-  await queueWorkspaceCoordinator(connection, workspaceRecord(rows[0], []));
+  await connection.query(`INSERT INTO agent_workspace_rounds
+    (workspace_id,user_id,round_number,instruction,status) VALUES (?,?,1,?,'queued')`, [rows[0].id, input.userId, input.goal]);
+  await queueWorkspaceRound(connection, { id: rows[0].id, userId: input.userId }, input.executionMode);
   await connection.query(`INSERT INTO agent_workspace_submissions
     (user_id,idempotency_key,request_hash,outcome,workspace_id) VALUES (?,?,?,'accepted',?)`,
   [input.userId, input.idempotencyKey, input.requestHash, rows[0].id]);
-  return { workspace: workspaceDTO(rows[0], await readNodes(connection, rows[0].id)), reused: false };
+  return { workspace: workspaceDTO(await lockWorkspace(connection, rows[0].id, input.userId), await readNodes(connection, rows[0].id)), reused: false };
 }
 
 // Submission replay is resolved before reading changed resources or acquiring
@@ -298,6 +406,7 @@ export async function findWorkspaceSubmission(connection, { userId, idempotencyK
     WHERE id = ? AND user_id = ? AND idempotency_key = ? AND request_hash = ? FOR UPDATE`,
   [outcome.workspace_id, userId, idempotencyKey, requestHash]);
   if (!stored) throw new TypeError("Accepted workspace submission is missing its matching workspace");
+  await refreshLockedRounds(connection, [stored]);
   return workspaceDTO(stored, await readNodes(connection, stored.id));
 }
 
@@ -310,18 +419,49 @@ export async function rejectWorkspaceSubmission(connection, { userId, idempotenc
   return error;
 }
 
+// File outputs remain in task history, but unavailable source data must never
+// expose derived delivery titles or continuation actions. Batch metadata reads;
+// full source bodies are only resolved by the guarded text endpoint.
+export async function unavailableWorkspaceFileSources(connection, userId, references, { lock = false } = {}) {
+  if (!references.length) return new Set();
+  const ids = [...new Set(references.map(ref => ref.id))];
+  const files = await connection.query(`SELECT id,original_filename,mime_type,checksum_sha256,parse_version,status,
+    encode(sha256(convert_to(extracted_text,'UTF8')),'hex') AS content_hash FROM file_assets
+    WHERE user_id=? AND id=ANY(?::text[]) AND deleted_at IS NULL AND extracted_text IS NOT NULL ORDER BY id${lock ? " FOR SHARE" : ""}`, [userId, ids]);
+  const [grant] = await connection.query(`SELECT enabled,granted_scopes FROM user_agents WHERE user_id=? AND agent_id='file-preprocessor'${lock ? " FOR SHARE" : ""}`, [userId]);
+  const fileAgent = await getAgent('file-preprocessor');
+  const permitted = grant?.enabled && agentScopesMatchDeclaration(fileAgent, grant.granted_scopes);
+  const versions = new Map(files.map(file => [file.id, fileReference(file)?.version]));
+  return new Set(references.filter(ref => !permitted || versions.get(ref.id) !== ref.version).map(ref => `${ref.id}:${ref.version}`));
+}
+
+async function protectFileDeliveries(connection, userId, rows, nodes) {
+  const references = rows.flatMap(row => row.context_refs).filter(ref => ref.kind === 'station-file');
+  const unavailable = await unavailableWorkspaceFileSources(connection, userId, references);
+  return rows.map(row => {
+    const dto = workspaceDTO(row, nodes.filter(node => node.workspace_id === row.id));
+    if (!row.context_refs.some(ref => ref.kind === 'station-file' && unavailable.has(`${ref.id}:${ref.version}`))) return dto;
+    const explanation = '引用文件已删除、变化或授权不可用，成果无法打开，请重新选择文件创建任务。';
+    return { ...dto, readAccess: { state: 'unavailable', code: 'WORKSPACE_FILE_SOURCE_UNAVAILABLE' }, result: null, summary: explanation, allowedActions: dto.allowedActions.filter(action => action !== 'continue'),
+      steps: dto.steps.map(node => ({ ...node, result: null, summary: explanation })),
+      rounds: dto.rounds.map(round => ({ ...round, result: null, summary: explanation })) };
+  });
+}
+
 export function createAgentWorkspaceRepository({ query: runQuery = query, withTransaction: transaction = withTransaction } = {}) {
   const getAgentWorkspace = async ({ userId, workspaceId }) => transaction(async connection => {
     id.parse(userId); id.parse(workspaceId);
     const rows = await connection.query(`SELECT ${rowFields} FROM agent_workspaces WHERE id = ? AND user_id = ? FOR SHARE`, [workspaceId, userId]);
-    return rows[0] ? workspaceDTO(rows[0], await readNodes(connection, workspaceId)) : null;
+    await refreshLockedRounds(connection, rows);
+    return rows[0] ? (await protectFileDeliveries(connection, userId, rows, await readNodes(connection, workspaceId)))[0] : null;
   });
   const listAgentWorkspaces = async ({ userId, limit = 30 }) => transaction(async connection => {
     id.parse(userId); z.number().int().min(1).max(100).parse(limit);
     const rows = await connection.query(`SELECT ${rowFields} FROM agent_workspaces WHERE user_id = ? ORDER BY updated_at DESC,id DESC LIMIT ? FOR SHARE`, [userId, limit]);
     if (!rows.length) return [];
+    await refreshLockedRounds(connection, rows);
     const nodes = await connection.query("SELECT * FROM agent_workspace_nodes WHERE user_id = ? AND workspace_id = ANY(?::text[]) ORDER BY created_at,id", [userId, rows.map(row => row.id)]);
-    return rows.map(row => workspaceDTO(row, nodes.filter(node => node.workspace_id === row.id)));
+    return protectFileDeliveries(connection, userId, rows, nodes);
   });
   const claimWorkspaceNode = async () => transaction(async connection => {
     // Lock the aggregate before a node everywhere. The short aggregate lock
@@ -470,22 +610,72 @@ export function createAgentWorkspaceRepository({ query: runQuery = query, withTr
     }
     return recovered;
   });
-  const mutateAgentWorkspace = async ({ userId, workspaceId, revision, operation, approvalId, text, mutate }) => {
+  const mutateAgentWorkspace = async ({ userId, workspaceId, revision, operation, approvalId, text, idempotencyKey, mutate, authorizeReplay }) => {
     id.parse(userId); id.parse(workspaceId); z.number().int().min(1).parse(revision);
-    z.enum(["cancel", "confirm", "reject", "reply"]).parse(operation);
+    z.enum(["cancel", "confirm", "reject", "reply", "continue"]).parse(operation);
     if (operation === "confirm") {
       id.parse(approvalId);
       if (typeof mutate !== "function") throw new TypeError("Confirmation requires an apply handler");
     }
-    if (operation === "reply") z.string().trim().min(1).max(2000).parse(text);
-    if ((operation !== "confirm" && approvalId !== undefined) || (operation !== "reply" && text !== undefined)) {
+    if (["reply", "continue"].includes(operation)) text = z.string().trim().min(1).max(2000).parse(text);
+    if (operation === "continue") {
+      z.string().min(8).max(160).parse(idempotencyKey);
+      if (typeof mutate !== "function") throw new TypeError("Continuation requires an authorization handler");
+    }
+    if ((operation !== "confirm" && approvalId !== undefined) || (!["reply", "continue"].includes(operation) && text !== undefined) ||
+      (operation !== "continue" && idempotencyKey !== undefined)) {
       throw new HttpError(400, "Decision contains fields for a different operation.", { code: "WORKSPACE_DECISION_INVALID" });
     }
     const decisionHash = crypto.createHash("sha256").update(json({ operation, approvalId: approvalId ?? null, text: text ?? null })).digest("hex");
     return transaction(async connection => {
       let row = await lockWorkspace(connection, workspaceId, userId);
+      if (operation === "continue") {
+        const requestHash = crypto.createHash("sha256").update(json({ revision, text })).digest("hex");
+        const [previous] = await connection.query(`SELECT request_hash FROM agent_workspace_continuations
+          WHERE workspace_id = ? AND user_id = ? AND idempotency_key = ?`, [workspaceId, userId, idempotencyKey]);
+        const nodes = await readNodes(connection, row.id);
+        const record = workspaceRecord(row, nodes);
+        if (previous) {
+          if (authorizeReplay) await authorizeReplay(connection, record);
+          if (previous.request_hash !== requestHash) throw conflict("WORKSPACE_IDEMPOTENCY_CONFLICT", "This continuation key belongs to a different request.");
+          return (await protectFileDeliveries(connection, userId, [row], nodes))[0];
+        }
+        if (row.revision !== revision) throw conflict("WORKSPACE_REVISION_CONFLICT", "Workspace has changed; refresh before deciding.");
+        if (!["succeeded", "awaiting_confirmation"].includes(row.status)) {
+          throw conflict("WORKSPACE_STATE_CHANGED", "Only a completed delivery can start a new revision round.");
+        }
+        if (!canContinueWorkspace(row)) throw conflict("WORKSPACE_CONTINUATION_UNAVAILABLE", "当前专业能力不能接续此成果，请明确发起新的需求。");
+        const base = nodes.find(node => node.node_key === row.result?.resultKey);
+        if (!base || base.status !== "succeeded" || base.capability === "workspace.coordinate" || base.round_number !== row.current_round ||
+          !artifactOf(base.result) || json(artifactOf(base.result)) !== json(artifactOf(row.result))) {
+          throw conflict("WORKSPACE_RESULT_UNAVAILABLE", "The current delivery has no verified originating step.");
+        }
+        if (nodes.some(node => ["queued", "running"].includes(node.status))) {
+          throw conflict("WORKSPACE_STEPS_PENDING", "Workspace has unfinished execution steps.");
+        }
+        const patch = patchSchema.parse(await mutate(connection, record) || {});
+        if (Object.keys(patch).some(field => field !== "summary")) throw new TypeError("Continuation may not replace the previous delivery or its state");
+        await connection.query(`UPDATE agent_workspace_rounds SET status = ?,summary = ?,result = ?::jsonb,approval = ?::jsonb,
+          result_node_id = ?,completed_at = ? WHERE workspace_id = ? AND round_number = ?`,
+        [row.status, row.summary, nullableJson(row.result), nullableJson(record.rounds.at(-1).approval), base.id,
+          row.status === "succeeded" ? row.updated_at : row.database_now, row.id, row.current_round]);
+        const nextRound = row.current_round + 1;
+        await connection.query(`INSERT INTO agent_workspace_rounds
+          (workspace_id,user_id,round_number,instruction,base_result_node_id,status,summary)
+          VALUES (?,?,?,?,?,'queued',?)`, [row.id, userId, nextRound, text, base.id, patch.summary ?? "已收到修改，等待继续协作"]);
+        await connection.query(`UPDATE agent_workspaces SET current_round = ?,status = 'queued',summary = ?,question = NULL,
+          result = NULL,approval = NULL,error = NULL,deadline_at = clock_timestamp() + ((limits->>'deadlineSeconds')::integer * INTERVAL '1 second'),
+          revision = revision + 1,last_operation = 'continue',last_operation_revision = ?,last_decision_hash = ?,updated_at = clock_timestamp()
+          WHERE id = ?`, [nextRound, patch.summary ?? "已收到修改，等待继续协作", revision, decisionHash, row.id]);
+        await queueWorkspaceRound(connection, { id: row.id, userId }, row.execution_mode);
+        await connection.query(`INSERT INTO agent_workspace_continuations
+          (workspace_id,user_id,idempotency_key,request_hash,round_number) VALUES (?,?,?,?,?)`,
+        [row.id, userId, idempotencyKey, requestHash, nextRound]);
+        row = await lockWorkspace(connection, row.id, userId);
+        return (await protectFileDeliveries(connection, userId, [row], await readNodes(connection, row.id)))[0];
+      }
       if (row.last_operation === operation && row.last_operation_revision === revision && row.last_decision_hash === decisionHash) {
-        return workspaceDTO(row, await readNodes(connection, row.id));
+        return (await protectFileDeliveries(connection, userId, [row], await readNodes(connection, row.id)))[0];
       }
       if (row.revision !== revision) throw conflict("WORKSPACE_REVISION_CONFLICT", "Workspace has changed; refresh before deciding.");
       const permitted = operation === "cancel" ? ["queued", "running", "waiting_input", "awaiting_confirmation"]
@@ -506,7 +696,7 @@ export function createAgentWorkspaceRepository({ query: runQuery = query, withTr
       let status;
       let followups = row.followups;
       if (operation === "reply") {
-        followups = [...row.followups, { text, createdAt: iso(row.database_now) }];
+        followups = [...row.followups, { text, round: row.current_round, createdAt: iso(row.database_now) }];
         bounds(followups);
         await queueWorkspaceCoordinator(connection, record);
         status = "queued";
@@ -517,6 +707,8 @@ export function createAgentWorkspaceRepository({ query: runQuery = query, withTr
       }
       const nextResult = patch.result === undefined ? row.result : validateResult(patch.result);
       if (operation === "confirm" && !artifactOf(nextResult)) throw new TypeError("Workspace confirmation requires an artifact");
+      if (row.approval) await connection.query(`UPDATE agent_workspace_rounds SET approval = ?::jsonb
+        WHERE workspace_id = ? AND round_number = ?`, [json(row.approval), row.id, row.current_round]);
       const updated = await connection.query(`UPDATE agent_workspaces SET status = ?,summary = ?,question = NULL,
         result = ?::jsonb,approval = NULL,followups = ?::jsonb,revision = revision + 1,
         last_operation = ?,last_operation_revision = ?,last_decision_hash = ?,updated_at = clock_timestamp()
@@ -526,7 +718,7 @@ export function createAgentWorkspaceRepository({ query: runQuery = query, withTr
       nullableJson(nextResult), json(followups), operation, revision, decisionHash, row.id, operation]);
       if (!updated[0]) throw conflict("WORKSPACE_APPROVAL_EXPIRED", "Workspace approval expired before completion.");
       row = updated[0];
-      return workspaceDTO(row, await readNodes(connection, row.id));
+      return (await protectFileDeliveries(connection, userId, [row], await readNodes(connection, row.id)))[0];
     });
   };
   return { getAgentWorkspace, listAgentWorkspaces, claimWorkspaceNode, heartbeatWorkspaceNode, reserveWorkspaceModelCall, recordWorkspaceModelCall,

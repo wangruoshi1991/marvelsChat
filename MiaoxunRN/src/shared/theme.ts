@@ -31,36 +31,47 @@ export const workspaceColors = {
 };
 
 /**
- * The light page background is a vertical wash rather than a flat fill: the
- * reference screens run from mint at the top to near-white at the bottom.
- * Sampled off the reference at 5% / 25% / 45% / 62% / 80% of the page height.
- * `productColors.background` stays the flat equivalent for surfaces that cannot
- * take a gradient (modals, sheets, dark mode).
+ * The shared light-page wash provides the existing left/right tint. A soft white
+ * veil fades the top and bottom while leaving the main content area exposed.
+ * `productColors.background` remains the flat fill for modals, sheets and dark
+ * mode.
  */
 export const pageGradientWash = {
-  left: '#E6F6F1',
-  right: '#EDFBEA',
+  // Sampled from the exposed page margins in the supplied reference sheet:
+  // the left edge stays a cool mint while the right edge shifts toward a
+  // warmer pale green. The white fade below is intentionally separate so it
+  // cannot wash out the content area in the middle of the page.
+  left: '#E4F6F3',
+  right: '#ECFAE9',
 } as const;
 
+/**
+ * White veil shared by 妙 / 讯 / 我. It stays open across the main content area
+ * so the existing horizontal wash remains visible instead of becoming a white
+ * slab. Zero opacity reveals `pageGradientWash` without adding new colours.
+ */
 export const pageGradientStops = [
-  // Solved per stop from the reference stack. Vertical sampling of the design
-  // shows mint 0–16%, white 20–58%, a second mint band 60–88% peaking near
-  // 76–84% at `#F0FAF9`, then white again. Each opacity below is the white
-  // veil needed over `pageGradientWash` to land on that colour.
-  { offset: 0, color: '#FFFFFF', opacity: 0.1 },
-  { offset: 0.16, color: '#FFFFFF', opacity: 0.84 },
-  { offset: 0.21, color: '#FFFFFF', opacity: 1 },
-  { offset: 0.58, color: '#FFFFFF', opacity: 1 },
-  { offset: 0.63, color: '#FFFFFF', opacity: 0.12 },
-  { offset: 0.7, color: '#FFFFFF', opacity: 0.3 },
-  { offset: 0.76, color: '#FFFFFF', opacity: 0.4 },
-  { offset: 0.84, color: '#FFFFFF', opacity: 0.38 },
-  { offset: 0.88, color: '#FFFFFF', opacity: 0.32 },
-  { offset: 0.92, color: '#FFFFFF', opacity: 0.95 },
+  // The reference keeps the horizontal wash intact through the content area.
+  // A measured white veil starts near the lower third and reaches about 60%
+  // opacity immediately above the white bottom navigation. Earlier versions
+  // faded too early or too abruptly, making a pale band cross the middle.
+  { offset: 0, color: '#FFFFFF', opacity: 0 },
+  { offset: 0.64, color: '#FFFFFF', opacity: 0 },
+  { offset: 0.67, color: '#FFFFFF', opacity: 0 },
+  { offset: 0.69, color: '#FFFFFF', opacity: 0.12 },
+  { offset: 0.72, color: '#FFFFFF', opacity: 0.17 },
+  { offset: 0.75, color: '#FFFFFF', opacity: 0.22 },
+  { offset: 0.78, color: '#FFFFFF', opacity: 0.28 },
+  { offset: 0.81, color: '#FFFFFF', opacity: 0.38 },
+  { offset: 0.84, color: '#FFFFFF', opacity: 0.46 },
+  { offset: 0.87, color: '#FFFFFF', opacity: 0.53 },
+  { offset: 0.9, color: '#FFFFFF', opacity: 0.6 },
+  { offset: 0.92, color: '#FFFFFF', opacity: 0.7 },
+  { offset: 0.96, color: '#FFFFFF', opacity: 0.85 },
   { offset: 1, color: '#FFFFFF', opacity: 1 },
 ] as const;
 
-/** The flat tint the gradient starts from; safe-area strips use it. */
+/** The flat tint used by the station's opaque sticky header. */
 export const pageGradientTop = pageGradientWash.left;
 export const pageGradientBottom = '#FFFFFF';
 

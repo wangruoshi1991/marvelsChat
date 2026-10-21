@@ -8,6 +8,7 @@ const safeMessages = {
   WORKSPACE_CONTEXT_INVALID: "本次选择的内容不适用于计划中的能力，请调整任务范围。",
   WORKSPACE_CONTEXT_LIMIT: "本次选择的内容超出任务范围上限，请缩小范围。",
   WORKSPACE_SOURCES_CHANGED: "任务引用的内容已变化或不可访问，请重新发起。",
+  WORKSPACE_ORIGIN_CHANGED: "原专业会话或用户需求已删除、撤回或变化，后续执行已停止。",
   WORKSPACE_MEDIA_CHANGED: "协作交接的素材已变化或不可访问，后续步骤已停止。",
   WORKSPACE_MEDIA_INVALID: "素材交付结果无效，未执行后续步骤。",
   WORKSPACE_MEDIA_NOT_FOUND: "未取得符合目标的可用素材，未自动改为无素材页面。",

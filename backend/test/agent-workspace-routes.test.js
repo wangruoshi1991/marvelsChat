@@ -19,7 +19,16 @@ test("decisions reject ambiguous or extra operation fields", () => {
     { operation: "cancel", revision: 1, text: "hidden reply" },
     { operation: "reply", revision: 1, text: "ok", approvalId: crypto.randomUUID() },
     { operation: "confirm", revision: 1, approvalId: crypto.randomUUID(), bypass: true },
+    { operation: "continue", revision: 1, text: "修改标题" },
+    { operation: "continue", revision: 1, idempotencyKey: crypto.randomUUID() },
+    { operation: "continue", revision: 1, text: "修改标题", idempotencyKey: "short" },
+    { operation: "continue", revision: 1, text: "修改标题", idempotencyKey: "k".repeat(161) },
+    { operation: "continue", revision: 1, text: "修改标题", idempotencyKey: crypto.randomUUID(), approvalId: crypto.randomUUID() },
+    ...["cancel", "reject", "reply", "confirm"].map(operation => ({ operation, revision: 1, idempotencyKey: crypto.randomUUID(),
+      ...(operation === "reply" && { text: "补充说明" }), ...(operation === "confirm" && { approvalId: crypto.randomUUID() }) })),
   ]) assert.equal(workspaceActionSchema.safeParse(body).success, false);
+  assert.deepEqual(workspaceActionSchema.parse({ operation: "continue", revision: 7, text: "  修改标题  ", idempotencyKey: "next-round" }),
+    { operation: "continue", revision: 7, text: "修改标题", idempotencyKey: "next-round" });
 });
 
 test("real HTTP routes reject missing contracts before dispatch, and require document contract on every confirmation", async () => {
@@ -50,13 +59,13 @@ test("real HTTP routes reject missing contracts before dispatch, and require doc
   try {
     const goal = { goal: "Create a page", idempotencyKey: crypto.randomUUID(), source: { page: "miao", module: null }, contextRefs: [] };
     const decision = { operation: "confirm", revision: 1, approvalId: crypto.randomUUID() };
-    for (const headers of [{}, { "X-Miaoxun-AI-Contract": "1" }, { "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": "1" }, { "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": "2" }]) {
+    for (const headers of [{}, { "X-Miaoxun-AI-Contract": "1" }, ...["1", "2", "3", "4", "5"].map(version => ({ "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": version }))]) {
       for (const [path, body] of [["/api/agent-workspaces", goal], [`/api/agent-workspaces/${workspaceId}`, null],
         [`/api/agent-workspaces/${workspaceId}/text/${nodeId}`, null],
         [`/api/agent-workspaces/${workspaceId}/decision`, decision]]) assert.equal((await request(path, body, headers)).status, 426);
     }
     assert.equal(calls.length, 0);
-    const supported = { "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": "3" };
+    const supported = { "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": "6" };
     assert.equal((await request("/api/agent-workspaces", goal, supported)).status, 202);
     assert.equal(calls[0].user.id, owner);
     assert.equal((await request(`/api/agent-workspaces/${workspaceId}/decision`, decision, supported)).status, 426);
@@ -71,5 +80,11 @@ test("real HTTP routes reject missing contracts before dispatch, and require doc
     assert.equal(text.status, 200);
     assert.equal((await text.json()).data.content, "按需鉴权读取的正文");
     assert.deepEqual(calls[2], { userId: owner, workspaceId, nodeId });
+    const continuation = { operation: "continue", revision: 7, text: "保留内容，调整标题", idempotencyKey: crypto.randomUUID() };
+    assert.equal((await request(`/api/agent-workspaces/${workspaceId}/decision`, continuation,
+      { ...supported, "X-Miaoxun-Agent-Workspace": "3" })).status, 426);
+    assert.equal(calls.length, 3);
+    assert.equal((await request(`/api/agent-workspaces/${workspaceId}/decision`, continuation, supported)).status, 200);
+    assert.deepEqual(calls[3], { userId: owner, workspaceId, ...continuation });
   } finally { await new Promise(resolve => server.close(resolve)); }
 });

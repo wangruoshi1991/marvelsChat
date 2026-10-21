@@ -164,6 +164,7 @@ export async function listFileAssetsByIdsForUser({ userId, fileAssetIds = [] }) 
 }
 
 export async function createFileAsset({
+  extractedText = null, parseVersion = null,
   userId,
   originalFilename,
   mimeType = "",
@@ -181,9 +182,9 @@ export async function createFileAsset({
     `INSERT INTO file_assets
       (
         id, user_id, original_filename, mime_type, byte_size, checksum_sha256,
-        storage_provider, storage_key, source_kind, status, preprocessing_result, metadata
+        storage_provider, storage_key, source_kind, status, preprocessing_result, metadata, extracted_text, parse_version
       )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
     RETURNING *`,
     [
       id,
@@ -197,7 +198,7 @@ export async function createFileAsset({
       sourceKind,
       status,
       JSON.stringify(preprocessingResult),
-      JSON.stringify(metadata),
+      JSON.stringify(metadata), extractedText, parseVersion,
     ],
   );
   return mapFileAsset(rows[0]);

@@ -217,27 +217,24 @@ describe('Chat content actions', () => {
     expect(props.onRetrySend).toHaveBeenCalledWith(item);
   });
 
-  it('opens draft actions without overriding native text selection or sending', async () => {
+  it('keeps the chat composer focused on speech, native editing and sending', async () => {
     const onSend = jest.fn();
-    const share = jest.spyOn(Share, 'share').mockResolvedValue({
-      action: Share.sharedAction,
-    });
-    const alert = jest.spyOn(Alert, 'alert');
+    const onChangeDraft = jest.fn();
+    const onFocusInput = jest.fn();
+    const onRecognizeSpeech = jest.fn();
     const props = {
       palette: palettes.light,
       language: 'zh' as const,
       threadTitle: thread.title,
-      threadId: thread.id,
       draft: '待编辑的内容',
       isSending: false,
       isRecognizingSpeech: false,
       replyTarget: null,
-      onChangeDraft: jest.fn(),
+      onChangeDraft,
       onClearReplyTarget: jest.fn(),
-      onFocusInput: jest.fn(),
-      onRecognizeSpeech: jest.fn(),
+      onFocusInput,
+      onRecognizeSpeech,
       onSend,
-      onActionMessage: jest.fn(),
     };
     await ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(<ChatComposer {...props} />);
@@ -245,62 +242,29 @@ describe('Chat content actions', () => {
     const input = renderer.root.findByType(TextInput);
     expect(input.props.onLongPress).toBeUndefined();
     expect(input.props.contextMenuHidden).not.toBe(true);
+    expect(input.props.onChangeText).toBe(onChangeDraft);
+    expect(input.props.onFocus).toBe(onFocusInput);
     const sendButton = renderer.root
       .findAllByProps({ accessibilityLabel: '发送消息' })
       .find(node => typeof node.props.onPress === 'function');
     expect(
       StyleSheet.flatten(sendButton!.props.style).minHeight,
     ).toBeGreaterThanOrEqual(44);
-    const button = renderer.root
-      .findAllByProps({ testID: 'chat-draft-assist' })
+    const speechButton = renderer.root
+      .findAllByProps({ accessibilityLabel: '语音转文字' })
       .find(node => typeof node.props.onPress === 'function');
-    await ReactTestRenderer.act(() => button!.props.onPress(touchEvent));
-    expect(mockAssist.open).toHaveBeenCalledWith(
-      expect.objectContaining({
-        object: expect.objectContaining({
-          kind: 'chat-draft',
-          metadata: { content: props.draft, threadId: thread.id },
-        }),
-        point: { x: 180, y: 260 },
-      }),
-    );
-    const request = mockAssist.open.mock.calls[0][0];
-    const actions: AIAssistAction[] = request.actions;
-    expect(actions.map(action => [action.direction, action.label])).toEqual([
-      ['up', '换行'],
-      ['right', '妙管家'],
-      ['down', '粘贴'],
-      ['left', '更多'],
-    ]);
-    await ReactTestRenderer.act(() => {
-      input.props.onSelectionChange({
-        nativeEvent: { selection: { start: 2, end: 2 } },
-      });
-      actions[0].onSelect(request.object);
-    });
-    expect(props.onChangeDraft).toHaveBeenCalledWith('待编\n辑的内容');
-    jest.mocked(Clipboard.getString).mockResolvedValueOnce('粘贴文本');
-    await ReactTestRenderer.act(async () => {
-      input.props.onSelectionChange({
-        nativeEvent: { selection: { start: 1, end: 3 } },
-      });
-      await actions[2].onSelect(request.object);
-    });
-    expect(props.onChangeDraft).toHaveBeenCalledWith('待粘贴文本的内容');
-    await ReactTestRenderer.act(() => actions[1].onSelect(request.object));
-    expect(mockAssist.askButler).toHaveBeenCalledWith(request.object);
-    await ReactTestRenderer.act(() => actions[3].onSelect(request.object));
-    const moreButtons = alert.mock.calls.at(-1)![2]!;
-    expect(moreButtons.map(item => item.text)).toEqual([
-      '分享',
-      '复制',
-      '继续编辑',
-      '取消',
-    ]);
-    await ReactTestRenderer.act(() => moreButtons[0].onPress?.());
-    expect(share).toHaveBeenCalledWith({ message: props.draft });
-    await ReactTestRenderer.act(() => moreButtons[1].onPress?.());
-    expect(Clipboard.setString).toHaveBeenCalledWith(props.draft);
+    expect(speechButton).toBeTruthy();
+    await ReactTestRenderer.act(() => speechButton!.props.onPress());
+    expect(onRecognizeSpeech).toHaveBeenCalledTimes(1);
+    expect(
+      renderer.root.findAllByProps({ testID: 'chat-draft-assist' }),
+    ).toHaveLength(0);
+    expect(
+      renderer.root
+        .findAllByType(Text)
+        .map(node => node.props.children)
+        .flat(),
+    ).not.toContain('妙管家');
     expect(onSend).not.toHaveBeenCalled();
     await ReactTestRenderer.act(() => sendButton!.props.onPress());
     expect(onSend).toHaveBeenCalledTimes(1);
@@ -308,9 +272,8 @@ describe('Chat content actions', () => {
       renderer.update(<ChatComposer {...props} draft="   " />);
     });
     expect(
-      renderer.root.findAllByProps({ testID: 'chat-draft-assist' })[0].props
-        .disabled,
-    ).toBe(false);
+      renderer.root.findAllByProps({ testID: 'chat-draft-assist' }),
+    ).toHaveLength(0);
     expect(
       renderer.root
         .findAllByProps({ accessibilityLabel: '发送消息' })

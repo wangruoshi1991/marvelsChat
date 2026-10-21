@@ -159,6 +159,13 @@ export type MessageDTO = {
   metadata?: Record<string, unknown> & {
     contextRefs?: AIContextReference[];
     agentWorkspace?: { id: string };
+    agentDispatch?: { version: 1; kind: 'reply' | 'clarify' | 'workspace' };
+    agentClarification?: {
+      contextRefs: AIContextReference[];
+      source: { currentPage: string };
+    };
+    agentContextReset?: boolean;
+    workspaceContext?: import('./workspaceContext').WorkspaceDiscussionContext;
     butlerClarification?: {
       contextRefs: AIContextReference[];
       source: { currentPage: string };
@@ -610,6 +617,13 @@ export type Avatar3DCreateJobPayload = {
 };
 
 export type StationFileAssetDTO = {
+  parseVersion?: string | null;
+  reference?: {
+    kind: 'station-file';
+    id: string;
+    version: string;
+    title: string;
+  } | null;
   id: string;
   userId?: string;
   originalFilename: string;

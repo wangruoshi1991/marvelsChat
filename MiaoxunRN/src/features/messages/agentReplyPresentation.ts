@@ -1,5 +1,6 @@
 import { ChatMessage, Language } from '../session/sessionTypes';
 import { textFor } from '../../shared/i18n';
+import { isAgentDispatch } from '../../models/agentDispatch';
 
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -19,6 +20,7 @@ export function agentReplyPresentation(
 ): string {
   if (
     message.senderType !== 'agent' ||
+    isAgentDispatch(message.metadata?.agentDispatch) ||
     !['comic-diary', 'site-builder'].includes(agentId || '')
   )
     return message.content;

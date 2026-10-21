@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { aiContextReferencesSchema } from "./ai-context.js";
+import { workspaceContextSchema } from "./workspace-discussion-contract.js";
 import {
   avatar3dCostVersion,
   avatar3dQualityPresetIds,
@@ -56,6 +57,8 @@ export const messageSchema = z.object({
   content: z.string().trim().min(1).max(2000),
   contextRefs: aiContextReferencesSchema,
   butlerContextReset: z.boolean().optional(),
+  agentContextReset: z.boolean().optional(),
+  workspaceContext: workspaceContextSchema.optional(),
   clientMessageId: z.string().uuid().optional(),
   replyToMessageId: z.string().uuid().optional(),
   clientContext: z.object({
@@ -71,7 +74,19 @@ export const messageSchema = z.object({
     }).optional(),
     enabledAgentIds: z.array(z.string().trim().min(1).max(80)).max(64).optional(),
   }).optional(),
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (value.agentContextReset !== undefined && value.butlerContextReset !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["agentContextReset"],
+      message: "Specialist and butler context resets cannot be combined" });
+  }
+  if (!value.workspaceContext) return;
+  if (!value.clientMessageId) context.addIssue({ code: z.ZodIssueCode.custom,
+    path: ["clientMessageId"], message: "Workspace discussion requires a stable client message ID" });
+  if (value.contextRefs.length || value.replyToMessageId || value.butlerContextReset !== undefined || value.agentContextReset !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["workspaceContext"],
+      message: "Workspace discussion cannot include selected references, reply targets, or conversation context resets" });
+  }
+});
 
 export const threadPreferencesSchema = z.object({
   muted: z.boolean(),

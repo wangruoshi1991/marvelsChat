@@ -50,7 +50,7 @@ test("ordinary conversations have an explicit chat method distinct from generati
   }
   const character = await getAgent("virtual-character");
   assert.equal(character.plan, undefined);
-  assert.deepEqual(registered.find(agent => agent.key === "virtual-character").runtimeModes, ["chat", "contribute"]);
+  assert.deepEqual(registered.find(agent => agent.key === "virtual-character").runtimeModes, ["chat", "dispatch", "contribute"]);
   const album = await getAgent("album-manager");
   assert.equal(album.chat, undefined);
   assert.equal(typeof album.plan, "function");

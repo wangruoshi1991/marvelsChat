@@ -216,7 +216,6 @@ describe('Station home content actions', () => {
               palette={palettes.light}
               onOpen={open}
               onEdit={edit}
-              onBack={jest.fn()}
               onCreate={jest.fn()}
             />
           ),

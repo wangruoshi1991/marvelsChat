@@ -19,6 +19,7 @@ export const RECOMMENDED_AGENT_MODEL_PROFILE = Object.freeze({
 // 视觉、图文向量及 3D 生成使用各自既有配置，不进入此文本角色映射。
 export const AGENT_MODEL_ROLE_POLICY = Object.freeze({
   chat: "chat",
+  discussWorkspace: "chat",
   plan: "planning",
   dispatch: "planning",
   coordinate: "planning",
@@ -56,7 +57,7 @@ export function resolveAgentModelRoute(modelConfig, role = "chat") {
 }
 
 export function resolveAgentModelRole({ mode = "plan" } = {}) {
-  if (!["plan", "coordinate", "dispatch", "chat", "contribute"].includes(mode)) {
+  if (!["plan", "coordinate", "dispatch", "chat", "contribute", "discussWorkspace"].includes(mode)) {
     throw new HttpError(422, "Agent does not support the requested execution mode.", { code: "AI_AGENT_MODE_UNSUPPORTED" });
   }
   return AGENT_MODEL_ROLE_POLICY[mode];

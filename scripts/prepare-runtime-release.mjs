@@ -34,7 +34,7 @@ const runtimeInputs = [
   'backend/src', 'backend/database',
   'backend/package.json', 'backend/package-lock.json',
   'agents',
-  'agents/package.json', 'agents/registry.js', 'agents/chat-history.js', 'agents/workspace-contribution.js',
+  'agents/package.json', 'agents/registry.js', 'agents/chat-history.js', 'agents/workspace-contribution.js', 'agents/specialist-dispatch.js',
   'shared/package.json', 'shared/site-document.js', 'shared/media-retrieval-public-contract.js',
   'backend/scripts/admin-bootstrap.js',
   'backend/scripts/avatar-3d-backfill-mobile-models.js',
@@ -68,7 +68,7 @@ const trackedFiles = trackedTree.toString('utf8').split('\0').filter(Boolean).ma
   if (type !== 'blob' || mode === '120000') throw new Error(`Runtime inputs cannot contain symlinks: ${path}`);
   const isRuntimeAgentFile = path === 'agents/package.json' ||
     path === 'agents/registry.js' || path === 'agents/chat-history.js' ||
-    path === 'agents/workspace-contribution.js' ||
+    path === 'agents/workspace-contribution.js' || path === 'agents/specialist-dispatch.js' ||
     (parts.length === 2 && path.startsWith('agents/') && path.endsWith('.agent.js'));
   if (path.startsWith('agents/') && !isRuntimeAgentFile) return null;
   if (parts.some(part => excludedNames.has(part) || part.startsWith('.env') || part.startsWith('._'))) return null;

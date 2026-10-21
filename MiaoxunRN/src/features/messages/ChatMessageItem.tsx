@@ -7,6 +7,12 @@ import { Bot, Copy, ExternalLink, LayoutGrid } from 'lucide-react-native';
 import { AgentDTO, AvatarConfigDTO } from '../../models/api';
 import { AgentWorkspace } from '../../models/agentWorkspace';
 import {
+  WorkspaceContinuationDraft,
+  WorkspaceDiscussionContext,
+  isWorkspaceDiscussionContext,
+} from '../../models/workspaceContext';
+import { WorkspaceContextCard } from './WorkspaceContextCard';
+import {
   messageWorkspaceId,
   WorkspaceMessageAction,
 } from './WorkspaceMessageAction';
@@ -54,6 +60,8 @@ export function ChatMessageItem({
   onRetrySend,
   onOpenAgentAccess,
   onOpenWorkspace,
+  onRestoreWorkspaceContext,
+  onEditWorkspaceDiscussion,
   onActionMessage,
 }: {
   token?: string;
@@ -76,11 +84,25 @@ export function ChatMessageItem({
   ) => void;
   onRetrySend: (message: ChatMessage) => void;
   onOpenAgentAccess?: () => void;
-  onOpenWorkspace?: (workspace: AgentWorkspace) => void;
+  onOpenWorkspace?: (
+    workspace: AgentWorkspace,
+    draft?: WorkspaceContinuationDraft,
+  ) => void;
+  onRestoreWorkspaceContext?: (context: WorkspaceDiscussionContext) => void;
+  onEditWorkspaceDiscussion?: (message: ChatMessage) => void;
   onActionMessage: (message: string) => void;
 }) {
   const assist = useAIAssist();
-  const workspaceId = messageWorkspaceId(item, thread.agentId);
+  const workspaceId = messageWorkspaceId(item, thread.agentId, thread.id);
+  const discussionContext =
+    thread.agentId === 'miaoxun-butler' &&
+    !item.deletedAt &&
+    !item.recalledAt &&
+    !item.localStatus &&
+    ['user', 'agent'].includes(item.senderType) &&
+    isWorkspaceDiscussionContext(item.metadata?.workspaceContext)
+      ? item.metadata.workspaceContext
+      : null;
   const presentedMessageContent = displayText(
     language,
     agentReplyPresentation(item, thread.agentId, language),
@@ -294,8 +316,28 @@ export function ChatMessageItem({
           </ChatMessageText>
         </AIAssistGestureSurface>
       </View>
-      {token && workspaceId && onOpenWorkspace ? (
+      {token &&
+      discussionContext &&
+      onOpenWorkspace &&
+      onRestoreWorkspaceContext ? (
+        <WorkspaceContextCard
+          key={`${token}:${currentUserId}:${thread.id}:${item.id}:${discussionContext.id}:${discussionContext.revision}`}
+          token={token}
+          context={discussionContext}
+          palette={palette}
+          language={language}
+          historical
+          onChangeContext={onRestoreWorkspaceContext}
+          onOpenWorkspace={onOpenWorkspace}
+        />
+      ) : null}
+      {token && workspaceId && !discussionContext && onOpenWorkspace ? (
         <WorkspaceMessageAction
+          origin={
+            thread.agentId && thread.agentId !== 'miaoxun-butler'
+              ? { threadId: thread.id, agentId: thread.agentId }
+              : undefined
+          }
           key={`${token}:${currentUserId}:${thread.id}:${item.id}:${workspaceId}`}
           token={token}
           workspaceId={workspaceId}
@@ -351,6 +393,27 @@ export function ChatMessageItem({
                     'Failed, tap to retry',
                   )}
               </Text>
+              {item.localFailure?.code === 'WORKSPACE_DISCUSSION_STALE' &&
+              isWorkspaceDiscussionContext(item.metadata?.workspaceContext) &&
+              onEditWorkspaceDiscussion ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={textFor(
+                    language,
+                    '编辑为新的讨论',
+                    'Edit as a new discussion',
+                  )}
+                  onPress={() => onEditWorkspaceDiscussion(item)}
+                >
+                  <Text style={{ color: palette.text }}>
+                    {textFor(
+                      language,
+                      '编辑为新的讨论，刷新任务关联后发送',
+                      'Edit as a new discussion and refresh its task context before sending',
+                    )}
+                  </Text>
+                </Pressable>
+              ) : null}
               {onOpenAgentAccess &&
               ['AI_CONTEXT_SCOPE_REQUIRED', 'AI_ACCESS_REVOKED'].includes(
                 item.localFailure?.code || '',

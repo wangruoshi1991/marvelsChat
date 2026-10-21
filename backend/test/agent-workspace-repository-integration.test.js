@@ -436,3 +436,131 @@ integration("unexpected failure after dispatch retains unknown billing state ins
   assert.equal(node.model_receipts[0].status, "unknown");
   assert.equal(await repository.claimWorkspaceNode(), null);
 });
+
+const completedRound = async ({ workspace = null, key = "prose", dependencies = [], pending = false } = {}) => {
+  if (!workspace) workspace = (await create()).workspace;
+  const first = await repository.claimWorkspaceNode();
+  assert.equal(first.workspace.id, workspace.id);
+  await plan(first, [{ key, dependencies, agentId: "miaoxun-butler", agentVersion: "0.2.0",
+    capability: "text.synthesize", goal: `Write ${key}`, contextRefIndexes: [] }]);
+  const author = await repository.claimWorkspaceNode();
+  const result = pending ? { ...draft(), resultKey: key } : {
+    artifact: { kind: "text_result", title: `Result ${key}`, content: `Only isolated integration prose ${key}` }, resultKey: key,
+    sourceReferences: [],
+  };
+  await finish(author, { result });
+  const coordinator = await repository.claimWorkspaceNode();
+  return finish(coordinator, { complete: async () => ({ status: pending ? "awaiting_confirmation" : "succeeded", result,
+    summary: `Delivered ${key}`, ...(pending ? { approval: approvalFor(result) } : {}) }) });
+};
+const continueRound = (workspace, overrides = {}) => ({ userId: owner, workspaceId: workspace.id,
+  revision: workspace.revision, operation: "continue", text: "Keep the existing content and refine its ending",
+  idempotencyKey: crypto.randomUUID(), mutate: async () => ({}), ...overrides });
+
+integration("owner continuation persists distinct rounds and exactly one acceptance across retries and later operations", async () => {
+  const first = await completedRound();
+  const [original] = await query("SELECT goal,context_refs,authority,usage,created_at FROM agent_workspaces WHERE id=?", [first.id]);
+  await query("UPDATE agent_workspaces SET deadline_at=clock_timestamp()-INTERVAL '1 day' WHERE id=?", [first.id]);
+  let authorized = 0, replays = 0;
+  const body = continueRound(first, { mutate: async (_connection, old) => {
+    authorized++;
+    assert.equal(old.currentRound, 1);
+    assert.equal(old.rounds[0].result.artifact.content, "Only isolated integration prose prose");
+    return {};
+  }, authorizeReplay: async () => { replays++; } });
+  const [second, duplicate] = await Promise.all([repository.mutateAgentWorkspace(body), repository.mutateAgentWorkspace(body)]);
+  assert.equal(second.id, first.id);
+  assert.equal(duplicate.currentRound, 2);
+  assert.equal(authorized, 1); assert.equal(replays, 1);
+  assert.equal(second.status, "queued"); assert.equal(second.result, null); assert.equal(second.approval, null);
+  assert.equal(second.currentRound, 2);
+  assert.equal(second.rounds[0].status, "succeeded");
+  assert.deepEqual(second.rounds[0].result, first.result);
+  assert.equal(second.rounds[0].resultNodeId, first.result.id);
+  assert.equal(second.rounds[1].baseResultNodeId, first.result.id);
+  assert.equal(second.rounds[1].instruction, body.text);
+  assert.ok(second.rounds[0].completedAt); assert.equal(second.rounds[1].completedAt, null);
+  assert.doesNotMatch(JSON.stringify(second), /Only isolated integration prose/);
+  assert.deepEqual(second.steps.filter(node => node.round === 1), first.steps);
+  assert.equal(second.steps.filter(node => node.round === 2).length, 1);
+  assert.equal(second.steps.at(-1).goal, body.text);
+  const [after] = await query("SELECT goal,context_refs,authority,usage,created_at,deadline_at>clock_timestamp() AS fresh FROM agent_workspaces WHERE id=?", [first.id]);
+  assert.deepEqual({ ...after, fresh: undefined }, { ...original, fresh: undefined }); assert.equal(after.fresh, true);
+
+  const delivered = await completedRound({ workspace: second, key: "prose-v2", dependencies: ["prose"] });
+  assert.equal(delivered.rounds[1].resultNodeId, delivered.result.id);
+  assert.deepEqual(delivered.rounds[1].result, delivered.result);
+  assert.equal(delivered.rounds[1].status, delivered.status);
+  assert.equal(delivered.rounds[1].summary, delivered.summary);
+  const third = await repository.mutateAgentWorkspace(continueRound(delivered, { text: "Add a concise opening" }));
+  assert.equal(third.currentRound, 3);
+  const replayed = await repository.mutateAgentWorkspace(body);
+  assert.equal(replayed.currentRound, 3); assert.equal(replayed.revision, third.revision);
+  assert.equal(authorized, 1); assert.equal(replays, 2);
+  assert.equal((await query("SELECT count(*)::int AS count FROM agent_workspace_continuations WHERE workspace_id=?", [first.id]))[0].count, 2);
+  assert.equal((await query("SELECT count(*)::int AS count FROM agent_workspace_nodes WHERE workspace_id=? AND status='queued'", [first.id]))[0].count, 1);
+  await assert.rejects(repository.mutateAgentWorkspace({ ...body, text: "Different request" }), error => error.details.code === "WORKSPACE_IDEMPOTENCY_CONFLICT");
+  await assert.rejects(repository.mutateAgentWorkspace({ ...body, authorizeReplay: async () => { throw Object.assign(new Error("revoked"), { code: "REVOKED" }); } }), { code: "REVOKED" });
+});
+
+integration("concurrent different continuation keys cannot open two rounds from the same revision", async () => {
+  const first = await completedRound();
+  const outcomes = await Promise.allSettled([repository.mutateAgentWorkspace(continueRound(first)), repository.mutateAgentWorkspace(continueRound(first))]);
+  assert.equal(outcomes.filter(item => item.status === "fulfilled").length, 1);
+  assert.equal(outcomes.find(item => item.status === "rejected").reason.details.code, "WORKSPACE_REVISION_CONFLICT");
+  const current = await get(first.id);
+  assert.equal(current.currentRound, 2); assert.equal(current.rounds.length, 2);
+  await assert.rejects(repository.mutateAgentWorkspace(continueRound(first, { userId: outsider })), error => error.status === 404);
+});
+
+integration("continuing a pending page invalidates its old approval while preserving the old delivery", async () => {
+  const first = await completedRound({ pending: true });
+  const next = await repository.mutateAgentWorkspace(continueRound(first));
+  assert.equal(next.rounds[0].status, "awaiting_confirmation"); assert.ok(next.rounds[0].completedAt);
+  assert.deepEqual(next.rounds[0].result, first.result);
+  assert.equal(next.approval, null); assert.equal(next.result, null);
+  assert.equal(Object.hasOwn(next.rounds[0], "approval"), false);
+  const stored = await withTransaction(connection => repository.readOwnedWorkspaceRecord(connection, { userId: owner, workspaceId: first.id }));
+  assert.deepEqual(stored.rounds[0].approval, first.approval);
+  assert.equal(stored.rounds[1].approval, null);
+  let saves = 0;
+  await assert.rejects(repository.mutateAgentWorkspace({ userId: owner, workspaceId: first.id, revision: first.revision,
+    operation: "confirm", approvalId: first.approval.id, mutate: async () => { saves++; return {}; } }), error => error.details.code === "WORKSPACE_REVISION_CONFLICT");
+  assert.equal(saves, 0);
+});
+
+integration("continuation authorization and state validation roll back every new round, receipt and queued step", async () => {
+  const first = await completedRound();
+  const body = continueRound(first);
+  await assert.rejects(repository.mutateAgentWorkspace({ ...body, mutate: async () => { throw Object.assign(new Error("revoked"), { code: "REVOKED" }); } }), { code: "REVOKED" });
+  await assert.rejects(repository.mutateAgentWorkspace({ ...body, mutate: async () => ({ result: { artifact: { kind: "text_result", title: "forged", content: "not a real delivery" } } }) }), /may not replace/);
+  assert.deepEqual(await get(first.id), first);
+  assert.equal((await query("SELECT count(*)::int AS count FROM agent_workspace_continuations WHERE workspace_id=?", [first.id]))[0].count, 0);
+  const accepted = await repository.mutateAgentWorkspace(body);
+  await assert.rejects(repository.mutateAgentWorkspace(continueRound(accepted)), error => error.details.code === "WORKSPACE_STATE_CHANGED");
+  const cancelled = await repository.mutateAgentWorkspace({ userId: owner, workspaceId: first.id, revision: accepted.revision, operation: "cancel" });
+  await assert.rejects(repository.mutateAgentWorkspace(continueRound(cancelled)), error => error.details.code === "WORKSPACE_STATE_CHANGED");
+});
+
+integration("round ownership and node membership constraints reject cross-workspace history", async () => {
+  const first = await completedRound();
+  await repository.mutateAgentWorkspace(continueRound(first));
+  const other = await create();
+  const otherNode = other.workspace.steps[0].id;
+  await assert.rejects(query("UPDATE agent_workspace_rounds SET base_result_node_id=? WHERE workspace_id=? AND round_number=2", [otherNode, first.id]), error => error.code === "23503");
+  await assert.rejects(query("UPDATE agent_workspace_nodes SET round_number=99 WHERE id=?", [first.result.id]), error => error.code === "23503");
+  await assert.rejects(query("UPDATE agent_workspace_rounds SET user_id=? WHERE workspace_id=? AND round_number=2", [outsider, first.id]), error => error.code === "23503");
+});
+
+integration("confirmed page approval remains private audit history after a later revision starts", async () => {
+  const pending = await completedRound({ pending: true });
+  const saved = await repository.mutateAgentWorkspace({ userId: owner, workspaceId: pending.id,
+    revision: pending.revision, operation: "confirm", approvalId: pending.approval.id, mutate: async () => ({}) });
+  assert.equal(saved.approval, null);
+  assert.equal(Object.hasOwn(saved.rounds[0], "approval"), false);
+  const continued = await repository.mutateAgentWorkspace(continueRound(saved));
+  assert.equal(continued.approval, null);
+  const record = await withTransaction(connection => repository.readOwnedWorkspaceRecord(connection, { userId: owner, workspaceId: pending.id }));
+  assert.deepEqual(record.rounds[0].approval, pending.approval);
+  assert.equal(record.rounds[1].approval, null);
+});

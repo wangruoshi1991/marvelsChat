@@ -1,10 +1,12 @@
 # 相册对话检索
 
-更新：2026-10-15。以下产品/API说明对应当前工作区；正式部署、模型配置及设备验收见[当前交接](../handoffs/CURRENT.md)。带日期的证据仅说明当时结果。
+更新：2026-10-20。以下产品/API说明对应本地工作区；正式部署、模型配置及设备验收见[当前交接](../handoffs/CURRENT.md)。带日期的证据仅说明当时结果。
 
 ## 产品行为
 
-正式入口是相册管理 Agent 的会话。用户描述画面，或继续补充“只要视频”“换成全部相册”等条件；模型决定何时列相册和调用检索工具，结果卡片直接显示在会话中。RN 已移除个人相册的独立“找素材”页面及规则整理工作台，旧检索线程保留在数据库但不再出现在主聊天列表。
+正式入口是相册管理 Agent 的会话。专业分派先区分普通咨询、需要澄清的需求和可执行选材；咨询与澄清只保存回复，不创建任务。需求明确后，服务端以当前用户的原消息及已补充要求建立固定由相册 Agent 执行的 direct workspace。用户可从会话中的“查看任务”进入详情，也可在妙页查看进展和真实素材结果。执行阶段由模型决定如何列相册及调用检索工具，不能用分派回复表示已经找到素材。RN 已移除个人相册的独立“找素材”页面及规则整理工作台，旧检索线程保留在数据库但不再出现在主聊天列表。
+
+澄清期间可补充“只要视频”“换成全部相册”等条件；完成后的相册选材目前不支持基于已有成果续作。需要修改选材时，返回原会话准备一条新需求并明确提交；不会静默接入其他能力或重复执行旧任务。没有找到匹配素材时，workspace 明确失败并返回 `WORKSPACE_MEDIA_NOT_FOUND`，不会生成成功的空素材成果。
 
 首次添加相册管理 Agent 时，统一说明已上传图片、视频代表帧和查询描述的云端 AI 处理，再由用户同意。已有 `media-retrieval-consent-v1` 同意直接复用，搜索不重复确认。手机系统相册访问与云端 AI 处理是不同数据流；系统相册权限不会自动上传本机照片。移除 Agent 会撤回并清理派生索引，原素材保留。
 
@@ -21,10 +23,10 @@
 - `list_albums` 只查询服务端会话 owner，最多 50 项；指定相册搜索必须使用本轮列表返回的 ID。
 - `search_media` 调用现有检索服务：解析视觉描述、owner 范围 pgvector 召回、验证候选重排、按素材合并视频帧。不按前端固定关键词查询。
 - 检索查询角色解析复用管家的 `NEW_API_*` 对话模型；图片描述、视觉/文本 embedding 和真实画面判定使用独立的百炼多模态配置。不能把视觉索引模型说成对话模型。一次任务中的检索调用沿用稳定幂等键，按真实工具结果交付；执行时限、权限、租约和未知调用结果仍是停止边界，不以固定三轮模型请求判断完成。
-- 工具每次执行重新校验 Agent 权限；模型不能传 owner、SQL 或任意业务字段。会话历史使用最近10条有权读取且未撤回的真实消息，当前输入另行传入；工具文本视为数据而非指令。
-- 对话工具仅返回本次执行的 `matchedQuery`、匹配状态、素材引用、类型和视频时间，不把不完整的展示摘要交给对话模型重新判定画面。App 卡片仍从鉴权结果接口读取摘要；历史助手回复不是当前素材事实，以本次检索结论为准。
+- 工具每次执行重新校验 Agent 权限；模型不能传 owner、SQL 或任意业务字段。专业分派按权限使用同一会话最近10条有权读取且未撤回的真实消息，当前输入及澄清链另行传入，不自动附加整站资料。选材执行使用任务中固定的真实需求和所选相册范围；工具文本视为数据而非指令。
+- 对话工具仅返回本次执行的 `matchedQuery`、匹配状态、素材引用、类型和视频时间，不把不完整的展示摘要交给对话模型重新判定画面。新任务的素材从 workspace 鉴权接口读取；历史助手回复不是当前素材事实，以本次检索结论为准。
 - 素材主体只有 `station_media_assets` 与 OSS 原文件。相册移动只更新关系，检索段是可删除的派生索引。聊天 metadata 只存运行引用和结果状态，不复制原文件或检索结果描述。
-- 结果读取重新检查 owner、消息撤回、Agent scope、云端同意、当前索引 epoch 和素材存活；原文件内容版本晚于搜索完成时间的素材从旧结果中移除，保留原排名。图片与视频预览使用鉴权文件接口，视频加载后 seek 到匹配时间。换账号、换消息或卸载组件会使旧读取和预览失效。
+- 新 workspace 成果读取重新检查 owner、原会话及需求消息、固定 Agent 版本与完整 scope、云端同意、当前索引 epoch、检索来源和素材版本；来源变化时明确拒绝，不发布过期成果。旧消息结果接口仍按原合同移除原文件版本晚于搜索完成时间的素材并保留排名。图片与视频预览使用鉴权文件接口，视频加载后 seek 到匹配时间。换账号、换消息或卸载组件会使旧读取和预览失效。
 - 同一素材版本、重复上传完成通知、并发通知复用已有任务/ready 索引；文件内容改变失效旧索引。不同资产 ID 的相同字节文件尚未实现哈希合并，不能称为全库重复文件去重。
 
 当前查询 schema v3 只分类原文片段，拼接必须完整还原输入，不接受旧 schema、改写、空解析或低置信度；身份只作 owner 数据中的完整值精确约束。视觉路径不使用固定词表、关键词 SQL 或本地词汇排序。召回后对最多 20 个候选逐张读取当前原图片或精确视频帧，每次只让模型看一张图，且全部视觉条件都须明确支持才返回。每张画面单独预留费用和核验权限；后续判定失败会阻断整个查询，不能返回部分成功。仅在请求内存中规范化原画面，不持久化第二份素材。
@@ -37,9 +39,13 @@
 
 同意记录、索引任务、Agent access 与聊天线程在同一数据库事务中保存；任一步失败全部回滚。按用户行加锁串行化并发添加/移除，避免创建重复线程。移除的索引清理请求与停用 Agent 也在同一事务中保存；实际异步清理保持原有状态机。已有云端同意直接复用。工具还必须取得已启用Agent的完整当前声明权限，不能只凭profile或单个 `album:read` 执行会话检索。
 
-发送消息使用 `POST /api/threads/:threadId/messages`、`X-Miaoxun-AI-Contract: 1` 和稳定 `clientMessageId`。首次提交返回202及持久任务，AI Worker执行检索并保存回复；客户端从 `GET /api/tasks/:taskId` 读取进展。相同消息ID重放返回200和原任务，已完成时带原回复，不再使用同步201合同。检索幂等键由服务端生成 `album-chat:<inputMessageId>:search`；请求超时不能证明任务失败，也不能自动新建付费操作。
+本地新专业消息使用 `POST /api/threads/:threadId/messages`，必须携带 `X-Miaoxun-AI-Contract: 1`、`X-Miaoxun-Agent-Workspace: 5` 和稳定 `clientMessageId`。首次完成分派返回201及已保存的消息；公开回复 metadata 的 `agentDispatch` 为 `{version: 1, kind: "reply" | "clarify" | "workspace"}`。`reply` 与 `clarify` 不创建任务；只有 `workspace` 同时返回 `agentWorkspace: {id}`。201表示分派已完成，不代表素材检索已成功。
 
-新增 `GET /api/threads/:threadId/messages/:messageId/media-results`，返回 `{data: MediaRetrievalSearchResult[]}`。不接受客户端提交的运行引用；结果来自持久化的 Agent 消息 metadata。
+新选材任务通过 `GET /api/agent-workspaces/:workspaceId` 轮询，`executionMode` 为 `direct`，`origin` 固定原会话、输入消息、相册 Agent、版本与 `media.select` 能力。成功成果为带素材版本、匹配视频时间和真实检索来源的 `media_selection`；逐项使用 `GET /api/agent-workspaces/:workspaceId/media/:assetId` 鉴权读取。两个接口同样要求 AI 1 和 workspace 5。空检索只接受 `status: "failed"`、`error.code: "WORKSPACE_MEDIA_NOT_FOUND"` 且 `result: null`；其他失败或不确定调用不能当成空结果。
+
+相同 `clientMessageId` 与相同内容重放返回200及原分派消息和同一 workspace 引用，不再次分派。检索操作使用服务端生成的稳定 workspace/节点标识；轮询和重放不得另发一条新需求。请求超时不能证明任务失败，也不能自动新建付费操作。
+
+切换前已接受并绑定旧 `ai_tasks` 的相册消息仍走原路径：相同 key 重放返回200、原 `task` 和已有回复，进展仍从 `GET /api/tasks/:taskId` 读取，不改建 workspace。旧回复的 `GET /api/threads/:threadId/messages/:messageId/media-results` 继续返回 `{data: MediaRetrievalSearchResult[]}`；不接受客户端提交的运行引用，结果来自持久化的 Agent 消息 metadata。该兼容路径不再接收新选材任务。
 
 状态接口仍使用现有 `backfill` 字段：`indexedAssets` 统计当前内容的可用索引，`skippedAssets` 统计当前无可用索引、
 也无当前 epoch/内容版本活动任务的素材；`totalAssets - indexedAssets - skippedAssets` 为真正排队或处理中的素材。
@@ -47,18 +53,18 @@
 会话工具将这些计数投影为 `accountIndexCoverage`（`indexedAssets`、`pendingAssets`、`unavailableAssets`、`totalAssets`），
 始终表示整个账号；`searchScope` 独立说明本次是指定相册（`kind: "album"`、`albumId`）还是全部账号素材（`kind: "account"`）。
 回复只用 `results.length` 说明本次返回的匹配数量，不能把账号覆盖计数或返回条数当作所选相册总数，不能把账号其他相册的排队/失败状态归到所选相册。
-该内部工具结果不改变 App 的公开搜索响应或检索权限，不新增迁移。公开消息只保留命中提示，不暴露内部检索运行ID；空结果从鉴权结果接口验证，不能依赖被移除的后台 metadata。
+这些内部工具计数不授予检索权限。旧公开消息只保留命中提示，旧空结果从其鉴权结果接口验证；新公开消息保留分派类型及 workspace 引用，实际结果和明确失败状态从 workspace 读取，不能依赖内部消息 metadata 推断执行成功。
 
 ## 当前验证入口
 
-- 无付费合同检查：`node --test backend/test/album-assistant-e2e.test.js backend/test/album-assistant-tools.test.js backend/test/album-assistant-result-access.test.js backend/test/album-assistant-access-service.test.js`。共享验收客户端只接受202任务，覆盖原任务轮询、成功后同键读取、失败/中断/超时停止、错误任务或成果拒绝；不会调用模型或启动CLI。
-- 在已迁移的隔离PostgreSQL测试库，设置 `RUN_AI_TASK_INTEGRATION=1` 执行 `backend/test/ai-task-integration.test.js`，验证真实HTTP、任务持久化、Worker执行、断线后结果、授权撤回、消息重放与账号隔离。这里的模型由夹具替代，不证明供应商或真实视觉质量。
+- 无付费合同检查：`MIAOXUN_DOTENV_ENABLED=false NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test backend/test/album-assistant-e2e.test.js backend/test/ai-client-contract.test.js backend/test/album-assistant-eval.test.js`。共享验收客户端覆盖 AI 1/workspace 5、201分派、原 workspace 轮询、真实成果后同键重放、明确空检索失败、其他失败/中断/超时停止、错误来源与成果拒绝；不会调用模型或启动CLI。原工具、授权与旧结果读取边界仍分别由 `album-assistant-tools.test.js`、`album-assistant-access-service.test.js` 和 `album-assistant-result-access.test.js` 覆盖。
+- 在迁移至042的隔离 loopback `*_migration_test` PostgreSQL 测试库，分别设置 `RUN_SPECIALIST_MESSAGE_INTEGRATION=1` 执行 `backend/test/specialist-message-integration.test.js`，以及 `RUN_AGENT_WORKSPACE_DIRECT_INTEGRATION=1` 执行 `backend/test/agent-workspace-direct-integration.test.js`，串行验证新专业分派、任务持久化、执行、来源与授权复验、重放及账号隔离。旧已接受相册任务由 `RUN_AI_TASK_INTEGRATION=1` 下的 `backend/test/ai-task-integration.test.js` 继续覆盖。这里的模型由夹具替代，不证明供应商或真实视觉质量。
 - `backend/scripts/album-assistant-eval.js --allow-paid`：真实对话模型、合成工具响应的路由评测；JSONL含中英文、指定相册、多轮、模糊、未上传本机素材、越权与SQL注入。不能当作真实召回质量评测。
-- `backend/scripts/album-assistant-e2e.js --base http://127.0.0.1:<QA端口> --bicycle <公开图片> --car <公开图片> --allow-paid`：对已启动的隔离API执行真实OSS上传、独立媒体Worker索引和AI Worker异步会话。权限读取服务端Agent目录并完整提交；图片、视频时间点、多轮、同键重放、跨账号、鉴权预览和空结果均使用当前公开接口。成功后保留QA素材供设备验收，凭据仅存0600临时session；`--cleanup <session.json>`撤回并注销账号、清理对象。这是唯一覆盖真实上传及两个独立Worker的此类入口，不能用纯模型评测替代。
-- `backend/scripts/media-retrieval-service-e2e.js --allow-paid --fixtures <公开素材目录> --report <新报告路径>`：对loopback上以 `_migration_test` 结尾的空测试库，运行真实图片/视频模型和检索服务；包含完整授权、异步任务HTTP及进程内AI任务执行器。它共享上述202任务轮询实现；storage使用公开本地文件适配器，readiness使用注入的service gate，不证明真实OSS、独立Worker或生产readiness。素材目录须含固定SHA的 `fresh-dog.jpg`、`fresh-camera.jpg` 和CC0 `public-flower.mp4`，派发前核对；报告拒绝覆盖，结束清理测试用户及关联运行。
+- `backend/scripts/album-assistant-e2e.js --base http://127.0.0.1:<QA端口> --bicycle <公开图片> --car <公开图片> --allow-paid`：对已启动的隔离API执行真实OSS上传、独立媒体Worker索引和AI Worker中的 workspace 执行。权限读取服务端Agent目录并完整提交；先核对201专业分派及 direct 来源，再轮询任务并从 workspace 素材接口读取图片和视频。覆盖新选材、视频匹配时间、同键重放、跨账号、鉴权预览及明确空检索失败。成功后保留QA素材供设备验收，凭据仅存0600临时session；`--cleanup <session.json>`撤回并注销账号、清理对象。这是唯一覆盖真实上传及两个独立Worker的此类入口，不能用纯模型评测替代。
+- `backend/scripts/media-retrieval-service-e2e.js --allow-paid --fixtures <公开素材目录> --report <新报告路径>`：对loopback上以 `_migration_test` 结尾的空测试库，运行真实图片/视频模型和检索服务；包含完整授权、专业消息HTTP、workspace 路由及进程内 workspace 执行器。它共享上述201分派和 direct 任务轮询实现，并将原检索服务注入能力执行器；storage使用公开本地文件适配器，readiness使用注入的service gate，不证明真实OSS、独立Worker或生产readiness。素材目录须含固定SHA的 `fresh-dog.jpg`、`fresh-camera.jpg` 和CC0 `public-flower.mp4`，派发前核对；报告拒绝覆盖，结束清理测试用户及关联运行。
 - `backend/scripts/album-assistant-query-plan.js`：仅针对loopback、以 `_migration_test` 结尾的隔离库，在回滚事务中验证owner范围及查询计划；无OSS/模型调用，不能证明大库质量或并发性能。
 
-两项真实供应商脚本均不自动重放未知调用，任务失败、取消、中断或等待超时即失败。本轮只修正了旧接口并运行无付费合同检查，尚未重新执行OSS/Worker/真实模型全链；下方旧成功记录不代表新脚本已经通过云端验收。
+两项真实供应商脚本均不自动重放未知调用；除负例明确期待的 `WORKSPACE_MEDIA_NOT_FOUND` 外，任务失败、取消、中断或等待超时即停止验收。2026-10-20 本轮仅修正脚本合同并完成离线检查：共享 helper、API 合同和工具评测夹具共29项通过，另有原相册工具10项回归及脚本语法检查通过，没有调用付费模型、生产服务或重新执行OSS/Worker真实全链。下方旧成功记录不构成本轮新专业任务流程的付费或云端验收证据。
 
 ## 迁移035及当时发布约束（历史）
 

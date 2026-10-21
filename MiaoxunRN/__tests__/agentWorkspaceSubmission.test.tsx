@@ -55,7 +55,7 @@ beforeEach(() => {
   store.read.mockResolvedValue(savedAttempt);
   store.save.mockResolvedValue();
   store.clear.mockResolvedValue();
-  setAIContractSession('token', { aiTasks: 1, agentWorkspaces: 3 });
+  setAIContractSession('token', { aiTasks: 1, agentWorkspaces: 6 });
   jest
     .spyOn(AppState, 'addEventListener')
     .mockImplementation((_event, listener) => {

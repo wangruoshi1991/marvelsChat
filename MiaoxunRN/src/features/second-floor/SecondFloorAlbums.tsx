@@ -16,13 +16,11 @@ export function SecondFloorAlbums({
   palette,
   language,
   session,
-  onBack,
   onBusyChange,
 }: {
   palette: Palette;
   language: Language;
   session: ReturnType<typeof useMiaoxunSession>;
-  onBack: () => void;
   onBusyChange?: (busy: boolean) => void;
 }) {
   const colors = workspacePalette(palette);
@@ -188,7 +186,6 @@ export function SecondFloorAlbums({
           token={session.token}
           albums={session.stationContent.albums}
           mediaAssets={session.stationContent.mediaAssets}
-          onBack={onBack}
           onCreate={() => {
             createdAlbum.current = null;
             setMessage('');

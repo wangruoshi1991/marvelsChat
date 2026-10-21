@@ -3,7 +3,10 @@ import { Text, TextInput } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { AIRequestComposer } from '../src/features/ai/AIRequestComposer';
 import { persistentAssistReference } from '../src/features/ai/assistContext';
-import { buildAssistMessage } from '../src/features/assist/assistRequest';
+import {
+  assistContextSummary,
+  buildAssistMessage,
+} from '../src/features/assist/assistRequest';
 import { AIAssistObjectReference } from '../src/features/assist/aiAssistTypes';
 import { WorkspaceButton } from '../src/shared/workspaceUi';
 import { palettes } from '../src/shared/theme';
@@ -53,7 +56,8 @@ test('workspace context includes only persisted participants and is independent 
     { agentId: 'miaoxun-butler', name: '妙管家' },
     { agentId: 'retired-agent', name: 'retired-agent' },
   ]);
-  const content = buildAssistMessage('分析', object.scene, object, 'zh');
+  expect(buildAssistMessage('分析', object.scene, object, 'zh')).toBe('分析');
+  const content = assistContextSummary(object.scene, object, 'zh');
   expect(content).toContain('选中时协作中');
   expect(content).toContain('参与者：妙管家、其他参与者');
   expect(content).not.toMatch(
@@ -65,7 +69,7 @@ test('workspace context includes only persisted participants and is independent 
   expect(persistentAssistReference(object)).toBeNull();
 });
 
-test('a large workspace snapshot blocks submission instead of silently dropping the goal or participants', () => {
+test('a workspace keeps its full display summary without copying that snapshot into the discussion body', () => {
   const goal = '旅'.repeat(1990);
   const object = workspaceAssistContext(agentWorkspace({ goal }), [], 'zh');
   const message = buildAssistMessage(
@@ -90,14 +94,22 @@ test('a large workspace snapshot blocks submission instead of silently dropping 
       />,
     );
   });
-  expect(message.length).toBeGreaterThan(2000);
-  expect(message).toContain(goal);
-  expect(message).toContain('参与者：');
+  expect(message).toBe('分析这个协作任务');
+  expect(
+    renderer.root
+      .findAllByType(Text)
+      .map(node => node.props.children)
+      .flat()
+      .join(' '),
+  ).toContain(goal);
+  expect(assistContextSummary(object.scene, object, 'zh')).toContain(
+    '参与者：',
+  );
   expect(
     renderer.root
       .findAllByType(WorkspaceButton)
       .find(node => node.props.label === '交给妙管家')!.props.disabled,
-  ).toBe(true);
+  ).toBe(false);
   expect(onContinue).not.toHaveBeenCalled();
   act(() => renderer.unmount());
 });
@@ -132,7 +144,7 @@ test('task cards reference only the actual input message, never an unsupported t
   expect(persistentAssistReference(object)).toBeNull();
 });
 
-test('restarted goals retain oversized followups for editing and cannot be sent until shortened', () => {
+test('restarted goals retain oversized followups for editing and cannot be sent until shortened', async () => {
   const draft =
     '原始目标'.repeat(400) + '\n已补充要求\n' + '补充说明'.repeat(200);
   const onContinue = jest.fn(() => true);
@@ -163,7 +175,7 @@ test('restarted goals retain oversized followups for editing and cannot be sent 
   expect(onContinue).not.toHaveBeenCalled();
   act(() => renderer.update(render('保留全部要点后的精简目标')));
   expect(submit().props.disabled).toBe(false);
-  act(() => submit().props.onPress());
+  await act(async () => submit().props.onPress());
   expect(onContinue).toHaveBeenCalledWith(
     expect.stringContaining('保留全部要点后的精简目标'),
   );

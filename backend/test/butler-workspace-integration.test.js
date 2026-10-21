@@ -82,7 +82,7 @@ after(async () => {
   await closeDatabase();
 });
 
-const request = async (path, body, authToken = token, workspaceContract = "3") => {
+const request = async (path, body, authToken = token, workspaceContract = "6") => {
   const response = await fetch(`${origin}${path}`, { method: body === undefined ? "GET" : "POST", headers: {
     Authorization: `Bearer ${authToken}`, "Content-Type": "application/json", "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Site-Document": "2",
     ...(workspaceContract === null ? {} : { "X-Miaoxun-Agent-Workspace": workspaceContract }),

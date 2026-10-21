@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, View } from 'react-native';
+import { Modal, View, StyleSheet } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import { AIAssistProvider } from '../src/features/assist/AIAssistProvider';
@@ -28,12 +28,22 @@ jest.mock('../src/features/station/StationHeader', () => {
   const ReactModule = require('react');
   const { View: NativeView } = require('react-native');
   return {
+    STATION_COLLAPSE_SCROLL_DISTANCE: 72,
+    STATION_EXPAND_SCROLL_DISTANCE: 16,
     // The real card renders the 3D stage inside its avatar cell; keep that
     // relationship so these lifecycle assertions stay meaningful.
-    StationProfileHeader: ({ stage }: { stage?: unknown }) =>
+    StationProfileHeader: ({
+      collapsed,
+      collapseProgress,
+      stage,
+    }: {
+      collapsed?: boolean;
+      collapseProgress?: { __getValue: () => number };
+      stage?: unknown;
+    }) =>
       ReactModule.createElement(
         NativeView,
-        { testID: 'station-profile' },
+        { collapsed, collapseProgress, testID: 'station-profile' },
         stage as never,
       ),
     StationTabs: () =>
@@ -157,6 +167,34 @@ function stationScreen(tab: StationTab, active = true) {
   );
 }
 
+function responderEvent(
+  previousX: number,
+  previousY: number,
+  currentX: number,
+  currentY: number,
+  timeStamp: number,
+) {
+  const touch = {
+    touchActive: true,
+    currentTimeStamp: timeStamp,
+    previousPageX: previousX,
+    previousPageY: previousY,
+    currentPageX: currentX,
+    currentPageY: currentY,
+  };
+  return {
+    nativeEvent: {
+      touches: [{ pageX: currentX, pageY: currentY }],
+    },
+    touchHistory: {
+      numberActiveTouches: 1,
+      indexOfSingleActiveTouch: 0,
+      mostRecentTimeStamp: timeStamp,
+      touchBank: [touch],
+    },
+  };
+}
+
 describe('Station tab lifecycle', () => {
   let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
   beforeEach(() => {
@@ -240,6 +278,106 @@ describe('Station tab lifecycle', () => {
     expect(
       renderer!.root.findAllByProps({ testID: 'station-panel-agents' }),
     ).toHaveLength(0);
+  });
+
+  it('keeps the profile card scroll-collapsible when the panel is empty', async () => {
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(stationScreen('posts'));
+    });
+
+    const scroll = renderer!.root.findByProps({
+      testID: 'station-panel-scroll-posts',
+    });
+    const card = () =>
+      renderer!.root.findByProps({ testID: 'station-profile' });
+    const header = renderer!.root.findByProps({ testID: 'station-top-header' });
+    // The resizable profile and switch must stay outside the list's clipped
+    // viewport; a native sticky wrapper can expose rows above the switch.
+    expect(scroll.findAllByProps({ testID: 'station-profile' })).toHaveLength(
+      0,
+    );
+    expect(scroll.findAllByProps({ testID: 'station-tabs' })).toHaveLength(0);
+    expect(header.findByProps({ testID: 'station-profile' })).toBeTruthy();
+    expect(header.findByProps({ testID: 'station-tabs' })).toBeTruthy();
+    expect(scroll.props.stickyHeaderIndices).toBeUndefined();
+    expect(StyleSheet.flatten(scroll.props.style).overflow).toBe('hidden');
+    ReactTestRenderer.act(() => {
+      scroll.props.onLayout({ nativeEvent: { layout: { height: 500 } } });
+    });
+    expect(
+      StyleSheet.flatten(scroll.props.contentContainerStyle).minHeight,
+    ).toBe(572);
+
+    await ReactTestRenderer.act(async () => {
+      scroll.props.onScroll({ nativeEvent: { contentOffset: { y: 36 } } });
+    });
+    expect(card().props.collapseProgress.__getValue()).toBeCloseTo(0.5);
+    expect(card().props.collapsed).toBe(false);
+
+    await ReactTestRenderer.act(async () => {
+      scroll.props.onScroll({ nativeEvent: { contentOffset: { y: 72 } } });
+    });
+    expect(card().props.collapseProgress.__getValue()).toBe(1);
+    expect(card().props.collapsed).toBe(true);
+
+    ReactTestRenderer.act(() => {
+      scroll.props.onLayout({ nativeEvent: { layout: { height: 700 } } });
+    });
+    // Even as the header shrinks, an empty panel keeps exactly the same
+    // gesture allowance instead of adding another screen of blank content.
+    expect(
+      StyleSheet.flatten(scroll.props.contentContainerStyle).minHeight,
+    ).toBe(772);
+
+    await ReactTestRenderer.act(async () => {
+      scroll.props.onScroll({ nativeEvent: { contentOffset: { y: 8 } } });
+    });
+    expect(card().props.collapseProgress.__getValue()).toBeCloseTo(8 / 72);
+    expect(card().props.collapsed).toBe(false);
+  });
+
+  it('drives the empty-panel collapse from vertical gestures that start in the fixed header', async () => {
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(stationScreen('posts'));
+    });
+
+    const header = renderer!.root.findByProps({ testID: 'station-top-header' });
+    const scroll = renderer!.root.findByProps({
+      testID: 'station-panel-scroll-posts',
+    });
+    const card = () =>
+      renderer!.root.findByProps({ testID: 'station-profile' });
+
+    ReactTestRenderer.act(() => {
+      scroll.props.onLayout({ nativeEvent: { layout: { height: 500 } } });
+      scroll.props.onContentSizeChange(320, 572);
+    });
+
+    const firstTouch = responderEvent(0, 0, 0, 0, 1);
+    const horizontalMove = responderEvent(0, 0, 24, -4, 2);
+    header.props.onStartShouldSetResponderCapture(firstTouch);
+    header.props.onMoveShouldSetResponderCapture(horizontalMove);
+    expect(header.props.onMoveShouldSetResponder(horizontalMove)).toBe(false);
+
+    header.props.onResponderRelease(horizontalMove);
+    const secondTouch = responderEvent(24, -4, 24, -4, 3);
+    const verticalMove = responderEvent(24, -4, 24, -24, 4);
+    header.props.onStartShouldSetResponderCapture(secondTouch);
+    header.props.onMoveShouldSetResponderCapture(verticalMove);
+    expect(header.props.onMoveShouldSetResponder(verticalMove)).toBe(true);
+
+    await ReactTestRenderer.act(async () => {
+      header.props.onResponderGrant(verticalMove);
+      header.props.onResponderMove(responderEvent(24, -24, 24, -60, 5));
+    });
+    expect(card().props.collapseProgress.__getValue()).toBeCloseTo(0.5);
+    expect(card().props.collapsed).toBe(false);
+
+    await ReactTestRenderer.act(async () => {
+      header.props.onResponderMove(responderEvent(24, -60, 24, -36, 6));
+    });
+    expect(card().props.collapseProgress.__getValue()).toBeCloseTo(12 / 72);
+    expect(card().props.collapsed).toBe(false);
   });
 
   it('opens the 3D agent conversation without creating a content page', async () => {

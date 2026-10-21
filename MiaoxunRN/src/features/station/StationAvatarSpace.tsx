@@ -15,7 +15,6 @@ import {
   Share,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -72,12 +71,19 @@ export function StationAvatarSpace({
   onOpenOotd?: () => void;
 }) {
   const [viewerError, setViewerError] = useState('');
-  const { height: windowHeight } = useWindowDimensions();
   const { askButler } = useAIAssist();
   const [viewerRevision, setViewerRevision] = useState(0);
   const assistGestureRef = useRef<AIAssistGestureHandle>(null);
   const colors = resolveStationColors(palette);
-  const stageBackgroundColor = colors.isLight ? '#F7F8FC' : colors.soft;
+  // The standalone stage owns its pale plate. In the profile card the stage
+  // already sits inside `.stationIdentityStage`; keeping another plate here
+  // made the empty state read as a nested card and left a visible rectangle
+  // around the 3D area. Let the profile stage show through when embedded.
+  const stageBackgroundColor = embedded
+    ? 'transparent'
+    : colors.isLight
+    ? '#F7F8FC'
+    : colors.soft;
   const latestModel = useMemo(
     () =>
       avatar3d?.models.find(
@@ -109,6 +115,31 @@ export function StationAvatarSpace({
   const canOpenGenerator =
     avatar3dStatus === 'ready' &&
     (Boolean(avatar3d?.models.length) || !creationUnavailableReason);
+  // An empty stage needs a visible, keyboard- and screen-reader-accessible
+  // entry point. Long-press actions remain useful for an existing model, but
+  // they are not discoverable enough for a first-time user. Keep the action
+  // out of unavailable/error/loading states so those states stay truthful.
+  const showCreateAction =
+    !latestModel &&
+    !viewerError &&
+    !activeJob &&
+    !creationUnavailableReason &&
+    avatar3dStatus === 'ready';
+  const emptyBody =
+    viewerError ||
+    avatar3dError ||
+    (activeJob
+      ? activeJobStageCopy(language, activeJob.status).body
+      : avatar3dStatus !== 'loading'
+      ? creationUnavailableReason ||
+        (embedded && avatar3dStatus === 'ready'
+          ? textFor(
+              language,
+              '创建后在此查看模型。',
+              'Create an avatar to preview it here.',
+            )
+          : emptyStateBody(language, avatar3dStatus))
+      : '');
   const assistObject = useMemo(
     () => ({
       kind: 'avatar-3d' as const,
@@ -242,10 +273,8 @@ export function StationAvatarSpace({
     >
       <View
         style={[
-          styles.avatarStage,
-          embedded
-            ? { height: Math.min(Math.round(windowHeight * 0.25), 220) }
-            : styles.avatarStageStation,
+          embedded ? localStyles.embeddedStage : styles.avatarStage,
+          !embedded && styles.avatarStageStation,
           { backgroundColor: stageBackgroundColor },
         ]}
         testID="avatar3d-stage"
@@ -280,7 +309,10 @@ export function StationAvatarSpace({
             />
           ) : (
             <View
-              style={styles.avatar3dEmptyState}
+              style={[
+                styles.avatar3dEmptyState,
+                embedded && localStyles.embeddedEmptyState,
+              ]}
               testID="avatar3d-empty-state"
             >
               {preparingModelId ? (
@@ -320,14 +352,32 @@ export function StationAvatarSpace({
                 style={[
                   styles.avatar3dEmptyBody,
                   { color: colors.secondaryText },
+                  embedded && localStyles.embeddedEmptyStateBody,
                 ]}
               >
-                {viewerError ||
-                  avatar3dError ||
-                  (activeJob
-                    ? activeJobStageCopy(language, activeJob.status).body
-                    : emptyStateBody(language, avatar3dStatus))}
+                {emptyBody}
               </Text>
+              {showCreateAction ? (
+                <Pressable
+                  accessibilityLabel={textFor(
+                    language,
+                    '创建3D形象',
+                    'Create 3D avatar',
+                  )}
+                  accessibilityRole="button"
+                  onPress={onOpenGenerator}
+                  style={({ pressed }) => [
+                    localStyles.createButton,
+                    { backgroundColor: colors.accent },
+                    pressed && localStyles.createButtonPressed,
+                  ]}
+                  testID="avatar3d-create-empty"
+                >
+                  <Text style={localStyles.createButtonText}>
+                    {textFor(language, '创建3D形象', 'Create 3D avatar')}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
           )}
         </AIAssistGestureSurface>
@@ -398,11 +448,25 @@ export function StationAvatarSpace({
 
 const localStyles = StyleSheet.create({
   availabilityText: { fontSize: 12, marginTop: 8 },
+  embeddedStage: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  embeddedEmptyState: {
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  embeddedEmptyStateBody: { fontSize: 10, lineHeight: 14 },
   embeddedSpace: {
+    backgroundColor: 'transparent',
     borderWidth: 0,
     borderRadius: 0,
-    flex: 1,
     overflow: 'hidden',
+    flex: 1,
     shadowOpacity: 0,
   },
   embeddedActions: {
@@ -412,6 +476,15 @@ const localStyles = StyleSheet.create({
     paddingVertical: 8,
   },
   assistSurface: { flex: 1, width: '100%' },
+  createButton: {
+    borderRadius: 999,
+    marginTop: 4,
+    minHeight: 34,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  createButtonPressed: { opacity: 0.78, transform: [{ scale: 0.97 }] },
+  createButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
   preparingPreview: {
     bottom: 0,
     height: '100%',

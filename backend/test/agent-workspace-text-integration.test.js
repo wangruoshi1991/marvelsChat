@@ -54,7 +54,7 @@ const next = async () => {
 };
 const request = async (path, body, authToken = token) => {
   const response = await fetch(`${origin}${path}`, { method: body === undefined ? "GET" : "POST",
-    headers: { Authorization: `Bearer ${authToken}`, "Content-Type": "application/json", "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": "3", "X-Miaoxun-Site-Document": "2" },
+    headers: { Authorization: `Bearer ${authToken}`, "Content-Type": "application/json", "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": "6", "X-Miaoxun-Site-Document": "2" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { status: response.status, ...await response.json() };
 };

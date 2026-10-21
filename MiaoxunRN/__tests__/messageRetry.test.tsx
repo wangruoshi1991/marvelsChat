@@ -13,6 +13,10 @@ import {
 import { workspaceAssistContext } from '../src/features/assist/workspaceAssistContext';
 import { buildAssistMessage } from '../src/features/assist/assistRequest';
 import { agentWorkspace } from '../__fixtures__/agentWorkspace';
+import {
+  workspaceDiscussionContext,
+  workspaceContextSelector,
+} from '../src/models/workspaceContext';
 
 jest.mock('../src/services/apiClient', () => ({
   apiClient: { sendMessage: jest.fn() },
@@ -99,9 +103,13 @@ test('a failed quoted message retries with its original idempotency key and repl
   expect(failed.metadata?.replyTo).toEqual({ messageId: 'quoted-1' });
 
   await ReactTestRenderer.act(async () => {
-    await actions.sendMessage('thread-1', 'hello', failed.id, 'quoted-1', [
-      { kind: 'station-album', id: 'changed-selection' },
-    ]);
+    await actions.sendMessage(
+      'thread-1',
+      'hello',
+      failed.id,
+      'different-quote',
+      [{ kind: 'station-album', id: 'changed-selection' }],
+    );
   });
   expect(sendMessage).toHaveBeenCalledTimes(2);
   expect(sendMessage.mock.calls[0][5]).toBe(failed.clientMessageId);
@@ -115,6 +123,28 @@ test('a failed quoted message retries with its original idempotency key and repl
     'server-1',
   ]);
   await ReactTestRenderer.act(async () => renderer!.unmount());
+});
+
+test('a missing original failed message never falls back to a new execution key', async () => {
+  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  sendMessage.mockReset();
+  const onError = jest.fn();
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <Harness agentId="site-builder" onError={onError} />,
+    );
+  });
+  await ReactTestRenderer.act(async () => {
+    expect(
+      await actions.sendMessage('thread-1', '旧请求', 'missing-failed-message'),
+    ).toBe(false);
+  });
+  expect(sendMessage).not.toHaveBeenCalled();
+  expect(onError).toHaveBeenCalledWith(
+    expect.stringContaining('原失败消息已不可重试'),
+  );
+  await ReactTestRenderer.act(async () => renderer.unmount());
 });
 
 test('an album request against an unverified server is blocked before sending and keeps an explicit failed input', async () => {
@@ -158,8 +188,91 @@ test('a task recovered after a lost response replaces its failed optimistic mess
   expect(mergeMessages([otherThread], [accepted])).toHaveLength(2);
 });
 
+test.each([
+  'album-manager',
+  'site-builder',
+  'file-preprocessor',
+  'comic-diary',
+  'video-production',
+  'virtual-character',
+  'model-3d',
+])(
+  'professional %s requires contract 5 before even an ordinary send',
+  async agentId => {
+    setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 4 });
+    sendMessage.mockReset();
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<Harness agentId={agentId} />);
+    });
+    await ReactTestRenderer.act(async () => {
+      expect(await actions.sendMessage('thread-1', '你好')).toBe(false);
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(currentThreads[0].messages[0].localStatus).toBe('failed');
+    await ReactTestRenderer.act(async () => renderer.unmount());
+  },
+);
+
+test('professional retry preserves original text, selection, reset and key without Butler private context or a workspace selector', async () => {
+  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  sendMessage.mockReset().mockRejectedValue(new Error('response lost'));
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(<Harness agentId="comic-diary" />);
+  });
+  const refs = [
+    {
+      kind: 'station-diary' as const,
+      id: 'selected-diary',
+      version: 'a'.repeat(64),
+    },
+  ];
+  await ReactTestRenderer.act(async () => {
+    await actions.sendMessage(
+      'thread-1',
+      '为这篇日记写分镜',
+      undefined,
+      null,
+      refs,
+      { currentPage: 'station.diaries' },
+      undefined,
+      undefined,
+      true,
+    );
+  });
+  const failed = currentThreads[0].messages[0];
+  expect(failed.metadata?.agentContextReset).toBe(true);
+  expect(failed.metadata?.butlerContextReset).toBeUndefined();
+  await ReactTestRenderer.act(async () => {
+    await actions.sendMessage(
+      'thread-1',
+      '不同的新正文',
+      failed.id,
+      null,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      false,
+    );
+  });
+  expect(sendMessage.mock.calls).toHaveLength(2);
+  expect(sendMessage.mock.calls[1]).toEqual(sendMessage.mock.calls[0]);
+  expect(sendMessage.mock.calls[0][1]).toBe('为这篇日记写分镜');
+  expect(sendMessage.mock.calls[0][3]).toBeNull();
+  expect(sendMessage.mock.calls[0][5]).toBe(failed.clientMessageId);
+  expect(sendMessage.mock.calls[0][7]).toEqual(refs);
+  expect(sendMessage.mock.calls[0].slice(8)).toEqual([
+    undefined,
+    undefined,
+    true,
+  ]);
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
 test('a failed assistance request retries from its captured page and discards local metadata on server success', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 3 });
+  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
   sendMessage.mockReset();
   sendMessage.mockRejectedValueOnce(new Error('response lost'));
   sendMessage.mockRejectedValueOnce(new Error('still offline'));
@@ -221,7 +334,7 @@ test('a failed assistance request retries from its captured page and discards lo
 });
 
 test('invalid assistance locations stop before sending or creating a local message', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 3 });
+  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
   sendMessage.mockReset();
   const onError = jest.fn();
   let renderer: ReactTestRenderer.ReactTestRenderer;
@@ -243,15 +356,16 @@ test('invalid assistance locations stop before sending or creating a local messa
   await ReactTestRenderer.act(async () => renderer!.unmount());
 });
 
-test('a failed workspace explanation retries its complete selected snapshot and original page without resource access', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 3 });
+test('a failed task discussion retries its original selector and key without replacing them with a new selection', async () => {
+  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
   sendMessage.mockReset();
   sendMessage.mockRejectedValue(new Error('offline'));
-  const selected = workspaceAssistContext(
-    agentWorkspace({ id: 'selected-workspace', revision: 12 }),
-    [],
-    'zh',
-  );
+  const workspace = agentWorkspace({
+    id: '45267cd7-549c-4f8f-8576-49d061cc335a',
+    revision: 12,
+  });
+  const context = workspaceDiscussionContext(workspace);
+  const selected = workspaceAssistContext(workspace, [], 'zh');
   const content = buildAssistMessage(
     '帮我理解',
     selected.scene,
@@ -263,14 +377,24 @@ test('a failed workspace explanation retries its complete selected snapshot and 
     renderer = ReactTestRenderer.create(<Harness agentId="miaoxun-butler" />);
   });
   await ReactTestRenderer.act(async () => {
-    await actions.sendMessage('thread-1', content, undefined, null, [], {
-      currentPage: 'miao.feed',
-    });
+    await actions.sendMessage(
+      'thread-1',
+      content,
+      undefined,
+      null,
+      [],
+      {
+        currentPage: 'miao.feed',
+      },
+      undefined,
+      context,
+    );
   });
   const failed = currentThreads[0].messages[0];
   expect(failed.localStatus).toBe('failed');
   expect(failed.content).toBe(content);
-  expect(failed.content).toContain(selected.title);
+  expect(failed.content).toBe('帮我理解');
+  expect(failed.metadata?.workspaceContext).toEqual(context);
   expect(failed.content).not.toMatch(
     /selected-workspace|记录版本|发起位置|所在模块/,
   );
@@ -282,6 +406,8 @@ test('a failed workspace explanation retries its complete selected snapshot and 
       null,
       [{ kind: 'station-album', id: 'must-not-add-new-reference' }],
       { currentPage: 'second-floor.albums' },
+      undefined,
+      { ...context, revision: 99, currentRound: 8 },
     );
   });
   expect(sendMessage).toHaveBeenCalledTimes(2);
@@ -290,12 +416,51 @@ test('a failed workspace explanation retries its complete selected snapshot and 
     expect(call[3].currentPage).toBe('miao.feed');
     expect(call[5]).toBe(failed.clientMessageId);
     expect(call[7]).toEqual([]);
+    expect(call[9]).toEqual(workspaceContextSelector(context));
   }
   await ReactTestRenderer.act(async () => renderer.unmount());
 });
 
+test('a task discussion cannot be sent with an explicitly supplied reset value', async () => {
+  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  sendMessage.mockReset();
+  const onError = jest.fn();
+  const context = workspaceDiscussionContext(
+    agentWorkspace({
+      id: '45267cd7-549c-4f8f-8576-49d061cc335a',
+      revision: 12,
+    }),
+  );
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <Harness agentId="miaoxun-butler" onError={onError} />,
+    );
+  });
+  await ReactTestRenderer.act(async () => {
+    expect(
+      await actions.sendMessage(
+        'thread-1',
+        '请继续讨论',
+        undefined,
+        null,
+        [],
+        undefined,
+        false,
+        context,
+      ),
+    ).toBe(false);
+  });
+  expect(sendMessage).not.toHaveBeenCalled();
+  expect(currentThreads[0].messages).toEqual([]);
+  expect(onError).toHaveBeenCalledWith(
+    expect.stringContaining('任务讨论关联无效'),
+  );
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
 test('a denied album reference retains the exact request and explicit access failure for review', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 3 });
+  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
   sendMessage.mockReset();
   sendMessage.mockRejectedValueOnce(
     new MiaoxunApiError('请先确认相册读取授权。', {
@@ -361,7 +526,7 @@ test('a denied album reference retains the exact request and explicit access fai
 });
 
 test('an explicit Butler context reset is retained by the same failed request and cannot be changed on retry', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 3 });
+  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
   sendMessage.mockReset();
   sendMessage.mockRejectedValue(new Error('response lost'));
   let renderer!: ReactTestRenderer.ReactTestRenderer;
@@ -431,8 +596,8 @@ test.each([
 
 test.each([
   { agentId: null, contracts: undefined },
-  { agentId: 'comic-diary', contracts: { aiTasks: 1 } },
-  { agentId: 'miaoxun-butler', contracts: { aiTasks: 1, agentWorkspaces: 3 } },
+  { agentId: 'comic-diary', contracts: { aiTasks: 1, agentWorkspaces: 6 } },
+  { agentId: 'miaoxun-butler', contracts: { aiTasks: 1, agentWorkspaces: 6 } },
 ])(
   'the existing contract permits a normal message for $agentId',
   async ({ agentId, contracts }) => {
@@ -465,7 +630,7 @@ test.each([
 ])(
   'Butler receives the complete request without a fabricated local action: %s',
   async content => {
-    setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 3 });
+    setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
     sendMessage.mockReset().mockResolvedValue({ messages: [] });
     let renderer!: ReactTestRenderer.ReactTestRenderer;
     await ReactTestRenderer.act(async () => {

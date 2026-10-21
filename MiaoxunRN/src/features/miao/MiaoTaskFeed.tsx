@@ -155,20 +155,20 @@ export function MiaoTaskFeed({
               )}
               description={textFor(
                 language,
-                '告诉妙管家你想做什么，进展与成果会留在这里。',
-                'Tell the assistant what you want to do. Follow the work and results here.',
+                '告诉 Agent 你想做什么，执行进展与成果会留在这里。',
+                'Tell an Agent what you want to do. Follow task progress and results here.',
               )}
             />
           ) : null}
         </View>
       }
       ListFooterComponent={
-        tasks.length === 30 ? (
+        tasks.length === 30 || collaboration.workspaces.length === 30 ? (
           <Text style={[s.footer, { color: colors.secondaryText }]}>
             {textFor(
               language,
-              '显示最近 30 项任务',
-              'Showing the latest 30 tasks',
+              '分别显示最近 30 项 Agent 任务和历史任务',
+              'Showing up to 30 recent Agent tasks and 30 legacy tasks',
             )}
           </Text>
         ) : null

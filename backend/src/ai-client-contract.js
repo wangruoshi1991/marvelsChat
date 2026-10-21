@@ -1,6 +1,6 @@
 import { HttpError } from "./http-error.js";
 
-export const aiClientContracts = Object.freeze({ aiTasks: 1, siteDocuments: 2, agentWorkspaces: 3 });
+export const aiClientContracts = Object.freeze({ aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6 });
 export const aiContractHeader = "X-Miaoxun-AI-Contract";
 export const siteDocumentContractHeader = "X-Miaoxun-Site-Document";
 export const agentWorkspaceContractHeader = "X-Miaoxun-Agent-Workspace";

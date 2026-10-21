@@ -143,6 +143,88 @@ test('deduplicates workspace pages and sends pending confirmation to its owning 
   );
   expect(saved).toHaveLength(1);
   expect(saved[0].target).toEqual({ kind: 'site', id: draft.id });
+  expect(saved[0].sourceWorkspace?.id).toBe(waiting.id);
+});
+
+test('selected media opens its real task and is not described as generated media', async () => {
+  const selected = agentWorkspace({
+    status: 'succeeded',
+    steps: [
+      workspaceStep({
+        id: 'selection-node',
+        agentId: 'album-manager',
+        capability: 'media.select',
+        result: {
+          kind: 'media_selection',
+          title: '本次选中的照片',
+          assets: [
+            {
+              id: 'selected-photo',
+              version: 'a'.repeat(64),
+              kind: 'image',
+              matchedFrameTimestampMs: null,
+            },
+          ],
+          retrievalRunIds: ['retrieval-1'],
+        },
+      }),
+    ],
+  });
+  mockWorkspaces.workspaces = [selected];
+  await act(async () => {
+    renderer = Renderer.create(
+      <StationOutcomesPanel {...props} stationContent={emptyStationContent} />,
+    );
+  });
+  const results = stationOutcomes(emptyStationContent, [selected], 'zh');
+  expect(results).toHaveLength(1);
+  expect(results[0].label).toBe('选材结果');
+  expect(results[0].target).toEqual({ kind: 'workspace', workspace: selected });
+  act(() => card(`media:${selected.id}:selection-node`).props.onPress());
+  expect(open).toHaveBeenCalledWith(selected);
+  expect(renderer.root.findAllByType(Image)).toHaveLength(0);
+  expect(stationContentApi.stationMediaAsset).not.toHaveBeenCalled();
+});
+
+test('a saved workspace page retains both its document preview and its original task entry', async () => {
+  const saved = agentWorkspace({
+    status: 'succeeded',
+    steps: [
+      workspaceStep({
+        result: { kind: 'site_draft', id: draft.id, title: draft.title },
+      }),
+    ],
+  });
+  mockWorkspaces.workspaces = [saved];
+  await act(async () => {
+    renderer = Renderer.create(
+      <StationOutcomesPanel
+        {...props}
+        stationContent={{
+          ...emptyStationContent,
+          siteDrafts: [{ ...draft, status: 'applied' }],
+        }}
+      />,
+    );
+  });
+  act(() => card('site:page-1').props.onPress());
+  expect(renderer.root.findByType(SiteDocumentPreview).props.draftId).toBe(
+    draft.id,
+  );
+  act(() => renderer.root.findByType(SiteDocumentPreview).props.onClose());
+  const original = renderer.root
+    .findAllByType(WorkspaceButton)
+    .find(button => button.props.label === '查看原任务');
+  expect(original).toBeDefined();
+  const oldOpen = original!.props.onPress;
+  act(() => oldOpen());
+  expect(open).toHaveBeenLastCalledWith(saved);
+  open.mockClear();
+  await act(async () =>
+    renderer.update(<StationOutcomesPanel {...props} token="account-b" />),
+  );
+  act(() => oldOpen());
+  expect(open).not.toHaveBeenCalled();
 });
 
 test('only the page named by the current approval is pending, while other successful pages open their own document', () => {

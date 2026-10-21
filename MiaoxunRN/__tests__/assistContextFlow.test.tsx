@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { AccessibilityInfo, Text, View } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import App from '../src/App';
 import { BottomBar } from '../src/shared/ui';
@@ -8,6 +8,7 @@ import { AgentWorkspaceScreen } from '../src/features/workspaces/AgentWorkspaceS
 import { WorkspaceSubmissionRecovery } from '../src/features/workspaces/WorkspaceSubmission';
 import { AIAssistProvider } from '../src/features/assist/AIAssistProvider';
 import { ChatComposer } from '../src/features/messages/ChatComposer';
+import { WorkspaceContextCard } from '../src/features/messages/WorkspaceContextCard';
 import { ChatMessageItem } from '../src/features/messages/ChatMessageItem';
 import { ChatScreen } from '../src/features/messages/MessagesScreen';
 import { ThreadListScreen } from '../src/features/messages/ThreadListScreen';
@@ -155,6 +156,9 @@ const chatComposer = () => root().findByType(ChatComposer);
 
 beforeEach(() => {
   jest.useFakeTimers();
+  jest
+    .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
+    .mockResolvedValue(true);
   mockSession = makeSession();
   mockWorkspaces = [];
   jest.mocked(agentWorkspaceApi.create).mockClear();
@@ -177,7 +181,9 @@ async function openAlbumMenu() {
     renderer = TestRenderer.create(<App />);
   });
   act(() => root().findByType(BottomBar).props.onSelectTab('messages'));
-  act(() => root().findByType(ThreadListScreen).props.onOpenSecondFloor());
+  await act(async () =>
+    root().findByType(ThreadListScreen).props.onOpenSecondFloor(),
+  );
   act(() => tool('albums').props.onPress());
   const card = root().findAll(
     node =>
@@ -185,7 +191,7 @@ async function openAlbumMenu() {
       typeof node.props.onLongPress === 'function',
   )[0];
   expect(card).toBeTruthy();
-  act(() =>
+  await act(async () =>
     card.props.onLongPress({ nativeEvent: { pageX: 160, pageY: 300 } }),
   );
   expect(
@@ -212,7 +218,7 @@ async function openAlbumRequest() {
 async function openWorkspaceMenu() {
   mockWorkspaces = [
     agentWorkspace({
-      id: 'workspace-context',
+      id: '45267cd7-549c-4f8f-8576-49d061cc335a',
       revision: 8,
       steps: [
         workspaceStep(),
@@ -225,14 +231,20 @@ async function openWorkspaceMenu() {
       ],
     }),
   ];
+  jest
+    .mocked(agentWorkspaceApi.get)
+    .mockImplementation(async () => mockWorkspaces[0]);
   await act(async () => {
     renderer = TestRenderer.create(<App />);
   });
   // The app opens on 讯; the workspace cards live on 妙.
-  act(() => root().findByType(BottomBar).props.onSelectTab('agents'));
+  await act(async () =>
+    root().findByType(BottomBar).props.onSelectTab('agents'),
+  );
   const card = root().findAll(
     node =>
-      node.props.testID === 'miao-workspace-workspace-context' &&
+      node.props.testID ===
+        'miao-workspace-45267cd7-549c-4f8f-8576-49d061cc335a' &&
       typeof node.props.onLongPress === 'function',
   )[0];
   expect(card).toBeTruthy();
@@ -276,14 +288,18 @@ test.each([
       expect(reopened.props.draft).toBe(
         '保留我的编辑，只做计划\n还要说明下一步',
       );
-      act(() => button('交给妙管家').props.onPress());
-    } else act(() => dock.props.onOpenButler('还要说明下一步'));
+      await act(async () => button('交给妙管家').props.onPress());
+    } else await act(async () => dock.props.onOpenButler('还要说明下一步'));
 
     expect(chatComposer().props.draft).toContain(
       '保留我的编辑，只做计划\n还要说明下一步',
     );
-    if (item === 'workspace')
-      expect(chatComposer().props.draft).toContain(context.title);
+    if (item === 'workspace') {
+      expect(chatComposer().props.draft).not.toContain(context.title);
+      expect(root().findByType(WorkspaceContextCard).props.context.goal).toBe(
+        context.title,
+      );
+    }
     expect(chatComposer().props.draft).not.toMatch(
       /发起位置|所在模块|记录版本/,
     );
@@ -296,8 +312,10 @@ test.each([
       currentPage: scene.page,
     });
     if (item === 'workspace') {
-      expect(chatComposer().props.draft).not.toContain('workspace-context');
-      expect(chatComposer().props.draft).toContain('不继续执行原任务');
+      expect(chatComposer().props.draft).not.toContain(
+        '45267cd7-549c-4f8f-8576-49d061cc335a',
+      );
+      expect(text()).toContain('发送消息只讨论');
     }
     expect(mockSession.sendMessage).not.toHaveBeenCalled();
     expect(agentWorkspaceApi.create).not.toHaveBeenCalled();
@@ -372,7 +390,7 @@ test('a restarted access request retains edited followups and remaining referenc
   expect(composer.props.references).toEqual([workspace.contextRefs[0]]);
   expect(composer.props.scene.page).toBe('miao.workspace');
   closeRequestToMiao();
-  act(() =>
+  await act(async () =>
     root().findByType(VoiceShortcutDock).props.onOpenButler('先帮我检查要求'),
   );
   expect(chatComposer().props.draft).toContain(edited);
@@ -432,10 +450,11 @@ test.each(['妙管家'])(
     expect(composer.props.context.kind).toBe('agent-workspace');
     expect(composer.props.context.scene.task).toBeUndefined();
     expect(composer.props.context.scene.workspace).toEqual({
-      id: 'workspace-context',
+      id: '45267cd7-549c-4f8f-8576-49d061cc335a',
       goal: '选择旅行素材并生成页面',
       status: 'running',
       revision: 8,
+      currentRound: 1,
       participants: [
         { agentId: 'miaoxun-butler', name: 'miaoxun-butler' },
         { agentId: 'album-manager', name: 'album-manager' },
@@ -443,15 +462,26 @@ test.each(['妙管家'])(
     });
     expect(text()).not.toMatch(/发起位置|所在模块|记录版本/);
     expect(text()).toContain('选中时协作中');
-    expect(text()).toContain('不继续执行原任务');
+    expect(text()).toContain('发送消息只讨论');
     expect(mockSession.sendMessage).not.toHaveBeenCalled();
     expect(agentWorkspaceApi.create).not.toHaveBeenCalled();
     expect(agentWorkspaceApi.decide).not.toHaveBeenCalled();
 
-    act(() => button('交给妙管家').props.onPress());
+    await act(async () => button('交给妙管家').props.onPress());
+    expect(root().findAllByType(ChatComposer)).toHaveLength(0);
+    expect(text()).toContain('任务已更新');
+    expect(root().findByType(AIRequestComposer).props.draft).toBe(
+      '请检查这项任务的进展',
+    );
+    await act(async () => button('交给妙管家').props.onPress());
     const draft = chatComposer().props.draft;
-    expect(draft).not.toContain('workspace-context');
-    expect(draft).toContain('选择旅行素材并生成页面');
+    expect(draft).toBe('请检查这项任务的进展');
+    expect(root().findByType(WorkspaceContextCard).props.context).toEqual({
+      id: mockWorkspaces[0].id,
+      revision: 9,
+      currentRound: 1,
+      goal: mockWorkspaces[0].goal,
+    });
     expect(chatComposer().props.contextRefs).toEqual([]);
     expect(chatComposer().props.assistSource).toEqual({
       currentPage: 'miao.feed',
@@ -465,6 +495,16 @@ test.each(['妙管家'])(
       null,
       [],
       { currentPage: 'miao.feed' },
+      undefined,
+      {
+        id: mockWorkspaces[0].id,
+        revision: 9,
+        currentRound: 1,
+        goal: mockWorkspaces[0].goal,
+      },
+    );
+    expect(root().findByType(WorkspaceContextCard).props.context.revision).toBe(
+      9,
     );
     expect(chatComposer().props.draft).toBe('');
     expect(chatComposer().props.assistSource).toBeUndefined();
@@ -480,8 +520,8 @@ test('removing a workspace selection removes its snapshot while preserving where
       .props.onChangeDraft('我想提出另一个需求'),
   );
   act(() => button('移除选中内容').props.onPress());
-  expect(text()).not.toContain('workspace-context');
-  act(() => button('交给妙管家').props.onPress());
+  expect(text()).not.toContain('45267cd7-549c-4f8f-8576-49d061cc335a');
+  await act(async () => button('交给妙管家').props.onPress());
   expect(chatComposer().props.draft).not.toContain('记录版本');
   expect(chatComposer().props.draft).not.toContain('选择旅行素材并生成页面');
   expect(chatComposer().props.draft).not.toContain('发起位置');
@@ -492,9 +532,135 @@ test('removing a workspace selection removes its snapshot while preserving where
   expect(mockSession.sendMessage).not.toHaveBeenCalled();
 });
 
+test('closing an active task discussion through the real header preserves it for a later reopen', async () => {
+  await openWorkspaceMenu();
+  act(() => button('妙管家').props.onPress());
+  const request = root().findByType(AIRequestComposer);
+  act(() => request.props.onChangeDraft('请继续检查这项任务'));
+  await act(async () => button('交给妙管家').props.onPress());
+  expect(root().findByType(WorkspaceContextCard).props.context.revision).toBe(
+    8,
+  );
+  act(() => chatComposer().props.onChangeDraft('保留这段讨论草稿'));
+
+  await act(async () => button('返回').props.onPress());
+  expect(root().findAllByType(ChatScreen)).toHaveLength(0);
+  expect(mockSession.sendMessage).not.toHaveBeenCalled();
+
+  act(() => root().findByType(BottomBar).props.onSelectTab('messages'));
+  act(() =>
+    root().findByType(ThreadListScreen).props.onOpenThread(butlerThread),
+  );
+  expect(chatComposer().props.draft).toBe('保留这段讨论草稿');
+  expect(root().findByType(WorkspaceContextCard).props.context).toEqual(
+    expect.objectContaining({
+      id: '45267cd7-549c-4f8f-8576-49d061cc335a',
+      revision: 8,
+      currentRound: 1,
+    }),
+  );
+  expect(mockSession.sendMessage).not.toHaveBeenCalled();
+});
+
+test.each(['success', 'failure', 'later-reset'] as const)(
+  'removing an active task link keeps the new-request boundary through %s',
+  async result => {
+    const threadWithPreviousClarification: ChatThread = {
+      ...butlerThread,
+      messages: [
+        {
+          id: 'old-clarification',
+          threadId: butlerThread.id,
+          senderType: 'agent',
+          senderName: '妙讯管家',
+          content: '是否继续使用之前的素材？',
+          metadata: {
+            butlerClarification: {
+              contextRefs: [
+                { kind: 'station-album', id: albumId, title: albumTitle },
+              ],
+              source: { currentPage: 'second-floor.albums' },
+            },
+          },
+        },
+      ],
+    };
+    mockSession = {
+      ...mockSession,
+      threads: [threadWithPreviousClarification],
+    };
+    await openWorkspaceMenu();
+    act(() => button('妙管家').props.onPress());
+    const request = root().findByType(AIRequestComposer);
+    act(() => request.props.onChangeDraft('先保留这段任务讨论'));
+    await act(async () => button('交给妙管家').props.onPress());
+    const originalContext =
+      root().findByType(WorkspaceContextCard).props.context;
+    act(() => chatComposer().props.onChangeDraft('这是移除关联后的新需求'));
+    await act(async () =>
+      root().findByType(WorkspaceContextCard).props.onRemove(),
+    );
+    expect(chatComposer().props.workspaceActions).toBeDefined();
+    expect(text()).toContain('移除关联后将开始新的需求');
+    expect(chatComposer().props.contextRefs).toEqual([]);
+    expect(chatComposer().props.draft).toBe('这是移除关联后的新需求');
+
+    await act(async () => button('返回').props.onPress());
+    act(() => root().findByType(BottomBar).props.onSelectTab('messages'));
+    act(() =>
+      root().findByType(ThreadListScreen).props.onOpenThread(butlerThread),
+    );
+    expect(chatComposer().props.draft).toBe('这是移除关联后的新需求');
+    expect(chatComposer().props.contextRefs).toEqual([]);
+    expect(text()).toContain('移除关联后将开始新的需求');
+
+    let resolveSend: ((value: boolean) => void) | undefined;
+    if (result === 'failure')
+      mockSession.sendMessage.mockResolvedValueOnce(false);
+    if (result === 'later-reset')
+      mockSession.sendMessage.mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveSend = resolve;
+          }),
+      );
+    await act(async () => button('发送消息').props.onPress());
+    expect(mockSession.sendMessage).toHaveBeenLastCalledWith(
+      butlerThread.id,
+      '这是移除关联后的新需求',
+      undefined,
+      null,
+      [],
+      { currentPage: 'miao.feed' },
+      true,
+    );
+    if (result === 'later-reset') {
+      act(() =>
+        root()
+          .findByType(ChatMessageItem)
+          .props.onRestoreWorkspaceContext(originalContext),
+      );
+      act(() => root().findByType(WorkspaceContextCard).props.onRemove());
+      await act(async () => resolveSend!(true));
+    }
+    if (result !== 'success') {
+      expect(text()).toContain('移除关联后将开始新的需求');
+      expect(chatComposer().props.contextRefs).toEqual([]);
+      act(() => chatComposer().props.onChangeDraft('下一条也应是新的需求'));
+      await act(async () => button('发送消息').props.onPress());
+      expect(mockSession.sendMessage.mock.calls[1][6]).toBe(true);
+    }
+    expect(chatComposer().props.contextRefs).toEqual([]);
+    expect(text()).not.toContain('移除关联后将开始新的需求');
+    act(() => chatComposer().props.onChangeDraft('成功后继续普通对话'));
+    await act(async () => button('发送消息').props.onPress());
+    expect(mockSession.sendMessage.mock.calls.at(-1)?.[6]).toBeUndefined();
+  },
+);
+
 test('album assistance retains its actual origin and reference through review, then clears both for the next message', async () => {
   await openAlbumRequest();
-  act(() => button('交给妙管家').props.onPress());
+  await act(async () => button('交给妙管家').props.onPress());
   expect(root().findAllByType(AIRequestComposer)).toHaveLength(0);
   expect(chatComposer().props.assistSource).toEqual({
     currentPage: 'second-floor.albums',
@@ -539,7 +705,7 @@ test('album assistance preserves the draft while access is missing and only enab
     'agents:invoke',
   ];
   await openAlbumRequest();
-  act(() => button('交给妙管家').props.onPress());
+  await act(async () => button('交给妙管家').props.onPress());
   const draft = chatComposer().props.draft;
   expect(text()).toContain('读取相册');
   expect(button('发送消息').props.disabled).toBe(true);
@@ -582,7 +748,7 @@ test.each(['cancel', 'grant'])(
       'agents:invoke',
     ];
     await openAlbumRequest();
-    act(() => button('交给妙管家').props.onPress());
+    await act(async () => button('交给妙管家').props.onPress());
     act(() =>
       chatComposer().props.onChangeDraft(
         '我编辑后的目标：只分析选中的旅行相册',
@@ -667,10 +833,12 @@ test('an authorization draft is restored only in its original thread', async () 
   };
   mockSession.threads = [butlerThread, otherThread];
   await openAlbumRequest();
-  act(() => button('交给妙管家').props.onPress());
+  await act(async () => button('交给妙管家').props.onPress());
   act(() => chatComposer().props.onChangeDraft('留在原会话的目标'));
   act(() => button(chatComposer().props.contextAccessWarning).props.onPress());
-  act(() => root().findByType(BottomBar).props.onSelectTab('messages'));
+  await act(async () =>
+    root().findByType(BottomBar).props.onSelectTab('messages'),
+  );
   act(() =>
     root().findByType(ThreadListScreen).props.onOpenThread(otherThread),
   );
@@ -690,7 +858,7 @@ test.each(['empty', 'new-text'])(
   async choice => {
     mockSession.ownedAgents[0].grantedScopes = ['messages:read'];
     await openAlbumRequest();
-    act(() => button('交给妙管家').props.onPress());
+    await act(async () => button('交给妙管家').props.onPress());
     act(() => chatComposer().props.onChangeDraft('原始相册目标，保留我的编辑'));
     const source = chatComposer().props.assistSource;
     const references = chatComposer().props.contextRefs;
@@ -698,8 +866,10 @@ test.each(['empty', 'new-text'])(
       button(chatComposer().props.contextAccessWarning).props.onPress(),
     );
     expect(root().findAllByType(ChatScreen)).toHaveLength(0);
-    act(() => root().findByType(BottomBar).props.onSelectTab('agents'));
-    act(() =>
+    await act(async () =>
+      root().findByType(BottomBar).props.onSelectTab('agents'),
+    );
+    await act(async () =>
       root()
         .findByType(VoiceShortcutDock)
         .props.onOpenButler(
@@ -717,7 +887,9 @@ test.each(['empty', 'new-text'])(
     );
     expect(mockSession.sendMessage).not.toHaveBeenCalled();
     act(() => root().findByType(ChatScreen).props.onBack());
-    act(() => root().findByType(VoiceShortcutDock).props.onOpenButler());
+    await act(async () =>
+      root().findByType(VoiceShortcutDock).props.onOpenButler(),
+    );
     expect(chatComposer().props.draft).toBe('');
     expect(chatComposer().props.contextRefs).toEqual([]);
   },
@@ -728,7 +900,7 @@ test.each(['account', 'token'])(
   async boundary => {
     mockSession.ownedAgents[0].grantedScopes = ['messages:read'];
     await openAlbumRequest();
-    act(() => button('交给妙管家').props.onPress());
+    await act(async () => button('交给妙管家').props.onPress());
     act(() => chatComposer().props.onChangeDraft('属于旧登录的未发送草稿'));
     const stalePreserve =
       root().findByType(ChatScreen).props.onPreserveDraftForAccess;
@@ -795,7 +967,7 @@ test('an explicit server access refusal is visible and retrying while access is 
   };
   mockSession.threads = [{ ...butlerThread, messages: [failed] }];
   await openAlbumRequest();
-  act(() => button('交给妙管家').props.onPress());
+  await act(async () => button('交给妙管家').props.onPress());
   expect(text()).toContain('请先确认相册读取授权。');
   expect(text()).not.toContain('发送失败，点击重试');
   expect(button('查看授权')).toBeTruthy();
@@ -811,7 +983,7 @@ test('removing the selected album removes its reference and summary before revie
   expect(
     root().findAllByProps({ testID: 'assist-context-summary' }),
   ).toHaveLength(0);
-  act(() => button('交给妙管家').props.onPress());
+  await act(async () => button('交给妙管家').props.onPress());
   expect(chatComposer().props.contextRefs).toEqual([]);
   expect(chatComposer().props.draft).not.toContain(albumTitle);
   expect(chatComposer().props.assistSource).toEqual({
@@ -834,7 +1006,8 @@ test.each([
         .findByType(AIRequestComposer)
         .props.onChangeDraft('只属于旧会话的私有草稿'),
     );
-    if (stage === 'chat') act(() => button('交给妙管家').props.onPress());
+    if (stage === 'chat')
+      await act(async () => button('交给妙管家').props.onPress());
     const previousSender = mockSession.sendMessage;
     const oldRouteKey = root().findByType(AIAssistProvider).props.routeKey;
     mockSession = {
@@ -901,7 +1074,9 @@ test.each(['butler', 'chat'])(
       renderer = TestRenderer.create(<App />);
     });
     if (route === 'butler')
-      act(() => root().findByType(VoiceShortcutDock).props.onOpenButler());
+      await act(async () =>
+        root().findByType(VoiceShortcutDock).props.onOpenButler(),
+      );
     else {
       act(() => root().findByType(BottomBar).props.onSelectTab('messages'));
       act(() =>
@@ -987,7 +1162,9 @@ async function openClarification() {
   await act(async () => {
     renderer = TestRenderer.create(<App />);
   });
-  act(() => root().findByType(VoiceShortcutDock).props.onOpenButler());
+  await act(async () =>
+    root().findByType(VoiceShortcutDock).props.onOpenButler(),
+  );
 }
 
 test('opening and reopening a pending clarification restores its original server references and source', async () => {
@@ -998,7 +1175,9 @@ test('opening and reopening a pending clarification restores its original server
   });
   expect(chatComposer().props.draft).toBe('');
   act(() => root().findByType(ChatScreen).props.onBack());
-  act(() => root().findByType(VoiceShortcutDock).props.onOpenButler());
+  await act(async () =>
+    root().findByType(VoiceShortcutDock).props.onOpenButler(),
+  );
   expect(chatComposer().props.contextRefs).toEqual(clarificationRefs);
   act(() => chatComposer().props.onChangeDraft('以旅行照片为主'));
   await act(async () => chatComposer().props.onSend());
@@ -1051,7 +1230,7 @@ test('a new explicit selection resets the older clarification and sends only its
       .findByType(AIRequestComposer)
       .props.onChangeDraft('新选择的独立需求'),
   );
-  act(() => button('交给妙管家').props.onPress());
+  await act(async () => button('交给妙管家').props.onPress());
   expect(chatComposer().props.draft).toContain('新选择的独立需求');
   expect(chatComposer().props.contextRefs).toEqual([
     { kind: 'station-album', id: albumId, title: albumTitle },
@@ -1081,4 +1260,226 @@ test('a clarification consumed elsewhere clears its untouched inherited scope in
   await act(async () => renderer!.update(<App />));
   expect(chatComposer().props.contextRefs).toEqual([]);
   expect(chatComposer().props.assistSource).toBeUndefined();
+});
+
+const professionalThread: ChatThread = {
+  ...butlerThread,
+  id: 'professional-thread',
+  agentId: 'site-builder',
+  title: '建站 Agent',
+};
+function enableProfessionalThread(clarification = true) {
+  mockSession.ownedAgents.push({
+    ...mockSession.ownedAgents[0],
+    id: 'site-builder',
+    name: '建站 Agent',
+    grantedScopes: ['station:read', 'album:read', 'messages:read'],
+  });
+  mockSession.threads = [
+    butlerThread,
+    {
+      ...professionalThread,
+      messages: clarification
+        ? [
+            {
+              ...clarificationReply('professional-clarification'),
+              threadId: professionalThread.id,
+              metadata: {
+                agentDispatch: { version: 1, kind: 'clarify' },
+                agentClarification: {
+                  contextRefs: clarificationRefs,
+                  source: { currentPage: 'messages.agent' },
+                },
+              },
+            },
+          ]
+        : [],
+    },
+  ];
+}
+async function openProfessionalChat() {
+  await act(async () => {
+    renderer = TestRenderer.create(<App />);
+  });
+  await act(async () =>
+    root()
+      .findByType(ThreadListScreen)
+      .props.onOpenThread(mockSession.threads[1]),
+  );
+}
+test('professional clarification survives authorization round trips and removal uses only the professional reset', async () => {
+  enableProfessionalThread();
+  await openProfessionalChat();
+  expect(chatComposer().props.contextRefs).toEqual(clarificationRefs);
+  act(() => chatComposer().props.onRemoveContextReference(0));
+  act(() => chatComposer().props.onChangeDraft('只用保留的素材'));
+  act(() => chatComposer().props.onOpenAgentAccess());
+  await act(async () =>
+    root().findByType(StationScreen).props.onOpenAgentThread('site-builder'),
+  );
+  expect(chatComposer().props.contextRefs).toEqual(clarificationRefs.slice(1));
+  expect(chatComposer().props.draft).toBe('只用保留的素材');
+  await act(async () => chatComposer().props.onSend());
+  const sent = mockSession.sendMessage.mock.calls[0] as unknown[];
+  expect(sent[0]).toBe(professionalThread.id);
+  expect(sent[4]).toEqual(clarificationRefs.slice(1));
+  expect(sent.slice(6)).toEqual([undefined, undefined, true]);
+  expect(agentWorkspaceApi.create).not.toHaveBeenCalled();
+});
+
+test('professional users can explicitly leave clarification and ordinary send never silently continues a workspace', async () => {
+  enableProfessionalThread();
+  await openProfessionalChat();
+  act(() =>
+    root().findByProps({ testID: 'chat-agent-new-request' }).props.onPress(),
+  );
+  expect(chatComposer().props.contextRefs).toEqual([]);
+  act(() => chatComposer().props.onChangeDraft('换个话题，解释一个概念'));
+  await act(async () => chatComposer().props.onSend());
+  const sent = mockSession.sendMessage.mock.calls[0] as unknown[];
+  expect(sent.slice(6)).toEqual([undefined, undefined, true]);
+  expect(agentWorkspaceApi.decide).not.toHaveBeenCalled();
+});
+
+const professionalWorkspace = (changes: Partial<AgentWorkspace> = {}) =>
+  agentWorkspace({
+    id: 'direct-workspace',
+    executionMode: 'direct',
+    origin: {
+      kind: 'agent_conversation',
+      threadId: professionalThread.id,
+      inputMessageId: 'input',
+      agentId: 'site-builder',
+      agentVersion: '1',
+      capability: 'site.compose',
+    },
+    steps: [
+      workspaceStep({
+        agentId: 'site-builder',
+        agentVersion: '1',
+        capability: 'site.compose',
+      }),
+    ],
+    ...changes,
+  });
+test('a professional workspace opened from Xun returns to its authenticated original conversation, and restart keeps the professional Agent', async () => {
+  enableProfessionalThread(false);
+  const workspace = professionalWorkspace({
+    status: 'failed',
+    allowedActions: [],
+  });
+  jest.mocked(agentWorkspaceApi.get).mockResolvedValue(workspace);
+  await act(async () => {
+    renderer = TestRenderer.create(<App />);
+  });
+  await act(async () =>
+    root().findByType(ThreadListScreen).props.onOpenWorkspace(workspace),
+  );
+  expect(root().findByType(AgentWorkspaceScreen).props.workspace.id).toBe(
+    workspace.id,
+  );
+  await act(async () =>
+    root().findByType(AgentWorkspaceScreen).props.onOpenSource(workspace),
+  );
+  expect(mockSession.refreshThreadMessages).toHaveBeenCalledWith(
+    professionalThread.id,
+  );
+  expect(root().findByType(ChatScreen).props.thread.id).toBe(
+    professionalThread.id,
+  );
+  await act(async () =>
+    root().findByType(ChatScreen).props.onOpenWorkspace(workspace),
+  );
+  await act(async () => button('以此目标准备新任务').props.onPress());
+  expect(root().findByType(ChatScreen).props.thread.agentId).toBe(
+    'site-builder',
+  );
+  expect(chatComposer().props.draft).toBe(workspace.goal);
+  expect(chatComposer().props.contextRefs).toEqual(workspace.contextRefs);
+  expect(root().findAllByType(AIRequestComposer)).toHaveLength(0);
+  expect(mockSession.sendMessage).not.toHaveBeenCalled();
+  expect(
+    root().findByType(ChatScreen).props.initialAgentContextReset,
+  ).toBeUndefined();
+  expect(text()).toContain('移除关联后将开始新的需求');
+  await act(async () => chatComposer().props.onSend());
+  expect(mockSession.sendMessage.mock.calls[0].slice(6)).toEqual([
+    undefined,
+    undefined,
+    true,
+  ]);
+});
+
+test('the real direct restart button retains every user revision after a later round fails without submitting', async () => {
+  enableProfessionalThread(false);
+  const original = professionalWorkspace();
+  const instructions = ['只保留两段，并把结尾改成邀请', '保留原内容，调整语气'];
+  const workspace = professionalWorkspace({
+    status: 'failed',
+    allowedActions: [],
+    currentRound: 3,
+    followups: [instructions[0]],
+    rounds: [
+      original.rounds[0],
+      ...instructions.map((instruction, index) => ({
+        ...original.rounds[0],
+        number: index + 2,
+        instruction,
+        status: 'failed' as const,
+        completedAt: '2026-10-20T00:00:00Z',
+      })),
+    ],
+  });
+  jest.mocked(agentWorkspaceApi.get).mockResolvedValue(workspace);
+  await act(async () => {
+    renderer = TestRenderer.create(<App />);
+  });
+  await act(async () =>
+    root().findByType(ThreadListScreen).props.onOpenWorkspace(workspace),
+  );
+  expect(button('以此目标准备新任务').props.disabled).toBe(false);
+  await act(async () => button('以此目标准备新任务').props.onPress());
+  expect(root().findByType(ChatScreen).props.thread.id).toBe(
+    professionalThread.id,
+  );
+  expect(chatComposer().props.draft).toBe(
+    [workspace.goal, ...instructions].join('\n\n'),
+  );
+  expect(chatComposer().props.contextRefs).toEqual(workspace.contextRefs);
+  expect(mockSession.sendMessage).not.toHaveBeenCalled();
+  expect(agentWorkspaceApi.create).not.toHaveBeenCalled();
+  expect(agentWorkspaceApi.decide).not.toHaveBeenCalled();
+});
+
+test('a late original-conversation read cannot open a previous account thread', async () => {
+  enableProfessionalThread(false);
+  const workspace = professionalWorkspace();
+  jest.mocked(agentWorkspaceApi.get).mockResolvedValue(workspace);
+  let finish!: () => void;
+  mockSession.refreshThreadMessages.mockImplementation(
+    () =>
+      new Promise<void>(resolve => {
+        finish = resolve;
+      }),
+  );
+  await act(async () => {
+    renderer = TestRenderer.create(<App />);
+  });
+  await act(async () =>
+    root().findByType(ThreadListScreen).props.onOpenWorkspace(workspace),
+  );
+  act(() => {
+    root().findByType(AgentWorkspaceScreen).props.onOpenSource(workspace);
+  });
+  mockSession = {
+    ...makeSession(),
+    token: 'other-token',
+    user: { id: 'other-owner', displayName: 'Other' },
+  };
+  await act(async () => renderer!.update(<App />));
+  await act(async () => finish());
+  expect(root().findAllByType(ChatScreen)).toHaveLength(0);
+  expect(mockSession.setActiveThreadId).not.toHaveBeenCalledWith(
+    professionalThread.id,
+  );
 });

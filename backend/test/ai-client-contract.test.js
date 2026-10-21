@@ -17,17 +17,17 @@ test("an AI client must explicitly declare the supported contract, regardless of
   let called = false;
   requireAIClientContract({ get: () => "1" }, null, () => { called = true; });
   assert.equal(called, true);
-  assert.deepEqual(aiClientContracts, { aiTasks: 1, siteDocuments: 2, agentWorkspaces: 3 });
+  assert.deepEqual(aiClientContracts, { aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6 });
 });
 
-test("text collaboration requires workspace contract 3 before any business execution", () => {
-  for (const value of [undefined, "", "1", "2", "4", "3, 2"]) {
+test("direct and coordinated workspaces require contract 6 before any business execution", () => {
+  for (const value of [undefined, "", "1", "2", "3", "4", "5", "6, 5"]) {
     assert.throws(() => requireAgentWorkspaceContract({ get: () => value }), error =>
       error.status === 426 && error.details.code === "WORKSPACE_CLIENT_UPDATE_REQUIRED" &&
-      error.details.requiredContract === 3);
+      error.details.requiredContract === 6);
   }
   let called = false;
-  requireAgentWorkspaceContract({ get: () => "3" }, null, () => { called = true; });
+  requireAgentWorkspaceContract({ get: () => "6" }, null, () => { called = true; });
   assert.equal(called, true);
 });
 

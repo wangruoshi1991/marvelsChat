@@ -9,6 +9,10 @@ import {
 } from '../../models/api';
 import { apiClient } from '../../services/apiClient';
 import { PickedStationMedia } from '../../services/stationMediaPicker';
+import {
+  PickedStationFile,
+  uploadStationFile,
+} from '../../services/stationFilePicker';
 import { uploadStationMediaAsset } from '../../services/stationMediaUpload';
 import { emptyStationContent } from './sessionDefaults';
 
@@ -439,6 +443,40 @@ export function useStationActions({
     [setStationContent, token],
   );
 
+  const uploadStationFileAsset = useCallback(
+    async (file: PickedStationFile) => {
+      if (!token) throw new Error('请先登录。');
+      const asset = await uploadStationFile(token, file);
+      setStationContent(current => ({
+        ...current,
+        fileAssets: [
+          asset,
+          ...current.fileAssets.filter(item => item.id !== asset.id),
+        ],
+      }));
+      return asset;
+    },
+    [token, setStationContent],
+  );
+  const stationFileAsset = useCallback(
+    async (id: string) => {
+      if (!token) throw new Error('请先登录。');
+      return apiClient.stationFileAsset(token, id);
+    },
+    [token],
+  );
+  const deleteStationFileAsset = useCallback(
+    async (id: string) => {
+      if (!token) throw new Error('请先登录。');
+      await apiClient.deleteStationFileAsset(token, id);
+      setStationContent(current => ({
+        ...current,
+        fileAssets: current.fileAssets.filter(item => item.id !== id),
+      }));
+    },
+    [token, setStationContent],
+  );
+
   const deleteStationComicDiary = useCallback(
     async (comicDiaryId: string) => {
       if (!token) {
@@ -483,6 +521,9 @@ export function useStationActions({
     createStationOutfit,
     createStationSiteDraft,
     createStationFileAsset,
+    uploadStationFileAsset,
+    stationFileAsset,
+    deleteStationFileAsset,
     createStationComicDiary,
     deleteStationComicDiary,
     resolveLocation,

@@ -32,6 +32,7 @@ import { relativeTimeText } from './messageUtils';
 import { AgentIconAvatar } from './AgentIconAvatar';
 import { useAIAssist } from '../assist/AIAssistProvider';
 import { AITaskInbox } from '../ai/AITaskInbox';
+import { AgentWorkspace } from '../../models/agentWorkspace';
 import { agentReplyPresentation } from './agentReplyPresentation';
 import { messageTextPreview } from './messageTextPresentation';
 
@@ -202,6 +203,7 @@ export function ThreadListScreen({
   onRejectFriendRequest,
   onOpenSecondFloor,
   onOpenTask,
+  onOpenWorkspace,
 }: {
   token?: string;
   active?: boolean;
@@ -222,6 +224,7 @@ export function ThreadListScreen({
   onRejectFriendRequest: (id: string) => Promise<void>;
   onOpenSecondFloor?: () => void;
   onOpenTask?: (task: AITaskDTO) => void;
+  onOpenWorkspace?: (workspace: AgentWorkspace) => void;
 }) {
   const assist = useAIAssist();
   const colors = useMemo(() => workspacePalette(palette), [palette]);
@@ -506,6 +509,7 @@ export function ThreadListScreen({
             language={language}
             agents={agents}
             onOpenTask={task => onOpenTask?.(task)}
+            onOpenWorkspace={onOpenWorkspace}
           />
         ) : (
           <NoticeList

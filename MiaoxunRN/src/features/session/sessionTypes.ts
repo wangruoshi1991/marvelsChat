@@ -14,6 +14,13 @@ export type ChatMessage = {
     contextRefs?: AIContextReference[];
     assistSource?: AssistMessageSource;
     agentWorkspace?: { id: string };
+    agentDispatch?: { version: 1; kind: 'reply' | 'clarify' | 'workspace' };
+    agentClarification?: {
+      contextRefs: AIContextReference[];
+      source: { currentPage: string };
+    };
+    agentContextReset?: boolean;
+    workspaceContext?: import('../../models/workspaceContext').WorkspaceDiscussionContext;
     butlerClarification?: {
       contextRefs: AIContextReference[];
       source: { currentPage: string };

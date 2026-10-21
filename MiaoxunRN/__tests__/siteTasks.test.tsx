@@ -16,7 +16,7 @@ import { WorkspaceButton } from '../src/shared/workspaceUi';
 
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
-  return { SafeAreaView: View };
+  return { SafeAreaProvider: View, SafeAreaView: View };
 });
 jest.mock('../src/services/api/stationAgentApi', () => ({
   stationAgentApi: { siteDocument: jest.fn() },

@@ -26,6 +26,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AgentDTO, AvatarConfigDTO } from '../../models/api';
 import { AgentWorkspace } from '../../models/agentWorkspace';
+import {
+  WorkspaceContinuationDraft,
+  WorkspaceDiscussionContext,
+} from '../../models/workspaceContext';
+import { WorkspaceContextCard } from './WorkspaceContextCard';
 import { recognizeSpeechOnce } from '../../services/speechToText';
 import { displayText, publicPresenceText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
@@ -52,7 +57,8 @@ import { keyboardBottomInset } from './keyboardGeometry';
 import { missingContextScopes } from '../ai/assistContext';
 import { agentScopeListLabel } from '../agents/agentPresentation';
 import { agentReplyPresentation } from './agentReplyPresentation';
-import { pendingButlerClarification } from './butlerClarification';
+import { pendingConversationClarification } from './butlerClarification';
+import { usesAgentDispatch } from '../../models/agentDispatch';
 
 export type { MessageTab, UserAvatarRenderer };
 
@@ -62,6 +68,8 @@ export type ChatDraftSnapshot = {
   source?: AssistMessageSource;
   replyToMessageId?: string;
   butlerContextReset?: boolean;
+  agentContextReset?: boolean;
+  workspaceContext?: WorkspaceDiscussionContext;
 };
 
 const recallWindowMs = 60 * 1000;
@@ -96,6 +104,8 @@ export function ChatScreen({
   initialAssistSource,
   initialReplyToMessageId,
   initialButlerContextReset,
+  initialAgentContextReset,
+  initialWorkspaceContext,
   agentGrantedScopes,
   onOpenAgentAccess,
   onOpenWorkspace,
@@ -121,6 +131,8 @@ export function ChatScreen({
     contextRefs?: AIContextReference[],
     assistSource?: AssistMessageSource,
     butlerContextReset?: boolean,
+    workspaceContext?: WorkspaceDiscussionContext,
+    agentContextReset?: boolean,
   ) => void | Promise<void | boolean>;
   onDeleteMessage: (messageId: string) => void | Promise<void>;
   onRecallMessage: (messageId: string) => void | Promise<void>;
@@ -132,26 +144,39 @@ export function ChatScreen({
   initialAssistSource?: AssistMessageSource;
   initialReplyToMessageId?: string;
   initialButlerContextReset?: boolean;
+  initialAgentContextReset?: boolean;
+  initialWorkspaceContext?: WorkspaceDiscussionContext;
   agentGrantedScopes?: string[];
   onOpenAgentAccess?: () => void;
-  onOpenWorkspace?: (workspace: AgentWorkspace) => void;
+  onOpenWorkspace?: (
+    workspace: AgentWorkspace,
+    draft?: WorkspaceContinuationDraft,
+  ) => void;
   onPreserveDraftForAccess?: (draft: ChatDraftSnapshot) => void;
   onRefreshThread?: () => Promise<void>;
   onInitialDraftConsumed?: () => void;
 }) {
   const assist = useAIAssist();
+  const professional = usesAgentDispatch(thread.agentId);
+  const initialContextReset = professional
+    ? initialAgentContextReset
+    : initialButlerContextReset;
   const [draft, setDraft] = useState('');
   const [contextRefs, setContextRefs] = useState<AIContextReference[]>([]);
   const [assistSource, setAssistSource] = useState<AssistMessageSource>();
+  const [workspaceContext, setWorkspaceContext] =
+    useState<WorkspaceDiscussionContext>();
+  const [contextResetNotice, setContextResetNotice] = useState(false);
   const submitting = useRef(false);
   const clarification = useMemo(
-    () => pendingButlerClarification(thread),
+    () => pendingConversationClarification(thread),
     [thread],
   );
   const handledClarification = useRef<string | null>(null);
   const draftEdited = useRef(false);
   const continuingClarification = useRef(false);
   const contextReset = useRef(false);
+  const contextGeneration = useRef(0);
   const contextWarning = (references: AIContextReference[]) => {
     const missingScopes = agentGrantedScopes
       ? missingContextScopes(references, agentGrantedScopes)
@@ -190,14 +215,36 @@ export function ChatScreen({
     arrowLeft: number;
   } | null>(null);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
-  const preserveDraftForAccess = () =>
-    onPreserveDraftForAccess?.({
-      text: draft,
-      references: contextRefs.map(reference => ({ ...reference })),
-      ...(assistSource ? { source: { ...assistSource } } : {}),
-      ...(replyTarget ? { replyToMessageId: replyTarget.id } : {}),
-      ...(contextReset.current ? { butlerContextReset: true } : {}),
-    });
+  const preserveDraftForAccess = useCallback(
+    () =>
+      onPreserveDraftForAccess?.({
+        text: draft,
+        references: contextRefs.map(reference => ({ ...reference })),
+        ...(assistSource ? { source: { ...assistSource } } : {}),
+        ...(replyTarget ? { replyToMessageId: replyTarget.id } : {}),
+        ...(contextReset.current
+          ? professional
+            ? { agentContextReset: true }
+            : { butlerContextReset: true }
+          : {}),
+        ...(workspaceContext
+          ? { workspaceContext: { ...workspaceContext } }
+          : {}),
+      }),
+    [
+      assistSource,
+      contextRefs,
+      draft,
+      onPreserveDraftForAccess,
+      replyTarget,
+      workspaceContext,
+      professional,
+    ],
+  );
+  const closeChat = useCallback(() => {
+    if (workspaceContext || contextReset.current) preserveDraftForAccess();
+    onBack();
+  }, [onBack, preserveDraftForAccess, workspaceContext]);
   const openAgentAccess = onOpenAgentAccess
     ? () => {
         preserveDraftForAccess();
@@ -262,9 +309,9 @@ export function ChatScreen({
       useNativeDriver: true,
     }).start(() => {
       chatTranslateX.setValue(0);
-      onBack();
+      closeChat();
     });
-  }, [chatTranslateX, closeMessageMenu, onBack, windowSize.width]);
+  }, [chatTranslateX, closeChat, closeMessageMenu, windowSize.width]);
   const closeSwipeResponder = useMemo(
     () =>
       PanResponder.create({
@@ -355,6 +402,44 @@ export function ChatScreen({
       onActionMessage={onActionError}
       onOpenAgentAccess={openAgentAccess}
       onOpenWorkspace={onOpenWorkspace}
+      onRestoreWorkspaceContext={context => {
+        if (contextRefs.length || replyTarget) {
+          onActionError(
+            textFor(
+              language,
+              '请先移除其他素材或取消回复，再讨论原任务。',
+              'Remove other references or the reply before discussing this task.',
+            ),
+          );
+          return;
+        }
+        draftEdited.current = true;
+        continuingClarification.current = false;
+        contextReset.current = false;
+        contextGeneration.current += 1;
+        setContextResetNotice(false);
+        setWorkspaceContext(context);
+      }}
+      onEditWorkspaceDiscussion={message => {
+        const context = message.metadata?.workspaceContext;
+        if (!context || draft.trim() || contextRefs.length || replyTarget) {
+          onActionError(
+            textFor(
+              language,
+              '请先处理当前输入，再重新编辑这条讨论。',
+              'Finish the current draft before editing this discussion.',
+            ),
+          );
+          return;
+        }
+        draftEdited.current = true;
+        continuingClarification.current = false;
+        contextReset.current = false;
+        contextGeneration.current += 1;
+        setContextResetNotice(false);
+        setWorkspaceContext(context);
+        setDraft(message.content);
+      }}
       onRetrySend={message => {
         if (message.localStatus !== 'failed') {
           return;
@@ -380,9 +465,13 @@ export function ChatScreen({
             replyId,
             message.metadata?.contextRefs || [],
             message.metadata?.assistSource,
-            ...(message.metadata?.butlerContextReset === true
-              ? ([true] as const)
-              : []),
+            ...((message.metadata?.agentContextReset === true
+              ? [undefined, undefined, true]
+              : message.metadata?.workspaceContext
+              ? [undefined, message.metadata.workspaceContext]
+              : message.metadata?.butlerContextReset === true
+              ? [true]
+              : []) as [boolean?, WorkspaceDiscussionContext?, boolean?]),
           ),
         ).catch(() => undefined);
       }}
@@ -408,7 +497,8 @@ export function ChatScreen({
       !initialContextRefs?.length &&
       !initialAssistSource &&
       !initialReplyToMessageId &&
-      !initialButlerContextReset
+      !initialContextReset &&
+      !initialWorkspaceContext
     ) {
       return;
     }
@@ -416,11 +506,20 @@ export function ChatScreen({
       initialDraft?.trim() ||
         initialContextRefs?.length ||
         initialReplyToMessageId ||
-        initialButlerContextReset,
+        initialContextReset ||
+        initialWorkspaceContext,
     );
-    contextReset.current = initialButlerContextReset === true;
+    contextReset.current =
+      !initialWorkspaceContext && initialContextReset === true;
+    contextGeneration.current += 1;
+    if (contextReset.current)
+      handledClarification.current = clarification?.messageId || null;
+    setContextResetNotice(
+      !initialWorkspaceContext && initialContextReset === true,
+    );
     continuingClarification.current = Boolean(
-      clarification &&
+      !initialWorkspaceContext &&
+        clarification &&
         initialContextRefs?.length === clarification.references.length &&
         initialContextRefs.every((reference, index) => {
           const original = clarification.references[index];
@@ -432,13 +531,14 @@ export function ChatScreen({
         }),
     );
     setDraft(initialDraft || '');
-    setContextRefs(initialContextRefs || []);
+    setContextRefs(initialWorkspaceContext ? [] : initialContextRefs || []);
+    setWorkspaceContext(initialWorkspaceContext);
     setAssistSource(initialAssistSource);
     const restoredReply = thread.messages.find(
       message => message.id === initialReplyToMessageId,
     );
     setReplyTarget(
-      restoredReply
+      restoredReply && !initialWorkspaceContext
         ? {
             ...restoredReply,
             content: displayText(
@@ -455,7 +555,8 @@ export function ChatScreen({
     initialDraft,
     initialAssistSource,
     initialReplyToMessageId,
-    initialButlerContextReset,
+    initialContextReset,
+    initialWorkspaceContext,
     onInitialDraftConsumed,
     thread.messages,
     thread.agentId,
@@ -463,6 +564,8 @@ export function ChatScreen({
   ]);
 
   useEffect(() => {
+    if (workspaceContext || initialWorkspaceContext || contextReset.current)
+      return;
     if (!clarification) {
       if (continuingClarification.current && !draftEdited.current) {
         setContextRefs([]);
@@ -479,7 +582,13 @@ export function ChatScreen({
     setAssistSource(clarification.source);
     continuingClarification.current = true;
     contextReset.current = false;
-  }, [clarification]);
+    setContextResetNotice(false);
+  }, [
+    clarification,
+    contextResetNotice,
+    initialWorkspaceContext,
+    workspaceContext,
+  ]);
 
   useEffect(() => {
     const showSubscription = Keyboard.addListener('keyboardDidShow', event => {
@@ -530,10 +639,11 @@ export function ChatScreen({
     setDraft('');
     const selectedReferences = contextRefs;
     const selectedSource = assistSource;
+    const selectedWorkspace = workspaceContext;
     const submittedReset = contextReset.current;
+    const submittedGeneration = contextGeneration.current;
     draftEdited.current = false;
     continuingClarification.current = false;
-    contextReset.current = false;
     setContextRefs([]);
     setAssistSource(undefined);
     setIsSending(true);
@@ -546,10 +656,26 @@ export function ChatScreen({
         targetId,
         selectedReferences,
         selectedSource,
-        ...(submittedReset ? ([true] as const) : []),
+        ...((submittedReset && professional
+          ? [undefined, undefined, true]
+          : selectedWorkspace
+          ? [undefined, selectedWorkspace]
+          : submittedReset
+          ? [true]
+          : []) as [boolean?, WorkspaceDiscussionContext?, boolean?]),
       ),
     )
-      .then(() => tasks.refresh())
+      .then(result => {
+        if (
+          result === true &&
+          submittedReset &&
+          contextGeneration.current === submittedGeneration
+        ) {
+          contextReset.current = false;
+          setContextResetNotice(false);
+        }
+        return tasks.refresh();
+      })
       .catch(error =>
         onActionError(error instanceof Error ? error.message : '消息发送失败'),
       )
@@ -612,7 +738,7 @@ export function ChatScreen({
           subtitleStatus={
             presenceSubtitle ? (threadOnline ? 'online' : 'offline') : undefined
           }
-          onBack={onBack}
+          onBack={closeChat}
           onOpenSettings={
             canConfigureThread ? () => setIsThreadSettingsOpen(true) : undefined
           }
@@ -730,7 +856,19 @@ export function ChatScreen({
               arrowLeft={messageMenuPosition.arrowLeft}
               canRecall={canRecallSelectedMessage}
               onClose={closeMessageMenu}
-              onReply={setReplyTarget}
+              onReply={message => {
+                if (workspaceContext) {
+                  onActionError(
+                    textFor(
+                      language,
+                      '请先移除任务关联，再回复其他消息。',
+                      'Remove the task context before replying to another message.',
+                    ),
+                  );
+                  return;
+                }
+                setReplyTarget(message);
+              }}
               onDeleteMessage={onDeleteMessage}
               onRecallMessage={onRecallMessage}
               onActionMessage={onActionError}
@@ -741,13 +879,84 @@ export function ChatScreen({
           palette={messagePalette}
           language={language}
           threadTitle={thread.title}
-          threadId={thread.id}
           draft={draft}
           isSending={isSending}
           isRecognizingSpeech={isRecognizingSpeech}
           replyTarget={replyTarget}
-          contextRefs={contextRefs}
           assistSource={assistSource}
+          contextRefs={contextRefs}
+          workspaceActions={
+            workspaceContext && token && onOpenWorkspace ? (
+              <WorkspaceContextCard
+                key={`${token}:${currentUserId}:${thread.id}:${workspaceContext.id}:${workspaceContext.revision}:${workspaceContext.currentRound}`}
+                token={token}
+                context={workspaceContext}
+                palette={messagePalette}
+                language={language}
+                draft={draft}
+                onOpenWorkspace={onOpenWorkspace}
+                onChangeContext={context => {
+                  draftEdited.current = true;
+                  contextGeneration.current += 1;
+                  setWorkspaceContext(context);
+                }}
+                onRemove={() => {
+                  draftEdited.current = true;
+                  continuingClarification.current = false;
+                  contextReset.current = true;
+                  contextGeneration.current += 1;
+                  handledClarification.current =
+                    clarification?.messageId || null;
+                  setContextResetNotice(true);
+                  setContextRefs([]);
+                  setReplyTarget(null);
+                  setWorkspaceContext(undefined);
+                }}
+              />
+            ) : contextResetNotice ? (
+              <View
+                testID="chat-context-reset-notice"
+                style={taskStyles.contextResetNotice}
+              >
+                <Text style={{ color: palette.secondaryText }}>
+                  {textFor(
+                    language,
+                    '移除关联后将开始新的需求，不沿用之前的素材和待续需求。',
+                    'Removing this task link starts a new request without previous references or pending follow-ups.',
+                  )}
+                </Text>
+              </View>
+            ) : professional && clarification ? (
+              <Pressable
+                testID="chat-agent-new-request"
+                accessibilityRole="button"
+                accessibilityLabel={textFor(
+                  language,
+                  '开始新的需求',
+                  'Start a new request',
+                )}
+                style={taskStyles.contextResetNotice}
+                onPress={() => {
+                  draftEdited.current = true;
+                  continuingClarification.current = false;
+                  contextReset.current = true;
+                  contextGeneration.current += 1;
+                  handledClarification.current = clarification.messageId;
+                  setContextRefs([]);
+                  setAssistSource(undefined);
+                  setContextResetNotice(true);
+                }}
+              >
+                <Text style={{ color: palette.secondaryText }}>
+                  {textFor(
+                    language,
+                    '正在补充上个需求 · 点击开始新的需求',
+                    'Following up on the previous request · Start a new request',
+                  )}
+                </Text>
+              </Pressable>
+            ) : undefined
+          }
           contextAccessWarning={contextAccessWarning}
           onOpenAgentAccess={openAgentAccess}
           onRemoveContextReference={index => {
@@ -759,8 +968,11 @@ export function ChatScreen({
               if (
                 continuingClarification.current &&
                 next.length < current.length
-              )
+              ) {
                 contextReset.current = true;
+                contextGeneration.current += 1;
+                setContextResetNotice(true);
+              }
               return next;
             });
           }}
@@ -777,7 +989,6 @@ export function ChatScreen({
           }}
           onRecognizeSpeech={recognizeSpeech}
           onSend={send}
-          onActionMessage={onActionError}
         />
       </Animated.View>
       <ThreadSettingsSheet
@@ -796,4 +1007,5 @@ export function ChatScreen({
 
 const taskStyles = StyleSheet.create({
   refresh: { minHeight: 44, padding: 12 },
+  contextResetNotice: { paddingHorizontal: 16, paddingVertical: 8 },
 });

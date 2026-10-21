@@ -52,7 +52,7 @@ const confirm = (workspace, overrides = {}) => service.decideAgentWorkspace({ us
 const profileConfig = async () => (await query("SELECT station_config FROM user_profiles WHERE user_id = ?", [owner]))[0].station_config;
 const request = async (path, body, options = {}) => {
   const headers = { Authorization: `Bearer ${options.token || token}`, "Content-Type": "application/json", "X-Miaoxun-App-Build": "46",
-    "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": "3", "X-Miaoxun-Site-Document": "2", ...options.headers };
+    "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": "6", "X-Miaoxun-Site-Document": "2", ...options.headers };
   for (const key of Object.keys(headers)) if (headers[key] === null) delete headers[key];
   const response = await fetch(`${origin}${path}`, { method: body === undefined ? "GET" : "POST", headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { status: response.status, ...await response.json() };
@@ -189,7 +189,7 @@ integration("HTTP dynamic direct composition, complete, full preview and atomic 
 
 integration("old workspace contract fails before writes, models and idempotent replay", async () => {
   const { user, ...body } = input();
-  for (const version of [null, "0", "1", "2", "4"]) {
+  for (const version of [null, "0", "1", "2", "3", "4", "5"]) {
     const result = await request("/api/agent-workspaces", body, { headers: { "X-Miaoxun-Agent-Workspace": version } });
     assert.equal(result.status, 426);
   }

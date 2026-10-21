@@ -1,3 +1,4 @@
+import { specialistDispatchPlan } from "./specialist-dispatch.js";
 import { workspaceContributionPlan } from "./workspace-contribution.js";
 import { agentChatHistory } from "./chat-history.js";
 
@@ -31,6 +32,10 @@ export default {
     return workspaceContributionPlan(args, { name: "形象顾问",
       expertise: "根据本次明确给出的条件提出形象、风格和审美方案。",
       boundary: "没有自动读取账户形象配置；不生成图片、修改头像、购买素材或写入资料。" });
+  },
+
+  async dispatch(args) {
+    return specialistDispatchPlan(args, this);
   },
 
   async chat({ input, user, messages = [], appContext = null }) {

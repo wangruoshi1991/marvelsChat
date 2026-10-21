@@ -57,6 +57,18 @@ export const stationAgentApi = {
     );
   },
 
+  stationFileAsset(token: string, id: string) {
+    return request<StationFileAssetDTO & { content: string | null }>(
+      `/api/station/file-assets/${encodeURIComponent(id)}`,
+      { token },
+    );
+  },
+  deleteStationFileAsset(token: string, id: string) {
+    return request<void>(`/api/station/file-assets/${encodeURIComponent(id)}`, {
+      token,
+      method: 'DELETE',
+    });
+  },
   createStationFileAsset(
     token: string,
     payload: {

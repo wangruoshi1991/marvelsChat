@@ -292,6 +292,29 @@ export const stationPostStyles = {
     borderRadius: 8,
     overflow: 'hidden',
   },
+  // Diary entries use the same timeline surface as posts, but keep their
+  // metadata, title and body in one compact padded block.
+  stationDiaryCard: {
+    borderRadius: 8,
+    gap: 0,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  stationDiaryMeta: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+    minHeight: 18,
+  },
+  stationDiaryMetaText: { fontSize: 11, fontWeight: '700' },
+  stationDiaryTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    lineHeight: 22,
+    marginTop: 7,
+  },
+  stationDiaryBody: { fontSize: 12, lineHeight: 19, marginTop: 4 },
   stationFeedContextContent: { gap: 8 },
   // Prototype `me-post-body` plus the author row it contains.
   stationFeedBody: { paddingBottom: 12, paddingHorizontal: 14, paddingTop: 13 },

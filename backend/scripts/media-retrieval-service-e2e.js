@@ -18,9 +18,10 @@ import { parseArgs } from "node:util";
 import express from "express";
 import { authenticate, hashToken, createPlainToken } from "../src/auth.js";
 import { registerMessageRoutes } from "../src/routes/message-routes.js";
-import { registerAITaskRoutes } from "../src/routes/ai-task-routes.js";
-import { createAITaskRunner } from "../src/ai-task-runner.js";
-import { createMessageTaskExecutor } from "../src/ai-message-task-service.js";
+import { registerAgentWorkspaceRoutes } from "../src/routes/agent-workspace-routes.js";
+import { createAgentWorkspaceRunner } from "../src/agent-workspace-runner.js";
+import { createAgentWorkspaceService } from "../src/agent-workspace-service.js";
+import { createWorkspaceCapabilityExecutor } from "../src/agent-workspace-capabilities.js";
 import { albumAssistantE2EHeaders, sendAlbumMessageAndWait } from "./album-assistant-e2e.js";
 import { registerStationMediaRetrievalRoutes } from "../src/routes/station-media-retrieval-routes.js";
 import { createRequestErrorHandler } from "../src/request-observability.js";
@@ -39,7 +40,7 @@ const report = { type: "isolated-db-real-model-service-and-agent", storageTransp
   runtimeGate: "injected-service-test-not-production-readiness", passed: [], providerCalls: [], failure: null };
 const owner = crypto.randomUUID(), outsider = crypto.randomUUID(), albumId = crypto.randomUUID();
 let server;
-let taskRunner;
+let workspaceRunner;
 let httpResultRoute;
 let originalControls;
 const ownerToken = createPlainToken(), outsiderToken = createPlainToken();
@@ -153,7 +154,7 @@ try {
   assert.ok(Number.isSafeInteger(video.results[0].matchedFrameTimestampMs));
   report.videoTimestampMs = video.results[0].matchedFrameTimestampMs;
   report.passed.push("exact-video-frame-original-read-and-visual-judging");
-  const tools = createAlbumAssistantTools({ userId: owner, inputMessageId: crypto.randomUUID(), service, assertAccess,
+  const tools = createAlbumAssistantTools({ userId: owner, operationKey: `service-e2e:${crypto.randomUUID()}`, service, assertAccess,
     listAlbums: (userId, name) => query("SELECT id,title FROM station_albums WHERE user_id=? AND (?='' OR title ILIKE ?) ORDER BY created_at DESC LIMIT 51",
       [userId, name || "", "%" + (name || "") + "%"]) });
   const input = "帮我在公开验收相册找穿着灰色针织衫的黑色巴哥犬照片";
@@ -165,9 +166,12 @@ try {
   const app = express(); app.use(express.json({ limit: "1mb" }));
   const asyncHandler = handler => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
   const logger = { error: () => {} };
+  const workspaceService = createAgentWorkspaceService({
+    executeCapability: createWorkspaceCapabilityExecutor({ retrievalService: service }),
+  });
   registerMessageRoutes(app, { authenticate, asyncHandler, getOnlineUserIds: () => [],
-    sendRealtimeToUser: () => {}, logger, retrievalRepository: repository, retrievalService: service });
-  registerAITaskRoutes(app, { authenticate, asyncHandler });
+    sendRealtimeToUser: () => {}, logger, retrievalRepository: repository });
+  registerAgentWorkspaceRoutes(app, { authenticate, asyncHandler, service: workspaceService });
   registerStationMediaRetrievalRoutes(app, { authenticate, asyncHandler, service });
   app.use(createRequestErrorHandler({ production: true, logger }));
   server = app.listen(0, "127.0.0.1");
@@ -188,29 +192,28 @@ try {
   const thread = (await query("SELECT id FROM chat_threads WHERE user_id=? AND agent_id='album-manager'", [owner]))[0];
   const messageBody = { content: input, clientMessageId: crypto.randomUUID() };
   const messageRoute = "/api/threads/" + thread.id + "/messages";
-  taskRunner = createAITaskRunner({
-    executors: { agent_message: createMessageTaskExecutor({ retrievalService: service }) }, logger,
+  workspaceRunner = createAgentWorkspaceRunner({
+    execute: workspaceService.executeWorkspaceNode, logger,
   });
-  taskRunner.start();
+  workspaceRunner.start();
   report.httpStage = "message-post";
   const conversation = await sendAlbumMessageAndWait({ api, token: ownerToken, threadId: thread.id, ...messageBody });
   report.httpStage = "agent-found";
   const agentMessage = conversation.messages.find(message => message.senderType === "agent");
-  assert.equal(agentMessage.metadata.albumAssistant.outcome, "found");
-  httpResultRoute = messageRoute + "/" + agentMessage.id + "/media-results";
+  assert.deepEqual(conversation.workspace.result.assets.map(asset => asset.id), [fixtureDefinitions[0].id]);
+  httpResultRoute = `/api/agent-workspaces/${conversation.workspace.id}/media/${fixtureDefinitions[0].id}`;
   report.httpStage = "result-read";
-  const actualResults = await api(httpResultRoute);
-  assert.deepEqual(actualResults.map(item => item.mediaAssetId), [fixtureDefinitions[0].id]);
+  assert.equal((await api(httpResultRoute)).id, fixtureDefinitions[0].id);
   const beforeHttpReplay = report.providerCalls.length;
   report.httpStage = "message-replay";
   const replay = await api(messageRoute, { method: "POST", body: messageBody, expected: 200 });
-  assert.equal(replay.task.id, conversation.task.id);
+  assert.equal(replay.messages.find(message => message.senderType === "agent").metadata.agentWorkspace.id, conversation.workspace.id);
   assert.equal(replay.messages.find(message => message.senderType === "agent").id, agentMessage.id);
   assert.equal(report.providerCalls.length, beforeHttpReplay);
   report.httpStage = "cross-owner-read";
   await api(httpResultRoute, { token: outsiderToken, expected: 404 });
   await api("/api/station/media-retrieval/status", { token: "", expected: 401 });
-  report.passed.push("authenticated-async-chat-task-result-read-replay-and-cross-owner-denial");
+  report.passed.push("authenticated-professional-workspace-result-read-replay-and-cross-owner-denial");
   const empty = await service.searchMediaRetrieval({ userId: owner, query: "a passenger airplane above clouds", idempotencyKey: crypto.randomUUID() });
   assert.deepEqual(empty.results, []);
   report.passed.push("unrelated-query-empty-without-fabricated-result");
@@ -221,7 +224,7 @@ try {
   report.passed.push("revocation-stops-new-model-dispatch");
   assert.equal(report.providerCalls.length, beforeRevokedSearch);
   await api(httpResultRoute, { expected: 403 });
-  report.passed.push("revoked-chat-result-HTTP-denial");
+  report.passed.push("revoked-workspace-result-HTTP-denial");
   report.ledger = await query("SELECT operation,disposition,COUNT(*)::int AS count FROM media_retrieval_cost_ledger WHERE user_id=? GROUP BY operation,disposition ORDER BY operation,disposition", [owner]);
 } catch (error) {
   report.failure = { name: error.name, code: error.code || null, stagePassedCount: report.passed.length,
@@ -230,7 +233,7 @@ try {
     assertionExpected: typeof error.expected === "number" || ["found", "empty", "error"].includes(error.expected) ? error.expected : null };
   process.exitCode = 2;
 } finally {
-  if (taskRunner) await taskRunner.stop();
+  if (workspaceRunner) await workspaceRunner.stop();
   if (server) await new Promise(resolve => server.close(resolve));
   report.ledger = await query("SELECT operation,disposition,COUNT(*)::int AS count FROM media_retrieval_cost_ledger WHERE user_id=? GROUP BY operation,disposition ORDER BY operation,disposition", [owner]);
   await query("DELETE FROM agent_runs WHERE user_id IN (?,?)", [owner, outsider]);

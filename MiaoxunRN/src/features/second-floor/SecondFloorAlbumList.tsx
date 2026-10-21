@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Images, Pencil, Plus, X } from 'lucide-react-native';
+import { Images, Pencil, Plus } from 'lucide-react-native';
 import { StationAlbumDTO, StationMediaAssetDTO } from '../../models/api';
 import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
 import { textFor } from '../../shared/i18n';
@@ -145,7 +145,6 @@ export function SecondFloorAlbumList({
   token,
   albums,
   mediaAssets,
-  onBack,
   onCreate,
   onOpen,
   onEdit,
@@ -155,7 +154,6 @@ export function SecondFloorAlbumList({
   token: string;
   albums: StationAlbumDTO[];
   mediaAssets: StationMediaAssetDTO[];
-  onBack: () => void;
   onCreate: () => void;
   onOpen: (id: string) => void;
   onEdit: (id: string) => void;
@@ -174,18 +172,6 @@ export function SecondFloorAlbumList({
           icon={<Plus size={18} color={colors.surface} />}
           style={s.create}
         />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={textFor(
-            language,
-            '收起相册面板',
-            'Close albums panel',
-          )}
-          onPress={onBack}
-          style={s.edit}
-        >
-          <X size={18} color={colors.secondaryText} />
-        </Pressable>
       </View>
       <Text style={[s.body, { color: colors.secondaryText }]}>
         {textFor(
@@ -317,7 +303,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     gap: 6,
   },
   name: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
@@ -387,12 +373,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     opacity: 0.9,
-  },
-  edit: {
-    minHeight: workspaceTokens.minTouch,
-    minWidth: workspaceTokens.minTouch,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   empty: {
     width: '31.8%',

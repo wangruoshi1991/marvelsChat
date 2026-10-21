@@ -1,3 +1,4 @@
+import { fileWorkspaceUnavailable } from '../__fixtures__/fileWorkspaceUnavailable';
 import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
 import { request } from '../src/services/api/http';
 import {
@@ -9,6 +10,7 @@ import {
   isWorkspaceArtifact,
 } from '../src/models/agentWorkspace';
 import { agentWorkspace, workspaceStep } from '../__fixtures__/agentWorkspace';
+import { AgentWorkspace } from '../src/models/agentWorkspace';
 jest.mock('../src/services/api/http', () => ({ request: jest.fn() }));
 const http = jest.mocked(request);
 beforeEach(() => {
@@ -19,7 +21,7 @@ const session = () =>
   setAIContractSession('token', {
     aiTasks: 1,
     siteDocuments: 2,
-    agentWorkspaces: 3,
+    agentWorkspaces: 6,
   });
 test.each([
   undefined,
@@ -27,8 +29,11 @@ test.each([
   { aiTasks: 1 },
   { aiTasks: 1, agentWorkspaces: 1 },
   { aiTasks: 1, agentWorkspaces: 2 },
+  { aiTasks: 1, agentWorkspaces: 3 },
   { aiTasks: 1, agentWorkspaces: 4 },
-  { aiTasks: 1, agentWorkspaces: '3' },
+  { aiTasks: 1, agentWorkspaces: 5 },
+  { aiTasks: 1, agentWorkspaces: 7 },
+  { aiTasks: 1, agentWorkspaces: '4' },
 ])('unsupported collaboration capability blocks HTTP: %p', async contracts => {
   setAIContractSession('token', contracts);
   await expect(agentWorkspaceApi.list('token')).rejects.toThrow();
@@ -48,6 +53,50 @@ test('capability is scoped to active session', async () => {
   clearAIContractSession();
   await expect(agentWorkspaceApi.list('token')).rejects.toThrow();
   expect(http).not.toHaveBeenCalled();
+});
+
+test('contract 5 requires execution mode and an exact direct origin whose executor cannot change', () => {
+  const direct = agentWorkspace({
+    executionMode: 'direct',
+    origin: {
+      kind: 'agent_conversation',
+      threadId: 'thread',
+      inputMessageId: 'input',
+      agentId: 'comic-diary',
+      agentVersion: '1',
+      capability: 'comic.storyboard',
+    },
+    steps: [
+      workspaceStep({
+        agentId: 'comic-diary',
+        agentVersion: '1',
+        capability: 'comic.storyboard',
+      }),
+    ],
+  });
+  expect(() => assertAgentWorkspace(direct)).not.toThrow();
+  for (const patch of [
+    { executionMode: undefined },
+    { executionMode: 'unknown' },
+    { origin: undefined },
+    { origin: null },
+    { origin: { ...direct.origin, threadId: '' } },
+    { origin: { ...direct.origin, privateHistory: [] } },
+    { executionMode: 'coordinated' },
+    { steps: [workspaceStep()] },
+    {
+      steps: [
+        workspaceStep({
+          agentId: 'comic-diary',
+          agentVersion: '2',
+          capability: 'comic.storyboard',
+        }),
+      ],
+    },
+  ])
+    expect(() => assertAgentWorkspace({ ...direct, ...patch })).toThrow(
+      '数据格式',
+    );
 });
 test('v3 retains typed input actions and never allows replying to an access request', () => {
   const question = '需要授权后新建任务';
@@ -126,7 +175,7 @@ test('goal, explicit source and real references cross one dedicated contract', a
   expect(http).toHaveBeenCalledWith('/api/agent-workspaces', {
     token: 'token',
     method: 'POST',
-    headers: { 'X-Miaoxun-AI-Contract': '1', 'X-Miaoxun-Agent-Workspace': '3' },
+    headers: { 'X-Miaoxun-AI-Contract': '1', 'X-Miaoxun-Agent-Workspace': '6' },
     body: input,
   });
 });
@@ -254,7 +303,7 @@ test('public text references bind the produced node and contain no body', () => 
   ])
     expect(() => assertAgentWorkspace({ ...valid, ...changes })).toThrow();
 });
-test('text endpoint sends contract3 and validates the requested node separately from snapshots', async () => {
+test('text endpoint sends contract4 and validates the requested node separately from snapshots', async () => {
   session();
   const document = {
     id: 'node-1',
@@ -271,7 +320,7 @@ test('text endpoint sends contract3 and validates the requested node separately 
       token: 'token',
       headers: {
         'X-Miaoxun-AI-Contract': '1',
-        'X-Miaoxun-Agent-Workspace': '3',
+        'X-Miaoxun-Agent-Workspace': '6',
       },
     },
   );
@@ -387,14 +436,14 @@ test('confirmation needs document contract plus revision and approval', async ()
     expect.objectContaining({
       headers: {
         'X-Miaoxun-AI-Contract': '1',
-        'X-Miaoxun-Agent-Workspace': '3',
+        'X-Miaoxun-Agent-Workspace': '6',
         'X-Miaoxun-Site-Document': '2',
       },
       body: { revision: 3, operation: 'confirm', approvalId: 'approval' },
     }),
   );
   http.mockClear();
-  setAIContractSession('token', { aiTasks: 1, agentWorkspaces: 3 });
+  setAIContractSession('token', { aiTasks: 1, agentWorkspaces: 6 });
   await expect(agentWorkspaceApi.decide('token', w, 'confirm')).rejects.toThrow(
     '结构化页面',
   );
@@ -410,4 +459,329 @@ test('media binds exact asset and accepts only currently uploaded assets', async
   await expect(
     agentWorkspaceApi.media('token', 'workspace', 'asset'),
   ).rejects.toThrow();
+});
+
+test('round history retains matching completed results and rejects broken lineage', () => {
+  const previousResult = {
+    kind: 'text_result' as const,
+    id: 'previous-node',
+    title: '初稿',
+  };
+  const result = {
+    kind: 'text_result' as const,
+    id: 'revised-node',
+    title: '修订稿',
+  };
+  const original = agentWorkspace({
+    status: 'succeeded',
+    result: previousResult,
+    steps: [workspaceStep({ id: previousResult.id, result: previousResult })],
+    allowedActions: ['continue'],
+  });
+  const current = agentWorkspace({
+    currentRound: 2,
+    status: 'succeeded',
+    result,
+    allowedActions: ['continue'],
+    steps: [
+      ...original.steps,
+      workspaceStep({
+        id: result.id,
+        key: 'revised',
+        round: 2,
+        result,
+      }),
+    ],
+    rounds: [
+      original.rounds[0],
+      {
+        ...original.rounds[0],
+        number: 2,
+        instruction: '精简开头，保留已有安排',
+        baseResultNodeId: previousResult.id,
+        resultNodeId: result.id,
+        result,
+      },
+    ],
+  });
+  expect(() => assertAgentWorkspace(current)).not.toThrow();
+  expect(() =>
+    assertAgentWorkspace({
+      ...current,
+      result: { title: result.title, id: result.id, kind: result.kind },
+    }),
+  ).not.toThrow();
+  for (const patch of [
+    { currentRound: undefined },
+    { currentRound: 0 },
+    { currentRound: 3 },
+    { rounds: undefined },
+    { rounds: [] },
+    { rounds: [{ ...current.rounds[0], number: 2 }, current.rounds[1]] },
+    { rounds: [current.rounds[0], { ...current.rounds[1], instruction: '' }] },
+    {
+      rounds: [
+        current.rounds[0],
+        { ...current.rounds[1], baseResultNodeId: 'other' },
+      ],
+    },
+    {
+      rounds: [
+        current.rounds[0],
+        { ...current.rounds[1], resultNodeId: previousResult.id },
+      ],
+    },
+    { rounds: [current.rounds[0], { ...current.rounds[1], result: null }] },
+    { rounds: [current.rounds[0], { ...current.rounds[1], status: 'failed' }] },
+    {
+      rounds: [
+        current.rounds[0],
+        { ...current.rounds[1], summary: 'different' },
+      ],
+    },
+    { steps: current.steps.map(step => ({ ...step, round: 0 })) },
+    { steps: current.steps.map(step => ({ ...step, round: 3 })) },
+    { steps: [current.steps[0], { ...current.steps[1], status: 'failed' }] },
+    { steps: [current.steps[0], { ...current.steps[1], round: 1 }] },
+  ])
+    expect(() => assertAgentWorkspace({ ...current, ...patch })).toThrow();
+});
+
+test.each(['running', 'waiting_input', 'failed', 'cancelled'] as const)(
+  'continue is never accepted for %s workspaces',
+  status => {
+    expect(() =>
+      assertAgentWorkspace(
+        agentWorkspace({
+          status,
+          result: { kind: 'site_draft', id: 'draft', title: '当前成果' },
+          allowedActions: ['continue'],
+        }),
+      ),
+    ).toThrow();
+  },
+);
+
+const continuationReceipt = (w: AgentWorkspace): AgentWorkspace => ({
+  ...w,
+  status: 'queued',
+  revision: w.revision + 1,
+  currentRound: w.currentRound + 1,
+  summary: '',
+  result: null,
+  allowedActions: ['cancel'],
+  rounds: [
+    ...w.rounds,
+    {
+      number: w.currentRound + 1,
+      instruction: '精简开头',
+      baseResultNodeId: w.rounds[w.currentRound - 1].resultNodeId,
+      resultNodeId: null,
+      result: null,
+      summary: '',
+      status: 'queued',
+      createdAt: w.updatedAt,
+      completedAt: null,
+    },
+  ],
+});
+
+test('continuation sends only the current revision, explicit instruction and idempotency key to the same workspace', async () => {
+  session();
+  const w = agentWorkspace({
+    status: 'succeeded',
+    result: { kind: 'site_draft', id: 'draft', title: '当前成果' },
+    allowedActions: ['continue'],
+  });
+  http.mockResolvedValue(continuationReceipt(w));
+  await agentWorkspaceApi.decide(
+    'token',
+    w,
+    'continue',
+    '精简开头',
+    'continue-request-1',
+  );
+  expect(http).toHaveBeenCalledWith(
+    '/api/agent-workspaces/workspace-1/decision',
+    {
+      token: 'token',
+      method: 'POST',
+      headers: {
+        'X-Miaoxun-AI-Contract': '1',
+        'X-Miaoxun-Agent-Workspace': '6',
+      },
+      body: {
+        revision: w.revision,
+        operation: 'continue',
+        text: '精简开头',
+        idempotencyKey: 'continue-request-1',
+      },
+    },
+  );
+});
+
+test.each([
+  [undefined, 'stable-request'],
+  ['', 'stable-request'],
+  ['   ', 'stable-request'],
+  ['文'.repeat(2001), 'stable-request'],
+  ['修改标题', undefined],
+  ['修改标题', 'short'],
+  ['修改标题', 'x'.repeat(161)],
+])('invalid continuation input never reaches HTTP: %p', async (text, key) => {
+  session();
+  const w = agentWorkspace({
+    status: 'succeeded',
+    result: { kind: 'site_draft', id: 'draft', title: '当前成果' },
+    allowedActions: ['continue'],
+  });
+  await expect(
+    agentWorkspaceApi.decide('token', w, 'continue', text, key),
+  ).rejects.toThrow();
+  expect(http).not.toHaveBeenCalled();
+});
+
+test('continuation never falls back to creation when the action or server contract is unavailable', async () => {
+  session();
+  const w = agentWorkspace({ status: 'succeeded', allowedActions: [] });
+  await expect(
+    agentWorkspaceApi.decide(
+      'token',
+      w,
+      'continue',
+      '修改标题',
+      'stable-request',
+    ),
+  ).rejects.toThrow('当前状态');
+  setAIContractSession('token', { aiTasks: 1, agentWorkspaces: 3 });
+  await expect(
+    agentWorkspaceApi.decide(
+      'token',
+      { ...w, allowedActions: ['continue'] },
+      'continue',
+      '修改标题',
+      'stable-request',
+    ),
+  ).rejects.toThrow('任务续作');
+  expect(http).not.toHaveBeenCalled();
+});
+
+test('a continuation requires a receipt from a later round, while a replay may return progress beyond the next round', async () => {
+  session();
+  const w = agentWorkspace({
+    status: 'succeeded',
+    result: { kind: 'site_draft', id: 'draft', title: '当前成果' },
+    allowedActions: ['continue'],
+  });
+  http.mockResolvedValue(w);
+  await expect(
+    agentWorkspaceApi.decide(
+      'token',
+      w,
+      'continue',
+      '精简开头',
+      'stable-request',
+    ),
+  ).rejects.toThrow('结果尚未确认');
+  const firstReceipt = continuationReceipt(w);
+  const nextResult = {
+    kind: 'site_draft' as const,
+    id: 'next-draft',
+    title: '第二版',
+  };
+  const nextStep = workspaceStep({
+    id: 'next-step',
+    key: 'next-step',
+    round: 2,
+    result: nextResult,
+  });
+  const second = {
+    ...firstReceipt,
+    status: 'succeeded' as const,
+    result: nextResult,
+    steps: [...firstReceipt.steps, nextStep],
+    allowedActions: ['continue' as const],
+    rounds: [
+      w.rounds[0],
+      {
+        ...firstReceipt.rounds[1],
+        status: 'succeeded' as const,
+        result: nextResult,
+        resultNodeId: nextStep.id,
+      },
+    ],
+  };
+  const later = continuationReceipt(second);
+  http.mockResolvedValue(later);
+  await expect(
+    agentWorkspaceApi.decide(
+      'token',
+      w,
+      'continue',
+      '精简开头',
+      'stable-request',
+    ),
+  ).resolves.toEqual(later);
+});
+
+test('only explicit file source unavailability permits redacted historical result links', () => {
+  const summary = '文件已删除、变化或授权不可用，历史成果正文不可读取。';
+  const base = agentWorkspace({
+    status: 'succeeded',
+    summary,
+    allowedActions: [],
+    contextRefs: [{ kind: 'station-file', id: 'file-1', version: 'v1' }],
+    steps: [workspaceStep({ summary, result: null })],
+  });
+  const redacted = {
+    ...base,
+    readAccess: {
+      state: 'unavailable',
+      code: 'WORKSPACE_FILE_SOURCE_UNAVAILABLE',
+    },
+    rounds: base.rounds.map(round => ({ ...round, resultNodeId: 'node-1' })),
+  };
+  expect(() => assertAgentWorkspace(redacted)).not.toThrow();
+  for (const patch of [
+    { readAccess: undefined },
+    { readAccess: { state: 'unavailable', code: 'unknown' } },
+    {
+      readAccess: {
+        state: 'unavailable',
+        code: 'WORKSPACE_FILE_SOURCE_UNAVAILABLE',
+        extra: true,
+      },
+    },
+    { contextRefs: [{ kind: 'station-album', id: 'album-1' }] },
+    { allowedActions: ['continue'] },
+    { steps: [workspaceStep({ summary: 'unredacted summary' })] },
+    {
+      rounds: redacted.rounds.map(round => ({
+        ...round,
+        resultNodeId: 'missing-node',
+      })),
+    },
+  ])
+    expect(() => assertAgentWorkspace({ ...redacted, ...patch })).toThrow();
+});
+
+test('actual isolated HTTP deletion DTO keeps both historical rounds while protecting source content', async () => {
+  expect(() => assertAgentWorkspace(fileWorkspaceUnavailable)).not.toThrow();
+  expect(fileWorkspaceUnavailable.currentRound).toBe(2);
+  expect(fileWorkspaceUnavailable.rounds[1].baseResultNodeId).toBe(
+    fileWorkspaceUnavailable.rounds[0].resultNodeId,
+  );
+  expect(fileWorkspaceUnavailable.result).toBeNull();
+  expect(fileWorkspaceUnavailable.allowedActions).not.toContain('continue');
+  session();
+  http.mockResolvedValueOnce([fileWorkspaceUnavailable]);
+  await expect(agentWorkspaceApi.list('token')).resolves.toEqual([
+    fileWorkspaceUnavailable,
+  ]);
+  http.mockResolvedValueOnce(fileWorkspaceUnavailable);
+  await expect(
+    agentWorkspaceApi.get('token', fileWorkspaceUnavailable.id),
+  ).resolves.toEqual(fileWorkspaceUnavailable);
+  const unmarked = { ...fileWorkspaceUnavailable, readAccess: undefined };
+  expect(() => assertAgentWorkspace(unmarked)).toThrow();
 });

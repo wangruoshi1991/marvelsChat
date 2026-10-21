@@ -126,18 +126,34 @@ test('recognized legacy drafts omit extra runtime fields without depending on a 
   );
 });
 
-test.each(['recognized', 'user-json', 'unknown-json'])(
+test.each([
+  'recognized',
+  'user-json',
+  'unknown-json',
+  'dispatch-reply',
+  'dispatch-clarify',
+  'dispatch-workspace',
+])(
   'rendered %s content matches accessibility, copying, sharing and selected assistance without changing storage',
   async kind => {
-    const item =
-      kind === 'user-json'
-        ? { ...message(comic), senderType: 'user' }
-        : kind === 'unknown-json'
-        ? message({
-            unknown: 'User-facing JSON',
-            mediaAssetIds: ['must-remain'],
-          })
-        : message(comic);
+    const item = kind.startsWith('dispatch-')
+      ? {
+          ...message(comic),
+          metadata: {
+            agentDispatch: {
+              version: 1 as const,
+              kind: kind.slice(9) as 'reply' | 'clarify' | 'workspace',
+            },
+          },
+        }
+      : kind === 'user-json'
+      ? { ...message(comic), senderType: 'user' }
+      : kind === 'unknown-json'
+      ? message({
+          unknown: 'User-facing JSON',
+          mediaAssetIds: ['must-remain'],
+        })
+      : message(comic);
     const stored = JSON.stringify(item);
     const expected =
       kind === 'recognized'

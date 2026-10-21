@@ -1,3 +1,4 @@
+import { specialistDispatchPlan } from "./specialist-dispatch.js";
 import { workspaceContributionPlan } from "./workspace-contribution.js";
 import { agentChatHistory } from "./chat-history.js";
 
@@ -31,6 +32,10 @@ export default {
     return workspaceContributionPlan(args, { name: "视频脚本助手",
       expertise: "编写视频脚本、节奏、镜头、旁白和剪辑建议，结合明确交付的文字与素材说明。",
       boundary: "此次只交付文字脚本，不渲染、剪辑、上传或发布视频；素材说明不等于看过完整视频。" });
+  },
+
+  async dispatch(args) {
+    return specialistDispatchPlan(args, this);
   },
 
   async chat({ input, user, messages = [], appContext = null }) {

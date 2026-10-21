@@ -24,6 +24,19 @@ export function validateWorkspaceDecision(reply, { workspace, catalogue, unavail
   try { decision = workspaceDecisionSchema.parse(typeof reply === "string" ? JSON.parse(reply) : reply); }
   catch { invalid("协调 Agent 返回了无效计划，未执行后续操作。"); }
   const existing = new Map(workspace.nodes.map(node => [node.key, node]));
+  const currentRound = workspace.rounds?.find(round => round.number === workspace.currentRound);
+  const base = currentRound?.baseResultNodeId
+    ? workspace.nodes.find(node => node.id === currentRound.baseResultNodeId) : null;
+  if (workspace.currentRound > 1 && (!base || base.status !== "succeeded" || !base.result?.artifact)) {
+    invalid("续作缺少真实的上一轮成果。");
+  }
+  const inheritsBase = (node, planned = new Map(), visited = new Set()) => {
+    if (!node || visited.has(node.key)) return false;
+    if (node.id === base?.id) return true;
+    visited.add(node.key);
+    return (node.dependencies ?? node.dependsOn).some(key =>
+      inheritsBase(existing.get(key) ?? planned.get(key), planned, visited));
+  };
   if (decision.type === "clarify") return decision;
   if (decision.type === "request_access") {
     const requirements = decision.capabilities.map(selected => {
@@ -42,6 +55,9 @@ export function validateWorkspaceDecision(reply, { workspace, catalogue, unavail
     const result = existing.get(decision.resultKey);
     if (!result || result.status !== "succeeded" || !result.result?.artifact || result.capability === "workspace.coordinate") {
       invalid("协调 Agent 没有选择已实际完成的成果。");
+    }
+    if (base && (result.round !== workspace.currentRound || !inheritsBase(result))) {
+      invalid("续作必须交付当前轮基于上一成果产生的新成果。");
     }
     return decision;
   }
@@ -72,6 +88,9 @@ export function validateWorkspaceDecision(reply, { workspace, catalogue, unavail
     visiting.delete(name); visited.add(name);
   };
   planned.forEach((_node, name) => visit(name));
+  if (base && !decision.steps.some(node => inheritsBase(node, planned))) {
+    invalid("续作计划没有交接上一轮成果。");
+  }
   return { ...decision, nodes: decision.steps.map(node => ({
     key: node.key, agentId: node.agentId, agentVersion: capability(node).agentVersion,
     capability: node.capability, goal: node.goal, dependencies: node.dependsOn, contextRefIndexes: node.contextRefIndexes,

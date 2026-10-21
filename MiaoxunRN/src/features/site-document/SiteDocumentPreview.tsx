@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AppState, Modal, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { SiteDocumentView } from '../../models/siteDocument';
 import { stationAgentApi } from '../../services/api/stationAgentApi';
 import { textFor } from '../../shared/i18n';
@@ -133,64 +133,78 @@ export function SiteDocumentPreview({
     onClose();
   };
   return (
-    <Modal visible={visibleActive} animationType="slide" onRequestClose={close}>
-      <SafeAreaView style={[s.screen, { backgroundColor: palette.background }]}>
-        <Header
-          palette={palette}
-          title={textFor(
-            language,
-            '页面预览 · 仅自己可见',
-            'Page preview · Private',
-          )}
-          onBack={close}
-        />
-        <View testID={`site-draft-preview-${draftId}`} style={s.screen}>
-          {visible?.view ? (
-            <SiteDocumentRenderer
-              key={visible.generation}
-              view={visible.view}
-              token={token}
-              palette={palette}
-              language={language}
-              onReadinessChange={ready => {
-                if (
-                  !requiresReview ||
-                  !currentScope.current.active ||
-                  currentScope.current.scope !== visible.scope ||
-                  generation.current !== visible.generation
-                )
-                  return;
-                if (ready) review.current?.();
-                else invalidate.current?.();
-              }}
-            />
-          ) : (
-            <WorkspaceState
-              palette={palette}
-              busy={!visible?.error && visibleActive}
-              tone={visible?.error ? 'error' : undefined}
-              title={
-                visible?.error ||
-                textFor(
-                  language,
-                  '正在读取页面及引用内容…',
-                  'Loading the page and its references…',
-                )
-              }
-            />
-          )}
-          {visible?.error ? (
-            <View style={workspaceStyles.content}>
-              <WorkspaceButton
+    <Modal
+      visible={visibleActive}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={close}
+    >
+      <SafeAreaProvider>
+        <SafeAreaView
+          style={[s.screen, { backgroundColor: palette.background }]}
+        >
+          <Header
+            palette={palette}
+            title={textFor(
+              language,
+              '页面预览 · 仅自己可见',
+              'Page preview · Private',
+            )}
+            backAccessibilityLabel={textFor(
+              language,
+              '关闭页面预览',
+              'Close page preview',
+            )}
+            onBack={close}
+          />
+          <View testID={`site-draft-preview-${draftId}`} style={s.screen}>
+            {visible?.view ? (
+              <SiteDocumentRenderer
+                key={visible.generation}
+                view={visible.view}
+                token={token}
                 palette={palette}
-                variant="secondary"
-                label={textFor(language, '重新读取页面', 'Reload page')}
-                onPress={() => setAttempt(value => value + 1)}
+                language={language}
+                onReadinessChange={ready => {
+                  if (
+                    !requiresReview ||
+                    !currentScope.current.active ||
+                    currentScope.current.scope !== visible.scope ||
+                    generation.current !== visible.generation
+                  )
+                    return;
+                  if (ready) review.current?.();
+                  else invalidate.current?.();
+                }}
               />
-            </View>
-          ) : null}
-        </View>
-      </SafeAreaView>
+            ) : (
+              <WorkspaceState
+                palette={palette}
+                busy={!visible?.error && visibleActive}
+                tone={visible?.error ? 'error' : undefined}
+                title={
+                  visible?.error ||
+                  textFor(
+                    language,
+                    '正在读取页面及引用内容…',
+                    'Loading the page and its references…',
+                  )
+                }
+              />
+            )}
+            {visible?.error ? (
+              <View style={workspaceStyles.content}>
+                <WorkspaceButton
+                  palette={palette}
+                  variant="secondary"
+                  label={textFor(language, '重新读取页面', 'Reload page')}
+                  onPress={() => setAttempt(value => value + 1)}
+                />
+              </View>
+            ) : null}
+          </View>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }
