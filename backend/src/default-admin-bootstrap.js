@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { createAiId } from "./ai-id.js";
 import { hashPassword } from "./auth.js";
+import { ensureDefaultButlerAccess } from "./repositories.js";
 
 const adminPermissions = JSON.stringify(["*"]);
 
@@ -82,6 +83,7 @@ export async function bootstrapDefaultAdmin(connection, defaultAdmin) {
       userId,
       displayName: defaultAdmin.displayName,
     });
+    await ensureDefaultButlerAccess({ userId, connection });
     return { created: false, userId };
   }
 
@@ -110,5 +112,6 @@ export async function bootstrapDefaultAdmin(connection, defaultAdmin) {
     userId,
     displayName: defaultAdmin.displayName,
   });
+  await ensureDefaultButlerAccess({ userId, connection });
   return { created: true, userId };
 }

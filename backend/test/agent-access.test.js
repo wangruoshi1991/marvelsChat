@@ -5,6 +5,7 @@ process.env.DEFAULT_ADMIN_PASSWORD ||= "test-only-password";
 
 const {
   createUserWithDefaults,
+  ensureDefaultButlerAccess,
   resolveAgentGrantedScopes,
   setUserAgentAccess,
 } = await import("../src/repositories.js");
@@ -23,7 +24,7 @@ const agent = {
   permissions: ["profile:read", "station:read"],
 };
 
-test("new accounts have no Agent grant or Agent conversation until explicit addition", async () => {
+test("new accounts receive the default Butler grant and conversation in the account transaction", async () => {
   const calls = [];
   let transactionCommitted = false;
   const readUser = async (userId) => {
@@ -42,6 +43,8 @@ test("new accounts have no Agent grant or Agent conversation until explicit addi
         await work({
           execute: async (sql, params = []) => {
             calls.push({ sql, params });
+            if (sql.includes("SELECT id FROM users WHERE id = ? FOR UPDATE"))
+              return [[{ id: params[0] }]];
             return sql.includes("nextval") ? [[{ value: "51" }]] : [[]];
           },
         });
@@ -59,10 +62,24 @@ test("new accounts have no Agent grant or Agent conversation until explicit addi
   assert.ok(
     calls.some((call) => call.sql.includes("INSERT INTO profile_visibility"))
   );
+  const grant = calls.find((call) => call.sql.includes("INSERT INTO user_agents"));
+  assert.ok(grant);
+  assert.deepEqual(JSON.parse(grant.params[4]), [
+    "profile:read",
+    "messages:read",
+    "agents:invoke",
+    "station:read",
+    "album:read",
+  ]);
+  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO chat_threads")));
+  const welcome = calls.find((call) => call.sql.includes("INSERT INTO chat_messages"));
+  assert.ok(welcome);
+  assert.deepEqual(JSON.parse(welcome.params.at(-1)), {
+    source: "account_default",
+    agentId: "miaoxun-butler",
+  });
   assert.ok(
-    calls.every(
-      (call) => !/user_agents|chat_threads|chat_messages/.test(call.sql)
-    )
+    calls.some((call) => call.params.includes("agent.access.default_granted")),
   );
 });
 
@@ -96,11 +113,159 @@ test("a failed account transaction never returns a partially created account", a
   assert.equal(read, false);
 });
 
+test("a failed default Butler welcome write rolls back the new account transaction", async () => {
+  let read = false;
+  const calls = [];
+  await assert.rejects(
+    createUserWithDefaults(
+      {
+        email: "new@example.com",
+        displayName: "New Owner",
+        passwordHash: "test-hash",
+        role: "user",
+      },
+      {
+        transaction: async (work) =>
+          work({
+            execute: async (sql, params = []) => {
+              calls.push({ sql, params });
+              if (sql.includes("SELECT id FROM users WHERE id = ? FOR UPDATE"))
+                return [[{ id: params[0] }]];
+              if (sql.includes("INSERT INTO chat_messages"))
+                throw new Error("welcome write rejected");
+              return sql.includes("nextval") ? [[{ value: "51" }]] : [[]];
+            },
+          }),
+        readUser: async () => {
+          read = true;
+        },
+      }
+    ),
+    /welcome write rejected/
+  );
+  assert.equal(read, false);
+  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO user_agents")));
+  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO chat_threads")));
+});
+
+for (const originalAccess of [
+  { enabled: false, granted_scopes: [], alias: "自定义管家" },
+  { enabled: true, granted_scopes: ["profile:read"], alias: null },
+]) {
+  test(`account default reconciles an existing ${originalAccess.enabled ? "incomplete" : "disabled"} Butler grant without changing its alias`, async () => {
+    const calls = [];
+    const access = structuredClone(originalAccess);
+    let threadId = null;
+    const scopes = [
+      "profile:read",
+      "messages:read",
+      "agents:invoke",
+      "station:read",
+      "album:read",
+    ];
+    const connection = {
+      execute: async (sql, params = []) => {
+        calls.push({ sql, params });
+        if (sql.startsWith("SELECT id FROM users"))
+          return [[{ id: "test-owner" }]];
+        if (sql.includes("FROM user_agents") && sql.includes("FOR UPDATE"))
+          return [[{ ...access }]];
+        if (sql.includes("UPDATE user_agents")) {
+          access.enabled = true;
+          access.granted_scopes = JSON.parse(params[0]);
+          return [[]];
+        }
+        if (sql.startsWith("SELECT id FROM chat_threads"))
+          return [threadId ? [{ id: threadId }] : []];
+        if (sql.includes("INSERT INTO chat_threads")) {
+          threadId = params[0];
+          return [[]];
+        }
+        if (
+          sql.includes("INSERT INTO chat_messages") ||
+          sql.includes("UPDATE chat_threads") ||
+          sql.includes("INSERT INTO usage_events")
+        ) return [[]];
+        assert.fail(`Unexpected default-grant query: ${sql}`);
+      },
+    };
+
+    const first = await ensureDefaultButlerAccess({
+      userId: "test-owner",
+      connection,
+    });
+    const repeated = await ensureDefaultButlerAccess({
+      userId: "test-owner",
+      connection,
+    });
+
+    assert.deepEqual(first, { added: false, enabled: true, grantedScopes: scopes });
+    assert.deepEqual(repeated, first);
+    assert.deepEqual(access, {
+      enabled: true,
+      granted_scopes: scopes,
+      alias: originalAccess.alias,
+    });
+    const grantWrites = calls.filter((call) => call.sql.includes("UPDATE user_agents"));
+    assert.equal(grantWrites.length, 1);
+    assert.doesNotMatch(grantWrites[0].sql, /alias\s*=/);
+    assert.equal(calls.filter((call) => call.sql.includes("INSERT INTO chat_threads")).length, 1);
+    const welcomes = calls.filter((call) => call.sql.includes("INSERT INTO chat_messages"));
+    assert.equal(welcomes.length, 1);
+    assert.equal(welcomes[0].params[3], originalAccess.alias || "妙讯管家");
+    assert.deepEqual(JSON.parse(welcomes[0].params.at(-1)), {
+      source: "account_default",
+      agentId: "miaoxun-butler",
+    });
+    assert.equal(calls.filter((call) => call.params.includes("agent.access.default_granted")).length, 1);
+  });
+}
+
 test("Agent access resolution accepts an explicit complete declaration", () => {
   assert.deepEqual(
     resolveAgentGrantedScopes(agent, ["profile:read", "station:read"]),
     agent.permissions
   );
+});
+
+test("explicit Agent addition keeps the manual welcome-message source", async () => {
+  let welcomeMetadata;
+  const connection = {
+    query: async (sql) => {
+      if (sql.startsWith("SELECT id FROM users")) return [{ id: "test-owner" }];
+      if (sql.includes("INSERT INTO user_agents")) return [];
+      if (sql.startsWith("SELECT id FROM chat_threads")) return [];
+      if (sql.includes("FROM user_agents")) {
+        return [{
+          user_id: "test-owner",
+          agent_id: agent.key,
+          alias: "Example",
+          enabled: true,
+          granted_scopes: agent.permissions,
+        }];
+      }
+      assert.fail(`Unexpected persistence query: ${sql}`);
+    },
+    execute: async (sql, params = []) => {
+      if (sql.includes("INSERT INTO chat_messages")) {
+        welcomeMetadata = JSON.parse(params.at(-1));
+      }
+      return [[]];
+    },
+  };
+
+  await setUserAgentAccess({
+    userId: "test-owner",
+    agent,
+    enabled: true,
+    alias: "Example",
+    grantedScopes: agent.permissions,
+    connection,
+  });
+  assert.deepEqual(welcomeMetadata, {
+    source: "admin_agent_enable",
+    agentId: agent.key,
+  });
 });
 
 test("external enable requests require an explicit array before declaration validation", () => {

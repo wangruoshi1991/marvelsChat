@@ -18,7 +18,11 @@ const createConnection = ({ users = [] } = {}) => {
     connection: {
       execute: async (sql, params = []) => {
         calls.push({ sql, params });
-        if (sql.includes("FROM users")) return [users];
+        if (sql.includes("FROM users")) {
+          if (sql.includes("FOR UPDATE") && users.length === 0)
+            return [[{ id: "bootstrapped-user" }]];
+          return [users];
+        }
         if (sql.includes("nextval")) return [[{ value: "42" }]];
         return [[]];
       },
@@ -26,7 +30,7 @@ const createConnection = ({ users = [] } = {}) => {
   };
 };
 
-test("bootstrap creates administrator profile records without granting an Agent", async () => {
+test("bootstrap creates administrator profile records with the default Butler", async () => {
   const { calls, connection } = createConnection();
 
   const result = await bootstrapDefaultAdmin(connection, defaultAdmin);
@@ -45,11 +49,9 @@ test("bootstrap creates administrator profile records without granting an Agent"
   assert.ok(
     calls.some((call) => call.sql.includes("INSERT INTO profile_visibility"))
   );
-  assert.ok(
-    calls.every(
-      (call) => !/user_agents|chat_threads|chat_messages/.test(call.sql)
-    )
-  );
+  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO user_agents")));
+  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO chat_threads")));
+  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO chat_messages")));
 });
 
 test("bootstrap updates an existing admin without silently resetting its password", async () => {
@@ -63,11 +65,8 @@ test("bootstrap updates an existing admin without silently resetting its passwor
   const userUpdate = calls.find((call) => call.sql.includes("UPDATE users"));
   assert.ok(userUpdate);
   assert.doesNotMatch(userUpdate.sql, /password_hash/);
-  assert.ok(
-    calls.every(
-      (call) => !/user_agents|chat_threads|chat_messages/.test(call.sql)
-    )
-  );
+  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO user_agents")));
+  assert.ok(calls.some((call) => call.sql.includes("INSERT INTO chat_threads")));
   const profile = calls.find((call) =>
     call.sql.includes("INSERT INTO user_profiles")
   );

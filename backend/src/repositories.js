@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { config } from "./config.js";
 import { query, withTransaction } from "./db.js";
+import { getAgent } from "../../agents/registry.js";
 import { createPlainToken, hashToken, sessionExpiryDate } from "./auth.js";
 import { HttpError } from "./http-error.js";
 import { agentScopesMatchDeclaration } from "./ai-agent-access.js";
@@ -154,6 +155,8 @@ export async function createUserWithDefaults(
       "INSERT INTO profile_visibility (user_id) VALUES (?)",
       [userId]
     );
+
+    await ensureDefaultButlerAccess({ userId, connection });
   });
 
   return readUser(userId);
@@ -296,6 +299,141 @@ export async function listAgentAccessForUser(
   });
 }
 
+function transactionQuery(connection) {
+  if (typeof connection?.query === "function") return connection.query;
+  if (typeof connection?.execute === "function") {
+    return async (sql, params = []) => {
+      const [rows] = await connection.execute(sql, params);
+      return rows || [];
+    };
+  }
+  throw new Error("Agent access requires a transaction connection.");
+}
+
+async function ensureAgentThread(
+  connection,
+  { userId, agent, alias, welcomeSource = "admin_agent_enable" },
+) {
+  const queryFn = transactionQuery(connection);
+  const existingThreads = await queryFn(
+    "SELECT id FROM chat_threads WHERE user_id = ? AND agent_id = ? LIMIT 1",
+    [userId, agent.key]
+  );
+  if (existingThreads.length) {
+    await queryFn(
+      `UPDATE chat_threads
+      SET status_text = '在线 · Agent', kind = 'agent'
+      WHERE user_id = ? AND agent_id = ?
+        AND (status_text IS DISTINCT FROM '在线 · Agent' OR kind IS DISTINCT FROM 'agent')`,
+      [userId, agent.key]
+    );
+    return;
+  }
+
+  const threadId = crypto.randomUUID();
+  const messageId = crypto.randomUUID();
+  const resolvedAlias = alias || agent.name || agent.key;
+  await connection.execute(
+    `INSERT INTO chat_threads
+        (id, user_id, title, status_text, avatar_text, agent_id, kind, pinned)
+      VALUES (?, ?, ?, '在线 · Agent', ?, ?, 'agent', FALSE)`,
+    [threadId, userId, resolvedAlias, displayInitial(resolvedAlias), agent.key]
+  );
+  await connection.execute(
+    `INSERT INTO chat_messages
+        (id, thread_id, user_id, sender_type, sender_name, content, metadata)
+      VALUES (?, ?, ?, 'agent', ?, ?, ?)`,
+    [
+      messageId,
+      threadId,
+      userId,
+      resolvedAlias,
+      `${resolvedAlias} 已添加，可以开始对话。`,
+      JSON.stringify({ source: welcomeSource, agentId: agent.key }),
+    ]
+  );
+}
+
+/**
+ * Keep the built-in Butler enabled with its complete declared grant. This is
+ * the account default, so reconcile stale access rows while preserving the
+ * owner's alias; other Agents remain governed by explicit owner grants.
+ */
+export async function ensureDefaultButlerAccess({ userId, connection = null }) {
+  if (!connection) {
+    return withTransaction(transaction =>
+      ensureDefaultButlerAccess({ userId, connection: transaction })
+    );
+  }
+
+  const agent = await getAgent("miaoxun-butler");
+  if (!agent) throw new Error("The default Butler Agent is not registered.");
+  const grantedScopes = resolveAgentGrantedScopes(agent, agent.permissions);
+  const queryFn = transactionQuery(connection);
+  const users = await queryFn("SELECT id FROM users WHERE id = ? FOR UPDATE", [
+    userId,
+  ]);
+  if (!users[0]) throw new HttpError(404, "User not found");
+
+  const existing = await queryFn(
+    `SELECT enabled, granted_scopes, alias
+    FROM user_agents
+    WHERE user_id = ? AND agent_id = ?
+    FOR UPDATE`,
+    [userId, agent.key]
+  );
+  if (existing.length) {
+    const hasDefaultGrant =
+      Boolean(existing[0].enabled) &&
+      agentScopesMatchDeclaration(
+        agent,
+        parseJson(existing[0].granted_scopes, [])
+      );
+    if (hasDefaultGrant) {
+      await ensureAgentThread(connection, {
+        userId,
+        agent,
+        alias: existing[0].alias,
+        welcomeSource: "account_default",
+      });
+      return { added: false, enabled: true, grantedScopes };
+    }
+
+    await queryFn(
+      `UPDATE user_agents
+      SET enabled = TRUE, granted_scopes = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ? AND agent_id = ?`,
+      [JSON.stringify(grantedScopes), userId, agent.key]
+    );
+    await ensureAgentThread(connection, {
+      userId,
+      agent,
+      alias: existing[0].alias,
+      welcomeSource: "account_default",
+    });
+  } else {
+    await setUserAgentAccess({
+      userId,
+      agent,
+      enabled: true,
+      grantedScopes,
+      connection,
+      welcomeSource: "account_default",
+    });
+  }
+  await createUsageEvent(
+    {
+      userId,
+      eventType: "agent.access.default_granted",
+      targetType: "agent",
+      targetId: agent.key,
+      payload: { grantedScopes, source: "account_default" },
+    },
+    queryFn
+  );
+  return { added: !existing.length, enabled: true, grantedScopes };
+}
+
 export async function setUserAgentAccess({
   userId,
   agent,
@@ -303,6 +441,7 @@ export async function setUserAgentAccess({
   alias = "",
   grantedScopes,
   connection = null,
+  welcomeSource = "admin_agent_enable",
 }) {
   const resolvedScopes = enabled
     ? resolveAgentGrantedScopes(agent, grantedScopes)
@@ -316,10 +455,11 @@ export async function setUserAgentAccess({
         alias,
         grantedScopes,
         connection: transaction,
+        welcomeSource,
       })
     );
   }
-  const queryFn = connection.query;
+  const queryFn = transactionQuery(connection);
   // Serialize concurrent enable/disable requests and thread creation per owner.
   const users = await queryFn("SELECT id FROM users WHERE id = ? FOR UPDATE", [
     userId,
@@ -339,39 +479,12 @@ export async function setUserAgentAccess({
   );
 
   if (enabled) {
-    const existingThreads = await queryFn(
-      "SELECT id FROM chat_threads WHERE user_id = ? AND agent_id = ? LIMIT 1",
-      [userId, agent.key]
-    );
-    if (!existingThreads.length) {
-      const threadId = crypto.randomUUID();
-      const messageId = crypto.randomUUID();
-      const avatarText = displayInitial(resolvedAlias);
-      await connection.execute(
-        `INSERT INTO chat_threads
-            (id, user_id, title, status_text, avatar_text, agent_id, kind, pinned)
-          VALUES (?, ?, ?, '在线 · Agent', ?, ?, 'agent', FALSE)`,
-        [threadId, userId, resolvedAlias, avatarText, agent.key]
-      );
-      await connection.execute(
-        `INSERT INTO chat_messages
-            (id, thread_id, user_id, sender_type, sender_name, content, metadata)
-          VALUES (?, ?, ?, 'agent', ?, ?, ?)`,
-        [
-          messageId,
-          threadId,
-          userId,
-          resolvedAlias,
-          `${resolvedAlias} 已添加，可以开始对话。`,
-          JSON.stringify({ source: "admin_agent_enable", agentId: agent.key }),
-        ]
-      );
-    } else {
-      await queryFn(
-        "UPDATE chat_threads SET status_text = '在线 · Agent' WHERE user_id = ? AND agent_id = ?",
-        [userId, agent.key]
-      );
-    }
+    await ensureAgentThread(connection, {
+      userId,
+      agent,
+      alias: resolvedAlias,
+      welcomeSource,
+    });
   } else {
     await queryFn(
       "UPDATE chat_threads SET status_text = '已停用' WHERE user_id = ? AND agent_id = ?",
