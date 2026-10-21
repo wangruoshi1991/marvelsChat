@@ -30,15 +30,7 @@ React Native 是当前正式移动端主线，iOS 上线能力通过 `MiaoxunRN/
 
 ## 当前状态
 
-**妙讯仍处于开发阶段，完整协作与设计验收尚未完成。** 当前问题、证据和实施顺序只维护在[当前交接](docs/handoffs/CURRENT.md)，不以局部测试或部署成功代表整体交付。
-
-- 正式App为`MiaoxunRN/`，底栏“妙 / 讯 / 我”，固定iPhone17与真机连接正式HTTPS。用户已确认Build48恢复同步、可进入妙页；连续触摸、真机语音及完整成果续作仍未验收。
-- 2026-10-15只读核验：线上`dynamic-agents-20261014-48`、来源`232a1428`、迁移039、合同`aiTasks:1/siteDocuments:2/agentWorkspaces:3`；API与两个Worker同源，227个文件匹配发布清单，readiness及心跳正常。运行健康不代表用户链路完整。
-- 已有按需求选择Agent和依赖调度，执行器覆盖选材、页面生成及摘要/分镜/脚本等文字成果。本轮源码已接通成果聚合与打开，删除固定模板视频创建和管家关键词动作；尚未部署。完成后修改续作、独立Agent与任务统一仍有缺口；漫画成图、视频成片、文件解析和协作3D生成尚未接通。
-- 添加Agent与完整权限确认集中于“我 → AI伙伴”，二楼为账号隐私；旧不完整授权由用户移除重加，不自动补权。模型共享不代表共享私聊或自动扩权。
-- 本轮源码统一相册跨页面长按动作及共享色值，成果页改为实际内容入口；布局与连续手势仍需设备对照验收。正式媒体、登录、社交、建站与独立3D能力及各自边界见[文档索引](docs/README.md)。
-- 文本模型配置集中于`backend/src/agent-model-config.js`，当前供应商为浮生/vip `gpt-6.1-sol`；视觉/向量Qwen，3D独立。密钥只放受限环境配置。
-- 主工作区已包含Build48之后的本轮修复，当前不与线上源码一致；HEAD仍为`a4d90c3`并保留大量既有修改。必须核对实际文件及交接验证状态，不能仅凭分支或Build号认定版本。TestFlight46继续暂缓。
+当前源码、线上服务、客户端分发、验证证据和下一步统一维护在[当前交接](docs/handoffs/CURRENT.md)。开始工作先读 [AGENTS.md](AGENTS.md)、[文档索引](docs/README.md)和当前交接，再核对 Git 与实际运行；日期记录不代表当前状态或新的操作授权。
 
 ## 日常客户端
 
@@ -117,17 +109,7 @@ http://127.0.0.1:4390/api/agents
 
 生产环境禁止首个注册用户自动成为管理员，也禁止在邮箱尚未验证时通过 `ADMIN_EMAILS` 提权。首次部署先执行 `npm run db:migrate`，再临时设置 `DEFAULT_ADMIN_ENABLED=true` 和至少 16 位的非占位强密码执行 `npm run admin:bootstrap`。命令完成后立即恢复 `DEFAULT_ADMIN_ENABLED=false` 并清空密码；不要在常驻生产配置中保留初始化密码。
 
-妙讯管家模型配置：
-
-```text
-NEW_API_BASE_URL=https://fushengyunsuan.cn/v1
-NEW_API_KEY=
-NEW_API_MODEL=gpt-6.1-sol
-```
-
-这些值配置在 `backend/.env`，开发密钥只保存在被 Git 忽略的环境文件。三项任一缺失时，模型运行时拒绝调用；消息路由保存用户消息、`runtime-error` 失败记录和明确的服务失败提示，token 字段保持空值。配置完整后，后端调用指定 chat completions 接口并保存真实 token 用量。`NEW_API_*` 是既有配置名，不表示必须经过 New API 中转。
-
-本地旧供应商配置与 Key 已清理，当前 `NEW_API_KEY` 留空，不能据此声称本地模型已经可用。模拟器/真机连接正式 HTTPS API 时使用服务器配置，不读取开发 Mac 的 `.env`。开发后端需要单独配置开发 Key，不复制生产密钥。伙伴分支的集成边界见 [2026-09-16 集成核对](docs/reviews/2026-09-16-partner-integration.md)。
+模型环境变量与执行模式见 [Agent 模型配置代码入口](docs/agent-model-configuration.md)及 `backend/.env.example`。开发密钥只保存在被 Git 忽略的环境文件；配置缺失或调用失败时必须返回明确错误并保留真实用量状态。模拟器/真机连接正式 HTTPS API 时使用服务器配置，不读取开发 Mac 的 `.env`；开发后端单独配置开发 Key。
 
 定位建议需要额外配置：
 
@@ -145,7 +127,7 @@ GEOCODING_EMAIL=contact@example.com
 1. 前端、后端、Agent 分目录独立维护；根目录 `package.json` 只承载跨项目质量工具，不承载业务运行依赖。
 2. `MiaoxunRN/` 是唯一正式移动端方向；历史原型不再保留在主工程。
 3. 关键业务数据必须来自 `backend` 和数据库；数据库不可用时 API 返回明确错误，不回退到前端假数据。
-4. 每次新增能力时，同步更新 `README.md` 和 `docs/`。
+4. 能力和接口变化同步更新对应专文，阶段状态与证据更新 `docs/handoffs/CURRENT.md`。
 5. Agent 独立放在 `agents/`，由后端注册和调用，客户端只消费 API。
 6. 涉及外部发送、发布、长期记忆、用户授权的数据流，需要保留确认机制。
 

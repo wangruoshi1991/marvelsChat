@@ -99,7 +99,7 @@ Agent独立模块通过 `workspaceCapabilities` 声明输入引用类型、依�
 
 当前本地App/API/Worker使用协作合同6，迁移042保留`coordinated`并新增严格专业会话来源`direct`；保留`request_access`、038提交结果账本、039未确认页面来源和041轮次。正式部署最后核验仍为合同3/039，详见当前交接，不新增服务或供应商环境变量。管家内容澄清使用`clarify`与`followups`，专业分派以`agentClarification`恢复明确需求链，可用`agentContextReset`重新开始；缺权不能通过回复扩大旧任务快照。仅我页添加时确认全部声明权限；已有不完整授权移除重加，新权限只在新任务生效。文本成果继承全部明确来源，下游以自己的范围重验，不共享私聊或全库。文字成果只投影`kind/id/title`，正文通过`GET /api/agent-workspaces/:workspaceId/text/:nodeId`重新校验当前授权与原始来源后读取；列表、取消或重放不携带正文。PDF/DOCX解析、生图与成片仍未接入，详见[需求驱动协作](agent-workspace-architecture.md#按需求组织协作合同3工作区)。
 
-运行共用现有Node API、AI Worker与PostgreSQL。架构决策与初版合同可参考[协作闭环历史](reviews/2026-10-12-agent-collaboration.md)；现行合同见[统一AI交互](ai-interaction-system.md#任务1页面2与协作3合同)，部署状态只以[当前交接](handoffs/CURRENT.md)中的运行证据为准。
+运行共用现有Node API、AI Worker与PostgreSQL。架构决策与初版合同可参考[协作闭环历史](reviews/2026-10-12-agent-collaboration.md)；现行合同见[统一AI交互](ai-interaction-system.md#任务1页面2与协作6合同)，部署状态只以[当前交接](handoffs/CURRENT.md)中的运行证据为准。
 
 ## 文件输入（本地合同6，迁移043）
 

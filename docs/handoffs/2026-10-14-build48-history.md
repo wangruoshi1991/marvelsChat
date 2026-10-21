@@ -1,8 +1,8 @@
-# Build48 及此前实施与验证历史
+# Build48 及前后阶段实施与验证历史
 
 重复阶段文档已移出工作区；详细原文保存在仓库外受限归档 `~/Library/Application Support/MiaoxunReleasePreparations/repository-cleanup-20261014/superseded-documentation-20261015.tar.gz`。本文保留历史汇总和原始运行证据路径。
 
-本文件于2026-10-15从 CURRENT 迁出，保留原有阶段记录。下文的“当前”“下一步”“候选”和操作范围均指各段发生时，不是现在的部署状态或执行指令。现状仅见 [CURRENT](CURRENT.md)。
+本文件于2026-10-15从 CURRENT 迁出，2026-10-21补入10月15—19日实施与整理记录，复用现有档案保留证据。下文的“当前”“下一步”“候选”和操作范围均指各段发生时，不是现在的部署状态或执行指令。现状仅见 [CURRENT](CURRENT.md)。
 
 ## Build48同步故障与前向恢复
 
@@ -50,7 +50,7 @@
 - 本轮实现验收时曾处于协作合同3、039尚待配套阶段；当前已随Build48/039上线，真实运行基线见文首。已有不完整Agent授权仍按用户决定移除后重新添加，不自动补权。管家/相册/建站源码版本记录为0.3.1/0.3.2/0.3.4，3D顾问1.0.1；原工作区修改与空索引状态以当前Git核验为准。
 - 本轮再次运行`MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh`退出0：backend772 passed、164项因未提供专用PostgreSQL集成变量而门控跳过、0fail；RN64组699项，Agents41、Admin15、media web3；语法、格式、lint、类型、构建与内嵌viewer一致性通过。运行时打包回归1/1通过，覆盖提交源、锁文件构建、前端忽略素材/环境变量排除与manifest SHA。此前同阶段的隔离PostgreSQL真实回归170项通过、0skip，日志在`output/test-evidence/20261014-dynamic-collaboration/`。结构规划合同评测包含10条新增文字组合案例，仍不证明真实模型质量。
 - 隔离PG真实回归170项通过、0skip（独立site suite另2项路由单测）：新文字HTTP链29、分派23、迁移约束8、原能力5/仓储24/service21/提交9/相册任务14/微秒历史1/漫画16/独立建站20。覆盖并行和显式汇总、文字→页面→预览/确认、撤权/来源变化拒读、任务清理与保存独立、metadata早于确认的并发时序。主隔离库038→039为1 applied/38 unchanged，重复0/39；另全新库由独立site套创建39项，后续重复0/39。迁移8项在独立事务schema验证回填、歧义和跨owner原子拒绝，schema回滚清理。日志在同一证据目录。
-- 固定iPhone17最终候选`ios --build-only`构建/严格签名通过，正式Bundle/HTTPS、Debug1.0(47)，`installed:false`、`launched:false`、`officialUnchanged:true`。证据`~/Library/Application Support/MiaoxunDevelopment/76237d6f8986/builds/2026-10-14T04-59-45-353Z/build.json`；构建前后source均`7bcbcc593ba28442bc1e152169eefe6c031767ae64a1f431279ffe34b72b8330`，JS`46f0ced2eb89f576738bf62d88665201b7fcc302889a13f99a20f8fa5defd432`。此后仅同步交接与架构文档，不改实施代码。Simulator安装仍为下节03:45的旧反馈候选，不能当作新协作3已验收；同Build号不代表同源码。
+- 固定iPhone17最终候选`ios --build-only`构建/严格签名通过，正式Bundle/HTTPS、Debug1.0(47)，`installed:false`、`launched:false`、`officialUnchanged:true`。证据`~/Library/Application Support/MiaoxunDevelopment/76237d6f8986/builds/2026-10-14T04-59-45-353Z/build.json`；构建前后source均`7bcbcc593ba28442bc1e152169eefe6c031767ae64a1f431279ffe34b72b8330`，JS`46f0ced2eb89f576738bf62d88665201b7fcc302889a13f99a20f8fa5defd432`。此后仅同步交接与架构文档，不改实施代码。当时Simulator安装仍为“47反馈后的产品修正”节所记03:45的旧反馈候选，不能当作新协作3已验收；同Build号不代表同源码。
 - 先核对本轮PG归属，清空两套一次性库的fixture/无owner审计，业务/审计均0、迁移均39，再删除仅本轮`miaoxun-collab-review-20261014`容器及其具标签卷；产品数据库未动。整仓再生的三个Web dist精确清除，源码、依赖、当前构建和恢复资料保留。证据`isolated-db-cleanup.json`与`cleanup-completed.json`。没有本轮付费模型调用、生产写入/切换、新TestFlight上传或Git推送。
 
 本阶段当时判定为`COMPLETE WITH CONDITIONS`（仅本地候选）；Build48配套部署随后完成。隔离真实规划与专业贡献证据已通过；当前仍待纯文字成果转页面预览/确认验收，以及固定iPhone17和用户真机核对。此前8/8模型分派、B02素材链与本日反馈阶段106项不能代替新提示/新执行器质量。连续触摸、真机语音及完整真实设备素材链仍未标通过，TestFlight46继续暂缓。
@@ -88,7 +88,7 @@
 
 ## Build47冻结、上传与初始ASC门禁（2026-10-13，历史状态）
 
-本节保留首次上传时的 ASC 与生产证据；后续处理状态以本页上方“当前接续点”为准，不把本节历史门禁当作现状。
+本节保留首次上传时的 ASC 与生产证据；后续处理状态以[CURRENT](CURRENT.md)为准，不把本节历史门禁当作现状。
 
 - 最终freeze05为1030源文件，manifest SHA256 `652ddd6f09228aa1a4efcf142678ed44bc6f5574a3ff95794531e6dce75c7dd8`。隔离发布树本地commit `653ad85a95e7cc9b3c0c4d05dc7e1f915300c687`、tree `0f5b29927a5f20f813a0ef898b81c406fae4900e`；工作树clean、未push，主树原修改及空索引保留。939产品文件与最终整仓及266个B02产品文件逐项一致，38SQL与正式一致；完整扫描无未审阅secret匹配。
 - 最终runtime462文件（455源+7构建）已在隔离Linux全新npmci/官方audit0、backend91/91与registry12/12及原生媒体依赖检查通过。制品`butler-unified-20261013-47.tar.gz` SHA256 `095c7b5b063731ca9494244360677a69cb19796e11681a28edc4979a75c0fded`，manifest SHA256 `9a179a32715b1e777f7d877bb0a652025ff45de077f449bb1da9e41a7291592c`；内容检查前后一致，未部署。freeze04只属中间制品，不得部署。
@@ -184,7 +184,7 @@
 
 ## Build48部署前统一基线快照（2026-10-14历史记录）
 
-本节记录本次配套切换前的基线，不代表当前运行版本；当前状态以上方“当前接续点”为准。
+本节记录本次配套切换前的基线，不代表当前运行版本；当前状态以[CURRENT](CURRENT.md)为准。
 
 - 正式服务器仅运行 `agent-preview-20261013-02`，来源 `c04385eb2583cd710735648b0380a9a67cb28ba1`；API、媒体Worker、AI Worker共用同一runtime。38项迁移，合同aiTasks:1/siteDocuments:2/agentWorkspaces:2；三个服务active、NRestarts=0、health/ready200，双Worker实际轮询/心跳通过。见[最新配套发布](../reviews/2026-10-13-testflight-46.md)。
 - 已安装日常客户端固定使用现有 iPhone 17 Simulator（`7E81531F-02AE-40FC-98DA-A575CEC9930F`）上的“妙讯”，`com.wangruoshi.miaoxun` / `1.0(47)` Debug / `https://8.153.167.11`。2026-10-14最终构建已原位安装并沿用生产登录；Simulator迁移了数据容器路径，不能用容器UUID不变作为保留数据的依据，没有读取或搬运Keychain。
@@ -271,7 +271,7 @@
 
 ## Build48配套部署前的下一步与边界（历史快照）
 
-以下计划形成于正式切换和真机同步复验之前，不再作为当前状态或操作指令；当前待验收范围见顶部五项清单。
+以下计划形成于正式切换和真机同步复验之前，不再作为当前状态或操作指令；当前待验收范围见[CURRENT](CURRENT.md)。
 
 用户已授权并完成此前TestFlight46配套发布；前轮真实模型验收与47上传已完成，用户已完成47出口合规。正式仍为agent-preview-20261013-02/038/协作合同2/DeepSeek；47为旧冻结制品，不包含2026-10-14反馈修正。固定iPhone17本轮安装的是当前工作区1.0(47) Debug，不能当作TestFlight新包或后台已配套。后续发布必须重新冻结并核对新App/API/两个Worker、权限声明、模型配置和任务状态，再验收真实设备素材链；此前47切换范围不证明本轮新候选已发布。妙负责目标、参与Agent、进展与成果，Agent添加授权留在我。
 
@@ -282,3 +282,61 @@
 真机/Android、代表性大库/视频质量、供应商实扣账单、第三方崩溃符号及OSS/异地完整灾难恢复仍未验收。此前DeepSeek43次估计¥0.44是历史参考，用户后来已取消本轮测试10元价格上限并指定浮生vip；浮生分派与B02分别参考16分/15分，不是账单，正式不引入评测次数/费用限制。47上传和后续同源配套切换已有本轮授权，Git推送未授权；历史记录不授权其他新增操作。
 
 历史过程保存在[升级前完整交接](2026-10-12-before-production-ai-tasks.md)及各日期审查中，不作为当前版本入口或操作指令。
+
+## 2026-10-15—19 实施与整理补记
+
+本节于2026-10-21从CURRENT迁入；“本轮”“尚未部署”与后续安排均限定当时阶段，不代表后来的客户端或当前工作区。各项删除、缓存量及测试计数也仅按原范围解释，实际下一步见[CURRENT](CURRENT.md)。
+
+### 2026-10-15 线上只读核验快照
+
+| 对象 | 当时证据 |
+| --- | --- |
+| 正式后端 | 10:17–10:19 CST只读核验：`dynamic-agents-20261014-48`，来源`232a1428eab9c4616a42d2eb5b2f5bfee523a41c`；227个manifest文件全部匹配，releases仅此版本 |
+| 数据库与进程 | 039、合同`aiTasks:1/siteDocuments:2/agentWorkspaces:3`；API和两个Worker同runtime、active/running、零重启；本机HTTP、公网HTTP/HTTPS readiness200；AI数据库心跳正常，媒体仅1个活跃Worker |
+| 队列与备份 | 只读汇总无在途、积压、过期租约或未知回执；备份timer活跃，最近任务06:16 CST成功。当轮未重新做备份恢复或完整用户链测试 |
+| 模型配置 | 已部署记录为浮生/vip `gpt-6.1-sol`，视觉/向量Qwen，3D独立；2026-10-21的本地合成评估未修改此线上配置，密钥仅在仓库外受限配置 |
+
+2026-10-21仅补做未认证HTTPS health/readiness检查，不能据此确认上述runtime、账本、进程或备份状态仍未变化。
+
+### 2026-10-15 产品实施与隔离验证（当时尚未部署）
+
+- **删除关键词动作。** `appActions.ts`、`useButlerActions.ts`及其透传已删除；所有消息走`session.sendMessage`。移除`localActionResult`请求和后端合同，旧字段明确拒绝；“英文/深色/设置/建站”等原文不再触发偏好修改或预先报告本地执行成功。有意义的回归并入消息重试测试。
+- **删除固定视频生成。** 移除`buildVideoDraft`服务、POST创建接口、移动端创建面板及会话回调、无引用样式。旧视频记录保留只读；新`video.script`使用真实模型文字执行器。就绪状态按文字模型判断，明确未接入成片及渲染。
+- **统一相册动作。** 我页和二楼使用同一`AlbumContextActions`，包含查看、妙管家、编辑和更多；已接上真实相册编辑。移除固定“理解/规划”双入口和预填需求，选择内容后由用户填写目标。共享现有色值，保留语音与内容手势各自必要生命周期。
+- **接通成果打开。** 成果页读取真实页面、分镜、视频旧记录、穿搭及最近30个协作工作区的成功成果，页面去重并按更新时间排序。只有当前approval指定页面显示待确认并进入所属任务，其他页面打开现有全量预览，文字成果打开鉴权工作区；分页外页面不猜当前保存状态。穿搭显示真实保存的形象与鉴权关联图片/视频；保存返回和重进成果页会刷新实际内容，失败可重试；换号/离页/后台及并发读取均隔离迟到结果。删除旧成果计数、奖章、虚构精选式呈现和无引用样式。
+- **收紧模型协议。** 非流式响应缺结束原因不再算成功；空Anthropic输入不补“请继续”。普通聊天不再回落结构化`plan`，未声明`chat`在写消息与调用模型前明确拒绝；虚拟人物声明真实`chat`。这一早期阶段相册保留旧持久任务；10月20日后续阶段已将新相册交办接入direct，旧已接受任务仍保留原执行与回放路径。
+- **去掉漫画输出修补。** 保存分镜只接受完整合法JSON，显式非法参数、缺字段、缺标题、混合文字/围栏、超长内容和越界素材都明确失败，不抽JSON、补标题或截断后保存。普通聊天和协作文字不套此结构。
+- **删除相册固定规则与后台重复映射。** 移除按文件名和关键词猜标签、伪置信度、自动分组建议及三条旧接口；仅保留真实元信息文字搜索、用户显式标签和独立视觉索引。后台不再维护手写Agent→模块/接口对照表，直接展示注册器声明的执行方式与协作能力。公开文件信息只提供类型和真实字符/行数，不再公开旧规则摘要和标签。
+- **删除规则式文件理解。** 移除固定关键词标签、首句摘要、语言猜测和估计词数；文件登记只保留真实原文预览、类型、哈希、大小与字符/行数。删除重复预处理接口及全部无引用调用，输入不再预填示例。2026-10-21后续阶段已补设备UTF-8文本文件上传到专业摘要的本地闭环；PDF/Word/OCR仍未接入，见[文本文件处理阶段记录](../reviews/2026-10-21-contract6-release-preparation.md#2026-10-21-文本文件处理本地实现尚未发布)。
+- **改善真实协作信息和文字排版。** 妙页从当前节点展示真实执行者、工作目标、待处理事项及最终/最新成功成果。聊天与成果共用标题、引用、列表、表格、代码、手动HTTP/HTTPS链接呈现；不会因Markdown自动加载远端图片或执行HTML。浅色基础主题也统一到现有产品色值，深色未重新设计。
+
+本轮验证（2026-10-15）：
+
+- `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh`退出0：后端808通过、172项专用环境门控跳过；RN66组763项；Agent42、Admin15、avatar-web29、media-web3及制品测试通过。格式、lint、类型检查、Web构建和内嵌viewer一致性通过，最终日志无act警告。证据在仓库外`MiaoxunReleasePreparations/repository-cleanup-20261015/repository-check-final.log`。
+- 本机PostgreSQL18/pgvector一次性空库完整执行39个迁移。普通聊天、漫画授权、管家分派、工作区文字和能力五套集成共78个不同用例通过：首轮77通过、1个漫画夹具错误，修正后漫画整组17/17复验；其余61项首轮通过。没有把mock或跳过项算作PG验证。结束核对users=0、其它连接=0后删除本轮临时库；4391/55441/8768均无监听。
+- 首次新构建已安装固定iPhone17，实看默认妙、妙/讯同一三向菜单、二楼前五项完整、相册动作→空需求草稿且发送禁用、真实页面预览/返回、穿搭保存形象。任务卡850ms原地长按释放后无菜单残留；语音返回模拟器能力限制，可关闭。未发送消息、调用模型、保存成果或修改授权；不能代表真实素材→协作→确认完成。
+- 实看发现内嵌bundle的Debug仍探测不存在的Metro，已用RN公开API关闭无用探测，不屏蔽LogBox。需求页同时删除重复上下文标题/摘要和冗长说明；最终增量构建、签名、原位安装和启动全部成功，新进程Metro/调试器/其它JS警告及React错误均0；最终界面确认素材只标识一次、需求仍为空且发送禁用。
+
+- 最终构建前后全仓source SHA256均为`4a28f0a1f14c44329c35e0587571d8d5148f985571faeed9d285d1ac870c681a`，JS为`67c2d1f63aed928f3b3f13c5d08b68d849ae91d35d3fbc549c9b4a221b5aea1a`。构建后只补本文证据，未继续修改产品源码。二楼无私人内容截图保存在仓库外同证据目录`iphone17-second-floor-final.png`。
+- 上述设备结果只覆盖已安装客户端读取正式48数据及不写入的交互。新后端逻辑以隔离HTTP/PG测试验证，没有把模拟器连接旧后端称为新前后端完整验收；本轮未部署、上传或做真实供应商复验。
+
+### 2026-10-15—19 清理记录（当时快照）
+
+**2026-10-19 本轮代码清理**（经 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0 验证）：
+
+- 删除 6 个零引用源文件：`StationSocialPanel.tsx`(261 行)、`StationCapabilityWorkspace.tsx`(121 行)、`stationModuleStatus.ts`(35 行)，以及被它们删除后失去唯一引用方的 `StationShared.tsx`(49 行)、`StationMetricBox.tsx`(35 行)、`StationAlbumAgentPanel.tsx`(36 行)。
+- 删除 5 个零引用导出：`assistPageLabel`、`isAssistantAgent`（连同只为它存在的两个 Set）、`workspaceIsTerminal`、`messageIconAssets`、`stationPartnerIconAssets`。
+- 删除 16 张零引用 PNG（5 张 Agent 角色头像、5 张 settings 图标、2 张 tab 图标等），并移除因此变空的 `assets/icons/settings`、`assets/icons/messages`、`assets/icons/station/partners` 三个目录。
+- 合并两处完全相同的头像白环样式：`AgentGlyphAvatar` 的 `ring` 改为引用 `shared/styles.ts` 的 `avatarRing`。
+- 重新生成过期的 `MiaoxunRN/src/assets/avatar-viewer/avatar-viewer.html`；它此前使 `check-repository.sh` 的 `cmp` 步骤失败。
+- 当时引用核验未再发现该次范围内可删除的源码或图片；原“全仓零死源码、零死图片”表述过强，不作为今天或全仓的保证。
+
+- 已删除主树旧Build47 `MiaoxunDevelopment/76237d6f8986/DerivedData`：2,107,432 KiB，约2.01 GiB；删除前确认无构建进程、缓存App为47。保留当前构建缓存、构建记录、签名制品、日志、数据库和备份。
+- 新构建安装后，已删除被替代的`MiaoxunDevelopment/69e1bb93ddda/DerivedData`（1,114,824 KiB，约1.06 GiB）和本轮重新生成的三个Web dist；先确认无xcodebuild进程、新App来自76237d6f8986且安装摘要一致，dist均为无跟踪可重建输出。精确清单为仓库外同证据目录`final-cache-cleanup.json`。当前新DerivedData保留；不能将旧47缓存删除量当作重建后的净节省。
+- 已停止8768旧B02静态预览服务器。该页面是历史验证结果，不代表当前RN App；原验证材料保留。
+- 13份过时/重复Markdown已删除，约94.6KB、1054行；有效工程结构与迁移内容归并到`architecture.md`和`database.md`，引用同步更新。删除前逐文件归档验证，归档位于仓库外`MiaoxunReleasePreparations/repository-cleanup-20261014/superseded-documentation-20261015.tar.gz`（0600，SHA256 `65528be0aa002d25e37313e034cd16d97f7c3699b5d316db500e71a4f09555b4`）。不另增加本轮一次性审查报告。
+- 39个脚本均有执行、测试、迁移或恢复入口；引用存在不等于工具有效，收尾已修正两项真实相册验收脚本的旧同步/授权合同，共用202任务轮询和幂等结果读取；另修正相册评估的工具operationKey/完整索引统计及检索smoke未真正到达调度检查的问题。前两者分别承担真实OSS上传链和独立服务链，本轮只验证离线合同，未重跑云端验收。CURRENT旧阶段记录仍保留单份历史证据；不将“全项目已清理”作为结论。
+- 主仓库约2GB主要为Pods/node_modules，RN业务源码约2.9MB；不能按文件数量删除依赖、迁移、测试或备份。
+- 两个旧活动工作树、旧分支及主树未整理的Git基线仍待收拢。它们不属于本轮可直接归档的当前聊天附件；保留独有提交，不能盲删。
+- `ai_tasks`和`agent_workspaces`均仍承载真实功能；存在重复状态/轮询/取消/预览逻辑，应在统一任务模型与数据迁移后删旧路径，不能直接删库或伪装兼容完成。
+- 本机其它数据库和独立new-api容器未证明无用，本轮保留；日常App没有另起本地API/Worker。
