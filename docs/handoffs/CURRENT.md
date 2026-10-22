@@ -8,11 +8,19 @@
 
 | 对象 | 最后核验的状态与边界 |
 | --- | --- |
-| 本地源码 | 合同 `aiTasks:1 / siteDocuments:2 / agentWorkspaces:6`，迁移截至043；默认管家、同任务续作、原任务讨论、专业会话统一任务及UTF-8文本文件处理已本地实现 |
+| 本地源码 | 候选来源 `b8da29b`；合同 `aiTasks:1 / siteDocuments:2 / agentWorkspaces:6`，迁移截至043；默认管家、同任务续作、原任务讨论、专业会话统一任务及UTF-8文本文件处理已本地实现 |
 | TestFlight | 2026-10-20 实读 1.0(51)“正在测试”，已有内部/外部测试群组；属于UI修复及合同3客户端，不能当作合同6配套版本 |
 | 线上后端 | 2026-10-15 完整只读核验为 `dynamic-agents-20261014-48`、来源 `232a1428eab9c4616a42d2eb5b2f5bfee523a41c`、039/合同3，API和两个Worker同源；040–043未由本轮部署。2026-10-21仅公开HTTPS health/ready成功，不能由此确认runtime、账本或Worker仍未变化 |
 | 固定模拟器 | 日常正式Bundle/HTTPS App保留为2026-10-20 04:14Z构建的Debug1.0(51)。合同6及文件页修复用独立同JS副本连接隔离API/PG验收，之后退出账号、卸载副本、停止本机环境并恢复日常App |
-| 物理设备 | 未取得本轮新功能或连续手势的真机验收证据；模拟器、未签名Release编译及TestFlight分发各自单列，不相互替代 |
+| 物理设备 | 未取得本轮新功能或连续手势的真机验收证据；模拟器、Release归档与分发签名、TestFlight分发各自单列，不相互替代 |
+
+## 2026-10-22 本地发布候选
+
+从干净 HEAD `b8da29b6ebe5d04d106c7599a32ef24f5df2e761` 生成了本地合同6候选，证据目录为 `/Users/gary/Library/Application Support/MiaoxunReleasePreparations/contract6-candidate-20261022-b8da29b/`。runtime 共238个文件，SHA256 为 `82d23c514f880f0c5fa9e6e2a7a23bb719a270f788492e5d8de418c4777b1c46`，`sourceTree` 为 `1af970d1179cab15c9b799a2e4a265266d4627ad`，且不含工作区修改。
+
+同一源码生成 iOS Release archive `MiaoxunRN-build52.xcarchive`，Bundle `com.wangruoshi.miaoxun`，版本 `1.0 (52)`，正式 API `https://8.153.167.11`，内嵌 `main.jsbundle` SHA256 为 `22e4d8b389857c4e2f2c4e5819d8bc98f10df7221386559df97d0078564a7706`。原archive使用Development签名；随后Organizer用现有云托管分发证书成功导出 `ios/MiaoxunRN-build52-distribution/MiaoxunRN.ipa`，SHA256为 `a18a081d3ace217fbfd9c7bf31c1c4ef271c0da1228e9ff50937101a7d42fb91`。IPA深度严格签名校验通过，`get-task-allow=false`、`beta-reports-active=true`，版本/Bundle及内嵌JS与归档一致。
+
+先前CLI导出退出70（`No Accounts`及`No signing certificate "iOS Distribution" found`），不能推断Xcode账号/证书缺失；本轮已实看现有登录及Admin团队，走Custom→App Store Connect→Export成功解除本地导出阻塞。原CLI日志与Organizer导出文件均保留。App dSYM匹配，React/ReactNativeDependencies/Hermes匹配符号仍缺失。全仓检查退出0（RN72套915项，backend874通过/268环境跳过），launch-readiness退出0且有4项环境警告。没有上传TestFlight、部署生产或新增付费调用；Build52尚未获得Apple服务器验收或真机证据。
 
 Build48同步故障、前向恢复、227项manifest和备份证据保存在[历史恢复记录](2026-10-14-build48-history.md#build48同步故障与前向恢复)。2026-10-15的队列、备份timer与进程详情也仅为历史快照，发布前重新核验。
 
@@ -52,7 +60,7 @@ Build48同步故障、前向恢复、227项manifest和备份证据保存在[历�
 | 项目 | 影响与边界 |
 | --- | --- |
 | 合同6配套发布 | 已分发Build51与本地合同6/043不是同一制品；新旧AI入口会按合同明确拒绝，不能放宽校验假装兼容 |
-| 发布门禁 | 可定位源码基线已建立；正式runtime、唯一新build的签名Release、生产恢复点及真机证据未齐，详见发布准备记录 |
+| 发布门禁 | 本地runtime、Build52 archive及App Store分发签名IPA已生成；尚未上传/获Apple验收，生产恢复点、第三方符号处理决定及真机证据仍未齐，详见发布准备记录 |
 | 模型复核豁免 | [复核材料](../reviews/2026-10-21-contract6-human-review.md)记录首轮12例与修复后3例的AI复审结论。用户于2026-10-22明确接受AI复审并豁免本批真人复核；原始报告仍保留`humanReviewStatus=NOT_RUN`、`releaseApproved=false`，该豁免不等于发布批准 |
 | 真实执行能力 | 漫画成图、视频成片、PDF/Word/OCR、协作3D生成未接入；协调器可见成果元信息，任务成功不证明全部需求满足 |
 | 设计与设备 | 33状态清单是带日期对照，尚未全面逐页重验；连续长按/滑选、语音、我页/二楼真实手指手感仍待真机。后端缺少的等级/星标、关系评分、妙点累计等不能用假数据补齐 |
@@ -60,6 +68,6 @@ Build48同步故障、前向恢复、227项manifest和备份证据保存在[历�
 
 ## 下一步
 
-1. 本地Git基线整理已完成；旧工作树由原所属聊天归档。后续调整继续按真实依赖审查，只有证明必要才新增工具或抽象，不重复合并旧候选或为清理强拆模块。
-2. 按[配套发布顺序与恢复边界](../reviews/2026-10-21-contract6-release-preparation.md#配套发布顺序)准备同源runtime与签名客户端；模型真人复核已由用户明确豁免，发布前仍需重新核验线上，生产部署、上传、推送及新增付费调用分别按当次明确范围执行。
+1. 本地Git基线整理和候选runtime已完成；旧工作树由原所属聊天归档。后续调整继续按真实依赖审查，只有证明必要才新增工具或抽象，不重复合并旧候选或为清理强拆模块。
+2. 本地分发签名已核验；按[配套发布顺序与恢复边界](../reviews/2026-10-21-contract6-release-preparation.md#配套发布顺序)准备生产恢复点、核验App Store Connect实际build号/群组分发并安排客户端与合同6后端切换窗口。上传、生产部署、推送及新增付费调用仍需当次明确范围；不能只上传新客户端后称合同6已配套可用。
 3. 用实际配套版本完成真机素材→专业任务→续作→预览确认→重进与撤权链路，再按优先级补设计和真实执行器。通用设计、已实现样例与可上线产品分别报告。

@@ -1,32 +1,45 @@
 # 合同6配套发布准备
 
-2026-10-21的准备与后续模型验收快照。实时状态仍以[CURRENT](../handoffs/CURRENT.md)、Git和发布时实际运行核对为准。准备阶段没有付费模型调用；随后获准的12次真实合成评估发现1例语义失败，本地修复后另获3次授权复测并通过AI语义审阅。准备与模型验收期间没有Git提交，后续本地提交见文末Git整理节；各阶段均无生产变更、TestFlight上传或Git推送。
+2026-10-21的准备与后续模型验收快照，及2026-10-22本地发布候选记录。实时状态仍以[CURRENT](../handoffs/CURRENT.md)、Git和发布时实际运行核对为准。准备阶段没有付费模型调用；随后获准的12次真实合成评估发现1例语义失败，本地修复后另获3次授权复测并通过AI语义审阅。准备与模型验收期间没有Git提交，后续本地提交见文末Git整理节；各阶段均无生产变更、TestFlight上传或Git推送。
 
 ## 范围与结论
 
-目标是把默认管家、同任务续作、原任务讨论、专业Agent统一任务和UTF-8文本文件处理配套发布。当前本地合同为`aiTasks:1 / siteDocuments:2 / agentWorkspaces:6`，迁移截至043；最后已核验的分发版本仍为TestFlight 1.0(51)、合同3。两者不能作为可混用版本。
+目标是把默认管家、同任务续作、原任务讨论、专业Agent统一任务和UTF-8文本文件处理配套发布。当前本地合同为`aiTasks:1 / siteDocuments:2 / agentWorkspaces:6`，迁移截至043；最后已核验的分发版本仍为TestFlight 1.0(51)、合同3。2026-10-22已从干净HEAD生成本地合同6候选、Build52 archive及App Store签名IPA；尚未上传，不能与旧后端作为可混用版本。
 
-**发布结论：BLOCKED（准备工作已推进，尚不具备实际发布条件）。** 可定位源码提交已在后续Git整理建立；用户已于2026-10-22明确接受既有AI复审并豁免本批真人复核，但正式runtime、配套签名客户端、生产恢复点和真机证据仍未齐备。不能由小样本AI审阅、本地编译或模拟器样例通过推断可上线。
+**发布结论：BLOCKED（本地候选准备完成，配套发布尚未闭环）。** 可定位源码、本地runtime及分发签名IPA已建立；用户已于2026-10-22接受既有AI复审并豁免本批真人复核，但Apple服务器验收、生产恢复点、第三方符号处理决定和真机证据仍未齐备。不能由小样本AI审阅、本地编译或模拟器样例通过推断可上线。
 
 ## 门禁与证据
 
-证据根目录：`/Users/gary/Library/Application Support/MiaoxunReleasePreparations/contract6-release-preparation-20261021-120344/`。
+证据根目录：`/Users/gary/Library/Application Support/MiaoxunReleasePreparations/contract6-release-preparation-20261021-120344/`。2026-10-22 候选证据另见 `/Users/gary/Library/Application Support/MiaoxunReleasePreparations/contract6-candidate-20261022-b8da29b/`。
 
 | 门禁 | 状态 | 已知证据与实际限制 |
 | --- | --- | --- |
-| 工作区保护 | PASS | 分支`feature/redesign-by-prototype`，HEAD`9ec03a2`，保留前阶段所有未提交改动；准备阶段改验收工具、打包工具/回归和文档，后续修管家讨论提示、成果标题Unicode截断、HTTP测试合同、文件页前后台导航及兼容文件登记入口校验 |
-| 正式runtime来源 | 未完成 | 准备阶段打包器拒绝未提交工作区，保留`runtime-source-guard.log`；后续默认管家`b75767d`、完整功能`4eb5254`及文档已本地入Git。尚未从最终干净HEAD生成正式runtime，不把本地提交当发布制品 |
-| runtime内容 | PASS（打包回归） | 发现`agents/specialist-dispatch.js`漏入白名单，已修复；测试使用当前真实Agent定义，在解包产物内实际加载完整注册器，修复前可复现MODULE_NOT_FOUND、修复后通过。不是正式生产制品 |
-| 代码质量 | PASS | 兼容文件登记校验补强后最新整仓退出0：RN72套915项、backend874通过/0失败/268环境跳过、Agent50通过；完整日志`file-placeholder-validation-20261021-083658/repository-check.log`、摘要`verification-summary.json`。文件页前后台阶段873项及更早计数均为各阶段快照；不将跳过项计为PG通过 |
+| 工作区保护 | PASS（生成时） | 分支`feature/redesign-by-prototype`，候选生成时 HEAD`b8da29b`且工作区干净，`includesWorkingTreeChanges=false`；之后仅收尾本文及CURRENT，实际状态以Git为准。 |
+| 正式runtime来源 | PASS（本地候选） | 候选 runtime 来源 `b8da29b6ebe5d04d106c7599a32ef24f5df2e761`，`sourceTree=1af970d1179cab15c9b799a2e4a265266d4627ad`，共238个文件，归档 SHA256 为 `82d23c514f880f0c5fa9e6e2a7a23bb719a270f788492e5d8de418c4777b1c46`。这是本地候选，不是已部署制品。 |
+| runtime内容 | PASS（本地候选） | 解包逐项复核manifest的238个文件哈希全部匹配，包含Agent注册器及后端/Worker脚本；尚未证明Linux环境加载或生产切换成功。 |
+| 代码质量 | PASS（本地） | 2026-10-22候选检查及文档收尾复验均退出0：RN72套915项、backend874通过/0失败/268环境跳过、Agent50、Admin15、avatar-web29及media3通过；候选完整日志`check-repository-20261022.log`位于本次候选目录。旧阶段计数按对应快照解释，不将环境跳过计为PG通过。 |
 | 专业消息/任务讨论HTTP合同 | PASS（独立隔离PG复验，完整日志已保存） | 一次性PG18.4回环集群执行43/43迁移；合同6夹具下专业消息18/18、任务讨论19/19通过，零失败/取消/跳过，测试替身无供应商调用。37项不与前阶段67项简单累计。独立复验日志、退出码、聚合计数及停机证据见下方。 |
 | 数据库升级与恢复 | PASS（合成演练） | PG18.4/pgvector0.8.6、非superuser应用角色，039→040→041→042→043；39/43各自dump恢复、逐表数据一致、恢复后升级/no-op及约束拒绝通过。见`database/results.json` |
 | 生产恢复能力 | 未验证 | 未读取生产dump、未验证本轮OSS加密恢复或生产数据规模；合成毫秒级耗时不能用于生产维护窗口估计 |
-| iOS设备Release编译 | PASS（前阶段未签名验证归档） | `ios/MiaoxunRN-contract6-validation.xcarchive`，正式Bundle/HTTPS、1.0(51)，新原生文件选择模块已编译arm64；285个关键输入哈希前后一致。未包含后续文件页前后台修复，不是可上传或可安装制品；最终签名归档仍待生成 |
-| 符号与分发 | 未完成 | App自身dSYM匹配；React、ReactNativeDependencies、Hermes缺对应UUID符号。下次需唯一新build号和正式分发签名；未把此验证归档复用成新TestFlight |
+| iOS设备Release编译 | PASS（本地 archive） | Build52 archive `/Users/gary/Library/Application Support/MiaoxunReleasePreparations/contract6-candidate-20261022-b8da29b/ios/MiaoxunRN-build52.xcarchive`，Bundle `com.wangruoshi.miaoxun`、版本 `1.0 (52)`、正式 HTTPS、App dSYM 存在，codesign 校验通过；内嵌 JS SHA256 为 `22e4d8b389857c4e2f2c4e5819d8bc98f10df7221386559df97d0078564a7706`。 |
+| 分发签名 | PASS（本地导出） | CLI退出70并报`No Accounts`/缺少Distribution；本轮实看Xcode现有登录及Admin团队后，Organizer使用现有Cloud Managed Apple Distribution证书成功Export，未上传。IPA深度严格签名校验通过，`get-task-allow=false`、`beta-reports-active=true`，JS与archive一致；不能由CLI失败推断账号/证书缺失。 |
+| 崩溃符号 | 部分通过，待发布决定 | App dSYM与二进制UUID匹配；React、ReactNativeDependencies及Hermes仍缺对应UUID符号，需补齐或在发布决定中明确接受第三方崩溃符号化限制。 |
 | 后端生产依赖 | PASS（本机锁文件审计） | 官方npm registry、`npm --prefix backend audit --omit=dev`返回0项漏洞，见`backend-production-audit.json`；不是Linux干净安装或全面安全证明 |
 | HTTPS只读预检 | PASS（有限） | 2026-10-21 12:17 CST，未认证GET `/api/health`、`/api/ready`均`ok:true`，TLS校验未跳过；未SSH、未连接生产PG，不能由ready推断当前runtime来源、迁移编号或Worker同源 |
 | 模型质量 | AI复审接受，真人复核豁免 | 首轮自动12/12、内部AI语义11/12，待保存页面引导错误；修复后3例讨论复测及内部AI复审均3/3，其余9例未重跑但提示/版本hash未变。用户于2026-10-22接受该AI复审并豁免本批真人逐例复核；原始报告仍保留失败来源、`humanReviewStatus=NOT_RUN`与`releaseApproved=false`，不等于发布批准。 |
 | 设备交互 | 固定模拟器本项PASS，真机待验 | 前后台修复同JS独立副本已通过后台回包及回包前返前台两种8秒HTTP200时序，旧响应不跳转、新操作正常；文件Agent引用/空发送禁用与picker取消恢复已核对。QA已卸载、服务已停、日常App已恢复；不能替代签名Release、真机或生产验收 |
+
+## 2026-10-22 本地候选核验
+
+候选证据目录为 `/Users/gary/Library/Application Support/MiaoxunReleasePreparations/contract6-candidate-20261022-b8da29b/`，汇总见 `candidate-verification.json`。runtime 从干净 HEAD 生成，未带工作区修改；iOS archive 为 Build52，使用 `Apple Development`，`get-task-allow=true`。App二进制与dSYM的arm64 UUID同为`39BDE0CB-6935-385A-83B0-4E5F0C6E8814`；React、ReactNativeDependencies及Hermes仍缺各自匹配dSYM，第三方崩溃符号化限制未解除。
+
+全仓 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出0，RN72套915项、backend874通过/268环境跳过；候选原始日志为 `check-repository-20261022.log`，文档收尾复验日志为`check-repository-docs-20261022.log`，两份文档的13个本地链接及锚点均有效。`check-launch-readiness` 退出0，但保留4项警告：`marvelschat.com` 为 `clientHold`、两个公网子域DNS为空、Mac 无 Java 导致 Android Gradle 检查未执行。这些警告不被改写为通过。
+
+CLI尝试导出App Store包退出70，原始日志`ios/xcodebuild-export-app-store.log`保留；该失败不能证明GUI账号或分发证书不可用。本轮随后在Xcode实看已登录账号、Admin团队，Organizer对Build52明确选择Custom→App Store Connect→Export，关闭自动改版本号，成功使用现有云托管分发证书（有效至2027-06-23）与正式Bundle的Store profile导出。未新建或撤销证书，未上传。
+
+导出目录`ios/MiaoxunRN-build52-distribution/`保留`MiaoxunRN.ipa`、`ExportOptions.plist`、`DistributionSummary.plist`及`Packaging.log`。IPA SHA256为`a18a081d3ace217fbfd9c7bf31c1c4ef271c0da1228e9ff50937101a7d42fb91`；解包后`codesign --verify --deep --strict`退出0，Bundle/版本仍为`com.wangruoshi.miaoxun`/`1.0 (52)`，`get-task-allow=false`、`beta-reports-active=true`，Store profile无设备列表，内嵌JS与archive哈希一致。`ExportOptions`确认`destination=export`、`method=app-store-connect`、`manageAppVersionAndBuildNumber=false`。核验临时解包目录已移除。
+
+当前结论是“本地候选与分发包已完成，尚未上传或获Apple服务器验收”；后续先核实际build号和群组自动分发，再按明确授权安排配套发布及生产恢复。该阶段没有生产部署或新增付费模型调用；runtime238项manifest哈希独立复核全部匹配，产品源码与`b8da29b`无差异，随后只收尾本文及CURRENT。
 
 ## 真实模型验收范围
 
@@ -101,8 +114,8 @@
 ## 配套发布顺序
 
 1. 本批12例首轮与3例复测已按用户决定接受AI复审并豁免真人语义审阅；若后续修改产品提示或运行时代码，仍需重跑受影响测试、构建和设备链路，任何新增付费复测需独立授权。文件页前后台P2的固定模拟器验收及QA清理已完成，不重复列为待办。明确本次仍不包含PDF/Word/OCR、漫画成图、视频成片或协作3D。
-2. 本轮已按依赖整理本地提交，见下方Git基线整理节。后续代码调整重新审查并验证；只用现有`prepare-runtime-release.mjs`从最终干净HEAD生成runtime，核`sourceHead/sourceTree`及每个文件哈希；不初始化替代仓库或手工拼装生产制品。发布时重新验证Linux Node版本、锁文件生产依赖、配置样例、API及两个Worker共同使用的制品。
-3. 从同一冻结源码生成唯一新build号的签名Release归档，核Bundle、正式HTTPS、内嵌JS及原生模块。核对精确UUID的符号来源；若无法获得第三方dSYM，单独记录对崩溃符号化的影响并在发布决定中明确处理，不能填入不匹配符号。新build号发布前以App Store Connect实际记录确定。
+2. 本轮已按依赖整理本地提交，并已从干净 HEAD 生成候选 runtime，见上方“2026-10-22 本地候选核验”及下方Git基线整理节。后续代码调整重新审查并验证；仍只用现有`prepare-runtime-release.mjs`从最终干净HEAD生成runtime，核`sourceHead/sourceTree`及每个文件哈希；不初始化替代仓库或手工拼装生产制品。发布时重新验证Linux Node版本、锁文件生产依赖、配置样例、API及两个Worker共同使用的制品。
+3. Build52已通过Organizer导出App Store签名IPA；发布前仍以App Store Connect实读确认build号可用，若需改号才从同一冻结源码重新归档/导出并核Bundle、正式HTTPS、JS及原生模块。核对精确UUID的符号来源，若无法获得第三方dSYM，单独记录对崩溃符号化的影响并作发布决定，不能填入不匹配符号。CLI的`No Accounts`不作为重新登录或重建证书依据。
 4. 在获准上传后完成Apple处理并安排测试员升级窗口；先核现有群组的自动分发行为，再决定上传、开放测试及后端切换时点。新客户端连接旧后端会拒绝不支持的AI合同；新后端对旧客户端的Agent新消息/任务入口返回426。不能承诺任意先后顺序都没有功能中断，也不通过放宽合同维持假兼容。
 5. 获准生产窗口后做只读预检：实际runtime与manifest、三进程cwd/版本、迁移账本、任务/未知回执/租约汇总、备份timer、磁盘和现有锁。只输出聚合，不输出生产身份或聊天。完成新停写恢复点、数据库与storage对应关系及隔离恢复验证后再改生产。
 6. 维护入口阻止新写入；排空或明确处理在途AI/媒体任务，停止API、AI Task Worker、媒体Worker。禁止滚动混跑039与043代码。专用迁移连接使用有界`lock_timeout`、`statement_timeout`和外部总截止时间；本机建议起点3秒/60秒，生产表规模与锁预检后再定，不能照搬合成耗时。
