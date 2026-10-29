@@ -98,3 +98,24 @@ test("retry rejects running or awaiting tasks instead of resetting an uncertain 
     error => error.code === "ADMIN_TASK_RETRY_UNAVAILABLE" && error.status === 409,
   );
 });
+
+test("workspace cancellation stops queued nodes and preserves running-node draining", async () => {
+  const statements = [];
+  const transaction = async work => work({
+    query: async (sql, params = []) => {
+      statements.push({ sql, params });
+      if (sql.includes("FROM usage_events")) return [];
+      if (sql.includes("FROM ai_tasks") && sql.includes("FOR UPDATE")) return [];
+      if (sql.includes("FROM agent_workspaces") && sql.includes("FOR UPDATE")) return [{
+        id: baseTask.id, user_id: baseTask.user_id, status: "running", revision: 4,
+      }];
+      if (sql.includes("FROM agent_workspace_nodes") && sql.includes("status = 'running'")) return [{ id: "00000000-0000-0000-0000-000000000003" }];
+      if (sql.includes("UPDATE agent_workspaces")) return [{ id: baseTask.id, status: "cancelling", revision: 5, updated_at: new Date() }];
+      return [];
+    },
+  });
+  const repository = createAdminOperationsRepository({ runQuery: async () => [], transaction });
+  const result = await repository.mutateAdminTask({ taskId: baseTask.id, operation: "cancel", idempotencyKey: "cancel-workspace-1", actor: baseTask.user_id });
+  assert.equal(result.status, "cancelling");
+  assert.ok(statements.some(item => item.sql.includes("UPDATE agent_workspace_nodes SET status = 'cancelled'")));
+});

@@ -167,7 +167,9 @@ export function createAdminOperationsRepository({ runQuery = query, transaction 
         if (operation === 'retry') throw error(409, 'ADMIN_TASK_RETRY_UNAVAILABLE', 'Workspace retry requires a new user-authorized submission');
         const row = workspaces[0];
         if (!['queued', 'running', 'waiting_input', 'awaiting_confirmation', 'cancelling'].includes(row.status)) throw error(409, 'ADMIN_TASK_STATE_CHANGED', 'Task cannot be cancelled in its current state');
-        const status = row.status === 'running' ? 'cancelling' : 'cancelled';
+        const runningNodes = await connection.query("SELECT id FROM agent_workspace_nodes WHERE workspace_id = ? AND status = 'running' FOR UPDATE", [taskId]);
+        await connection.query("UPDATE agent_workspace_nodes SET status = 'cancelled', claim_token = NULL, lease_until = NULL, updated_at = clock_timestamp() WHERE workspace_id = ? AND status = 'queued'", [taskId]);
+        const status = runningNodes.length ? 'cancelling' : 'cancelled';
         const updated = (await connection.query(`UPDATE agent_workspaces SET status = ?, summary = ?, question = NULL, approval = NULL, revision = revision + 1, last_operation = 'cancel', last_operation_revision = revision + 1, updated_at = clock_timestamp() WHERE id = ? RETURNING id,status,revision,updated_at`, [status, status === 'cancelling' ? '后台请求停止，正在等待运行步骤结束' : '后台已取消任务', taskId]))[0];
         const result = { id: updated.id, type: 'agent_workspace', status: updated.status, revision: Number(updated.revision), operation, replayed: false };
         await createUsageEvent({ userId: actor, eventType: `admin.task.${operation}`, targetType: "task", targetId: taskId,
