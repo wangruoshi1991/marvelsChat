@@ -47,6 +47,7 @@ Vite 代理必须开启 `changeOrigin`，否则本地后台代理 HTTPS 线上�
 - Agent 目录：读取已部署的 `agents/` 注册项，配置展示名称、描述、头像标识/颜色，并由管理员在后台上架或下架 App 推荐目录。手机端没有全局目录管理入口，只读取后台发布结果；上架只改变已部署执行器的可发现性，不创建新的执行能力，也不替用户授予权限。
 - Agent 注册：读取 `agents/` 中已注册的 Agent，并统计近期调用。
 - 使用监控：按 7/30/90 天从 `agent_runs` 全量聚合运行次数、成功/失败、Token、成本和平均耗时；不再用最近 500 条记录估算总量。
+- 任务运营：读取 `ai_tasks` 和 Agent workspace 的真实任务状态，按 Agent、用户、状态和时间窗口筛选；失败任务只允许在服务端确认合同仍有效后重试，运行中任务不会被强制重放，取消与重试均写入审计事件。
 - 模型服务：显示当前 `NEW_API_*` 配置状态、实际 chat completions endpoint，并可发起一次管理员连通测试。
 - 事件流：读取 `usage_events`，包含登录、退出、消息和后台管理动作。
 - Agent 调用记录：读取 `agent_runs`。
@@ -55,6 +56,7 @@ Vite 代理必须开启 `changeOrigin`，否则本地后台代理 HTTPS 线上�
 
 ```text
 GET /api/admin/overview
+GET /api/admin/operations/overview?days=7|30|90
 GET /api/admin/users
 POST /api/admin/users
 GET /api/admin/users/:userId
@@ -70,6 +72,10 @@ GET /api/admin/agents
 GET /api/admin/agent-catalog
 PATCH /api/admin/agent-catalog/:agentId
 GET /api/admin/agent-usage?days=30
+GET /api/admin/tasks?agentId=&userId=&status=&from=&to=&limit=
+POST /api/admin/tasks/:taskId/retry
+POST /api/admin/tasks/:taskId/cancel
+GET /api/admin/monitoring?days=7|30|90
 GET /api/admin/model-status
 POST /api/admin/model-test
 ```
@@ -85,6 +91,8 @@ POST /api/auth/logout
 ```text
 Authorization: Bearer <token>
 ```
+
+任务运营接口需要 `tasks:read`；任务取消和重试还需要 `tasks:write`。产品接口使用 `products:read` 和 `products:write`。监控和审计接口需要 `audit:read`。时间窗口只接受 7、30 或 90 天，成本和 Token 没有账单证据时返回 `null` 或“未知”，不使用估算值。
 
 ## 保护规则
 
