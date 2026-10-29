@@ -57,13 +57,34 @@ describe('station module management', () => {
       name: id,
       description: `${id} description`,
       enabled: true,
+      identity: {
+        avatarKind: 'agent-mark' as const,
+        mark: id.slice(0, 1).toUpperCase(),
+        shape: 'circle' as const,
+        colors: {
+          background: '#123456',
+          foreground: '#ffffff',
+          accent: '#36d4a4',
+        },
+      },
+    }));
+    const registeredAgents = ownedAgents.map(agent => ({
+      key: agent.id,
+      name: agent.name,
+      version: '1.0.0',
+      category: 'test',
+      description: agent.description,
+      capabilities: [],
+      permissions: ['agents:invoke'],
+      identity: agent.identity,
+      status: 'registered' as const,
     }));
     let renderer: ReactTestRenderer.ReactTestRenderer;
 
     await ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(
         <AIPartnerGrid
-          agents={[]}
+          agents={registeredAgents}
           language="zh"
           onOpenAgentThread={jest.fn()}
           ownedAgents={ownedAgents as never}
