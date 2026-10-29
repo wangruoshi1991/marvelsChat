@@ -300,7 +300,8 @@ function StationPostCard({
   const agentTags = post.agentCapabilities
     .map(agentId => {
       const agent = ownedAgents.find(item => item.id === agentId);
-      return agent
+      const registered = agents?.some(item => item.key === agentId);
+      return agent && registered
         ? {
             id: agent.id,
             name: agent.name,
