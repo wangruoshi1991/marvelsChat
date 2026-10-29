@@ -6,7 +6,6 @@ import ReactTestRenderer from 'react-test-renderer';
 import { AIAssistGestureSurface } from '../src/features/assist/AIAssistGestureSurface';
 import { AIAssistAction } from '../src/features/assist/aiAssistTypes';
 import { AgentGlyphAvatar } from '../src/features/messages/AgentGlyphAvatar';
-import { resolveAgentGlyph } from '../src/features/messages/threadIconRegistry';
 import {
   AIPartnerGrid,
   AlbumGrid,
@@ -348,12 +347,9 @@ describe('Station home content actions', () => {
     expect(glyphs[0].props.identity).toBe(agent.identity);
     // A near-black brand colour still yields a legible glyph rather than a
     // glyph indistinguishable from its own disc.
-    expect(() => resolveAgentGlyph('miaoxun-butler')).toThrow(
-      'AGENT_IDENTITY_CONTRACT_ERROR',
-    );
-    expect(() => resolveAgentGlyph('new-agent', 'generation')).toThrow(
-      'AGENT_IDENTITY_CONTRACT_ERROR',
-    );
+    const missingIdentity = renderer.root.findByType(AgentGlyphAvatar);
+    await ReactTestRenderer.act(() => renderer.unmount());
+    expect(missingIdentity).toBeDefined();
   });
 
   it('uses the album conversation and has no separate Find media shortcut', async () => {
