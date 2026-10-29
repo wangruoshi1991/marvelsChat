@@ -1,18 +1,6 @@
 import { query, withTransaction } from "./db.js";
 import { parseJson, toIso } from "./repository-mappers.js";
 
-const currentCatalogueKeys = [
-  "album-manager",
-  "comic-diary",
-  "file-preprocessor",
-  "media-retrieval",
-  "miaoxun-butler",
-  "model-3d",
-  "site-builder",
-  "video-production",
-  "virtual-character",
-];
-
 function mapRow(row) {
   return {
     agentId: row.agent_id,
@@ -58,11 +46,12 @@ function applyCatalogueMetadata(agent, metadata) {
 export async function syncAgentCatalogue(registeredAgents) {
   const keys = new Set(registeredAgents.map((agent) => agent.key));
   for (const agent of registeredAgents) {
-    const published = currentCatalogueKeys.includes(agent.key);
+    // A code registration never implies operator publication. Existing rows
+    // retain their reviewed state; new rows are explicitly unpublished.
     await query(
       `INSERT INTO agent_catalog
        (agent_id, display_name, description, identity_mark, identity_shape, identity_colors, published)
-       VALUES (?, ?, ?, ?, ?, ?::jsonb, ?)
+       VALUES (?, ?, ?, ?, ?, ?::jsonb, FALSE)
        ON CONFLICT (agent_id) DO UPDATE SET
          display_name = COALESCE(agent_catalog.display_name, EXCLUDED.display_name),
          description = COALESCE(agent_catalog.description, EXCLUDED.description),
@@ -84,7 +73,6 @@ export async function syncAgentCatalogue(registeredAgents) {
         agent.identity?.mark || "",
         agent.identity?.shape || null,
         JSON.stringify(agent.identity?.colors || {}),
-        published,
       ],
     );
   }

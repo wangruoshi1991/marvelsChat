@@ -633,3 +633,86 @@ export const modelTestSchema = z.object({
   input: z.string().trim().min(1).max(500).optional(),
   role: z.enum(["chat", "planning"]).optional().default("chat"),
 });
+
+// Agent release and product publishing contracts. These schemas are strict so
+// callers cannot smuggle legacy identity fields or duplicate authorization scopes.
+const agentKeySchema = z.string().trim().regex(/^[a-z][a-z0-9-]{0,79}$/);
+const versionSchema = z.string().trim().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/);
+const scopeSchema = z.string().trim().regex(/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/);
+const uniqueScopesSchema = z.array(scopeSchema).max(64).refine((scopes) => new Set(scopes).size === scopes.length, "Scopes must be unique");
+
+export const agentIdentitySchema = z.object({
+  key: agentKeySchema,
+  displayName: z.string().trim().min(1).max(120),
+  description: z.string().max(2000),
+  mark: z.string().trim().min(1).max(40),
+  shape: z.enum(["circle", "squircle", "rounded"]),
+  colors: z.object({
+    background: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    foreground: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    accent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  }).strict(),
+  published: z.boolean(),
+  source: z.string().trim().min(1).max(40),
+  updatedAt: z.string().datetime({ offset: true }),
+}).strict();
+
+export const agentReleaseSchema = z.object({
+  agentKey: agentKeySchema,
+  version: versionSchema,
+  contractHash: z.string().regex(/^[a-f0-9]{64}$/),
+  declaredScopes: uniqueScopesSchema,
+  readiness: z.object({ ready: z.boolean(), missing: z.array(z.string().trim().min(1).max(160)).max(64).refine((items) => new Set(items).size === items.length, "Readiness entries must be unique") }).strict(),
+  catalogStatus: z.enum(["draft", "review", "published", "unpublished", "archived"]),
+  publishedAt: z.string().datetime({ offset: true }).nullable(),
+}).strict();
+
+export const productDependencySchema = z.object({
+  agentKey: agentKeySchema,
+  version: versionSchema,
+  scopes: uniqueScopesSchema,
+}).strict();
+
+export const productVersionSchema = z.object({
+  productKey: agentKeySchema,
+  version: versionSchema,
+  displayName: z.string().trim().min(1).max(120),
+  description: z.string().max(2000),
+  supportedPlatforms: z.array(z.enum(["ios", "android", "web"])).min(1).max(3).refine((items) => new Set(items).size === items.length, "Platforms must be unique"),
+  dependencies: z.array(productDependencySchema).min(1).max(64),
+  status: z.enum(["draft", "review", "published", "paused", "retired"]),
+}).strict();
+
+export const entitlementSchema = z.object({
+  userId: z.string().trim().min(1).max(80).optional(),
+  productId: z.string().trim().min(1).max(80).optional(),
+  productVersionId: z.string().trim().min(1).max(80).optional(),
+  agentKey: agentKeySchema.optional(),
+  grantedScopes: uniqueScopesSchema.optional().default([]),
+  contractHash: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(),
+  status: z.enum(["enabled", "disabled", "unavailable", "reconsent_required"]),
+}).strict();
+
+export const AGENT_RELEASE_STATUSES = ["draft", "review", "published", "unpublished", "archived"];
+export const PRODUCT_STATUSES = ["draft", "review", "published", "paused", "retired"];
+export const ENTITLEMENT_STATUSES = ["enabled", "disabled", "unavailable", "reconsent_required"];
+
+const transitions = {
+  agent: {
+    draft: new Set(["review", "archived"]), review: new Set(["draft", "published", "unpublished"]),
+    published: new Set(["unpublished", "archived"]), unpublished: new Set(["review", "published", "archived"]), archived: new Set(),
+  },
+  product: {
+    draft: new Set(["review", "retired"]), review: new Set(["draft", "published"]), published: new Set(["paused", "retired"]),
+    paused: new Set(["published", "retired"]), retired: new Set(),
+  },
+  entitlement: {
+    enabled: new Set(["disabled", "unavailable", "reconsent_required"]), disabled: new Set(["enabled", "unavailable", "reconsent_required"]),
+    unavailable: new Set(["reconsent_required", "disabled"]), reconsent_required: new Set(["enabled", "disabled", "unavailable"]),
+  },
+};
+
+const canTransition = (kind, from, to) => Boolean(transitions[kind]?.[from]?.has(to));
+export const isValidAgentReleaseTransition = (from, to) => canTransition("agent", from, to);
+export const isValidProductVersionTransition = (from, to) => canTransition("product", from, to);
+export const isValidEntitlementTransition = (from, to) => canTransition("entitlement", from, to);
