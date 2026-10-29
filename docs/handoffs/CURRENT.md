@@ -2,6 +2,13 @@
 
 更新：2026-10-29。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
 
+### 2026-10-29 Agent 目录与后台线上部署（最新）
+
+- 已按维护窗口部署后台目录与 Agent 展示链路到阿里云 ECS `8.153.167.11`。线上 runtime 为 `/opt/projects/marvels-chat/releases/agent-catalog-admin-20261029/runtime`，制品包含 backend、Admin 静态资源、avatar-web 和 迁移 044/045；服务器运行制品文件哈希与本地发布制品一致。服务器 manifest 记录来源提交 `2cc75b12c01fc888e7ea39b73eb3b5fbcc5d0096`；随后本地将同一已审查内容及其新增 RN 资源、回归测试整理为提交 `3784b06ebded16fde2b963d07ce9a6343026a323`，runtime 白名单文件内容未改变。
+- 停写备份 `/opt/projects/marvels-chat/database/backups/marvels_chat-20261029T082200Z.dump` 的 SHA-256 为 `3a33087b7e1d98860275b5bea4e50eaee67b2ec34d7de8b8267042a3ad90f132`，`pg_restore --list` 共 518 项；迁移账本现为 45 条，最新为 `045_agent_alias_source.sql`。迁移使用维护窗口执行，未调用模型供应商。
+- 部署后 `marvels-chat-backend`、`marvels-chat-ai-task-worker`、`marvels-chat-media-retrieval-worker` 均 active；本机和公网 HTTPS `/api/health`、`/api/ready` 均返回 200，ready 报告数据库已连接且 `migrationsCurrent=true`；`marvels-chat-database-backup.timer` active。后台 `/api/admin/agent-catalog` 已由线上服务返回 200，线上管理台可使用目录配置与使用监控模块。
+- 本次部署未上传 TestFlight、未推送 Git、未创建生产测试账号、未触发付费模型调用。当前仍需用户在后台浏览器刷新后复核目录表单，并在实体真机复验 App 对线上目录变更的同步；域名/DNS 的既有 4 项 readiness 警告仍未改变。
+
 ### 2026-10-29 Agent 目录隔离验证与别名边界（最新）
 
 - 完成全新 loopback PostgreSQL 隔离库迁移 `001–045`（45/45），验证 `agent_catalog` 首次种入当前 9 个已部署 Agent 且默认上架；新增未登记 Agent 通过目录同步默认未上架；后台目录改名、描述/身份颜色合并、上架/下架和 App 目录投影均按真实数据库返回。
