@@ -17,6 +17,7 @@ trap cleanup EXIT
 
 container_id="$(docker run --detach --network none \
   --env NODE_ENV=production \
+  --env CORS_ORIGIN=https://smoke.invalid \
   --env DEFAULT_ADMIN_ENABLED=false \
   --env CREATE_FIRST_USER_AS_ADMIN=false \
   --env AVATAR_3D_ENABLED=false \

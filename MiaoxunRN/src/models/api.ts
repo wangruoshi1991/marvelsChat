@@ -187,6 +187,9 @@ export type AgentDTO = {
   capabilities: string[];
   permissions: string[];
   identity?: AgentIdentityDTO | null;
+  /** Operator catalog visibility. Unpublished entries remain available only
+   * for existing user authorizations and are excluded from recommendations. */
+  published?: boolean;
   status: string;
 };
 
@@ -208,6 +211,8 @@ export type OwnedAgentDTO = {
   category: string;
   enabled: boolean;
   grantedScopes: string[];
+  published?: boolean;
+  identity?: AgentIdentityDTO | null;
   createdAt?: string | null;
 };
 
@@ -709,6 +714,10 @@ export type AppSyncDTO = {
   messagesByThread: Record<string, MessageDTO[]>;
   notices: NoticeDTO[];
   unreadNoticeCount: number;
+  agents?: {
+    registered: AgentDTO[];
+    owned: OwnedAgentDTO[];
+  };
   serverTime: string;
 };
 

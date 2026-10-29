@@ -258,6 +258,7 @@ export const messageStyles = {
     top: 0,
   },
   actionSheetBackdrop: { flex: 1 },
+  xunMessageMenuBackdrop: { backgroundColor: 'transparent' },
   messageMenu: {
     borderRadius: 12,
     borderWidth: 1,
@@ -270,6 +271,26 @@ export const messageStyles = {
     shadowRadius: 18,
     top: 125,
     width: 156,
+  },
+  // V15 Xun state 04: the menu is anchored to the top-right plus button and
+  // uses the compact white, folded-corner card from the prototype.
+  xunMessageMenu: {
+    borderWidth: 1,
+    borderRadius: 20,
+    borderTopRightRadius: 0,
+    gap: 0,
+    paddingHorizontal: 17,
+    paddingVertical: 0,
+    right: 29,
+    position: 'absolute',
+    shadowOffset: { height: 7, width: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 16,
+    top: 46,
+    width: 137,
+  },
+  xunMessageMenuArrow: {
+    display: 'none',
   },
   messageMenuArrow: {
     borderLeftWidth: 1,
@@ -300,6 +321,30 @@ export const messageStyles = {
   },
   actionSheetCopy: { flex: 1, gap: 4 },
   actionSheetRowTitle: { fontSize: 13, fontWeight: '900' },
+  xunActionSheetRow: {
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    gap: 16,
+    height: 60,
+    minHeight: 60,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+  xunActionSheetRowTitle: { fontSize: 15, fontWeight: '500' },
+  xunActionSheetIcon: { width: 18, alignItems: 'center' },
+  xunActionSheetSymbol: {
+    color: '#cbdee4',
+    fontSize: 23,
+    lineHeight: 25,
+    fontWeight: '400',
+  },
+  xunActionSheetCopy: {
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+    borderBottomWidth: 1,
+  },
+  xunActionSheetCopyLast: { borderBottomColor: 'transparent' },
+  xunActionSheetCopyDivider: { borderBottomColor: '#d2dce4' },
   noticeScreen: { flex: 1 },
   noticeList: { gap: 10, padding: 14, paddingBottom: 88 },
   noticeRow: {

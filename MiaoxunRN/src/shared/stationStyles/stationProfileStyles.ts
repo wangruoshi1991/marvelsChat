@@ -112,6 +112,10 @@ export const stationProfileStyles = {
     marginVertical: 8,
     padding: 4,
   },
+  stationSwitchV6: {
+    backgroundColor: '#FFFFFF08',
+    borderColor: 'transparent',
+  },
   stationSwitchButton: {
     alignItems: 'center',
     borderRadius: 7,
@@ -130,6 +134,7 @@ export const stationProfileStyles = {
     shadowOpacity: 0.08,
     shadowRadius: 12,
   },
+  stationSwitchButtonSelectedV6: { backgroundColor: '#3A4257' },
   // Prototype `.me-switch-button:active { transform: scale(.97) }`.
   stationSwitchButtonPressed: { transform: [{ scale: 0.97 }] },
   stationSwitchText: { fontSize: 14, fontWeight: '700' },

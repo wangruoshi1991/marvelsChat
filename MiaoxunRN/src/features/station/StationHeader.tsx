@@ -109,7 +109,10 @@ export function StationProfileHeader({
       style={[
         styles.stationIdentityCard,
         {
-          backgroundColor: colors.surface,
+          // V6 keeps the profile header on the page canvas. The existing
+          // measured card and collapse geometry stay intact; only the large
+          // legacy surface is removed so the page matches the prototype.
+          backgroundColor: colors.isV6 ? colors.background : colors.surface,
           borderRadius: collapseProgress.interpolate({
             inputRange: [0, 1],
             outputRange: [12, 10],
@@ -138,6 +141,7 @@ export function StationProfileHeader({
         <Animated.View
           style={[
             styles.stationIdentityStage,
+            colors.isV6 && { backgroundColor: colors.soft },
             {
               borderRadius: collapseProgress.interpolate({
                 inputRange: [0, 1],
@@ -205,6 +209,10 @@ export function StationProfileHeader({
               )}
               style={[
                 styles.stationIdentityStageBadge,
+                colors.isV6 && {
+                  backgroundColor: colors.accent,
+                  borderColor: colors.surface,
+                },
                 {
                   opacity: collapseProgress.interpolate({
                     inputRange: [0, 0.4],
@@ -214,7 +222,11 @@ export function StationProfileHeader({
                 },
               ]}
             >
-              <Check color="#FFFFFF" size={12} strokeWidth={3.4} />
+              <Check
+                color={colors.isV6 ? colors.background : '#FFFFFF'}
+                size={12}
+                strokeWidth={3.4}
+              />
             </Animated.View>
           ) : null}
         </Animated.View>
@@ -225,7 +237,12 @@ export function StationProfileHeader({
             hidden={detailsHidden}
             rootTestID="station-profile-kicker"
           >
-            <Text style={styles.stationIdentityKicker}>
+            <Text
+              style={[
+                styles.stationIdentityKicker,
+                colors.isV6 && { color: colors.accent },
+              ]}
+            >
               {textFor(language, '我的信息', 'My info')}
             </Text>
           </StationProfileDetailGroup>
@@ -279,7 +296,16 @@ export function StationProfileHeader({
                 </Text>
               </Pressable>
             ) : null}
-            {bio ? <Text style={styles.stationIdentityBio}>{bio}</Text> : null}
+            {bio ? (
+              <Text
+                style={[
+                  styles.stationIdentityBio,
+                  colors.isV6 && { color: secondaryTextColor },
+                ]}
+              >
+                {bio}
+              </Text>
+            ) : null}
 
             {onOpenLocation ? (
               <Pressable
@@ -296,7 +322,10 @@ export function StationProfileHeader({
                 <MapPin color={secondaryTextColor} size={14} strokeWidth={2} />
                 <Text
                   numberOfLines={1}
-                  style={styles.stationIdentityLocationText}
+                  style={[
+                    styles.stationIdentityLocationText,
+                    colors.isV6 && { color: secondaryTextColor },
+                  ]}
                 >
                   {locationLabel ||
                     textFor(language, '设置社区与活动区域', 'Set your area')}
@@ -350,8 +379,17 @@ function StationProfileDetailGroup({
     >
       <View
         collapsable={false}
-        onLayout={event => setContentHeight(event.nativeEvent.layout.height)}
-        style={profileDetailStyles.content}
+        onLayout={event => {
+          const height = event.nativeEvent.layout.height;
+          // A clipped native layout can briefly report zero. Both groups have
+          // permanent content, so zero is not their natural height and must not
+          // lock the expanded group closed.
+          if (Number.isFinite(height) && height > 0) setContentHeight(height);
+        }}
+        style={[
+          profileDetailStyles.content,
+          contentHeight !== null && profileDetailStyles.measuredContent,
+        ]}
         testID={`${rootTestID}-content`}
       >
         {children}
@@ -362,9 +400,12 @@ function StationProfileDetailGroup({
 
 const profileDetailStyles = StyleSheet.create({
   clip: { overflow: 'hidden' },
-  // Keep measuring the full, naturally wrapped detail content while the
-  // outer group shrinks. An opacity-only fade would still hold the card open.
+  // The first natural layout sizes the clip. After that, detach the content
+  // from its animated height so clipping cannot feed a smaller measurement
+  // back into the expanded height. Width stays tied to the right column for
+  // real text reflow, including while the group is collapsed.
   content: { flexShrink: 0 },
+  measuredContent: { left: 0, position: 'absolute', right: 0, top: 0 },
 });
 
 /** Prototype `.me-switch`: two equal segments, nothing else in the trough. */
@@ -392,6 +433,7 @@ export function StationTabs({
       style={[
         styles.stationSwitch,
         { backgroundColor: colors.soft, borderColor: colors.border },
+        colors.isV6 && styles.stationSwitchV6,
       ]}
     >
       {tabs.map(item => {
@@ -407,6 +449,7 @@ export function StationTabs({
               isSelected && [
                 styles.stationSwitchButtonSelected,
                 { backgroundColor: colors.surface },
+                colors.isV6 && styles.stationSwitchButtonSelectedV6,
               ],
               // Prototype `.me-switch-button:active { transform: scale(.97) }`.
               pressed && styles.stationSwitchButtonPressed,

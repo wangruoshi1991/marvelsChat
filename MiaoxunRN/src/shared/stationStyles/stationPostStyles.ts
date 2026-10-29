@@ -216,6 +216,7 @@ export const stationPostStyles = {
     borderRadius: 16,
     borderWidth: 1,
     flexDirection: 'row',
+    gap: 5,
     maxWidth: '100%',
     minHeight: 31,
     paddingHorizontal: 13,
@@ -429,7 +430,10 @@ export const stationPostStyles = {
   stationFeedVideoText: { fontSize: 12 },
   stationFeedAgents: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   stationFeedAgentChip: {
+    alignItems: 'center',
     borderRadius: 4,
+    flexDirection: 'row',
+    gap: 5,
     paddingHorizontal: 7,
     paddingVertical: 4,
   },

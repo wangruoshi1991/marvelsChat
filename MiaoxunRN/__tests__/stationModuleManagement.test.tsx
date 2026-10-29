@@ -4,6 +4,7 @@ import ReactTestRenderer from 'react-test-renderer';
 
 import { StationContentListScreen } from '../src/features/station/StationContentListScreen';
 import { StationAgentsPanel } from '../src/features/station/StationAgentsPanel';
+import { AgentList } from '../src/features/station/StationAgentCards';
 import { StationCreateSheet } from '../src/features/station/StationCreateSheet';
 import {
   AIPartnerGrid,
@@ -12,6 +13,7 @@ import {
 } from '../src/features/station/StationHomeModules';
 import { styles } from '../src/shared/styles';
 import { palettes } from '../src/shared/theme';
+import { v6Palette } from '../src/shared/v6Palette';
 import {} from '../src/features/session/sessionDefaults';
 
 const diaryEntry = {
@@ -200,6 +202,55 @@ describe('station module management', () => {
 
     await ReactTestRenderer.act(() => renderer!.unmount());
     confirmation.mockRestore();
+  });
+
+  it('renders real Agent information while keeping unavailable profile metrics absent', async () => {
+    const onOpenAgentThread = jest.fn();
+    const onRemoveAgent = jest.fn();
+    const agent = {
+      id: 'model-3d',
+      name: '3D形象顾问 Agent',
+      description: '为真实的形象素材提供准备建议，不会直接生成3D模型。',
+      category: 'advisory',
+      enabled: true,
+      grantedScopes: [],
+      createdAt: '2026-10-28T08:00:00.000Z',
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <AgentList
+          agents={[
+            agent,
+            { ...agent, id: 'invalid-date', createdAt: 'invalid' },
+          ]}
+          language="zh"
+          onOpenAgentThread={onOpenAgentThread}
+          onRemoveAgent={onRemoveAgent}
+          palette={v6Palette(palettes.dark)}
+          readdAgentIds={new Set(['model-3d'])}
+          updatingAgentId={null}
+        />,
+      );
+    });
+    const text = renderer!.root
+      .findAllByType(Text)
+      .map(item => item.props.children)
+      .join(' ');
+    expect(text).toContain('添加于 2026.10.28');
+    expect(text).toContain(agent.description);
+    expect(text).toContain('授权范围不同，请移除后重新添加。');
+    expect(text).not.toMatch(/NaN|Lv\.|偏好匹配|协作 \d|原创|★|☆/);
+    expect(text.match(/添加于 /g)).toHaveLength(1);
+
+    await ReactTestRenderer.act(() => {
+      renderer!.root
+        .findAllByProps({ accessibilityLabel: `与 ${agent.name} 对话` })[0]
+        .props.onPress();
+    });
+    expect(onOpenAgentThread).toHaveBeenCalledWith('model-3d');
+    expect(onRemoveAgent).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   it('opens an existing diary in the shared editor and exposes swipe handlers', async () => {

@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   AppState,
   Pressable,
@@ -9,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { FileText, Plus } from 'lucide-react-native';
+import { ChevronRight, FileText, Plus } from 'lucide-react-native';
 import { appErrorText, textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
 import {
@@ -19,7 +20,14 @@ import {
   workspaceTokens,
 } from '../../shared/workspaceUi';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
-import { workspacePalette } from '../../shared/workspacePalette';
+import {
+  secondFloorAccent,
+  secondFloorPalette,
+  secondFloorXunStyles,
+} from './secondFloorTheme';
+import { isV6Palette, v6Colors } from '../../shared/v6Palette';
+import { isXunPalette } from '../../shared/xunPalette';
+import { SecondFloorXunSourceIcon } from './SecondFloorSourceIcon';
 import { AIContextReference } from '../../models/aiTask';
 import { StationFileAssetDTO } from '../../models/api';
 import {
@@ -29,6 +37,7 @@ import {
 } from '../../services/stationFilePicker';
 import { AgentWorkspace } from '../../models/agentWorkspace';
 import { StationOutcomesPanel } from '../station/StationOutcomesPanel';
+import { SecondFloorPageScrollProps } from './secondFloorScroll';
 
 /**
  * Prototype shows readable sizes (「2.4 MB」), not raw bytes. The API reports
@@ -75,6 +84,7 @@ function fileStatusText(status: string, language: Language) {
 }
 
 export function SecondFloorFiles({
+  header,
   palette,
   language,
   session,
@@ -82,7 +92,9 @@ export function SecondFloorFiles({
   onBusyChange,
   onOpenWorkspace,
   onOpenFileAgent,
+  scrollProps,
 }: {
+  header?: React.ReactNode;
   palette: Palette;
   language: Language;
   session: ReturnType<typeof useMiaoxunSession>;
@@ -90,12 +102,35 @@ export function SecondFloorFiles({
   onBusyChange?: (busy: boolean) => void;
   onOpenWorkspace: (workspace: AgentWorkspace) => void;
   onOpenFileAgent?: (reference: AIContextReference) => void;
+  scrollProps?: SecondFloorPageScrollProps;
 }) {
-  const colors = workspacePalette(palette);
+  const colors = secondFloorPalette(palette);
+  const v6 = isV6Palette(colors);
+  const xun = isXunPalette(colors);
+  const accent = secondFloorAccent(colors);
   const [detail, setDetail] = useState<
     (StationFileAssetDTO & { content: string | null }) | null
   >(null);
   const [uploadFile, setUploadFile] = useState<PickedStationFile | null>(null);
+  const retainedUploadFile = useRef<{
+    file: PickedStationFile;
+    release?: Promise<void>;
+  } | null>(null);
+  const releaseUploadFile = useCallback((file: PickedStationFile) => {
+    const retained = retainedUploadFile.current;
+    if (retained?.file !== file) return Promise.resolve();
+    if (retained.release) return retained.release;
+    retained.release = releaseStationFile(file)
+      .then(() => {
+        if (retainedUploadFile.current === retained)
+          retainedUploadFile.current = null;
+      })
+      .catch(cause => {
+        retained.release = undefined;
+        throw cause;
+      });
+    return retained.release;
+  }, []);
   const latest = useRef({ active, token: session.token, epoch: 0 });
   if (
     latest.current.active !== active ||
@@ -116,6 +151,9 @@ export function SecondFloorFiles({
   const foreground = useRef(AppState.currentState === 'active');
   // Invalidate reads/navigation without invalidating the native picker round trip.
   const foregroundEpoch = useRef(0);
+  // A detail request can finish after the user has returned to the list. Keep
+  // that navigation transition separate from lifecycle/account invalidation.
+  const detailReadGeneration = useRef(0);
   const pending = useRef(false);
   useEffect(() => {
     alive.current = true;
@@ -133,6 +171,7 @@ export function SecondFloorFiles({
   useEffect(() => {
     setDetail(null);
     setSelectedId(null);
+    detailReadGeneration.current += 1;
     setFilename('');
     setContent('');
     setEditing(false);
@@ -141,6 +180,7 @@ export function SecondFloorFiles({
   }, [session.token]);
   useEffect(() => {
     if (!active) {
+      detailReadGeneration.current += 1;
       setDetail(null);
       setSelectedId(null);
     }
@@ -237,6 +277,7 @@ export function SecondFloorFiles({
     const epoch = latest.current.epoch;
     const appEpoch = foregroundEpoch.current;
     const owner = session.token;
+    const generation = detailReadGeneration.current;
     let result;
     try {
       result = await session.stationFileAsset(id);
@@ -245,7 +286,8 @@ export function SecondFloorFiles({
         alive.current &&
         latest.current.token === owner &&
         latest.current.epoch === epoch &&
-        foregroundEpoch.current === appEpoch
+        foregroundEpoch.current === appEpoch &&
+        detailReadGeneration.current === generation
       ) {
         setDetail(null);
         setSelectedId(null);
@@ -258,7 +300,8 @@ export function SecondFloorFiles({
       latest.current.active &&
       latest.current.token === owner &&
       latest.current.epoch === epoch &&
-      foregroundEpoch.current === appEpoch
+      foregroundEpoch.current === appEpoch &&
+      detailReadGeneration.current === generation
     ) {
       setDetail(result);
       setSelectedId(id);
@@ -268,7 +311,8 @@ export function SecondFloorFiles({
       !foreground.current ||
       !latest.current.active ||
       latest.current.epoch !== epoch ||
-      foregroundEpoch.current !== appEpoch
+      foregroundEpoch.current !== appEpoch ||
+      detailReadGeneration.current !== generation
     )
       return null;
     return result;
@@ -288,20 +332,32 @@ export function SecondFloorFiles({
         await releaseStationFile(file);
         return;
       }
+      if (retainedUploadFile.current?.file !== file)
+        retainedUploadFile.current = { file };
       setUploadFile(file);
       await session.uploadStationFileAsset(file);
-      await releaseStationFile(file);
-      if (alive.current && latest.current.token === owner) setUploadFile(null);
+      await releaseUploadFile(file);
+      if (
+        alive.current &&
+        latest.current.active &&
+        latest.current.token === owner &&
+        latest.current.epoch === epoch
+      ) {
+        setUploadFile(null);
+      } else {
+        return;
+      }
       await session.refreshStationContent();
     });
   useEffect(
     () => () => {
-      if (uploadFile)
-        releaseStationFile(uploadFile).catch(() => {
+      const retained = retainedUploadFile.current;
+      if (retained)
+        releaseUploadFile(retained.file).catch(() => {
           console.warn('Temporary file cleanup failed');
         });
     },
-    [uploadFile],
+    [session.token, releaseUploadFile],
   );
   const selectedFile =
     detail?.id === selectedId
@@ -310,10 +366,12 @@ export function SecondFloorFiles({
   if (selectedId) {
     return (
       <ScrollView
+        {...scrollProps}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.panel}
+        contentContainerStyle={[s.panel, xun && s.panelXun]}
       >
+        {header}
         {error ? (
           <WorkspaceState palette={colors} tone="error" title={error} />
         ) : null}
@@ -321,24 +379,42 @@ export function SecondFloorFiles({
           palette={colors}
           variant="secondary"
           label={textFor(language, '返回文件列表', 'Back to files')}
-          onPress={() => setSelectedId(null)}
+          onPress={() => {
+            detailReadGeneration.current += 1;
+            setDetail(null);
+            setSelectedId(null);
+          }}
+          labelStyle={xun ? secondFloorXunStyles.secondaryLabel : undefined}
+          style={xun ? secondFloorXunStyles.secondaryButton : undefined}
         />
         <Text
           accessibilityRole="header"
-          style={[s.name, { color: colors.text }]}
+          style={[s.name, xun && s.nameXun, { color: colors.text }]}
         >
           {selectedFile?.originalFilename ||
             textFor(language, '文件不存在', 'File unavailable')}
         </Text>
         {selectedFile ? (
           <>
-            <Text style={[s.body, { color: colors.secondaryText }]}>
+            <Text
+              style={[
+                s.body,
+                xun && s.metaXun,
+                { color: colors.secondaryText },
+              ]}
+            >
               {selectedFile.mimeType}
               {formatFileSize(selectedFile.byteSize)
                 ? ` · ${formatFileSize(selectedFile.byteSize)}`
                 : ''}
             </Text>
-            <Text style={[s.body, { color: colors.secondaryText }]}>
+            <Text
+              style={[
+                s.body,
+                xun && s.metaXun,
+                { color: colors.secondaryText },
+              ]}
+            >
               {textFor(language, '状态：', 'Status: ')}
               {selectedFile.reference
                 ? textFor(language, '可用于摘要', 'Ready for summary')
@@ -363,6 +439,8 @@ export function SecondFloorFiles({
                   await loadDetail(selectedFile.id);
                 })
               }
+              labelStyle={xun ? secondFloorXunStyles.secondaryLabel : undefined}
+              style={xun ? secondFloorXunStyles.secondaryButton : undefined}
             />
             {detail?.reference && detail.content !== null && onOpenFileAgent ? (
               <WorkspaceButton
@@ -389,6 +467,8 @@ export function SecondFloorFiles({
                     onOpenFileAgent(file.reference);
                   })
                 }
+                labelStyle={xun ? secondFloorXunStyles.primaryLabel : undefined}
+                style={xun ? secondFloorXunStyles.primaryButton : undefined}
               />
             ) : null}
             <WorkspaceButton
@@ -454,21 +534,87 @@ export function SecondFloorFiles({
   }
   return (
     <ScrollView
+      {...scrollProps}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={s.panel}
+      contentContainerStyle={[s.panel, xun && s.panelXun]}
     >
-      <WorkspaceButton
-        palette={colors}
-        label={
-          uploadFile
-            ? textFor(language, '重试上传同一文件', 'Retry same file')
-            : textFor(language, '选择并上传文件', 'Choose and upload file')
-        }
-        busy={busy}
-        onPress={upload}
-      />
+      {header}
+      <View style={s.pageHeader}>
+        <View style={s.headingRow}>
+          <Text
+            accessibilityRole="header"
+            style={[s.pageTitle, { color: colors.text }]}
+          >
+            {textFor(language, '文件', 'Files')}
+          </Text>
+          {xun ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                uploadFile
+                  ? textFor(language, '重试上传同一文件', 'Retry same file')
+                  : textFor(
+                      language,
+                      '选择并上传文件',
+                      'Choose and upload file',
+                    )
+              }
+              accessibilityState={{ disabled: busy, busy }}
+              disabled={busy}
+              onPress={upload}
+              style={({ pressed }) => [
+                s.headerLink,
+                pressed && !busy && workspaceStyles.pressed,
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator size="small" color={accent} />
+              ) : (
+                <Plus size={16} color={accent} />
+              )}
+              <Text style={[s.headerLinkLabel, { color: accent }]}>
+                {uploadFile
+                  ? textFor(language, '重试上传', 'Retry upload')
+                  : textFor(language, '上传文件', 'Upload file')}
+              </Text>
+            </Pressable>
+          ) : (
+            <WorkspaceButton
+              palette={colors}
+              accessibilityLabel={
+                uploadFile
+                  ? textFor(language, '重试上传同一文件', 'Retry same file')
+                  : textFor(
+                      language,
+                      '选择并上传文件',
+                      'Choose and upload file',
+                    )
+              }
+              label={
+                uploadFile
+                  ? textFor(language, '重试上传同一文件', 'Retry same file')
+                  : textFor(
+                      language,
+                      '选择并上传文件',
+                      'Choose and upload file',
+                    )
+              }
+              busy={busy}
+              onPress={upload}
+              style={s.headerAction}
+            />
+          )}
+        </View>
+        <Text style={[s.pageHint, { color: colors.secondaryText }]}>
+          {textFor(
+            language,
+            '你的资料，与 Agent 的成果，都在这里。',
+            'Your materials and Agent outcomes live here.',
+          )}
+        </Text>
+      </View>
       {uploadFile && !busy ? (
         <WorkspaceButton
           palette={colors}
@@ -476,20 +622,112 @@ export function SecondFloorFiles({
           label={textFor(language, '放弃本次上传', 'Discard upload')}
           onPress={() => {
             perform(async () => {
-              await releaseStationFile(uploadFile);
+              await releaseUploadFile(uploadFile);
               if (alive.current && latest.current.token === session.token)
                 setUploadFile(null);
             });
           }}
         />
       ) : null}
-      <Text style={[s.body, { color: colors.secondaryText }]}>
-        {textFor(
-          language,
-          '支持UTF-8 TXT、Markdown、JSON、CSV、TSV；不超过256KiB和50000字符。JSON和表格文件按文本读取。',
-          'UTF-8 TXT, Markdown, JSON, CSV and TSV, up to 256KiB and 50,000 characters. JSON and tabular files are read as text.',
-        )}
+      <Text style={[s.sectionTitle, { color: colors.text }]}>
+        {textFor(language, '最近文件', 'Recent files')}
       </Text>
+      {session.stationContent.fileAssets.length ? (
+        session.stationContent.fileAssets.map(file => (
+          <Pressable
+            key={file.id}
+            accessibilityRole="button"
+            accessibilityLabel={textFor(
+              language,
+              `查看${file.originalFilename}`,
+              `View ${file.originalFilename}`,
+            )}
+            disabled={busy}
+            accessibilityState={{ disabled: busy }}
+            onPress={() => {
+              if (!pending.current) {
+                detailReadGeneration.current += 1;
+                setDetail(null);
+                setSelectedId(file.id);
+                perform(async () => {
+                  await loadDetail(file.id);
+                });
+              }
+            }}
+            style={({ pressed }) => [
+              s.file,
+              xun && s.fileXun,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              pressed && !busy && workspaceStyles.pressed,
+            ]}
+          >
+            {xun ? (
+              <SecondFloorXunSourceIcon>
+                <FileText
+                  accessible={false}
+                  size={19}
+                  color="#f6f7fa"
+                  strokeWidth={1.8}
+                />
+              </SecondFloorXunSourceIcon>
+            ) : (
+              <View
+                style={[
+                  s.fileIcon,
+                  { backgroundColor: v6 ? colors.soft : colors.text },
+                ]}
+              >
+                {fileTypeLabel(file.originalFilename) ? (
+                  <Text
+                    style={[
+                      s.fileIconText,
+                      { color: v6 ? accent : colors.surface },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {fileTypeLabel(file.originalFilename)}
+                  </Text>
+                ) : (
+                  <FileText size={19} color={v6 ? accent : colors.surface} />
+                )}
+              </View>
+            )}
+            <View style={s.fileCopy}>
+              <Text
+                numberOfLines={2}
+                style={[s.name, xun && s.nameXun, { color: colors.text }]}
+              >
+                {file.originalFilename}
+              </Text>
+              <Text
+                style={[
+                  s.body,
+                  xun && s.metaXun,
+                  { color: colors.secondaryText },
+                ]}
+              >
+                {[
+                  fileStatusText(file.status, language),
+                  formatFileSize(file.byteSize),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </Text>
+            </View>
+            <ChevronRight
+              accessible={false}
+              size={18}
+              strokeWidth={1.7}
+              color={colors.secondaryText}
+            />
+          </Pressable>
+        ))
+      ) : (
+        <WorkspaceState
+          palette={colors}
+          title={textFor(language, '暂无文件素材', 'No file materials yet')}
+        />
+      )}
       <WorkspaceButton
         palette={colors}
         label={textFor(
@@ -502,14 +740,20 @@ export function SecondFloorFiles({
         }}
         disabled={busy}
         accessibilityState={{ expanded: editing }}
-        icon={<Plus size={17} color={colors.surface} />}
-        style={s.add}
+        icon={
+          <Plus
+            size={17}
+            color={xun ? '#073b3d' : v6 ? v6Colors.onAccent : colors.surface}
+          />
+        }
+        labelStyle={xun ? secondFloorXunStyles.primaryLabel : undefined}
+        style={[s.add, xun && secondFloorXunStyles.primaryButton]}
       />
       <Text style={[s.body, { color: colors.secondaryText }]}>
         {textFor(
           language,
-          '也可直接登记最多1000字符的文字，读取正文后交给文件Agent。',
-          'Register up to 1,000 characters directly, then read the content before sending it to File Agent.',
+          '也可以直接添加一段文字，交给文件 Agent 阅读和整理。',
+          'You can also add text for File Agent to read and organize.',
         )}
       </Text>
       {editing ? (
@@ -527,7 +771,7 @@ export function SecondFloorFiles({
               {
                 color: colors.text,
                 borderColor: colors.border,
-                backgroundColor: colors.surface,
+                backgroundColor: v6 || xun ? colors.input : colors.surface,
               },
             ]}
           />
@@ -550,7 +794,7 @@ export function SecondFloorFiles({
               {
                 color: colors.text,
                 borderColor: colors.border,
-                backgroundColor: colors.surface,
+                backgroundColor: v6 || xun ? colors.input : colors.surface,
               },
             ]}
           />
@@ -564,75 +808,15 @@ export function SecondFloorFiles({
             disabled={!filename.trim() || !content.trim()}
             busy={busy}
             onPress={save}
+            labelStyle={xun ? secondFloorXunStyles.primaryLabel : undefined}
+            style={xun ? secondFloorXunStyles.primaryButton : undefined}
           />
         </View>
       ) : null}
       {error ? (
         <WorkspaceState palette={colors} title={error} tone="error" />
       ) : null}
-      <Text style={[s.body, { color: colors.secondaryText }]}>
-        {textFor(language, '最近文件', 'Recent files')}
-      </Text>
-      {session.stationContent.fileAssets.length ? (
-        session.stationContent.fileAssets.map(file => (
-          <Pressable
-            key={file.id}
-            accessibilityRole="button"
-            accessibilityLabel={textFor(
-              language,
-              `查看${file.originalFilename}`,
-              `View ${file.originalFilename}`,
-            )}
-            disabled={busy}
-            accessibilityState={{ disabled: busy }}
-            onPress={() => {
-              if (!pending.current) {
-                setDetail(null);
-                setSelectedId(file.id);
-                perform(async () => {
-                  await loadDetail(file.id);
-                });
-              }
-            }}
-            style={[
-              s.file,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <View style={[s.fileIcon, { backgroundColor: colors.text }]}>
-              {fileTypeLabel(file.originalFilename) ? (
-                <Text
-                  style={[s.fileIconText, { color: colors.surface }]}
-                  numberOfLines={1}
-                >
-                  {fileTypeLabel(file.originalFilename)}
-                </Text>
-              ) : (
-                <FileText size={19} color={colors.surface} />
-              )}
-            </View>
-            <View style={s.fileCopy}>
-              <Text numberOfLines={2} style={[s.name, { color: colors.text }]}>
-                {file.originalFilename}
-              </Text>
-              <Text style={[s.body, { color: colors.secondaryText }]}>
-                {[
-                  fileStatusText(file.status, language),
-                  formatFileSize(file.byteSize),
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </Text>
-            </View>
-          </Pressable>
-        ))
-      ) : (
-        <WorkspaceState
-          palette={colors}
-          title={textFor(language, '暂无文件素材', 'No file materials yet')}
-        />
-      )}
-      <Text style={[s.body, { color: colors.secondaryText }]}>
+      <Text style={[s.sectionTitle, { color: colors.text }]}>
         {textFor(language, 'App 生成文件', 'Generated by the app')}
       </Text>
       <StationOutcomesPanel
@@ -640,6 +824,7 @@ export function SecondFloorFiles({
         active={active && !editing}
         language={language}
         palette={palette}
+        headingPresentation="floor"
         stationContent={session.stationContent}
         onRefreshStationContent={session.refreshStationContent}
         onOpenWorkspace={onOpenWorkspace}
@@ -649,8 +834,36 @@ export function SecondFloorFiles({
 }
 const s = StyleSheet.create({
   panel: workspaceStyles.content,
+  panelXun: {
+    paddingHorizontal: 17,
+    paddingTop: 8,
+    paddingBottom: 24,
+    gap: 12,
+  },
+  pageHeader: { gap: workspaceTokens.space.xs },
+  pageTitle: { fontSize: 23, lineHeight: 29, fontWeight: '700' },
+  headingRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: workspaceTokens.space.sm,
+  },
+  headerAction: { minHeight: 40, paddingHorizontal: 11 },
+  headerLink: {
+    minHeight: workspaceTokens.minTouch,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    paddingHorizontal: 2,
+  },
+  headerLinkLabel: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  pageHint: { fontSize: 13, lineHeight: 22 },
   body: workspaceTokens.typography.caption,
+  metaXun: { fontSize: 11, lineHeight: 19 },
+  sectionTitle: { fontSize: 14, lineHeight: 20, fontWeight: '600' },
   name: workspaceTokens.typography.title,
+  nameXun: { fontSize: 13, lineHeight: 22 },
   editor: { gap: workspaceTokens.space.md },
   add: { alignSelf: 'flex-start' },
   input: workspaceStyles.input,
@@ -662,12 +875,22 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   fileIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: workspaceTokens.radius.control,
+    width: 45,
+    height: 45,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  fileIconText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.2 },
+  fileXun: {
+    borderRadius: 23,
+    paddingHorizontal: 17,
+    paddingVertical: 20,
+    shadowColor: '#263a50',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  fileIconText: { fontSize: 11, fontWeight: '800' },
   fileCopy: { flex: 1, minWidth: 0, gap: workspaceTokens.space.xs },
 });

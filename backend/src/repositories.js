@@ -265,6 +265,8 @@ async function listOwnedAgents(userId, registeredAgents = []) {
       category: agent?.category || "",
       enabled: Boolean(row.enabled),
       grantedScopes: parseJson(row.granted_scopes, []),
+      published: agent?.published !== false,
+      identity: agent?.identity || null,
       createdAt: toIso(row.created_at),
     };
   });
@@ -366,10 +368,41 @@ export async function ensureDefaultButlerAccess({ userId, connection = null }) {
     );
   }
 
-  const agent = await getAgent("miaoxun-butler");
-  if (!agent) throw new Error("The default Butler Agent is not registered.");
-  const grantedScopes = resolveAgentGrantedScopes(agent, agent.permissions);
   const queryFn = transactionQuery(connection);
+  const registeredAgent = await getAgent("miaoxun-butler");
+  if (!registeredAgent) throw new Error("The default Butler Agent is not registered.");
+  // New accounts must use the same operator-controlled display identity as
+  // existing accounts. Keep the registry as the executable source of truth;
+  // the catalogue only overlays presentation fields when the migration exists.
+  const catalogueRows = typeof connection?.query === "function"
+    ? await queryFn(
+        `SELECT display_name, description, identity_mark, identity_shape,
+                identity_colors, published
+           FROM agent_catalog
+          WHERE agent_id = ?
+          LIMIT 1`,
+        [registeredAgent.key],
+      )
+    : [];
+  const catalogue = catalogueRows?.[0];
+  const catalogueColors = parseJson(catalogue?.identity_colors, {});
+  const agent = catalogue
+    ? {
+        ...registeredAgent,
+        name: catalogue.display_name ?? registeredAgent.name,
+        description: catalogue.description ?? registeredAgent.description,
+        published: Boolean(catalogue.published),
+        identity: {
+          ...registeredAgent.identity,
+          ...(catalogue.identity_mark ? { mark: catalogue.identity_mark } : {}),
+          ...(catalogue.identity_shape ? { shape: catalogue.identity_shape } : {}),
+          ...(Object.keys(catalogueColors).length
+            ? { colors: { ...registeredAgent.identity?.colors, ...catalogueColors } }
+            : {}),
+        },
+      }
+    : registeredAgent;
+  const grantedScopes = resolveAgentGrantedScopes(agent, agent.permissions);
   const users = await queryFn("SELECT id FROM users WHERE id = ? FOR UPDATE", [
     userId,
   ]);
@@ -439,6 +472,7 @@ export async function setUserAgentAccess({
   agent,
   enabled,
   alias = "",
+  aliasSource = null,
   grantedScopes,
   connection = null,
   welcomeSource = "admin_agent_enable",
@@ -453,6 +487,7 @@ export async function setUserAgentAccess({
         agent,
         enabled,
         alias,
+        aliasSource,
         grantedScopes,
         connection: transaction,
         welcomeSource,
@@ -465,24 +500,42 @@ export async function setUserAgentAccess({
     userId,
   ]);
   if (!users[0]) throw new HttpError(404, "User not found");
-  const resolvedAlias = alias || agent.name || agent.key;
-  await queryFn(
+  const requestedAlias = String(alias || "").trim();
+  const resolvedAlias = aliasSource === "system"
+    ? (agent.name || agent.key)
+    : (requestedAlias || agent.name || agent.key);
+  const resolvedAliasSource = aliasSource === "system" || aliasSource === "custom"
+    ? aliasSource
+    : requestedAlias ? "custom" : "system";
+  const accessRows = await queryFn(
     `INSERT INTO user_agents
-      (user_id, agent_id, alias, enabled, granted_scopes)
-    VALUES (?, ?, ?, ?, ?)
+      (user_id, agent_id, alias, enabled, granted_scopes, alias_source)
+    VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT (user_id, agent_id) DO UPDATE SET
-      alias = EXCLUDED.alias,
+      alias = CASE
+        WHEN EXCLUDED.alias_source = 'custom' THEN EXCLUDED.alias
+        WHEN user_agents.alias IS NOT NULL AND user_agents.alias <> '' THEN user_agents.alias
+        ELSE EXCLUDED.alias
+      END,
+      alias_source = CASE
+        WHEN EXCLUDED.alias_source = 'custom' THEN 'custom'
+        WHEN user_agents.alias_source = 'custom' THEN 'custom'
+        WHEN user_agents.alias IS NOT NULL AND user_agents.alias <> '' THEN user_agents.alias_source
+        ELSE EXCLUDED.alias_source
+      END,
       enabled = EXCLUDED.enabled,
       granted_scopes = EXCLUDED.granted_scopes,
-      updated_at = CURRENT_TIMESTAMP`,
-    [userId, agent.key, resolvedAlias, enabled, JSON.stringify(resolvedScopes)]
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING alias`,
+    [userId, agent.key, resolvedAlias, enabled, JSON.stringify(resolvedScopes), resolvedAliasSource]
   );
+  const effectiveAlias = accessRows[0]?.alias || resolvedAlias;
 
   if (enabled) {
     await ensureAgentThread(connection, {
       userId,
       agent,
-      alias: resolvedAlias,
+      alias: effectiveAlias,
       welcomeSource,
     });
   } else {
@@ -589,7 +642,8 @@ export async function createAgentRun(run, queryFn = query) {
 export async function getBootstrapForUser(
   user,
   registeredAgents,
-  onlineUserIds = []
+  onlineUserIds = [],
+  ownedRegistryAgents = registeredAgents,
 ) {
   const serverTime = new Date().toISOString();
   const onlineIds = normalizeOnlineUserIds(onlineUserIds);
@@ -605,7 +659,7 @@ export async function getBootstrapForUser(
     friends,
     agentReadiness,
   ] = await Promise.all([
-    getAgentContextForUser(user, registeredAgents),
+    getAgentContextForUser(user, registeredAgents, ownedRegistryAgents),
     listThreadsForUser(user.id, onlineIds),
     listNotificationsForUser(user.id),
     unreadNotificationCount(user.id),
@@ -662,10 +716,14 @@ export async function updateUserPresenceMode(userId, presenceMode) {
   return publicUser(rows[0]);
 }
 
-export async function getAgentContextForUser(user, registeredAgents = []) {
+export async function getAgentContextForUser(
+  user,
+  registeredAgents = [],
+  ownedRegistryAgents = registeredAgents,
+) {
   const [profile, ownedAgents, stationContent] = await Promise.all([
     getProfileForUser(user.id),
-    listOwnedAgents(user.id, registeredAgents),
+    listOwnedAgents(user.id, ownedRegistryAgents),
     getStationContentForUser(user.id),
   ]);
 

@@ -2,7 +2,11 @@ import { spacing } from '../theme';
 
 export const stationLayoutStyles = {
   stationPanelScroll: { flex: 1, overflow: 'hidden' },
-  stationScrollContent: { paddingBottom: 118 },
+  // Keep the content container intrinsically sized so `minHeight` on the
+  // station panel creates a real native scroll range even when the selected
+  // tab is empty. `flexGrow: 1` can make iOS stretch the container to the
+  // viewport and report no scrollable extent.
+  stationScrollContent: { flexGrow: 0, paddingBottom: 118 },
   stationTopContent: {
     paddingBottom: 8,
     paddingHorizontal: 14,

@@ -13,14 +13,14 @@ import { AgentWorkspaceCard } from '../workspaces/AgentWorkspaceCard';
 import { AgentDTO } from '../../models/api';
 import { AITaskDTO } from '../../models/aiTask';
 import { textFor } from '../../shared/i18n';
-import { isLightPalette, Palette } from '../../shared/theme';
+import { Palette } from '../../shared/theme';
 import { WorkspaceState, workspaceTokens } from '../../shared/workspaceUi';
-import { workspacePalette } from '../../shared/workspacePalette';
 import { useAITasks } from '../ai/useAITasks';
 import { taskPhaseLabel, taskStatusLabel } from '../ai/taskPresentation';
 import { MiaoTaskCard } from './MiaoTaskCard';
 export { MiaoTaskAgent } from './MiaoTaskAgent';
 import { Language } from '../session/sessionTypes';
+import { v6Palette } from '../../shared/v6Palette';
 
 export function MiaoTaskFeed({
   token,
@@ -29,6 +29,7 @@ export function MiaoTaskFeed({
   language,
   agents,
   waterfall,
+  voiceMenuExpanded = false,
   onOpenTask,
   onOpenWorkspace,
 }: {
@@ -38,15 +39,11 @@ export function MiaoTaskFeed({
   language: Language;
   agents: AgentDTO[];
   waterfall: boolean;
+  voiceMenuExpanded?: boolean;
   onOpenTask: (task: AITaskDTO) => void;
   onOpenWorkspace?: (workspace: AgentWorkspace) => void;
 }) {
-  const colors = workspacePalette(palette);
-  // Light mode paints the page gradient behind the tabs, so the feed must not
-  // cover it with a flat fill; dark mode keeps its own background.
-  const feedBackground = isLightPalette(palette)
-    ? 'transparent'
-    : colors.background;
+  const colors = v6Palette(palette);
   const { width, fontScale } = useWindowDimensions();
   const { tasks, hasLoaded, error, refresh } = useAITasks({
     token,
@@ -104,7 +101,11 @@ export function MiaoTaskFeed({
       data={entries}
       keyExtractor={entry => `${entry.kind}:${entry.task.id}`}
       numColumns={columns}
-      style={[s.screen, { backgroundColor: feedBackground }]}
+      style={[
+        s.screen,
+        { backgroundColor: colors.background },
+        voiceMenuExpanded && s.voiceMenuExpanded,
+      ]}
       contentContainerStyle={[s.content, columns === 2 && s.gridContent]}
       columnWrapperStyle={columns === 2 ? s.columns : undefined}
       refreshControl={
@@ -114,27 +115,32 @@ export function MiaoTaskFeed({
           tintColor={colors.secondaryText}
         />
       }
-      // Prototype `page-miao` starts straight at the first task card: no page
-      // title. Only a read failure still needs a block above the feed.
+      // Keep the V20 page title above the live task feed; errors remain
+      // explicit below it rather than replacing the page context.
       ListHeaderComponent={
-        loadError ? (
-          <View style={s.error} accessibilityLiveRegion="polite">
-            <WorkspaceState
-              palette={colors}
-              tone="error"
-              title={loadError}
-              retryLabel={textFor(
-                language,
-                '重试读取任务',
-                'Retry loading tasks',
-              )}
-              onRetry={() => {
-                refresh();
-                collaboration.refresh();
-              }}
-            />
-          </View>
-        ) : null
+        <View>
+          <Text style={[s.title, { color: colors.text }]}>
+            {textFor(language, '任务实时动态', 'Live task activity')}
+          </Text>
+          {loadError ? (
+            <View style={s.error} accessibilityLiveRegion="polite">
+              <WorkspaceState
+                palette={colors}
+                tone="error"
+                title={loadError}
+                retryLabel={textFor(
+                  language,
+                  '重试读取任务',
+                  'Retry loading tasks',
+                )}
+                onRetry={() => {
+                  refresh();
+                  collaboration.refresh();
+                }}
+              />
+            </View>
+          ) : null}
+        </View>
       }
       ItemSeparatorComponent={columns === 1 ? TaskCardGap : null}
       ListEmptyComponent={
@@ -261,13 +267,21 @@ function TaskCardGap() {
 
 const s = StyleSheet.create({
   screen: { flex: 1 },
-  // Prototype `.task-feed`: 28px top, 4px sides — each card carries its own
-  // 18px padding, so the feed itself stays nearly edge to edge.
+  voiceMenuExpanded: { opacity: 0.72 },
+  // V20 `.home-briefs`: 8px top, 13px sides. Cards carry their own 18px
+  // padding, while the title has its separate 17px inset.
   content: {
     flexGrow: 1,
-    paddingTop: 28,
-    paddingHorizontal: 4,
+    paddingTop: 8,
+    paddingHorizontal: 13,
     paddingBottom: 180,
+  },
+  title: {
+    fontSize: 19,
+    lineHeight: 27,
+    fontWeight: '600',
+    marginHorizontal: 17,
+    marginBottom: 14,
   },
   gridContent: { gap: workspaceTokens.space.sm },
   columns: { gap: workspaceTokens.space.sm },

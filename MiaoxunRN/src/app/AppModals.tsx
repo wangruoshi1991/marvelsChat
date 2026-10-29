@@ -23,6 +23,7 @@ import { styles } from '../shared/styles';
 import { Palette } from '../shared/theme';
 import { Header } from '../shared/ui';
 import { resolveMessagePalette } from '../features/messages/messagePalette';
+import { isXunPalette, xunV3Palette } from '../shared/xunPalette';
 import { ModalRoute } from './appTypes';
 
 type SessionState = ReturnType<typeof useMiaoxunSession>;
@@ -35,6 +36,8 @@ type RenderUserAvatar = (props: {
 
 type AppModalsProps = {
   modalRoute: ModalRoute;
+  messageMenuTop?: number;
+  messageMenuPullHintVisible: boolean;
   palette: Palette;
   session: SessionState;
   profileFlows: ProfileFlows;
@@ -43,8 +46,14 @@ type AppModalsProps = {
   onCloseModal: () => void;
   onNavigateModal: (route: ModalRoute) => void;
   onOpenThread: (thread: ChatThread) => void;
+  onSelectTab: (tab: 'agents' | 'messages' | 'station') => void;
+  onComposeWithButler: (draft?: string) => void;
+  onOpenTaskInbox: () => void;
+  onAssistantExpandedChange: (expanded: boolean) => void;
   onSearchQueryChange: (query: string) => void;
   onOpenFriendThread: (friendUserId: string) => void;
+  onStartChat: () => void;
+  onCreateGroup: () => void;
   onRequestMessageQRCodeScan: () => void;
   onConsumePendingScanRequest: () => void;
   onToast: (message: string) => void;
@@ -52,6 +61,8 @@ type AppModalsProps = {
 
 export function AppModals({
   modalRoute,
+  messageMenuTop,
+  messageMenuPullHintVisible,
   palette,
   session,
   profileFlows,
@@ -60,8 +71,14 @@ export function AppModals({
   onCloseModal,
   onNavigateModal,
   onOpenThread,
+  onSelectTab,
+  onComposeWithButler,
+  onOpenTaskInbox,
+  onAssistantExpandedChange,
   onSearchQueryChange,
   onOpenFriendThread,
+  onStartChat,
+  onCreateGroup,
   onRequestMessageQRCodeScan,
   onConsumePendingScanRequest,
   onToast,
@@ -73,7 +90,12 @@ export function AppModals({
   const renderHeader = (title: string) => (
     <Header palette={palette} title={title} onBack={onCloseModal} />
   );
-  const searchPalette = resolveMessagePalette(palette);
+  const resolvedSearchPalette = resolveMessagePalette(palette);
+  // V15's search state uses the slightly cooler #f4f6f9 canvas used by its
+  // xun-v3 states; keep other message surfaces on their shared palette.
+  const searchPalette = isXunPalette(resolvedSearchPalette)
+    ? xunV3Palette(resolvedSearchPalette)
+    : resolvedSearchPalette;
 
   return (
     <>
@@ -207,8 +229,12 @@ export function AppModals({
       >
         <MessageActionSheet
           palette={palette}
+          anchorTop={messageMenuTop}
+          pullHintVisible={messageMenuPullHintVisible}
           language={session.language}
           onBack={onCloseModal}
+          onStartChat={onStartChat}
+          onCreateGroup={onCreateGroup}
           onScanQRCode={onRequestMessageQRCodeScan}
         />
       </Modal>
@@ -221,13 +247,23 @@ export function AppModals({
         <SafeAreaProvider>
           <SafeAreaView
             edges={['top']}
-            style={[styles.safeArea, { backgroundColor: searchPalette.soft }]}
+            style={[
+              styles.safeArea,
+              // V15 keeps the status area on the same light canvas as the
+              // search page; the soft role would leave a visible strip.
+              { backgroundColor: searchPalette.background },
+            ]}
           >
             <SafeAreaView
               edges={['bottom']}
-              style={[styles.safeArea, styles.searchBottomSafeArea]}
+              style={[
+                styles.safeArea,
+                styles.searchBottomSafeArea,
+                { backgroundColor: searchPalette.surface },
+              ]}
             >
               <SearchScreen
+                active={modalRoute === 'search'}
                 palette={searchPalette}
                 language={session.language}
                 query={searchQuery}
@@ -237,6 +273,10 @@ export function AppModals({
                 searchHistory={session.searchHistory}
                 renderUserAvatar={renderUserAvatar}
                 onBack={onCloseModal}
+                onSelectTab={tab => {
+                  onCloseModal();
+                  onSelectTab(tab);
+                }}
                 onChangeQuery={onSearchQueryChange}
                 onOpenThread={onOpenThread}
                 onOpenFriend={onOpenFriendThread}
@@ -244,6 +284,19 @@ export function AppModals({
                 onClearSearchHistory={session.clearSearchHistory}
                 onDeleteSearchHistory={session.deleteSearchHistoryItem}
                 onError={onToast}
+                onComposeAssistant={draft => {
+                  onCloseModal();
+                  onComposeWithButler(draft);
+                }}
+                onOpenAssistant={draft => {
+                  onCloseModal();
+                  onComposeWithButler(draft);
+                }}
+                onOpenTasks={() => {
+                  onCloseModal();
+                  onOpenTaskInbox();
+                }}
+                onAssistantExpandedChange={onAssistantExpandedChange}
               />
             </SafeAreaView>
           </SafeAreaView>

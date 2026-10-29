@@ -35,7 +35,7 @@ type ViewerStatus = 'booting' | 'loading' | 'parsing' | 'loaded' | 'error';
 const serializeViewerConfig = (value: object) =>
   JSON.stringify(value).replace(/</g, '\\u003c');
 
-const VIEWER_BACKGROUND_COLOR = '#F7F8FC';
+const VIEWER_BACKGROUND_COLOR = '#202636';
 
 export const isAvatar3DViewerDocumentUrl = (value: string) => {
   if (value === 'about:blank') return true;
@@ -267,7 +267,7 @@ export function Avatar3DViewer({
           testID="avatar3d-viewer-loading"
         >
           <View style={localStyles.loadingIndicator}>
-            <ActivityIndicator color="#0B8271" />
+            <ActivityIndicator color="#00C7CB" />
           </View>
         </View>
       ) : null}
@@ -283,7 +283,7 @@ const localStyles = StyleSheet.create({
   },
   loadingIndicator: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.88)',
+    backgroundColor: 'rgba(41,46,63,0.88)',
     bottom: 12,
     borderRadius: 20,
     height: 40,

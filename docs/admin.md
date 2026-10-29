@@ -44,7 +44,9 @@ Vite 代理必须开启 `changeOrigin`，否则本地后台代理 HTTPS 线上�
 - 账号管理：创建账号、搜索筛选账号、启用/停用账号、设置管理员/普通用户、重置用户密码、撤销目标用户登录态。
 - 账号详情：查看 AI ID、会话、最近事件、最近 Agent 调用，并编辑小站昵称、简介、社区和活动区域。
 - Agent 授权：按用户启用或停用 `agents/` 中注册的 Agent；启用后会创建或恢复对应 Agent 会话。
+- Agent 目录：读取已部署的 `agents/` 注册项，配置展示名称、描述、头像标识/颜色，并由管理员在后台上架或下架 App 推荐目录。手机端没有全局目录管理入口，只读取后台发布结果；上架只改变已部署执行器的可发现性，不创建新的执行能力，也不替用户授予权限。
 - Agent 注册：读取 `agents/` 中已注册的 Agent，并统计近期调用。
+- 使用监控：按 7/30/90 天从 `agent_runs` 全量聚合运行次数、成功/失败、Token、成本和平均耗时；不再用最近 500 条记录估算总量。
 - 模型服务：显示当前 `NEW_API_*` 配置状态、实际 chat completions endpoint，并可发起一次管理员连通测试。
 - 事件流：读取 `usage_events`，包含登录、退出、消息和后台管理动作。
 - Agent 调用记录：读取 `agent_runs`。
@@ -65,6 +67,9 @@ POST /api/admin/users/:userId/reset-password
 GET /api/admin/events
 GET /api/admin/agent-runs
 GET /api/admin/agents
+GET /api/admin/agent-catalog
+PATCH /api/admin/agent-catalog/:agentId
+GET /api/admin/agent-usage?days=30
 GET /api/admin/model-status
 POST /api/admin/model-test
 ```
@@ -90,6 +95,8 @@ Authorization: Bearer <token>
 - 后台管理动作会写入 `usage_events`，用于后续审计。
 
 后台只展示和操作数据库真实记录。没有数据时显示空表，不使用模拟图表或前端假统计；概览数字来自 PostgreSQL 聚合查询。
+
+目录下架不会撤销已授权用户的 `user_agents`，也不会删除已有会话；这些用户仍可看到其已授权 Agent，新的推荐添加会过滤未上架项。新加入 `agents/` 的注册文件首次同步默认为未上架，必须由管理员审阅展示信息后发布。
 
 ## 妙讯管家模型测试
 

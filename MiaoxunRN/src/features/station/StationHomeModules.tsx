@@ -541,7 +541,8 @@ export function AIPartnerGrid({
     .filter(agent => agent.enabled && agent.id !== 'media-retrieval')
     .map(agent => ({
       ...agent,
-      identity: registeredByKey.get(agent.id)?.identity || null,
+      identity:
+        agent.identity || registeredByKey.get(agent.id)?.identity || null,
     }));
 
   if (!enabledAgents.length) {

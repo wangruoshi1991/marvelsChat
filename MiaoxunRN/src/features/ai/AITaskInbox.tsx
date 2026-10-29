@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
-  FlatList,
+  SectionList,
   Pressable,
   StyleSheet,
   Text,
@@ -13,12 +13,21 @@ import { AITaskDTO } from '../../models/aiTask';
 import { AgentWorkspace } from '../../models/agentWorkspace';
 import { useAgentWorkspaces } from '../workspaces/useAgentWorkspaces';
 import { AgentWorkspaceCard } from '../workspaces/AgentWorkspaceCard';
+import {
+  workspaceCardPresentation,
+  workspaceStatusLabel,
+} from '../workspaces/workspacePresentation';
+import { workspaceAssistContext } from '../assist/workspaceAssistContext';
 import { textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
+import { isXunPalette } from '../../shared/xunPalette';
 import { AgentIconAvatar } from '../messages/AgentIconAvatar';
 import { Language } from '../session/sessionTypes';
+import { taskAgentDisplayName } from '../miao/MiaoTaskAgent';
 import { TaskStatus } from './AIInteraction';
+import { taskPhaseLabel, taskStatusLabel } from './taskPresentation';
 import { useAITasks } from './useAITasks';
+import { XunTaskCard } from './XunTaskCard';
 
 type AITaskInboxProps = {
   token: string;
@@ -28,6 +37,19 @@ type AITaskInboxProps = {
   agents: AgentDTO[];
   onOpenTask: (task: AITaskDTO) => void;
   onOpenWorkspace?: (workspace: AgentWorkspace) => void;
+};
+
+type InboxEntry =
+  | { kind: 'task'; task: AITaskDTO }
+  | { kind: 'workspace'; task: AgentWorkspace };
+
+const inboxSection = (status: string) => {
+  if (status === 'waiting_input' || status === 'awaiting_confirmation')
+    return 'attention';
+  if (['queued', 'running', 'cancelling'].includes(status)) return 'following';
+  if (['succeeded', 'failed', 'cancelled', 'interrupted'].includes(status))
+    return 'history';
+  return 'other';
 };
 
 function updatedTime(value: string, language: Language) {
@@ -59,36 +81,65 @@ export function AITaskInbox({
     active: active && Boolean(onOpenWorkspace),
   });
   const error = legacy.error || collaboration.error;
+  const xunTheme = isXunPalette(palette);
   const loading =
     legacy.loading ||
     Boolean(onOpenWorkspace && !collaboration.loaded && !error);
   const refresh = () =>
     Promise.all([legacy.refresh(), collaboration.refresh()]);
-  const entries = [
+  const entries: InboxEntry[] = [
     ...legacy.tasks.map(task => ({ kind: 'task' as const, task })),
     ...collaboration.workspaces.map(workspace => ({
       kind: 'workspace' as const,
       task: workspace,
     })),
-  ].sort((a, b) => b.task.createdAt.localeCompare(a.task.createdAt));
+  ].sort(
+    (a, b) =>
+      (xunTheme ? b.task.updatedAt.localeCompare(a.task.updatedAt) : 0) ||
+      b.task.createdAt.localeCompare(a.task.createdAt) ||
+      `${a.kind}:${a.task.id}`.localeCompare(`${b.kind}:${b.task.id}`),
+  );
+  const sections = xunTheme
+    ? (
+        [
+          ['attention', textFor(language, '待你确认', 'Needs your attention')],
+          ['following', textFor(language, '正在跟进', 'In progress')],
+          ['history', textFor(language, '历史任务', 'Task history')],
+          ['other', textFor(language, '其他任务', 'Other tasks')],
+        ] as const
+      )
+        .map(([key, title]) => ({
+          key,
+          title,
+          data: entries.filter(
+            entry => inboxSection(entry.task.status) === key,
+          ),
+        }))
+        .filter(section => section.data.length > 0)
+    : entries.length
+    ? [{ key: 'recent', title: '', data: entries }]
+    : [];
   const initialLoading =
     Boolean(token) &&
     (!legacy.hasLoaded || (onOpenWorkspace && !collaboration.loaded)) &&
     !error;
   return (
-    <FlatList
+    <SectionList
       testID="ai-task-inbox"
-      data={entries}
+      sections={sections}
+      stickySectionHeadersEnabled={false}
       keyExtractor={entry => `${entry.kind}:${entry.task.id}`}
       style={[s.list, { backgroundColor: palette.background }]}
-      contentContainerStyle={s.content}
+      contentContainerStyle={[s.content, xunTheme && s.contentXun]}
       ListHeaderComponent={
         token ? (
           <View style={s.header}>
-            <View style={s.headerRow}>
-              <Text style={[s.caption, { color: palette.secondaryText }]}>
-                {textFor(language, '最近任务', 'Recent tasks')}
-              </Text>
+            <View style={[s.headerRow, xunTheme && s.headerRowXun]}>
+              {!xunTheme ? (
+                <Text style={[s.caption, { color: palette.secondaryText }]}>
+                  {textFor(language, '最近任务', 'Recent tasks')}
+                </Text>
+              ) : null}
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={textFor(
@@ -169,8 +220,128 @@ export function AITaskInbox({
           </Text>
         ) : null
       }
+      renderSectionHeader={({ section }) =>
+        xunTheme ? (
+          <Text
+            accessibilityRole="header"
+            testID={`task-section-${section.key}`}
+            style={[
+              s.sectionTitle,
+              section.key !== sections[0]?.key && s.laterSectionTitle,
+              { color: palette.text },
+            ]}
+          >
+            {section.title}
+          </Text>
+        ) : null
+      }
       renderItem={({ item }) => {
-        if (item.kind === 'workspace')
+        if (item.kind === 'workspace') {
+          if (xunTheme) {
+            const workspace = item.task;
+            const presentation = workspaceCardPresentation(workspace, language);
+            const participantIds = [
+              ...new Set(workspace.steps.map(step => step.agentId)),
+            ];
+            const participants = participantIds.map(id => ({
+              id,
+              agent: agents.find(candidate => candidate.key === id),
+              displayName: taskAgentDisplayName(
+                agents.find(candidate => candidate.key === id),
+                language,
+              ),
+            }));
+            const status = workspaceStatusLabel(
+              workspace.status,
+              language,
+              workspace.executionMode,
+            );
+            const detail =
+              presentation.detail ||
+              presentation.attention ||
+              presentation.outcome?.title ||
+              workspace.summary ||
+              null;
+            const extraDetails = [
+              ...presentation.activities.map(activity => {
+                const name = taskAgentDisplayName(
+                  agents.find(candidate => candidate.key === activity.agentId),
+                  language,
+                );
+                return `${name} · ${activity.description}`;
+              }),
+              presentation.attention && presentation.attention !== detail
+                ? presentation.attention
+                : null,
+              presentation.outcome && presentation.outcome.title !== detail
+                ? `${presentation.outcome.label}：${presentation.outcome.title}`
+                : null,
+            ].filter(Boolean) as string[];
+            const actionVariant =
+              workspace.status === 'waiting_input' ||
+              workspace.status === 'awaiting_confirmation'
+                ? 'primary'
+                : 'secondary';
+            const statusTone = workspace.error
+              ? 'error'
+              : workspace.status === 'running'
+              ? 'progress'
+              : workspace.status === 'waiting_input' ||
+                workspace.status === 'awaiting_confirmation' ||
+                workspace.status === 'queued'
+              ? 'attention'
+              : 'neutral';
+            return (
+              <XunTaskCard
+                testID={`miao-workspace-${workspace.id}`}
+                palette={palette}
+                status={status}
+                statusTone={statusTone}
+                time={updatedTime(workspace.updatedAt, language)}
+                participants={participants}
+                goal={workspace.goal}
+                description={detail}
+                openLabel={
+                  workspace.executionMode === 'direct'
+                    ? textFor(language, '查看任务', 'View task')
+                    : textFor(language, '查看协作', 'View workspace')
+                }
+                accessibilityLabel={[
+                  workspace.goal,
+                  status,
+                  detail,
+                  ...extraDetails,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                accessibilityHint={textFor(
+                  language,
+                  '打开协作任务，查看进展和成果',
+                  'Open the workspace to review progress and results',
+                )}
+                actionVariant={actionVariant}
+                context={{
+                  object: workspaceAssistContext(workspace, agents, language),
+                  language,
+                }}
+                onOpen={() => onOpenWorkspace?.(workspace)}
+              >
+                {extraDetails.length ? (
+                  <View style={s.xunDetails}>
+                    {extraDetails.map((line, index) => (
+                      <Text
+                        key={`${index}:${line}`}
+                        numberOfLines={2}
+                        style={[s.xunDetail, { color: palette.secondaryText }]}
+                      >
+                        {line}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
+              </XunTaskCard>
+            );
+          }
           return (
             <AgentWorkspaceCard
               workspace={item.task}
@@ -181,14 +352,15 @@ export function AITaskInbox({
               onOpen={() => onOpenWorkspace?.(item.task)}
             />
           );
+        }
         const task = item.task;
         const agent = agents.find(entry => entry.key === task.agentId);
         const agentName =
           agent?.name ||
           textFor(
             language,
-            task.kind === 'site_draft' ? '建站 Agent' : '相册管理 Agent',
-            task.kind === 'site_draft' ? 'Site Agent' : 'Album Agent',
+            task.kind === 'site_draft' ? '建站 Agent' : '执行 Agent',
+            task.kind === 'site_draft' ? 'Site Agent' : 'Task agent',
           );
         const goal =
           task.goal.trim() ||
@@ -201,6 +373,75 @@ export function AITaskInbox({
               ? 'Original message unavailable'
               : 'Task goal unavailable',
           );
+        if (xunTheme) {
+          const description = [
+            task.error?.message,
+            task.status === 'running'
+              ? taskPhaseLabel(task.phase, language)
+              : task.status === 'interrupted'
+              ? textFor(
+                  language,
+                  '执行已中断，不会自动重试。请核对现有成果后重新发起。',
+                  'Execution was interrupted and will not retry automatically. Review any results before starting again.',
+                )
+              : null,
+            ...task.artifacts.map(artifact => artifact.title),
+          ]
+            .filter(Boolean)
+            .join('\n');
+          const statusTone =
+            task.error || task.status === 'interrupted'
+              ? 'error'
+              : task.status === 'running' || task.status === 'succeeded'
+              ? 'progress'
+              : task.status === 'queued' ||
+                task.status === 'awaiting_confirmation'
+              ? 'attention'
+              : 'neutral';
+          return (
+            <XunTaskCard
+              testID={`ai-task-inbox-${task.id}`}
+              palette={palette}
+              status={taskStatusLabel(task.status, language)}
+              statusTone={statusTone}
+              time={updatedTime(task.updatedAt, language)}
+              participants={[
+                { id: task.agentId, agent, displayName: agentName },
+              ]}
+              goal={goal}
+              description={description}
+              openLabel={
+                task.status === 'awaiting_confirmation'
+                  ? textFor(language, '查看并确认', 'Review and confirm')
+                  : task.status === 'running'
+                  ? textFor(language, '查看进度', 'View progress')
+                  : textFor(language, '查看任务', 'View task')
+              }
+              accessibilityLabel={[
+                goal,
+                taskStatusLabel(task.status, language),
+                description,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+              accessibilityHint={textFor(
+                language,
+                task.kind === 'site_draft'
+                  ? '打开建站工作区，查看任务和草稿'
+                  : '打开原会话，查看任务和回复',
+                task.kind === 'site_draft'
+                  ? 'Open the site workspace to review the task and draft'
+                  : 'Open the conversation to review the task and reply',
+              )}
+              actionVariant={
+                task.status === 'awaiting_confirmation'
+                  ? 'primary'
+                  : 'secondary'
+              }
+              onOpen={() => onOpenTask(task)}
+            />
+          );
+        }
         return (
           <Pressable
             testID={`ai-task-inbox-${task.id}`}
@@ -265,12 +506,16 @@ export function AITaskInbox({
 const s = StyleSheet.create({
   list: { flex: 1 },
   content: { paddingHorizontal: 4, paddingBottom: 80, gap: 3, flexGrow: 1 },
+  contentXun: { paddingHorizontal: 13, gap: 11 },
   header: { paddingHorizontal: 9, paddingBottom: 8 },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  headerRowXun: { justifyContent: 'flex-end' },
+  sectionTitle: { fontSize: 14, lineHeight: 20, marginTop: 2, marginBottom: 1 },
+  laterSectionTitle: { marginTop: 18 },
   refresh: {
     minHeight: 44,
     minWidth: 64,
@@ -288,6 +533,8 @@ const s = StyleSheet.create({
   goal: { fontSize: 16, lineHeight: 23, fontWeight: '600' },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   status: { flex: 1 },
+  xunDetails: { gap: 6, marginBottom: 15 },
+  xunDetail: { fontSize: 12, lineHeight: 19 },
   body: { fontSize: 14, lineHeight: 21 },
   empty: {
     flex: 1,

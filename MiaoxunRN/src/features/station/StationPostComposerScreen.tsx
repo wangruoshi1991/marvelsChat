@@ -15,7 +15,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { contactIconAssets } from '../../assets/icons';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
-import { Palette } from '../../shared/theme';
+import { isLightPalette, Palette } from '../../shared/theme';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { StationPostComposerContent } from './StationPostComposerContent';
 import { useStationPostComposer } from './useStationPostComposer';
@@ -51,7 +51,7 @@ export function StationPostComposerScreen({
     setPublishError,
     uploadedCount,
   } = composer;
-  const isDark = session.appearance === 'dark';
+  const isDark = !isLightPalette(palette);
   const screenColor = isDark ? palette.background : '#E6F4F0';
   const backgroundColor = isDark ? palette.surface : '#FFFFFF';
   const headerColor = isDark ? palette.surface : '#E6F4F0';

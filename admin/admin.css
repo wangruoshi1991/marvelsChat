@@ -247,6 +247,74 @@ select option {
   font-size: 13px;
 }
 
+.admin-modules {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 16px 0;
+  padding-bottom: 2px;
+}
+
+.admin-modules button {
+  min-height: 38px;
+  padding: 0 15px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(245, 247, 242, 0.06);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.admin-modules button.active {
+  border-color: rgba(54, 212, 164, 0.7);
+  background: rgba(54, 212, 164, 0.16);
+  color: var(--ink);
+}
+
+.agent-catalog-card header,
+.agent-catalog-inline,
+.agent-catalog-form {
+  display: flex;
+  gap: 10px;
+}
+
+.agent-catalog-card header {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.agent-catalog-card header > div,
+.agent-catalog-form,
+.agent-catalog-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.agent-catalog-form {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.agent-catalog-inline > label {
+  flex: 1;
+}
+
+.agent-catalog-colors input[type="color"] {
+  width: 54px;
+  padding: 3px;
+}
+
+.agent-catalog-form label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.agent-catalog-form button {
+  justify-self: start;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);

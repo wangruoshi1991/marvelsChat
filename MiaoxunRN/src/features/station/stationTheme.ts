@@ -1,10 +1,13 @@
 import { Palette, palettes, productColors } from '../../shared/theme';
+import { isV6Palette } from '../../shared/v6Palette';
 
 export function resolveStationColors(palette: Palette) {
-  const isLight = palette.text === palettes.light.text;
+  const isV6 = isV6Palette(palette);
+  const isLight = !isV6 && palette.text === palettes.light.text;
 
   return {
     isLight,
+    isV6,
     accent: isLight ? productColors.accent : palette.mint,
     background: isLight ? productColors.background : palette.background,
     border: isLight ? productColors.border : palette.border,

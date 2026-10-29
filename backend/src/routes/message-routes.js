@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { getAgent, listAgents } from "../../../agents/registry.js";
+import { listRegisteredAgentsWithCatalogue } from "../agent-catalog-repository.js";
 import { assertAgentExecutionMode, runAgent } from "../agent-runtime.js";
 import { config } from "../config.js";
 import { HttpError } from "../http-error.js";
@@ -20,8 +21,14 @@ import { getAITask } from "../ai-task-repository.js";
 import { submitAgentWorkspace } from "../agent-workspace-service.js";
 import { createWorkspaceDiscussionService } from "../workspace-discussion-service.js";
 import { createSpecialistMessageService } from "../specialist-message-service.js";
-import { assertMatchingMessageRetry, messageRequestFingerprint } from "../message-request.js";
-export { assertMatchingMessageRetry, messageRequestFingerprint } from "../message-request.js";
+import {
+  assertMatchingMessageRetry,
+  messageRequestFingerprint,
+} from "../message-request.js";
+export {
+  assertMatchingMessageRetry,
+  messageRequestFingerprint,
+} from "../message-request.js";
 import {
   buildButlerDispatchContext,
   validateButlerDispatch,
@@ -148,18 +155,20 @@ export async function getAuthorizedMediaResults({
     !access[0]?.enabled ||
     !agentScopesMatchDeclaration(agent, access[0].granted_scopes)
   ) {
-    throw new HttpError(403, "相册 Agent 授权已撤回或范围已变化，请在“我”移除后重新添加。", { code: "AI_ACCESS_REVOKED" });
+    throw new HttpError(
+      403,
+      "相册 Agent 授权已撤回或范围已变化，请在“我”移除后重新添加。",
+      { code: "AI_ACCESS_REVOKED" },
+    );
   }
   const runIds = message.metadata?.albumAssistant?.retrievalRunIds || [];
   const responses = await Promise.all(
-    runIds
-      .slice(0, 1)
-      .map((agentRunId) =>
-        retrievalRepository.getMediaRetrievalSearchResponse({
-          userId,
-          agentRunId,
-        }),
-      ),
+    runIds.slice(0, 1).map((agentRunId) =>
+      retrievalRepository.getMediaRetrievalSearchResponse({
+        userId,
+        agentRunId,
+      }),
+    ),
   );
   const results = responses.flatMap((response) => response?.results || []);
   const assets = await listAssets({
@@ -188,8 +197,12 @@ export function registerMessageRoutes(
     runAgentRuntime = runAgent,
   },
 ) {
-  const discussWorkspace = createWorkspaceDiscussionService({ runAgentRuntime });
-  const sendSpecialistMessage = createSpecialistMessageService({ runAgentRuntime });
+  const discussWorkspace = createWorkspaceDiscussionService({
+    runAgentRuntime,
+  });
+  const sendSpecialistMessage = createSpecialistMessageService({
+    runAgentRuntime,
+  });
   app.get(
     "/api/threads/:threadId/messages/:messageId/media-results",
     authenticate,
@@ -252,12 +265,39 @@ export function registerMessageRoutes(
         unreadNotificationCount(req.user.id),
       ]);
 
+      // Agent presentation and publication state can change in the admin
+      // console while the app remains open. Include the current catalogue in
+      // every incremental sync so the client refreshes its Agent directory
+      // without requiring a full bootstrap. Existing authorizations are kept
+      // in `owned`; unpublished entries remain visible there for continuity,
+      // while new recommendations include published executors only.
+      const allRegisteredAgents = await listRegisteredAgentsWithCatalogue(
+        await listAgents(),
+      );
+      const publishedAgents = allRegisteredAgents.filter(
+        (agent) => agent.published !== false,
+      );
+      const agentContext = await getAgentContextForUser(
+        req.user,
+        publishedAgents,
+        allRegisteredAgents,
+      );
+      const ownedIds = new Set(
+        agentContext.ownedAgents.map((agent) => agent.id),
+      );
+
       res.json({
         data: {
           threads,
           messagesByThread: publicMessagesByThread(messagesByThread),
           notices,
           unreadNoticeCount,
+          agents: {
+            registered: allRegisteredAgents.filter(
+              (agent) => agent.published !== false || ownedIds.has(agent.key),
+            ),
+            owned: agentContext.ownedAgents,
+          },
           serverTime,
         },
       });
@@ -339,14 +379,32 @@ export function registerMessageRoutes(
         requireAIClientContract(req);
         requireAgentWorkspaceContract(req);
         enforceAgentMessageCreateLimit(req, res);
-        const result = await discussWorkspace({ userId: req.user.id, threadId: thread.id, body });
-        if (!result.reused) await createUsageEvent({ userId: req.user.id, eventType: "message.send",
-          targetType: "thread", targetId: thread.id, payload: { agentId: thread.agentId },
-          ipHash: hashRequestIp(req.ip), userAgent: req.get("user-agent") || "" });
-        return res.status(result.reused ? 200 : 201).json({ data: { messages: result.messages.map(publicMessage) } });
+        const result = await discussWorkspace({
+          userId: req.user.id,
+          threadId: thread.id,
+          body,
+        });
+        if (!result.reused)
+          await createUsageEvent({
+            userId: req.user.id,
+            eventType: "message.send",
+            targetType: "thread",
+            targetId: thread.id,
+            payload: { agentId: thread.agentId },
+            ipHash: hashRequestIp(req.ip),
+            userAgent: req.get("user-agent") || "",
+          });
+        return res
+          .status(result.reused ? 200 : 201)
+          .json({ data: { messages: result.messages.map(publicMessage) } });
       }
-      if (body.agentContextReset !== undefined && (!thread.agentId || thread.agentId === "miaoxun-butler")) {
-        throw new HttpError(400, "仅专业 Agent 会话支持清除专业待续需求。", { code: "SPECIALIST_CONTEXT_INVALID" });
+      if (
+        body.agentContextReset !== undefined &&
+        (!thread.agentId || thread.agentId === "miaoxun-butler")
+      ) {
+        throw new HttpError(400, "仅专业 Agent 会话支持清除专业待续需求。", {
+          code: "SPECIALIST_CONTEXT_INVALID",
+        });
       }
       const replay = async (message) => {
         assertMatchingMessageRetry(message, requestFingerprint);
@@ -413,8 +471,12 @@ export function registerMessageRoutes(
           ) {
             const stalePending = message.metadata?.butlerClarification;
             if (thread.agentId === "miaoxun-butler" && stalePending) {
-              await resolveButlerRequestMessages({ userId: req.user.id, threadId: thread.id,
-                requestMessageIds: stalePending.requestMessageIds, queryFn: query });
+              await resolveButlerRequestMessages({
+                userId: req.user.id,
+                threadId: thread.id,
+                requestMessageIds: stalePending.requestMessageIds,
+                queryFn: query,
+              });
             }
             result = await completeAgentMessageOnce({
               userId: req.user.id,
@@ -429,11 +491,20 @@ export function registerMessageRoutes(
                 ...(thread.agentId === "miaoxun-butler"
                   ? {
                       butlerClarification: {
-                        requestMessageIds: [...(stalePending ? stalePending.requestMessageIds : []), message.id],
-                        contextRefs: stalePending ? stalePending.contextRefs : message.metadata?.contextRefs || [],
+                        requestMessageIds: [
+                          ...(stalePending
+                            ? stalePending.requestMessageIds
+                            : []),
+                          message.id,
+                        ],
+                        contextRefs: stalePending
+                          ? stalePending.contextRefs
+                          : message.metadata?.contextRefs || [],
                         source: {
                           currentPage:
-                            (stalePending ? stalePending.source.currentPage : message.metadata?.assistSource?.currentPage) ||
+                            (stalePending
+                              ? stalePending.source.currentPage
+                              : message.metadata?.assistSource?.currentPage) ||
                             "messages.butler",
                         },
                       },
@@ -452,7 +523,8 @@ export function registerMessageRoutes(
               "Message is still processing; retry shortly",
             );
           }
-          if (!result.outputMessage.deletedAt) messages.push(result.outputMessage);
+          if (!result.outputMessage.deletedAt)
+            messages.push(result.outputMessage);
         }
         res
           .status(200)
@@ -462,14 +534,27 @@ export function registerMessageRoutes(
         requireAIClientContract(req);
         requireAgentWorkspaceContract(req);
         enforceAgentMessageCreateLimit(req, res);
-        const result = await sendSpecialistMessage({ userId: req.user.id, threadId: thread.id, body });
+        const result = await sendSpecialistMessage({
+          userId: req.user.id,
+          threadId: thread.id,
+          body,
+        });
         // An older server may have admitted this key before the cutover. Its
         // durable target wins; never create a second album or workspace task.
         if (result.legacy) return replay(result.legacy);
-        if (!result.reused) await createUsageEvent({ userId: req.user.id, eventType: "message.send",
-          targetType: "thread", targetId: thread.id, payload: { agentId: thread.agentId },
-          ipHash: hashRequestIp(req.ip), userAgent: req.get("user-agent") || "" });
-        return res.status(result.reused ? 200 : 201).json({ data: { messages: result.messages.map(publicMessage) } });
+        if (!result.reused)
+          await createUsageEvent({
+            userId: req.user.id,
+            eventType: "message.send",
+            targetType: "thread",
+            targetId: thread.id,
+            payload: { agentId: thread.agentId },
+            ipHash: hashRequestIp(req.ip),
+            userAgent: req.get("user-agent") || "",
+          });
+        return res
+          .status(result.reused ? 200 : 201)
+          .json({ data: { messages: result.messages.map(publicMessage) } });
       };
       const existing = await getMessageByClientId({
         userId: req.user.id,
@@ -477,8 +562,12 @@ export function registerMessageRoutes(
         clientMessageId,
         source: "app",
       });
-      if (existing) return existing.metadata?.specialistMessage ? specialist() : replay(existing);
-      if (thread.agentId && thread.agentId !== "miaoxun-butler") return specialist();
+      if (existing)
+        return existing.metadata?.specialistMessage
+          ? specialist()
+          : replay(existing);
+      if (thread.agentId && thread.agentId !== "miaoxun-butler")
+        return specialist();
       if (body.butlerContextReset && thread.agentId !== "miaoxun-butler") {
         throw new HttpError(400, "仅妙管家支持清除待续需求上下文。", {
           code: "BUTLER_CONTEXT_INVALID",
@@ -494,7 +583,10 @@ export function registerMessageRoutes(
         }
       }
       const agentContext = thread.agentId
-        ? await getAgentContextForUser(req.user, await listAgents())
+        ? await getAgentContextForUser(
+            req.user,
+            await listRegisteredAgentsWithCatalogue(await listAgents()),
+          )
         : null;
       let agentAccess = null;
       if (thread.agentId) {
@@ -526,7 +618,8 @@ export function registerMessageRoutes(
           400,
           "AI context references require an Agent conversation",
         );
-      const messageMode = thread.agentId === "miaoxun-butler" ? "dispatch" : "chat";
+      const messageMode =
+        thread.agentId === "miaoxun-butler" ? "dispatch" : "chat";
       if (thread.agentId) {
         // A generation plan is not a conversation. Reject unsupported chat
         // before persisting a new message or attempting a model call.
@@ -540,17 +633,21 @@ export function registerMessageRoutes(
           })
         : { references: [], context: [] };
 
-      const rawButlerHistory = thread.agentId === "miaoxun-butler"
-        ? await listRecentMessagesForThread(req.user.id, thread.id, 12)
-        : [];
+      const rawButlerHistory =
+        thread.agentId === "miaoxun-butler"
+          ? await listRecentMessagesForThread(req.user.id, thread.id, 12)
+          : [];
       // A linked task discussion is a hard boundary for the ordinary Butler
       // clarification chain. Starting a new ordinary request after it (the
       // client sends butlerContextReset) must not resurrect an older pending
       // question or carry its source references across the boundary.
-      const latestLinkedIndex = rawButlerHistory.findLastIndex(message => Boolean(message.metadata?.workspaceContext));
-      const butlerHistory = latestLinkedIndex >= 0
-        ? rawButlerHistory.slice(latestLinkedIndex + 1)
-        : rawButlerHistory;
+      const latestLinkedIndex = rawButlerHistory.findLastIndex((message) =>
+        Boolean(message.metadata?.workspaceContext),
+      );
+      const butlerHistory =
+        latestLinkedIndex >= 0
+          ? rawButlerHistory.slice(latestLinkedIndex + 1)
+          : rawButlerHistory;
       const previousButlerMessage = butlerHistory.at(-1);
       // A different message can arrive while the preceding answer is still
       // running. Its source=app snapshot was written below by this server, not
@@ -586,8 +683,13 @@ export function registerMessageRoutes(
       );
       const assertPendingInput = async (queryFn = query, lock = false) => {
         if (!continuesPendingContext) return;
-        await resolveButlerRequestMessages({ userId: req.user.id, threadId: thread.id,
-          requestMessageIds: pendingClarification.requestMessageIds, queryFn, lock });
+        await resolveButlerRequestMessages({
+          userId: req.user.id,
+          threadId: thread.id,
+          requestMessageIds: pendingClarification.requestMessageIds,
+          queryFn,
+          lock,
+        });
         await resolveAIContextReferences({
           userId: req.user.id,
           refs: pendingClarification.contextRefs,
@@ -625,14 +727,23 @@ export function registerMessageRoutes(
       const requestContinuation =
         thread.agentId === "miaoxun-butler"
           ? {
-                requestMessageIds: [...(continuesPendingContext ? pendingClarification.requestMessageIds : []), userMessage.id],
-                contextRefs: continuesPendingContext ? pendingClarification.contextRefs : resolvedContext.references,
-                source: {
-                  currentPage:
-                    (continuesPendingContext ? pendingClarification.source.currentPage : userMessage.metadata?.assistSource?.currentPage) ||
-                    "messages.butler",
-                },
-              }
+              requestMessageIds: [
+                ...(continuesPendingContext
+                  ? pendingClarification.requestMessageIds
+                  : []),
+                userMessage.id,
+              ],
+              contextRefs: continuesPendingContext
+                ? pendingClarification.contextRefs
+                : resolvedContext.references,
+              source: {
+                currentPage:
+                  (continuesPendingContext
+                    ? pendingClarification.source.currentPage
+                    : userMessage.metadata?.assistSource?.currentPage) ||
+                  "messages.butler",
+              },
+            }
           : null;
 
       const responseMessages = [userMessage];
@@ -665,13 +776,19 @@ export function registerMessageRoutes(
         try {
           const isButler = thread.agentId === "miaoxun-butler";
           if (isButler) {
-            const requestMessages = await resolveButlerRequestMessages({ userId: req.user.id, threadId: thread.id,
-              requestMessageIds: requestContinuation.requestMessageIds, queryFn: query });
+            const requestMessages = await resolveButlerRequestMessages({
+              userId: req.user.id,
+              threadId: thread.id,
+              requestMessageIds: requestContinuation.requestMessageIds,
+              queryFn: query,
+            });
             dispatchContext = {
               ...buildButlerDispatchContext({ agentContext, agentAccess }),
               pendingContextMissing,
               contextReset: body.butlerContextReset === true,
-              requestMessages: requestMessages.map(({ content }) => ({ content })),
+              requestMessages: requestMessages.map(({ content }) => ({
+                content,
+              })),
             };
           }
           const result = await runAgentRuntime({
@@ -681,9 +798,14 @@ export function registerMessageRoutes(
             user: req.user,
             thread,
             messages: agentAccess.grantedScopes.includes("messages:read")
-                ? isButler
+              ? isButler
                 ? butlerHistory
-                : await listAgentHistoryBeforeInput(req.user.id, thread.id, userMessage.id, 12)
+                : await listAgentHistoryBeforeInput(
+                    req.user.id,
+                    thread.id,
+                    userMessage.id,
+                    12,
+                  )
               : [],
             appContext: {
               ...buildAgentAppContext(
@@ -696,8 +818,13 @@ export function registerMessageRoutes(
             },
             beforeModelCall: async () => {
               await assertPendingInput();
-              if (isButler) await resolveButlerRequestMessages({ userId: req.user.id, threadId: thread.id,
-                requestMessageIds: requestContinuation.requestMessageIds, queryFn: query });
+              if (isButler)
+                await resolveButlerRequestMessages({
+                  userId: req.user.id,
+                  threadId: thread.id,
+                  requestMessageIds: requestContinuation.requestMessageIds,
+                  queryFn: query,
+                });
               return assertCurrentAgentAccess({
                 userId: req.user.id,
                 agent: agentAccess.agent,
@@ -721,8 +848,12 @@ export function registerMessageRoutes(
             };
           }
           if (dispatchDecision?.type === "workspace") {
-            const requestMessages = await resolveButlerRequestMessages({ userId: req.user.id, threadId: thread.id,
-              requestMessageIds: requestContinuation.requestMessageIds, queryFn: query });
+            const requestMessages = await resolveButlerRequestMessages({
+              userId: req.user.id,
+              threadId: thread.id,
+              requestMessageIds: requestContinuation.requestMessageIds,
+              queryFn: query,
+            });
             buildButlerWorkspaceGoal(requestMessages);
           }
           const clarification =
@@ -775,7 +906,10 @@ export function registerMessageRoutes(
             threadId: thread.id,
           });
           completion = {
-            content: error?.details?.code === "BUTLER_GOAL_LIMIT" ? error.message : agentFailureReply,
+            content:
+              error?.details?.code === "BUTLER_GOAL_LIMIT"
+                ? error.message
+                : agentFailureReply,
             metadata: {
               provider: "runtime-error",
               errorCode: failure.code,
@@ -806,8 +940,16 @@ export function registerMessageRoutes(
                 connection,
                 prepareCompletion: async (lockedConnection) => {
                   await assertPendingInput(lockedConnection.query, true);
-                  const requestMessages = requestContinuation ? await resolveButlerRequestMessages({ userId: req.user.id, threadId: thread.id,
-                    requestMessageIds: requestContinuation.requestMessageIds, queryFn: lockedConnection.query, lock: true }) : null;
+                  const requestMessages = requestContinuation
+                    ? await resolveButlerRequestMessages({
+                        userId: req.user.id,
+                        threadId: thread.id,
+                        requestMessageIds:
+                          requestContinuation.requestMessageIds,
+                        queryFn: lockedConnection.query,
+                        lock: true,
+                      })
+                    : null;
                   await assertCurrentAgentAccess({
                     userId: req.user.id,
                     agent: agentAccess.agent,

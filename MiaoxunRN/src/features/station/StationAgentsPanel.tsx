@@ -72,14 +72,18 @@ export function StationAgentsPanel({
     .filter(agent => agent.enabled)
     .map(agent => ({
       ...agent,
-      identity: registeredByKey.get(agent.id)?.identity || null,
+      identity:
+        agent.identity || registeredByKey.get(agent.id)?.identity || null,
     }));
   // A disabled Agent returns to 「推荐添加」, so the filter keys off the
   // *enabled* cards rather than every owned row.
   const recommendedAgents = useMemo(() => {
     const enabledIds = new Set(ownedCards.map(agent => agent.id));
     return agents.filter(
-      agent => agent.key !== 'media-retrieval' && !enabledIds.has(agent.key),
+      agent =>
+        agent.key !== 'media-retrieval' &&
+        agent.published !== false &&
+        !enabledIds.has(agent.key),
     );
   }, [agents, ownedCards]);
   return (
@@ -136,7 +140,6 @@ export function StationAgentsPanel({
                 <AgentMark palette={palette} agent={agent} />
                 <View style={styles.stationOwnedAgentCopy}>
                   <Text
-                    numberOfLines={1}
                     style={[
                       styles.stationOwnedAgentName,
                       { color: colors.text },
@@ -145,7 +148,6 @@ export function StationAgentsPanel({
                     {agent.name}
                   </Text>
                   <Text
-                    numberOfLines={1}
                     style={[
                       styles.stationOwnedAgentDesc,
                       { color: colors.secondaryText },

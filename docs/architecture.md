@@ -140,14 +140,14 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 在线好友聊天 -> /api/realtime WebSocket -> thread.message
 妙讯聊天入口 -> 点击或右滑会话进入 ChatScreen / 左滑 ChatScreen 或点击 < 返回妙讯页
 客户端行为 -> /api/events -> usage_events
-后台管理 -> /api/admin/* -> PostgreSQL 聚合查询/账号管理
+后台管理 -> /api/admin/* -> PostgreSQL 聚合查询/账号管理/Agent目录发布
 ```
 
 数据库未配置、未迁移或连接失败时，后端返回明确错误。App 不展示原型账号、静态聊天、静态 Agent 或静态内容流作为真实数据；未登录时只进入登录/注册流程。
 
 启动动画只表达“AI 不只问答 / 找人，找东西 / 就上妙讯小站”。登录和注册页不展示未上线的忘记密码、短信或邮件验证说明；对应能力接入后再补真实入口，不在客户端放提前说明。App 不使用 `LogBox.ignoreLogs` 隐藏运行时 warning。3D 查看器源码位于 `avatar-web/src/app-viewer/`，构建产物内嵌到 `MiaoxunRN/src/assets/avatar-viewer/avatar-viewer.html`；仓库检查会验证两者一致，禁止手工维护两份实现。
 
-后台管理系统与 App 使用不同的本地登录态。后台可以创建账号、启用/停用用户、调整角色、编辑资料、管理 Agent 授权、撤销登录态、重置密码；这些动作会写入 `usage_events`。
+后台管理系统与 App 使用不同的本地登录态。后台可以创建账号、启用/停用用户、调整角色、编辑资料、管理 Agent 授权、维护已部署 Agent 的目录展示与上架状态、查看全量运行聚合、撤销登录态、重置密码；这些动作会写入 `usage_events`。目录上架不创建执行器、不代替用户授权，下架也不撤销已有授权。
 
 ## Agent 运行时
 
@@ -161,7 +161,7 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 当前Agent接入分三层：
 
 1. 注册层：每个 Agent 声明 `key`、能力、权限、可见范围、不可编辑的 `identity` 头像标识和默认提示词计划；registry 对 identity 做结构校验，缺失配置时拒绝注册。
-2. 编排层：`agent-workspace-service.js` 调用管家提出结构化计划，服务端验证目录、授权快照和依赖后持久化节点；现有专业能力包括素材选择、页面草稿及显式文字贡献，完整目录与限制见[工作空间方案](agent-workspace-architecture.md#按需求组织协作合同3工作区)。其他普通Agent会话仍同步，不能据此视为完整协作执行器。
+2. 编排层：`agent-workspace-service.js` 调用管家提出结构化计划，服务端验证目录、授权快照和依赖后持久化节点；现有专业能力包括素材选择、页面草稿及显式文字贡献，完整目录与限制见[工作空间方案](agent-workspace-architecture.md)。当前客户端合同为 `agentWorkspaces:6`；其他普通 Agent 会话仍同步，不能据此视为完整协作执行器。
 3. 交互层：妙展示任务、参与者、进度和成果，我管理Agent；引用与确认使用共享组件。客户端不决定模型供应商，也不通过菜单或卡片扩大授权。
 
 主要现行后端接口与边界：
@@ -179,10 +179,10 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 - `POST /api/location/resolve`：按坐标调用配置好的 Nominatim-compatible 反向地理编码服务，返回附近社区候选和活动区域候选。
 - `GET /api/realtime`：WebSocket 实时通道。登录用户通过 session token 建立连接，direct 消息写入对方线程后立即推送 `thread.message` 给在线对方；关注、好友申请、好友通过、通知已读会推送 `notification.changed`，关注关系和好友关系变化会推送 `relationships.changed`，在线状态变化会推送 `presence.changed`。客户端收到事件后只重新读取真实通知/增量同步或 bootstrap，不把通知、关系或在线状态复制成第二套状态。客户端按 token 生命周期保持连接，异常断开后只重连同一个 WebSocket 通道，并明确展示未连接/连接中状态，不做短轮询兜底。
 - 客户端发送状态是 UI 内存态，不是后端消息状态；只有 `POST /api/threads/:threadId/messages` 成功返回的 `chat_messages` 记录才表示真实已保存消息。后续如需已送达、已读、正在输入，必须新增后端字段或事件表并通过 API/WebSocket 发布。
-- `GET /api/app/sync`：按 `chat_threads.updated_at` 做增量同步。
+- `GET /api/app/sync`：按 `chat_threads.updated_at` 做增量同步，并返回当前 Agent 目录快照。后台上架、下架或调整身份后，前台保持打开时也能更新 `registered` 与 `owned`；目录变化不会扩大用户授权，已有授权的未上架 Agent 仍保留以避免旧会话消失。
 - `POST /api/threads/:threadId/read`：将当前线程未读数清零。
 - `GET /api/tasks`、`GET /api/tasks/:id/events`、`POST /api/tasks/:id/decision`：单Agent持久任务与阶段事件；提交从相册消息/建站接口发起。
-- `POST/GET /api/agent-workspaces`、`GET /api/agent-workspaces/:id`、`POST /api/agent-workspaces/:id/decision`：共同目标、协作节点与确认/取消/澄清。要求协作合同3，缺少或不同声明明确返回426。
+- `POST/GET /api/agent-workspaces`、`GET /api/agent-workspaces/:id`、`POST /api/agent-workspaces/:id/decision`：共同目标、协作节点与确认/取消/澄清。要求 `X-Miaoxun-Agent-Workspace: 6`，缺少或不同声明明确返回 426。
 - `GET /api/agent-runs/:runId/events`：现行媒体检索专用事件接口，不能充作全体Agent事件流；通用流式输出仍待实现。
 
 协作接口的 `inputRequest` 区分内容澄清与 `agent_access`：后者的Agent、能力、必要范围和下一步由服务端实际能力目录生成，不解析模型文案猜测权限。旧任务授权快照不能扩大；用户确认授权后以保留目标和引用的新草稿主动创建任务。澄清回复通过037已有 `followups` 记录并传递至主管；新增授权不能借回复追加到旧快照。

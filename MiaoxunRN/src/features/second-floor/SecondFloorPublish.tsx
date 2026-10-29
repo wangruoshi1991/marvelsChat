@@ -1,11 +1,14 @@
 import { BookOpen, Send } from 'lucide-react-native';
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { appErrorText, textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
-import { workspacePalette } from '../../shared/workspacePalette';
+import { secondFloorPalette } from './secondFloorTheme';
+import { isV6Palette } from '../../shared/v6Palette';
+import { isXunPalette } from '../../shared/xunPalette';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
+import { SecondFloorPageScrollProps } from './secondFloorScroll';
 import {
   StationCreatePayload,
   StationCreateSheet,
@@ -18,20 +21,25 @@ import {
  * `.xun-floor-panel` body padding.
  */
 export function SecondFloorPublish({
+  header,
   palette,
   language,
   session,
   onOpenPostComposer,
   onBusyChange,
+  scrollProps,
 }: {
+  header?: React.ReactNode;
   palette: Palette;
   language: Language;
   session: ReturnType<typeof useMiaoxunSession>;
   /** Opens the post composer owned by the app shell. */
   onOpenPostComposer: () => void;
   onBusyChange?: (busy: boolean) => void;
+  scrollProps?: SecondFloorPageScrollProps;
 }) {
-  const colors = workspacePalette(palette);
+  const colors = secondFloorPalette(palette);
+  const xun = isXunPalette(colors);
   const [diaryOpen, setDiaryOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -66,21 +74,40 @@ export function SecondFloorPublish({
 
   if (diaryOpen) {
     return (
-      <StationCreateSheet
-        kind="diary"
-        palette={colors}
-        language={language}
-        isSaving={busy}
-        onBack={() => {
-          if (!busy) setDiaryOpen(false);
-        }}
-        onSubmit={submitDiary}
-      />
+      <View style={s.scroll}>
+        {header ? <View style={s.flowHeader}>{header}</View> : null}
+        {message ? (
+          <Text
+            accessibilityRole="alert"
+            style={[s.hint, s.editorError, { color: palette.rose }]}
+          >
+            {message}
+          </Text>
+        ) : null}
+        <StationCreateSheet
+          kind="diary"
+          palette={colors}
+          language={language}
+          isSaving={busy}
+          scrollProps={scrollProps}
+          onBack={() => {
+            if (!busy) setDiaryOpen(false);
+          }}
+          onSubmit={submitDiary}
+        />
+      </View>
     );
   }
 
   return (
-    <View style={s.body}>
+    <ScrollView
+      {...scrollProps}
+      contentContainerStyle={[s.body, xun && s.bodyXun]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      style={s.scroll}
+    >
+      {header}
       <Text style={[s.title, { color: colors.text }]}>
         {textFor(language, '发布', 'Publish')}
       </Text>
@@ -98,10 +125,15 @@ export function SecondFloorPublish({
         onPress={onOpenPostComposer}
         style={[
           s.action,
+          xun && s.actionXun,
           { backgroundColor: colors.surface, borderColor: colors.border },
         ]}
       >
-        <Send color={colors.text} size={20} strokeWidth={2} />
+        <Send
+          color={isV6Palette(colors) ? colors.mint : colors.text}
+          size={20}
+          strokeWidth={2}
+        />
         <View style={s.actionCopy}>
           <Text style={[s.actionTitle, { color: colors.text }]}>
             {textFor(language, '发布动态', 'New Post')}
@@ -121,10 +153,15 @@ export function SecondFloorPublish({
         }}
         style={[
           s.action,
+          xun && s.actionXun,
           { backgroundColor: colors.surface, borderColor: colors.border },
         ]}
       >
-        <BookOpen color={colors.text} size={20} strokeWidth={2} />
+        <BookOpen
+          color={isV6Palette(colors) ? colors.mint : colors.text}
+          size={20}
+          strokeWidth={2}
+        />
         <View style={s.actionCopy}>
           <Text style={[s.actionTitle, { color: colors.text }]}>
             {textFor(language, '写日记', 'Write diary')}
@@ -143,21 +180,24 @@ export function SecondFloorPublish({
           {message}
         </Text>
       ) : null}
-    </View>
+    </ScrollView>
   );
 }
 
-/** Prototype `.xun-floor-panel-body`: 14px 12px 12px. */
 const s = StyleSheet.create({
+  scroll: { flex: 1 },
+  flowHeader: { paddingTop: 8, paddingHorizontal: 17 },
   body: {
-    flex: 1,
+    flexGrow: 1,
     gap: 10,
-    paddingBottom: 12,
+    paddingBottom: 24,
     paddingHorizontal: 12,
     paddingTop: 14,
   },
-  title: { fontSize: 15, fontWeight: '800' },
+  bodyXun: { paddingHorizontal: 17, paddingTop: 8, gap: 12 },
+  title: { fontSize: 23, lineHeight: 29, fontWeight: '700' },
   hint: { fontSize: 12, lineHeight: 18 },
+  editorError: { marginHorizontal: 17, marginBottom: 8 },
   action: {
     alignItems: 'center',
     borderRadius: 10,
@@ -169,6 +209,7 @@ const s = StyleSheet.create({
     paddingVertical: 10,
   },
   actionCopy: { flex: 1, gap: 3, minWidth: 0 },
+  actionXun: { borderRadius: 23, paddingHorizontal: 17, paddingVertical: 20 },
   actionTitle: { fontSize: 14, fontWeight: '700' },
   actionBody: { fontSize: 11, lineHeight: 16 },
 });

@@ -4,13 +4,17 @@
 
 以下描述当前源码能力；实际服务器版本、设备安装和验收状态见[当前交接](../docs/handoffs/CURRENT.md)。
 
-底栏为妙、讯、我，登录后默认进入妙的任务动态。卡片读取真实 `GET /api/tasks` 与 `GET /api/agent-workspaces`，展示目标、实际参与Agent与当前状态，点击进入单任务或多Agent协作工作区。单任务保留一个执行Agent，协作展示服务端持久节点与真实参与者；普通同步对话不混入任务动态。Agent添加管理保留在我的既有小站入口。讯使用“对话 / 任务”分段及独立通知入口。
+截至当前交接，服务端合同为 `aiTasks:1 / siteDocuments:2 / agentWorkspaces:6`、数据库迁移为 043，Build52 已进入 TestFlight；本地源码和未提交修复可能领先于已分发构建。运行版本、设备和验收结论只以[当前交接](../docs/handoffs/CURRENT.md)为准。
+
+底栏为妙、讯、我，冷启动和切换账号默认进入讯。妙展示真实任务动态；卡片读取真实 `GET /api/tasks` 与 `GET /api/agent-workspaces`，展示目标、执行状态和已持久化的工作空间信息。普通同步对话不混入任务动态。Agent 添加管理保留在我的小站入口。讯使用“对话 / 任务”分段及独立通知入口。
+
+当前视觉以 V15 Plan3 原型为准：妙页和我页使用深色画布，讯页、对话、任务、二楼及讯内页面使用浅色画布和青色强调。V15 只用于视觉与状态核对，不把原型演示账号、统计数字或未接入能力写入真实数据；我页折叠、资料卡缩小/恢复和长按三向菜单的现有交互继续保留。
 
 讯对话列表在顶部纵向下拉，经0.56阻尼后显示位移达到86pt，松开进入二楼；短拖回弹，静止时无提示占位。二楼按实际宽度显示五张完整功能卡，六项横向滚动并按一卡间距吸附，进出卡缩放；底部拖拽柄上滑55pt返回，另支持无障碍和Android系统返回。我保留原小站，已访问的小站在切换栏时保留挂载、暂停交互。账号切换重置导航与二楼页面状态。
 
-妙/讯共用 `VoiceShortcutDock` 的紧凑三方向按钮菜单，轴向间距56pt、入口同幅上移16pt；两页均为上/左/下，分别映射键盘、妙管家、瀑布或任务。原地松手取消，140ms收起且立即禁交互；转写先入可编辑草稿，不自动发送。首次权限由用户显式准备，成功后重新长按才识别。妙长按隐藏底栏；读屏/轻点打开的菜单仍可选择。最新验收见[当前交接](../docs/handoffs/CURRENT.md)。
+妙/讯共用 `VoiceShortcutDock` 的三方向长按菜单，轴向中心距约80pt、入口同幅上移16pt；两页均为上/左/下，分别映射键盘、妙管家、瀑布或任务。轻点不展开菜单；长按后才显示入口。原地松手取消，140ms收起且立即禁交互；转写先入可编辑草稿，不自动发送。首次权限由用户显式准备，成功后重新长按才识别。妙长按隐藏底栏；读屏用户可使用显式“开始语音输入”长按操作。最新验收见[当前交接](../docs/handoffs/CURRENT.md)。
 
-二楼相册复用内容列表/编辑组件，部分上传失败保留新相册和成功素材，明确提示用户进入详情检查后继续添加；原小站创建流程仍保留其原有整体回滚语义。文件入口只保存现有 API 支持的文本素材预览，不声称保存完整原文件；信息海只展示应用通知，关系评分、第三方汇聚、代支付和文件上传未开放。完整 Agent 后续合同见 [方案](../docs/agent-workspace-architecture.md)。
+二楼相册复用内容列表/编辑组件，部分上传失败保留新相册和成功素材，明确提示用户进入详情检查后继续添加；原小站创建流程仍保留其原有整体回滚语义。文件入口目前支持 TXT、Markdown、JSON、CSV、TSV 的 UTF-8 正文上传与鉴权读取，空登记仍保持 `pending_upload`，不会伪造正文。信息海目前只展示应用通知；关系评分、第三方汇聚和代支付仍未开放。完整 Agent 合同见[方案](../docs/agent-workspace-architecture.md)。
 
 新增和调整的任务/二楼界面统一使用 `shared/workspaceUi.tsx` 的按钮、面板、状态与视觉规范，以及 `shared/workspacePalette.ts`。业务组件持有真实状态，共享组件只负责呈现和交互语义。任务状态及可读阶段只在 `features/ai/taskPresentation.ts` 定义。
 
@@ -24,9 +28,7 @@
 
 ## 当前状态
 
-- 前轮46反馈的客户端修复已进入2026-10-13旧TestFlight47冻结制品；对应普通Agent自然语言chat后端修复尚未部署。已知历史漫画/建站JSON以可读草稿呈现，正文/读屏/复制分享/回复/会话预览一致；存储原文、用户JSON和未知结构保持原值。前轮范围见[反馈修复记录](../docs/handoffs/2026-10-14-build48-history.md)，本轮增量以当前交接为准。
-- 2026-10-14工作区将Agent添加与全部声明权限确认集中到我页，二楼只留账号隐私；妙/讯共享上移三向菜单，卡片共用长按。公开消息与漫画结果去后台审计字段，Agent历史按输入身份查询。最终RN63组640项及整仓通过；固定iPhone17已安装当前Debug1.0(47)。这些增量尚未部署或上传新包；TestFlight47仍是旧冻结制品，当前源码、后台与真机不能视为已经配套，见[当前交接](../docs/handoffs/CURRENT.md)。
-- 2026-10-13历史配套：正式API与两个Worker为 `agent-preview-20261013-02` / `c04385e`，迁移038，合同 `aiTasks:1 / siteDocuments:2 / agentWorkspaces:2`。当时固定iPhone17与TestFlight1.0(46)配套结果保留于[Build46记录](../docs/reviews/2026-10-13-testflight-46.md)。
+当前源码、线上运行版本、TestFlight、设备验收和未完成事项统一见[当前交接](../docs/handoffs/CURRENT.md)。本文件保留的 Build46–48、合同2–3 和旧设备描述属于历史背景，不能作为当前联调或发布依据；对应的发布与恢复证据仍保留在 `docs/reviews/` 和 `docs/handoffs/`。
 - 已建立独立 RN 工程。
 - 已保留与原型相近的视觉基调。
 - 已预留 `src/features`、`src/services`、`src/shared` 分层。
@@ -39,7 +41,7 @@
 - 妙讯管家通过妙讯会话和小站 Agent 卡片进入；小站不再渲染悬浮“妙”，避免覆盖 3D、动态和后续内容模块。内容级 AI 辅助统一由根部 `AIAssistProvider` 接管，3D、聊天消息、动态、日记和相册卡片使用同一长按与方向能力入口。
 - API 地址由 `MiaoxunConfigModule` 原生桥接显式注入；iOS 读取 `Info.plist` 的 `MiaoxunAPIBaseURL`，Android 读取 `BuildConfig.MIAOXUN_API_BASE_URL`。该值只能是无路径的 HTTP(S) origin，所有业务调用必须显式传入 `/api/*` 路径；配置缺失或格式错误会直接报错。
 - 妙讯页左上角 `+` 菜单中的扫码已接入统一 `src/services/qrScanner.ts`，iOS 使用 AVFoundation，Android 使用 CameraX + ML Kit。
-- 妙讯页左上角 `+` 菜单展示创建群、添加好友和扫码；创建群和独立添加好友入口当前为待接入状态，不触发业务写入，好友申请从公开主页按钮发起。
+- 妙讯页左上角 `+` 菜单当前仍只提供扫码；V15 原型已核对为“发起聊天 / 创建群聊 / 扫描名片”三项，其中前两项还需要对应的联系人/群聊创建接口，好友申请继续从公开主页按钮发起。不要把原型演示弹层当成已接入能力。
 - 扫码返回真实二维码文本后，会调用 `/api/scan/resolve` 由后端解析 AI ID 并打开公开用户主页，用户确认后再点击加好友。
 - 扫码结果会先在客户端校验是否为妙讯主页码；非妙讯码直接提示错误，不进入主页加载。主页解析加载页必须提供返回入口，避免网络或后端异常时困住用户。
 - 小站动态码使用标准 QR Code 组件生成，外框可以装饰，但二维码模块本体不能变形、缺失或被遮挡，确保 iOS AVFoundation 和 Android ML Kit 都能识别。
@@ -64,7 +66,7 @@
 - 生活动态的点赞和收藏已接入 `station_post_interactions` 真实接口，按钮状态由服务端返回并在失败时回滚；动态、互动、媒体资产和漫画日记数量已进入后台总览。音乐不在当前新版设计实施范围；最终漫画媒体发布仍待接入。
 - `avatar_config` 只表示人类用户的小站形象。Agent 使用独立身份及设计资源；妙讯管家聊天头像映射为蓝湖聊天页对应的 `messages/avatar-butler.png` 人物插画，小站现有 `station/partners/miaoxun-assistant.png` 机器人素材不能替代聊天头像。新增 Agent 必须声明合法 `identity`，正式设计素材按入口与 `agentId` 明确映射，不能使用用户可编辑形象。
 - 正式形象设计可以参考 QQ 秀的顶部人物预览和底部素材卡片编辑结构，同时保留 VRoid 的 Face/Hair/Body/Outfit/Accessories 分区、Roblox 的 avatar cosmetics/accessories 持久化思路。正式扩展捏脸、装扮、动作、上传图片生成或购买素材时，必须使用本地或后端审核后的 2D/3D 人形资源，并补齐素材授权、审核流程、模型压缩、跨平台性能验证和资源版本记录。
-- 收藏列表、签名动态码、好友拒绝/取消流程、群聊、已读回执、正在输入、媒体消息和内容级可见性仍按 `docs/social-graph.md` 后续接入，必须先补后端 schema/API，不能用客户端假状态替代。
+- 收藏列表、签名动态码、群聊、已读回执、正在输入、媒体消息和内容级可见性仍按 `docs/social-graph.md` 后续接入；好友申请拒绝/取消接口已存在。所有新增能力必须先补后端 schema/API，不能用客户端假状态替代。
 
 ## 原生桥接边界
 
@@ -76,11 +78,11 @@ React Native 不代表完全没有原生代码；当前原则是业务跨平台�
 ```text
 src/services/qrScanner.ts
   -> ios/MiaoxunRN/QRCodeScannerModule.swift
-  -> android/app/src/main/java/com/gary/miaoxun/rn/QRCodeScannerModule.kt
+  -> android/app/src/main/java/com/wangruoshi/miaoxun/QRCodeScannerModule.kt
 
 src/services/location.ts
   -> ios/MiaoxunRN/QRCodeScannerModule.swift / MiaoxunLocationModule
-  -> android/app/src/main/java/com/gary/miaoxun/rn/MiaoxunLocationModule.kt
+  -> android/app/src/main/java/com/wangruoshi/miaoxun/MiaoxunLocationModule.kt
 ```
 
 新增相机、推送、相册、文件、分享等能力时，先在 `src/services` 定义统一 JS API，再分别补 iOS / Android 原生实现和权限说明。
@@ -88,7 +90,7 @@ src/services/location.ts
 
 ## 本地构建与正式环境联调
 
-日常使用现有主 iPhone 17 Simulator（UDID `7E81531F-02AE-40FC-98DA-A575CEC9930F`，iOS 26.5）上的同一个 **妙讯** App，Bundle ID为 `com.wangruoshi.miaoxun`。Build 48 是工作区下一候选配置，默认 API 仍为 `https://8.153.167.11`；TestFlight 47 及当前安装版本仍是旧冻结制品，039/合同3后端完成配套前不能安装该候选验收。固定设备原位更新并保留已有数据与Keychain登录态（Simulator可能重定位容器路径），不再并列维护另一个日常开发App。
+日常使用现有主 iPhone 17 Simulator（UDID `7E81531F-02AE-40FC-98DA-A575CEC9930F`，iOS 26.5）上的同一个 **妙讯** App，Bundle ID 为 `com.wangruoshi.miaoxun`。当前默认 API 为 `https://8.153.167.11`；Build、服务器版本和设备安装是否配套以[当前交接](../docs/handoffs/CURRENT.md)为准。固定设备原位更新并保留已有数据与 Keychain 登录态，不并列维护另一个日常开发 App。
 
 从仓库根目录执行：
 
@@ -98,9 +100,9 @@ node scripts/miaoxun-development.mjs ios
 
 该命令检查正式API readiness，再构建、签名、安装并启动固定设备上的正式Bundle；不需要先启动本机API、PostgreSQL或Worker。构建证据记录设备UDID、Build、提交、未提交源码摘要、`main.jsbundle`摘要、产品摘要和API origin。源码在构建期间变化时中止安装；单凭Build号或HEAD不能证明版本一致。实际部署与安装结果以[当前交接](../docs/handoffs/CURRENT.md)为准，构建不会自动升级服务器或TestFlight。
 
-当前工作区新增专业文字成果引用与鉴权读取，协作合同为3，正式仍2。候选只执行`node scripts/miaoxun-development.mjs ios --build-only`，配套前保持已安装App；不能原位换新端后用旧后台验收。TestFlight47仍为旧冻结制品。正式038及协作合同2可读不代表当前授权声明、Agent版本与模型分派已部署；提交结果账本区分已接受、明确拒绝和结果未知。新端在当前会话bootstrap确认AI合同后再提交受影响请求，不对旧合同试发业务。正式联调复用既有正式账号，不搬运本地token、不每轮创建测试账号；供应商付费验收、生产部署和TestFlight上传按各自确认范围执行。
+当前工作区包含专业文字成果、续作和直接工作空间合同；客户端启动时从 bootstrap 校验 `aiTasks:1`、`siteDocuments:2` 和 `agentWorkspaces:6`，不按 Build 号猜测协议。只在[当前交接](../docs/handoffs/CURRENT.md)确认客户端、后端和数据库配套后进行正式联调；不搬运本地 token，不把旧合同静默降级为新请求。供应商付费验收、生产部署和 TestFlight 上传按各自授权范围执行。
 
-当前固定Simulator反馈候选安装证据为 `~/Library/Application Support/MiaoxunDevelopment/76237d6f8986/builds/2026-10-14T03-45-31-222Z/build.json`，`installed:true`、`launched:true`，JS SHA256 `12425c48be1dd11a0216206cf1469eea98e702ab72baead2999f8503e1cda8ff`。默认妙、同间距三向菜单、原地长按松手无残留及二楼隐私已实看；安装成功不代表完整素材链、连续触摸或真机录音已验收，也不代表TestFlight已更新。构建后补状态文档，实施代码未变。
+最近一次固定 iPhone 17 构建、安装和页面验收证据，以及实体设备与 TestFlight 状态，统一见[当前交接](../docs/handoffs/CURRENT.md)；历史 Build48/Build51 证据保留在发布记录中，不作为当前安装或配套判断。
 
 仅在显式验证后端迁移、权限或失败场景时使用 `verify-local-start` / `verify-local-restart`；`stop` / `status` 继续管理已有本机验证服务。隔离库账号与数据保留，供应商请求明确阻断。它不是日常App的后端，`status`也不表示生产状态。详细命令、证据和恢复约定见[固定iPhone 17联调](../docs/local-development-preview.md)。
 
@@ -170,7 +172,7 @@ xcrun devicectl device process launch \
   com.wangruoshi.miaoxun
 ```
 
-Android候选默认版本为Build48并使用同一正式API。在 `MiaoxunRN/android` 中构建：
+Android 使用与当前交接一致的版本计划和正式 API。在 `MiaoxunRN/android` 中构建：
 
 ```sh
 ./gradlew assembleDebug
@@ -178,9 +180,7 @@ Android候选默认版本为Build48并使用同一正式API。在 `MiaoxunRN/and
 
 构建参数仍可显式传入 `MIAOXUN_API_BASE_URL`、`MIAOXUN_VERSION_CODE` 和 `MIAOXUN_VERSION_NAME`；后续版本递增需同步iOS与Android发布计划。真机或Android做隔离后端验证时，必须明确配置设备可访问的origin；仅绑定本机的4391验证服务不能直接作为真机LAN服务使用。
 
-Android Release构建必须显式提供正式签名参数，版本码必须为正整数，
-Build 47 已占用，Android Release 要求 `MIAOXUN_VERSION_CODE >= 48`。`MIAOXUN_API_BASE_URL` 必须是公网
-HTTPS origin，不能使用 localhost 或 loopback URL。可参考：
+Android Release 构建必须显式提供正式签名参数，版本码必须为正整数，并按当前发布计划递增。`MIAOXUN_API_BASE_URL` 必须是公网 HTTPS origin，不能使用 localhost 或 loopback URL。可参考：
 
 ```text
 android/release-signing.properties.example
@@ -212,4 +212,4 @@ bundle exec pod install
 
 2026-10-12：新建站页面通过 `features/site-document` 的同一RN渲染器完成草稿和当前保存页面的全屏查看，合同共用仓库 `shared/site-document.js`。Metro只额外纳入shared目录，并显式从移动端node_modules解析共享代码的转换运行库。生成/确认先检查会话的 `siteDocuments:2`，资源通过本人文档接口精确读取，预览双hash匹配才允许保存。
 
-当前已在 `agent-preview-20261013-02` / 038与固定iPhone17配套启用。页面中所有图片实例实际加载成功后才允许标记已审阅；失败、重试或已发现资源不可用会撤销审阅，迟到响应按当前会话/文档/hash隔离。正常关闭已完成审阅的预览后，仍需用户回到任务明确确认保存。实现依据见[结构页面记录](../docs/reviews/2026-10-12-structured-pages.md)和[图片预览门禁](../docs/handoffs/2026-10-14-build48-history.md)，本轮实际发布状态见[Build46记录](../docs/reviews/2026-10-13-testflight-46.md)。
+结构化页面使用 `siteDocuments:2` 合同；生成、预览和保存必须经过当前会话能力校验、资源 hash 校验和用户确认。页面图片加载失败、重试或资源失效会撤销审阅，迟到响应按会话、文档和 hash 隔离。当前部署与发布状态以[当前交接](../docs/handoffs/CURRENT.md)为准，旧 Build46/038 记录仅保留为历史证据。

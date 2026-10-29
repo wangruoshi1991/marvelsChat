@@ -119,16 +119,33 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-test('short tap exposes the three shortcuts without starting speech', () => {
+test('short tap does not expose the shortcuts or start speech', () => {
+  expect(trigger().props.accessibilityHint).toContain(
+    '轻点仅关闭已展开的快捷入口',
+  );
+  act(() => trigger().props.onAccessibilityTap());
+  expect(expanded).not.toHaveBeenCalledWith(true);
   act(() => trigger().props.onPanResponderGrant());
   release();
   expect(startSpeech).not.toHaveBeenCalled();
+  expect(action('切换到键盘')).toBeUndefined();
+  expect(action('打开妙管家')).toBeUndefined();
+  expect(action('切换到瀑布')).toBeUndefined();
+  expect(expanded).not.toHaveBeenCalledWith(true);
+});
+
+test('a long hold exposes the three shortcuts', () => {
+  hold();
+  expect(startSpeech).toHaveBeenCalledTimes(1);
   expect(action('切换到键盘')).toBeDefined();
   expect(action('打开妙管家')).toBeDefined();
   expect(action('切换到瀑布')).toBeDefined();
-  act(() => action('切换到键盘').props.onPress());
-  expect(compose).toHaveBeenCalledWith(undefined);
-  expect(expanded).toHaveBeenLastCalledWith(false);
+  expect(
+    renderer.root.findAllByProps({ testID: 'voice-menu-backdrop' }),
+  ).toHaveLength(0);
+  expect(
+    renderer.root.findByProps({ testID: 'voice-trigger-halo' }),
+  ).toBeDefined();
 });
 
 test('long press prepares, receives real partials, and release in place cancels without navigation', async () => {
@@ -196,15 +213,14 @@ test('release while system permission is pending cancels and ignores its late ev
   expect(compose).not.toHaveBeenCalled();
 });
 
-test('release collapses shortcuts while a native error stays explicit and shortcuts can be reopened', async () => {
+test('release collapses shortcuts while a native error stays explicit and a new hold can reopen them', async () => {
   hold();
   await act(async () => reject(new Error('未获得麦克风权限。')));
   release();
   expect(text()).toContain('未获得麦克风权限。');
   expect(expanded).toHaveBeenLastCalledWith(false);
   expect(action('切换到键盘')).toBeUndefined();
-  act(() => trigger().props.onPanResponderGrant());
-  release();
+  hold();
   act(() => action('切换到键盘').props.onPress());
   expect(compose).toHaveBeenCalledWith(undefined);
 });
@@ -257,8 +273,9 @@ test.each([
 test('selection stays aligned with the visible button when the initial touch is off centre', async () => {
   hold(6, 6);
   listening();
-  // Starting 20 points above and left of the trigger requires only this movement.
-  release(20, -20);
+  // Starting 20 points above and left of the trigger requires a 60pt move
+  // to reach the new 80pt-separated keyboard option center.
+  release(20, -60);
   expect(finish).toHaveBeenCalledTimes(1);
   await act(async () => resolve('对准按钮'));
   expect(compose).toHaveBeenCalledWith('对准按钮');
@@ -291,7 +308,7 @@ test('short dragging without a move event does not open shortcuts on release', (
   expect(expanded).not.toHaveBeenCalledWith(true);
 });
 
-test('reduce motion closes the visual menu immediately while keeping a new tap usable', async () => {
+test('reduce motion closes the visual menu immediately while keeping a new hold usable', async () => {
   jest
     .mocked(AccessibilityInfo.isReduceMotionEnabled)
     .mockResolvedValueOnce(true);
@@ -304,12 +321,11 @@ test('reduce motion closes the visual menu immediately while keeping a new tap u
   expect(
     renderer.root.findAllByProps({ accessibilityLabel: '切换到键盘' }),
   ).toHaveLength(0);
-  act(() => trigger().props.onPanResponderGrant());
-  release();
+  hold();
   expect(action('切换到键盘')).toBeDefined();
 });
 
-test('closing buttons stop accepting touches and a new tap survives the previous exit animation', () => {
+test('closing buttons stop accepting touches and a new hold survives the previous exit animation', () => {
   hold();
   act(() => jest.advanceTimersByTime(300));
   release();
@@ -321,32 +337,145 @@ test('closing buttons stop accepting touches and a new tap survives the previous
     closingButtons.every(button => button.props.accessibilityState.disabled),
   ).toBe(true);
   act(() => jest.advanceTimersByTime(70));
-  act(() => trigger().props.onPanResponderGrant());
-  release();
+  hold();
   act(() => jest.advanceTimersByTime(300));
   expect(action('切换到键盘')).toBeDefined();
   expect(expanded).toHaveBeenLastCalledWith(true);
 });
 
-test('xun shares the compact target geometry and opens tasks without leaving an audio session', () => {
+test('xun shares the compact target geometry and opens tasks without starting audio', () => {
   act(() => renderer.update(<VoiceShortcutDock {...props} tone="xun" />));
+  expect(trigger().props.accessibilityLabel).toBe('打开语音快捷菜单');
+  expect(trigger().props.accessibilityActions[0].label).toBe('打开语音菜单');
   hold();
-  listening();
-  // Prototype `#xunVoiceCluster` labels the same three directions
-  // 直接说 / 总结未读 / 替我规划 rather than the 妙 page's wording.
+  // The visible V15 labels are 语音 / 未读 / 规划; the action lookup keeps
+  // the longer accessibility label so VoiceOver still explains each action.
   expect(action('替我规划')).toBeDefined();
   expect(action('查看任务')).toBeUndefined();
   expect(action('切换' + '到瀑布')).toBeUndefined();
-  expect(voiceShortcutActionAt(0, -56)).toBe('keyboard');
-  expect(voiceShortcutActionAt(-56, 0)).toBe('butler');
+  expect(
+    renderer.root.findByProps({ testID: 'voice-menu-backdrop' }),
+  ).toBeDefined();
+  expect(
+    renderer.root.findByProps({ testID: 'voice-trigger-halo' }),
+  ).toBeDefined();
+  expect(voiceShortcutActionAt(0, -80)).toBe('keyboard');
+  expect(voiceShortcutActionAt(-80, 0)).toBe('butler');
   release(0, 64);
   expect(feed).toHaveBeenCalledTimes(1);
-  expect(cancel).toHaveBeenCalledTimes(1);
+  expect(startSpeech).not.toHaveBeenCalled();
+  expect(cancel).not.toHaveBeenCalled();
   expect(expanded).toHaveBeenLastCalledWith(false);
   expect(voiceShortcutActionAt(0, 0)).toBeNull();
-  expect(voiceShortcutActionAt(0, 56)).toBe('feed');
+  expect(voiceShortcutActionAt(0, 80)).toBe('feed');
   expect(voiceShortcutActionAt(-56, -56)).toBeNull();
 });
+
+test('switching back to miao restores the miao long-press action label', () => {
+  act(() => renderer.update(<VoiceShortcutDock {...props} tone="xun" />));
+  act(() => renderer.update(<VoiceShortcutDock {...props} tone="miao" />));
+  expect(trigger().props.accessibilityLabel).toBe('长按进行语音输入');
+  expect(trigger().props.accessibilityActions[0].label).toBe('开始语音输入');
+});
+
+test('xun voice recognition uses the V15 confirmation card structure', () => {
+  act(() => renderer.unmount());
+  act(() => {
+    renderer = TestRenderer.create(<VoiceShortcutDock {...props} tone="xun" />);
+  });
+  hold();
+  expect(startSpeech).not.toHaveBeenCalled();
+  expect(
+    renderer.root.findAllByProps({ accessibilityLabel: '语音识别内容' }),
+  ).toHaveLength(0);
+  move(0, -80);
+  release(0, -80);
+  expect(startSpeech).toHaveBeenCalledTimes(1);
+  listening();
+  expect(renderer.root.findAllByProps({ testID: 'voice-pulse' })).toHaveLength(
+    0,
+  );
+  expect(text()).toContain('语音');
+  expect(text()).toContain('正在识别你的意图');
+  expect(text()).toContain('等待语音');
+  expect(text()).toContain('重新说');
+  expect(text()).toContain('确认执行');
+  expect(
+    renderer.root.findByProps({ accessibilityLabel: '语音识别内容' }),
+  ).toBeDefined();
+  expect(
+    renderer.root.findByProps({ accessibilityLabel: '确认执行' }).props
+      .disabled,
+  ).toBe(true);
+});
+
+test('xun ready card can restart recognition without closing the card', async () => {
+  act(() => renderer.update(<VoiceShortcutDock {...props} tone="xun" />));
+  hold();
+  move(0, -64);
+  release(0, -64);
+  listening();
+  await act(async () => resolve('重新识别前的草稿'));
+  expect(
+    renderer.root.findByProps({ accessibilityLabel: '语音识别内容' }).props
+      .value,
+  ).toBe('重新识别前的草稿');
+  await act(async () =>
+    renderer.root.findByProps({ accessibilityLabel: '重新说' }).props.onPress(),
+  );
+  expect(startSpeech).toHaveBeenCalledTimes(2);
+  expect(text()).toContain('正在识别你的意图');
+  expect(
+    renderer.root.findByProps({ accessibilityLabel: '语音识别内容' }).props
+      .value,
+  ).toBe('');
+  expect(expanded).toHaveBeenLastCalledWith(false);
+});
+
+test('xun ready card closes when the outside backdrop is pressed', async () => {
+  act(() => renderer.update(<VoiceShortcutDock {...props} tone="xun" />));
+  hold();
+  move(0, -64);
+  release(0, -64);
+  listening();
+  await act(async () => resolve('待关闭的语音草稿'));
+  const backdrop = renderer.root.findByProps({
+    testID: 'xun-status-backdrop',
+  });
+  await act(async () => backdrop.props.onPress());
+  expect(expanded).toHaveBeenLastCalledWith(false);
+  expect(
+    renderer.root.findAllByProps({ testID: 'xun-status-backdrop' }),
+  ).toHaveLength(0);
+});
+
+test.each([
+  [24, true],
+  [25, false],
+])(
+  'switching to xun keeps the new trigger center and compact option boundary aligned at %spt',
+  async (dx, selectsOption) => {
+    act(() => renderer.update(<VoiceShortcutDock {...props} tone="xun" />));
+    hold(27, 27);
+    release(dx, -80);
+    expect(startSpeech).toHaveBeenCalledTimes(selectsOption ? 1 : 0);
+    expect(finish).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+    await act(async () => resolve('讯页边缘滑选'));
+    if (selectsOption) {
+      expect(
+        renderer.root.findByProps({ accessibilityLabel: '确认执行' }).props
+          .disabled,
+      ).toBe(false);
+      await act(async () =>
+        renderer.root
+          .findByProps({ accessibilityLabel: '确认执行' })
+          .props.onPress(),
+      );
+    }
+    expect(compose).toHaveBeenCalledTimes(selectsOption ? 1 : 0);
+  },
+);
 
 test.each(['resolve', 'reject'] as const)(
   'account changes ignore an old %s and keep the new draft separate',
@@ -397,6 +526,22 @@ test('active false cancels audio even when component remains mounted', async () 
   expect(cancel).toHaveBeenCalledTimes(1);
   await act(async () => resolve('离开后的结果'));
   expect(compose).not.toHaveBeenCalled();
+});
+
+test('leaving a route while the menu is open clears it before the dock returns', () => {
+  hold();
+  expect(action('切换到键盘')).toBeDefined();
+  act(() => renderer.update(<VoiceShortcutDock {...props} active={false} />));
+  expect(
+    renderer.root.findAllByProps({ accessibilityLabel: '切换到键盘' }),
+  ).toHaveLength(0);
+
+  act(() => renderer.update(<VoiceShortcutDock {...props} active />));
+  expect(
+    renderer.root.findAllByProps({ accessibilityLabel: '切换到键盘' }),
+  ).toHaveLength(0);
+  hold();
+  expect(action('切换到键盘')).toBeDefined();
 });
 
 test('scroll movement before threshold never starts a microphone or opens menu', () => {

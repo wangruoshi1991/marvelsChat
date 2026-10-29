@@ -23,6 +23,7 @@ import { StationVisibility } from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Language } from '../session/useMiaoxunSession';
+import { AgentGlyphAvatar } from '../messages/AgentGlyphAvatar';
 import {
   maxStationPostImageCount,
   useStationPostComposer,
@@ -310,6 +311,11 @@ export function StationPostComposerContent({
                       : unselectedAgentChipStyle,
                   ]}
                 >
+                  <AgentGlyphAvatar
+                    agentId={agent.id}
+                    identity={agent.identity}
+                    size={20}
+                  />
                   <Text
                     numberOfLines={1}
                     style={[

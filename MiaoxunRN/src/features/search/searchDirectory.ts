@@ -11,7 +11,7 @@ type DirectoryItemBase = {
   searchText: string;
 };
 
-type DirectoryItem =
+export type DirectoryItem =
   | (DirectoryItemBase & {
       kind: 'agent';
       thread: ChatThread;

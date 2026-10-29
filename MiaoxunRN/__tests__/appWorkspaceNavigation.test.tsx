@@ -1,8 +1,11 @@
 import React from 'react';
 import {
+  AppState,
+  AppStateStatus,
   FlatList,
   Modal,
   PanResponder,
+  StatusBar,
   StyleSheet,
   Text,
   View,
@@ -22,7 +25,6 @@ import {
   emptyStationContent,
 } from '../src/features/session/sessionDefaults';
 import { palettes } from '../src/shared/theme';
-import { workspacePalette } from '../src/shared/workspacePalette';
 import { AgentWorkspaceScreen } from '../src/features/workspaces/AgentWorkspaceScreen';
 import { WorkspaceSubmissionRecovery } from '../src/features/workspaces/WorkspaceSubmission';
 import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
@@ -81,6 +83,7 @@ let mockSession = {
   unreadNoticeCount: 0,
   setActiveThreadId: jest.fn(),
   refreshStationContent: jest.fn(async () => emptyStationContent),
+  refreshBootstrap: jest.fn(async () => undefined),
 };
 let renderer: TestRenderer.ReactTestRenderer;
 afterEach(async () => {
@@ -89,21 +92,109 @@ afterEach(async () => {
   jest.useRealTimers();
 });
 
-test('three root tabs retain the station, hide navigation in second floor, and reset across accounts', async () => {
+test('three root tabs retain the station, keep navigation under voice menus, and reset across accounts', async () => {
   jest.useFakeTimers();
   await act(async () => {
     renderer = TestRenderer.create(<App />);
   });
   // A cold start lands on 讯; 妙 is one tap away.
   expect(renderer.root.findByType(ThreadListScreen)).toBeTruthy();
+  expect(
+    StyleSheet.flatten(
+      renderer.root.findByProps({ testID: 'app-top-safe-area' }).props.style,
+    ).backgroundColor,
+  ).toBe('#f4f6f9');
+  expect(
+    renderer.root.findByProps({
+      accessibilityLabel: '搜索对话、任务或Agent',
+    }),
+  ).toBeTruthy();
+  expect(
+    renderer.root.findAllByProps({
+      accessibilityLabel: '应用通知，0条未读',
+    }),
+  ).toHaveLength(0);
+  const xunVoiceDock = renderer.root
+    .findAllByType(VoiceShortcutDock)
+    .find(node => node.props.tone === 'xun');
+  expect(xunVoiceDock).toBeTruthy();
+  expect(
+    renderer.root.findByProps({ testID: 'app-bottom-safe-area' }).props.edges,
+  ).toEqual([]);
+  expect(
+    renderer.root.findAllByProps({
+      accessibilityLabel: '下拉进入二楼，你的个人空间',
+    }),
+  ).not.toHaveLength(0);
+  act(() => xunVoiceDock?.props.onExpandedChange(true));
+  expect(
+    renderer.root.findByType(ThreadListScreen).props.messageActionsOpen,
+  ).toBe(true);
+  expect(
+    renderer.root.findAllByProps({
+      accessibilityLabel: '下拉进入二楼，你的个人空间',
+    }),
+  ).toHaveLength(0);
+  expect(renderer.root.findAllByType(BottomBar)).toHaveLength(1);
+  expect(
+    StyleSheet.flatten(
+      renderer.root.findByType(BottomBar).findByType(View).props.style,
+    ),
+  ).toMatchObject({ height: 89, minHeight: 89 });
+  expect(
+    renderer.root.findByProps({ testID: 'app-bottom-safe-area' }).props.edges,
+  ).toEqual([]);
+  act(() => xunVoiceDock?.props.onExpandedChange(false));
+  const xunTabLabels = renderer.root
+    .findByType(ThreadListScreen)
+    .findAllByType(Text)
+    .filter(
+      node => node.props.children === '对话' || node.props.children === '任务',
+    );
+  expect(xunTabLabels).toHaveLength(2);
+  expect(StyleSheet.flatten(xunTabLabels[0].props.style)).toMatchObject({
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '600',
+  });
+  expect(StyleSheet.flatten(xunTabLabels[1].props.style)).toMatchObject({
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '400',
+  });
   act(() => renderer.root.findByType(BottomBar).props.onSelectTab('agents'));
   expect(renderer.root.findByType(MiaoTaskFeed)).toBeTruthy();
+  expect(renderer.root.findByType(StatusBar).props.barStyle).toBe(
+    'light-content',
+  );
+  expect(
+    StyleSheet.flatten(
+      renderer.root.findByProps({ testID: 'app-top-safe-area' }).props.style,
+    ).backgroundColor,
+  ).toBe('#11121e');
   const labels = renderer.root
     .findByType(BottomBar)
     .findAllByType(Text)
     .map(node => node.props.children);
   expect(labels).toEqual(['妙', '讯', '我']);
   act(() => renderer.root.findByType(BottomBar).props.onSelectTab('station'));
+  expect(mockSession.refreshBootstrap).toHaveBeenCalledWith(
+    'unit-test-token',
+    false,
+  );
+  mockSession.refreshBootstrap.mockClear();
+  act(() =>
+    renderer.root
+      .findByProps({ testID: 'retained-station-screen' })
+      .props.onSelectStationTab('agents'),
+  );
+  expect(mockSession.refreshBootstrap).toHaveBeenCalledWith(
+    'unit-test-token',
+    false,
+  );
+  expect(renderer.root.findByType(StatusBar).props.barStyle).toBe(
+    'light-content',
+  );
   expect(
     renderer.root.findByProps({ testID: 'retained-station-screen' }).props
       .active,
@@ -122,14 +213,19 @@ test('three root tabs retain the station, hide navigation in second floor, and r
     expect(
       StyleSheet.flatten(renderer.root.findByProps({ testID }).props.style)
         .backgroundColor,
-    ).toBe(workspacePalette(palettes.light).background);
+    ).toBe('#f3f6f9');
   }
   act(() => renderer.root.findByType(SecondFloorScreen).props.onClose());
   expect(
     StyleSheet.flatten(
+      renderer.root.findByProps({ testID: 'app-top-safe-area' }).props.style,
+    ).backgroundColor,
+  ).toBe('#f4f6f9');
+  expect(
+    StyleSheet.flatten(
       renderer.root.findByProps({ testID: 'app-bottom-safe-area' }).props.style,
     ).backgroundColor,
-  ).toBe('transparent');
+  ).toBe('#ffffff');
   expect(renderer.root.findByType(BottomBar).props.selectedTab).toBe(
     'messages',
   );
@@ -142,6 +238,29 @@ test('three root tabs retain the station, hide navigation in second floor, and r
   // A different account starts fresh on 讯, the same page a cold start opens.
   expect(renderer.root.findByType(BottomBar).props.selectedTab).toBe(
     'messages',
+  );
+});
+
+test('refreshes the session catalog when the app returns to the foreground', async () => {
+  let onStateChange: ((state: AppStateStatus) => void) | undefined;
+  jest
+    .spyOn(AppState, 'addEventListener')
+    .mockImplementation((event, handler) => {
+      if (event === 'change') onStateChange = handler;
+      return { remove: jest.fn() };
+    });
+  AppState.currentState = 'active';
+  await act(async () => {
+    renderer = TestRenderer.create(<App />);
+  });
+
+  mockSession.refreshBootstrap.mockClear();
+  act(() => onStateChange?.('background'));
+  act(() => onStateChange?.('active'));
+
+  expect(mockSession.refreshBootstrap).toHaveBeenCalledWith(
+    'unit-test-token',
+    false,
   );
 });
 
@@ -202,17 +321,87 @@ test('pull-down opens only from the top, and short or horizontal gestures preser
   ).toBe(false);
 });
 
-test('voice hides the retained navigation without shifting its anchor and drafts are isolated by account', async () => {
+test('retained conversation surface clears an interrupted pull when leaving and returning', async () => {
+  jest.useFakeTimers();
+  const open = jest.fn();
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <AIAssistProvider routeKey="unit-test" onAskButler={jest.fn()}>
+        <ThreadListScreen
+          active
+          palette={palettes.light}
+          language="zh"
+          threads={[]}
+          agents={[]}
+          notices={[]}
+          unreadNoticeCount={0}
+          selectedMessageTab="chat"
+          renderUserAvatar={() => <View />}
+          onOpenThread={jest.fn()}
+          onOpenMessageActions={jest.fn()}
+          onOpenSearch={jest.fn()}
+          onSelectMessageTab={jest.fn()}
+          onMarkNotificationRead={jest.fn()}
+          onAcceptFriendRequest={jest.fn()}
+          onRejectFriendRequest={jest.fn()}
+          onOpenSecondFloor={open}
+        />
+      </AIAssistProvider>,
+    );
+  });
+  // Obtain the handlers from the rendered surface itself.
+  const surface = renderer.root.findByProps({
+    testID: 'messages-pull-surface',
+  });
+  const gesture = { dx: 0, dy: 180 } as never;
+  surface.props.onStartShouldSetPanResponderCapture?.({}, gesture);
+  surface.props.onMoveShouldSetPanResponderCapture?.({}, gesture);
+  surface.props.onPanResponderRelease?.({}, gesture);
+  await act(async () =>
+    renderer.update(
+      <AIAssistProvider routeKey="unit-test" onAskButler={jest.fn()}>
+        <ThreadListScreen
+          active={false}
+          palette={palettes.light}
+          language="zh"
+          threads={[]}
+          agents={[]}
+          notices={[]}
+          unreadNoticeCount={0}
+          selectedMessageTab="chat"
+          renderUserAvatar={() => <View />}
+          onOpenThread={jest.fn()}
+          onOpenMessageActions={jest.fn()}
+          onOpenSearch={jest.fn()}
+          onSelectMessageTab={jest.fn()}
+          onMarkNotificationRead={jest.fn()}
+          onAcceptFriendRequest={jest.fn()}
+          onRejectFriendRequest={jest.fn()}
+          onOpenSecondFloor={open}
+        />
+      </AIAssistProvider>,
+    ),
+  );
+  act(() => jest.runAllTimers());
+  expect(open).not.toHaveBeenCalled();
+});
+
+test('voice keeps the retained navigation anchored and drafts are isolated by account', async () => {
   jest.useFakeTimers();
   await act(async () => {
     renderer = TestRenderer.create(<App />);
   });
   const dock = () => renderer.root.findByType(VoiceShortcutDock);
+  // The navigation surface is fixed by the V15 shell; a tab switch must not
+  // re-measure it and move the floating assistant dock.
+  expect(
+    renderer.root.findByProps({ testID: 'root-navigation' }).props.onLayout,
+  ).toBeUndefined();
   // The app opens on 讯; switch to 妙 first so the offsets below compare the
   // two tones rather than 讯 against itself.
   act(() => renderer.root.findByType(BottomBar).props.onSelectTab('agents'));
   const miaoOffset = dock().props.bottomOffset;
-  expect(miaoOffset).toBe(140);
+  expect(miaoOffset).toBe(191);
   act(() => renderer.root.findByType(BottomBar).props.onSelectTab('messages'));
   const xunOffset = dock().props.bottomOffset;
   expect(xunOffset).toBe(miaoOffset);
@@ -220,13 +409,18 @@ test('voice hides the retained navigation without shifting its anchor and drafts
   expect(dock().props.bottomOffset).toBe(miaoOffset);
   act(() => dock().props.onExpandedChange(true));
   expect(
+    StyleSheet.flatten(
+      renderer.root.findByProps({ testID: 'app-shell' }).props.style,
+    ).backgroundColor,
+  ).toBe('#11121e');
+  expect(
     renderer.root.findByProps({ testID: 'root-navigation' }).props
       .pointerEvents,
-  ).toBe('none');
+  ).toBeUndefined();
   expect(
     renderer.root.findByProps({ testID: 'root-navigation' }).props
       .accessibilityElementsHidden,
-  ).toBe(true);
+  ).toBeUndefined();
   expect(renderer.root.findByType(BottomBar)).toBeTruthy();
   expect(dock().props.bottomOffset).toBe(miaoOffset);
   await act(async () => dock().props.onCompose('本地尚未发送的草稿'));
@@ -256,6 +450,33 @@ test('voice hides the retained navigation without shifting its anchor and drafts
   await act(async () => dock().props.onCompose());
   expect(renderer.root.findByType(AIRequestComposer).props.draft).toBe('');
 });
+
+test('leaving Miao through Butler clears the parent-owned long-press state', async () => {
+  jest.useFakeTimers();
+  await act(async () => {
+    renderer = TestRenderer.create(<App />);
+  });
+  act(() => renderer.root.findByType(BottomBar).props.onSelectTab('agents'));
+  const dock = () => renderer.root.findByType(VoiceShortcutDock);
+  act(() => dock().props.onExpandedChange(true));
+  expect(
+    renderer.root.findByProps({ testID: 'root-navigation' }).props
+      .pointerEvents,
+  ).toBeUndefined();
+
+  // Invoke the same callback the dock uses after releasing on 妙管家. The
+  // child may be retained for one render while the composer route opens, so
+  // the App must clear its own expansion state as the route changes.
+  await act(async () => dock().props.onOpenButler());
+  expect(renderer.root.findByType(MiaoTaskFeed).props.voiceMenuExpanded).toBe(
+    false,
+  );
+  expect(
+    renderer.root.findByProps({ testID: 'root-navigation' }).props
+      .pointerEvents,
+  ).toBeUndefined();
+});
+
 test.each(['header', 'system'])(
   'closing a workspace by %s refreshes outcomes and resumes the covered station only after leaving',
   async exit => {

@@ -39,8 +39,19 @@ export function useStationPostComposer({
   const [publishError, setPublishError] = useState('');
 
   const enabledAgents = useMemo(
-    () => session.ownedAgents.filter(agent => agent.enabled).slice(0, 6),
-    [session.ownedAgents],
+    () =>
+      session.ownedAgents
+        .filter(agent => agent.enabled)
+        .map(agent => ({
+          ...agent,
+          identity:
+            agent.identity ||
+            session.agents.find(candidate => candidate.key === agent.id)
+              ?.identity ||
+            null,
+        }))
+        .slice(0, 6),
+    [session.agents, session.ownedAgents],
   );
   const hasDraft =
     Boolean(body.trim()) ||

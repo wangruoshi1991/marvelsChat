@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Animated,
   FlatList,
@@ -9,18 +9,15 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import {
-  ArrowLeft,
-  Bell,
-  ChevronDown,
-  Plus,
-  Search,
-} from 'lucide-react-native';
+import { ArrowLeft, ChevronDown, Plus, Search } from 'lucide-react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { AgentDTO } from '../../models/api';
 import { AITaskDTO } from '../../models/aiTask';
 import { displayText, textFor } from '../../shared/i18n';
 import { isLightPalette, Palette } from '../../shared/theme';
 import { workspacePalette } from '../../shared/workspacePalette';
+import { isV6Palette } from '../../shared/v6Palette';
+import { isXunPalette } from '../../shared/xunPalette';
 import {
   ChatThread,
   Language,
@@ -51,6 +48,9 @@ function ThreadSwipeRow({
   renderUserAvatar: UserAvatarRenderer;
   onOpenThread: (thread: ChatThread) => void;
 }) {
+  const v6Theme = isV6Palette(palette);
+  const xunTheme = isXunPalette(palette);
+  const badgeText = v6Theme ? '#092f32' : palette.surface;
   const agent = agents.find(item => item.key === thread.agentId);
   const latestMessage = thread.messages[thread.messages.length - 1];
   const previewMessage =
@@ -78,6 +78,13 @@ function ThreadSwipeRow({
       bounciness: 6,
     }).start();
   }, [translateX]);
+  useEffect(() => {
+    // A bootstrap refresh can update a retained row while it is off-screen.
+    // Do not carry its previous action-sheet swipe into the new snapshot.
+    opened.current = false;
+    translateX.stopAnimation();
+    translateX.setValue(0);
+  }, [thread.id, thread.muted, thread.pinned, thread.unreadCount, translateX]);
   const panResponder = useMemo(
     () =>
       PanResponder.create({
@@ -107,6 +114,46 @@ function ThreadSwipeRow({
       }),
     [onOpenThread, reset, thread, translateX, width],
   );
+  const time = (
+    <Text
+      numberOfLines={1}
+      style={[
+        s.time,
+        xunTheme && s.xunTime,
+        xunTheme ? s.xunTimeColor : { color: palette.secondaryText },
+      ]}
+    >
+      {relativeTimeText(thread.lastMessageAt)}
+    </Text>
+  );
+  const unreadBadge =
+    thread.unreadCount > 0 ? (
+      <View
+        style={[
+          s.badge,
+          xunTheme && s.xunUnread,
+          {
+            backgroundColor: thread.muted
+              ? palette.secondaryText
+              : v6Theme
+              ? palette.mint
+              : xunTheme
+              ? '#ff484f'
+              : palette.text,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            s.badgeText,
+            xunTheme && s.xunUnreadText,
+            { color: badgeText },
+          ]}
+        >
+          {thread.unreadCount > 99 ? '99+' : thread.unreadCount}
+        </Text>
+      </View>
+    ) : null;
   return (
     <Animated.View
       {...panResponder.panHandlers}
@@ -118,20 +165,33 @@ function ThreadSwipeRow({
         onPress={() => onOpenThread(thread)}
         style={({ pressed }) => [
           s.thread,
+          v6Theme && s.v6Thread,
+          xunTheme && s.xunThread,
+          xunTheme && thread.pinned && s.xunPinned,
           {
-            backgroundColor: pressed ? palette.soft : palette.surface,
-            borderColor: palette.border,
+            backgroundColor: pressed
+              ? palette.soft
+              : v6Theme
+              ? 'transparent'
+              : xunTheme
+              ? thread.pinned
+                ? '#e7ebf2'
+                : 'transparent'
+              : palette.surface,
+            borderColor: v6Theme || xunTheme ? 'transparent' : palette.border,
           },
         ]}
       >
         {thread.agentId ? (
           <View style={s.agentAvatar}>
-            <View style={s.scaledAvatar}>
+            <View style={xunTheme ? undefined : s.scaledAvatar}>
               <AgentIconAvatar
                 agentId={thread.agentId}
                 category={agent?.category}
                 identity={agent?.identity || null}
                 palette={palette}
+                size={xunTheme ? 44 : undefined}
+                variant={xunTheme ? 'xun' : undefined}
               />
             </View>
           </View>
@@ -142,42 +202,41 @@ function ThreadSwipeRow({
             size: 44,
           })
         )}
-        <View style={s.threadMain}>
+        <View style={[s.threadMain, xunTheme && s.xunThreadMain]}>
+          <View style={xunTheme ? s.xunThreadTitleRow : undefined}>
+            <Text
+              numberOfLines={1}
+              style={[
+                s.threadTitle,
+                xunTheme && s.xunThreadTitle,
+                { color: palette.text },
+              ]}
+            >
+              {displayText(language, thread.title)}
+            </Text>
+            {xunTheme ? time : null}
+          </View>
           <Text
             numberOfLines={1}
-            style={[s.threadTitle, { color: palette.text }]}
-          >
-            {displayText(language, thread.title)}
-          </Text>
-          <Text
-            numberOfLines={1}
-            style={[s.preview, { color: palette.secondaryText }]}
+            style={[
+              s.preview,
+              xunTheme && s.xunPreview,
+              xunTheme && thread.unreadCount > 0 && s.xunUnreadPreview,
+              { color: palette.secondaryText },
+            ]}
           >
             {displayText(language, preview) ||
               textFor(language, '暂无消息', 'No messages yet')}
           </Text>
         </View>
-        <View style={s.trailing}>
-          <Text style={[s.time, { color: palette.secondaryText }]}>
-            {relativeTimeText(thread.lastMessageAt)}
-          </Text>
-          {thread.unreadCount > 0 ? (
-            <View
-              style={[
-                s.badge,
-                {
-                  backgroundColor: thread.muted
-                    ? palette.secondaryText
-                    : palette.text,
-                },
-              ]}
-            >
-              <Text style={[s.badgeText, { color: palette.surface }]}>
-                {thread.unreadCount > 99 ? '99+' : thread.unreadCount}
-              </Text>
-            </View>
-          ) : null}
-        </View>
+        {xunTheme ? (
+          unreadBadge
+        ) : (
+          <View style={s.trailing}>
+            {time}
+            {unreadBadge}
+          </View>
+        )}
       </Pressable>
     </Animated.View>
   );
@@ -191,11 +250,11 @@ export function ThreadListScreen({
   threads,
   agents,
   notices,
-  unreadNoticeCount,
   selectedMessageTab,
   renderUserAvatar,
   onOpenThread,
   onOpenMessageActions,
+  messageActionsOpen = false,
   onOpenSearch,
   onSelectMessageTab,
   onMarkNotificationRead,
@@ -216,7 +275,8 @@ export function ThreadListScreen({
   selectedMessageTab: MessageTab;
   renderUserAvatar: UserAvatarRenderer;
   onOpenThread: (thread: ChatThread) => void;
-  onOpenMessageActions: () => void;
+  onOpenMessageActions: (anchorTop?: number, pullHintVisible?: boolean) => void;
+  messageActionsOpen?: boolean;
   onOpenSearch: () => void;
   onSelectMessageTab: (tab: MessageTab) => void;
   onMarkNotificationRead: (id: string) => Promise<void>;
@@ -227,12 +287,42 @@ export function ThreadListScreen({
   onOpenWorkspace?: (workspace: AgentWorkspace) => void;
 }) {
   const assist = useAIAssist();
-  const colors = useMemo(() => workspacePalette(palette), [palette]);
+  const v6Theme = isV6Palette(palette);
+  const xunTheme = isXunPalette(palette);
+  const colors = useMemo(
+    () => (v6Theme || xunTheme ? palette : workspacePalette(palette)),
+    [palette, v6Theme, xunTheme],
+  );
   // Light mode paints the page gradient behind the tabs, so the list must not
   // cover it with a flat fill; dark mode keeps its own background.
-  const lightTheme = isLightPalette(palette);
-  const pageBackground = lightTheme ? 'transparent' : colors.background;
+  const lightTheme = isLightPalette(palette) || xunTheme;
+  const pageBackground = xunTheme
+    ? colors.background
+    : lightTheme
+    ? 'transparent'
+    : colors.background;
+  const badgeBackground = v6Theme
+    ? colors.mint
+    : xunTheme
+    ? '#00c7cb'
+    : colors.text;
+  const badgeText = v6Theme ? '#092f32' : xunTheme ? '#151720' : colors.surface;
+  const tabsBackground = v6Theme || xunTheme ? 'transparent' : colors.soft;
+  const tabsBorder = v6Theme || xunTheme ? 'transparent' : colors.border;
+  const selectedTabBackground = v6Theme
+    ? '#3a4257'
+    : xunTheme
+    ? 'transparent'
+    : colors.surface;
+  const topActionThemeStyle = useMemo(
+    () => ({
+      backgroundColor: xunTheme ? 'transparent' : colors.surface,
+      borderColor: xunTheme ? 'transparent' : colors.border,
+    }),
+    [colors.border, colors.surface, xunTheme],
+  );
   const { height } = useWindowDimensions();
+  const newButton = useRef<View>(null);
   const scrollOffset = useRef(0);
   const pullStartAtTop = useRef(false);
   const opening = useRef(false);
@@ -244,6 +334,15 @@ export function ThreadListScreen({
       speed: 22,
       bounciness: 3,
     }).start();
+  }, [pullOffset]);
+  const resetPullState = useCallback(() => {
+    // The conversation list is retained while the root tab or a modal route
+    // changes. Stop an interrupted entrance animation so a later return to
+    // 讯 never exposes a translated list or a stale opening lock.
+    opening.current = false;
+    pullStartAtTop.current = false;
+    pullOffset.stopAnimation();
+    pullOffset.setValue(0);
   }, [pullOffset]);
   const pullResponder = useMemo(
     () =>
@@ -291,7 +390,8 @@ export function ThreadListScreen({
   );
   React.useEffect(() => {
     scrollOffset.current = 0;
-  }, [selectedMessageTab]);
+    resetPullState();
+  }, [active, resetPullState, selectedMessageTab]);
   const visibleThreads = threads.filter(
     thread => thread.agentId !== 'media-retrieval',
   );
@@ -332,43 +432,48 @@ export function ThreadListScreen({
           },
         ]}
       >
-        <View style={s.topBar}>
+        {xunTheme && selectedMessageTab === 'chat' && !messageActionsOpen ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={textFor(
               language,
-              noticeMode ? '返回对话' : '新建',
-              noticeMode ? 'Back to conversations' : 'New',
+              '下拉进入二楼，你的个人空间',
+              'Pull down to enter your personal space on the second floor',
             )}
-            accessibilityActions={
-              onOpenSecondFloor && !noticeMode
-                ? [
-                    {
-                      name: 'openSecondFloor',
-                      label: textFor(language, '打开二楼', 'Open second floor'),
-                    },
-                  ]
-                : undefined
-            }
-            onAccessibilityAction={event => {
-              if (event.nativeEvent.actionName === 'openSecondFloor')
-                onOpenSecondFloor?.();
-            }}
-            hitSlop={4}
-            onPress={() =>
-              noticeMode ? onSelectMessageTab('chat') : onOpenMessageActions()
-            }
-            style={[
-              s.iconButton,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
+            onPress={onOpenSecondFloor}
+            style={s.xunPullHint}
           >
-            {noticeMode ? (
-              <ArrowLeft size={20} color={colors.text} />
-            ) : (
-              <Plus size={20} color={colors.text} />
-            )}
+            <ChevronDown color="#999999" size={15} />
+            <Text style={s.xunPullHintText}>
+              {textFor(
+                language,
+                '下拉进入二楼 · 你的个人空间',
+                'Pull down to second floor · Your space',
+              )}
+            </Text>
           </Pressable>
+        ) : null}
+        <View style={[s.topBar, xunTheme && s.xunTopBar]}>
+          {noticeMode ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={textFor(
+                language,
+                '返回对话',
+                'Back to conversations',
+              )}
+              hitSlop={4}
+              onPress={() => onSelectMessageTab('chat')}
+              style={[
+                s.iconButton,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <ArrowLeft size={20} color={colors.text} />
+            </Pressable>
+          ) : !xunTheme ? (
+            <View style={s.topBarSpacer} />
+          ) : null}
           {noticeMode ? (
             <Text
               accessibilityRole="header"
@@ -380,7 +485,11 @@ export function ThreadListScreen({
             <View
               style={[
                 s.switch,
-                { backgroundColor: colors.soft, borderColor: colors.border },
+                xunTheme && s.xunSwitch,
+                {
+                  backgroundColor: tabsBackground,
+                  borderColor: tabsBorder,
+                },
               ]}
             >
               {(['chat', 'tasks'] as const).map(tab => {
@@ -393,12 +502,19 @@ export function ThreadListScreen({
                     onPress={() => onSelectMessageTab(tab)}
                     style={[
                       s.switchButton,
-                      selected && { backgroundColor: colors.surface },
+                      xunTheme && s.xunSwitchButton,
+                      selected && {
+                        backgroundColor: selectedTabBackground,
+                      },
                     ]}
                   >
                     <Text
                       style={[
                         s.switchText,
+                        xunTheme &&
+                          (selected
+                            ? s.xunSwitchText
+                            : s.xunSwitchInactiveText),
                         {
                           color: selected ? colors.text : colors.secondaryText,
                         },
@@ -411,8 +527,26 @@ export function ThreadListScreen({
                       )}
                     </Text>
                     {tab === 'chat' && unread > 0 ? (
-                      <View style={[s.badge, { backgroundColor: colors.text }]}>
-                        <Text style={[s.badgeText, { color: colors.surface }]}>
+                      <View
+                        style={[
+                          s.badge,
+                          xunTheme && s.xunTabBadge,
+                          {
+                            backgroundColor: xunTheme
+                              ? selected
+                                ? '#00c7cb'
+                                : '#cddfe4'
+                              : badgeBackground,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            s.badgeText,
+                            xunTheme && s.xunTabBadgeText,
+                            { color: badgeText },
+                          ]}
+                        >
                           {unread > 99 ? '99+' : unread}
                         </Text>
                       </View>
@@ -422,21 +556,121 @@ export function ThreadListScreen({
               })}
             </View>
           )}
+          {noticeMode ? (
+            <View style={s.topBarSpacer} />
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={textFor(language, '新建', 'New')}
+              ref={newButton}
+              accessibilityActions={
+                onOpenSecondFloor
+                  ? [
+                      {
+                        name: 'openSecondFloor',
+                        label: textFor(
+                          language,
+                          '打开二楼',
+                          'Open second floor',
+                        ),
+                      },
+                    ]
+                  : undefined
+              }
+              onAccessibilityAction={event => {
+                if (event.nativeEvent.actionName === 'openSecondFloor')
+                  onOpenSecondFloor?.();
+              }}
+              hitSlop={4}
+              onPress={() => {
+                const pullHintVisible =
+                  xunTheme && selectedMessageTab === 'chat';
+                if (!newButton.current) {
+                  onOpenMessageActions(undefined, pullHintVisible);
+                  return;
+                }
+                newButton.current.measureInWindow(
+                  (_x, y, _width, buttonHeight) =>
+                    onOpenMessageActions(y + buttonHeight - 6, pullHintVisible),
+                );
+              }}
+              style={[
+                s.iconButton,
+                xunTheme && s.xunTopAction,
+                topActionThemeStyle,
+              ]}
+            >
+              {xunTheme ? (
+                <Svg height={25} viewBox="0 0 24 24" width={25}>
+                  <Path
+                    d="M12 4v16M4 12h16"
+                    fill="none"
+                    stroke={colors.text}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.3}
+                  />
+                </Svg>
+              ) : (
+                <Plus size={20} color={colors.text} />
+              )}
+            </Pressable>
+          )}
+        </View>
+        {!noticeMode && (!xunTheme || selectedMessageTab === 'chat') ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={textFor(language, '搜索', 'Search')}
-            hitSlop={4}
+            accessibilityLabel={textFor(
+              language,
+              '搜索对话、任务或Agent',
+              'Search conversations, tasks, or agents',
+            )}
             onPress={onOpenSearch}
             style={[
-              s.iconButton,
+              s.searchBar,
               { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
-            <Search size={20} color={colors.text} />
+            {xunTheme ? (
+              <Svg height={20} viewBox="0 0 24 24" width={20}>
+                <Circle
+                  cx={10}
+                  cy={10}
+                  fill="none"
+                  r={6}
+                  stroke="#a5b7bd"
+                  strokeWidth={1.9}
+                />
+                <Path
+                  d="m15 15 5 5"
+                  fill="none"
+                  stroke="#a5b7bd"
+                  strokeLinecap="round"
+                  strokeWidth={1.9}
+                />
+              </Svg>
+            ) : (
+              <Search size={20} color={colors.secondaryText} />
+            )}
+            <Text
+              style={[s.searchPlaceholder, { color: colors.secondaryText }]}
+            >
+              {textFor(
+                language,
+                '搜索对话、任务或Agent',
+                'Search conversations, tasks, or agents',
+              )}
+            </Text>
           </Pressable>
-        </View>
+        ) : null}
         {selectedMessageTab === 'chat' ? (
           <FlatList
+            // Recreate swipe rows when the retained 讯 surface is revisited
+            // or its tab changes. Each row owns an animated swipe offset and
+            // must not carry an open action state into a different surface.
+            key={`chat-list:${selectedMessageTab}:${
+              active ? 'active' : 'inactive'
+            }`}
             onScroll={event => {
               scrollOffset.current = event.nativeEvent.contentOffset.y;
             }}
@@ -444,38 +678,8 @@ export function ThreadListScreen({
             showsVerticalScrollIndicator={false}
             data={visibleThreads}
             keyExtractor={item => item.id}
-            contentContainerStyle={s.list}
+            contentContainerStyle={[s.list, xunTheme && s.xunList]}
             style={s.screen}
-            ListHeaderComponent={
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={textFor(
-                  language,
-                  `应用通知，${unreadNoticeCount}条未读`,
-                  `App notices, ${unreadNoticeCount} unread`,
-                )}
-                onPress={() => onSelectMessageTab('notice')}
-                style={[
-                  s.noticeRow,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <Bell size={18} color={colors.secondaryText} />
-                <Text style={[s.noticeLabel, { color: colors.secondaryText }]}>
-                  {textFor(language, '应用通知', 'App notices')}
-                </Text>
-                {unreadNoticeCount > 0 ? (
-                  <View style={[s.badge, { backgroundColor: colors.text }]}>
-                    <Text style={[s.badgeText, { color: colors.surface }]}>
-                      {unreadNoticeCount > 99 ? '99+' : unreadNoticeCount}
-                    </Text>
-                  </View>
-                ) : null}
-              </Pressable>
-            }
             ListEmptyComponent={
               <View style={s.empty}>
                 <Text style={{ color: colors.secondaryText }}>
@@ -484,8 +688,8 @@ export function ThreadListScreen({
                 <Text style={[s.preview, { color: colors.secondaryText }]}>
                   {textFor(
                     language,
-                    '从左上角发起聊天，或前往我页添加 Agent。',
-                    'Start a chat or add an agent in Me.',
+                    '点击右上角 + 新建对话，或前往我页添加 Agent。',
+                    'Tap + to start a conversation, or add an agent in Me.',
                   )}
                 </Text>
               </View>
@@ -528,6 +732,17 @@ export function ThreadListScreen({
 const s = StyleSheet.create({
   screen: { flex: 1 },
   pullCue: { position: 'absolute', top: 22, alignSelf: 'center' },
+  xunPullHint: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 2,
+    justifyContent: 'center',
+    paddingBottom: 8,
+    paddingTop: 1,
+    width: '100%',
+    zIndex: 2,
+  },
+  xunPullHintText: { fontSize: 12, color: '#999999' },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -535,6 +750,16 @@ const s = StyleSheet.create({
     paddingHorizontal: 10,
     paddingTop: 14,
     paddingBottom: 10,
+  },
+  topBarSpacer: { width: 40, height: 40 },
+  xunTopBar: { height: 62, paddingTop: 3, paddingBottom: 0 },
+  xunTopAction: {
+    position: 'absolute',
+    top: 16,
+    right: 25,
+    width: 25,
+    height: 25,
+    borderWidth: 0,
   },
   iconButton: {
     width: 40,
@@ -552,6 +777,12 @@ const s = StyleSheet.create({
     borderRadius: 7,
     padding: 3,
   },
+  xunSwitch: {
+    borderWidth: 0,
+    padding: 0,
+    gap: 23,
+    justifyContent: 'center',
+  },
   switchButton: {
     flex: 1,
     minHeight: 34,
@@ -561,7 +792,32 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     gap: 5,
   },
+  xunSwitchButton: {
+    flex: 0,
+    minHeight: 34,
+    borderRadius: 0,
+    paddingHorizontal: 2,
+  },
   switchText: { fontSize: 14, fontWeight: '600' },
+  // The native rendering needs one point over V15's browser value to retain
+  // the same visual size on device; the selected tab keeps the stronger tier.
+  // V20 `.x3-tab`: 16px regular, with a modest 650 active weight. Native
+  // only exposes the standard 600 tier, which keeps the same visual density.
+  xunSwitchText: { fontSize: 16, lineHeight: 21, fontWeight: '600' },
+  xunSwitchInactiveText: { fontSize: 16, lineHeight: 21, fontWeight: '400' },
+  searchBar: {
+    minHeight: 44,
+    marginHorizontal: 14,
+    marginTop: 9,
+    marginBottom: 11,
+    paddingHorizontal: 17,
+    borderWidth: 1,
+    borderRadius: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15,
+  },
+  searchPlaceholder: { fontSize: 13 },
   noticeTitle: {
     flex: 1,
     textAlign: 'center',
@@ -569,6 +825,7 @@ const s = StyleSheet.create({
     fontWeight: '600',
   },
   list: { paddingHorizontal: 4, paddingBottom: 90, gap: 3 },
+  xunList: { paddingHorizontal: 0, paddingBottom: 90, gap: 0 },
   thread: {
     minHeight: 76,
     paddingHorizontal: 14,
@@ -579,6 +836,40 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 7,
   },
+  v6Thread: {
+    borderWidth: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderRadius: 0,
+  },
+  xunThread: {
+    alignItems: 'flex-start',
+    borderWidth: 0,
+    borderRadius: 0,
+    minHeight: 79,
+    paddingTop: 17,
+    paddingBottom: 0,
+    gap: 16,
+  },
+  xunPinned: { backgroundColor: '#e7ebf2' },
+  xunThreadMain: {
+    gap: 0,
+    borderBottomColor: '#d4dde5',
+    borderBottomWidth: 1,
+    paddingBottom: 17,
+  },
+  xunThreadTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  xunThreadTitle: {
+    flex: 1,
+    lineHeight: 19.5,
+    marginBottom: 8,
+  },
+  xunPreview: { lineHeight: 16.8, paddingRight: 5 },
+  xunUnreadPreview: { paddingRight: 27 },
   agentAvatar: {
     width: 44,
     height: 44,
@@ -597,6 +888,8 @@ const s = StyleSheet.create({
     gap: 4,
   },
   time: { fontSize: 10 },
+  xunTime: { flexShrink: 0, fontSize: 12 },
+  xunTimeColor: { color: '#727272' },
   badge: {
     minWidth: 18,
     minHeight: 18,
@@ -606,6 +899,27 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   badgeText: { fontSize: 10, fontWeight: '700' },
+  xunUnread: {
+    position: 'absolute',
+    right: 14,
+    top: 44,
+    minWidth: 24,
+    minHeight: 17,
+    height: 17,
+    borderRadius: 12,
+  },
+  xunUnreadText: { fontSize: 11, fontWeight: '400' },
+  xunTabBadge: {
+    position: 'absolute',
+    right: -16,
+    top: -1,
+    minWidth: 25,
+    height: 17,
+    minHeight: 17,
+    paddingHorizontal: 5,
+    borderRadius: 15,
+  },
+  xunTabBadgeText: { fontSize: 12, fontWeight: '600' },
   noticeRow: {
     minHeight: 46,
     paddingHorizontal: 15,

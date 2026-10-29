@@ -198,6 +198,15 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 8,
   },
+  // V15 detail pages use a compact 48–50pt top bar. Keep the Xun route from
+  // inheriting the taller legacy chat header while preserving the existing
+  // header metrics for Miao/Station conversations.
+  chatHeaderXun: {
+    minHeight: 50,
+    paddingBottom: 0,
+    paddingHorizontal: 14,
+    paddingTop: 0,
+  },
   chatBackButton: {
     alignItems: 'center',
     borderRadius: 999,
@@ -206,7 +215,9 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 42,
   },
+  chatBackButtonXun: { height: 34, width: 34 },
   chatBackIcon: { height: 22, width: 22 },
+  chatBackIconXun: { height: 20, width: 20 },
   chatHeaderTitleWrap: {
     alignItems: 'center',
     flex: 1,
@@ -218,6 +229,7 @@ export const styles = StyleSheet.create({
     fontWeight: '900',
     textAlign: 'center',
   },
+  chatHeaderTitleXun: { fontSize: 19, fontWeight: '600' },
   chatHeaderSubtitleRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -234,6 +246,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 42,
   },
+  chatHeaderActionButtonXun: { height: 34, width: 34 },
   header: {
     alignItems: 'center',
     borderBottomWidth: 1,
@@ -248,6 +261,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 38,
   },
+  backButtonXun: { backgroundColor: 'transparent' },
   headerTitle: {
     flex: 1,
     fontSize: 17,
@@ -273,6 +287,26 @@ export const styles = StyleSheet.create({
     width: 38,
   },
   searchBackIcon: { height: 22, width: 22 },
+  xunSearchPageHeader: {
+    height: 47,
+    minHeight: 47,
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderBottomWidth: 0,
+  },
+  xunSearchBackButton: {
+    position: 'absolute',
+    // V15: 13pt page inset + 13pt button offset + 6pt browser padding.
+    // Keep the SVG at 32pt while expanding its touch target to 44pt.
+    left: 20.5,
+    width: 44,
+    height: 44,
+  },
+  // V15 `.x3-search-title` uses the same 17px title with a 650-ish weight.
+  xunSearchTitle: { fontSize: 17, fontWeight: '600' },
   searchField: {
     alignItems: 'center',
     borderRadius: 5,
@@ -284,6 +318,38 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   searchInput: { flex: 1, fontSize: 14, minHeight: 38, paddingVertical: 8 },
+  xunSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    minHeight: 43,
+    paddingVertical: 8,
+  },
+  xunSearchField: {
+    flex: 0,
+    height: 43,
+    minHeight: 43,
+    marginHorizontal: 13,
+    marginTop: 12,
+    marginBottom: 0,
+    borderRadius: 30,
+    borderWidth: 1,
+    paddingHorizontal: 17,
+    gap: 14,
+  },
+  xunSearchClear: {
+    alignItems: 'center',
+    backgroundColor: '#CBD5DE',
+    borderRadius: 11,
+    height: 21,
+    justifyContent: 'center',
+    width: 21,
+  },
+  xunSearchClearGlyph: {
+    fontSize: 17,
+    fontWeight: '600',
+    lineHeight: 19,
+    textAlign: 'center',
+  },
   searchContent: { flex: 1 },
   searchListViewport: { flex: 1 },
   searchResults: {
@@ -292,6 +358,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingTop: 14,
   },
+  xunSearchResults: { paddingHorizontal: 13, paddingTop: 15, gap: 15 },
   searchSection: { gap: 14 },
   searchSectionHeader: {
     alignItems: 'center',
@@ -300,6 +367,19 @@ export const styles = StyleSheet.create({
   },
   searchSectionTitle: { color: '#000000', fontSize: 15, fontWeight: '700' },
   searchSectionAction: { fontSize: 12, fontWeight: '600' },
+  xunSearchSectionHeader: {
+    minHeight: 32,
+  },
+  xunSearchResultHeader: {
+    borderBottomColor: '#D6DFE6',
+    borderBottomWidth: 1,
+    paddingBottom: 17,
+  },
+  xunSearchResultSection: { gap: 0 },
+  xunSearchResultEmpty: { paddingVertical: 15 },
+  xunSearchResultRowSpacing: { marginBottom: 14 },
+  xunSearchSectionTitle: { fontSize: 14, fontWeight: '500' },
+  xunSearchSectionAction: { fontWeight: '500' },
   searchHistoryList: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   searchHistoryCollapsed: { overflow: 'hidden' },
   searchChip: {
@@ -366,9 +446,19 @@ export const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   searchRowDivider: { borderBottomWidth: 2 },
+  xunSearchRow: {
+    alignItems: 'flex-start',
+    gap: 16,
+    minHeight: 79,
+    paddingVertical: 17,
+  },
+  xunSearchRowDivider: { borderBottomWidth: 1 },
   searchRowCopy: { flex: 1, gap: 5 },
+  xunSearchRowCopy: { gap: 8 },
   searchRowTitle: { fontSize: 15, fontWeight: '900' },
+  xunSearchRowTitle: { fontSize: 15, fontWeight: '600', lineHeight: 20 },
   searchRowBody: { fontSize: 12, lineHeight: 18 },
+  xunSearchRowBody: { lineHeight: 17 },
   searchEmpty: { fontSize: 13, lineHeight: 20 },
   searchBottomFade: {
     flexBasis: '9%',
@@ -376,7 +466,7 @@ export const styles = StyleSheet.create({
     flexShrink: 0,
     width: '100%',
   },
-  searchBottomSafeArea: { backgroundColor: '#F1EFFA' },
+  searchBottomSafeArea: { backgroundColor: '#FFFFFF' },
   publicProfileContent: { gap: 14, paddingBottom: 28 },
   publicProfileHero: {
     alignItems: 'center',

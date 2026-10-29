@@ -85,6 +85,40 @@ test('registered preview without full content never exposes an authenticated fil
   );
   expect(button('交给文件Agent')).toBeUndefined();
 });
+test.each(['resolve', 'reject'] as const)(
+  'returning to the file list invalidates a pending detail request that later %ss',
+  async outcome => {
+    let finish!: (value: any) => void;
+    let fail!: (error: Error) => void;
+    const read = jest.fn(
+      () =>
+        new Promise((resolve, reject) => {
+          finish = resolve;
+          fail = reject;
+        }),
+    );
+    await setup(read);
+    act(() => button('返回文件列表').props.onPress());
+    await act(async () => {
+      if (outcome === 'resolve')
+        finish({ ...file, content: 'late private content' });
+      else fail(new Error('late read error'));
+    });
+    expect(button('返回文件列表')).toBeUndefined();
+    expect(button('交给文件Agent')).toBeUndefined();
+    expect(
+      renderer.root.findAll(
+        node =>
+          node.props.accessibilityLabel === '查看notes.txt' &&
+          typeof node.props.onPress === 'function',
+      ),
+    ).toHaveLength(1);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain(
+      'late private content',
+    );
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('late read error');
+  },
+);
 test('leaving and returning while a detail read is pending cannot open the Agent with a late result', async () => {
   let finish!: (value: any) => void;
   const read = jest
@@ -274,6 +308,7 @@ test('a picker result arriving after leaving and returning is released without u
     await pending;
   });
   expect(upload).not.toHaveBeenCalled();
+  expect(release).toHaveBeenCalledTimes(1);
   expect(release).toHaveBeenCalledWith('same-key');
 });
 
@@ -340,10 +375,121 @@ test.each([false, true])(
       expect(JSON.stringify(renderer.toJSON())).toContain('上传失败，请重试');
       expect(button('重试上传同一文件').props.busy).toBe(false);
       expect(refresh).not.toHaveBeenCalled();
+      expect(release).not.toHaveBeenCalled();
     } else {
+      expect(release).toHaveBeenCalledTimes(1);
       expect(release).toHaveBeenCalledWith('picker-key');
       expect(refresh).toHaveBeenCalledTimes(1);
       expect(button('选择并上传文件').props.busy).toBe(false);
+      await act(async () => renderer.unmount());
+      expect(release).toHaveBeenCalledTimes(1);
     }
   },
 );
+
+test.each(['retry', 'discard', 'unmount'] as const)(
+  'a failed upload retains its temporary file until %s and releases it once',
+  async action => {
+    const picked = {
+      uri: 'file:///controlled',
+      originalFilename: 'a.txt',
+      byteSize: 8,
+      idempotencyKey: 'retained-key',
+    };
+    const release = jest.fn(async () => {});
+    const pick = jest.fn().mockResolvedValue(picked);
+    NativeModules.MiaoxunDocumentPickerModule = { pick, release };
+    const upload = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('上传失败，请重试'))
+      .mockResolvedValue(file);
+    const refresh = jest.fn().mockResolvedValue(undefined);
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <SecondFloorFiles
+          palette={palettes.light}
+          language="zh"
+          session={
+            {
+              token: 'owner',
+              stationContent: emptyStationContent,
+              uploadStationFileAsset: upload,
+              refreshStationContent: refresh,
+            } as any
+          }
+          onOpenWorkspace={jest.fn()}
+        />,
+      );
+    });
+    await act(async () => {
+      await button('选择并上传文件').props.onPress();
+    });
+    expect(release).not.toHaveBeenCalled();
+    expect(button('重试上传同一文件')).toBeTruthy();
+
+    await act(async () => {
+      if (action === 'retry') await button('重试上传同一文件').props.onPress();
+      else if (action === 'discard') {
+        button('放弃本次上传').props.onPress();
+        await Promise.resolve();
+      } else renderer.unmount();
+    });
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(upload).toHaveBeenCalledTimes(action === 'retry' ? 2 : 1);
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledWith('retained-key');
+    await act(async () => renderer.unmount());
+    expect(release).toHaveBeenCalledTimes(1);
+  },
+);
+
+test('unmount during an upload releases its temporary file only once after the late success', async () => {
+  const picked = {
+    uri: 'file:///controlled',
+    originalFilename: 'a.txt',
+    byteSize: 8,
+    idempotencyKey: 'pending-key',
+  };
+  let finish!: (value: typeof file) => void;
+  const upload = jest.fn(
+    () =>
+      new Promise<typeof file>(resolve => {
+        finish = resolve;
+      }),
+  );
+  const release = jest.fn(async () => {});
+  NativeModules.MiaoxunDocumentPickerModule = {
+    pick: jest.fn().mockResolvedValue(picked),
+    release,
+  };
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <SecondFloorFiles
+        palette={palettes.light}
+        language="zh"
+        session={
+          {
+            token: 'owner',
+            stationContent: emptyStationContent,
+            uploadStationFileAsset: upload,
+            refreshStationContent: jest.fn().mockResolvedValue(undefined),
+          } as any
+        }
+        onOpenWorkspace={jest.fn()}
+      />,
+    );
+  });
+  let pending!: Promise<void>;
+  await act(async () => {
+    pending = button('选择并上传文件').props.onPress();
+  });
+  expect(upload).toHaveBeenCalledTimes(1);
+  expect(release).not.toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+  expect(release).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    finish(file);
+    await pending;
+  });
+  expect(release).toHaveBeenCalledTimes(1);
+});

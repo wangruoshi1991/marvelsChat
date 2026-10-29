@@ -6,10 +6,13 @@ import {
   StyleProp,
   StyleSheet,
   Text,
+  TextStyle,
   View,
   ViewStyle,
 } from 'react-native';
 import { Palette } from './theme';
+import { isV6Palette, v6Colors } from './v6Palette';
+import { isXunPalette } from './xunPalette';
 
 // Shared by task workspaces and second-floor tools. Feature-specific layouts
 // stay in their screens; these tokens define the controls inside those layouts.
@@ -38,6 +41,7 @@ export type WorkspaceButtonProps = {
   testID?: string;
   icon?: React.ReactNode;
   iconOnly?: boolean;
+  labelStyle?: StyleProp<TextStyle>;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -54,10 +58,19 @@ export function WorkspaceButton({
   testID,
   icon,
   iconOnly = false,
+  labelStyle,
   style,
 }: WorkspaceButtonProps) {
   const unavailable = disabled || busy || !onPress;
-  const foreground = variant === 'primary' ? palette.surface : palette.text;
+  const xun = isXunPalette(palette);
+  const primaryBackground =
+    isV6Palette(palette) || xun ? palette.mint : palette.text;
+  const foreground =
+    variant === 'primary'
+      ? isV6Palette(palette) || xun
+        ? v6Colors.onAccent
+        : palette.surface
+      : palette.text;
   return (
     <Pressable
       testID={testID}
@@ -79,12 +92,19 @@ export function WorkspaceButton({
       }
       style={({ pressed }) => [
         workspaceStyles.button,
+        xun && {
+          borderRadius: 12,
+          borderWidth: variant === 'secondary' ? 1 : 0,
+          borderColor: palette.border,
+        },
         {
           backgroundColor:
             variant === 'primary'
-              ? palette.text
+              ? primaryBackground
               : variant === 'secondary'
-              ? palette.soft
+              ? xun
+                ? palette.surface
+                : palette.soft
               : 'transparent',
         },
         style,
@@ -98,7 +118,13 @@ export function WorkspaceButton({
         <View accessible={false}>{icon}</View>
       ) : null}
       {!iconOnly ? (
-        <Text style={[workspaceStyles.buttonLabel, { color: foreground }]}>
+        <Text
+          style={[
+            workspaceStyles.buttonLabel,
+            { color: foreground },
+            labelStyle,
+          ]}
+        >
           {label}
         </Text>
       ) : null}
@@ -181,6 +207,7 @@ export function WorkspacePanel({
       testID={testID}
       style={[
         workspaceStyles.panel,
+        isXunPalette(palette) && workspaceStyles.panelXun,
         { backgroundColor: palette.surface, borderColor: palette.border },
         style,
       ]}
@@ -216,6 +243,7 @@ export const workspaceStyles = StyleSheet.create({
     borderRadius: workspaceTokens.radius.panel,
     gap: workspaceTokens.space.sm,
   },
+  panelXun: { borderRadius: 23, paddingHorizontal: 17, paddingVertical: 20 },
   input: {
     ...workspaceTokens.typography.body,
     minHeight: workspaceTokens.minTouch,

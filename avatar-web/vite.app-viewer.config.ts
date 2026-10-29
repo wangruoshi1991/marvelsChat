@@ -9,7 +9,7 @@ const htmlDocument = (script: string) => `<!doctype html>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-    <meta name="color-scheme" content="light" />
+    <meta name="color-scheme" content="dark" />
     <meta name="referrer" content="no-referrer" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src http: https: blob:" />
     <style>
@@ -27,11 +27,11 @@ const htmlDocument = (script: string) => `<!doctype html>
         padding: 0;
         width: 100%;
       }
-      html, body, #viewer-stage, #avatar-canvas { background: #F7F8FC; }
+      html, body, #viewer-stage, #avatar-canvas { background: #202636; }
       #avatar-canvas { touch-action: none; }
       #viewer-loading {
         align-items: center;
-        background: #F7F8FC;
+        background: #202636;
         display: flex;
         inset: 0;
         justify-content: center;
@@ -40,9 +40,9 @@ const htmlDocument = (script: string) => `<!doctype html>
       #viewer-loading[hidden] { display: none; }
       #viewer-loading::after {
         animation: viewer-spin 0.8s linear infinite;
-        border: 2px solid #DBE2FF;
+        border: 2px solid #a4a8b5;
         border-radius: 50%;
-        border-top-color: #2012D9;
+        border-top-color: #00c7cb;
         content: "";
         height: 24px;
         width: 24px;

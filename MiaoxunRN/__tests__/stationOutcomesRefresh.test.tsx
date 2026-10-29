@@ -11,7 +11,11 @@ import { palettes } from '../src/shared/theme';
 import { WorkspaceButton } from '../src/shared/workspaceUi';
 
 jest.mock('../src/services/apiClient', () => ({
-  apiClient: { stationContent: jest.fn() },
+  apiClient: {
+    stationContent: jest.fn(),
+    createStationPost: jest.fn(),
+    deleteStationPost: jest.fn(),
+  },
 }));
 jest.mock('../src/features/workspaces/useAgentWorkspaces', () => ({
   useAgentWorkspaces: () => ({
@@ -55,6 +59,7 @@ const pending = () => {
 let current: {
   content: StationContentDTO;
   refresh: ReturnType<typeof useStationActions>['refreshStationContent'];
+  actions: ReturnType<typeof useStationActions>;
 };
 function Harness({
   token = 'account-a',
@@ -72,7 +77,7 @@ function Harness({
     avatarConfig: {},
     setStationContent: setter,
   });
-  current = { content: data, refresh: actions.refreshStationContent };
+  current = { content: data, refresh: actions.refreshStationContent, actions };
   return (
     <StationOutcomesPanel
       active={active}
@@ -91,6 +96,8 @@ const text = () =>
   renderer.root.findAllByType(Text).map(node => node.props.children);
 beforeEach(() => {
   load.mockReset();
+  jest.mocked(apiClient.createStationPost).mockReset();
+  jest.mocked(apiClient.deleteStationPost).mockReset();
   mockWorkspaceRefresh.mockClear();
   AppState.currentState = 'active';
   listeners = new Set();
@@ -239,4 +246,82 @@ test('overlapping global and visible refreshes cannot replace newer content with
     await globalRefresh;
   });
   expect(current.content.siteDrafts[0].id).toBe('newer-page');
+});
+
+test('a refresh started before a confirmed post save cannot erase the saved post', async () => {
+  const old = pending();
+  const post = {
+    id: 'saved-post',
+    userId: 'account-a',
+    body: 'Saved content',
+    locationLabel: '',
+    visibility: 'public' as const,
+    agentCapabilities: [],
+    media: [],
+    commentCount: 0,
+    likeCount: 0,
+    favoriteCount: 0,
+    likedByMe: false,
+    favoritedByMe: false,
+    createdAt: '2026-10-28T00:00:00Z',
+  };
+  load.mockReturnValueOnce(old.promise);
+  jest.mocked(apiClient.createStationPost).mockResolvedValueOnce(post);
+  await act(async () => {
+    renderer = Renderer.create(<Harness active={false} />);
+  });
+  const refreshing = current.refresh();
+  await act(async () => {
+    await current.actions.createStationPost({ body: post.body });
+  });
+  expect(current.content.posts.map(item => item.id)).toEqual(['saved-post']);
+  await act(async () => {
+    old.resolve(emptyStationContent);
+    await refreshing;
+  });
+  expect(current.content.posts.map(item => item.id)).toEqual(['saved-post']);
+});
+
+test('a pending refresh cannot restore a deleted post and later refreshes still apply', async () => {
+  const old = pending();
+  const post = {
+    id: 'deleted-post',
+    userId: 'account-a',
+    body: 'Removed content',
+    locationLabel: '',
+    visibility: 'public' as const,
+    agentCapabilities: [],
+    media: [],
+    commentCount: 0,
+    likeCount: 0,
+    favoriteCount: 0,
+    likedByMe: false,
+    favoritedByMe: false,
+    createdAt: '2026-10-28T00:00:00Z',
+  };
+  const stale = { ...emptyStationContent, posts: [post] };
+  load
+    .mockResolvedValueOnce(stale)
+    .mockReturnValueOnce(old.promise)
+    .mockResolvedValueOnce(content('fresh-after-delete'));
+  jest.mocked(apiClient.deleteStationPost).mockResolvedValueOnce(undefined);
+  await act(async () => {
+    renderer = Renderer.create(<Harness active={false} />);
+  });
+  await act(async () => {
+    await current.refresh();
+  });
+  const refreshing = current.refresh();
+  await act(async () => {
+    await current.actions.deleteStationPost(post.id);
+  });
+  await act(async () => {
+    old.resolve(stale);
+    await refreshing;
+  });
+  expect(current.content.posts).toEqual([]);
+  await act(async () => {
+    await current.refresh();
+  });
+  expect(current.content.siteDrafts[0].id).toBe('fresh-after-delete');
 });

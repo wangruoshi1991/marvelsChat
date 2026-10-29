@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   Brain,
   ChevronDown,
@@ -22,6 +22,8 @@ import {
   SettingsSwitchRow,
 } from '../../shared/settingsUi';
 import { SegmentedControl } from '../../shared/ui';
+import { isXunPalette } from '../../shared/xunPalette';
+import { SecondFloorPageScrollProps } from '../second-floor/secondFloorScroll';
 
 export function SettingsScreen({
   palette,
@@ -38,7 +40,15 @@ export function SettingsScreen({
   onSignOut,
   onDeleteAccount,
   embedded = false,
+  header,
+  footer,
+  scrollProps,
+  scrollable = true,
 }: {
+  header?: React.ReactNode;
+  footer?: React.ReactNode;
+  scrollProps?: SecondFloorPageScrollProps;
+  scrollable?: boolean;
   palette: Palette;
   userName: string;
   userRole: string;
@@ -74,14 +84,9 @@ export function SettingsScreen({
     });
   };
 
-  return (
-    <ScrollView
-      style={embedded ? undefined : { backgroundColor: palette.background }}
-      contentContainerStyle={[
-        styles.settingsContent,
-        embedded && styles.settingsContentEmbedded,
-      ]}
-    >
+  const content = (
+    <>
+      {header}
       {embedded ? null : (
         <View style={styles.settingsHeader}>
           <Pressable
@@ -329,6 +334,43 @@ export function SettingsScreen({
           />
         </Pressable>
       </SettingGroup>
+      {footer}
+    </>
+  );
+
+  const contentStyle = [
+    styles.settingsContent,
+    embedded && styles.settingsContentEmbedded,
+    embedded && isXunPalette(palette) && s.floorContent,
+    embedded && scrollable && s.floorContentGrow,
+  ];
+  if (!scrollable) return <View style={contentStyle}>{content}</View>;
+  return (
+    <ScrollView
+      {...scrollProps}
+      scrollEnabled
+      style={[
+        embedded && s.floorScroll,
+        !embedded && { backgroundColor: palette.background },
+      ]}
+      contentContainerStyle={contentStyle}
+    >
+      {content}
     </ScrollView>
   );
 }
+
+const s = StyleSheet.create({
+  // A nested ScrollView must stay constrained by the floor panel's viewport.
+  // Without an explicit zero basis, iOS can lay the embedded settings list at
+  // its content height, leaving no native scroll range and making the floor
+  // return gesture see every swipe as a bottom release.
+  floorScroll: { flex: 1, flexBasis: 0, minHeight: 0 },
+  floorContentGrow: { flexGrow: 1 },
+  floorContent: {
+    paddingTop: 8,
+    paddingHorizontal: 17,
+    paddingBottom: 24,
+    gap: 12,
+  },
+});

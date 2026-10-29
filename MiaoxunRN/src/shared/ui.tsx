@@ -3,21 +3,75 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   Circle,
   ChevronDown,
+  ArrowLeft,
   Settings,
-  House,
-  MessageSquare,
-  UserRound,
   type LucideIcon,
 } from 'lucide-react-native';
+import Svg, { Path } from 'react-native-svg';
 
 import { contactIconAssets } from '../assets/icons';
 import { Language } from '../features/session/useMiaoxunSession';
 import { textFor } from './i18n';
 import { styles } from './styles';
-import { Palette, palettes, workspaceColors } from './theme';
+import { isLightPalette, Palette, workspaceColors } from './theme';
+import { isV6Palette } from './v6Palette';
+import { isXunPalette } from './xunPalette';
 
 export type IconComponent = LucideIcon;
 export type RootTab = 'agents' | 'messages' | 'station';
+
+function RootNavIcon({
+  kind,
+  color,
+  strokeWidth,
+}: {
+  kind: 'home' | 'chat' | 'me';
+  color: string;
+  strokeWidth: number;
+}) {
+  return (
+    <Svg height={27} viewBox="0 0 24 24" width={27}>
+      {kind === 'home' ? (
+        <Path
+          d="M3 11 12 3l9 8M6 10v10h12V10M9 17h6"
+          fill="none"
+          stroke={color}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={strokeWidth}
+        />
+      ) : kind === 'chat' ? (
+        <>
+          <Path
+            d="M20 11a8 8 0 0 1-8 8H5l-3 2v-9a9 9 0 0 1 18-1Z"
+            fill="none"
+            stroke={color}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={strokeWidth}
+          />
+          <Path
+            d="M8 10v3m5-3v3"
+            fill="none"
+            stroke={color}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={strokeWidth}
+          />
+        </>
+      ) : (
+        <Path
+          d="M5 15c4 5 10 4 14-1M7 5v3m9-3 3-1"
+          fill="none"
+          stroke={color}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={strokeWidth}
+        />
+      )}
+    </Svg>
+  );
+}
 
 export function SegmentedControl<T extends string>({
   fill,
@@ -100,10 +154,12 @@ export function ChatHeader({
   onBack: () => void;
   onOpenSettings?: () => void;
 }) {
+  const xun = isXunPalette(palette);
   return (
     <View
       style={[
         styles.chatHeader,
+        xun && styles.chatHeaderXun,
         {
           backgroundColor: palette.background,
           borderBottomColor: palette.border,
@@ -115,17 +171,25 @@ export function ChatHeader({
         accessibilityLabel={textFor(language, '返回', 'Back')}
         hitSlop={10}
         onPress={onBack}
-        style={styles.chatBackButton}
+        style={[styles.chatBackButton, xun && styles.chatBackButtonXun]}
       >
-        <Image
-          source={contactIconAssets.back}
-          resizeMode="contain"
-          style={styles.chatBackIcon}
-        />
+        {xun ? (
+          <ArrowLeft color={palette.text} size={20} strokeWidth={1.8} />
+        ) : (
+          <Image
+            source={contactIconAssets.back}
+            resizeMode="contain"
+            style={[styles.chatBackIcon, xun && styles.chatBackIconXun]}
+          />
+        )}
       </Pressable>
       <View style={styles.chatHeaderTitleWrap}>
         <Text
-          style={[styles.chatHeaderTitle, { color: palette.text }]}
+          style={[
+            styles.chatHeaderTitle,
+            xun && styles.chatHeaderTitleXun,
+            { color: palette.text },
+          ]}
           numberOfLines={1}
         >
           {title}
@@ -160,6 +224,7 @@ export function ChatHeader({
           onPress={onOpenSettings}
           style={[
             styles.chatHeaderActionButton,
+            xun && styles.chatHeaderActionButtonXun,
             { backgroundColor: palette.surface, borderColor: palette.border },
           ]}
         >
@@ -211,15 +276,23 @@ export function Header({
   onBack: () => void;
   backAccessibilityLabel?: string;
 }) {
+  const xun = isXunPalette(palette);
   return (
     <View style={[styles.header, { borderBottomColor: palette.border }]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={backAccessibilityLabel}
         onPress={onBack}
-        style={[styles.backButton, { backgroundColor: palette.soft }]}
+        style={[
+          styles.backButton,
+          xun ? styles.backButtonXun : { backgroundColor: palette.soft },
+        ]}
       >
-        <ChevronDown color={palette.mint} size={22} strokeWidth={3} />
+        {xun ? (
+          <ArrowLeft color={palette.text} size={22} strokeWidth={1.8} />
+        ) : (
+          <ChevronDown color={palette.mint} size={22} strokeWidth={3} />
+        )}
       </Pressable>
       <Text style={[styles.headerTitle, { color: palette.text }]}>{title}</Text>
       <View style={styles.headerSpacer} />
@@ -238,15 +311,27 @@ export function BottomBar({
   selectedTab: RootTab;
   onSelectTab: (tab: RootTab) => void;
 }) {
-  const light = palette.text === palettes.light.text;
-  const color = light ? workspaceColors.text : palette.text;
-  const borderColor = light ? workspaceColors.border : palette.border;
+  const light = isLightPalette(palette);
+  const v6 = isV6Palette(palette);
+  const xun = isXunPalette(palette);
+  const lightNav = v6 || xun;
+  const backgroundColor = lightNav ? '#FFFFFF' : palette.surface;
+  const color = lightNav
+    ? '#080D12'
+    : light
+    ? workspaceColors.text
+    : palette.text;
+  const borderColor = lightNav
+    ? '#DEE3E7'
+    : light
+    ? workspaceColors.border
+    : palette.border;
   return (
     <View
       style={[
         navigationStyles.bar,
         {
-          backgroundColor: palette.surface,
+          backgroundColor,
           borderTopColor: borderColor,
         },
       ]}
@@ -256,20 +341,16 @@ export function BottomBar({
           {
             key: 'agents',
             label: textFor(language, '妙', 'Miao'),
-            icon: House,
+            icon: 'home',
           },
           {
             key: 'messages',
             label: textFor(language, '讯', 'Chats'),
-            icon: MessageSquare,
+            icon: 'chat',
           },
-          {
-            key: 'station',
-            label: textFor(language, '我', 'Me'),
-            icon: UserRound,
-          },
+          { key: 'station', label: textFor(language, '我', 'Me'), icon: 'me' },
         ] as const
-      ).map(({ key, label, icon: Icon }) => {
+      ).map(({ key, label, icon }) => {
         const selected = selectedTab === key;
         // Prototype `.tab[aria-selected="true"]`: the selected icon takes the
         // mint accent while its label stays ink; unselected icons sit on a pale
@@ -277,14 +358,24 @@ export function BottomBar({
         // the same dark ink (the earlier behaviour) is what made the bar read
         // flat compared with the design.
         const iconTint = selected
-          ? light
+          ? lightNav
+            ? '#00C7CB'
+            : light
             ? '#35D5C6'
             : palette.mint
+          : lightNav
+          ? xun
+            ? '#CCDDE4'
+            : '#87939C'
           : light
           ? '#CBD9D5'
           : palette.secondaryText;
         const labelTint = selected
           ? color
+          : lightNav
+          ? xun
+            ? '#666666'
+            : '#87939C'
           : light
           ? '#8E9A97'
           : palette.secondaryText;
@@ -296,8 +387,8 @@ export function BottomBar({
             onPress={() => onSelectTab(key)}
             style={navigationStyles.tab}
           >
-            <Icon
-              size={25}
+            <RootNavIcon
+              kind={icon}
               color={iconTint}
               strokeWidth={selected ? 2.25 : 1.8}
             />
@@ -312,17 +403,19 @@ export function BottomBar({
 }
 const navigationStyles = StyleSheet.create({
   bar: {
-    minHeight: 76,
+    height: 89,
+    minHeight: 89,
     borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    paddingHorizontal: 12,
+    paddingHorizontal: 0,
   },
   tab: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
+    gap: 3,
+    paddingTop: 10,
+    paddingBottom: 20,
   },
   label: { fontSize: 13, fontWeight: '600' },
 });

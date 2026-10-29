@@ -1,4 +1,10 @@
 import { listAgents } from "../../../agents/registry.js";
+import {
+  listAgentCatalogue,
+  listRegisteredAgentsWithCatalogue,
+  syncAgentCatalogue,
+  updateAgentCatalogue,
+} from "../agent-catalog-repository.js";
 import { buildAgentReadiness } from "../agent-readiness-service.js";
 import { registerAdminMediaRetrievalRoutes } from "./admin-media-retrieval-routes.js";
 import {
@@ -7,6 +13,7 @@ import {
   adminOverview,
   adminUserDetail,
   adminUsers,
+  adminAgentUsage,
   updateUserAdminPermissions,
   updateUserPassword,
   updateUserProfileAdmin,
@@ -41,6 +48,8 @@ import {
   limitSchema,
   modelTestSchema,
   profileAdminSchema,
+  adminUsageWindowSchema,
+  agentCatalogPatchSchema,
   resetPasswordSchema,
   userRoleSchema,
   userStatusSchema,
@@ -53,7 +62,8 @@ const setAlbumAssistantAccess = createAlbumAssistantAccessService({
 
 export function createAdminAgentAccessHandler({
   findUser = getRawUserById,
-  listRegisteredAgents = listAgents,
+  listRegisteredAgents = async () =>
+    listRegisteredAgentsWithCatalogue(await listAgents()),
   setAccess = setUserAgentAccess,
   setAlbumAccess = setAlbumAssistantAccess,
   recordEvent = createUsageEvent,
@@ -86,6 +96,7 @@ export function createAdminAgentAccessHandler({
             agent,
             enabled: body.enabled,
             alias: body.alias,
+            aliasSource: "system",
             grantedScopes: body.grantedScopes,
           });
     await recordEvent({
@@ -182,7 +193,9 @@ export function registerAdminRoutes(
       const includeAudit = hasAdminPermission(req.user, "audit:read");
       const detail = await adminUserDetail({
         userId: req.params.userId,
-        registeredAgents: includeAgents ? await listAgents() : [],
+        registeredAgents: includeAgents
+          ? await listRegisteredAgentsWithCatalogue(await listAgents())
+          : [],
         includeAgents,
         includeAudit,
       });
@@ -434,7 +447,7 @@ export function registerAdminRoutes(
     requireAdmin("agents:manage"),
     asyncHandler(async (_req, res) => {
       const [registered, recentRuns] = await Promise.all([
-        listAgents(),
+        listRegisteredAgentsWithCatalogue(await listAgents()),
         adminAgentRuns({ limit: 500 }),
       ]);
       const runCounts = recentRuns.reduce((groups, run) => {
@@ -457,6 +470,60 @@ export function registerAdminRoutes(
         })),
       });
     })
+  );
+
+  app.get(
+    "/api/admin/agent-catalog",
+    authenticate,
+    requireAdmin("agents:manage"),
+    asyncHandler(async (_req, res) => {
+      const registered = await listAgents();
+      await syncAgentCatalogue(registered);
+      const catalogue = await listAgentCatalogue({ includeUnregistered: true });
+      const byKey = new Map(catalogue.map((item) => [item.agentId, item]));
+      res.json({
+        data: registered.map((agent) => ({
+          ...agent,
+          catalogue: byKey.get(agent.key) || null,
+        })),
+      });
+    }),
+  );
+
+  app.patch(
+    "/api/admin/agent-catalog/:agentId",
+    authenticate,
+    requireAdmin("agents:manage"),
+    asyncHandler(async (req, res) => {
+      const patch = agentCatalogPatchSchema.parse(req.body);
+      const registered = await listAgents();
+      if (!registered.some((agent) => agent.key === req.params.agentId)) {
+        throw new HttpError(404, "Agent not found in the deployed registry");
+      }
+      await syncAgentCatalogue(registered);
+      const updated = await updateAgentCatalogue(req.params.agentId, patch);
+      if (!updated) throw new HttpError(404, "Agent catalogue entry not found");
+      await createUsageEvent({
+        userId: req.user.id,
+        eventType: "admin.agent.catalog",
+        targetType: "agent",
+        targetId: req.params.agentId,
+        payload: patch,
+        ipHash: hashRequestIp(req.ip),
+        userAgent: req.get("user-agent") || "",
+      });
+      res.json({ data: updated });
+    }),
+  );
+
+  app.get(
+    "/api/admin/agent-usage",
+    authenticate,
+    requireAdmin("audit:read"),
+    asyncHandler(async (req, res) => {
+      const { days } = adminUsageWindowSchema.parse(req.query);
+      res.json({ data: await adminAgentUsage({ days }) });
+    }),
   );
 
   app.get(

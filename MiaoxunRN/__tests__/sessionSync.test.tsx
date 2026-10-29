@@ -29,6 +29,7 @@ jest.mock('../src/services/apiClient', () => ({
     relationships: jest.fn(),
     deleteAccount: jest.fn(),
     stationContent: jest.fn(),
+    createStationPost: jest.fn(),
     updateProfile: jest.fn(),
     updateStationConfig: jest.fn(),
     setAgentEnabled: jest.fn(),
@@ -306,6 +307,56 @@ describe('session synchronization', () => {
     await ReactTestRenderer.act(async () => renderer!.unmount());
   });
 
+  test('a bootstrap started before a station mutation cannot erase the newer content', async () => {
+    const pendingBootstrap = deferred<BootstrapDTO>();
+    const localPost = {
+      id: 'local-post',
+      userId: 'user-1',
+      body: 'Local post',
+      locationLabel: '',
+      visibility: 'public' as const,
+      agentCapabilities: [],
+      media: [],
+      commentCount: 0,
+      likeCount: 0,
+      favoriteCount: 0,
+      likedByMe: false,
+      favoritedByMe: false,
+      createdAt: '2026-07-10T06:00:02.000Z',
+    };
+    mockedApiClient.createStationPost.mockResolvedValueOnce(localPost);
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    mockedApiClient.bootstrap.mockReturnValueOnce(pendingBootstrap.promise);
+
+    let refreshing!: Promise<void>;
+    ReactTestRenderer.act(() => {
+      refreshing = currentSession!.refreshBootstrap();
+    });
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.createStationPost({ body: localPost.body });
+    });
+    expect(currentSession?.stationContent.posts.map(post => post.id)).toEqual([
+      localPost.id,
+    ]);
+
+    await ReactTestRenderer.act(async () => {
+      pendingBootstrap.resolve({
+        ...bootstrap,
+        serverTime: '2026-07-10T06:00:03.000Z',
+        stationContent: { ...bootstrap.stationContent, posts: [] },
+      });
+      await refreshing;
+    });
+    expect(currentSession?.stationContent.posts.map(post => post.id)).toEqual([
+      localPost.id,
+    ]);
+    await ReactTestRenderer.act(() => renderer?.unmount());
+  });
+
   test('connection.ready catches up once without rebuilding the socket', async () => {
     let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
 
@@ -332,6 +383,74 @@ describe('session synchronization', () => {
     await ReactTestRenderer.act(() => {
       renderer?.unmount();
     });
+  });
+
+  test('incremental sync refreshes the Agent catalogue without expanding ownership', async () => {
+    const initialAgent: AgentDTO = {
+      key: 'site-builder',
+      name: '建站',
+      version: '0.1.0',
+      category: 'station-builder',
+      description: '旧描述',
+      capabilities: [],
+      permissions: ['station:read'],
+      published: true,
+      status: 'registered',
+    };
+    const newlyPublished: AgentDTO = {
+      key: 'comic-diary',
+      name: '漫画日记',
+      version: '0.1.0',
+      category: 'creative',
+      description: '后台刚刚上架',
+      capabilities: [],
+      permissions: ['station:read'],
+      published: true,
+      status: 'registered',
+    };
+    const owned: OwnedAgentDTO = {
+      id: initialAgent.key,
+      name: initialAgent.name,
+      description: initialAgent.description,
+      category: initialAgent.category,
+      enabled: true,
+      grantedScopes: initialAgent.permissions,
+      published: true,
+    };
+    mockedApiClient.bootstrap.mockResolvedValueOnce({
+      ...bootstrap,
+      agents: { registered: [initialAgent], owned: [owned] },
+    });
+    mockedApiClient.sync.mockResolvedValueOnce({
+      threads: [],
+      messagesByThread: {},
+      notices: [],
+      unreadNoticeCount: 0,
+      agents: {
+        registered: [initialAgent, newlyPublished],
+        owned: [{ ...owned, name: '后台更新后的名称' }],
+      },
+      serverTime: '2026-07-10T06:00:04.000Z',
+    });
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    expect(currentSession?.agents.map(agent => agent.key)).toEqual([
+      initialAgent.key,
+    ]);
+    expect(currentSession?.ownedAgents[0]?.name).toBe(initialAgent.name);
+
+    await ReactTestRenderer.act(async () => {
+      await currentSession?.incrementalSync();
+    });
+    expect(currentSession?.agents.map(agent => agent.key)).toEqual([
+      initialAgent.key,
+      newlyPublished.key,
+    ]);
+    expect(currentSession?.ownedAgents[0]?.name).toBe('后台更新后的名称');
+    await ReactTestRenderer.act(() => renderer?.unmount());
   });
 
   test('an authorization already in flight stays deduplicated after its workspace remounts', async () => {

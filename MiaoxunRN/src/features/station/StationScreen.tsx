@@ -1,4 +1,10 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Alert,
   Animated,
@@ -82,8 +88,7 @@ export function StationScreen({
   onActionError: (error: unknown) => void;
 }) {
   const { isActive: isAssistActive } = useAIAssist();
-  const { height: windowHeight } = useWindowDimensions();
-  const [panelViewportHeight, setPanelViewportHeight] = useState(windowHeight);
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [isPointsOpen, setIsPointsOpen] = useState(false);
   const [isAvatar3dOpen, setIsAvatar3dOpen] = useState(false);
   const [createKind, setCreateKind] = useState<StationCreateKind | null>(null);
@@ -324,11 +329,66 @@ export function StationScreen({
   // sibling of the clipped panel viewport, so its changing height cannot
   // move a native sticky-header wrapper over the list.
   const collapseProgress = useRef(new Animated.Value(0)).current;
+  const collapseProgressRef = useRef(0);
   const collapsedRef = useRef(false);
   const panelScrollRef = useRef<ScrollView>(null);
   const panelScrollOffset = useRef(0);
   const panelContentHeight = useRef(0);
   const panelViewportHeightRef = useRef(windowHeight);
+  const measuredPanelViewportHeight = useRef<number | null>(null);
+  const profileHeaderHeight = useRef<number | null>(null);
+  const panelGeometryInitialized = useRef(false);
+  // Reserve the gesture range before native layout callbacks arrive. On a
+  // short or empty panel iOS can defer one of the initial onLayout events;
+  // starting at zero would leave the ScrollView with no scrollable extent and
+  // make the profile appear non-interactive until another layout occurs.
+  const initialPanelContentHeight =
+    windowHeight + STATION_COLLAPSE_SCROLL_DISTANCE;
+  const stablePanelContentHeightRef = useRef(initialPanelContentHeight);
+  const [stablePanelContentHeight, setStablePanelContentHeight] = useState(
+    initialPanelContentHeight,
+  );
+  const updateStablePanelContentHeight = useCallback(() => {
+    if (
+      measuredPanelViewportHeight.current === null ||
+      profileHeaderHeight.current === null ||
+      (panelGeometryInitialized.current && collapseProgressRef.current > 0.001)
+    ) {
+      return;
+    }
+    const maximumViewportHeight =
+      measuredPanelViewportHeight.current +
+      Math.max(profileHeaderHeight.current - 64, 0);
+    const nextHeight = maximumViewportHeight + STATION_COLLAPSE_SCROLL_DISTANCE;
+    panelGeometryInitialized.current = true;
+    if (Math.abs(nextHeight - stablePanelContentHeightRef.current) <= 1) return;
+    stablePanelContentHeightRef.current = nextHeight;
+    setStablePanelContentHeight(nextHeight);
+  }, []);
+  const measuredWindowSize = useRef({
+    height: windowHeight,
+    width: windowWidth,
+  });
+  useLayoutEffect(() => {
+    if (
+      measuredWindowSize.current.height === windowHeight &&
+      measuredWindowSize.current.width === windowWidth
+    ) {
+      return;
+    }
+    const collapsedHeightOnlyResize =
+      measuredWindowSize.current.width === windowWidth &&
+      collapseProgressRef.current === 1;
+    measuredWindowSize.current = { height: windowHeight, width: windowWidth };
+    measuredPanelViewportHeight.current = null;
+    // A collapsed card stays 64pt when only the window height changes. Its
+    // unchanged frame will not emit another native onLayout event.
+    profileHeaderHeight.current = collapsedHeightOnlyResize ? 64 : null;
+    panelGeometryInitialized.current = false;
+    const fallbackHeight = windowHeight + STATION_COLLAPSE_SCROLL_DISTANCE;
+    stablePanelContentHeightRef.current = fallbackHeight;
+    setStablePanelContentHeight(fallbackHeight);
+  }, [windowHeight, windowWidth]);
   const [profileCollapsed, setProfileCollapsed] = useState(false);
   const setCollapsed = useCallback((next: boolean) => {
     if (collapsedRef.current === next) return;
@@ -339,12 +399,14 @@ export function StationScreen({
     (position: number) => {
       const y = Number.isFinite(position) ? Math.max(position, 0) : 0;
       panelScrollOffset.current = y;
+      collapseProgressRef.current = Math.min(
+        y / STATION_COLLAPSE_SCROLL_DISTANCE,
+        1,
+      );
       // Drive the card continuously from the finger's scroll position. The old
       // threshold-only timing animation started after the gesture and could
       // visibly lag or jump, especially on short/empty panels.
-      collapseProgress.setValue(
-        Math.min(y / STATION_COLLAPSE_SCROLL_DISTANCE, 1),
-      );
+      collapseProgress.setValue(collapseProgressRef.current);
       if (y >= STATION_COLLAPSE_SCROLL_DISTANCE) {
         setCollapsed(true);
       } else if (y <= STATION_EXPAND_SCROLL_DISTANCE) {
@@ -356,6 +418,17 @@ export function StationScreen({
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     applyPanelScrollPosition(event.nativeEvent.contentOffset.y);
   };
+  const getPanelMaxOffset = useCallback(() => {
+    // The content container always reserves this much room for the profile
+    // gesture. Layout and content-size events can arrive in either order while
+    // the header changes the viewport, so preserve the minimum range and the
+    // current native offset until its next scroll event reconciles the value.
+    return Math.max(
+      panelContentHeight.current - panelViewportHeightRef.current,
+      STATION_COLLAPSE_SCROLL_DISTANCE,
+      panelScrollOffset.current,
+    );
+  }, []);
   const headerScrollOrigin = useRef(0);
   const headerVerticalGesture = useMemo(
     () =>
@@ -364,10 +437,7 @@ export function StationScreen({
         // Capture only a clear vertical drag, after child taps have had a
         // chance to start, then drive the same native offset as panel scrolling.
         onMoveShouldSetPanResponder: (_event, gesture) => {
-          const maxOffset = Math.max(
-            panelContentHeight.current - panelViewportHeightRef.current,
-            0,
-          );
+          const maxOffset = getPanelMaxOffset();
           return (
             active &&
             !isAssistActive &&
@@ -380,10 +450,7 @@ export function StationScreen({
           headerScrollOrigin.current = panelScrollOffset.current;
         },
         onPanResponderMove: (_event, gesture) => {
-          const maxOffset = Math.max(
-            panelContentHeight.current - panelViewportHeightRef.current,
-            0,
-          );
+          const maxOffset = getPanelMaxOffset();
           const nextOffset = Math.min(
             maxOffset,
             Math.max(0, headerScrollOrigin.current - gesture.dy),
@@ -392,10 +459,7 @@ export function StationScreen({
           panelScrollRef.current?.scrollTo({ y: nextOffset, animated: false });
         },
         onPanResponderRelease: (_event, gesture) => {
-          const maxOffset = Math.max(
-            panelContentHeight.current - panelViewportHeightRef.current,
-            0,
-          );
+          const maxOffset = getPanelMaxOffset();
           const nextOffset = Math.min(
             maxOffset,
             Math.max(0, headerScrollOrigin.current - gesture.dy),
@@ -409,11 +473,11 @@ export function StationScreen({
           });
         },
       }),
-    [active, applyPanelScrollPosition, isAssistActive],
+    [active, applyPanelScrollPosition, getPanelMaxOffset, isAssistActive],
   );
 
-  const isDark = session.appearance === 'dark';
   const stationColors = resolveStationColors(palette);
+  const isDark = stationColors.isV6 || session.appearance === 'dark';
   const isPanelActive =
     active &&
     !isAvatar3dOpen &&
@@ -423,13 +487,13 @@ export function StationScreen({
 
   // Presence stays in the session model; its station entry awaits a final design location.
 
-  // Light mode paints the page gradient behind the tabs, so the screen must not
-  // cover it with a flat fill; dark mode keeps its own background.
-  const stationBackground = stationColors.isLight
+  // Legacy light mode retains its gradient; V6 uses the supplied page color.
+  const showPageGradient = stationColors.isLight && !stationColors.isV6;
+  const stationBackground = showPageGradient
     ? 'transparent'
     : stationColors.background;
   // Keep the fixed card and switch aligned with the root-page horizontal wash.
-  const stationTopBackground = stationColors.isLight
+  const stationTopBackground = showPageGradient
     ? 'transparent'
     : stationColors.background;
 
@@ -443,7 +507,7 @@ export function StationScreen({
           { backgroundColor: stationTopBackground },
         ]}
       >
-        {stationColors.isLight ? (
+        {showPageGradient ? (
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             <PageGradient verticalFade={false} />
           </View>
@@ -463,43 +527,54 @@ export function StationScreen({
             />
           </Pressable>
         </View>
-        <StationProfileHeader
-          collapsed={profileCollapsed}
-          collapseProgress={collapseProgress}
-          stage={
-            <StationAvatarSpace
-              active={isPanelActive}
-              embedded
-              palette={palette}
-              language={language}
-              token={session.token}
-              avatar3d={avatar3d.bootstrap}
-              avatar3dStatus={avatar3d.status}
-              avatar3dError={avatar3d.errorMessage}
-              selectedModelId={selectedAvatar3dModelId}
-              onOpenGenerator={openAvatar3d}
-              onOpenCoreAgent={() => onOpenAgentThread('model-3d')}
-              onOpenOotd={() => openStationCreate('outfit')}
-              onOpenDiary={() => openStationCreate('diary')}
-              onOpenAgents={() => onSelectStationTab('agents')}
-              onOpenCallable={() => onSelectStationTab('agents')}
-            />
-          }
-          palette={palette}
-          language={language}
-          nickname={displayText(language, session.profile.nickname)}
-          aiId={session.user?.aiId || '--'}
-          avatarText={session.profile.avatarText}
-          avatarConfig={session.profile.avatarConfig}
-          bio={displayText(language, session.profile.bio)}
-          presenceStatus={
-            session.user?.presenceMode === 'online' ? 'online' : 'offline'
-          }
-          locationLabel={stationDisplayRegionLabel(session.profile)}
-          renderUserAvatar={renderUserAvatar}
-          onCopyAIID={onCopyAIID}
-          onOpenLocation={onOpenLocation}
-        />
+        <View
+          onLayout={event => {
+            const height = event.nativeEvent.layout.height;
+            if (Number.isFinite(height) && height > 0) {
+              profileHeaderHeight.current = height;
+              updateStablePanelContentHeight();
+            }
+          }}
+          testID="station-profile-measure"
+        >
+          <StationProfileHeader
+            collapsed={profileCollapsed}
+            collapseProgress={collapseProgress}
+            stage={
+              <StationAvatarSpace
+                active={isPanelActive}
+                embedded
+                palette={palette}
+                language={language}
+                token={session.token}
+                avatar3d={avatar3d.bootstrap}
+                avatar3dStatus={avatar3d.status}
+                avatar3dError={avatar3d.errorMessage}
+                selectedModelId={selectedAvatar3dModelId}
+                onOpenGenerator={openAvatar3d}
+                onOpenCoreAgent={() => onOpenAgentThread('model-3d')}
+                onOpenOotd={() => openStationCreate('outfit')}
+                onOpenDiary={() => openStationCreate('diary')}
+                onOpenAgents={() => onSelectStationTab('agents')}
+                onOpenCallable={() => onSelectStationTab('agents')}
+              />
+            }
+            palette={palette}
+            language={language}
+            nickname={displayText(language, session.profile.nickname)}
+            aiId={session.user?.aiId || '--'}
+            avatarText={session.profile.avatarText}
+            avatarConfig={session.profile.avatarConfig}
+            bio={displayText(language, session.profile.bio)}
+            presenceStatus={
+              session.user?.presenceMode === 'online' ? 'online' : 'offline'
+            }
+            locationLabel={stationDisplayRegionLabel(session.profile)}
+            renderUserAvatar={renderUserAvatar}
+            onCopyAIID={onCopyAIID}
+            onOpenLocation={onOpenLocation}
+          />
+        </View>
         <StationTabs
           palette={palette}
           language={language}
@@ -518,15 +593,14 @@ export function StationScreen({
         // it represents the missing content state rather than fake records.
         contentContainerStyle={[
           styles.stationScrollContent,
-          {
-            minHeight: panelViewportHeight + STATION_COLLAPSE_SCROLL_DISTANCE,
-          },
+          { minHeight: stablePanelContentHeight },
         ]}
         onLayout={event => {
           const height = event.nativeEvent.layout.height;
-          if (height > 0) {
+          if (Number.isFinite(height) && height > 0) {
             panelViewportHeightRef.current = height;
-            setPanelViewportHeight(height);
+            measuredPanelViewportHeight.current = height;
+            updateStablePanelContentHeight();
           }
         }}
         onContentSizeChange={(_width, height) => {
@@ -534,10 +608,24 @@ export function StationScreen({
         }}
         onScroll={handleScroll}
         scrollEventThrottle={16}
+        alwaysBounceVertical
         scrollEnabled={!isAssistActive}
         style={styles.stationPanelScroll}
         testID={`station-panel-scroll-${selectedStationTab}`}
       >
+        <Animated.View
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          pointerEvents="none"
+          style={{
+            height: collapseProgress.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, STATION_COLLAPSE_SCROLL_DISTANCE],
+              extrapolate: 'clamp',
+            }),
+          }}
+          testID="station-collapse-spacer"
+        />
         <View
           collapsable={false}
           style={styles.stationPanelWrap}

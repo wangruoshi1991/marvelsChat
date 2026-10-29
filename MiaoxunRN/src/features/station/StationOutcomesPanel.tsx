@@ -31,6 +31,8 @@ import { resolveStationColors } from './stationTheme';
 import { stationOutcomes } from './stationOutcomes';
 import { StationOutfitResult } from './StationOutfitResult';
 
+type HeadingPresentation = 'station' | 'floor';
+
 export function StationOutcomesPanel({
   active,
   token,
@@ -39,6 +41,7 @@ export function StationOutcomesPanel({
   stationContent,
   onRefreshStationContent,
   onOpenWorkspace,
+  headingPresentation = 'station',
 }: {
   active: boolean;
   token: string;
@@ -47,6 +50,7 @@ export function StationOutcomesPanel({
   stationContent: StationContentDTO;
   onRefreshStationContent: (signal: AbortSignal) => Promise<unknown>;
   onOpenWorkspace: (workspace: AgentWorkspace) => void;
+  headingPresentation?: HeadingPresentation;
 }) {
   const colors = resolveStationColors(palette);
   const t = (zh: string, en: string) => textFor(language, zh, en);
@@ -120,14 +124,25 @@ export function StationOutcomesPanel({
       : undefined;
   return (
     <View style={s.stack}>
-      <StationPageHeading
-        palette={palette}
-        title={t('我的成果', 'My outcomes')}
-        detail={t(
-          '查看最近的创作与协作产出',
-          'Recent creations and task results',
-        )}
-      />
+      {headingPresentation === 'floor' ? (
+        <View testID="floor-outcomes-heading" style={s.floorHeading}>
+          <Text style={[s.floorHeadingTitle, { color: colors.text }]}>
+            {t('我的成果', 'My outcomes')}
+          </Text>
+          <Text style={[s.floorHeadingDetail, { color: colors.secondaryText }]}>
+            {t('查看最近的创作与协作产出', 'Recent creations and task results')}
+          </Text>
+        </View>
+      ) : (
+        <StationPageHeading
+          palette={palette}
+          title={t('我的成果', 'My outcomes')}
+          detail={t(
+            '查看最近的创作与协作产出',
+            'Recent creations and task results',
+          )}
+        />
+      )}
       {contentError || workspaces.error ? (
         <View style={s.stack}>
           {[contentError, workspaces.error]
@@ -314,6 +329,9 @@ export function StationOutcomesPanel({
 const s = StyleSheet.create({
   screen: { flex: 1 },
   stack: { gap: 12 },
+  floorHeading: { gap: 4, marginTop: 12 },
+  floorHeadingTitle: { fontSize: 14, lineHeight: 20, fontWeight: '600' },
+  floorHeadingDetail: { fontSize: 12, lineHeight: 18 },
   detail: { padding: 20, gap: 20 },
   card: {
     flexDirection: 'row',

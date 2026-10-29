@@ -11,34 +11,54 @@ export function MiaoTaskAgent({
   palette,
   language,
   compact = false,
+  size,
+  showName = true,
+  overlap = false,
+  constrainName = false,
 }: {
   agentId: string;
   agent?: AgentDTO;
   palette: Palette;
   language: Language;
   compact?: boolean;
+  /** V20 feed cards use 33px footer avatars; workspace rows keep their 44px size. */
+  size?: number;
+  /** Feed cards collapse Agent names until the footer disclosure is opened. */
+  showName?: boolean;
+  /** Apply the V20 footer's compact, overlapping avatar treatment. */
+  overlap?: boolean;
+  /** Keep expanded footer names inside the card's remaining width. */
+  constrainName?: boolean;
 }) {
   return (
     <View
-      style={[s.agent, compact && s.compact]}
+      style={[
+        s.agent,
+        compact && s.compact,
+        !showName && s.avatarOnly,
+        constrainName && showName && s.constrainedName,
+        overlap && s.overlap,
+      ]}
       testID={`miao-participant-${agentId}`}
     >
       <AgentGlyphAvatar
         agentId={agent ? agentId : ''}
         category={agent?.category}
         identity={agent?.identity}
-        size={compact ? 26 : 44}
+        size={size ?? (compact ? 26 : 44)}
       />
-      <Text
-        numberOfLines={2}
-        style={[
-          s.agentName,
-          compact && s.compactName,
-          { color: palette.secondaryText },
-        ]}
-      >
-        {taskAgentDisplayName(agent, language)}
-      </Text>
+      {showName ? (
+        <Text
+          numberOfLines={2}
+          style={[
+            s.agentName,
+            compact && s.compactName,
+            { color: palette.secondaryText },
+          ]}
+        >
+          {taskAgentDisplayName(agent, language)}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -52,6 +72,9 @@ export function taskAgentDisplayName(
 
 const s = StyleSheet.create({
   agent: { alignItems: 'center', maxWidth: 112, minWidth: 48 },
+  avatarOnly: { maxWidth: 32, minWidth: 32, width: 32 },
+  constrainedName: { maxWidth: '100%' },
+  overlap: { marginLeft: -12, maxWidth: 32, minWidth: 32, width: 32 },
   compact: { flexDirection: 'row', gap: 6, minWidth: 0, maxWidth: '100%' },
   compactName: {
     marginTop: 0,
@@ -61,9 +84,9 @@ const s = StyleSheet.create({
   },
   agentName: {
     marginTop: 7,
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: '600',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '400',
     textAlign: 'center',
   },
 });

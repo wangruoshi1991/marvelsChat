@@ -8,9 +8,11 @@ import {
   Image,
   Keyboard,
   PanResponder,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  View,
 } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { SecondFloorScreen } from '../src/features/second-floor/SecondFloorScreen';
@@ -21,6 +23,8 @@ import { SecondFloorAssets } from '../src/features/second-floor/SecondFloorAsset
 import { SecondFloorRelationships } from '../src/features/second-floor/SecondFloorRelationships';
 import { SecondFloorInformation } from '../src/features/second-floor/SecondFloorInformation';
 import { SecondFloorPermissions } from '../src/features/second-floor/SecondFloorPermissions';
+import { SecondFloorPublish } from '../src/features/second-floor/SecondFloorPublish';
+import { SecondFloorSettings } from '../src/features/second-floor/SecondFloorSettings';
 import { StationCreateSheet } from '../src/features/station/StationCreateSheet';
 import { StationContentManageSheet } from '../src/features/station/StationContentManageSheet';
 import {
@@ -30,7 +34,9 @@ import {
 } from '../src/features/session/sessionDefaults';
 import { useMiaoxunSession } from '../src/features/session/useMiaoxunSession';
 import { palettes } from '../src/shared/theme';
+import { xunPalette } from '../src/shared/xunPalette';
 import { AIAssistGestureSurface } from '../src/features/assist/AIAssistGestureSurface';
+import { ChevronDown, ChevronUp } from 'lucide-react-native';
 
 // The files panel lists app-generated outcomes; keep these tests off the network.
 jest.mock('../src/services/api/agentWorkspaceApi', () => ({
@@ -145,6 +151,25 @@ const deferred = <T,>() => {
   });
   return { promise, resolve, reject };
 };
+const floorScrollEvent = (
+  y = 0,
+  contentHeight = 1000,
+  viewportHeight = 500,
+) => ({
+  nativeEvent: {
+    contentOffset: { x: 0, y },
+    contentSize: { width: 390, height: contentHeight },
+    layoutMeasurement: { width: 390, height: viewportHeight },
+  },
+});
+const floorTouchEvent = (pageY: number, pageX = 120, count = 1) => ({
+  nativeEvent: {
+    pageX,
+    pageY,
+    touches: Array.from({ length: count }, () => ({ pageX, pageY })),
+    changedTouches: count === 0 ? [{ pageX, pageY }] : [],
+  },
+});
 afterEach(() => {
   if (renderer) act(() => renderer.unmount());
   jest.clearAllMocks();
@@ -241,6 +266,366 @@ test('floor opens on albums; tools toggle independently and keep file drafts on 
   expect(dismiss).toHaveBeenCalled();
 });
 
+test('V15 Xun floor opens on the personal-space landing with six visible tools', async () => {
+  const scrollTo = jest
+    .spyOn(ScrollView.prototype, 'scrollTo')
+    .mockImplementation(() => undefined);
+  const props = {
+    ...floorProps(),
+    palette: xunPalette(palettes.light),
+  };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+
+  expect(text()).toContain('二楼 · 个人空间');
+  expect(text()).toContain('你的生活，有序安放。');
+  expect(tool('albums').props.accessibilityState.selected).toBe(false);
+  expect(renderer.root.findAllByType(SecondFloorAlbums)).toHaveLength(1);
+
+  act(() =>
+    renderer.root
+      .findByProps({ testID: 'floor-tools-viewport' })
+      .props.onLayout({ nativeEvent: { layout: { width: 402 } } }),
+  );
+  const strip = renderer.root.findByProps({ testID: 'floor-tools' });
+  const spacing = StyleSheet.flatten(strip.props.contentContainerStyle);
+  const cardWidth = StyleSheet.flatten(
+    tool('albums').parent!.props.style,
+  ).width;
+  const sixthRight =
+    spacing.paddingHorizontal + 6 * cardWidth + 5 * spacing.gap;
+  expect(cardWidth).toBeGreaterThanOrEqual(44);
+  expect(sixthRight).toBeCloseTo(402 - spacing.paddingHorizontal);
+  expect(strip.props.snapToOffsets).toHaveLength(2);
+  expect(strip.props.snapToOffsets[0]).toBe(0);
+  expect(strip.props.snapToOffsets[1]).toBeCloseTo(
+    2 * (cardWidth + spacing.gap),
+  );
+
+  act(() => tool('publish').props.onPress());
+  expect(scrollTo).toHaveBeenLastCalledWith({
+    x: strip.props.snapToOffsets[1],
+    animated: false,
+  });
+  act(() => tool('permissions').props.onPress());
+  expect(scrollTo).toHaveBeenLastCalledWith({ x: 0, animated: false });
+
+  act(() => tool('albums').props.onPress());
+  expect(tool('albums').props.accessibilityState.selected).toBe(true);
+  expect(text()).toContain('新建相册');
+  // Re-tapping the active V15 entrance keeps the current panel open.
+  act(() => tool('albums').props.onPress());
+  expect(tool('albums').props.accessibilityState.selected).toBe(true);
+  expect(text()).toContain('新建相册');
+});
+
+test('V15 floor pages scroll their header while the tool tray stays outside', async () => {
+  const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+
+  const pages = [
+    ['albums', SecondFloorAlbums],
+    ['files', SecondFloorFiles],
+    ['relationships', SecondFloorRelationships],
+    ['assets', SecondFloorAssets],
+    ['information', SecondFloorInformation],
+    ['permissions', SecondFloorPermissions],
+    ['publish', SecondFloorPublish],
+    ['settings', SecondFloorSettings],
+  ] as const;
+  for (const [key, component] of pages) {
+    await act(async () => tool(key).props.onPress());
+    const pageScroller = renderer.root
+      .findByType(component)
+      .findByType(ScrollView);
+    expect(
+      pageScroller.findByProps({ testID: 'floor-header-back' }).props.onPress,
+    ).toBeDefined();
+    expect(pageScroller.findAllByProps({ testID: 'floor-tools' })).toHaveLength(
+      0,
+    );
+    expect(
+      pageScroller.findAllByProps({ testID: 'floor-return-gesture' }),
+    ).toHaveLength(0);
+  }
+  const settingsScroller = renderer.root
+    .findByType(SecondFloorSettings)
+    .findByType(ScrollView);
+  expect(
+    settingsScroller
+      .findAllByType(Text)
+      .some(node =>
+        node.props.children?.includes?.('展示社区与展示活动区域在这里调整。'),
+      ),
+  ).toBe(true);
+  expect(StyleSheet.flatten(settingsScroller.props.style).flex).toBe(1);
+  expect(settingsScroller.props.alwaysBounceVertical).toBe(true);
+  const publishScroller = renderer.root
+    .findByType(SecondFloorPublish)
+    .findByType(ScrollView);
+  expect(publishScroller.props.alwaysBounceVertical).toBe(true);
+});
+
+test('V15 bottom-edge return uses the native scroller touch release without taking its responder', async () => {
+  const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+  await act(async () => tool('relationships').props.onPress());
+  const scroller = renderer.root
+    .findByType(SecondFloorRelationships)
+    .findByType(ScrollView);
+  const scroll = scroller.props;
+  expect(
+    renderer.root.findByProps({ testID: 'floor-content' }).props
+      .onMoveShouldSetResponderCapture,
+  ).toBeUndefined();
+  // Scrolling from mid-page to its end is ordinary reading, not a floor exit.
+  act(() => scroll.onTouchStart(floorTouchEvent(500)));
+  act(() => scroll.onScrollBeginDrag(floorScrollEvent(300)));
+  act(() => scroll.onScroll(floorScrollEvent(530)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  expect(props.onClose).not.toHaveBeenCalled();
+  // Native dragEnd can run before touchEnd; the latter still owns its origin.
+  act(() => scroll.onTouchStart(floorTouchEvent(500)));
+  act(() => scroll.onScrollBeginDrag(floorScrollEvent(499)));
+  act(() => scroll.onScroll(floorScrollEvent(540)));
+  act(() => scroll.onScrollEndDrag(floorScrollEvent(540)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(399, 120, 0)));
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+  act(() => scroll.onMomentumScrollEnd(floorScrollEvent(500)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(399, 120, 0)));
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  ['albums', SecondFloorAlbums],
+  ['files', SecondFloorFiles],
+  ['relationships', SecondFloorRelationships],
+  ['assets', SecondFloorAssets],
+  ['information', SecondFloorInformation],
+  ['permissions', SecondFloorPermissions],
+  ['publish', SecondFloorPublish],
+  ['settings', SecondFloorSettings],
+] as const)(
+  'V15 %s short page and landing can swipe up to return without a responder handoff',
+  async (key, component) => {
+    const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+    await act(async () => {
+      renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+    });
+    const landing = renderer.root.findByProps({
+      testID: 'floor-landing-scroll',
+    }).props;
+    expect(landing.alwaysBounceVertical).toBe(true);
+    act(() => landing.onTouchStart(floorTouchEvent(500)));
+    act(() => landing.onScrollBeginDrag(floorScrollEvent(0, 300, 500)));
+    act(() => landing.onTouchEnd(floorTouchEvent(399, 120, 0)));
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    await act(async () => tool(key).props.onPress());
+    const scroll = renderer.root
+      .findByType(component)
+      .findByType(ScrollView).props;
+    expect(scroll.alwaysBounceVertical).toBe(true);
+    // Native rubber-band displacement need not reach the finger's 100pt.
+    act(() => scroll.onTouchStart(floorTouchEvent(500)));
+    act(() => scroll.onScrollBeginDrag(floorScrollEvent(0, 300, 500)));
+    act(() => scroll.onScroll(floorScrollEvent(35, 300, 500)));
+    act(() => scroll.onTouchEnd(floorTouchEvent(399, 120, 0)));
+    expect(props.onClose).toHaveBeenCalledTimes(2);
+  },
+);
+
+test('short landing and panel pages arm return from measured dimensions before any scroll event', async () => {
+  const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+  const landing = renderer.root.findByProps({
+    testID: 'floor-landing-scroll',
+  }).props;
+  act(() => landing.onContentSizeChange(390, 300));
+  act(() => landing.onLayout({ nativeEvent: { layout: { height: 500 } } }));
+  act(() => landing.onTouchStart(floorTouchEvent(500)));
+  act(() => landing.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+
+  await act(async () => tool('relationships').props.onPress());
+  const page = renderer.root
+    .findByType(SecondFloorRelationships)
+    .findByType(ScrollView).props;
+  act(() => page.onContentSizeChange(390, 300));
+  act(() => page.onLayout({ nativeEvent: { layout: { height: 500 } } }));
+  act(() => page.onTouchStart(floorTouchEvent(500)));
+  act(() => page.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  expect(props.onClose).toHaveBeenCalledTimes(2);
+});
+
+test('V15 settings keeps a real scrolling viewport before bottom-edge return is armed', async () => {
+  const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+  await act(async () => tool('settings').props.onPress());
+  const scroller = renderer.root
+    .findByType(SecondFloorSettings)
+    .findByType(ScrollView);
+  const scroll = scroller.props;
+  expect(StyleSheet.flatten(scroll.style)).toEqual(
+    expect.objectContaining({ flex: 1 }),
+  );
+  expect(StyleSheet.flatten(scroll.contentContainerStyle)).toEqual(
+    expect.objectContaining({ flexGrow: 1 }),
+  );
+
+  // A normal upward read from the top must stay inside the settings viewport.
+  act(() => scroll.onTouchStart(floorTouchEvent(520)));
+  act(() => scroll.onScrollBeginDrag(floorScrollEvent(0, 1400, 500)));
+  act(() => scroll.onScroll(floorScrollEvent(240, 1400, 500)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  expect(props.onClose).not.toHaveBeenCalled();
+
+  // Only a release that starts at the content end returns to the conversation.
+  act(() => scroll.onTouchStart(floorTouchEvent(520)));
+  act(() => scroll.onScrollBeginDrag(floorScrollEvent(900, 1400, 500)));
+  act(() => scroll.onScroll(floorScrollEvent(900, 1400, 500)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+});
+
+test('return release reads changedTouches coordinates and rejects missing release points', async () => {
+  const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+  const landing = renderer.root.findByProps({
+    testID: 'floor-landing-scroll',
+  }).props;
+  act(() => landing.onContentSizeChange(390, 300));
+  act(() => landing.onLayout({ nativeEvent: { layout: { height: 500 } } }));
+  act(() => landing.onTouchStart(floorTouchEvent(500)));
+  // Native iOS touchEnd carries the release point in changedTouches; root
+  // pageX/pageY are intentionally absent here.
+  act(() =>
+    landing.onTouchEnd({
+      nativeEvent: {
+        touches: [],
+        changedTouches: [{ pageX: 120, pageY: 350 }],
+      },
+    }),
+  );
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+
+  await act(async () => tool('relationships').props.onPress());
+  const page = renderer.root
+    .findByType(SecondFloorRelationships)
+    .findByType(ScrollView).props;
+  act(() => page.onContentSizeChange(390, 300));
+  act(() => page.onLayout({ nativeEvent: { layout: { height: 500 } } }));
+  act(() => page.onTouchStart(floorTouchEvent(500)));
+  act(() =>
+    page.onTouchEnd({
+      nativeEvent: {
+        touches: [],
+        changedTouches: [{ pageX: undefined, pageY: undefined }],
+      },
+    }),
+  );
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+});
+
+test('bottom-edge release ignores short, sideways, downward, multitouch and cancelled gestures', async () => {
+  const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+  await act(async () => tool('relationships').props.onPress());
+  const scroll = renderer.root
+    .findByType(SecondFloorRelationships)
+    .findByType(ScrollView).props;
+  for (const [endY, endX] of [
+    [400, 120],
+    [399, 320],
+    [650, 120],
+  ]) {
+    act(() => scroll.onTouchStart(floorTouchEvent(500)));
+    act(() => scroll.onScrollBeginDrag(floorScrollEvent(499)));
+    act(() => scroll.onTouchEnd(floorTouchEvent(endY, endX, 0)));
+  }
+  act(() => scroll.onTouchStart(floorTouchEvent(500)));
+  act(() => scroll.onScrollBeginDrag(floorScrollEvent(499)));
+  act(() => scroll.onTouchMove(floorTouchEvent(450, 120, 2)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => scroll.onTouchStart(floorTouchEvent(500)));
+  act(() => scroll.onScrollBeginDrag(floorScrollEvent(499)));
+  act(() => scroll.onTouchCancel());
+  act(() => scroll.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => scroll.onScrollBeginDrag(floorScrollEvent(499)));
+  act(() => scroll.onScrollEndDrag(floorScrollEvent(550)));
+  expect(props.onClose).not.toHaveBeenCalled();
+});
+
+test('hidden file and previous-activation touch events cannot arm or clear the current floor swipe', async () => {
+  const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+  await act(async () => tool('files').props.onPress());
+  const oldFiles = renderer.root
+    .findByType(SecondFloorFiles)
+    .findByType(ScrollView).props;
+  await act(async () => tool('relationships').props.onPress());
+  const oldRelationships = renderer.root
+    .findByType(SecondFloorRelationships)
+    .findByType(ScrollView).props;
+  act(() => oldRelationships.onTouchStart(floorTouchEvent(500)));
+  act(() => oldRelationships.onScrollBeginDrag(floorScrollEvent(499)));
+  act(() => renderer.update(<SecondFloorScreen {...props} active={false} />));
+  const inactive = renderer.root
+    .findByType(SecondFloorRelationships)
+    .findByType(ScrollView).props;
+  act(() => renderer.update(<SecondFloorScreen {...props} active />));
+  const current = renderer.root
+    .findByType(SecondFloorRelationships)
+    .findByType(ScrollView).props;
+  for (const old of [oldFiles, oldRelationships, inactive]) {
+    act(() => old.onTouchStart(floorTouchEvent(500)));
+    act(() => old.onScrollBeginDrag(floorScrollEvent(499)));
+    act(() => old.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  }
+  act(() => current.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  expect(props.onClose).not.toHaveBeenCalled();
+  act(() => current.onTouchStart(floorTouchEvent(500)));
+  act(() => current.onScrollBeginDrag(floorScrollEvent(499)));
+  for (const old of [oldFiles, oldRelationships, inactive]) {
+    act(() => old.onScrollEndDrag(floorScrollEvent(300)));
+    act(() => old.onMomentumScrollEnd(floorScrollEvent(300)));
+    act(() => old.onTouchCancel());
+    act(() => old.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  }
+  act(() => current.onMomentumScrollEnd(floorScrollEvent(499)));
+  act(() => current.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+});
+
+test('a switched-away landing gesture cannot exit a selected page', async () => {
+  const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+  const landing = renderer.root.findByProps({
+    testID: 'floor-landing-scroll',
+  }).props;
+  act(() => landing.onTouchStart(floorTouchEvent(500)));
+  act(() => landing.onScrollBeginDrag(floorScrollEvent(0, 300, 500)));
+  await act(async () => tool('relationships').props.onPress());
+  act(() => landing.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  expect(props.onClose).not.toHaveBeenCalled();
+});
+
 test('publish opens its panel and settings acts instead of selecting a panel', async () => {
   const props = floorProps();
   await act(async () => {
@@ -279,7 +664,10 @@ test('file save gates every floor exit and tool switch until failure, preserving
       return { remove: jest.fn() };
     });
   const pan = jest.spyOn(PanResponder, 'create');
-  const props = floorProps(sessionForFloor({ createStationFileAsset: save }));
+  const props = {
+    ...floorProps(sessionForFloor({ createStationFileAsset: save })),
+    palette: xunPalette(palettes.light),
+  };
   await act(async () => {
     renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
   });
@@ -321,6 +709,12 @@ test('file save gates every floor exit and tool switch until failure, preserving
   >[1];
   expect(config.onMoveShouldSetPanResponder?.(event, gesture)).toBe(false);
   act(() => config.onPanResponderRelease?.(event, gesture));
+  const fileScroll = renderer.root
+    .findByType(SecondFloorFiles)
+    .findByType(ScrollView).props;
+  act(() => fileScroll.onTouchStart(floorTouchEvent(500)));
+  act(() => fileScroll.onScrollBeginDrag(floorScrollEvent(0, 300, 500)));
+  act(() => fileScroll.onTouchEnd(floorTouchEvent(350, 120, 0)));
   expect(props.onClose).not.toHaveBeenCalled();
   await act(async () => {
     work.reject(new Error('连接已断开'));
@@ -344,6 +738,16 @@ test('return responder only handles upward vertical motion and ignores inactive 
   await act(async () => {
     renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
   });
+  const swipeArea = renderer.root
+    .findAllByType(View)
+    .find(node => node.props.testID === 'floor-return-swipe-area')!;
+  const pressHost = renderer.root
+    .findAllByType(View)
+    .find(node => node.props.testID === 'floor-return-gesture')!;
+  expect(swipeArea.props.onResponderRelease).toEqual(expect.any(Function));
+  expect(swipeArea.props.onResponderRelease).not.toBe(
+    pressHost.props.onResponderRelease,
+  );
   const config = pan.mock.calls[0][0];
   const event = {} as Parameters<
     NonNullable<typeof config.onPanResponderRelease>
@@ -426,6 +830,37 @@ test('album creation blocks internal back until finished; details and editing re
   );
   act(() => renderer.root.findByType(StationContentManageSheet).props.onBack());
   expect(renderer.root.findByType(SecondFloorAlbumList)).toBeTruthy();
+});
+
+test('album landing explains selective photo access and opens the real creation flow', () => {
+  act(() => {
+    renderer = TestRenderer.create(
+      <SecondFloorAlbums
+        palette={xunPalette(palettes.light)}
+        language="zh"
+        session={sessionForFloor()}
+      />,
+    );
+  });
+
+  expect(text()).toContain('连接你的手机相册');
+  expect(text()).toContain('仅在你授权后读取所选照片');
+  expect(text()).not.toContain('演示图');
+  const upload = renderer.root
+    .findAllByType(Text)
+    .find(node => node.props.children === '上传')!;
+  expect(StyleSheet.flatten(upload.props.style).color).toBe('#008f95');
+  const createAlbum = button('选择照片并新建相册');
+  expect(StyleSheet.flatten(createAlbum.props.style)).toMatchObject({
+    borderRadius: 12,
+    paddingHorizontal: 17,
+    paddingVertical: 13,
+  });
+  expect(
+    StyleSheet.flatten(createAlbum.findByType(Text).props.style),
+  ).toMatchObject({ color: '#073b3d', fontSize: 13, fontWeight: '600' });
+  act(() => button('选择照片并新建相册').props.onPress());
+  expect(renderer.root.findByType(StationCreateSheet).props.kind).toBe('album');
 });
 
 test('late album creation response after unmount cannot upload selected photos', async () => {
@@ -596,7 +1031,7 @@ test('failed album covers show a retry action and ignore old image callbacks aft
 
 test('file detail shows actual preview and explicit unsupported/unknown states, then returns to list', async () => {
   const props = {
-    palette: palettes.light,
+    palette: xunPalette(palettes.light),
     language: 'zh' as const,
     onOpenWorkspace: jest.fn(),
     session: sessionForFloor({
@@ -615,11 +1050,22 @@ test('file detail shows actual preview and explicit unsupported/unknown states, 
   act(() => {
     renderer = TestRenderer.create(<SecondFloorFiles {...props} />);
   });
+  expect(text()).not.toContain('UTF-8');
+  expect(text()).not.toContain('256KiB');
+  expect(text()).not.toContain('50000字符');
   expect(text()).toContain('暂不支持处理');
   await act(async () => {
     button(`查看${file.originalFilename}`).props.onPress();
   });
   expect(text()).toContain(file.preprocessingResult.textPreview);
+  const returnToFiles = button('返回文件列表');
+  expect(StyleSheet.flatten(returnToFiles.props.style)).toMatchObject({
+    borderColor: '#cedae5',
+    borderRadius: 12,
+  });
+  expect(
+    StyleSheet.flatten(returnToFiles.findByType(Text).props.style),
+  ).toMatchObject({ color: '#425b71', fontSize: 13, fontWeight: '400' });
   act(() => button('返回文件列表').props.onPress());
   expect(button(`查看${file.originalFilename}`)).toBeTruthy();
   act(() =>
@@ -753,19 +1199,109 @@ test('information expands actual notice content without inventing AI decisions o
       />,
     );
   });
-  const notice = () => button('用户通知标题');
+  const notice = () => button('用户通知标题，未读');
   expect(notice().props.accessibilityState.expanded).toBe(false);
+  expect(renderer.root.findAllByType(ChevronDown)).toHaveLength(1);
+  expect(renderer.root.findAllByType(ChevronUp)).toHaveLength(0);
+  const status = renderer.root
+    .findAllByType(Text)
+    .find(node => ['已读', '未读'].includes(node.props.children))!;
+  const statusStyle = StyleSheet.flatten(status.props.style);
+  expect(status.props.numberOfLines).toBe(1);
+  expect(statusStyle.flexShrink).toBe(1);
+  expect(StyleSheet.flatten(status.parent?.props.style).maxWidth).toBe('28%');
   act(() => notice().props.onPress());
   expect(notice().props.accessibilityState.expanded).toBe(true);
+  expect(renderer.root.findAllByType(ChevronDown)).toHaveLength(0);
+  expect(renderer.root.findAllByType(ChevronUp)).toHaveLength(1);
   expect(text()).toContain('这段内容只来自通知记录');
   expect(text()).toContain('未读');
   expect(text()).toContain('AI 信息整理尚未开放');
   expect(text()).not.toContain('已提取');
+  const fullContent = renderer.root
+    .findAllByType(Text)
+    .find(
+      node =>
+        node.props.selectable &&
+        node.props.children === '这段内容只来自通知记录',
+    )!;
+  expect(fullContent).toBeTruthy();
+  let ancestor = fullContent.parent;
+  while (ancestor) {
+    expect(ancestor.props.accessibilityRole).not.toBe('button');
+    ancestor = ancestor.parent;
+  }
   expect(onOpenNotices).not.toHaveBeenCalled();
   act(() => notice().props.onPress());
   expect(notice().props.accessibilityState.expanded).toBe(false);
-  act(() => button('查看应用通知').props.onPress());
+  act(() => button('查看应用通知，1 条未读').props.onPress());
   expect(onOpenNotices).toHaveBeenCalledTimes(1);
+});
+
+test('diary save failure is announced in the editor, keeps its draft and allows retry', async () => {
+  const work = deferred<void>();
+  const createDiary = jest
+    .fn()
+    .mockImplementationOnce(() => work.promise)
+    .mockResolvedValueOnce(undefined);
+  const onBusyChange = jest.fn();
+  act(() => {
+    renderer = TestRenderer.create(
+      <SecondFloorPublish
+        palette={xunPalette(palettes.light)}
+        language="zh"
+        session={sessionForFloor({ createStationDiary: createDiary })}
+        onOpenPostComposer={jest.fn()}
+        onBusyChange={onBusyChange}
+      />,
+    );
+  });
+  act(() => button('写日记').props.onPress());
+  const draft = '失败后仍然保留的日记草稿';
+  act(() => renderer.root.findByType(TextInput).props.onChangeText(draft));
+  act(() => button('保存').props.onPress());
+  expect(createDiary).toHaveBeenCalledTimes(1);
+  expect(createDiary).toHaveBeenLastCalledWith(
+    expect.objectContaining({ body: draft }),
+  );
+  expect(onBusyChange).toHaveBeenLastCalledWith(true);
+  await act(async () => work.reject(new Error('日记服务暂不可用')));
+  expect(renderer.root.findByType(StationCreateSheet).props.isSaving).toBe(
+    false,
+  );
+  expect(renderer.root.findByType(TextInput).props.value).toBe(draft);
+  expect(
+    renderer.root.findByProps({ accessibilityRole: 'alert' }).props.children,
+  ).toBe('日记服务暂不可用');
+  expect(onBusyChange).toHaveBeenLastCalledWith(false);
+  await act(async () => button('保存').props.onPress());
+  expect(createDiary).toHaveBeenCalledTimes(2);
+  expect(createDiary).toHaveBeenLastCalledWith(
+    expect.objectContaining({ body: draft }),
+  );
+  expect(renderer.root.findAllByType(StationCreateSheet)).toHaveLength(0);
+  expect(text()).toContain('发布动态');
+});
+
+test('publish actions remain scrollable with bottom breathing room', () => {
+  act(() => {
+    renderer = TestRenderer.create(
+      <SecondFloorPublish
+        palette={xunPalette(palettes.light)}
+        language="zh"
+        session={sessionForFloor()}
+        onOpenPostComposer={jest.fn()}
+      />,
+    );
+  });
+  const scroller = renderer.root.findByType(ScrollView);
+  const contentStyle = StyleSheet.flatten(scroller.props.contentContainerStyle);
+  expect(StyleSheet.flatten(scroller.props.style).flex).toBe(1);
+  expect(contentStyle.flexGrow).toBe(1);
+  expect(contentStyle.paddingBottom).toBeGreaterThanOrEqual(24);
+  expect(scroller.props.keyboardShouldPersistTaps).toBe('handled');
+  expect(text()).toContain('发布动态');
+  expect(text()).toContain('写日记');
 });
 
 test('second-floor privacy does not duplicate Agent authorization management', () => {
@@ -794,4 +1330,62 @@ test('second-floor privacy does not duplicate Agent authorization management', (
   expect(actions[0].props.onPress).toBe(onOpenSettings);
   act(() => actions[0].props.onPress());
   expect(onOpenSettings).toHaveBeenCalledTimes(1);
+});
+
+test('second-floor permissions keep disconnected services and payment settings unavailable', () => {
+  act(() => {
+    renderer = TestRenderer.create(
+      <SecondFloorPermissions
+        palette={xunPalette(palettes.light)}
+        language="zh"
+        onOpenSettings={jest.fn()}
+      />,
+    );
+  });
+  const serviceLabels = [
+    '微信 · 消息与联系人',
+    '邮箱 · 邮件读取与整理',
+    '日历 · 日程读取与提醒',
+  ];
+  const switches = renderer.root
+    .findAllByType(View)
+    .filter(node => node.props.accessibilityRole === 'switch');
+  expect(switches).toHaveLength(3);
+  expect(switches.map(node => node.props.accessibilityLabel)).toEqual(
+    serviceLabels,
+  );
+  expect(new Set(switches.map(node => node.parent)).size).toBe(3);
+  switches.forEach(node => {
+    expect(node.props.accessibilityState).toEqual({
+      disabled: true,
+      checked: false,
+    });
+    expect(node.props.onPress).toBeUndefined();
+    expect(node.props.onValueChange).toBeUndefined();
+    expect(
+      node
+        .parent!.findAllByType(Text)
+        .some(child => child.props.children === '尚未接入 · 暂不可管理'),
+    ).toBe(true);
+  });
+  expect(text()).toContain('支付能力尚未开放');
+  expect(text()).toContain('单次支付限额');
+  expect(text()).not.toContain('¥200');
+  expect(text()).not.toContain('已授权 · 可随时撤回');
+  expect(
+    renderer.root.findAllByProps({ accessibilityRole: 'slider' }),
+  ).toHaveLength(0);
+  const saveSettings = renderer.root.findAll(
+    node =>
+      node.props.accessibilityRole === 'button' &&
+      node.props.accessibilityLabel === '保存设置',
+  );
+  expect(saveSettings.length).toBeGreaterThan(0);
+  saveSettings.forEach(node => {
+    expect(node.props.accessibilityState).toEqual({ disabled: true });
+    expect(node.props.onPress).toBeUndefined();
+  });
+  expect(
+    renderer.root.findAll(node => typeof node.props.onPress === 'function'),
+  ).toHaveLength(1);
 });

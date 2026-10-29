@@ -548,6 +548,25 @@ export const limitSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional().default(80),
 });
 
+export const adminUsageWindowSchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).optional().default(30),
+});
+
+export const agentCatalogPatchSchema = z.object({
+  displayName: z.string().trim().min(1).max(120).optional(),
+  description: z.string().trim().max(1000).optional(),
+  identityMark: z.string().trim().min(1).max(40).optional(),
+  identityShape: z.enum(["circle", "squircle", "rounded"]).optional(),
+  identityColors: z.object({
+    background: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+    foreground: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+    accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  }).strict().optional(),
+  published: z.boolean().optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, {
+  message: "Agent catalogue update cannot be empty",
+});
+
 export const incrementalSyncSchema = z.object({
   updatedAfter: z.string().datetime().optional(),
 });

@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { FlatList, Pressable, Text, TextInput } from 'react-native';
+import {
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+} from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { MiaoTaskFeed } from '../src/features/miao/MiaoTaskFeed';
 import { AIRequestComposer } from '../src/features/ai/AIRequestComposer';
@@ -10,6 +17,7 @@ import { AIAssistGestureSurface } from '../src/features/assist/AIAssistGestureSu
 import { AITaskDTO } from '../src/models/aiTask';
 import { AgentDTO } from '../src/models/api';
 import { palettes } from '../src/shared/theme';
+import { MiaoTaskCard } from '../src/features/miao/MiaoTaskCard';
 
 jest.mock('../src/features/ai/useAITasks', () => ({ useAITasks: jest.fn() }));
 jest.mock('../src/features/workspaces/useAgentWorkspaces', () => ({
@@ -113,6 +121,7 @@ const feed = (
     language="zh"
     agents={agents}
     waterfall={false}
+    voiceMenuExpanded={false}
     onOpenTask={jest.fn()}
     {...options}
   />
@@ -157,14 +166,15 @@ test('task cards show only their recorded executor and open the original task wi
     renderer = TestRenderer.create(feed({ onOpenTask: open }));
   });
   expect(text()).toContain(recorded.goal);
-  expect(text()).toContain('相册管理');
+  // V20 collapses Agent names in the task footer; the recorded participant
+  // remains available through the avatar test id and disclosure control.
+  expect(text()).not.toContain('相册管理');
+  expect(
+    renderer!.root.findByProps({ testID: 'miao-participant-album-manager' }),
+  ).toBeTruthy();
   expect(text()).toContain('正在执行');
-  // The design puts the Agent strip (with its status pill) above the task
-  // description, so the goal now reads after both.
-  expect(text().indexOf('相册管理')).toBeLessThan(
-    text().indexOf(recorded.goal),
-  );
-  expect(text().indexOf(recorded.goal)).toBeGreaterThan(
+  // V20 puts the brief first and the compact Agent/status footer after it.
+  expect(text().indexOf(recorded.goal)).toBeLessThan(
     text().indexOf('正在执行'),
   );
   expect(text()).not.toMatch(
@@ -183,6 +193,67 @@ test('task cards show only their recorded executor and open the original task wi
   act(() => renderer!.root.findByType(AIAssistGestureSurface).props.onPress());
   expect(open).toHaveBeenCalledWith(recorded);
   expect(useTasks).toHaveBeenCalledWith({ token: 'owner', active: true });
+});
+
+test('the feed uses the V6 dark palette and dims its content while the voice menu is open', () => {
+  useTasks.mockReturnValue(state({ tasks: [task()] }));
+  act(() => {
+    renderer = TestRenderer.create(feed({ voiceMenuExpanded: true }));
+  });
+
+  const listStyle = StyleSheet.flatten(
+    renderer!.root.findByType(FlatList).props.style,
+  );
+  expect(listStyle).toMatchObject({
+    backgroundColor: '#11121e',
+    opacity: 0.72,
+  });
+  expect(renderer!.root.findByType(MiaoTaskCard).props.palette).toMatchObject({
+    surface: '#292e3f',
+    text: '#f6f7fa',
+    secondaryText: '#a4a8b5',
+    mint: '#00c7cb',
+  });
+});
+
+test('a narrow grid card keeps every recorded Agent reachable and its disclosure does not open the task', () => {
+  const participants = [
+    ...agents,
+    { ...agents[0], key: 'fourth-agent', name: '名称较长的第四位执行 Agent' },
+  ];
+  const open = jest.fn();
+  act(() => {
+    renderer = TestRenderer.create(
+      <MiaoTaskCard
+        object={{ kind: 'ai-task', id: 'narrow', title: '窄卡片任务' }}
+        goal="窄卡片任务"
+        status="等待你确认下一步"
+        participantIds={participants.map(agent => agent.key)}
+        agents={participants}
+        palette={palettes.light}
+        language="zh"
+        grid
+        failed={false}
+        openLabel="查看任务"
+        onOpen={open}
+      />,
+    );
+  });
+  expect(text()).not.toContain('相册管理');
+  // Even a short stack can exceed the grid card's available width. It must
+  // remain scrollable instead of hiding the fourth recorded participant.
+  expect(renderer!.root.findByType(ScrollView).props.scrollEnabled).toBe(true);
+  const stopPropagation = jest.fn();
+  act(() => button('展开 Agent').props.onPress({ stopPropagation }));
+  expect(stopPropagation).toHaveBeenCalledTimes(1);
+  expect(open).not.toHaveBeenCalled();
+  participants.forEach(agent => expect(text()).toContain(agent.name));
+  expect(text()).toContain('等待你确认下一步');
+  expect(button('收起 Agent').props.accessibilityState.expanded).toBe(true);
+  expect(renderer!.root.findAllByType(ScrollView)).toHaveLength(0);
+  act(() => button('收起 Agent').props.onPress({ stopPropagation }));
+  expect(text()).not.toContain('相册管理');
+  expect(open).not.toHaveBeenCalled();
 });
 
 test('task actions preserve the page, real task state and input reference before asking for help', () => {
@@ -249,6 +320,9 @@ test('collaboration cards use shared content actions while tap and View workspac
   });
   const surface = renderer!.root.findByType(AIAssistGestureSurface);
   expect(text()).toContain(recorded.summary);
+  expect(text()).not.toContain('相册管理');
+  act(() => button('展开 Agent').props.onPress({ stopPropagation: jest.fn() }));
+  expect(open).not.toHaveBeenCalled();
   expect(text()).toContain('相册管理');
   expect(text()).toContain('未参与的妙管家');
   expect(text()).not.toContain('同分类未参与者');

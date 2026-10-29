@@ -78,7 +78,8 @@ const readinessStateLabel = (readiness) =>
   readiness?.configured ? "可用" : "待配置";
 const availabilityStateLabel = (availability) =>
   availability?.state === "available" ? "可用" : "暂不可用";
-const formatFen = (value) => `¥${(Number(value || 0) / 100).toFixed(2)}`;
+const formatFen = (value) =>
+  value === null || value === undefined ? "未知" : `¥${(Number(value) / 100).toFixed(2)}`;
 const formatAge = (value) => {
   if (!value) return "未上报";
   const milliseconds = Date.now() - new Date(value).getTime();
@@ -124,6 +125,27 @@ const setAdminReady = (ready) => {
   if (adminRoleOption.disabled) qs("#create-role").value = "user";
   qs("#model-test").disabled = !ready || !currentAdminCan("model:operate");
   syncAdminPermissionVisibility();
+};
+
+const setActiveAdminModule = (moduleName) => {
+  const buttons = qsa("[data-module-target]");
+  const modules = qsa("[data-admin-module]");
+  const candidate = modules.find(
+    (module) =>
+      module.dataset.adminModule === moduleName &&
+      !module.hidden &&
+      currentAdminCan(module.dataset.adminPermission),
+  );
+  const active = candidate?.dataset.adminModule || modules.find(
+    (module) => !module.hidden && currentAdminCan(module.dataset.adminPermission),
+  )?.dataset.adminModule;
+  modules.forEach((module) => {
+    module.classList.toggle("hidden", module.dataset.adminModule !== active);
+  });
+  buttons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.moduleTarget === active);
+    button.setAttribute("aria-current", button.dataset.moduleTarget === active ? "page" : "false");
+  });
 };
 
 const apiRequest = createAdminApiRequest({
@@ -253,17 +275,48 @@ const renderAgents = (agents) => {
     agents
       .map(
         (agent) => `
-          <article>
-            <strong>${escapeHtml(agent.name)}</strong>
+          <article class="agent-catalog-card">
+            <header>
+              <div><strong>${escapeHtml(agent.name)}</strong><code>${escapeHtml(agent.key)}</code></div>
+              <span class="status-pill ${agent.catalogue?.published ? "" : "error"}">${agent.catalogue?.published ? "已上架" : "未上架"}</span>
+            </header>
             <p>${escapeHtml(agent.description || "暂无描述")}</p>
-            <code>${escapeHtml(agent.key)} · ${Number(
-          agent.runs?.total || 0
-        )} runs</code>
+            <code>${Number(agent.runs?.total || 0)} runs · ${escapeHtml(listText(agent.runtimeModes, "未声明"))}</code>
+            <form class="agent-catalog-form" data-agent-catalog-form data-agent-id="${escapeHtml(agent.key)}">
+              <label>展示名称<input name="displayName" value="${escapeHtml(agent.catalogue?.displayName || agent.name)}" maxlength="120" required /></label>
+              <label>描述<textarea name="description" maxlength="1000">${escapeHtml(agent.catalogue?.description ?? agent.description ?? "")}</textarea></label>
+              <div class="agent-catalog-inline">
+                <label>标识<input name="identityMark" value="${escapeHtml(agent.catalogue?.identityMark || agent.identity?.mark || "")}" maxlength="40" /></label>
+                <label>形状<select name="identityShape">${["circle", "squircle", "rounded"].map(shape => `<option value="${shape}" ${shape === (agent.catalogue?.identityShape || agent.identity?.shape) ? "selected" : ""}>${shape}</option>`).join("")}</select></label>
+              </div>
+              <div class="agent-catalog-inline agent-catalog-colors">
+                ${["background", "foreground", "accent"].map(color => `<label>${color}<input name="identityColors.${color}" type="color" value="${/^#[0-9a-fA-F]{6}$/.test(agent.catalogue?.identityColors?.[color] || "") ? agent.catalogue.identityColors[color] : agent.identity?.colors?.[color] || "#36d4a4"}" /></label>`).join("")}
+              </div>
+              <label class="checkbox-row"><input name="published" type="checkbox" ${agent.catalogue?.published ? "checked" : ""} /> <span>在 App 推荐目录中上架</span></label>
+              <button type="submit">保存目录配置</button>
+            </form>
           </article>
         `
       )
       .join("") ||
     "<article><strong>暂无 Agent</strong><p>agents/ 目录中还没有注册文件。</p></article>";
+};
+
+const renderAgentUsage = (usage) => {
+  const summary = usage?.summary || {};
+  qs("#usage-window-label").textContent = `最近 ${Number(usage?.days || 30)} 天`;
+  qs("#agent-usage-summary").innerHTML = [
+    ["运行次数", summary.runs],
+    ["成功", summary.succeeded],
+    ["失败", summary.failed],
+    ["Token", summary.tokenTotal == null ? "未知" : Number(summary.tokenTotal).toLocaleString("zh-CN")],
+    ["成本", formatFen(summary.costCents)],
+    ["平均耗时", summary.avgLatencyMs == null ? "未知" : `${Math.round(Number(summary.avgLatencyMs))} ms`],
+  ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value ?? 0))}</strong></div>`).join("");
+  qs("#agent-usage-table").innerHTML = (usage?.agents || []).map((agent) => `
+    <tr><td><code>${escapeHtml(agent.agentId)}</code></td><td>${agent.runs}</td><td>${agent.succeeded}</td><td>${agent.failed}</td><td>${agent.tokenTotal == null ? "未知" : Number(agent.tokenTotal).toLocaleString("zh-CN")}</td><td>${formatFen(agent.costCents)}</td><td>${agent.avgLatencyMs == null ? "未知" : `${Number(agent.avgLatencyMs)} ms`}</td></tr>
+  `).join("") || '<tr><td colspan="7">当前统计周期没有 Agent 运行记录</td></tr>';
+  qs("#agent-usage-daily").innerHTML = (usage?.daily || []).map((day) => `<span><b>${escapeHtml(day.day)}</b><small>${day.runs} 次 · 成功 ${day.succeeded} · 失败 ${day.failed}</small></span>`).join("") || '<p class="empty-note">暂无按日记录。</p>';
 };
 
 const renderAgentReadiness = (
@@ -880,6 +933,8 @@ async function loadAdmin() {
     renderAgents([]);
     renderAgentReadiness({}, []);
     renderMediaRetrievalOverview(null);
+    renderAgentUsage(null);
+    setActiveAdminModule("overview");
 
     if (!currentAdminCan("users:read")) closeDrawer();
 
@@ -912,16 +967,24 @@ async function loadAdmin() {
         loadAdminModule(
           "agents:manage",
           async () => {
-            const [agents, readiness, retrievalOverview] = await Promise.all([
+            const [agents, catalogue, readiness, retrievalOverview] = await Promise.all([
               apiRequest("/api/admin/agents"),
+              apiRequest("/api/admin/agent-catalog"),
               apiRequest("/api/admin/agent-readiness"),
               apiRequest("/api/admin/media-retrieval/overview"),
             ]);
-            renderAgents(agents);
-            renderAgentReadiness(readiness, agents);
+            const catalogueByKey = new Map(catalogue.map((item) => [item.key, item.catalogue]));
+            const mergedAgents = agents.map((agent) => ({ ...agent, catalogue: catalogueByKey.get(agent.key) || null }));
+            renderAgents(mergedAgents);
+            renderAgentReadiness(readiness, mergedAgents);
             renderMediaRetrievalOverview(retrievalOverview);
           },
           "Agent 管理数据读取失败。"
+        ),
+        loadAdminModule(
+          "audit:read",
+          async () => renderAgentUsage(await apiRequest("/api/admin/agent-usage?days=30")),
+          "Agent 使用监控读取失败。",
         ),
         loadAdminModule(
           "model:operate",
@@ -949,6 +1012,7 @@ async function loadAdmin() {
     } else if (errors.length) {
       setStatus(`部分后台模块读取失败：${errors[0]}`);
     } else {
+      setActiveAdminModule("overview");
       setStatus(
         `后台数据已同步。最近刷新：${new Date().toLocaleTimeString("zh-CN")}`
       );
@@ -1100,6 +1164,52 @@ qs("#media-retrieval-content").addEventListener("submit", async (event) => {
   } catch (error) {
     setStatus(friendlyErrorMessage(error, "媒体检索运行控制保存失败。"));
   } finally {
+    submit.disabled = false;
+  }
+});
+
+qsa("[data-module-target]").forEach((button) => {
+  button.addEventListener("click", () => setActiveAdminModule(button.dataset.moduleTarget));
+});
+
+qs("#usage-window")?.addEventListener("change", async (event) => {
+  try {
+    renderAgentUsage(await apiRequest(`/api/admin/agent-usage?days=${encodeURIComponent(event.target.value)}`));
+  } catch (error) {
+    setStatus(friendlyErrorMessage(error, "Agent 使用监控读取失败。"));
+  }
+});
+
+qs("#agents-list")?.addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-agent-catalog-form]");
+  if (!form) return;
+  event.preventDefault();
+  const agentId = form.dataset.agentId;
+  const formData = new FormData(form);
+  const identityColors = {};
+  ["background", "foreground", "accent"].forEach((key) => {
+    identityColors[key] = formData.get(`identityColors.${key}`);
+  });
+  const payload = {
+    displayName: String(formData.get("displayName") || "").trim(),
+    description: String(formData.get("description") || "").trim(),
+    identityMark: String(formData.get("identityMark") || "").trim(),
+    identityShape: formData.get("identityShape"),
+    identityColors,
+    published: formData.get("published") === "on",
+  };
+  const submit = form.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  setStatus(`正在保存 ${agentId} 的目录配置...`);
+  try {
+    await apiRequest(`/api/admin/agent-catalog/${encodeURIComponent(agentId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    await loadAdmin();
+    setStatus(`${agentId} 的目录配置已保存。`);
+  } catch (error) {
+    setStatus(friendlyErrorMessage(error, "Agent 目录配置保存失败。"));
     submit.disabled = false;
   }
 });

@@ -36,6 +36,7 @@ import { SegmentedControl, SheetHeader } from '../../shared/ui';
 import { Language } from '../session/useMiaoxunSession';
 import { StationContentEditorHeader } from './StationContentEditorUi';
 import { StationCreateKind } from './stationTypes';
+import type { SecondFloorPageScrollProps } from '../second-floor/secondFloorScroll';
 
 type StationCreatePayload =
   | {
@@ -69,6 +70,8 @@ type StationCreateSheetProps = {
   onBack: () => void;
   onSubmit: (payload: StationCreatePayload) => void;
   onActionError?: (error: unknown) => void;
+  /** Optional host floor scroll contract for the embedded publish panel. */
+  scrollProps?: SecondFloorPageScrollProps;
 };
 
 const visibilityOptions = (language: Language) => [
@@ -127,6 +130,7 @@ export function StationCreateSheet({
   onBack,
   onSubmit,
   onActionError,
+  scrollProps,
 }: StationCreateSheetProps) {
   const [title, setTitle] = useState(initialTitle(kind, language));
   const [body, setBody] = useState('');
@@ -474,6 +478,7 @@ export function StationCreateSheet({
 
   return (
     <ScrollView
+      {...scrollProps}
       style={{ backgroundColor: palette.background }}
       contentContainerStyle={styles.settingsContent}
     >

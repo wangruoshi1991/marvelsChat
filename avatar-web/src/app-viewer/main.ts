@@ -179,7 +179,7 @@ const load = async ({ modelUrl, token }: ViewerConfig) => {
     try {
       phase = "parsing";
       notify({ type: "parsing" });
-      scene ||= createModelScene(canvas, { backgroundColor: "#F7F8FC" });
+      scene ||= createModelScene(canvas, { backgroundColor: "#202636" });
       scene.setActive(viewerActive);
       await scene.load(objectUrl);
     } finally {

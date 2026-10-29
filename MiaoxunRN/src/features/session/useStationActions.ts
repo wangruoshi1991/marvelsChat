@@ -53,6 +53,15 @@ export function useStationActions({
     [setStationContent, token],
   );
 
+  const applyStationMutation = useCallback(
+    (value: SetStateAction<StationContentDTO>) => {
+      // A read started before this confirmed mutation must not restore its older snapshot.
+      contentRefresh.current += 1;
+      setStationContent(value);
+    },
+    [setStationContent],
+  );
+
   const listMiaoPointLedger = useCallback(async () => {
     if (!token) {
       throw new Error('请先登录。');
@@ -72,13 +81,13 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       const post = await apiClient.createStationPost(token, payload);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         posts: [post, ...current.posts],
       }));
       return post;
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const deleteStationPost = useCallback(
@@ -87,12 +96,12 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       await apiClient.deleteStationPost(token, postId);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         posts: current.posts.filter(post => post.id !== postId),
       }));
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const setStationPostInteraction = useCallback(
@@ -110,7 +119,7 @@ export function useStationActions({
         interactionType,
         active,
       );
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         posts: current.posts.map(post =>
           post.id === postId
@@ -126,7 +135,7 @@ export function useStationActions({
       }));
       return result;
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const createStationDiary = useCallback(
@@ -140,13 +149,13 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       const entry = await apiClient.createStationDiary(token, payload);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         diaryEntries: [entry, ...current.diaryEntries],
       }));
       return entry;
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const updateStationDiary = useCallback(
@@ -163,7 +172,7 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       const entry = await apiClient.updateStationDiary(token, entryId, payload);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         diaryEntries: current.diaryEntries.map(item =>
           item.id === entry.id ? entry : item,
@@ -171,7 +180,7 @@ export function useStationActions({
       }));
       return entry;
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const deleteStationDiary = useCallback(
@@ -180,12 +189,12 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       await apiClient.deleteStationDiary(token, entryId);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         diaryEntries: current.diaryEntries.filter(item => item.id !== entryId),
       }));
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const createStationAlbum = useCallback(
@@ -198,13 +207,13 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       const album = await apiClient.createStationAlbum(token, payload);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         albums: [album, ...current.albums],
       }));
       return album;
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const updateStationAlbum = useCallback(
@@ -220,7 +229,7 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       const album = await apiClient.updateStationAlbum(token, albumId, payload);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         albums: current.albums.map(item =>
           item.id === album.id ? album : item,
@@ -228,7 +237,7 @@ export function useStationActions({
       }));
       return album;
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const deleteStationAlbum = useCallback(
@@ -237,7 +246,7 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       await apiClient.deleteStationAlbum(token, albumId);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         albums: current.albums.filter(item => item.id !== albumId),
         mediaAssets: current.mediaAssets.filter(
@@ -245,7 +254,7 @@ export function useStationActions({
         ),
       }));
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const createStationMediaAsset = useCallback(
@@ -258,7 +267,7 @@ export function useStationActions({
         token,
         assetPayload,
       );
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         mediaAssets: [asset, ...current.mediaAssets],
         albums: asset.albumId
@@ -278,7 +287,7 @@ export function useStationActions({
           asset,
           media: localMedia,
         });
-        setStationContent(current => ({
+        applyStationMutation(current => ({
           ...current,
           mediaAssets: current.mediaAssets.map(item =>
             item.id === uploadedAsset.id ? uploadedAsset : item,
@@ -289,7 +298,7 @@ export function useStationActions({
         await apiClient
           .deleteStationMediaAsset(token, asset.id)
           .catch(() => undefined);
-        setStationContent(current => ({
+        applyStationMutation(current => ({
           ...current,
           mediaAssets: current.mediaAssets.filter(item => item.id !== asset.id),
           albums: asset.albumId
@@ -306,7 +315,7 @@ export function useStationActions({
         throw error;
       }
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const updateStationMediaAsset = useCallback(
@@ -325,7 +334,7 @@ export function useStationActions({
         assetId,
         payload,
       );
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         mediaAssets: current.mediaAssets.map(item =>
           item.id === asset.id ? asset : item,
@@ -333,7 +342,7 @@ export function useStationActions({
       }));
       return asset;
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const deleteStationMediaAsset = useCallback(
@@ -342,7 +351,7 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       await apiClient.deleteStationMediaAsset(token, assetId);
-      setStationContent(current => {
+      applyStationMutation(current => {
         const deletedAsset = current.mediaAssets.find(
           item => item.id === assetId,
         );
@@ -363,7 +372,7 @@ export function useStationActions({
         };
       });
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const createStationOutfit = useCallback(
@@ -379,13 +388,13 @@ export function useStationActions({
         ...payload,
         avatarConfig,
       });
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         outfits: [outfit, ...current.outfits],
       }));
       return outfit;
     },
-    [avatarConfig, setStationContent, token],
+    [avatarConfig, applyStationMutation, token],
   );
 
   const createStationComicDiary = useCallback(
@@ -400,13 +409,13 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       const draft = await apiClient.createStationComicDiary(token, payload);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         comicDiaries: [draft, ...current.comicDiaries],
       }));
       return draft;
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const createStationSiteDraft = useCallback(
@@ -429,7 +438,7 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       const asset = await apiClient.createStationFileAsset(token, payload);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         fileAssets: [
           asset,
@@ -440,14 +449,14 @@ export function useStationActions({
       }));
       return asset;
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const uploadStationFileAsset = useCallback(
     async (file: PickedStationFile) => {
       if (!token) throw new Error('请先登录。');
       const asset = await uploadStationFile(token, file);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         fileAssets: [
           asset,
@@ -456,7 +465,7 @@ export function useStationActions({
       }));
       return asset;
     },
-    [token, setStationContent],
+    [token, applyStationMutation],
   );
   const stationFileAsset = useCallback(
     async (id: string) => {
@@ -469,12 +478,12 @@ export function useStationActions({
     async (id: string) => {
       if (!token) throw new Error('请先登录。');
       await apiClient.deleteStationFileAsset(token, id);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         fileAssets: current.fileAssets.filter(item => item.id !== id),
       }));
     },
-    [token, setStationContent],
+    [token, applyStationMutation],
   );
 
   const deleteStationComicDiary = useCallback(
@@ -483,14 +492,14 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       await apiClient.deleteStationComicDiary(token, comicDiaryId);
-      setStationContent(current => ({
+      applyStationMutation(current => ({
         ...current,
         comicDiaries: current.comicDiaries.filter(
           (item: StationComicDiaryDTO) => item.id !== comicDiaryId,
         ),
       }));
     },
-    [setStationContent, token],
+    [applyStationMutation, token],
   );
 
   const resolveLocation = useCallback(

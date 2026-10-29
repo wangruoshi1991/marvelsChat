@@ -28,6 +28,7 @@ import {
   AIAssistObjectReference,
 } from '../assist/aiAssistTypes';
 import {
+  AgentDTO,
   OwnedAgentDTO,
   ProfileDTO,
   StationContentDTO,
@@ -41,6 +42,7 @@ import { Palette } from '../../shared/theme';
 import { Language } from '../session/useMiaoxunSession';
 import { UserAvatarRenderer } from '../messages/messageTypes';
 import { resolveStationColors } from './stationTheme';
+import { AgentGlyphAvatar } from '../messages/AgentGlyphAvatar';
 
 export function StationPostsPanel({
   palette,
@@ -48,6 +50,7 @@ export function StationPostsPanel({
   stationContent,
   profile,
   renderUserAvatar,
+  agents,
   ownedAgents,
   token,
   onDeletePost,
@@ -61,6 +64,7 @@ export function StationPostsPanel({
   stationContent: StationContentDTO;
   profile: ProfileDTO;
   renderUserAvatar: UserAvatarRenderer;
+  agents?: AgentDTO[];
   ownedAgents: OwnedAgentDTO[];
   token: string;
   onDeletePost: (postId: string) => Promise<void>;
@@ -82,7 +86,6 @@ export function StationPostsPanel({
   const posts = stationContent.posts;
   const timeline = postTimeline(posts, stationContent.diaryEntries);
   const colors = resolveStationColors(palette);
-
   if (!timeline.length) {
     return (
       <View style={styles.stationFeedStack}>
@@ -111,6 +114,7 @@ export function StationPostsPanel({
         ) : (
           <StationPostCard
             key={item.post.id}
+            agents={agents}
             language={language}
             ownedAgents={ownedAgents}
             palette={palette}
@@ -235,6 +239,7 @@ function diaryDisplayTitle(entry: StationDiaryEntryDTO) {
 }
 
 function StationPostCard({
+  agents,
   language,
   ownedAgents,
   palette,
@@ -247,6 +252,7 @@ function StationPostCard({
   onActionMessage,
   onActionError,
 }: {
+  agents?: AgentDTO[];
   language: Language;
   ownedAgents: OwnedAgentDTO[];
   palette: Palette;
@@ -290,12 +296,22 @@ function StationPostCard({
   ]);
 
   const assist = useAIAssist();
+  const registeredByKey = new Map(
+    (agents || []).map(agent => [agent.key, agent]),
+  );
   const agentTags = post.agentCapabilities
     .map(agentId => {
       const agent = ownedAgents.find(item => item.id === agentId);
-      return agent ? { id: agent.id, name: agent.name } : null;
+      return agent
+        ? {
+            id: agent.id,
+            name: agent.name,
+            identity: registeredByKey.get(agent.id)?.identity || null,
+            category: registeredByKey.get(agent.id)?.category,
+          }
+        : null;
     })
-    .filter((agent): agent is { id: string; name: string } => Boolean(agent));
+    .filter((agent): agent is NonNullable<typeof agent> => Boolean(agent));
   const colors = resolveStationColors(palette);
   const previewMedia = post.media.slice(0, 3);
 
@@ -474,6 +490,12 @@ function StationPostCard({
                     { backgroundColor: colors.soft },
                   ]}
                 >
+                  <AgentGlyphAvatar
+                    agentId={agent.id}
+                    category={agent.category}
+                    identity={agent.identity}
+                    size={20}
+                  />
                   <Text
                     style={[
                       styles.stationFeedAgentText,

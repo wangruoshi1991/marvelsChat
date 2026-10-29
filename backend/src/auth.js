@@ -6,6 +6,9 @@ import { HttpError } from "./http-error.js";
 
 const pbkdf2Async = promisify(crypto.pbkdf2);
 const passwordIterations = 310000;
+// Keep enough headroom for future password-cost increases while bounding the
+// work an attacker can force by supplying a polluted stored hash.
+const maxPasswordIterations = 1000000;
 const passwordKeyLength = 32;
 const passwordDigest = "sha256";
 
@@ -26,10 +29,16 @@ export async function verifyPassword(password, storedHash) {
   const [scheme, iterationsText, salt, storedKey] = String(storedHash || "").split("$");
   if (scheme !== "pbkdf2" || !iterationsText || !salt || !storedKey) return false;
 
+  if (!/^\d+$/.test(iterationsText)) return false;
   const iterations = Number(iterationsText);
-  if (!Number.isFinite(iterations)) return false;
+  if (
+    !Number.isSafeInteger(iterations)
+    || iterations < 1
+    || iterations > maxPasswordIterations
+  ) return false;
 
   const expected = Buffer.from(storedKey, "base64url");
+  if (expected.length !== passwordKeyLength) return false;
   const actual = await pbkdf2Async(password, salt, iterations, expected.length, passwordDigest);
 
   if (actual.length !== expected.length) return false;

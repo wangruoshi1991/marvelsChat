@@ -34,10 +34,13 @@ import { WorkspaceContextCard } from './WorkspaceContextCard';
 import { recognizeSpeechOnce } from '../../services/speechToText';
 import { displayText, publicPresenceText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
-import { Palette, palettes } from '../../shared/theme';
+import { isLightPalette, Palette } from '../../shared/theme';
 import { ChatHeader } from '../../shared/ui';
 import { useAIAssist } from '../assist/AIAssistProvider';
-import { AIAssistPoint } from '../assist/aiAssistTypes';
+import {
+  AIAssistObjectReference,
+  AIAssistPoint,
+} from '../assist/aiAssistTypes';
 import {
   ChatMessage,
   ChatThread,
@@ -45,7 +48,7 @@ import {
 } from '../session/useMiaoxunSession';
 import { ThreadListScreen } from './ThreadListScreen';
 import { MessageTab, UserAvatarRenderer } from './messageTypes';
-import { ChatComposer } from './ChatComposer';
+import { ChatComposer, ComposerTool } from './ChatComposer';
 import { ChatMessageItem } from './ChatMessageItem';
 import { ChatMessageMenu } from './ChatMessageMenu';
 import { resolveMessagePalette } from './messagePalette';
@@ -202,6 +205,11 @@ export function ChatScreen({
   });
   const [isSending, setIsSending] = useState(false);
   const [isRecognizingSpeech, setIsRecognizingSpeech] = useState(false);
+  // The composer grows when Butler shortcuts, context references, or a reply
+  // preview are visible. Reserve that measured height in the message list so
+  // the final bubble can still scroll above the composer instead of being
+  // covered by it.
+  const [composerHeight, setComposerHeight] = useState(0);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const safeAreaInsets = useSafeAreaInsets();
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(
@@ -263,7 +271,7 @@ export function ChatScreen({
     () => resolveMessagePalette(palette),
     [palette],
   );
-  const isDarkPalette = messagePalette.text === palettes.dark.text;
+  const isDarkPalette = !isLightPalette(messagePalette);
   const canConfigureThread =
     Boolean(thread.peerUserId) || thread.kind === 'group';
   const threadAgent = thread.agentId
@@ -712,6 +720,39 @@ export function ChatScreen({
       .finally(() => setIsRecognizingSpeech(false));
   };
 
+  const openConversationAssistant = useCallback(() => {
+    // This is a local snapshot of the current conversation entry point. A
+    // thread id is metadata only; it must not be sent as a chat-message
+    // reference because the server reference contract requires a message id.
+    const object: AIAssistObjectReference = {
+      kind: 'chat-draft',
+      id: null,
+      title: textFor(language, '当前对话', 'Current conversation'),
+      metadata: {
+        threadId: thread.id,
+        threadTitle: displayText(language, thread.title),
+      },
+    };
+    assist.askButler(object);
+  }, [assist, language, thread.id, thread.title]);
+
+  const handleComposerTool = useCallback(
+    (tool: ComposerTool) => {
+      if (tool === '妙猜猜') {
+        openConversationAssistant();
+        return;
+      }
+      onActionError(
+        textFor(
+          language,
+          `“${tool}”功能暂未接通，请使用已提供的入口。`,
+          `“${tool}” is not connected yet. Please use an available entry point.`,
+        ),
+      );
+    },
+    [language, onActionError, openConversationAssistant],
+  );
+
   return (
     <KeyboardAvoidingView
       style={[
@@ -721,7 +762,6 @@ export function ChatScreen({
       enabled={false}
     >
       <Animated.View
-        {...closeSwipeResponder.panHandlers}
         style={[
           styles.chatSwipeSurface,
           {
@@ -730,150 +770,166 @@ export function ChatScreen({
           },
         ]}
       >
-        <ChatHeader
-          palette={messagePalette}
-          language={language}
-          title={displayText(language, thread.title)}
-          subtitle={presenceSubtitle}
-          subtitleStatus={
-            presenceSubtitle ? (threadOnline ? 'online' : 'offline') : undefined
-          }
-          onBack={closeChat}
-          onOpenSettings={
-            canConfigureThread ? () => setIsThreadSettingsOpen(true) : undefined
-          }
-        />
-        {thread.agentId === 'album-manager' && token && onAuthorizeAlbumAI ? (
-          <AlbumAssistantStatus
-            token={token}
+        <View
+          {...closeSwipeResponder.panHandlers}
+          style={styles.chatSwipeSurface}
+        >
+          <ChatHeader
             palette={messagePalette}
             language={language}
-            onAuthorize={async () => {
-              preserveDraftForAccess();
-              return onAuthorizeAlbumAI();
-            }}
-            onError={onActionError}
-          />
-        ) : null}
-        <View
-          ref={messageAreaRef}
-          collapsable={false}
-          onLayout={closeMessageMenu}
-          style={styles.chatMessageArea}
-        >
-          <FlatList
-            ref={listRef}
-            style={styles.chatMessageList}
-            data={thread.messages}
-            keyExtractor={item => item.id}
-            contentContainerStyle={styles.messages}
-            initialNumToRender={Math.max(thread.messages.length, 12)}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            scrollEnabled={!isChatInteractionBlocked}
-            ListFooterComponent={
-              <View>
-                {tasks.error || tasks.decisionError ? (
-                  <View>
-                    <Text
-                      accessibilityRole="alert"
-                      style={{ color: palette.rose }}
-                    >
-                      {tasks.error || tasks.decisionError}
-                    </Text>
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => {
-                        tasks.refresh();
-                      }}
-                      style={taskStyles.refresh}
-                    >
-                      <Text style={{ color: palette.text }}>
-                        {textFor(language, '刷新任务', 'Refresh tasks')}
-                      </Text>
-                    </Pressable>
-                  </View>
-                ) : null}
-                {tasks.tasks.map(task => (
-                  <AITaskCard
-                    key={task.id}
-                    task={task}
-                    palette={messagePalette}
-                    language={language}
-                    busy={tasks.pendingTaskId !== null}
-                    onDecision={operation => {
-                      tasks.decide(task, operation);
-                    }}
-                    renderArtifact={artifact => (
-                      <Artifact
-                        artifact={artifact}
-                        palette={messagePalette}
-                        language={language}
-                        onPreview={() => {
-                          const index = thread.messages.findIndex(
-                            message => message.id === artifact.id,
-                          );
-                          if (index >= 0)
-                            listRef.current?.scrollToIndex({
-                              index,
-                              animated: true,
-                            });
-                          else {
-                            onRefreshThread?.().catch(error =>
-                              onActionError(error.message),
-                            );
-                            onActionError(
-                              textFor(
-                                language,
-                                '正在刷新对话成果，请稍后查看。',
-                                'Refreshing conversation results. Please check again.',
-                              ),
-                            );
-                          }
-                        }}
-                      />
-                    )}
-                  />
-                ))}
-                <View style={styles.messageFooterSpacer} />
-              </View>
+            title={displayText(language, thread.title)}
+            subtitle={presenceSubtitle}
+            subtitleStatus={
+              presenceSubtitle
+                ? threadOnline
+                  ? 'online'
+                  : 'offline'
+                : undefined
             }
-            onScrollToIndexFailed={info =>
-              listRef.current?.scrollToOffset({
-                offset: info.averageItemLength * info.index,
-                animated: true,
-              })
+            onBack={closeChat}
+            onOpenSettings={
+              canConfigureThread
+                ? () => setIsThreadSettingsOpen(true)
+                : undefined
             }
-            onLayout={() => scrollToBottom(false)}
-            renderItem={renderMessage}
           />
-          {selectedMessage && messageMenuPosition ? (
-            <ChatMessageMenu
+          {thread.agentId === 'album-manager' && token && onAuthorizeAlbumAI ? (
+            <AlbumAssistantStatus
+              token={token}
               palette={messagePalette}
               language={language}
-              selectedMessage={selectedMessage}
-              position={messageMenuPosition}
-              arrowLeft={messageMenuPosition.arrowLeft}
-              canRecall={canRecallSelectedMessage}
-              onClose={closeMessageMenu}
-              onReply={message => {
-                if (workspaceContext) {
-                  onActionError(
-                    textFor(
-                      language,
-                      '请先移除任务关联，再回复其他消息。',
-                      'Remove the task context before replying to another message.',
-                    ),
-                  );
-                  return;
-                }
-                setReplyTarget(message);
+              onAuthorize={async () => {
+                preserveDraftForAccess();
+                return onAuthorizeAlbumAI();
               }}
-              onDeleteMessage={onDeleteMessage}
-              onRecallMessage={onRecallMessage}
-              onActionMessage={onActionError}
+              onError={onActionError}
             />
           ) : null}
+          <View
+            ref={messageAreaRef}
+            collapsable={false}
+            onLayout={closeMessageMenu}
+            style={styles.chatMessageArea}
+          >
+            <FlatList
+              ref={listRef}
+              style={styles.chatMessageList}
+              data={thread.messages}
+              keyExtractor={item => item.id}
+              contentContainerStyle={styles.messages}
+              initialNumToRender={Math.max(thread.messages.length, 12)}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              scrollEnabled={!isChatInteractionBlocked}
+              ListFooterComponent={
+                <View>
+                  {tasks.error || tasks.decisionError ? (
+                    <View>
+                      <Text
+                        accessibilityRole="alert"
+                        style={{ color: palette.rose }}
+                      >
+                        {tasks.error || tasks.decisionError}
+                      </Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => {
+                          tasks.refresh();
+                        }}
+                        style={taskStyles.refresh}
+                      >
+                        <Text style={{ color: palette.text }}>
+                          {textFor(language, '刷新任务', 'Refresh tasks')}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                  {tasks.tasks.map(task => (
+                    <AITaskCard
+                      key={task.id}
+                      task={task}
+                      palette={messagePalette}
+                      language={language}
+                      busy={tasks.pendingTaskId !== null}
+                      onDecision={operation => {
+                        tasks.decide(task, operation);
+                      }}
+                      renderArtifact={artifact => (
+                        <Artifact
+                          artifact={artifact}
+                          palette={messagePalette}
+                          language={language}
+                          onPreview={() => {
+                            const index = thread.messages.findIndex(
+                              message => message.id === artifact.id,
+                            );
+                            if (index >= 0)
+                              listRef.current?.scrollToIndex({
+                                index,
+                                animated: true,
+                              });
+                            else {
+                              onRefreshThread?.().catch(error =>
+                                onActionError(error.message),
+                              );
+                              onActionError(
+                                textFor(
+                                  language,
+                                  '正在刷新对话成果，请稍后查看。',
+                                  'Refreshing conversation results. Please check again.',
+                                ),
+                              );
+                            }
+                          }}
+                        />
+                      )}
+                    />
+                  ))}
+                  <View
+                    style={[
+                      styles.messageFooterSpacer,
+                      { height: Math.max(48, composerHeight + 12) },
+                    ]}
+                  />
+                </View>
+              }
+              onScrollToIndexFailed={info =>
+                listRef.current?.scrollToOffset({
+                  offset: info.averageItemLength * info.index,
+                  animated: true,
+                })
+              }
+              onLayout={() => scrollToBottom(false)}
+              renderItem={renderMessage}
+            />
+            {selectedMessage && messageMenuPosition ? (
+              <ChatMessageMenu
+                palette={messagePalette}
+                language={language}
+                selectedMessage={selectedMessage}
+                position={messageMenuPosition}
+                arrowLeft={messageMenuPosition.arrowLeft}
+                canRecall={canRecallSelectedMessage}
+                onClose={closeMessageMenu}
+                onReply={message => {
+                  if (workspaceContext) {
+                    onActionError(
+                      textFor(
+                        language,
+                        '请先移除任务关联，再回复其他消息。',
+                        'Remove the task context before replying to another message.',
+                      ),
+                    );
+                    return;
+                  }
+                  setReplyTarget(message);
+                }}
+                onDeleteMessage={onDeleteMessage}
+                onRecallMessage={onRecallMessage}
+                onActionMessage={onActionError}
+              />
+            ) : null}
+          </View>
         </View>
         <ChatComposer
           palette={messagePalette}
@@ -885,6 +941,11 @@ export function ChatScreen({
           replyTarget={replyTarget}
           assistSource={assistSource}
           contextRefs={contextRefs}
+          quickCommands={
+            thread.agentId === 'miaoxun-butler'
+              ? ['生成今日待办', '今晚只提醒紧急事项', '同步相关 Agent']
+              : undefined
+          }
           workspaceActions={
             workspaceContext && token && onOpenWorkspace ? (
               <WorkspaceContextCard
@@ -980,6 +1041,25 @@ export function ChatScreen({
             draftEdited.current = true;
             setDraft(value);
           }}
+          onQuickCommand={command => {
+            draftEdited.current = true;
+            const normalized = command.trim();
+            if (!normalized) return;
+            setDraft(current => {
+              const alreadyIncluded = current
+                .split(/\r?\n/)
+                .some(line => line.trim() === normalized);
+              if (alreadyIncluded) return current;
+              return current.trim() ? `${current}\n${normalized}` : normalized;
+            });
+          }}
+          onComposerTool={handleComposerTool}
+          onLayout={event => {
+            const nextHeight = event.nativeEvent.layout.height;
+            setComposerHeight(current =>
+              Math.abs(current - nextHeight) > 1 ? nextHeight : current,
+            );
+          }}
           onClearReplyTarget={() => setReplyTarget(null)}
           onFocusInput={() => {
             assist.dismiss();
@@ -987,6 +1067,7 @@ export function ChatScreen({
             scrollToBottom(true);
             setTimeout(() => scrollToBottom(true), 80);
           }}
+          onOpenAssistant={openConversationAssistant}
           onRecognizeSpeech={recognizeSpeech}
           onSend={send}
         />

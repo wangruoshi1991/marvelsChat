@@ -8,9 +8,7 @@ import React, {
   useState,
 } from 'react';
 import {
-  Animated,
   AppState,
-  Easing,
   Modal,
   Platform,
   StatusBar,
@@ -46,9 +44,7 @@ import { StationTab } from './features/station/stationTypes';
 import { AvatarConfigDTO } from './models/api';
 import { appErrorText, textFor } from './shared/i18n';
 import { styles } from './shared/styles';
-import { isLightPalette, pageGradientBottom, palettes } from './shared/theme';
-import { PageGradient } from './shared/PageGradient';
-import { entranceCurve, useReduceMotion } from './shared/useReduceMotion';
+import { palettes } from './shared/theme';
 import { BottomBar, RootTab } from './shared/ui';
 import { AIAssistProvider } from './features/assist/AIAssistProvider';
 import {
@@ -64,6 +60,8 @@ import {
 import { AgentWorkspaceScreen } from './features/workspaces/AgentWorkspaceScreen';
 import { WorkspaceSubmissionRecovery } from './features/workspaces/WorkspaceSubmission';
 import { MiaoTaskFeed } from './features/miao/MiaoTaskFeed';
+import { isV6Palette, v6Palette } from './shared/v6Palette';
+import { isXunPalette, xunPalette, xunV3Palette } from './shared/xunPalette';
 import { MiaoTaskWorkspace } from './features/miao/MiaoTaskWorkspace';
 import { AIRequestComposer } from './features/ai/AIRequestComposer';
 import {
@@ -81,20 +79,35 @@ import { agentWorkspaceApi } from './services/api/agentWorkspaceApi';
 
 function App(): React.JSX.Element {
   const session = useMiaoxunSession();
-  const palette = palettes[session.appearance];
+  // V15 keeps Xun's conversation and second-floor states light while Miao and
+  // Station retain the dark canvas used by their existing flows.
+  const [selectedTab, setSelectedTab] = useState<RootTab>('messages');
+  const [secondFloorOpen, setSecondFloorOpen] = useState(false);
+  const basePalette = palettes[session.appearance];
+  const palette = session.token
+    ? selectedTab === 'agents' || selectedTab === 'station'
+      ? v6Palette(basePalette)
+      : secondFloorOpen
+      ? xunPalette(basePalette)
+      : xunV3Palette(basePalette)
+    : basePalette;
   const messagePalette = resolveMessagePalette(palette);
   // The app opens on 讯 (messages): the conversations are what the user comes
   // back to, and the prototype's first tab is 妙 only because the sheet lays
   // the states out in that order.
-  const [selectedTab, setSelectedTab] = useState<RootTab>('messages');
-  const [secondFloorOpen, setSecondFloorOpen] = useState(false);
   const [secondFloorTool, setSecondFloorTool] =
     useState<SecondFloorTool | null>(null);
-  const closeSecondFloor = useCallback(() => setSecondFloorOpen(false), []);
+  const closeSecondFloor = useCallback(() => {
+    setSecondFloorTool(null);
+    setSecondFloorOpen(false);
+  }, []);
   const [selectedStationTab, setSelectedStationTab] =
     useState<StationTab>('posts');
   const [isPostComposerOpen, setIsPostComposerOpen] = useState(false);
   const [modalRoute, setModalRoute] = useState<ModalRoute>(null);
+  const [messageMenuTop, setMessageMenuTop] = useState<number>();
+  const [messageMenuPullHintVisible, setMessageMenuPullHintVisible] =
+    useState(false);
   const [activeThread, setActiveThread] = useState<ChatThread | null>(null);
   const [activeThreadOwner, setActiveThreadOwner] = useState<string | null>(
     null,
@@ -113,30 +126,10 @@ function App(): React.JSX.Element {
     useState<WorkspaceDiscussionContext>();
   const [miaoVoiceExpanded, setMiaoVoiceExpanded] = useState(false);
   const [miaoWaterfall, setMiaoWaterfall] = useState(false);
-  const [navigationHeight, setNavigationHeight] = useState(76);
-  // Prototype `.tabbar` transitions `opacity .28s ease, transform .34s
-  // cubic-bezier(.2,.8,.2,1)`, and its hidden state is `opacity: 0;
-  // transform: translate(-50%, 34px)` — not an instant disappear.
-  const navigationHideProgress = useRef(new Animated.Value(1)).current;
-  const reduceMotion = useReduceMotion();
-  useEffect(() => {
-    navigationHideProgress.stopAnimation();
-    const target = miaoVoiceExpanded ? 0 : 1;
-    if (reduceMotion) {
-      navigationHideProgress.setValue(target);
-      return;
-    }
-    const animation = Animated.parallel([
-      Animated.timing(navigationHideProgress, {
-        toValue: target,
-        duration: 340,
-        easing: Easing.bezier(...entranceCurve),
-        useNativeDriver: true,
-      }),
-    ]);
-    animation.start();
-    return () => animation.stop();
-  }, [miaoVoiceExpanded, navigationHideProgress, reduceMotion]);
+  // V15 uses one fixed 89pt navigation surface for every root tab. Keeping
+  // this as a constant avoids the voice dock and page content jumping when
+  // the palette changes between Miao and Xun.
+  const navigationHeight = 89;
   const workspaceOwner = `${session.user?.id || ''}:${session.token || ''}`;
   const workspaceOwnerRef = useRef(workspaceOwner);
   workspaceOwnerRef.current = workspaceOwner;
@@ -159,6 +152,8 @@ function App(): React.JSX.Element {
   const selectedRequest =
     requestContext?.owner === workspaceOwner ? requestContext : null;
   const requestHandoffGeneration = useRef(0);
+  const sessionToken = session.token;
+  const refreshSessionBootstrap = session.refreshBootstrap;
   const selectedReference = selectedRequest?.object
     ? persistentAssistReference(selectedRequest.object)
     : null;
@@ -173,11 +168,29 @@ function App(): React.JSX.Element {
     };
   }, [workspaceOwner, requestComposerOpen, selectedRequest, requestDraftState]);
   useEffect(() => {
+    let wasActive = AppState.currentState === 'active';
     const subscription = AppState.addEventListener('change', state => {
-      if (state !== 'active') requestHandoffGeneration.current += 1;
+      if (state !== 'active') {
+        requestHandoffGeneration.current += 1;
+        wasActive = false;
+        return;
+      }
+
+      // The server-side Agent catalog can be published while the app is in
+      // the background. Refresh the authenticated session when the app comes
+      // back to the foreground so “我的 Agent” and its recommendation list
+      // see the latest registered identities without expanding user access.
+      if (
+        !wasActive &&
+        sessionToken &&
+        typeof refreshSessionBootstrap === 'function'
+      ) {
+        refreshSessionBootstrap(sessionToken, false).catch(() => undefined);
+      }
+      wasActive = true;
     });
     return () => subscription.remove();
-  }, []);
+  }, [refreshSessionBootstrap, sessionToken]);
   const [selectedMiaoTask, setSelectedMiaoTask] = useState<{
     owner: string;
     task: AITaskDTO;
@@ -219,7 +232,8 @@ function App(): React.JSX.Element {
     // Signing in or switching accounts lands on 讯, the same page a cold start
     // opens on — not back on 妙.
     setSelectedTab('messages');
-    setSecondFloorOpen(false);
+    setSelectedMessageTab('chat');
+    closeSecondFloor();
     setButlerDraft('');
     setButlerReferences([]);
     setActiveThread(null);
@@ -228,7 +242,64 @@ function App(): React.JSX.Element {
     setIsPostComposerOpen(false);
     setPendingScanRequest(false);
     setSearchQuery('');
-  }, [session.user?.id]);
+  }, [closeSecondFloor, session.user?.id]);
+
+  // The retained station screen deliberately stays mounted so the profile
+  // collapse and post timeline do not jump when switching root tabs. Its
+  // server snapshot therefore needs an explicit refresh whenever the user
+  // enters the station again, returns from a modal/workspace, or changes the
+  // station sub-tab. Without this, Agent ownership changes made elsewhere can
+  // leave the 「我的 Agent」 panel showing the first bootstrap forever.
+  const stationVisible =
+    selectedTab === 'station' &&
+    !modalRoute &&
+    !isPostComposerOpen &&
+    !requestComposerOpen &&
+    !selectedMiaoTask &&
+    !selectedWorkspace;
+  const previousStationVisible = useRef(false);
+  const previousStationTab = useRef(selectedStationTab);
+  const { refreshBootstrap } = session;
+  useEffect(() => {
+    const enteredStation = stationVisible && !previousStationVisible.current;
+    const changedStationTab =
+      stationVisible && previousStationTab.current !== selectedStationTab;
+    previousStationVisible.current = stationVisible;
+    previousStationTab.current = selectedStationTab;
+    if (
+      !(enteredStation || changedStationTab) ||
+      !sessionToken ||
+      typeof refreshBootstrap !== 'function'
+    ) {
+      return;
+    }
+    refreshBootstrap(sessionToken, false).catch(() => undefined);
+  }, [
+    refreshBootstrap,
+    selectedStationTab,
+    selectedTab,
+    sessionToken,
+    stationVisible,
+  ]);
+
+  // A long-press menu belongs to the page that opened it. Route changes can
+  // unmount or retain the dock in different ways, so clear the parent-owned
+  // visibility flag as well as the child gesture state when leaving a route.
+  // This prevents returning from Butler, a task, or another modal with the
+  // previous menu still hiding the navigation bar.
+  useEffect(() => {
+    setMiaoVoiceExpanded(false);
+  }, [
+    agentWorkspace?.id,
+    isPostComposerOpen,
+    modalRoute,
+    requestComposerOpen,
+    secondFloorOpen,
+    miaoTask?.id,
+    selectedMessageTab,
+    selectedStationTab,
+    selectedTab,
+  ]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -549,10 +620,10 @@ function App(): React.JSX.Element {
     return true;
   };
   const openTaskInbox = useCallback(() => {
-    setSecondFloorOpen(false);
+    closeSecondFloor();
     setSelectedTab('messages');
     setSelectedMessageTab('tasks');
-  }, []);
+  }, [closeSecondFloor]);
   const openAgentManagement = () => {
     setSelectedWorkspace(null);
     setSelectedMiaoTask(null);
@@ -560,7 +631,7 @@ function App(): React.JSX.Element {
     setModalRoute(null);
     setActiveThread(null);
     session.setActiveThreadId(null);
-    setSecondFloorOpen(false);
+    closeSecondFloor();
     setSelectedStationTab('agents');
     setSelectedTab('station');
   };
@@ -653,39 +724,23 @@ function App(): React.JSX.Element {
   }, [consumePendingScanRequest, modalRoute, pendingScanRequest]);
   const isChatRoute =
     Boolean(openedThread) && (modalRoute === 'butler' || modalRoute === 'chat');
+  const chatPalette = isChatRoute ? xunPalette(basePalette) : messagePalette;
   const isRootTabRoute = Boolean(session.token) && !isChatRoute;
-  const voiceDockBottomOffset = navigationHeight + 64;
-  const lightTheme = isLightPalette(palette);
-  // The second-floor workspace has its own solid background through the
-  // bottom safe area. Showing the root-page gradient here fades that inset to
-  // white, creating a strip below the floor panel.
-  const showPageGradient =
-    isRootTabRoute &&
-    lightTheme &&
-    !(selectedTab === 'messages' && secondFloorOpen);
-  const rootBackgroundColor = showPageGradient
-    ? pageGradientBottom
-    : isChatRoute
-    ? messagePalette.background
+  const voiceDockBottomOffset = navigationHeight + 102;
+  const rootBackgroundColor = isChatRoute
+    ? chatPalette.background
     : palette.background;
-  // The page gradient sits behind both safe-area views. Keeping those views
-  // transparent avoids a flat status-bar strip interrupting the same wash used
-  // by 妙, 讯, and 我.
-  const topSafeAreaColor = showPageGradient
-    ? 'transparent'
-    : isChatRoute
-    ? messagePalette.background
+  const topSafeAreaColor = isChatRoute
+    ? chatPalette.background
     : isRootTabRoute && selectedTab !== 'station'
     ? workspacePalette(palette).background
     : palette.background;
-  const bottomSafeAreaColor = showPageGradient
-    ? 'transparent'
-    : isChatRoute
-    ? messagePalette.surface
-    : isRootTabRoute &&
-      ((selectedTab === 'messages' && secondFloorOpen) ||
-        (miaoVoiceExpanded && selectedTab !== 'station'))
+  const bottomSafeAreaColor = isChatRoute
+    ? chatPalette.surface
+    : isRootTabRoute && selectedTab === 'messages' && secondFloorOpen
     ? workspacePalette(palette).background
+    : isV6Palette(palette)
+    ? '#FFFFFF'
     : palette.surface;
 
   return (
@@ -694,14 +749,17 @@ function App(): React.JSX.Element {
         testID="app-background-root"
         style={[styles.safeArea, { backgroundColor: rootBackgroundColor }]}
       >
-        {showPageGradient ? <PageGradient /> : null}
         <SafeAreaView
           edges={['top']}
           testID="app-top-safe-area"
           style={[styles.safeArea, { backgroundColor: topSafeAreaColor }]}
         >
           <SafeAreaView
-            edges={['bottom']}
+            edges={
+              isRootTabRoute && !(selectedTab === 'messages' && secondFloorOpen)
+                ? []
+                : ['bottom']
+            }
             testID="app-bottom-safe-area"
             style={[styles.safeArea, { backgroundColor: bottomSafeAreaColor }]}
           >
@@ -720,7 +778,12 @@ function App(): React.JSX.Element {
             >
               <StatusBar
                 barStyle={
-                  session.appearance === 'dark'
+                  isChatRoute
+                    ? isXunPalette(chatPalette)
+                      ? 'dark-content'
+                      : 'light-content'
+                    : isV6Palette(palette) ||
+                      (!session.token && session.appearance === 'dark')
                     ? 'light-content'
                     : 'dark-content'
                 }
@@ -864,7 +927,7 @@ function App(): React.JSX.Element {
                       onRefreshThread={() =>
                         session.refreshThreadMessages(openedThread.id)
                       }
-                      palette={palette}
+                      palette={chatPalette}
                       language={session.language}
                       currentUserId={session.user?.id || ''}
                       currentUserName={session.user?.displayName || ''}
@@ -937,7 +1000,12 @@ function App(): React.JSX.Element {
                     />
                   ) : null}
                   <View
-                    style={[styles.shell, isChatRoute && appStyles.hidden]}
+                    testID="app-shell"
+                    style={[
+                      styles.shell,
+                      { backgroundColor: workspacePalette(palette).background },
+                      isChatRoute && appStyles.hidden,
+                    ]}
                     pointerEvents={isChatRoute ? 'none' : 'auto'}
                     accessibilityElementsHidden={isChatRoute}
                     importantForAccessibility={
@@ -949,6 +1017,7 @@ function App(): React.JSX.Element {
                         key={workspaceOwner}
                         token={session.token}
                         active={
+                          !isChatRoute &&
                           !modalRoute &&
                           !requestComposerOpen &&
                           !miaoTask &&
@@ -956,6 +1025,7 @@ function App(): React.JSX.Element {
                           !isPostComposerOpen
                         }
                         palette={palette}
+                        voiceMenuExpanded={miaoVoiceExpanded}
                         language={session.language}
                         agents={session.agents}
                         waterfall={miaoWaterfall}
@@ -973,6 +1043,7 @@ function App(): React.JSX.Element {
                     {selectedTab === 'messages' && secondFloorOpen ? (
                       <SecondFloorScreen
                         active={
+                          !isChatRoute &&
                           !modalRoute &&
                           !isPostComposerOpen &&
                           !requestComposerOpen
@@ -991,7 +1062,7 @@ function App(): React.JSX.Element {
                         }
                         onOpenPostComposer={() => setIsPostComposerOpen(true)}
                         onOpenNotices={() => {
-                          setSecondFloorOpen(false);
+                          closeSecondFloor();
                           setSelectedMessageTab('notice');
                         }}
                         onOpenFileAgent={reference => {
@@ -1045,6 +1116,10 @@ function App(): React.JSX.Element {
                             });
                           }}
                           onOpenSecondFloor={() => setSecondFloorOpen(true)}
+                          messageActionsOpen={
+                            modalRoute === 'message-actions' ||
+                            miaoVoiceExpanded
+                          }
                           palette={palette}
                           language={session.language}
                           threads={session.threads}
@@ -1054,9 +1129,16 @@ function App(): React.JSX.Element {
                           selectedMessageTab={selectedMessageTab}
                           renderUserAvatar={renderUserAvatar}
                           onOpenThread={openThread}
-                          onOpenMessageActions={() =>
-                            setModalRoute('message-actions')
-                          }
+                          onOpenMessageActions={(
+                            anchorTop,
+                            pullHintVisible,
+                          ) => {
+                            setMessageMenuTop(anchorTop);
+                            setMessageMenuPullHintVisible(
+                              Boolean(pullHintVisible),
+                            );
+                            setModalRoute('message-actions');
+                          }}
                           onOpenSearch={() => {
                             setSearchQuery('');
                             setModalRoute('search');
@@ -1168,43 +1250,23 @@ function App(): React.JSX.Element {
                     ) : null}
 
                     {!(selectedTab === 'messages' && secondFloorOpen) ? (
-                      <Animated.View
-                        testID="root-navigation"
-                        onLayout={event =>
-                          setNavigationHeight(event.nativeEvent.layout.height)
-                        }
-                        style={{
-                          opacity: navigationHideProgress,
-                          transform: [
-                            {
-                              translateY: navigationHideProgress.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [34, 0],
-                              }),
-                            },
-                          ],
-                        }}
-                        pointerEvents={miaoVoiceExpanded ? 'none' : 'auto'}
-                        accessibilityElementsHidden={miaoVoiceExpanded}
-                        importantForAccessibility={
-                          miaoVoiceExpanded ? 'no-hide-descendants' : 'auto'
-                        }
-                      >
+                      <View testID="root-navigation">
                         <BottomBar
                           palette={palette}
                           language={session.language}
                           selectedTab={selectedTab}
                           onSelectTab={tab => {
-                            setSecondFloorOpen(false);
+                            closeSecondFloor();
                             setSelectedTab(tab);
                           }}
                         />
-                      </Animated.View>
+                      </View>
                     ) : null}
                     {selectedTab === 'messages' && !secondFloorOpen ? (
                       <VoiceShortcutDock
                         key={`assistant:${workspaceOwner}`}
                         active={
+                          !isChatRoute &&
                           !modalRoute &&
                           !isPostComposerOpen &&
                           !requestComposerOpen &&
@@ -1566,6 +1628,8 @@ function App(): React.JSX.Element {
               ) : null}
               <AppModals
                 modalRoute={modalRoute}
+                messageMenuTop={messageMenuTop}
+                messageMenuPullHintVisible={messageMenuPullHintVisible}
                 palette={palette}
                 session={session}
                 profileFlows={profileFlows}
@@ -1574,8 +1638,29 @@ function App(): React.JSX.Element {
                 onCloseModal={() => setModalRoute(null)}
                 onNavigateModal={setModalRoute}
                 onOpenThread={openThread}
+                onSelectTab={tab => {
+                  closeSecondFloor();
+                  setSelectedTab(tab);
+                }}
+                onComposeWithButler={composeWithButler}
+                onOpenTaskInbox={openTaskInbox}
+                onAssistantExpandedChange={setMiaoVoiceExpanded}
                 onSearchQueryChange={setSearchQuery}
                 onOpenFriendThread={openFriendThread}
+                onStartChat={() => {
+                  setSearchQuery('');
+                  setModalRoute('search');
+                }}
+                onCreateGroup={() => {
+                  setModalRoute(null);
+                  showToast(
+                    textFor(
+                      session.language,
+                      '创建群聊暂未接入，请先发起一对一聊天',
+                      'Group chat creation is not available yet. Start a one-to-one chat instead.',
+                    ),
+                  );
+                }}
                 onRequestMessageQRCodeScan={requestMessageQRCodeScan}
                 onConsumePendingScanRequest={consumePendingScanRequest}
                 onToast={showToast}

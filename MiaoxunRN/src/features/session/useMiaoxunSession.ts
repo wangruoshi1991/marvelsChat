@@ -124,6 +124,11 @@ export function useMiaoxunSession() {
     };
   }
   const profileRevisionRef = useRef(0);
+  // Local station mutations (for example a just-saved post) must win over a
+  // bootstrap request that started before the mutation completed. The
+  // revision is captured when a bootstrap starts and checked before its
+  // station content snapshot is applied.
+  const stationContentMutationRevisionRef = useRef(0);
   const lastSyncAtRef = useRef<string | null>(null);
   const bootstrapPromiseRef = useRef<{
     token: string;
@@ -219,6 +224,7 @@ export function useMiaoxunSession() {
     setProfileVisibility(defaultProfileVisibility);
     setSearchHistory([]);
     setRelationships(emptyRelationships);
+    stationContentMutationRevisionRef.current += 1;
     setStationContent(emptyStationContent);
     setRealtimeNotificationNotice(null);
     lastSyncAtRef.current = null;
@@ -273,6 +279,7 @@ export function useMiaoxunSession() {
     (
       bootstrap: BootstrapDTO,
       requestedProfileRevision = profileRevisionRef.current,
+      requestedStationContentRevision = stationContentMutationRevisionRef.current,
     ) => {
       setAIContractSession(tokenRef.current, bootstrap.contracts);
       // A bootstrap started before a confirmed save must not restore its older profile snapshot.
@@ -298,7 +305,12 @@ export function useMiaoxunSession() {
       setProfileVisibility(bootstrap.profileVisibility);
       setSearchHistory(bootstrap.searchHistory);
       setRelationships(bootstrap.relationships);
-      setStationContent(bootstrap.stationContent);
+      if (
+        requestedStationContentRevision ===
+        stationContentMutationRevisionRef.current
+      ) {
+        setStationContent(bootstrap.stationContent);
+      }
       lastSyncAtRef.current = bootstrap.serverTime;
     },
     [],
@@ -316,11 +328,17 @@ export function useMiaoxunSession() {
 
       const sessionVersion = sessionVersionRef.current;
       const requestedProfileRevision = profileRevisionRef.current;
+      const requestedStationContentRevision =
+        stationContentMutationRevisionRef.current;
       const request = (async () => {
         try {
           const bootstrap = await apiClient.bootstrap(nextToken);
           if (sessionVersionRef.current === sessionVersion) {
-            applyBootstrap(bootstrap, requestedProfileRevision);
+            applyBootstrap(
+              bootstrap,
+              requestedProfileRevision,
+              requestedStationContentRevision,
+            );
           }
         } catch (error) {
           if (showError && sessionVersionRef.current === sessionVersion) {
@@ -488,6 +506,10 @@ export function useMiaoxunSession() {
           );
           setNotices(sync.notices);
           setUnreadNoticeCount(sync.unreadNoticeCount);
+          if (sync.agents) {
+            setAgents(sync.agents.registered);
+            setOwnedAgents(sync.agents.owned);
+          }
           lastSyncAtRef.current = sync.serverTime;
         } catch (error) {
           if (tokenRef.current !== currentToken) {
@@ -541,6 +563,14 @@ export function useMiaoxunSession() {
       );
     },
     [setSessionUser],
+  );
+
+  const setStationContentFromMutation = useCallback(
+    (value: Parameters<typeof setSessionStationContent>[0]) => {
+      stationContentMutationRevisionRef.current += 1;
+      setSessionStationContent(value);
+    },
+    [setSessionStationContent],
   );
 
   const {
@@ -850,7 +880,7 @@ export function useMiaoxunSession() {
   } = useStationActions({
     token,
     avatarConfig: profile.avatarConfig,
-    setStationContent: setSessionStationContent,
+    setStationContent: setStationContentFromMutation,
   });
 
   return {

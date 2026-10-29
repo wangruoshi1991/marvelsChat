@@ -19,6 +19,7 @@ import {
 import { displayText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette, productColors } from '../../shared/theme';
+import { isXunPalette } from '../../shared/xunPalette';
 import { AIAssistGestureSurface } from '../assist/AIAssistGestureSurface';
 import { useAIAssist } from '../assist/AIAssistProvider';
 import {
@@ -227,20 +228,31 @@ export function ChatMessageItem({
     );
   }
 
+  const xunTheme = isXunPalette(palette);
   const cardBackground = isDarkPalette
+    ? isMine
+      ? palette.soft
+      : palette.surface
+    : xunTheme
     ? isMine
       ? palette.soft
       : palette.surface
     : isMine
     ? productColors.border
     : '#FFFFFF';
-  const cardBorder = isDarkPalette ? palette.border : productColors.border;
-  const replyBackground = isDarkPalette
-    ? palette.background
-    : productColors.background;
-  const replyAccent = isDarkPalette ? palette.mint : productColors.accent;
+  const cardBorder =
+    isDarkPalette || xunTheme ? palette.border : productColors.border;
+  const replyBackground =
+    isDarkPalette || xunTheme ? palette.background : productColors.background;
+  const replyAccent =
+    isDarkPalette || xunTheme ? palette.mint : productColors.accent;
   const bubble = (
-    <View style={chatLayoutStyles.content}>
+    <View
+      style={[
+        chatLayoutStyles.content,
+        xunTheme && (isMine ? xunStyles.contentMine : xunStyles.contentOther),
+      ]}
+    >
       <View
         onTouchStart={event => {
           touchPoint.current = {
@@ -255,6 +267,7 @@ export function ChatMessageItem({
           palette={palette}
           style={[
             chatLayoutStyles.card,
+            xunTheme && (isMine ? xunStyles.cardMine : xunStyles.cardOther),
             {
               backgroundColor: cardBackground,
               borderColor: cardBorder,
@@ -308,7 +321,11 @@ export function ChatMessageItem({
           />
           <ChatMessageText
             testID={`chat-message-content-${item.id}`}
-            style={[chatLayoutStyles.body, { color: palette.text }]}
+            style={[
+              chatLayoutStyles.body,
+              xunTheme && xunStyles.body,
+              { color: palette.text },
+            ]}
             formatted={item.senderType === 'agent'}
             palette={palette}
           >
@@ -476,7 +493,9 @@ export function ChatMessageItem({
               resolveAgentIdentity(agents, thread.agentId)
             }
             palette={palette}
-            small
+            size={xunTheme ? 45 : 36}
+            variant={xunTheme ? 'xun' : undefined}
+            radius={xunTheme ? 13 : undefined}
           />
         ) : (
           renderUserAvatar({
@@ -522,3 +541,27 @@ export function ChatMessageItem({
 }
 
 const failureStyles = StyleSheet.create({ content: { flexShrink: 1, gap: 4 } });
+
+const xunStyles = StyleSheet.create({
+  contentMine: { alignItems: 'flex-end' },
+  contentOther: { alignItems: 'flex-start' },
+  cardMine: {
+    alignSelf: 'flex-end',
+    borderRadius: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 0,
+    borderWidth: 1,
+    maxWidth: '92%',
+    width: 'auto',
+  },
+  cardOther: {
+    alignSelf: 'flex-start',
+    borderRadius: 20,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    maxWidth: '92%',
+    width: 'auto',
+  },
+  body: { fontSize: 14, lineHeight: 20 },
+});

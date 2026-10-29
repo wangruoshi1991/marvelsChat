@@ -1,9 +1,10 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { ThreadListScreen } from '../src/features/messages/ThreadListScreen';
 import { ChatMessage, ChatThread } from '../src/features/session/sessionTypes';
 import { palettes } from '../src/shared/theme';
+import { xunV3Palette } from '../src/shared/xunPalette';
 
 jest.mock('../src/features/assist/AIAssistProvider', () => ({
   useAIAssist: () => ({ isActive: false }),
@@ -137,3 +138,75 @@ test.each([
     act(() => renderer.unmount());
   },
 );
+
+test('Xun highlights any pinned conversation and clears the highlight when unpinned', () => {
+  const threads: ChatThread[] = [
+    {
+      id: 'butler',
+      title: '妙讯管家',
+      avatarText: '妙',
+      agentId: 'miaoxun-butler',
+      kind: 'agent',
+      pinned: false,
+      unreadCount: 0,
+      lastContent: '',
+      messages: [],
+    },
+    {
+      id: 'group',
+      title: '置顶群聊',
+      avatarText: '群',
+      kind: 'group',
+      pinned: true,
+      unreadCount: 0,
+      lastContent: '',
+      messages: [],
+    },
+  ];
+  const renderList = (items: ChatThread[]) => (
+    <ThreadListScreen
+      palette={xunV3Palette(palettes.light)}
+      language="zh"
+      threads={items}
+      agents={[]}
+      notices={[]}
+      unreadNoticeCount={0}
+      selectedMessageTab="chat"
+      renderUserAvatar={() => null}
+      onOpenThread={jest.fn()}
+      onOpenMessageActions={jest.fn()}
+      onOpenSearch={jest.fn()}
+      onSelectMessageTab={jest.fn()}
+      onMarkNotificationRead={jest.fn(async () => undefined)}
+      onAcceptFriendRequest={jest.fn(async () => undefined)}
+      onRejectFriendRequest={jest.fn(async () => undefined)}
+    />
+  );
+  let renderer!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    renderer = TestRenderer.create(renderList(threads));
+  });
+  const rowColor = (title: string) => {
+    const row = renderer.root.findAll(
+      node =>
+        node.props.accessibilityLabel === title &&
+        node.props.style !== undefined,
+    )[0];
+    const style = row.props.style;
+    return StyleSheet.flatten(
+      typeof style === 'function' ? style({ pressed: false }) : style,
+    ).backgroundColor;
+  };
+  expect(rowColor('妙讯管家')).toBe('transparent');
+  expect(rowColor('置顶群聊')).toBe('#e7ebf2');
+  act(() => {
+    renderer.update(
+      renderList(
+        threads.map(thread => ({ ...thread, pinned: !thread.pinned })),
+      ),
+    );
+  });
+  expect(rowColor('妙讯管家')).toBe('#e7ebf2');
+  expect(rowColor('置顶群聊')).toBe('transparent');
+  act(() => renderer.unmount());
+});

@@ -35,6 +35,7 @@ export const chatLayoutStyles = StyleSheet.create({
     borderWidth: 1,
     fontSize: 15,
     lineHeight: 21,
+    textAlignVertical: 'top',
     paddingHorizontal: 12,
     paddingVertical: 11,
   },

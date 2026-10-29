@@ -13,7 +13,8 @@ import { notificationIconAssets } from '../../assets/icons';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { displayText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
-import { Palette, palettes } from '../../shared/theme';
+import { isLightPalette, Palette } from '../../shared/theme';
+import { isXunPalette } from '../../shared/xunPalette';
 
 function resolveNoticeIcon(kind: string): ImageSourcePropType {
   if (kind.includes('collection') || kind.includes('favorite')) {
@@ -54,10 +55,13 @@ function NoticeRow({
   onAction: () => void;
   onSecondaryAction?: () => void;
 }) {
-  const isLightPalette = palette.text === palettes.light.text;
-  const titleColor = isLightPalette ? '#000000' : palette.text;
-  const messageColor = isLightPalette
-    ? 'rgba(0,0,0,0.6)'
+  const lightPalette = isLightPalette(palette);
+  const xunTheme = isXunPalette(palette);
+  const titleColor = palette.text;
+  const messageColor = lightPalette
+    ? xunTheme
+      ? palette.secondaryText
+      : 'rgba(0,0,0,0.6)'
     : palette.secondaryText;
 
   return (

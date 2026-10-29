@@ -8,16 +8,28 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Images, Pencil, Plus } from 'lucide-react-native';
+import { ImagePlus, Images, Pencil, Plus } from 'lucide-react-native';
 import { StationAlbumDTO, StationMediaAssetDTO } from '../../models/api';
 import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
 import { textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
-import { WorkspaceButton, workspaceTokens } from '../../shared/workspaceUi';
-import { workspacePalette } from '../../shared/workspacePalette';
+import {
+  WorkspaceButton,
+  workspaceStyles,
+  workspaceTokens,
+} from '../../shared/workspaceUi';
+import {
+  secondFloorAccent,
+  secondFloorPalette,
+  secondFloorXunStyles,
+} from './secondFloorTheme';
+import { isV6Palette, v6Colors } from '../../shared/v6Palette';
+import { isXunPalette } from '../../shared/xunPalette';
+import { SecondFloorXunSourceIcon } from './SecondFloorSourceIcon';
 import { AlbumContextActions } from '../assist/AlbumContextActions';
 import { AIAssistScene } from '../assist/aiAssistTypes';
 import { Language } from '../session/sessionTypes';
+import { SecondFloorPageScrollProps } from './secondFloorScroll';
 
 function AlbumCover({
   album,
@@ -140,6 +152,7 @@ function AlbumCover({
 }
 
 export function SecondFloorAlbumList({
+  header,
   palette,
   language,
   token,
@@ -148,7 +161,9 @@ export function SecondFloorAlbumList({
   onCreate,
   onOpen,
   onEdit,
+  scrollProps,
 }: {
+  header?: React.ReactNode;
   palette: Palette;
   language: Language;
   token: string;
@@ -157,28 +172,131 @@ export function SecondFloorAlbumList({
   onCreate: () => void;
   onOpen: (id: string) => void;
   onEdit: (id: string) => void;
+  scrollProps?: SecondFloorPageScrollProps;
 }) {
-  const colors = workspacePalette(palette);
+  const colors = secondFloorPalette(palette);
+  const xun = isXunPalette(colors);
+  const accent = secondFloorAccent(colors);
   return (
     <ScrollView
+      {...scrollProps}
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={s.panel}
+      contentContainerStyle={[s.panel, xun && s.panelXun]}
     >
-      <View style={s.heading}>
+      {header}
+      <View style={s.pageHeader}>
+        <View style={s.pageTitleRow}>
+          <Text
+            accessibilityRole="header"
+            style={[s.pageTitle, { color: colors.text }]}
+          >
+            {textFor(language, '相册', 'Albums')}
+          </Text>
+          {xun ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={textFor(
+                language,
+                '上传照片并新建相册',
+                'Upload photos and create album',
+              )}
+              onPress={onCreate}
+              style={({ pressed }) => [
+                s.createLink,
+                pressed && workspaceStyles.pressed,
+              ]}
+            >
+              <Plus size={16} color={accent} />
+              <Text style={[s.createLinkLabel, { color: accent }]}>
+                {textFor(language, '上传', 'Upload')}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+        <Text style={[s.pageHint, { color: colors.secondaryText }]}>
+          {textFor(
+            language,
+            '让每一张值得珍藏的照片，被好好记住。',
+            'Keep every photo worth remembering in its proper place.',
+          )}
+        </Text>
+      </View>
+      {!xun ? (
+        <View style={s.heading}>
+          <WorkspaceButton
+            palette={colors}
+            label={textFor(language, '新建相册', 'New album')}
+            onPress={onCreate}
+            icon={
+              <Plus
+                size={18}
+                color={isV6Palette(colors) ? v6Colors.onAccent : colors.surface}
+              />
+            }
+            style={s.create}
+          />
+        </View>
+      ) : null}
+      <View
+        style={[
+          s.libraryCard,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <View style={s.libraryHeading}>
+          {xun ? (
+            <SecondFloorXunSourceIcon>
+              <ImagePlus color="#f6f7fa" size={23} strokeWidth={1.7} />
+            </SecondFloorXunSourceIcon>
+          ) : (
+            <View style={[s.libraryIcon, { backgroundColor: colors.soft }]}>
+              <ImagePlus color={accent} size={23} strokeWidth={1.7} />
+            </View>
+          )}
+          <View style={s.libraryCopy}>
+            <Text style={[s.libraryTitle, { color: colors.text }]}>
+              {textFor(
+                language,
+                '连接你的手机相册',
+                'Connect your photo library',
+              )}
+            </Text>
+            <Text style={[s.body, { color: colors.secondaryText }]}>
+              {textFor(
+                language,
+                '仅在你授权后读取所选照片',
+                'Only selected photos are read after you grant access.',
+              )}
+            </Text>
+          </View>
+        </View>
         <WorkspaceButton
           palette={colors}
-          label={textFor(language, '新建相册', 'New album')}
+          label={textFor(
+            language,
+            '选择照片并新建相册',
+            'Choose photos and create album',
+          )}
+          accessibilityLabel={textFor(
+            language,
+            '选择照片并新建相册',
+            'Choose photos and create album',
+          )}
           onPress={onCreate}
-          icon={<Plus size={18} color={colors.surface} />}
-          style={s.create}
+          labelStyle={xun ? secondFloorXunStyles.primaryLabel : undefined}
+          style={[s.libraryAction, xun && secondFloorXunStyles.primaryButton]}
         />
       </View>
-      <Text style={[s.body, { color: colors.secondaryText }]}>
-        {textFor(
-          language,
-          '只上传你选择的照片，不自动同步手机相册。',
-          'Upload only photos you choose. Your photo library is not synced automatically.',
-        )}
+      <Text style={[s.sectionTitle, { color: colors.text }]}>
+        {albums.length
+          ? textFor(
+              language,
+              `已保存 ${albums.length} 个相册`,
+              `${albums.length} saved ${
+                albums.length === 1 ? 'album' : 'albums'
+              }`,
+            )
+          : textFor(language, '你的相册', 'Your albums')}
       </Text>
       <View style={s.grid}>
         {albums.length ? (
@@ -204,7 +322,13 @@ export function SecondFloorAlbumList({
             return (
               <View
                 key={album.id}
-                style={[s.album, { borderColor: colors.border }]}
+                style={[
+                  s.album,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
               >
                 <View style={s.open}>
                   {cover ? (
@@ -279,7 +403,12 @@ export function SecondFloorAlbumList({
             );
           })
         ) : (
-          <View style={[s.empty, { borderColor: colors.border }]}>
+          <View
+            style={[
+              s.empty,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
             <Images color={colors.secondaryText} size={24} />
             <Text style={[s.name, { color: colors.text }]}>
               {textFor(language, '暂无相册', 'No albums yet')}
@@ -287,8 +416,8 @@ export function SecondFloorAlbumList({
             <Text style={[s.body, { color: colors.secondaryText }]}>
               {textFor(
                 language,
-                '新建相册并选择照片后，会显示在这里。',
-                'Create an album and choose photos to see them here.',
+                '选择照片并保存后，相册会显示在这里。',
+                'Albums appear here after you choose and save photos.',
               )}
             </Text>
           </View>
@@ -299,6 +428,21 @@ export function SecondFloorAlbumList({
 }
 const s = StyleSheet.create({
   panel: { paddingHorizontal: 12, paddingVertical: 14, gap: 10 },
+  panelXun: {
+    paddingHorizontal: 17,
+    paddingTop: 8,
+    paddingBottom: 24,
+    gap: 12,
+  },
+  pageHeader: { gap: 4, paddingBottom: 2 },
+  pageTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  pageTitle: { fontSize: 23, lineHeight: 29, fontWeight: '700' },
+  pageHint: { fontSize: 13, lineHeight: 22 },
   heading: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -306,6 +450,42 @@ const s = StyleSheet.create({
     justifyContent: 'flex-start',
     gap: 6,
   },
+  createLink: {
+    minHeight: workspaceTokens.minTouch,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 2,
+  },
+  createLinkLabel: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  libraryCard: {
+    borderWidth: 1,
+    borderRadius: 23,
+    paddingHorizontal: 17,
+    paddingVertical: 20,
+    gap: 18,
+    shadowColor: '#263a50',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  libraryHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  libraryIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  libraryCopy: { flex: 1, minWidth: 0, gap: 2 },
+  libraryTitle: { fontSize: 17, lineHeight: 23, fontWeight: '600' },
+  libraryAction: { width: '100%' },
+  sectionTitle: { fontSize: 14, lineHeight: 20, fontWeight: '600' },
   name: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
   body: workspaceTokens.typography.caption,
   create: { maxWidth: '100%' },
@@ -313,7 +493,7 @@ const s = StyleSheet.create({
   album: {
     width: '31.8%',
     borderWidth: 1,
-    borderRadius: workspaceTokens.radius.control,
+    borderRadius: 12,
     overflow: 'hidden',
   },
   open: {
@@ -375,12 +555,14 @@ const s = StyleSheet.create({
     opacity: 0.9,
   },
   empty: {
-    width: '31.8%',
-    minHeight: 150,
-    padding: 10,
+    width: '100%',
+    minHeight: 120,
+    paddingHorizontal: 17,
+    paddingVertical: 20,
     gap: 8,
     borderWidth: 1,
-    borderStyle: 'dashed',
-    borderRadius: workspaceTokens.radius.control,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

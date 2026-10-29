@@ -17,6 +17,7 @@ import { ContextReference, TaskStatus } from '../ai/AIInteraction';
 import { AgentIconAvatar } from '../messages/AgentIconAvatar';
 import { Language } from '../session/sessionTypes';
 import { workspacePalette } from '../../shared/workspacePalette';
+import { isXunPalette } from '../../shared/xunPalette';
 import { taskAgentDisplayName } from './MiaoTaskAgent';
 
 type Props = {
@@ -271,12 +272,23 @@ function TaskWorkspaceContent({
       testID="miao-task-workspace"
       style={[s.screen, { backgroundColor: colors.background }]}
     >
-      <View style={[s.header, { borderBottomColor: colors.border }]}>
+      <View
+        style={[
+          s.header,
+          isXunPalette(palette) && s.headerXun,
+          { borderBottomColor: colors.border },
+        ]}
+      >
         <WorkspaceButton
           palette={colors}
           variant="ghost"
           label={textFor(language, '返回妙页', 'Back to Miao')}
-          icon={<ArrowLeft size={22} color={colors.text} />}
+          icon={
+            <ArrowLeft
+              size={isXunPalette(palette) ? 20 : 22}
+              color={colors.text}
+            />
+          }
           iconOnly
           onPress={onClose}
         />
@@ -293,7 +305,12 @@ function TaskWorkspaceContent({
           disabled={loading || busy || !foreground || !token}
           busy={loading}
           onPress={refresh}
-          icon={<RefreshCw size={19} color={colors.secondaryText} />}
+          icon={
+            <RefreshCw
+              size={isXunPalette(palette) ? 18 : 19}
+              color={colors.secondaryText}
+            />
+          }
           iconOnly
         />
       </View>
@@ -326,6 +343,7 @@ function TaskWorkspaceContent({
                   category={agent?.category}
                   identity={agent?.identity || null}
                   palette={colors}
+                  variant={isXunPalette(palette) ? 'xun' : undefined}
                 />
                 <Text style={[s.agentName, { color: colors.secondaryText }]}>
                   {taskAgentDisplayName(agent, language)}
@@ -457,6 +475,13 @@ const s = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: workspaceTokens.space.sm,
     minHeight: 52,
+  },
+  // V15's Xun detail routes keep the title bar compact, leaving the task
+  // card to carry the visual weight below it.
+  headerXun: {
+    minHeight: 48,
+    paddingHorizontal: 13,
+    borderBottomWidth: 0,
   },
   heading: {
     ...workspaceTokens.typography.heading,

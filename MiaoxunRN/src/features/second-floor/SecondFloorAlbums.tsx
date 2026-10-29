@@ -3,8 +3,11 @@ import { StyleSheet, Text, View } from 'react-native';
 import { pickStationPhotoFromLibrary } from '../../services/stationMediaPicker';
 import { appErrorText, textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
-import { workspacePalette } from '../../shared/workspacePalette';
+import { secondFloorPalette } from './secondFloorTheme';
+import { isV6Palette } from '../../shared/v6Palette';
+import { isXunPalette } from '../../shared/xunPalette';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
+import { SecondFloorPageScrollProps } from './secondFloorScroll';
 import { SecondFloorAlbumList } from './SecondFloorAlbumList';
 import { StationContentManageSheet } from '../station/StationContentManageSheet';
 import {
@@ -13,17 +16,23 @@ import {
 } from '../station/StationCreateSheet';
 
 export function SecondFloorAlbums({
+  header,
   palette,
   language,
   session,
   onBusyChange,
+  scrollProps,
 }: {
+  header?: React.ReactNode;
   palette: Palette;
   language: Language;
   session: ReturnType<typeof useMiaoxunSession>;
   onBusyChange?: (busy: boolean) => void;
+  scrollProps?: SecondFloorPageScrollProps;
 }) {
-  const colors = workspacePalette(palette);
+  const colors = secondFloorPalette(palette);
+  const v6 = isV6Palette(colors);
+  const xun = isXunPalette(colors);
   const [page, setPage] = useState<'list' | 'create' | 'detail' | 'edit'>(
     'list',
   );
@@ -158,7 +167,17 @@ export function SecondFloorAlbums({
     ) => withPending(() => session.deleteStationMediaAsset(...args)),
   };
   return (
-    <View style={[s.screen, { backgroundColor: colors.surface }]}>
+    <View
+      style={[
+        s.screen,
+        {
+          backgroundColor: v6 || xun ? colors.background : colors.surface,
+        },
+      ]}
+    >
+      {page !== 'list' && header ? (
+        <View style={s.flowHeader}>{header}</View>
+      ) : null}
       {busy && page !== 'create' ? (
         <Text
           accessibilityLiveRegion="polite"
@@ -181,6 +200,7 @@ export function SecondFloorAlbums({
       ) : null}
       {page === 'list' ? (
         <SecondFloorAlbumList
+          header={header}
           palette={colors}
           language={language}
           token={session.token}
@@ -201,6 +221,7 @@ export function SecondFloorAlbums({
             setAlbumId(id);
             setPage('edit');
           }}
+          scrollProps={scrollProps}
         />
       ) : null}
       {page === 'create' ? (
@@ -249,4 +270,8 @@ export function SecondFloorAlbums({
   );
 }
 
-const s = StyleSheet.create({ screen: { flex: 1 }, message: { padding: 12 } });
+const s = StyleSheet.create({
+  screen: { flex: 1 },
+  flowHeader: { paddingTop: 8, paddingHorizontal: 17 },
+  message: { padding: 12 },
+});

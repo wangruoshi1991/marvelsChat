@@ -2,6 +2,8 @@
 
 妙讯正式 iOS App 当前以 `MiaoxunRN/` 为唯一移动端主线，采用 React Native 承接上线实现。旧 SwiftUI 原型已从主工程移除。
 
+本文包含历史构建记录；当前服务器、Build52、签名和真机验收状态只以[当前交接](handoffs/CURRENT.md)为准。
+
 2026-09-16：`1.0 (43)` 已用标准自动签名归档并上传 App Store Connect，正式 API 为
 `https://8.153.167.11`。包含资料精简/定位、全局内容操作、小站交互和私有素材检索界面；
 检索运营开关仍关闭。正式模拟器保留原账号数据，已验证定位候选/取消草稿/键盘顶栏。
@@ -43,11 +45,11 @@ src/services/location.ts -> NativeModules.MiaoxunLocationModule.currentLocation(
 iOS:     ios/MiaoxunRN/QRCodeScannerModule.swift
          ios/MiaoxunRN/QRCodeScannerViewController.swift
 
-Android: android/app/src/main/java/com/gary/miaoxun/rn/QRCodeScannerModule.kt
-         android/app/src/main/java/com/gary/miaoxun/rn/QRCodeScannerActivity.kt
+Android: android/app/src/main/java/com/wangruoshi/miaoxun/QRCodeScannerModule.kt
+         android/app/src/main/java/com/wangruoshi/miaoxun/QRCodeScannerActivity.kt
 
 iOS:     ios/MiaoxunRN/QRCodeScannerModule.swift / MiaoxunLocationModule
-Android: android/app/src/main/java/com/gary/miaoxun/rn/MiaoxunLocationModule.kt
+Android: android/app/src/main/java/com/wangruoshi/miaoxun/MiaoxunLocationModule.kt
 ```
 
 当前扫码能力：
@@ -60,7 +62,7 @@ Android: android/app/src/main/java/com/gary/miaoxun/rn/MiaoxunLocationModule.kt
 - 如果后续不使用 QR Code 或不需要实时相机识别，则不需要 `AVFoundation` / CameraX 这一层；可改为纯 RN 输入、链接打开或后端校验流程。
 - 扫码结果不会在客户端直接伪造成主页跳转；JS 会调用 `/api/scan/resolve`，由后端解析 AI ID、校验账号状态并返回公开主页和关系状态。
 - 扫码页识别成功后会自动关闭，随后 App 必须显示“正在打开用户主页”的解析状态；解析成功才展示公开主页，失败或超时必须关闭解析页并提示明确错误。
-- 公开主页已接入关注、好友申请、好友通过通知、好友 direct 聊天线程和通知未读；小站社交页已展示真实好友、关注和粉丝列表；搜索页已接入用户搜索和最近搜索；设置页已接入主页展示开关。收藏列表、签名动态码、好友拒绝/取消流程、群聊和内容级可见性仍按 [社交关系流程](social-graph.md) 后续接入。
+- 公开主页已接入关注、好友申请、好友通过通知、好友 direct 聊天线程和通知未读；小站社交页已展示真实好友、关注和粉丝列表；搜索页已接入用户搜索和最近搜索；设置页已接入主页展示开关。收藏列表、签名动态码、群聊和内容级可见性仍按 [社交关系流程](social-graph.md) 后续接入。
 
 当前定位能力：
 
@@ -207,7 +209,7 @@ xcrun devicectl device process launch \
 ```text
 设备：iPhone 14 Pro / iOS 17.6.1
 连接：USB wired / paired / developer mode enabled
-Debug API：当时使用 Mac 局域网 IP 访问本机 backend；当前线上联调默认使用 https://api.marvelschat.com
+Debug API：当时使用 Mac 局域网 IP 访问本机 backend；历史文档曾使用 https://api.marvelschat.com；当前线上联调默认使用 https://8.153.167.11，实际 origin 以当前交接为准
 Bundle ID：com.wangruoshi.miaoxun
 签名：自动签名，Team ID R8K5DUTWB6
 JS 加载：真机和模拟器 Debug 都使用构建时内嵌 main.jsbundle

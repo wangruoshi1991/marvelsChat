@@ -242,8 +242,10 @@ describe('Chat content actions', () => {
     const input = renderer.root.findByType(TextInput);
     expect(input.props.onLongPress).toBeUndefined();
     expect(input.props.contextMenuHidden).not.toBe(true);
-    expect(input.props.onChangeText).toBe(onChangeDraft);
-    expect(input.props.onFocus).toBe(onFocusInput);
+    await ReactTestRenderer.act(() => input.props.onChangeText('新的内容'));
+    expect(onChangeDraft).toHaveBeenCalledWith('新的内容');
+    await ReactTestRenderer.act(() => input.props.onFocus());
+    expect(onFocusInput).toHaveBeenCalledTimes(1);
     const sendButton = renderer.root
       .findAllByProps({ accessibilityLabel: '发送消息' })
       .find(node => typeof node.props.onPress === 'function');
@@ -279,6 +281,256 @@ describe('Chat content actions', () => {
         .findAllByProps({ accessibilityLabel: '发送消息' })
         .find(node => typeof node.props.onPress === 'function')!.props.disabled,
     ).toBe(true);
+  });
+
+  it('renders Butler quick-command capsules without sending on tap', async () => {
+    const onChangeDraft = jest.fn();
+    const onQuickCommand = jest.fn();
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <ChatComposer
+          palette={palettes.light}
+          language="zh"
+          threadTitle="妙讯管家"
+          draft=""
+          isSending={false}
+          isRecognizingSpeech={false}
+          replyTarget={null}
+          quickCommands={['生成今日待办', '今晚只提醒紧急事项']}
+          onQuickCommand={onQuickCommand}
+          onChangeDraft={onChangeDraft}
+          onClearReplyTarget={jest.fn()}
+          onFocusInput={jest.fn()}
+          onRecognizeSpeech={jest.fn()}
+          onSend={jest.fn()}
+        />,
+      );
+    });
+    const command = renderer.root.findByProps({
+      accessibilityLabel: '使用快捷指令：生成今日待办',
+    });
+    const quickCommandScroller = renderer.root.findByProps({
+      testID: 'chat-quick-commands',
+    });
+    expect(StyleSheet.flatten(quickCommandScroller.props.style)).toEqual(
+      expect.objectContaining({ overflow: 'hidden', flexShrink: 1 }),
+    );
+    expect(quickCommandScroller.props.onMoveShouldSetResponderCapture).toEqual(
+      expect.any(Function),
+    );
+    await ReactTestRenderer.act(() => command.props.onPress());
+    expect(onQuickCommand).toHaveBeenCalledWith('生成今日待办');
+    expect(onChangeDraft).not.toHaveBeenCalled();
+  });
+
+  it('keeps attachment tools separate from quick-command draft insertion', async () => {
+    const onQuickCommand = jest.fn();
+    const onComposerTool = jest.fn();
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <ChatComposer
+          palette={palettes.light}
+          language="zh"
+          threadTitle="妙讯管家"
+          draft=""
+          isSending={false}
+          isRecognizingSpeech={false}
+          replyTarget={null}
+          onQuickCommand={onQuickCommand}
+          onComposerTool={onComposerTool}
+          onChangeDraft={jest.fn()}
+          onClearReplyTarget={jest.fn()}
+          onFocusInput={jest.fn()}
+          onRecognizeSpeech={jest.fn()}
+          onSend={jest.fn()}
+        />,
+      );
+    });
+    await ReactTestRenderer.act(() =>
+      renderer.root
+        .findByProps({ accessibilityLabel: '更多功能' })
+        .props.onPress(),
+    );
+    expect(
+      renderer.root.findByProps({ accessibilityLabel: '聊天扩展功能' }),
+    ).toBeDefined();
+    await ReactTestRenderer.act(() =>
+      renderer.root
+        .findByProps({ accessibilityLabel: '添加相册' })
+        .props.onPress(),
+    );
+    expect(onComposerTool).toHaveBeenCalledWith('相册');
+    expect(onQuickCommand).not.toHaveBeenCalled();
+    expect(
+      renderer.root.findAllByProps({ accessibilityLabel: '聊天扩展功能' }),
+    ).toHaveLength(0);
+  });
+
+  it('closes attachment tools when the message input receives focus', async () => {
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <ChatComposer
+          palette={palettes.light}
+          language="zh"
+          threadTitle="妙讯管家"
+          draft=""
+          isSending={false}
+          isRecognizingSpeech={false}
+          replyTarget={null}
+          onChangeDraft={jest.fn()}
+          onClearReplyTarget={jest.fn()}
+          onFocusInput={jest.fn()}
+          onRecognizeSpeech={jest.fn()}
+          onSend={jest.fn()}
+        />,
+      );
+    });
+    await ReactTestRenderer.act(() =>
+      renderer.root
+        .findByProps({ accessibilityLabel: '更多功能' })
+        .props.onPress(),
+    );
+    await ReactTestRenderer.act(() =>
+      renderer.root.findByType(TextInput).props.onFocus(),
+    );
+    expect(
+      renderer.root.findAllByProps({ accessibilityLabel: '聊天扩展功能' }),
+    ).toHaveLength(0);
+  });
+
+  it('keeps the shortcut row horizontally scrollable and grows the multiline input', async () => {
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <ChatComposer
+          palette={palettes.light}
+          language="zh"
+          threadTitle="妙讯管家"
+          draft={'今晚只提醒紧急事项\n请保留第二行'}
+          isSending={false}
+          isRecognizingSpeech={false}
+          replyTarget={null}
+          quickCommands={['一', '二', '三']}
+          onChangeDraft={jest.fn()}
+          onClearReplyTarget={jest.fn()}
+          onFocusInput={jest.fn()}
+          onRecognizeSpeech={jest.fn()}
+          onSend={jest.fn()}
+        />,
+      );
+    });
+    const quickCommands = renderer.root.findByProps({
+      testID: 'chat-quick-commands',
+    });
+    expect(quickCommands.props.onResponderMove).toEqual(expect.any(Function));
+    expect(StyleSheet.flatten(quickCommands.props.style)).toEqual(
+      expect.objectContaining({ width: '100%', flexShrink: 1 }),
+    );
+    const input = renderer.root.findByType(TextInput);
+    expect(StyleSheet.flatten(input.props.style)).toEqual(
+      expect.objectContaining({ textAlignVertical: 'top' }),
+    );
+    await ReactTestRenderer.act(() =>
+      input.props.onContentSizeChange({
+        nativeEvent: { contentSize: { height: 82 } },
+      }),
+    );
+    expect(StyleSheet.flatten(input.props.style)).toEqual(
+      expect.objectContaining({ height: 82 }),
+    );
+    await ReactTestRenderer.act(() =>
+      input.props.onChangeText('第一行\n第二行\n第三行'),
+    );
+    expect(StyleSheet.flatten(input.props.style)).toEqual(
+      expect.objectContaining({ height: 85 }),
+    );
+  });
+
+  it('does not turn a horizontal shortcut swipe into a draft insertion', async () => {
+    const onQuickCommand = jest.fn();
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <ChatComposer
+          palette={palettes.light}
+          language="zh"
+          threadTitle="妙讯管家"
+          draft=""
+          isSending={false}
+          isRecognizingSpeech={false}
+          replyTarget={null}
+          quickCommands={['生成今日待办', '今晚只提醒紧急事项']}
+          onQuickCommand={onQuickCommand}
+          onChangeDraft={jest.fn()}
+          onClearReplyTarget={jest.fn()}
+          onFocusInput={jest.fn()}
+          onRecognizeSpeech={jest.fn()}
+          onSend={jest.fn()}
+        />,
+      );
+    });
+    const scroller = renderer.root.findByProps({
+      testID: 'chat-quick-commands',
+    });
+    const command = renderer.root.findByProps({
+      accessibilityLabel: '使用快捷指令：今晚只提醒紧急事项',
+    });
+    const touchStart = { nativeEvent: { pageX: 760, pageY: 1680 } };
+    const touchMove = { nativeEvent: { pageX: 280, pageY: 1680 } };
+    await ReactTestRenderer.act(() =>
+      scroller.props.onStartShouldSetResponderCapture(touchStart),
+    );
+    expect(scroller.props.onMoveShouldSetResponderCapture(touchMove)).toBe(
+      true,
+    );
+    await ReactTestRenderer.act(() => scroller.props.onResponderGrant());
+    await ReactTestRenderer.act(() =>
+      scroller.props.onResponderMove(touchMove),
+    );
+    await ReactTestRenderer.act(() =>
+      scroller.props.onResponderRelease(touchMove),
+    );
+    await ReactTestRenderer.act(() =>
+      command.props.onPressIn({ nativeEvent: { pageX: 760, pageY: 1680 } }),
+    );
+    await ReactTestRenderer.act(() =>
+      command.props.onPressMove({ nativeEvent: { pageX: 280, pageY: 1680 } }),
+    );
+    await ReactTestRenderer.act(() => command.props.onPress());
+    expect(onQuickCommand).not.toHaveBeenCalled();
+  });
+
+  it('does not submit a shortcut after a sustained touch', async () => {
+    jest.useFakeTimers();
+    const onQuickCommand = jest.fn();
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <ChatComposer
+          palette={palettes.light}
+          language="zh"
+          threadTitle="妙讯管家"
+          draft=""
+          isSending={false}
+          isRecognizingSpeech={false}
+          replyTarget={null}
+          quickCommands={['生成今日待办']}
+          onQuickCommand={onQuickCommand}
+          onChangeDraft={jest.fn()}
+          onClearReplyTarget={jest.fn()}
+          onFocusInput={jest.fn()}
+          onRecognizeSpeech={jest.fn()}
+          onSend={jest.fn()}
+        />,
+      );
+    });
+    const command = renderer.root.findByProps({
+      accessibilityLabel: '使用快捷指令：生成今日待办',
+    });
+    await ReactTestRenderer.act(() =>
+      command.props.onPressIn({ nativeEvent: { pageX: 100, pageY: 100 } }),
+    );
+    await ReactTestRenderer.act(() => jest.advanceTimersByTime(450));
+    await ReactTestRenderer.act(() => command.props.onPress());
+    expect(onQuickCommand).not.toHaveBeenCalled();
+    jest.useRealTimers();
   });
 
   it('requires confirmation before deleting and keeps Recall permission gated', async () => {
@@ -346,5 +598,144 @@ describe('Chat content actions', () => {
       renderer.update(<ChatScreen {...props} />),
     );
     expect(renderer.root.findByType(FlatList).props.scrollEnabled).toBe(true);
+  });
+
+  it('reserves the measured composer height so the last message is not covered', async () => {
+    const props = {
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread: { ...thread, agentId: 'miaoxun-butler' },
+      agents: [],
+      renderUserAvatar: () => <View />,
+      onBack: jest.fn(),
+      onSend: jest.fn(),
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError: jest.fn(),
+    };
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    const composer = renderer.root.findByType(ChatComposer);
+    const list = renderer.root.findByType(FlatList);
+    const footer = () => {
+      const element = list.props.ListFooterComponent as React.ReactElement<{
+        children?: React.ReactNode;
+      }>;
+      const children = React.Children.toArray(element.props.children);
+      return children[children.length - 1] as React.ReactElement<{
+        style?: unknown;
+      }>;
+    };
+    expect(footer().props.style).toEqual(
+      expect.arrayContaining([expect.objectContaining({ height: 48 })]),
+    );
+    await ReactTestRenderer.act(() =>
+      composer.props.onLayout({ nativeEvent: { layout: { height: 124 } } }),
+    );
+    expect(footer().props.style).toEqual(
+      expect.arrayContaining([expect.objectContaining({ height: 136 })]),
+    );
+  });
+
+  it('does not append the same Butler quick command twice', async () => {
+    const props = {
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread: { ...thread, agentId: 'miaoxun-butler' },
+      agents: [],
+      renderUserAvatar: () => <View />,
+      onBack: jest.fn(),
+      onSend: jest.fn(),
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError: jest.fn(),
+    };
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    const composer = () => renderer.root.findByType(ChatComposer);
+    await ReactTestRenderer.act(() =>
+      composer().props.onQuickCommand('生成今日待办'),
+    );
+    await ReactTestRenderer.act(() =>
+      composer().props.onQuickCommand('生成今日待办'),
+    );
+    expect(composer().props.draft).toBe('生成今日待办');
+  });
+
+  it('opens 妙猜猜 with a local conversation snapshot instead of a thread id reference', async () => {
+    const onActionError = jest.fn();
+    const props = {
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread,
+      agents: [],
+      renderUserAvatar: () => <View />,
+      onBack: jest.fn(),
+      onSend: jest.fn(),
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError,
+    };
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    await ReactTestRenderer.act(() =>
+      renderer.root
+        .findByProps({ accessibilityLabel: '妙猜猜' })
+        .props.onPress(),
+    );
+    expect(mockAssist.askButler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'chat-draft',
+        id: null,
+        metadata: expect.objectContaining({ threadId: thread.id }),
+      }),
+    );
+    expect(onActionError).not.toHaveBeenCalled();
+  });
+
+  it('reports unavailable attachment actions instead of inserting their labels', async () => {
+    const onActionError = jest.fn();
+    const props = {
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread,
+      agents: [],
+      renderUserAvatar: () => <View />,
+      onBack: jest.fn(),
+      onSend: jest.fn(),
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError,
+    };
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    await ReactTestRenderer.act(() =>
+      renderer.root
+        .findByProps({ accessibilityLabel: '更多功能' })
+        .props.onPress(),
+    );
+    await ReactTestRenderer.act(() =>
+      renderer.root
+        .findByProps({ accessibilityLabel: '添加相册' })
+        .props.onPress(),
+    );
+    expect(onActionError).toHaveBeenCalledWith(expect.stringContaining('相册'));
+    expect(renderer.root.findByType(ChatComposer).props.draft).toBe('');
   });
 });

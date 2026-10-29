@@ -1,5 +1,5 @@
 import type { SiteDocument } from '../../../../shared/site-document';
-import { Palette, palettes } from '../../shared/theme';
+import { isLightPalette, Palette } from '../../shared/theme';
 import { workspacePalette } from '../../shared/workspacePalette';
 import { workspaceTokens } from '../../shared/workspaceUi';
 
@@ -8,7 +8,7 @@ export function siteDocumentTheme(
   palette: Palette,
 ) {
   const base = workspacePalette(palette);
-  const dark = palette.text === palettes.dark.text;
+  const dark = !isLightPalette(palette);
   const variants = {
     clean: { colors: base, accent: base.text },
     warm: {

@@ -21,7 +21,7 @@ import {
   pickStationPhotoFromLibrary,
 } from '../../services/stationMediaPicker';
 import { textFor } from '../../shared/i18n';
-import { Palette, palettes } from '../../shared/theme';
+import { isLightPalette, Palette } from '../../shared/theme';
 import { Language } from '../session/useMiaoxunSession';
 import {
   BodyShape,
@@ -75,9 +75,9 @@ export function Avatar3DCreateScreen({
   const [acceptedIdentity, setAcceptedIdentity] = useState(false);
   const [acceptedFaceCompletion, setAcceptedFaceCompletion] = useState(false);
 
-  const isDark = palette.text === palettes.dark.text;
+  const isDark = !isLightPalette(palette);
   const colors = {
-    accent: isDark ? '#4FD1B5' : '#0B8271',
+    accent: isDark ? palette.mint : '#0B8271',
     background: isDark ? palette.background : '#E6F4F0',
     border: isDark ? palette.border : '#D6EDE7',
     danger: '#E8435A',

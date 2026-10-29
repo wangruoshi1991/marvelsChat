@@ -46,6 +46,7 @@ function groupHeight(
 ) {
   const group = renderer.root.findByProps({ testID });
   const style = StyleSheet.flatten(group.props.style);
+  if (style.height === undefined) return undefined;
   return (style.height as unknown as { __getValue: () => number }).__getValue();
 }
 
@@ -144,5 +145,57 @@ describe('station profile collapse', () => {
     expect(collapsedDetails().props.pointerEvents).toBe('auto');
     expect(collapsedDetails().props.accessibilityElementsHidden).toBe(false);
     expect(nicknameText()).toBe('测试昵称');
+  });
+
+  it('waits for a positive natural layout instead of locking initially empty measurements closed', async () => {
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(header(collapseProgress));
+    });
+
+    await ReactTestRenderer.act(async () => {
+      measureGroup(renderer!, 'station-profile-kicker', 0);
+      measureGroup(renderer!, 'station-profile-details', 0);
+    });
+
+    expect(groupHeight(renderer!, 'station-profile-kicker')).toBeUndefined();
+    expect(groupHeight(renderer!, 'station-profile-details')).toBeUndefined();
+
+    await ReactTestRenderer.act(async () => {
+      measureGroup(renderer!, 'station-profile-kicker', 24);
+      measureGroup(renderer!, 'station-profile-details', 224);
+    });
+
+    expect(groupHeight(renderer!, 'station-profile-kicker')).toBe(24);
+    expect(groupHeight(renderer!, 'station-profile-details')).toBe(224);
+  });
+
+  it('restores full details after a clipped layout reports zero and accepts later text reflow', async () => {
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(header(collapseProgress));
+    });
+    await ReactTestRenderer.act(async () => {
+      measureGroup(renderer!, 'station-profile-kicker', 24);
+      measureGroup(renderer!, 'station-profile-details', 224);
+      collapseProgress.setValue(1);
+    });
+    await ReactTestRenderer.act(async () => {
+      measureGroup(renderer!, 'station-profile-kicker', 0);
+      measureGroup(renderer!, 'station-profile-details', 0);
+      collapseProgress.setValue(0);
+    });
+
+    expect(groupHeight(renderer!, 'station-profile-kicker')).toBe(24);
+    expect(groupHeight(renderer!, 'station-profile-details')).toBe(224);
+    expect(
+      renderer!.root.findByProps({ testID: 'station-profile-details' }).props
+        .accessibilityElementsHidden,
+    ).toBe(false);
+
+    await ReactTestRenderer.act(async () => {
+      measureGroup(renderer!, 'station-profile-details', 280);
+    });
+    expect(groupHeight(renderer!, 'station-profile-details')).toBe(280);
+    expect(stageMounted).toHaveBeenCalledTimes(1);
+    expect(stageUnmounted).not.toHaveBeenCalled();
   });
 });

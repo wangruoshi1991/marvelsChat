@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppState, AppStateStatus, Text } from 'react-native';
+import { AppState, AppStateStatus, SectionList, Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { AITaskInbox } from '../src/features/ai/AITaskInbox';
 import { useAITasks } from '../src/features/ai/useAITasks';
@@ -11,6 +11,9 @@ import { agentWorkspace, workspaceStep } from '../__fixtures__/agentWorkspace';
 import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
 import { AIAssistProvider } from '../src/features/assist/AIAssistProvider';
 import { AgentWorkspaceCard } from '../src/features/workspaces/AgentWorkspaceCard';
+import { XunTaskCard } from '../src/features/ai/XunTaskCard';
+import { xunV3Palette } from '../src/shared/xunPalette';
+import { WorkspaceStatus } from '../src/models/agentWorkspace';
 
 jest.mock('../src/services/api/aiTaskApi', () => ({
   aiTaskApi: { list: jest.fn(), decide: jest.fn() },
@@ -264,6 +267,228 @@ test('displays an interrupted result and an unavailable recalled goal without in
   expect(text()).toContain('任务执行中断');
   expect(text()).toContain('不会自动重试');
   expect(text()).not.toMatch(/\d+%/);
+});
+
+test('Xun cards retain actual legacy status, errors, results and canonical opening without deciding', async () => {
+  const interrupted = task({
+    goal: '',
+    status: 'interrupted',
+    phase: 'interrupted',
+    agentId: 'removed-agent',
+    error: { code: 'AI_TASK_INTERRUPTED', message: '连接中断' },
+    artifacts: [{ kind: 'message', id: 'partial', title: '已保存的部分成果' }],
+    allowedActions: [],
+  });
+  const awaiting = task({
+    id: 'confirm-site',
+    kind: 'site_draft',
+    status: 'awaiting_confirmation',
+    phase: 'awaiting_confirmation',
+    allowedActions: ['confirm'],
+  });
+  const queued = task({ id: 'queued' });
+  list.mockResolvedValue([interrupted, awaiting, queued]);
+  const open = jest.fn();
+  await act(async () => {
+    renderer = TestRenderer.create(
+      inbox({ palette: xunV3Palette(palettes.light), onOpenTask: open }),
+    );
+  });
+  expect(text()).toContain('原消息已删除或撤回');
+  expect(text()).toContain('连接中断');
+  expect(text()).toContain('不会自动重试');
+  expect(text()).toContain('已保存的部分成果');
+  expect(text()).toContain('执行 Agent');
+  expect(text()).not.toContain('removed-agent');
+  const cards = renderer!.root.findAllByType(XunTaskCard);
+  expect(
+    cards.find(card => card.props.testID.endsWith('confirm-site'))?.props
+      .actionVariant,
+  ).toBe('primary');
+  expect(
+    cards.find(card => card.props.testID.endsWith('queued'))?.props
+      .actionVariant,
+  ).toBe('secondary');
+  const stopPropagation = jest.fn();
+  act(() => button('查看并确认').props.onPress({ stopPropagation }));
+  expect(stopPropagation).toHaveBeenCalledTimes(1);
+  expect(open).toHaveBeenCalledTimes(1);
+  expect(open).toHaveBeenCalledWith(awaiting);
+  expect(aiTaskApi.decide).not.toHaveBeenCalled();
+});
+
+test('Xun workspace cards retain active work, attention and real deliveries with their long-press context', async () => {
+  const working = agentWorkspace({
+    id: 'active-workspace',
+    status: 'running',
+    steps: [
+      workspaceStep({
+        id: 'working',
+        status: 'running',
+        agentId: 'album-manager',
+        capability: 'media.search',
+        goal: '正在查找雪山视频',
+      }),
+      workspaceStep({
+        id: 'result',
+        agentId: 'site-builder',
+        capability: 'site.compose',
+        result: { kind: 'site_draft', id: 'draft', title: '真实旅行页草稿' },
+      }),
+    ],
+  });
+  const waiting = agentWorkspace({
+    id: 'waiting-workspace',
+    status: 'waiting_input',
+    inputRequest: {
+      kind: 'clarification',
+      question: '希望使用哪一年的旅行素材？',
+    },
+    allowedActions: ['reply'],
+  });
+  jest.mocked(agentWorkspaceApi.list).mockResolvedValue([working, waiting]);
+  const open = jest.fn();
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <AIAssistProvider routeKey="inbox" onAskButler={jest.fn()}>
+        {inbox({
+          palette: xunV3Palette(palettes.light),
+          onOpenWorkspace: open,
+        })}
+      </AIAssistProvider>,
+    );
+  });
+  expect(text()).toContain('正在查找雪山视频');
+  expect(text()).toContain('真实旅行页草稿');
+  expect(text()).toContain('希望使用哪一年的旅行素材？');
+  const cards = renderer!.root.findAllByType(XunTaskCard);
+  const activeCard = cards.find(
+    card => card.props.testID === 'miao-workspace-active-workspace',
+  )!;
+  expect(activeCard.props.context.object).toMatchObject({
+    kind: 'agent-workspace',
+    id: working.id,
+  });
+  expect(activeCard.props.actionVariant).toBe('secondary');
+  expect(
+    cards.find(card => card.props.testID === 'miao-workspace-waiting-workspace')
+      ?.props.actionVariant,
+  ).toBe('primary');
+  act(() => activeCard.props.onOpen());
+  expect(open).toHaveBeenCalledWith(working);
+  expect(aiTaskApi.decide).not.toHaveBeenCalled();
+});
+
+test('Xun separates attention, ongoing and historical tasks without dropping either task contract or cancelling work', async () => {
+  const legacyStatuses: AITaskDTO['status'][] = [
+    'queued',
+    'running',
+    'awaiting_confirmation',
+    'succeeded',
+    'failed',
+    'cancelled',
+    'interrupted',
+  ];
+  const workspaceStatuses: WorkspaceStatus[] = [
+    ...legacyStatuses,
+    'waiting_input',
+    'cancelling',
+  ];
+  list.mockResolvedValue(
+    legacyStatuses.map(status => task({ id: `legacy-${status}`, status })),
+  );
+  jest
+    .mocked(agentWorkspaceApi.list)
+    .mockResolvedValue(
+      workspaceStatuses.map(status =>
+        agentWorkspace({ id: `workspace-${status}`, status }),
+      ),
+    );
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <AIAssistProvider routeKey="inbox" onAskButler={jest.fn()}>
+        {inbox({
+          palette: xunV3Palette(palettes.light),
+          onOpenWorkspace: jest.fn(),
+        })}
+      </AIAssistProvider>,
+    );
+  });
+  const sections = renderer!.root.findByType(SectionList).props.sections;
+  expect(sections.map((section: { title: string }) => section.title)).toEqual([
+    '待你确认',
+    '正在跟进',
+    '历史任务',
+  ]);
+  expect(
+    sections.map((section: { data: { task: { id: string } }[] }) =>
+      section.data.map(entry => entry.task.id).sort(),
+    ),
+  ).toEqual([
+    [
+      'legacy-awaiting_confirmation',
+      'workspace-awaiting_confirmation',
+      'workspace-waiting_input',
+    ],
+    [
+      'legacy-queued',
+      'legacy-running',
+      'workspace-cancelling',
+      'workspace-queued',
+      'workspace-running',
+    ],
+    [
+      'legacy-cancelled',
+      'legacy-failed',
+      'legacy-interrupted',
+      'legacy-succeeded',
+      'workspace-cancelled',
+      'workspace-failed',
+      'workspace-interrupted',
+      'workspace-succeeded',
+    ],
+  ]);
+  expect(aiTaskApi.decide).not.toHaveBeenCalled();
+});
+
+test('Xun orders by recent activity within each group and moves refreshed tasks without leaving empty headings', async () => {
+  const older = task({
+    id: 'older',
+    status: 'awaiting_confirmation',
+    updatedAt: '2026-10-10T03:00:00Z',
+  });
+  const updated = task({
+    id: 'updated',
+    status: 'awaiting_confirmation',
+    createdAt: '2026-10-09T03:00:00Z',
+    updatedAt: '2026-10-12T03:00:00Z',
+  });
+  list.mockResolvedValueOnce([older, updated]);
+  await act(async () => {
+    renderer = TestRenderer.create(
+      inbox({ palette: xunV3Palette(palettes.light) }),
+    );
+  });
+  let sections = renderer!.root.findByType(SectionList).props.sections;
+  expect(sections.map((section: { key: string }) => section.key)).toEqual([
+    'attention',
+  ]);
+  expect(
+    sections[0].data.map((entry: { task: AITaskDTO }) => entry.task.id),
+  ).toEqual(['updated', 'older']);
+  list.mockResolvedValueOnce([
+    { ...older, status: 'succeeded', revision: 2 },
+    { ...updated, status: 'succeeded', revision: 2 },
+  ]);
+  await act(async () => button('刷新任务').props.onPress());
+  sections = renderer!.root.findByType(SectionList).props.sections;
+  expect(sections.map((section: { key: string }) => section.key)).toEqual([
+    'history',
+  ]);
+  expect(text()).not.toContain('待你确认');
+  expect(text()).not.toContain('正在跟进');
+  expect(text()).toContain('历史任务');
+  expect(aiTaskApi.decide).not.toHaveBeenCalled();
 });
 
 test('all-kind and filtered scopes discard stale requests and expose accurate loading state', async () => {

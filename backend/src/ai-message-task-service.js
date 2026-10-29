@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { listAgents } from "../../agents/registry.js";
+import { listRegisteredAgentsWithCatalogue } from "./agent-catalog-repository.js";
 import { query, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
 import { mapMessage } from "./repository-mappers.js";
@@ -71,7 +72,7 @@ export function createMessageTaskExecutor({ runAgentRuntime = runAgent, retrieva
     const user = await getUserById(record.userId);
     const thread = await getThreadForUser(record.userId, record.threadId);
     if (!user || user.status !== "active" || !thread || thread.agentId !== record.agentId) throw new HttpError(403, "任务账号或会话不可用。");
-    const registeredAgents = await listAgents();
+    const registeredAgents = await listRegisteredAgentsWithCatalogue(await listAgents());
     const agentContext = await getAgentContextForUser(user, registeredAgents);
     const access = assertAgentAvailable(agentContext, record.agentId);
     const canReadHistory = access.grantedScopes.includes("messages:read");

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { X } from 'lucide-react-native';
+import { ArrowUpRight, X } from 'lucide-react-native';
 
 import { AgentDTO, OwnedAgentDTO } from '../../models/api';
 import { textFor } from '../../shared/i18n';
@@ -61,11 +61,7 @@ type AgentCard = OwnedAgentDTO & {
   identity?: AgentDTO['identity'];
 };
 
-/**
- * Prototype `#me-agents-panel` holds one `me-agent-grid` and nothing else, so
- * this renders the cards directly — no section heading, no capability
- * workspace, no recommendation block.
- */
+/** V15 profile cards use a title/date row and one full-width destination. */
 export function AgentList({
   palette,
   language,
@@ -90,9 +86,8 @@ export function AgentList({
       {agents.length ? (
         <View style={styles.stationAgentList}>
           {agents.map(agent => {
-            // 「数量等级」「被添加星标」 have no backend columns yet; the grid is
-            // rendered from whatever cells carry real data, so an empty cell is
-            // never shown as if it held a value.
+            // V15's levels, collaboration counts, matches and stars have no
+            // API fields. Show the real description instead of demo metrics.
             const addedDate = agent.createdAt
               ? formatAddedDate(agent.createdAt)
               : '';
@@ -107,88 +102,38 @@ export function AgentList({
                   },
                 ]}
               >
-                <Pressable
-                  accessibilityLabel={agent.name}
-                  accessibilityRole="button"
-                  onPress={() => onOpenAgentThread(agent.id)}
-                  style={styles.stationAgentListHead}
-                >
-                  <AgentMark palette={palette} agent={agent} />
-                  <View style={styles.stationOwnedAgentCopy}>
-                    <Text
-                      style={[
-                        styles.stationOwnedAgentName,
-                        { color: colors.text },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {agent.name}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.stationOwnedAgentDesc,
-                        { color: colors.secondaryText },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {moduleBindingForAgent(agent.id, language)}
-                    </Text>
-                  </View>
-                </Pressable>
-                {readdAgentIds?.has(agent.id) ? (
-                  <Text
-                    style={[
-                      styles.stationOwnedAgentDesc,
-                      { color: colors.accent },
-                    ]}
+                <View style={styles.stationAgentListHead}>
+                  <Pressable
+                    accessibilityLabel={agent.name}
+                    accessibilityRole="button"
+                    onPress={() => onOpenAgentThread(agent.id)}
+                    style={styles.stationAgentListOpen}
                   >
-                    {textFor(
-                      language,
-                      '授权范围不同，请移除后重新添加。',
-                      'Access scopes differ. Remove and add this agent again.',
-                    )}
-                  </Text>
-                ) : null}
-                {addedDate ? (
-                  <View style={styles.stationAgentListMeta}>
-                    <View style={styles.stationAgentListMetaCell}>
+                    <AgentMark palette={palette} agent={agent} />
+                    <View style={styles.stationOwnedAgentCopy}>
                       <Text
                         style={[
-                          styles.stationAgentListMetaLabel,
-                          { color: colors.secondaryText },
-                        ]}
-                      >
-                        {textFor(language, '添加时间', 'Added')}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.stationAgentListMetaValue,
+                          styles.stationOwnedAgentName,
                           { color: colors.text },
                         ]}
                       >
-                        {addedDate}
+                        {agent.name}
                       </Text>
+                      {addedDate ? (
+                        <Text
+                          style={[
+                            styles.stationAgentAddedDate,
+                            { color: colors.secondaryText },
+                          ]}
+                        >
+                          {textFor(
+                            language,
+                            `添加于 ${addedDate}`,
+                            `Added ${addedDate}`,
+                          )}
+                        </Text>
+                      ) : null}
                     </View>
-                  </View>
-                ) : null}
-                <View style={styles.stationAgentListFoot}>
-                  <Pressable
-                    accessibilityLabel={textFor(
-                      language,
-                      `与 ${agent.name} 对话`,
-                      `Chat with ${agent.name}`,
-                    )}
-                    accessibilityRole="button"
-                    onPress={() => onOpenAgentThread(agent.id)}
-                  >
-                    <Text
-                      style={[
-                        styles.stationOwnedAgentStatus,
-                        { backgroundColor: colors.soft, color: colors.accent },
-                      ]}
-                    >
-                      {textFor(language, '进入对话', 'Chat')}
-                    </Text>
                   </Pressable>
                   <Pressable
                     accessibilityLabel={textFor(
@@ -205,9 +150,71 @@ export function AgentList({
                         styles.stationAgentCardDisabled,
                     ]}
                   >
-                    <X color={colors.secondaryText} size={15} strokeWidth={2} />
+                    <X
+                      color={colors.secondaryText}
+                      size={18}
+                      strokeWidth={1.9}
+                    />
                   </Pressable>
                 </View>
+                <Text
+                  style={[
+                    styles.stationAgentListDescription,
+                    { color: colors.secondaryText },
+                  ]}
+                >
+                  {agent.description ||
+                    moduleBindingForAgent(agent.id, language)}
+                </Text>
+                {readdAgentIds?.has(agent.id) ? (
+                  <Text
+                    style={[
+                      styles.stationAgentAccessNotice,
+                      {
+                        backgroundColor: colors.soft,
+                        color: colors.accent,
+                      },
+                    ]}
+                  >
+                    {textFor(
+                      language,
+                      '授权范围不同，请移除后重新添加。',
+                      'Access scopes differ. Remove and add this agent again.',
+                    )}
+                  </Text>
+                ) : null}
+                <Pressable
+                  accessibilityLabel={textFor(
+                    language,
+                    `与 ${agent.name} 对话`,
+                    `Chat with ${agent.name}`,
+                  )}
+                  accessibilityRole="button"
+                  onPress={() => onOpenAgentThread(agent.id)}
+                  style={[
+                    styles.stationAgentListDestination,
+                    colors.isV6
+                      ? styles.stationAgentDarkDestination
+                      : {
+                          backgroundColor: colors.soft,
+                          borderColor: colors.border,
+                        },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.stationAgentListDestinationText,
+                      { color: colors.text },
+                    ]}
+                  >
+                    {textFor(language, '进入对话', 'Open conversation')}
+                  </Text>
+                  <ArrowUpRight
+                    color={colors.text}
+                    size={16}
+                    strokeWidth={1.9}
+                  />
+                </Pressable>
               </View>
             );
           })}
@@ -226,7 +233,6 @@ export function AgentList({
 export function AgentMark({
   agent,
 }: {
-  /** Retained so existing call sites keep compiling; the glyph no longer uses it. */
   palette?: Palette;
   agent: Pick<AgentDTO, 'name' | 'identity'> & {
     id?: string;
@@ -244,7 +250,7 @@ export function AgentMark({
   );
 }
 
-/** Prototype shows 添加时间 as 2026.05.12; the real column is user_agents.created_at. */
+/** The date comes from user_agents.created_at, never the prototype's demo date. */
 function formatAddedDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';

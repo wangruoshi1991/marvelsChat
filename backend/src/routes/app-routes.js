@@ -1,4 +1,8 @@
 import { listAgents } from "../../../agents/registry.js";
+import {
+  listPublishedRegisteredAgents,
+  listRegisteredAgentsWithCatalogue,
+} from "../agent-catalog-repository.js";
 import { aiClientContracts } from "../ai-client-contract.js";
 import { publicMessagesByThread } from "../public-message.js";
 import { checkDatabase, withTransaction } from "../db.js";
@@ -51,6 +55,7 @@ export function registerAppRoutes(
     sendPresenceChanged,
     checkDatabaseStatus = checkDatabase,
     getBootstrap = getBootstrapForUser,
+    resolveRegisteredAgents = null,
   },
 ) {
   app.get("/api/health", (_req, res) => {
@@ -85,7 +90,8 @@ export function registerAppRoutes(
   app.get(
     "/api/agents",
     asyncHandler(async (_req, res) => {
-      res.json({ data: await listAgents() });
+      const registered = await listAgents();
+      res.json({ data: await listPublishedRegisteredAgents(registered) });
     }),
   );
 
@@ -114,12 +120,26 @@ export function registerAppRoutes(
     "/api/app/bootstrap",
     authenticate,
     asyncHandler(async (req, res) => {
-      const registeredAgents = await listAgents();
+      const allRegisteredAgents = resolveRegisteredAgents
+        ? await resolveRegisteredAgents()
+        : getBootstrap === getBootstrapForUser
+        ? await listRegisteredAgentsWithCatalogue(await listAgents())
+        : await listAgents();
+      const registeredAgents = allRegisteredAgents.filter(
+        (agent) => agent.published !== false,
+      );
       const data = await getBootstrap(
         req.user,
         registeredAgents,
         getOnlineUserIds(),
+        allRegisteredAgents,
       );
+      if (data.agents?.owned && Array.isArray(data.agents.registered)) {
+        const ownedKeys = new Set(data.agents.owned.map((agent) => agent.id));
+        data.agents.registered = allRegisteredAgents.filter(
+          (agent) => agent.published !== false || ownedKeys.has(agent.key),
+        );
+      }
       res.json({
         data: {
           ...data,
@@ -135,11 +155,18 @@ export function registerAppRoutes(
     authenticate,
     asyncHandler(async (req, res) => {
       const body = agentAccessSchema.parse(req.body);
-      const registeredAgents = await listAgents();
+      const registeredAgents = await listRegisteredAgentsWithCatalogue(
+        await listAgents(),
+      );
       const agent = registeredAgents.find(
         (item) => item.key === req.params.agentId,
       );
       if (!agent) throw new HttpError(404, "Agent not found");
+      if (body.enabled && agent.published === false) {
+        throw new HttpError(409, "Agent 暂未上架，无法添加。", {
+          code: "AGENT_NOT_PUBLISHED",
+        });
+      }
       // Validate scopes before any consent/index side effects.
       if (body.enabled) resolveAgentGrantedScopes(agent, body.grantedScopes);
       if (

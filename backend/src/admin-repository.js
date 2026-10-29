@@ -311,3 +311,80 @@ export async function adminAgentRuns({ limit = 80 } = {}) {
 
   return rows.map(mapAgentRun);
 }
+
+/** Full-window Agent usage aggregates for the operator dashboard. The older
+ * `/api/admin/agents` cards intentionally use a small recent-run list; this
+ * endpoint is the source of truth for monitoring and never infers totals from
+ * a truncated page. */
+export async function adminAgentUsage({ days = 30 } = {}) {
+  const safeDays = Math.max(1, Math.min(365, Number(days) || 30));
+  const [summaryRows, agentRows, dailyRows] = await Promise.all([
+    query(
+      `SELECT COUNT(*) AS runs,
+              COUNT(*) FILTER (WHERE lifecycle_status = 'succeeded' OR (lifecycle_status IS NULL AND status = 'success')) AS succeeded,
+              COUNT(*) FILTER (WHERE lifecycle_status IN ('failed','cancelled','blocked') OR (lifecycle_status IS NULL AND status = 'error')) AS failed,
+              SUM(token_total) AS token_total,
+              SUM(cost_cents) AS cost_cents,
+              AVG(latency_ms) FILTER (WHERE latency_ms IS NOT NULL) AS avg_latency_ms
+         FROM agent_runs
+        WHERE created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')`,
+      [safeDays],
+    ),
+    query(
+      `SELECT agent_id,
+              COUNT(*) AS runs,
+              COUNT(*) FILTER (WHERE lifecycle_status = 'succeeded' OR (lifecycle_status IS NULL AND status = 'success')) AS succeeded,
+              COUNT(*) FILTER (WHERE lifecycle_status IN ('failed','cancelled','blocked') OR (lifecycle_status IS NULL AND status = 'error')) AS failed,
+              SUM(token_total) AS token_total,
+              SUM(cost_cents) AS cost_cents,
+              AVG(latency_ms) FILTER (WHERE latency_ms IS NOT NULL) AS avg_latency_ms
+         FROM agent_runs
+        WHERE created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+        GROUP BY agent_id
+        ORDER BY runs DESC, agent_id ASC`,
+      [safeDays],
+    ),
+    query(
+      `SELECT created_at::date AS day,
+              COUNT(*) AS runs,
+              COUNT(*) FILTER (WHERE lifecycle_status = 'succeeded' OR (lifecycle_status IS NULL AND status = 'success')) AS succeeded,
+              COUNT(*) FILTER (WHERE lifecycle_status IN ('failed','cancelled','blocked') OR (lifecycle_status IS NULL AND status = 'error')) AS failed
+         FROM agent_runs
+        WHERE created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+        GROUP BY created_at::date
+        ORDER BY day ASC`,
+      [safeDays],
+    ),
+  ]);
+  const number = (value) => Number(value || 0);
+  const nullableNumber = (value) => value === null || value === undefined ? null : Number(value);
+  const mapUsage = (row) => ({
+    agentId: row.agent_id,
+    runs: number(row.runs),
+    succeeded: number(row.succeeded),
+    failed: number(row.failed),
+    tokenTotal: nullableNumber(row.token_total),
+    costCents: nullableNumber(row.cost_cents),
+    avgLatencyMs: nullableNumber(row.avg_latency_ms) === null ? null : Math.round(number(row.avg_latency_ms)),
+  });
+  return {
+    days: safeDays,
+    summary: {
+      runs: number(summaryRows[0]?.runs),
+      succeeded: number(summaryRows[0]?.succeeded),
+      failed: number(summaryRows[0]?.failed),
+      tokenTotal: nullableNumber(summaryRows[0]?.token_total),
+      costCents: nullableNumber(summaryRows[0]?.cost_cents),
+      avgLatencyMs: nullableNumber(summaryRows[0]?.avg_latency_ms) === null
+        ? null
+        : Math.round(number(summaryRows[0]?.avg_latency_ms)),
+    },
+    agents: agentRows.map(mapUsage),
+    daily: dailyRows.map((row) => ({
+      day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
+      runs: number(row.runs),
+      succeeded: number(row.succeeded),
+      failed: number(row.failed),
+    })),
+  };
+}

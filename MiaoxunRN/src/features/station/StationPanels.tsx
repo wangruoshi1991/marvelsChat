@@ -76,6 +76,7 @@ export function StationPanel({
             stationContent={stationContent}
             profile={profile}
             renderUserAvatar={renderUserAvatar}
+            agents={agents}
             ownedAgents={ownedAgents}
             token={token}
             onDeletePost={onDeletePost}

@@ -123,7 +123,13 @@ export function avatarPlateColor(seed: string): string {
 
 /** True for the light theme, the only one the page gradient applies to. */
 export function isLightPalette(palette: Palette): boolean {
-  return palette.text === palettes.light.text;
+  // Xun 3.0 uses a cool light canvas with its own ink values rather than the
+  // legacy mint page roles, so text equality alone is not sufficient here.
+  return (
+    palette.text === palettes.light.text ||
+    ((palette.background === '#f3f6f9' || palette.background === '#f4f6f9') &&
+      palette.surface === '#ffffff')
+  );
 }
 
 export type Palette = {

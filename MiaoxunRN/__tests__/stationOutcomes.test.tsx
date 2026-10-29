@@ -16,6 +16,7 @@ import { SiteDocumentMedia } from '../src/features/site-document/SiteDocumentMed
 import { StationMediaPreviewScreen } from '../src/features/station/StationMediaPreviewScreen';
 import { SecondFloorFiles } from '../src/features/second-floor/SecondFloorFiles';
 import { useMiaoxunSession } from '../src/features/session/useMiaoxunSession';
+import { StationPageHeading } from '../src/features/station/StationPageHeading';
 
 jest.mock('../src/features/workspaces/useAgentWorkspaces', () => ({
   useAgentWorkspaces: () => mockWorkspaces,
@@ -587,4 +588,8 @@ test('second floor files lists app-generated outcomes and opens their task', asy
   act(() => card('text:text-1').props.onPress());
   expect(open).toHaveBeenCalledWith(workspace);
   expect(card('site:page-1')).toBeTruthy();
+  expect(
+    renderer.root.findByProps({ testID: 'floor-outcomes-heading' }),
+  ).toBeTruthy();
+  expect(renderer.root.findAllByType(StationPageHeading)).toHaveLength(0);
 });

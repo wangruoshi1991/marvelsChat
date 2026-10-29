@@ -1,21 +1,12 @@
-import { Palette, palettes, productColors } from '../../shared/theme';
-
-const messageLightPalette: Partial<Palette> = {
-  background: productColors.surface,
-  border: productColors.border,
-  input: productColors.surface,
-  soft: productColors.background,
-  surface: productColors.surface,
-  mint: productColors.accent,
-};
+import { Palette, palettes } from '../../shared/theme';
+import { isV6Palette } from '../../shared/v6Palette';
+import { isXunPalette, xunPalette } from '../../shared/xunPalette';
 
 export function resolveMessagePalette(palette: Palette): Palette {
+  if (isV6Palette(palette) || isXunPalette(palette)) return palette;
   if (palette.text !== palettes.light.text) {
     return palette;
   }
 
-  return {
-    ...palette,
-    ...messageLightPalette,
-  };
+  return xunPalette(palette);
 }
