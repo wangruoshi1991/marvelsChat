@@ -275,6 +275,7 @@ function StationPostCard({
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
+  void agents;
   const [isDeleting, setIsDeleting] = useState(false);
   const [liked, setLiked] = useState(post.likedByMe);
   const [favorited, setFavorited] = useState(post.favoritedByMe);
@@ -296,9 +297,6 @@ function StationPostCard({
   ]);
 
   const assist = useAIAssist();
-  const registeredByKey = new Map(
-    (agents || []).map(agent => [agent.key, agent]),
-  );
   const agentTags = post.agentCapabilities
     .map(agentId => {
       const agent = ownedAgents.find(item => item.id === agentId);
@@ -306,8 +304,7 @@ function StationPostCard({
         ? {
             id: agent.id,
             name: agent.name,
-            identity: registeredByKey.get(agent.id)?.identity || null,
-            category: registeredByKey.get(agent.id)?.category,
+            identity: agent.identity,
           }
         : null;
     })
@@ -492,7 +489,6 @@ function StationPostCard({
                 >
                   <AgentGlyphAvatar
                     agentId={agent.id}
-                    category={agent.category}
                     identity={agent.identity}
                     size={20}
                   />

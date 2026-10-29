@@ -312,8 +312,14 @@ describe('Station home content actions', () => {
       key: 'miaoxun-butler',
       name: '妙讯管家',
       identity: {
+        avatarKind: 'agent-mark',
         mark: '妙',
-        colors: { background: '#000000', foreground: '#FFFFFF' },
+        shape: 'circle',
+        colors: {
+          background: '#000000',
+          foreground: '#FFFFFF',
+          accent: '#abcdef',
+        },
       },
     } as AgentDTO;
     const owned = {
@@ -321,6 +327,7 @@ describe('Station home content actions', () => {
       name: agent.name,
       description: '管家',
       enabled: true,
+      identity: agent.identity,
     } as OwnedAgentDTO;
     await ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(
@@ -341,12 +348,12 @@ describe('Station home content actions', () => {
     expect(glyphs[0].props.identity).toBe(agent.identity);
     // A near-black brand colour still yields a legible glyph rather than a
     // glyph indistinguishable from its own disc.
-    const butler = resolveAgentGlyph('miaoxun-butler');
-    expect(butler.Icon).toBeDefined();
-    expect(butler.accent).toMatch(/^#[0-9A-Fa-f]{6}$/);
-    // An Agent this build has never seen still resolves, by category first.
-    expect(resolveAgentGlyph('new-agent', 'generation').Icon).toBeDefined();
-    expect(resolveAgentGlyph('new-agent').Icon).toBeDefined();
+    expect(() => resolveAgentGlyph('miaoxun-butler')).toThrow(
+      'AGENT_IDENTITY_CONTRACT_ERROR',
+    );
+    expect(() => resolveAgentGlyph('new-agent', 'generation')).toThrow(
+      'AGENT_IDENTITY_CONTRACT_ERROR',
+    );
   });
 
   it('uses the album conversation and has no separate Find media shortcut', async () => {

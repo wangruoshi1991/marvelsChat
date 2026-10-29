@@ -340,8 +340,13 @@ function TaskWorkspaceContent({
               <View style={s.agent}>
                 <AgentIconAvatar
                   agentId={task.agentId}
-                  category={agent?.category}
-                  identity={agent?.identity || null}
+                  identity={
+                    agent?.identity || {
+                      status: 'unavailable',
+                      code: 'AGENT_IDENTITY_CONTRACT_ERROR',
+                      message: 'Agent identity contract unavailable.',
+                    }
+                  }
                   palette={colors}
                   variant={isXunPalette(palette) ? 'xun' : undefined}
                 />

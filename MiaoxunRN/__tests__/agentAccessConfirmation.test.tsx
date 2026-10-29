@@ -20,6 +20,12 @@ const agent: AgentDTO = {
   name: '建站',
   version: '0.3.1',
   category: 'station-builder',
+  identity: {
+    avatarKind: 'agent-mark',
+    mark: '测',
+    shape: 'circle',
+    colors: { background: '#123456', foreground: '#ffffff', accent: '#abcdef' },
+  },
   description: '生成个人页面',
   capabilities: [],
   permissions: ['station:read', 'album:read'],
@@ -30,6 +36,12 @@ const owned: OwnedAgentDTO = {
   name: agent.name,
   description: agent.description,
   category: agent.category,
+  identity: {
+    avatarKind: 'agent-mark',
+    mark: '测',
+    shape: 'circle',
+    colors: { background: '#123456', foreground: '#ffffff', accent: '#abcdef' },
+  },
   enabled: true,
   grantedScopes: ['station:read', 'files:read'],
 };

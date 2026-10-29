@@ -43,8 +43,13 @@ export function MiaoTaskAgent({
     >
       <AgentGlyphAvatar
         agentId={agent ? agentId : ''}
-        category={agent?.category}
-        identity={agent?.identity}
+        identity={
+          agent?.identity || {
+            status: 'unavailable',
+            code: 'AGENT_IDENTITY_CONTRACT_ERROR',
+            message: 'Agent identity contract unavailable.',
+          }
+        }
         size={size ?? (compact ? 26 : 44)}
       />
       {showName ? (

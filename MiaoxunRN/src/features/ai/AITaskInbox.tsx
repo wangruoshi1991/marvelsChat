@@ -467,8 +467,13 @@ export function AITaskInbox({
             <View style={s.metadata}>
               <AgentIconAvatar
                 agentId={task.agentId}
-                category={agent?.category}
-                identity={agent?.identity || null}
+                identity={
+                  agent?.identity || {
+                    status: 'unavailable',
+                    code: 'AGENT_IDENTITY_CONTRACT_ERROR',
+                    message: 'Agent identity contract unavailable.',
+                  }
+                }
                 palette={palette}
                 small
               />

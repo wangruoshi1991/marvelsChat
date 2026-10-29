@@ -78,6 +78,16 @@ const props = {
       name: '相册管理 Agent',
       version: '0.3.2',
       category: 'media-management',
+      identity: {
+        avatarKind: 'agent-mark',
+        mark: '测',
+        shape: 'circle',
+        colors: {
+          background: '#123456',
+          foreground: '#ffffff',
+          accent: '#abcdef',
+        },
+      },
       description: '',
       capabilities: [],
       permissions: [],
@@ -88,6 +98,16 @@ const props = {
       name: '建站 Agent',
       version: '0.3.3',
       category: 'station-builder',
+      identity: {
+        avatarKind: 'agent-mark',
+        mark: '测',
+        shape: 'circle',
+        colors: {
+          background: '#123456',
+          foreground: '#ffffff',
+          accent: '#abcdef',
+        },
+      },
       description: '',
       capabilities: [],
       permissions: [],
@@ -391,6 +411,16 @@ test('two text Agents show their handoff and readable final result without a pag
     key,
     name: index === 0 ? '资料助手' : '漫画日记',
     category: index === 0 ? 'file-preprocessing' : 'comic-diary',
+    identity: {
+      avatarKind: 'agent-mark',
+      mark: '测',
+      shape: 'circle',
+      colors: {
+        background: '#123456',
+        foreground: '#ffffff',
+        accent: '#abcdef',
+      },
+    },
   }));
   const w = agentWorkspace({
     goal: '根据安排资料写一个周末故事',

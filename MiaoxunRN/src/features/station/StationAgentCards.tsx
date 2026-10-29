@@ -243,7 +243,6 @@ export function AgentMark({
   return (
     <AgentGlyphAvatar
       agentId={agent.id || agent.key || ''}
-      category={agent.category}
       identity={agent.identity}
       size={48}
     />

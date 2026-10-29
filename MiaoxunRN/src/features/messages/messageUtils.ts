@@ -1,5 +1,5 @@
 import { ChatMessage, ChatThread } from '../session/useMiaoxunSession';
-import { AgentDTO, AgentIdentityDTO } from '../../models/api';
+import { AgentDTO } from '../../models/api';
 
 export const isThreadOnline = (thread: ChatThread, agent: AgentDTO | null) => {
   if (!thread.agentId) {
@@ -68,15 +68,4 @@ export const shouldShowMessageTimeSeparator = (
     return true;
   }
   return currentTimestamp - previousTimestamp >= 5 * 60 * 1000;
-};
-
-export const resolveAgentIdentity = (
-  agents: AgentDTO[],
-  agentId?: string | null,
-): AgentIdentityDTO | null => {
-  const identity = agents.find(agent => agent.key === agentId)?.identity;
-  if (!identity || identity.avatarKind !== 'agent-mark') {
-    return null;
-  }
-  return identity;
 };

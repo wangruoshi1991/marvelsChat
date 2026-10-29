@@ -535,14 +535,13 @@ export function AIPartnerGrid({
   ownedAgents: OwnedAgentDTO[];
   onOpenAgentThread: (agentId: string) => void;
 }) {
+  void agents;
   const colors = resolveStationColors(palette);
-  const registeredByKey = new Map(agents.map(agent => [agent.key, agent]));
   const enabledAgents = ownedAgents
     .filter(agent => agent.enabled && agent.id !== 'media-retrieval')
     .map(agent => ({
       ...agent,
-      identity:
-        agent.identity || registeredByKey.get(agent.id)?.identity || null,
+      identity: agent.identity,
     }));
 
   if (!enabledAgents.length) {

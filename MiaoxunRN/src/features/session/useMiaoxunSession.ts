@@ -54,6 +54,7 @@ import {
 } from '../station/albumAssistantAuthorization';
 import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
 import { agentAccessSnapshot } from '../agents/agentAccess';
+import { assertAgentDirectoryIdentity } from '../messages/agentIdentity';
 
 export type { ChatMessage, ChatThread, Language } from './sessionTypes';
 
@@ -282,6 +283,10 @@ export function useMiaoxunSession() {
       requestedStationContentRevision = stationContentMutationRevisionRef.current,
     ) => {
       setAIContractSession(tokenRef.current, bootstrap.contracts);
+      assertAgentDirectoryIdentity(
+        bootstrap.agents.registered,
+        bootstrap.agents.owned,
+      );
       // A bootstrap started before a confirmed save must not restore its older profile snapshot.
       const profileChanged =
         requestedProfileRevision !== profileRevisionRef.current;
@@ -507,6 +512,10 @@ export function useMiaoxunSession() {
           setNotices(sync.notices);
           setUnreadNoticeCount(sync.unreadNoticeCount);
           if (sync.agents) {
+            assertAgentDirectoryIdentity(
+              sync.agents.registered,
+              sync.agents.owned,
+            );
             setAgents(sync.agents.registered);
             setOwnedAgents(sync.agents.owned);
           }

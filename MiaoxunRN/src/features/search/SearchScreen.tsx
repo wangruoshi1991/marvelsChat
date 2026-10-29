@@ -377,8 +377,13 @@ export function SearchScreen({
       {item.kind === 'agent' ? (
         <AgentGlyphAvatar
           agentId={item.thread.agentId || ''}
-          category={item.agent?.category}
-          identity={item.agent?.identity || null}
+          identity={
+            item.agent?.identity || {
+              status: 'unavailable',
+              code: 'AGENT_IDENTITY_CONTRACT_ERROR',
+              message: 'Agent identity contract unavailable.',
+            }
+          }
           size={xunTheme ? 44 : 54}
           variant={xunTheme ? 'xun' : undefined}
         />

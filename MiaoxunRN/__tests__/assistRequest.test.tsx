@@ -31,6 +31,16 @@ test('workspace context includes only persisted participants and is independent 
       name: '妙管家',
       version: '1',
       category: 'orchestrator',
+      identity: {
+        avatarKind: 'agent-mark',
+        mark: '测',
+        shape: 'circle',
+        colors: {
+          background: '#123456',
+          foreground: '#ffffff',
+          accent: '#abcdef',
+        },
+      },
       description: '',
       capabilities: [],
       permissions: [],
@@ -41,6 +51,16 @@ test('workspace context includes only persisted participants and is independent 
       name: '没有参与的建站助手',
       version: '1',
       category: 'station-builder',
+      identity: {
+        avatarKind: 'agent-mark',
+        mark: '测',
+        shape: 'circle',
+        colors: {
+          background: '#123456',
+          foreground: '#ffffff',
+          accent: '#abcdef',
+        },
+      },
       description: '',
       capabilities: [],
       permissions: [],

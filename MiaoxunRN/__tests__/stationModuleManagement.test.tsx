@@ -135,6 +135,16 @@ describe('station module management', () => {
       name: '3D形象顾问 Agent',
       version: '1.0.0',
       category: 'advisory',
+      identity: {
+        avatarKind: 'agent-mark',
+        mark: '测',
+        shape: 'circle',
+        colors: {
+          background: '#123456',
+          foreground: '#ffffff',
+          accent: '#abcdef',
+        },
+      },
       description: '3D advice',
       capabilities: [],
       permissions: [],
@@ -145,6 +155,16 @@ describe('station module management', () => {
       name: agent.name,
       description: agent.description,
       category: agent.category,
+      identity: {
+        avatarKind: 'agent-mark',
+        mark: '测',
+        shape: 'circle',
+        colors: {
+          background: '#123456',
+          foreground: '#ffffff',
+          accent: '#abcdef',
+        },
+      },
       enabled: true,
       grantedScopes: [],
     };
@@ -212,6 +232,16 @@ describe('station module management', () => {
       name: '3D形象顾问 Agent',
       description: '为真实的形象素材提供准备建议，不会直接生成3D模型。',
       category: 'advisory',
+      identity: {
+        avatarKind: 'agent-mark',
+        mark: '测',
+        shape: 'circle',
+        colors: {
+          background: '#123456',
+          foreground: '#ffffff',
+          accent: '#abcdef',
+        },
+      },
       enabled: true,
       grantedScopes: [],
       createdAt: '2026-10-28T08:00:00.000Z',

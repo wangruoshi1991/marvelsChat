@@ -186,7 +186,7 @@ export type AgentDTO = {
   description: string;
   capabilities: string[];
   permissions: string[];
-  identity?: AgentIdentityDTO | null;
+  identity: AgentIdentityDTO;
   /** Operator catalog visibility. Unpublished entries remain available only
    * for existing user authorizations and are excluded from recommendations. */
   published?: boolean;
@@ -194,15 +194,23 @@ export type AgentDTO = {
 };
 
 export type AgentIdentityDTO = {
-  avatarKind: 'agent-mark';
+  avatarKind: string;
   mark: string;
-  shape: 'circle' | 'squircle' | 'rounded';
+  shape: string;
   colors: {
     background: string;
     foreground: string;
     accent: string;
   };
 };
+
+export type AgentIdentityUnavailable = {
+  status: 'unavailable';
+  code: 'AGENT_IDENTITY_CONTRACT_ERROR';
+  message: string;
+};
+
+export type AgentIdentityInput = AgentIdentityDTO | AgentIdentityUnavailable;
 
 export type OwnedAgentDTO = {
   id: string;
@@ -212,7 +220,7 @@ export type OwnedAgentDTO = {
   enabled: boolean;
   grantedScopes: string[];
   published?: boolean;
-  identity?: AgentIdentityDTO | null;
+  identity: AgentIdentityDTO;
   createdAt?: string | null;
 };
 

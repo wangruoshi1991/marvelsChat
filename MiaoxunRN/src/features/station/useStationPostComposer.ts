@@ -44,14 +44,10 @@ export function useStationPostComposer({
         .filter(agent => agent.enabled)
         .map(agent => ({
           ...agent,
-          identity:
-            agent.identity ||
-            session.agents.find(candidate => candidate.key === agent.id)
-              ?.identity ||
-            null,
+          identity: agent.identity,
         }))
         .slice(0, 6),
-    [session.agents, session.ownedAgents],
+    [session.ownedAgents],
   );
   const hasDraft =
     Boolean(body.trim()) ||

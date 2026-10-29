@@ -67,6 +67,16 @@ const view = (
         name: '相册管理',
         version: '1',
         category: 'media-management',
+        identity: {
+          avatarKind: 'agent-mark',
+          mark: '测',
+          shape: 'circle',
+          colors: {
+            background: '#123456',
+            foreground: '#ffffff',
+            accent: '#abcdef',
+          },
+        },
         description: '',
         capabilities: [],
         permissions: [],
@@ -77,6 +87,16 @@ const view = (
         name: '未参与的管家',
         version: '1',
         category: 'orchestrator',
+        identity: {
+          avatarKind: 'agent-mark',
+          mark: '测',
+          shape: 'circle',
+          colors: {
+            background: '#123456',
+            foreground: '#ffffff',
+            accent: '#abcdef',
+          },
+        },
         description: '',
         capabilities: [],
         permissions: [],

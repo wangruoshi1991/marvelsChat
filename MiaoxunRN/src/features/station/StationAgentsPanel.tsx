@@ -72,8 +72,7 @@ export function StationAgentsPanel({
     .filter(agent => agent.enabled)
     .map(agent => ({
       ...agent,
-      identity:
-        agent.identity || registeredByKey.get(agent.id)?.identity || null,
+      identity: agent.identity,
     }));
   // A disabled Agent returns to 「推荐添加」, so the filter keys off the
   // *enabled* cards rather than every owned row.

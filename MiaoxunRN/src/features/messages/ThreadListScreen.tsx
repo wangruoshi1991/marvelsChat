@@ -187,8 +187,13 @@ function ThreadSwipeRow({
             <View style={xunTheme ? undefined : s.scaledAvatar}>
               <AgentIconAvatar
                 agentId={thread.agentId}
-                category={agent?.category}
-                identity={agent?.identity || null}
+                identity={
+                  agent?.identity || {
+                    status: 'unavailable',
+                    code: 'AGENT_IDENTITY_CONTRACT_ERROR',
+                    message: 'Agent identity contract unavailable.',
+                  }
+                }
                 palette={palette}
                 size={xunTheme ? 44 : undefined}
                 variant={xunTheme ? 'xun' : undefined}

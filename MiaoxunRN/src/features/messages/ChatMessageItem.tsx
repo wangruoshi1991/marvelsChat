@@ -40,7 +40,6 @@ import { agentReplyPresentation } from './agentReplyPresentation';
 import { ChatMessageText } from './ChatMessageText';
 import {
   messageTimeText,
-  resolveAgentIdentity,
   shouldShowMessageTimeSeparator,
 } from './messageUtils';
 
@@ -487,12 +486,13 @@ export function ChatMessageItem({
         ) : shouldShowAgentIcon && thread.agentId ? (
           <AgentIconAvatar
             agentId={thread.agentId}
-            category={threadAgent?.category}
             identity={
-              threadAgent?.identity ||
-              resolveAgentIdentity(agents, thread.agentId)
+              threadAgent?.identity || {
+                status: 'unavailable',
+                code: 'AGENT_IDENTITY_CONTRACT_ERROR',
+                message: 'Agent identity contract unavailable.',
+              }
             }
-            palette={palette}
             size={xunTheme ? 45 : 36}
             variant={xunTheme ? 'xun' : undefined}
             radius={xunTheme ? 13 : undefined}

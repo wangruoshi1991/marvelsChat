@@ -85,8 +85,13 @@ export function XunTaskCard({
             >
               <AgentIconAvatar
                 agentId={id}
-                category={agent?.category}
-                identity={agent?.identity || null}
+                identity={
+                  agent?.identity || {
+                    status: 'unavailable',
+                    code: 'AGENT_IDENTITY_CONTRACT_ERROR',
+                    message: 'Agent identity contract unavailable.',
+                  }
+                }
                 size={31}
                 // V20 task cards use circular glyphs; the rounded-square
                 // portraits belong to the conversation list/detail views.

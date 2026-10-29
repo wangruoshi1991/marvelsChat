@@ -49,6 +49,16 @@ const agents: AgentDTO[] = [
     name: '相册管理',
     version: '1',
     category: 'media-management',
+    identity: {
+      avatarKind: 'agent-mark',
+      mark: '测',
+      shape: 'circle',
+      colors: {
+        background: '#123456',
+        foreground: '#ffffff',
+        accent: '#abcdef',
+      },
+    },
     description: '',
     capabilities: [],
     permissions: [],
@@ -59,6 +69,16 @@ const agents: AgentDTO[] = [
     name: '建站助手',
     version: '1',
     category: 'site-builder',
+    identity: {
+      avatarKind: 'agent-mark',
+      mark: '测',
+      shape: 'circle',
+      colors: {
+        background: '#123456',
+        foreground: '#ffffff',
+        accent: '#abcdef',
+      },
+    },
     description: '',
     capabilities: [],
     permissions: [],
