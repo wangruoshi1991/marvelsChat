@@ -1,0 +1,2 @@
+import { createModule } from './_module.js';
+export function createSystemModule(client) { return createModule({ name:'system', title:'服务配置', permission:'model:operate', endpoint:'/api/admin/model-status', client, renderData(data) { return `<section class="module-header"><div><span>SYSTEM</span><h2>服务配置</h2><p>只显示脱敏配置状态；供应商连通测试需要明确操作。</p></div><button data-system-test type="button">连通测试</button></section><div class="system-status"><strong>${data?.configured ? '模型已配置' : '模型未配置'}</strong><p>${data?.provider || '服务端尚未返回 provider。'}</p></div>`; } }); }

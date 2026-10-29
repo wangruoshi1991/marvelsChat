@@ -1,0 +1,2 @@
+import { createModule } from './_module.js';
+export function createProductsModule(client) { return createModule({ name:'products', title:'产品发布', permission:'products:manage', endpoint:'/api/admin/products', client, columns:[{key:'key',label:'产品'},{key:'displayName',label:'名称'},{key:'version',label:'版本'},{key:'status',label:'状态'},{key:'platforms',label:'平台',format:(v)=>Array.isArray(v)?v.join(', '):v}] }); }
