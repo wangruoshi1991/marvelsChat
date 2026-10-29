@@ -7,6 +7,8 @@ import {
 } from "../agent-catalog-repository.js";
 import { buildAgentReadiness } from "../agent-readiness-service.js";
 import { registerAdminMediaRetrievalRoutes } from "./admin-media-retrieval-routes.js";
+import { registerAdminReleaseRoutes } from "./admin-release-routes.js";
+import { registerAdminProductRoutes } from "./admin-product-routes.js";
 import {
   adminAgentRuns,
   adminEvents,
@@ -54,6 +56,24 @@ import {
   userRoleSchema,
   userStatusSchema,
 } from "../schemas.js";
+import {
+  adminOperationsOverview,
+  adminMonitoring,
+  listAdminTasks,
+  mutateAdminTask,
+} from "../admin-operations-repository.js";
+import { z } from "zod";
+
+const operationsWindowSchema = z.object({ days: z.coerce.number().int().refine(value => [7, 30, 90].includes(value)).default(30) }).strict();
+const operationsTaskQuerySchema = z.object({
+  agentId: z.string().trim().min(1).max(120).optional(),
+  userId: z.string().uuid().optional(),
+  status: z.enum(["queued", "running", "waiting_input", "awaiting_confirmation", "succeeded", "failed", "interrupted", "cancelling", "cancelled"]).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+}).strict();
+const operationsMutationSchema = z.object({ idempotencyKey: z.string().trim().min(8).max(160) }).strict();
 
 const setAlbumAssistantAccess = createAlbumAssistantAccessService({
   withTransaction,
@@ -126,14 +146,73 @@ export function registerAdminRoutes(
     asyncHandler,
     requireAdmin,
   });
+  registerAdminReleaseRoutes(app, { authenticate, asyncHandler, requireAdmin });
+  registerAdminProductRoutes(app, { authenticate, asyncHandler, requireAdmin });
   app.get(
     "/api/admin/overview",
     authenticate,
     requireAdmin("users:read"),
-    asyncHandler(async (_req, res) => {
-      res.json({ data: await adminOverview() });
+    asyncHandler(async (req, res) => {
+      const window = operationsWindowSchema.parse(req.query);
+      const [legacy, operations] = await Promise.all([
+        adminOverview(),
+        adminOperationsOverview(window),
+      ]);
+      res.json({ data: { ...legacy, ...operations } });
     })
   );
+
+  app.get(
+    "/api/admin/operations/overview",
+    authenticate,
+    requireAdmin("users:read"),
+    asyncHandler(async (req, res) => {
+      res.json({ data: await adminOperationsOverview(operationsWindowSchema.parse(req.query)) });
+    }),
+  );
+
+  // The modular console uses this path. Keep the legacy overview endpoint
+  // above for existing operators while the response contract converges.
+  app.get(
+    "/api/admin/tasks",
+    authenticate,
+    requireAdmin("tasks:read"),
+    asyncHandler(async (req, res) => {
+      res.json({ data: { items: await listAdminTasks(operationsTaskQuerySchema.parse(req.query)) } });
+    }),
+  );
+
+  app.get(
+    "/api/admin/monitoring",
+    authenticate,
+    requireAdmin("audit:read"),
+    asyncHandler(async (req, res) => {
+      res.json({ data: await adminMonitoring(operationsWindowSchema.parse(req.query)) });
+    }),
+  );
+
+  for (const operation of ["retry", "cancel"]) {
+    app.post(
+      `/api/admin/tasks/:taskId/${operation}`,
+      authenticate,
+      requireAdmin("tasks:write"),
+      asyncHandler(async (req, res) => {
+        const body = operationsMutationSchema.parse({
+          idempotencyKey: req.get("Idempotency-Key") || req.body?.idempotencyKey,
+        });
+        const result = await mutateAdminTask({
+          taskId: req.params.taskId,
+          operation,
+          idempotencyKey: body.idempotencyKey,
+          actor: req.user.id,
+          requestId: req.get("X-Request-ID") || null,
+          ipHash: hashRequestIp(req.ip),
+          userAgent: req.get("user-agent") || "",
+        });
+        res.json({ data: result });
+      }),
+    );
+  }
 
   app.get(
     "/api/admin/users",
