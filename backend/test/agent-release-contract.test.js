@@ -44,6 +44,8 @@ test("AgentIdentity has the required shared fields and rejects malformed identit
   assert.equal(isCompleteAgentIdentity(identity), true);
   assert.deepEqual(agentIdentitySchema.parse(identity), identity);
   assert.throws(() => agentIdentitySchema.parse({ ...identity, colors: { background: "bad" } }));
+  assert.throws(() => agentIdentitySchema.parse({ ...identity, colors: { ...identity.colors, extra: "#000000" } }));
+  assert.throws(() => agentIdentitySchema.parse({ ...identity, updatedAt: "2026-10-29T00:00:00+08:00" }));
   assert.throws(() => agentIdentitySchema.parse({ ...identity, displayName: "" }));
   assert.equal(isCompleteAgentIdentity({ ...identity, updatedAt: undefined }), false);
 });
@@ -65,11 +67,11 @@ test("release schema rejects duplicate scopes and unknown status", () => {
 });
 
 test("product dependency schema requires unique declared scopes", () => {
-  assert.deepEqual(productDependencySchema.parse({ agentKey: "demo-agent", version: "1.2.3", scopes: ["messages:read"] }), {
-    agentKey: "demo-agent", version: "1.2.3", scopes: ["messages:read"],
+  assert.deepEqual(productDependencySchema.parse({ agentKey: "demo-agent", agentReleaseId: "00000000-0000-4000-8000-000000000001", version: "1.2.3", scopes: ["messages:read"] }), {
+    agentKey: "demo-agent", agentReleaseId: "00000000-0000-4000-8000-000000000001", version: "1.2.3", scopes: ["messages:read"],
   });
   assert.throws(() => productDependencySchema.parse({ agentKey: "demo-agent", version: "1.2.3", scopes: ["messages:read", "messages:read"] }));
-  assert.throws(() => productDependencySchema.parse({ agentKey: "demo-agent", version: "1.2.3", scopes: ["not-a-scope"] }));
+  assert.throws(() => productDependencySchema.parse({ agentKey: "demo-agent", agentReleaseId: "00000000-0000-4000-8000-000000000001", version: "1.2.3", scopes: ["not-a-scope"] }));
   assert.equal(isValidProductVersionTransition("draft", "review"), true);
   assert.equal(isValidProductVersionTransition("retired", "published"), false);
 });
@@ -89,4 +91,19 @@ test("migration discovery includes 046-048 in numeric order", async () => {
   assert.match(migrations.at(-3).sql, /CREATE TABLE IF NOT EXISTS agent_registry/);
   assert.match(migrations.at(-2).sql, /CREATE TABLE IF NOT EXISTS products/);
   assert.match(migrations.at(-1).sql, /CREATE TABLE IF NOT EXISTS user_entitlements/);
+});
+
+test("release and product migrations keep one catalog status and preserve audit history", async () => {
+  const migrations = await loadMigrationFiles();
+  const releaseSql = migrations.find(item => item.filename === "046_agent_releases.sql").sql;
+  const productSql = migrations.find(item => item.filename === "047_product_catalog.sql").sql;
+  const entitlementSql = migrations.find(item => item.filename === "048_agent_entitlements.sql").sql;
+  assert.match(releaseSql, /chk_agent_catalog_contract_hash[\s\S]*\^\[a-f0-9\]\{64\}/);
+  assert.match(releaseSql, /ALTER TABLE agent_catalog DROP COLUMN published/);
+  assert.match(releaseSql, /release_id CHAR\(36\) NOT NULL REFERENCES agent_releases\(id\) ON DELETE RESTRICT/);
+  assert.match(productSql, /agent_release_id CHAR\(36\) NOT NULL/);
+  assert.match(productSql, /FOREIGN KEY \(agent_release_id, agent_key, version\)[\s\S]*REFERENCES agent_releases\(id, agent_key, version\) ON DELETE RESTRICT/);
+  assert.match(productSql, /product_id CHAR\(36\) NOT NULL REFERENCES products\(id\) ON DELETE RESTRICT/);
+  assert.match(productSql, /product_version_id CHAR\(36\) REFERENCES product_versions\(id\) ON DELETE RESTRICT/);
+  assert.match(entitlementSql, /entitlement_id CHAR\(36\) NOT NULL REFERENCES user_entitlements\(id\) ON DELETE RESTRICT/);
 });

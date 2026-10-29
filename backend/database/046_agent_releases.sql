@@ -29,13 +29,14 @@ CREATE TABLE IF NOT EXISTS agent_releases (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_agent_release_registry FOREIGN KEY (agent_key) REFERENCES agent_registry(agent_key) ON DELETE RESTRICT,
   CONSTRAINT uniq_agent_release_contract UNIQUE (agent_key, version, contract_hash),
+  CONSTRAINT uniq_agent_release_identity UNIQUE (id, agent_key, version),
   CONSTRAINT chk_agent_release_status CHECK (catalog_status IN ('draft', 'review', 'published', 'unpublished', 'archived')),
   CONSTRAINT chk_agent_release_published_at CHECK ((catalog_status = 'published') = (published_at IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS agent_release_status_history (
   id BIGSERIAL PRIMARY KEY,
-  release_id CHAR(36) NOT NULL REFERENCES agent_releases(id) ON DELETE CASCADE,
+  release_id CHAR(36) NOT NULL REFERENCES agent_releases(id) ON DELETE RESTRICT,
   from_status VARCHAR(20),
   to_status VARCHAR(20) NOT NULL,
   actor_user_id CHAR(36) REFERENCES users(id) ON DELETE SET NULL,
@@ -52,7 +53,25 @@ ALTER TABLE agent_catalog ADD COLUMN IF NOT EXISTS source VARCHAR(80) NOT NULL D
 ALTER TABLE agent_catalog ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'unpublished';
 ALTER TABLE agent_catalog DROP CONSTRAINT IF EXISTS chk_agent_catalog_status;
 ALTER TABLE agent_catalog ADD CONSTRAINT chk_agent_catalog_status CHECK (status IN ('draft', 'review', 'published', 'unpublished', 'archived'));
-UPDATE agent_catalog SET status = CASE WHEN published THEN 'published' ELSE 'unpublished' END;
+ALTER TABLE agent_catalog DROP CONSTRAINT IF EXISTS chk_agent_catalog_contract_hash;
+ALTER TABLE agent_catalog ADD CONSTRAINT chk_agent_catalog_contract_hash
+  CHECK (contract_hash IS NULL OR contract_hash ~ '^[a-f0-9]{64}$');
+
+-- 044 used a boolean visibility column. Migrate it once into the lifecycle
+-- status and remove the duplicate source of truth. The conditional block
+-- keeps this migration safe to retry after the column has already been gone.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = current_schema()
+       AND table_name = 'agent_catalog'
+       AND column_name = 'published'
+  ) THEN
+    UPDATE agent_catalog SET status = CASE WHEN published THEN 'published' ELSE 'unpublished' END;
+    ALTER TABLE agent_catalog DROP COLUMN published;
+  END IF;
+END $$;
 
 -- Preserve the deployed keys from migration 044 as historical registration
 -- facts. New registry syncs insert real versions and hashes as unreviewed rows.

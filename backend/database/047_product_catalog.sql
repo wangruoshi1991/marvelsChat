@@ -31,18 +31,21 @@ CREATE TABLE IF NOT EXISTS product_agent_dependencies (
   id BIGSERIAL PRIMARY KEY,
   product_version_id CHAR(36) NOT NULL REFERENCES product_versions(id) ON DELETE CASCADE,
   agent_key VARCHAR(80) NOT NULL,
-  agent_release_id CHAR(36) REFERENCES agent_releases(id) ON DELETE RESTRICT,
+  agent_release_id CHAR(36) NOT NULL,
   version VARCHAR(80) NOT NULL,
   required_scopes JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(required_scopes) = 'array'),
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT uniq_product_agent_dependency UNIQUE (product_version_id, agent_key),
+  CONSTRAINT fk_product_dependency_release_identity
+    FOREIGN KEY (agent_release_id, agent_key, version)
+    REFERENCES agent_releases(id, agent_key, version) ON DELETE RESTRICT,
   CONSTRAINT fk_product_dependency_registry FOREIGN KEY (agent_key) REFERENCES agent_registry(agent_key) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS product_status_history (
   id BIGSERIAL PRIMARY KEY,
-  product_id CHAR(36) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  product_version_id CHAR(36) REFERENCES product_versions(id) ON DELETE CASCADE,
+  product_id CHAR(36) NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  product_version_id CHAR(36) REFERENCES product_versions(id) ON DELETE RESTRICT,
   from_status VARCHAR(20),
   to_status VARCHAR(20) NOT NULL,
   actor_user_id CHAR(36) REFERENCES users(id) ON DELETE SET NULL,

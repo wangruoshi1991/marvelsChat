@@ -13,6 +13,7 @@ export const AGENT_IDENTITY_FIELDS = Object.freeze([
 ]);
 export const AGENT_IDENTITY_REQUIRED_FIELDS = AGENT_IDENTITY_FIELDS;
 export const AGENT_IDENTITY_SHAPES = Object.freeze(["circle", "squircle", "rounded"]);
+export const AGENT_IDENTITY_COLOR_FIELDS = Object.freeze(["background", "foreground", "accent"]);
 export const AGENT_RELEASE_CATALOG_STATUSES = Object.freeze(["draft", "review", "published", "unpublished", "archived"]);
 export const PRODUCT_VERSION_STATUSES = Object.freeze(["draft", "review", "published", "paused", "retired"]);
 export const ENTITLEMENT_STATUSES = Object.freeze(["enabled", "disabled", "unavailable", "reconsent_required"]);
@@ -30,9 +31,10 @@ export function isCompleteAgentIdentity(value) {
   if (typeof value.mark !== "string" || !value.mark.trim() || value.mark.length > 40) return false;
   if (!AGENT_IDENTITY_SHAPES.includes(value.shape)) return false;
   if (!value.colors || typeof value.colors !== "object" || Array.isArray(value.colors)) return false;
-  if (["background", "foreground", "accent"].some((key) => !HEX_COLOR.test(value.colors[key] || ""))) return false;
+  if (Object.keys(value.colors).some((key) => !AGENT_IDENTITY_COLOR_FIELDS.includes(key))) return false;
+  if (AGENT_IDENTITY_COLOR_FIELDS.some((key) => !HEX_COLOR.test(value.colors[key] || ""))) return false;
   if (typeof value.published !== "boolean" || typeof value.source !== "string" || !value.source.trim() || value.source.length > 40) return false;
-  return typeof value.updatedAt === "string" && ISO_DATE.test(value.updatedAt) && !Number.isNaN(Date.parse(value.updatedAt));
+  return isAgentIdentityTimestamp(value.updatedAt);
 }
 
 function canonical(value) {
@@ -56,3 +58,5 @@ export const stableContractJson = canonicalizeContract;
 export const isAgentKey = (value) => AGENT_KEY.test(String(value || ""));
 export const isSemanticVersion = (value) => VERSION.test(String(value || ""));
 export const isHexColor = (value) => HEX_COLOR.test(String(value || ""));
+export const isAgentIdentityTimestamp = (value) =>
+  typeof value === "string" && ISO_DATE.test(value) && !Number.isNaN(Date.parse(value));

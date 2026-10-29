@@ -377,7 +377,7 @@ export async function ensureDefaultButlerAccess({ userId, connection = null }) {
   const catalogueRows = typeof connection?.query === "function"
     ? await queryFn(
         `SELECT display_name, description, identity_mark, identity_shape,
-                identity_colors, published
+                identity_colors, status
            FROM agent_catalog
           WHERE agent_id = ?
           LIMIT 1`,
@@ -391,7 +391,7 @@ export async function ensureDefaultButlerAccess({ userId, connection = null }) {
         ...registeredAgent,
         name: catalogue.display_name ?? registeredAgent.name,
         description: catalogue.description ?? registeredAgent.description,
-        published: Boolean(catalogue.published),
+        published: catalogue.status === "published",
         identity: {
           ...registeredAgent.identity,
           ...(catalogue.identity_mark ? { mark: catalogue.identity_mark } : {}),

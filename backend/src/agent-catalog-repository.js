@@ -9,7 +9,12 @@ function mapRow(row) {
     identityMark: row.identity_mark ?? null,
     identityShape: row.identity_shape || null,
     identityColors: parseJson(row.identity_colors, {}),
-    published: Boolean(row.published),
+    status: row.status || "unpublished",
+    releaseVersion: row.release_version ?? null,
+    contractHash: row.contract_hash ?? null,
+    // Keep the existing API projection while the database uses one lifecycle
+    // status column as its source of truth.
+    published: row.status === "published",
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };
@@ -27,7 +32,10 @@ function applyCatalogueMetadata(agent, metadata) {
     // database field falls back to the executable registry declaration.
     name: metadata.displayName ?? agent.name,
     description: metadata.description ?? agent.description,
-    published: metadata.published,
+    published: metadata.status === "published",
+    catalogStatus: metadata.status,
+    releaseVersion: metadata.releaseVersion,
+    contractHash: metadata.contractHash,
     identity: {
       ...(agent.identity || {}),
       ...(metadata.identityMark ? { mark: metadata.identityMark } : {}),
@@ -50,8 +58,8 @@ export async function syncAgentCatalogue(registeredAgents) {
     // retain their reviewed state; new rows are explicitly unpublished.
     await query(
       `INSERT INTO agent_catalog
-       (agent_id, display_name, description, identity_mark, identity_shape, identity_colors, published)
-       VALUES (?, ?, ?, ?, ?, ?::jsonb, FALSE)
+       (agent_id, display_name, description, identity_mark, identity_shape, identity_colors, status)
+       VALUES (?, ?, ?, ?, ?, ?::jsonb, 'unpublished')
        ON CONFLICT (agent_id) DO UPDATE SET
          display_name = COALESCE(agent_catalog.display_name, EXCLUDED.display_name),
          description = COALESCE(agent_catalog.description, EXCLUDED.description),
@@ -84,9 +92,9 @@ export async function syncAgentCatalogue(registeredAgents) {
 export async function listAgentCatalogue({ includeUnregistered = false } = {}) {
   const rows = await query(
     `SELECT agent_id, display_name, description, identity_mark, identity_shape,
-            identity_colors, published, created_at, updated_at
+            identity_colors, status, release_version, contract_hash, created_at, updated_at
        FROM agent_catalog
-      ${includeUnregistered ? "" : "WHERE published = TRUE"}
+      ${includeUnregistered ? "" : "WHERE status = 'published'"}
       ORDER BY updated_at DESC, agent_id ASC`,
   );
   return rows.map(mapRow);
@@ -96,7 +104,7 @@ export async function updateAgentCatalogue(agentId, patch) {
   return withTransaction(async ({ query: runQuery }) => {
   const previous = await runQuery(
     `SELECT agent_id, display_name, description, identity_mark, identity_shape,
-            identity_colors, published, created_at, updated_at
+            identity_colors, status, release_version, contract_hash, created_at, updated_at
        FROM agent_catalog
       WHERE agent_id = ?
       LIMIT 1 FOR UPDATE`,
@@ -114,12 +122,16 @@ export async function updateAgentCatalogue(agentId, patch) {
     ["description", "description"],
     ["identityMark", "identity_mark"],
     ["identityShape", "identity_shape"],
-    ["published", "published"],
+    ["status", "status"],
   ]) {
     if (Object.hasOwn(patch, field)) {
       assignments.push(`${column} = ?`);
       params.push(patch[field]);
     }
+  }
+  if (Object.hasOwn(patch, "published")) {
+    assignments.push("status = ?");
+    params.push(patch.published ? "published" : "unpublished");
   }
   if (Object.hasOwn(patch, "identityColors")) {
     assignments.push("identity_colors = identity_colors || ?::jsonb");
@@ -133,7 +145,7 @@ export async function updateAgentCatalogue(agentId, patch) {
         SET ${assignments.join(", ")}
       WHERE agent_id = ?
       RETURNING agent_id, display_name, description, identity_mark, identity_shape,
-                identity_colors, published, created_at, updated_at`,
+                identity_colors, status, release_version, contract_hash, created_at, updated_at`,
     params,
   );
   if (!rows[0]) return null;
@@ -175,7 +187,7 @@ export async function updateAgentCatalogue(agentId, patch) {
 
 export async function listPublishedRegisteredAgents(registeredAgents) {
   const all = await listRegisteredAgentsWithCatalogue(registeredAgents);
-  return all.filter((agent) => agent.published);
+  return all.filter((agent) => agent.status === "published");
 }
 
 /**

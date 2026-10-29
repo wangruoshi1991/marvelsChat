@@ -8,6 +8,7 @@ import {
 import {
   MEDIA_RETRIEVAL_CONSENT_VERSION,
 } from "./media-retrieval-constants.js";
+import { isAgentIdentityTimestamp } from "../../shared/agent-catalog.js";
 
 const phoneNumberSchema = z.string().trim().regex(/^1[3-9]\d{9}$/, "Phone number must be a valid mainland China mobile number");
 
@@ -562,9 +563,14 @@ export const agentCatalogPatchSchema = z.object({
     foreground: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
     accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   }).strict().optional(),
+  status: z.enum(["draft", "review", "published", "unpublished", "archived"]).optional(),
+  // Accept the pre-046 request shape at the API boundary, but persist only
+  // the lifecycle status column. New callers should send status.
   published: z.boolean().optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, {
   message: "Agent catalogue update cannot be empty",
+}).refine((value) => !(value.status && value.published !== undefined), {
+  message: "Use status or published, not both",
 });
 
 export const incrementalSyncSchema = z.object({
@@ -654,7 +660,7 @@ export const agentIdentitySchema = z.object({
   }).strict(),
   published: z.boolean(),
   source: z.string().trim().min(1).max(40),
-  updatedAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().refine(isAgentIdentityTimestamp, "updatedAt must be a UTC ISO-8601 timestamp"),
 }).strict();
 
 export const agentReleaseSchema = z.object({
@@ -669,6 +675,7 @@ export const agentReleaseSchema = z.object({
 
 export const productDependencySchema = z.object({
   agentKey: agentKeySchema,
+  agentReleaseId: z.string().uuid(),
   version: versionSchema,
   scopes: uniqueScopesSchema,
 }).strict();

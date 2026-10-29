@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS user_entitlements (
 
 CREATE TABLE IF NOT EXISTS entitlement_status_history (
   id BIGSERIAL PRIMARY KEY,
-  entitlement_id CHAR(36) NOT NULL REFERENCES user_entitlements(id) ON DELETE CASCADE,
+  entitlement_id CHAR(36) NOT NULL REFERENCES user_entitlements(id) ON DELETE RESTRICT,
   from_status VARCHAR(24),
   to_status VARCHAR(24) NOT NULL,
   actor_user_id CHAR(36) REFERENCES users(id) ON DELETE SET NULL,
