@@ -24,7 +24,23 @@ test("identity cards stop rendering when the server contract is incomplete", () 
   const html = agentIdentityCard({ key: "album-manager", displayName: "相册助手" });
   assert.match(html, /身份合同错误/);
   assert.doesNotMatch(html, /相册助手/);
-  const complete = agentIdentityCard({ key: "album-manager", displayName: "相册助手", description: "真实描述", mark: "相", shape: "circle", colors: { background: "#111" }, source: "catalog", updatedAt: "2026-10-29T00:00:00Z" });
+  const legacyCatalogue = agentIdentityCard({
+    catalogue: {
+      key: "album-manager", displayName: "旧目录名称", description: "旧描述",
+      mark: "旧", shape: "circle", colors: { background: "#111" },
+      source: "catalog", updatedAt: "2026-10-29T00:00:00Z",
+    },
+  });
+  assert.match(legacyCatalogue, /身份合同错误/);
+  assert.doesNotMatch(legacyCatalogue, /旧目录名称/);
+});
+
+function completeAgentIdentity() {
+  return { key: "album-manager", displayName: "相册助手", description: "真实描述", mark: "相", shape: "circle", colors: { background: "#111" }, source: "catalog", updatedAt: "2026-10-29T00:00:00Z" };
+}
+
+test("identity card accepts only the standard identity field", () => {
+  const complete = agentIdentityCard({ identity: completeAgentIdentity() });
   assert.match(complete, /相册助手/);
   assert.match(complete, /album-manager/);
 });
