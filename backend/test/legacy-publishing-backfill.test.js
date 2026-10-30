@@ -25,6 +25,7 @@ const catalog = (key, published = true) => ({
   identity_shape: "squircle",
   identity_colors: { background: "#123456", foreground: "#ffffff", accent: "#abcdef" },
   status: published ? "published" : "unpublished",
+  created_at: "2026-01-01T00:00:00.000Z",
   updated_at: "2026-10-30T00:00:00.000Z",
 });
 
@@ -80,4 +81,22 @@ test("legacy backfill fails closed when the identity contract is incomplete", ()
   assert.equal(item.product, null);
   assert.equal(item.entitlements[0].status, "reconsent_required");
   assert.throws(() => validateBackfillPlan(plan), /blocked before any write/);
+});
+
+test("legacy backfill keeps the product identity stable when catalogue updated_at changes", () => {
+  const base = catalog("ordinary-agent");
+  const first = buildBackfillPlan({
+    agents: [agent("ordinary-agent")],
+    catalogs: [base],
+    grants: [],
+    readiness: { "ordinary-agent": { configured: true, missingEnv: [], capabilityNeeds: [] } },
+  });
+  const retried = buildBackfillPlan({
+    agents: [agent("ordinary-agent")],
+    catalogs: [{ ...base, updated_at: "2026-11-30T00:00:00.000Z" }],
+    grants: [],
+    readiness: { "ordinary-agent": { configured: true, missingEnv: [], capabilityNeeds: [] } },
+  });
+  assert.equal(first[0].product.identity.updatedAt, "2026-01-01T00:00:00.000Z");
+  assert.equal(retried[0].product.identity.updatedAt, first[0].product.identity.updatedAt);
 });

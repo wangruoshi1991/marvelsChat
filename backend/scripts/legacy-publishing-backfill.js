@@ -61,7 +61,10 @@ function buildIdentity({ agent, catalog, now, published }) {
     // Treat the preserved 045 presentation as an operator snapshot so later
     // registry syncs do not silently replace or unpublish it.
     source: "admin",
-    updatedAt: iso(catalog?.updated_at, now),
+    // The catalogue row is touched when this migration records the new
+    // release/product linkage. Use its immutable creation time so a retry
+    // cannot change the product contract merely because updated_at moved.
+    updatedAt: iso(catalog?.created_at ?? catalog?.updated_at, now),
   };
   return isCompleteAgentIdentity(legacy) ? legacy : null;
 }
