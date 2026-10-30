@@ -6,7 +6,10 @@ const target = typeof __MIAOXUN_ADMIN_API_TARGET__ === "string" && __MIAOXUN_ADM
 const tokenKey = "miaoxun.admin.auth.v2";
 
 export function readAuth() {
-  try { return JSON.parse(sessionStorage.getItem(tokenKey) || "{}"); } catch { return {}; }
+  try {
+    const value = JSON.parse(sessionStorage.getItem(tokenKey) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch { return {}; }
 }
 export function writeAuth(value) { sessionStorage.setItem(tokenKey, JSON.stringify(value)); }
 export function clearAuth() { sessionStorage.removeItem(tokenKey); }
