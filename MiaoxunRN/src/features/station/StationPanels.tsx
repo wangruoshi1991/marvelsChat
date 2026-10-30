@@ -20,6 +20,9 @@ export function StationPanel({
   stationContent,
   agents,
   ownedAgents,
+  products,
+  entitlements,
+  catalogRevision,
   onOpenAgentThread,
   onSetAgentEnabled,
   onOpenDiaryDetail,
@@ -38,6 +41,9 @@ export function StationPanel({
   stationContent: ReturnType<typeof useMiaoxunSession>['stationContent'];
   agents: AgentDTO[];
   ownedAgents: OwnedAgentDTO[];
+  products: ReturnType<typeof useMiaoxunSession>['products'];
+  entitlements: ReturnType<typeof useMiaoxunSession>['entitlements'];
+  catalogRevision: ReturnType<typeof useMiaoxunSession>['catalogRevision'];
   onOpenAgentThread: (agentId: string) => void;
   onSetAgentEnabled: (
     agentId: string,
@@ -95,6 +101,9 @@ export function StationPanel({
           language={language}
           agents={agents}
           ownedAgents={ownedAgents}
+          products={products}
+          entitlements={entitlements}
+          catalogRevision={catalogRevision}
           onOpenAgentThread={onOpenAgentThread}
           onSetAgentEnabled={onSetAgentEnabled}
           onActionMessage={onActionMessage}

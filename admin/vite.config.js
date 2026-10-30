@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
+import { DEFAULT_LOCAL_API_ORIGIN } from "./src/runtime-config.js";
 
-const apiTarget = process.env.MIAOXUN_ADMIN_API_TARGET || "http://127.0.0.1:4390";
+const apiTarget = process.env.MIAOXUN_ADMIN_API_TARGET || DEFAULT_LOCAL_API_ORIGIN;
 
 export default defineConfig(({ command }) => ({
   root: ".",

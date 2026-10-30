@@ -79,6 +79,7 @@ export const profileApi = {
       token,
       body: {
         enabled,
+        ...(enabled ? { consent: true } : {}),
         ...(grantedScopes !== undefined ? { grantedScopes } : {}),
         ...(albumAIConsentVersion ? { albumAIConsentVersion } : {}),
       },

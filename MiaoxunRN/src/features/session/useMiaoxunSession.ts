@@ -7,6 +7,8 @@ import {
   ModuleDTO,
   NoticeDTO,
   OwnedAgentDTO,
+  ProductCatalogProductDTO,
+  ProductEntitlementDTO,
   PresenceMode,
   ProfileDTO,
   ProfileVisibilityDTO,
@@ -88,6 +90,12 @@ export function useMiaoxunSession() {
     Record<string, AgentReadinessDTO>
   >({});
   const [ownedAgents, setOwnedAgents] = useState<OwnedAgentDTO[]>([]);
+  // Keep the published product snapshot alongside Agent access. Product
+  // entry points and consent screens must consume the server release result
+  // instead of reconstructing it from the user_agents projection.
+  const [products, setProducts] = useState<ProductCatalogProductDTO[]>([]);
+  const [entitlements, setEntitlements] = useState<ProductEntitlementDTO[]>([]);
+  const [catalogRevision, setCatalogRevision] = useState<string | null>(null);
   const [notices, setNotices] = useState<NoticeDTO[]>([]);
   const [unreadNoticeCount, setUnreadNoticeCount] = useState(0);
   const [profileVisibility, setProfileVisibility] =
@@ -220,6 +228,9 @@ export function useMiaoxunSession() {
     setAgents([]);
     setAgentReadiness({});
     setOwnedAgents([]);
+    setProducts([]);
+    setEntitlements([]);
+    setCatalogRevision(null);
     setNotices([]);
     setUnreadNoticeCount(0);
     setProfileVisibility(defaultProfileVisibility);
@@ -305,6 +316,9 @@ export function useMiaoxunSession() {
       setAgents(bootstrap.agents.registered);
       setAgentReadiness(bootstrap.agentReadiness);
       setOwnedAgents(bootstrap.agents.owned);
+      setProducts(bootstrap.products);
+      setEntitlements(bootstrap.entitlements);
+      setCatalogRevision(bootstrap.catalogRevision);
       setNotices(bootstrap.notices);
       setUnreadNoticeCount(bootstrap.unreadNoticeCount);
       setProfileVisibility(bootstrap.profileVisibility);
@@ -519,6 +533,9 @@ export function useMiaoxunSession() {
             setAgents(sync.agents.registered);
             setOwnedAgents(sync.agents.owned);
           }
+          setProducts(sync.products);
+          setEntitlements(sync.entitlements);
+          setCatalogRevision(sync.catalogRevision);
           lastSyncAtRef.current = sync.serverTime;
         } catch (error) {
           if (tokenRef.current !== currentToken) {
@@ -901,6 +918,9 @@ export function useMiaoxunSession() {
     agents,
     agentReadiness,
     ownedAgents,
+    products,
+    entitlements,
+    catalogRevision,
     notices,
     unreadNoticeCount,
     profileVisibility,

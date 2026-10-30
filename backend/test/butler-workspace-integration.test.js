@@ -11,6 +11,8 @@ import { completeAgentMessageOnce } from "../src/message-repository.js";
 import { createAgentWorkspaceService } from "../src/agent-workspace-service.js";
 import { createAgentWorkspaceRunner } from "../src/agent-workspace-runner.js";
 import { getAgent } from "../../agents/registry.js";
+import { computeAgentReleaseContractHash } from "../../shared/agent-catalog.js";
+import { computeProductContractHash } from "../src/product-catalog-repository.js";
 
 const enabled = process.env.RUN_AI_TASK_INTEGRATION === "1";
 const integration = (name, work) => test(name, { skip: !enabled && "Requires migrated disposable PostgreSQL" }, work);
@@ -32,6 +34,58 @@ let calls;
 let runtime;
 const logger = { error() {} };
 
+const publicationIds = {
+  "miaoxun-butler": { release: "11111111-1111-4111-8111-111111111111", product: "21111111-1111-4111-8111-111111111111", version: "31111111-1111-4111-8111-111111111111", entitlement: "41111111-1111-4111-8111-111111111111" },
+  "album-manager": { release: "12222222-2222-4222-8222-222222222222", product: "22222222-2222-4222-8222-222222222222", version: "32222222-2222-4222-8222-222222222222", entitlement: "42222222-2222-4222-8222-222222222222" },
+  "site-builder": { release: "13333333-3333-4333-8333-333333333333", product: "23333333-3333-4333-8333-333333333333", version: "33333333-3333-4333-8333-333333333333", entitlement: "43333333-3333-4333-8333-333333333333" },
+};
+
+async function seedPublishedProduct(agentKey) {
+  const agent = await getAgent(agentKey);
+  const ids = publicationIds[agentKey];
+  const releaseIdentity = {
+    key: agent.key, avatarKind: "agent-mark", displayName: agent.name, description: agent.description,
+    mark: agent.identity.mark, shape: agent.identity.shape, colors: agent.identity.colors,
+    published: true, source: "registry", updatedAt: "2026-10-30T00:00:00.000Z",
+  };
+  const releaseHash = computeAgentReleaseContractHash({ key: agent.key, version: agent.version, permissions: agent.permissions, identity: releaseIdentity });
+  await query(`INSERT INTO agent_registry
+    (agent_key, version, contract_hash, declared_scopes, readiness, registration_status, source)
+    VALUES (?, ?, ?, ?::jsonb, '{"ready":true,"missing":[]}'::jsonb, 'registered', 'registry')
+    ON CONFLICT (agent_key) DO UPDATE SET version = EXCLUDED.version, contract_hash = EXCLUDED.contract_hash,
+      declared_scopes = EXCLUDED.declared_scopes, readiness = EXCLUDED.readiness, registration_status = 'registered', removed_at = NULL`,
+  [agent.key, agent.version, releaseHash, JSON.stringify(agent.permissions)]);
+  await query(`UPDATE agent_catalog SET display_name = ?, description = ?, identity_mark = ?, identity_shape = ?,
+      identity_colors = ?::jsonb, status = 'published', release_version = ?, contract_hash = ?, source = 'registry'
+    WHERE agent_id = ?`, [agent.name, agent.description, agent.identity.mark, agent.identity.shape, JSON.stringify(agent.identity.colors), agent.version, releaseHash, agent.key]);
+  await query(`INSERT INTO agent_releases
+    (id, agent_key, version, contract_hash, declared_scopes, readiness, identity_snapshot, catalog_status, published_at)
+    VALUES (?, ?, ?, ?, ?::jsonb, '{"ready":true,"missing":[]}'::jsonb, ?::jsonb, 'published', CURRENT_TIMESTAMP)`,
+  [ids.release, agent.key, agent.version, releaseHash, JSON.stringify(agent.permissions), JSON.stringify(releaseIdentity)]);
+  const productIdentity = {
+    key: agent.key, avatarKind: "agent-mark", displayName: agent.name, description: agent.description,
+    mark: agent.identity.mark, shape: agent.identity.shape, colors: agent.identity.colors,
+    published: false, source: "admin", updatedAt: "2026-10-30T00:00:00.000Z",
+  };
+  const product = {
+    productKey: agent.key, version: agent.version, displayName: agent.name, description: agent.description,
+    identity: productIdentity, supportedPlatforms: ["ios", "android"],
+    dependencies: [{ agentKey: agent.key, agentReleaseId: ids.release, version: agent.version, scopes: agent.permissions, contractHash: releaseHash }],
+  };
+  const productHash = computeProductContractHash(product);
+  await query(`INSERT INTO products (id, product_key, display_name, description, identity_snapshot, status)
+    VALUES (?, ?, ?, ?, ?::jsonb, 'published')`, [ids.product, agent.key, agent.name, agent.description, JSON.stringify(productIdentity)]);
+  await query(`INSERT INTO product_versions (id, product_id, version, supported_platforms, status, contract_hash)
+    VALUES (?, ?, ?, '["ios","android"]'::jsonb, 'published', ?)`, [ids.version, ids.product, agent.version, productHash]);
+  await query(`INSERT INTO product_agent_dependencies (product_version_id, agent_key, agent_release_id, version, required_scopes)
+    VALUES (?, ?, ?, ?, ?::jsonb)`, [ids.version, agent.key, ids.release, agent.version, JSON.stringify(agent.permissions)]);
+  await query(`INSERT INTO user_entitlements
+    (id, user_id, product_id, product_version_id, status, granted_scopes, contract_hash, consent_version, idempotency_key)
+    VALUES (?, ?, ?, ?, 'enabled', ?::jsonb, ?, 'fixture-consent-v1', ?)`,
+  [ids.entitlement, owner, ids.product, ids.version, JSON.stringify(agent.permissions), productHash, `fixture-${agent.key}-enable`]);
+  return { agent, ids, productHash };
+}
+
 before(async () => {
   if (!enabled) return;
   const databaseUrl = new URL(process.env.DATABASE_URL);
@@ -45,6 +99,7 @@ before(async () => {
   }
   await query("INSERT INTO chat_threads(id,user_id,title,agent_id,kind) VALUES (?, ?, 'Butler fixture', 'miaoxun-butler', 'agent')", [threadId, owner]);
   await query("INSERT INTO station_albums(id,user_id,title) VALUES (?, ?, 'Selected album')", [albumId, owner]);
+  for (const agentKey of Object.keys(publicationIds)) await seedPublishedProduct(agentKey);
   await query("INSERT INTO user_agents(user_id,agent_id,enabled,granted_scopes) VALUES (?, 'miaoxun-butler', true, ?::jsonb), (?, 'album-manager', true, ?::jsonb), (?, 'site-builder', true, ?::jsonb)",
     [owner, JSON.stringify(butlerScopes), owner, JSON.stringify(albumScopes), owner, JSON.stringify(siteScopes)]);
   const app = express();

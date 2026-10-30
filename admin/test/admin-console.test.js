@@ -8,7 +8,7 @@ import { createRouter, routeFromLocation, ROUTES } from "../src/router.js";
 test("modular router normalizes admin paths and rejects unknown modules", () => {
   assert.equal(routeFromLocation({ pathname: "/admin/monitoring" }), "monitoring");
   assert.equal(routeFromLocation({ pathname: "/admin/does-not-exist" }), "overview");
-  assert.deepEqual(ROUTES, ["overview", "accounts", "agents", "products", "tasks", "monitoring", "audit", "system"]);
+  assert.deepEqual(ROUTES, ["overview", "accounts", "agents", "products", "media-retrieval", "tasks", "monitoring", "audit", "system"]);
   const calls = [];
   const router = createRouter({ location: { pathname: "/admin/overview" }, history: { pushState() {} }, onRoute: (name) => calls.push(name) });
   assert.equal(router.navigate("products"), "products");
@@ -36,13 +36,28 @@ test("identity cards stop rendering when the server contract is incomplete", () 
 });
 
 function completeAgentIdentity() {
-  return { key: "album-manager", displayName: "相册助手", description: "真实描述", mark: "相", shape: "circle", colors: { background: "#111" }, source: "catalog", updatedAt: "2026-10-29T00:00:00Z" };
+  return { key: "album-manager", avatarKind: "agent-mark", displayName: "相册助手", description: "真实描述", mark: "相", shape: "circle", colors: { background: "#111111", foreground: "#ffffff", accent: "#abcdef" }, source: "catalog", updatedAt: "2026-10-29T00:00:00Z" };
 }
 
 test("identity card accepts only the standard identity field", () => {
   const complete = agentIdentityCard({ identity: completeAgentIdentity() });
   assert.match(complete, /相册助手/);
   assert.match(complete, /album-manager/);
+});
+
+test("identity card escapes operator-controlled identity text", () => {
+  const html = agentIdentityCard({
+    identity: {
+      ...completeAgentIdentity(),
+      displayName: '<script>alert(1)</script>',
+      description: '简介 & 说明',
+      mark: '"',
+    },
+  });
+  assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(html, /简介 &amp; 说明/);
+  assert.match(html, /&quot;/);
 });
 
 test("shared table keeps unknown values explicit and shows a real-data empty state", () => {

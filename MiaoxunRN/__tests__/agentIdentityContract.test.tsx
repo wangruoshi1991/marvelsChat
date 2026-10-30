@@ -22,6 +22,15 @@ test('directory identity is complete and is passed through unchanged', () => {
   ).not.toThrow();
 });
 
+test('directory identity rejects unsupported avatar contracts', () => {
+  expect(
+    isCompleteAgentIdentity({ ...identity, avatarKind: 'legacy-image' }),
+  ).toBe(false);
+  expect(isCompleteAgentIdentity({ ...identity, shape: 'hexagon' })).toBe(
+    false,
+  );
+});
+
 test('missing identity becomes an explicit contract error state', () => {
   const agent = { key: 'removed-agent', identity: null };
   expect(isCompleteAgentIdentity(agent.identity)).toBe(false);

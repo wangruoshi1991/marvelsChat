@@ -24,6 +24,17 @@ export async function assertCurrentAgentAccess({ userId, agent, grantedScopes, c
 export function assertAgentAvailable(agentContext, agentId) {
   const agent = agentContext.registeredAgents.find((item) => item.key === agentId);
   if (!agent) throw new HttpError(404, "Agent is not registered");
+  // Execution requires a complete, current publication projection. A missing
+  // catalog field is an invalid state, never an implicit legacy allowance.
+  if (agent.catalogStatus !== "published") {
+    throw new HttpError(409, "Agent release is unavailable", { code: "AGENT_RELEASE_UNAVAILABLE" });
+  }
+  if (!agent.version || !agent.releaseVersion || agent.releaseVersion !== agent.version) {
+    throw new HttpError(409, "Agent release version is stale", { code: "AGENT_RELEASE_STALE" });
+  }
+  if (!agent.identity || !agent.contractHash) {
+    throw new HttpError(409, "Agent identity contract is incomplete", { code: "AGENT_IDENTITY_CONTRACT_INCOMPLETE" });
+  }
   const access = agentContext.ownedAgents.find((item) => item.id === agentId && item.enabled);
   if (!access) throw new HttpError(403, "Agent is not enabled for this account");
   if (!agentScopesMatchDeclaration(agent, access.grantedScopes)) {

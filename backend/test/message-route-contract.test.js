@@ -137,11 +137,20 @@ test("Agent chat context omits data outside granted scopes", () => {
 });
 
 test("Agent chat rejects incomplete or outdated declarations instead of filtering into a usable grant", () => {
+  const publishedAgent = {
+    key: "model-3d",
+    version: "1.0.0",
+    releaseVersion: "1.0.0",
+    catalogStatus: "published",
+    contractHash: "a".repeat(64),
+    identity: { key: "model-3d", avatarKind: "agent-mark", displayName: "模型", description: "", mark: "模", shape: "circle", colors: { background: "#123456", foreground: "#ffffff", accent: "#facc15" }, published: true, source: "registry", updatedAt: "2026-10-29T00:00:00.000Z" },
+    permissions: ["profile:read", "station:read"],
+  };
   for (const grantedScopes of [["profile:read"], ["profile:read", "station:write"], ["profile:read", "station:read", "station:write"]]) {
     assert.throws(() => assertAgentAvailable(
     {
       registeredAgents: [
-        { key: "model-3d", permissions: ["profile:read", "station:read"] },
+        publishedAgent,
       ],
       ownedAgents: [
         {
@@ -154,17 +163,22 @@ test("Agent chat rejects incomplete or outdated declarations instead of filterin
     "model-3d",
     ), { details: { code: "AI_ACCESS_REVOKED" } });
   }
-  const access = assertAgentAvailable({ registeredAgents: [{ key: "model-3d", permissions: ["profile:read", "station:read"] }],
+  const access = assertAgentAvailable({ registeredAgents: [publishedAgent],
     ownedAgents: [{ id: "model-3d", enabled: true, grantedScopes: ["station:read", "profile:read"] }] }, "model-3d");
   assert.deepEqual(access.grantedScopes, ["station:read", "profile:read"]);
 });
 
 test("Agent chat rejects a disabled Agent thread", () => {
+  const publishedAgent = {
+    key: "model-3d", version: "1.0.0", releaseVersion: "1.0.0", catalogStatus: "published", contractHash: "a".repeat(64),
+    identity: { key: "model-3d", avatarKind: "agent-mark", displayName: "模型", description: "", mark: "模", shape: "circle", colors: { background: "#123456", foreground: "#ffffff", accent: "#facc15" }, published: true, source: "registry", updatedAt: "2026-10-29T00:00:00.000Z" },
+    permissions: ["profile:read"],
+  };
   assert.throws(
     () =>
       assertAgentAvailable(
         {
-          registeredAgents: [{ key: "model-3d" }],
+          registeredAgents: [publishedAgent],
           ownedAgents: [],
         },
         "model-3d",

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { config } from "../src/config.js";
 import { closeDatabase, getPool } from "../src/db.js";
-import { registerMessageRoutes } from "../src/routes/message-routes.js";
+import { registerAppRoutes } from "../src/routes/app-routes.js";
 
 test("sync cursor precedes reads so a concurrent new thread remains eligible for the next sync", async (t) => {
   const startedAt = Date.UTC(2026, 8, 15);
@@ -34,11 +34,19 @@ test("sync cursor precedes reads so a concurrent new thread remains eligible for
         handlers.set(`${method} ${route}`, registered.at(-1)),
     ]),
   );
-  registerMessageRoutes(app, {
+  registerAppRoutes(app, {
     authenticate: (_req, _res, next) => next(),
     asyncHandler: (handler) => handler,
     getOnlineUserIds: () => [],
-    sendRealtimeToUser: () => {},
+    sendPresenceChanged: () => {},
+    resolveRegisteredAgents: async () => [],
+    getAgentContext: async () => ({ ownedAgents: [] }),
+    getPublishedCatalog: async () => ({
+      products: [],
+      entitlements: [],
+      catalogRevision: "test",
+      catalogStatus: "ready",
+    }),
   });
   let body;
   const previousCursor = new Date(startedAt - 1000).toISOString();

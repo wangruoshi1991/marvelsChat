@@ -1,4 +1,4 @@
-export const ROUTES = ["overview", "accounts", "agents", "products", "tasks", "monitoring", "audit", "system"];
+export const ROUTES = ["overview", "accounts", "agents", "products", "media-retrieval", "tasks", "monitoring", "audit", "system"];
 
 export function routePath(name) { return `/admin/${name}`; }
 

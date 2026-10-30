@@ -6,6 +6,8 @@ import { applyPendingMigrations } from "../src/migration-ledger.js";
 import { loadMigrationFiles } from "../src/migration-files.js";
 import { createConnectionAdapter } from "../src/db.js";
 import { ensureDefaultButlerAccess } from "../src/repositories.js";
+import { getAgent } from "../../agents/registry.js";
+import { computeAgentReleaseContractHash } from "../../shared/agent-catalog.js";
 
 const enabled = process.env.RUN_DEFAULT_BUTLER_MIGRATION_INTEGRATION === "1";
 const databaseUrl = String(process.env.DEFAULT_BUTLER_MIGRATION_DATABASE_URL || "").trim();
@@ -61,6 +63,50 @@ if (!enabled) {
       await client.query(
         "INSERT INTO chat_threads (id, user_id, title, status_text, avatar_text, agent_id, kind) VALUES ($1, $2, '旧会话', '已停用', '旧', 'miaoxun-butler', 'agent'), ($3, $4, '我的会话', '在线 · Agent', '我', 'miaoxun-butler', 'agent')",
         [crypto.randomUUID(), ids.disabled, crypto.randomUUID(), ids.complete],
+      );
+      // ensureDefaultButlerAccess now reads the current operator-published
+      // identity contract. This migration fixture predates migration 044, so
+      // provide the minimal release-backed catalog row explicitly instead of
+      // relying on a legacy user_agents grant.
+      await client.query(`
+        CREATE TABLE agent_catalog (
+          agent_id VARCHAR(80) PRIMARY KEY,
+          display_name VARCHAR(120),
+          description TEXT,
+          identity_mark VARCHAR(40),
+          identity_shape VARCHAR(20),
+          identity_colors JSONB NOT NULL DEFAULT '{}'::jsonb,
+          published BOOLEAN NOT NULL DEFAULT TRUE,
+          status VARCHAR(20) NOT NULL DEFAULT 'unpublished',
+          release_version VARCHAR(80),
+          contract_hash CHAR(64),
+          source VARCHAR(80) NOT NULL DEFAULT 'migration-test',
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )`);
+      const registeredButler = await getAgent("miaoxun-butler");
+      const identity = {
+        key: registeredButler.key,
+        avatarKind: "agent-mark",
+        displayName: "妙讯管家",
+        description: "默认妙讯管家",
+        mark: "妙",
+        shape: "rounded",
+        colors: { background: "#f4efe7", foreground: "#2d2926", accent: "#c78b5d" },
+        published: true,
+        source: "migration-test",
+        updatedAt: "2026-10-30T00:00:00.000Z",
+      };
+      const contractHash = computeAgentReleaseContractHash({
+        key: registeredButler.key,
+        version: registeredButler.version,
+        permissions: registeredButler.permissions,
+        identity,
+      });
+      await client.query(
+        `INSERT INTO agent_catalog
+          (agent_id, display_name, description, identity_mark, identity_shape, identity_colors, status, release_version, contract_hash)
+         VALUES ('miaoxun-butler', $1, $2, $3, $4, $5::jsonb, 'published', $6, $7)`,
+        [identity.displayName, identity.description, identity.mark, identity.shape, JSON.stringify(identity.colors), registeredButler.version, contractHash],
       );
       const completeThread = await client.query("SELECT id FROM chat_threads WHERE user_id = $1", [ids.complete]);
       await client.query(

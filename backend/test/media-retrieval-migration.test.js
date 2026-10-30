@@ -289,14 +289,14 @@ if (integrationEnabled) {
     });
     try {
       await assert.rejects(failingAccess({ userId, agent: albumAgent,
-        body: { enabled: true, albumAIConsentVersion: "media-retrieval-consent-v1" }, idempotencyKey: crypto.randomUUID(),
+        body: { enabled: true, grantedScopes: ["album:read"], albumAIConsentVersion: "media-retrieval-consent-v1" }, idempotencyKey: crypto.randomUUID(),
       }), /injected access persistence failure/);
       for (const table of ["media_retrieval_profiles", "media_retrieval_jobs", "agent_runs", "user_agents", "chat_threads"]) {
         const result = await client.query(`SELECT count(*)::int AS count FROM ${table} WHERE user_id=$1`, [userId]);
         assert.equal(result.rows[0].count, 0, `${table} must roll back`);
       }
       await albumAccess()({ userId, agent: albumAgent,
-        body: { enabled: true, albumAIConsentVersion: "media-retrieval-consent-v1" }, idempotencyKey: crypto.randomUUID(),
+        body: { enabled: true, grantedScopes: ["album:read"], albumAIConsentVersion: "media-retrieval-consent-v1" }, idempotencyKey: crypto.randomUUID(),
       });
       const before = await createRepository().getMediaRetrievalProfile({ userId });
       await assert.rejects(failingAccess({ userId, agent: albumAgent,
@@ -316,7 +316,7 @@ if (integrationEnabled) {
     await insertUser({ id: userId, email: `${userId}@example.invalid`, displayName: userId, aiId: "700002700002" });
     try {
       const activate = () => albumAccess()({ userId, agent: albumAgent,
-        body: { enabled: true, albumAIConsentVersion: "media-retrieval-consent-v1" }, idempotencyKey: crypto.randomUUID(),
+        body: { enabled: true, grantedScopes: ["album:read"], albumAIConsentVersion: "media-retrieval-consent-v1" }, idempotencyKey: crypto.randomUUID(),
       });
       await Promise.all([activate(), activate()]);
       const rows = await client.query("SELECT count(*)::int AS count FROM chat_threads WHERE user_id=$1 AND agent_id='album-manager'", [userId]);

@@ -642,6 +642,9 @@ export function StationScreen({
             stationContent={session.stationContent}
             agents={session.agents}
             ownedAgents={session.ownedAgents}
+            products={session.products}
+            entitlements={session.entitlements}
+            catalogRevision={session.catalogRevision}
             onOpenAgentThread={onOpenAgentThread}
             onSetAgentEnabled={session.setAgentEnabled}
             onOpenDiaryDetail={openDiaryDetail}

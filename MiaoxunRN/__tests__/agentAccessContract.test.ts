@@ -17,6 +17,7 @@ test('Agent authorization sends exactly the user-confirmed scopes with cloud con
     token: 'unit-token',
     body: {
       enabled: true,
+      consent: true,
       grantedScopes: ['album:read'],
       albumAIConsentVersion: 'media-retrieval-consent-v1',
     },
@@ -35,6 +36,8 @@ test('an empty confirmed grant is explicit and cannot become server-default perm
   );
   expect(request).toHaveBeenLastCalledWith(
     '/api/me/agents/site-builder',
-    expect.objectContaining({ body: { enabled: true, grantedScopes: [] } }),
+    expect.objectContaining({
+      body: { enabled: true, consent: true, grantedScopes: [] },
+    }),
   );
 });

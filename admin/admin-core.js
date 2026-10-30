@@ -141,7 +141,7 @@ export const friendlyAdminErrorMessage = (
       message
     )
   ) {
-    return "妙讯服务正在初始化，请稍后再试。";
+    return "后台数据暂不可用（数据库未初始化），请联系维护人员后重试。";
   }
   if (/invalid email or password|invalid account or password/i.test(message))
     return "账号或密码不正确。";

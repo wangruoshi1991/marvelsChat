@@ -275,7 +275,6 @@ function StationPostCard({
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
-  void agents;
   const [isDeleting, setIsDeleting] = useState(false);
   const [liked, setLiked] = useState(post.likedByMe);
   const [favorited, setFavorited] = useState(post.favoritedByMe);

@@ -1,2 +1,66 @@
-import { createModule } from './_module.js';
-export function createAccountsModule(client) { return createModule({ name:'accounts', title:'账号与权限', permission:'users:read', endpoint:'/api/admin/users?limit=120', client, columns:[{key:'displayName',label:'账号'},{key:'email',label:'邮箱'},{key:'role',label:'角色'},{key:'status',label:'状态'},{key:'lastLoginAt',label:'最近登录'}] }); }
+import { createModule } from "./_module.js";
+import { escapeHtml } from "../../admin-core.js";
+
+const idempotencyKey = (action, id) => {
+  const suffix = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `admin-user-${action}-${id}-${suffix}`;
+};
+
+const roleLabel = { admin: "管理员", user: "普通用户" };
+const statusLabel = { active: "启用", disabled: "停用" };
+
+export function createAccountsModule(client) {
+  const filters = { query: "", status: "", role: "" };
+  let selected = null;
+  const module = createModule({
+    name: "accounts", title: "账号与权限", permission: "users:read", actionPermission: "users:write",
+    endpoint: "/api/admin/users?limit=200", client,
+    handleAction: async (action, payload = {}) => {
+      const userId = payload.userId;
+      if (action === "filter") { filters.query = String(payload.query || "").trim().toLowerCase(); filters.status = String(payload.status || ""); filters.role = String(payload.role || ""); return { ok: true }; }
+      if (action === "create-user") {
+        const email = String(payload.email || "").trim();
+        const displayName = String(payload.displayName || "").trim();
+        const password = String(payload.password || "");
+        if (!email || !displayName || password.length < 8) throw new Error("创建账号需要邮箱、显示名和至少 8 位密码。");
+        return client("/api/admin/users", { method: "POST", body: JSON.stringify({ email, displayName, password, role: payload.role || "user", status: payload.status || "active" }) });
+      }
+      const resolvedUserId = userId || selected?.user?.id;
+      if (!resolvedUserId) throw new Error("账号操作缺少用户 ID。");
+      if (action === "detail") { selected = await client(`/api/admin/users/${encodeURIComponent(userId)}`); return selected; }
+      if (action === "status" || action === "role") return client(`/api/admin/users/${encodeURIComponent(resolvedUserId)}/${action}`, { method: "PATCH", headers: { "Idempotency-Key": idempotencyKey(action, resolvedUserId), "Content-Type": "application/json" }, body: JSON.stringify({ [action]: payload.nextValue }) });
+      if (action === "profile-save") {
+        const experienceYears = payload.experienceYears === "" || payload.experienceYears === undefined ? null : Number(payload.experienceYears);
+        return client(`/api/admin/users/${encodeURIComponent(resolvedUserId)}/profile`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nickname: payload.nickname, bio: payload.bio || "", community: payload.community || "", activityArea: payload.activityArea || "", headline: payload.headline || undefined, publicLocation: payload.publicLocation || undefined, experienceYears }) });
+      }
+      if (action === "permissions-save") {
+        let permissions;
+        try { permissions = JSON.parse(payload.permissions || "[]"); } catch { throw new Error("权限格式无效。"); }
+        if (!Array.isArray(permissions)) throw new Error("权限必须是数组。");
+        return client(`/api/admin/users/${encodeURIComponent(resolvedUserId)}/permissions`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ permissions }) });
+      }
+      if (action === "revoke-sessions") return client(`/api/admin/users/${encodeURIComponent(resolvedUserId)}/revoke-sessions`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey(action, resolvedUserId) } });
+      if (action === "reset-password") { const password = payload.password || globalThis.prompt?.("请输入新的临时密码（至少 8 位）") || ""; if (password.length < 8) throw new Error("临时密码至少需要 8 位。"); return client(`/api/admin/users/${encodeURIComponent(resolvedUserId)}/reset-password`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey(action, resolvedUserId) }, body: JSON.stringify({ password }) }); }
+      throw new Error("未知账号操作。");
+    },
+    renderData(data) {
+      const all = Array.isArray(data) ? data : data?.items || [];
+      const rows = all.filter((user) => { const text = [user.displayName, user.email, user.phoneNumber, user.aiId].filter(Boolean).join(" ").toLowerCase(); return (!filters.query || text.includes(filters.query)) && (!filters.status || user.status === filters.status) && (!filters.role || user.role === filters.role); });
+      const toolbar = `<form class="module-toolbar" data-module-filter="accounts"><label>搜索<input name="query" value="${escapeHtml(filters.query)}" placeholder="昵称、邮箱、手机号或 AI ID" /></label><label>状态<select name="status"><option value="">全部状态</option><option value="active" ${filters.status === "active" ? "selected" : ""}>启用</option><option value="disabled" ${filters.status === "disabled" ? "selected" : ""}>停用</option></select></label><label>角色<select name="role"><option value="">全部角色</option><option value="admin" ${filters.role === "admin" ? "selected" : ""}>管理员</option><option value="user" ${filters.role === "user" ? "selected" : ""}>普通用户</option></select></label><button type="submit">应用筛选</button><button type="button" data-module-action="filter-clear">清空</button></form>`;
+      const createForm = `<details class="module-create"><summary>创建账号</summary><p>账号创建会写入真实用户表并记录审计；不会创建示例数据。</p><form data-module-form="create-user" data-required-permission="users:write"><div class="form-grid"><label>邮箱<input name="email" type="email" required /></label><label>显示名<input name="displayName" required /></label><label>临时密码<input name="password" type="password" minlength="8" required /></label><label>角色<select name="role"><option value="user">普通用户</option><option value="admin">管理员</option></select></label></div><button type="submit">创建账号</button></form></details>`;
+      const body = rows.map((user) => `<tr><td><button class="link-btn" type="button" data-module-action="detail" data-user-id="${escapeHtml(user.id)}">${escapeHtml(user.displayName || "--")}</button><small>${escapeHtml(user.aiId || user.loginName || "")}</small></td><td>${escapeHtml(user.email || user.phoneNumber || "--")}</td><td>${escapeHtml(roleLabel[user.role] || user.role || "未知")}</td><td><span class="status-pill ${user.status === "active" ? "" : "error"}">${escapeHtml(statusLabel[user.status] || user.status || "未知")}</span><small>${escapeHtml(user.presenceMode || "")}</small></td><td>${escapeHtml(String(user.activeSessionCount ?? 0))} / ${escapeHtml(String(user.threadCount ?? 0))}</td><td>${escapeHtml(String(user.messageCount ?? 0))}</td><td>${escapeHtml(String(user.agentCount ?? 0))}</td><td>${escapeHtml(user.lastLoginAt || "--")}</td><td><div class="console-actions"><button type="button" data-module-action="status" data-user-id="${escapeHtml(user.id)}" data-next-value="${user.status === "active" ? "disabled" : "active"}">${user.status === "active" ? "停用" : "启用"}</button><button type="button" data-module-action="role" data-user-id="${escapeHtml(user.id)}" data-next-value="${user.role === "admin" ? "user" : "admin"}">${user.role === "admin" ? "设为用户" : "设为管理员"}</button><button type="button" data-module-action="revoke-sessions" data-user-id="${escapeHtml(user.id)}">撤销会话</button><button type="button" data-module-action="reset-password" data-user-id="${escapeHtml(user.id)}">重置密码</button></div></td></tr>`).join("");
+      const profile = selected?.profile || {};
+      const permissionEditor = selected?.user?.role === "admin" ? `<form class="detail-form" data-module-form="permissions-save" data-user-id="${escapeHtml(selected.user?.id || "")}" data-required-permission="users:write"><h4>后台权限</h4><p class="console-note">请输入 JSON 数组，例如 ["users:read","audit:read"]；服务端会再次校验并记录审计。</p><textarea name="permissions" rows="3">${escapeHtml(JSON.stringify(selected.user?.adminPermissions || []))}</textarea><button type="submit">保存权限</button></form>` : "";
+      const agents = Array.isArray(selected?.agents) ? selected.agents : [];
+      const threads = Array.isArray(selected?.threads) ? selected.threads : [];
+      const events = Array.isArray(selected?.recentEvents) ? selected.recentEvents : [];
+      const runs = Array.isArray(selected?.recentRuns) ? selected.recentRuns : [];
+      const compactRows = (items, columns, empty) => items.length ? `<div class="detail-table"><table><thead><tr>${columns.map((column) => `<th>${column.label}</th>`).join("")}</tr></thead><tbody>${items.map((item) => `<tr>${columns.map((column) => `<td>${column.render(item)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<div class="detail-inline-empty">${empty}</div>`;
+      const detail = selected ? `<aside class="detail-panel"><div class="detail-panel-header"><div><span>ACCOUNT DETAIL</span><h3>${escapeHtml(selected.user?.displayName || "账号详情")}</h3><small>${escapeHtml(selected.user?.id || "")}</small></div><button type="button" data-module-action="detail-close">关闭</button></div><dl class="detail-list"><dt>邮箱</dt><dd>${escapeHtml(selected.user?.email || "--")}</dd><dt>登录名</dt><dd>${escapeHtml(selected.user?.loginName || "--")}</dd><dt>状态</dt><dd>${escapeHtml(statusLabel[selected.user?.status] || selected.user?.status || "未知")}</dd><dt>角色</dt><dd>${escapeHtml(roleLabel[selected.user?.role] || selected.user?.role || "未知")}</dd><dt>会话</dt><dd>${escapeHtml(String(selected.sessions?.active ?? 0))} 活跃 / ${escapeHtml(String(selected.sessions?.total ?? 0))} 总计 / ${escapeHtml(String(selected.sessions?.revoked ?? 0))} 已撤销</dd><dt>Agent 授权</dt><dd>${escapeHtml(String(agents.filter((agent) => agent.enabled).length))} 启用 / ${escapeHtml(String(agents.length))} 已登记</dd></dl><section class="detail-section"><h4>账号资料</h4><form class="detail-form" data-module-form="profile-save" data-user-id="${escapeHtml(selected.user?.id || "")}" data-required-permission="users:write"><label>昵称<input name="nickname" required value="${escapeHtml(profile.nickname || selected.user?.displayName || "")}" /></label><label>简介<textarea name="bio" rows="3">${escapeHtml(profile.bio || "")}</textarea></label><div class="form-grid"><label>社区<input name="community" value="${escapeHtml(profile.community || "")}" /></label><label>活动区域<input name="activityArea" value="${escapeHtml(profile.activityArea || "")}" /></label><label>身份标题<input name="headline" value="${escapeHtml(profile.headline || "")}" /></label><label>公开城市<input name="publicLocation" value="${escapeHtml(profile.publicLocation || "")}" /></label><label>从业年限<input name="experienceYears" inputmode="numeric" value="${escapeHtml(profile.experienceYears ?? "")}" /></label></div><button type="submit">保存资料</button></form>${permissionEditor}</section><section class="detail-section"><div class="section-heading"><div><h4>Agent 授权</h4><p>后台只显示授权投影；启用必须由用户在 App 对已发布产品确认。</p></div><span class="section-count">${agents.length} 项</span></div>${compactRows(agents, [{ label: "Agent", render: (item) => escapeHtml(item.name || item.id || "--") }, { label: "状态", render: (item) => `<span class="status-pill ${item.enabled ? "" : "error"}">${item.enabled ? "已启用" : "未启用"}</span>` }, { label: "权限", render: (item) => escapeHtml(Array.isArray(item.grantedScopes) ? item.grantedScopes.join(", ") || "无" : "未知") }], "该账号没有 Agent 授权记录。")}</section><section class="detail-section"><div class="section-heading"><div><h4>最近会话</h4><p>对话线程和最近消息来自服务端详情接口。</p></div><span class="section-count">${threads.length} 条</span></div>${compactRows(threads.slice(0, 8), [{ label: "标题", render: (item) => escapeHtml(item.title || "未命名会话") }, { label: "Agent", render: (item) => escapeHtml(item.agentId || item.kind || "普通会话") }, { label: "更新时间", render: (item) => escapeHtml(item.updatedAt || item.lastMessageAt || "--") }], "暂无会话记录。")}</section><section class="detail-section"><div class="section-heading"><div><h4>最近运行与审计</h4><p>只显示脱敏摘要，原始 payload 不在后台展开。</p></div><span class="section-count">${runs.length + events.length} 条</span></div>${compactRows(runs.slice(0, 6), [{ label: "Agent", render: (item) => escapeHtml(item.agentId || "--") }, { label: "状态", render: (item) => escapeHtml(item.status || item.lifecycleStatus || "未知") }, { label: "时间", render: (item) => escapeHtml(item.createdAt || "--") }], "暂无 Agent 运行记录。")}${compactRows(events.slice(0, 6), [{ label: "事件", render: (item) => escapeHtml(item.eventType || "--") }, { label: "目标", render: (item) => escapeHtml([item.targetType, item.targetId].filter(Boolean).join(" /") || "--") }, { label: "时间", render: (item) => escapeHtml(item.createdAt || "--") }], "暂无审计事件。")}</section></aside>` : "";
+      return `<section class="module-header"><div><span>USERS &amp; ACCESS</span><h2>账号与权限</h2><p>管理真实账号、登录会话、消息量、Agent 投影和管理员配置；点击账号可查看完整详情。</p></div><button data-module-refresh="accounts">刷新</button></section>${toolbar}${createForm}<div class="table-wrap"><table><thead><tr><th>账号</th><th>联系方式</th><th>角色</th><th>状态</th><th>会话 / 会话总数</th><th>消息</th><th>Agent</th><th>最近登录</th><th>操作</th></tr></thead><tbody>${body || `<tr><td colspan="9"><div class="console-empty">暂无匹配账号。</div></td></tr>`}</tbody></table></div>${detail}`;
+    },
+  });
+  const originalHandle = module.handleAction.bind(module);
+  module.handleAction = async (action, payload = {}) => { if (action === "filter-clear") { filters.query = ""; filters.status = ""; filters.role = ""; return { ok: true }; } if (action === "detail-close") { selected = null; return { ok: true }; } return originalHandle(action, payload); };
+  return module;
+}

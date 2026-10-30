@@ -5,6 +5,7 @@ import path from 'node:path';
 import test, { after, before } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { config } from '../src/config.js';
 import { messageSchema, relationshipPageSchema } from '../src/schemas.js';
 
 const enabled = process.env.RUN_MESSAGE_IDEMPOTENCY_INTEGRATION === '1';
@@ -33,6 +34,20 @@ before(async () => {
     stdio: 'pipe',
   });
   process.env.DATABASE_URL = database;
+  // The route dependencies import db/config before this hook runs. Update the
+  // shared test configuration after Compose publishes its disposable port so
+  // db.js uses this isolated database without changing production behavior.
+  const parsedDatabase = new URL(database);
+  config.db = {
+    ...config.db,
+    configured: true,
+    databaseUrl: database,
+    host: parsedDatabase.hostname,
+    port: Number(parsedDatabase.port || 5432),
+    user: decodeURIComponent(parsedDatabase.username),
+    password: decodeURIComponent(parsedDatabase.password),
+    database: decodeURIComponent(parsedDatabase.pathname.slice(1)),
+  };
   const { registerMessageRoutes } = await import('../src/routes/message-routes.js');
   const app = { get() {}, patch() {}, delete() {}, post(pathname, ...handlers) {
     if (pathname === '/api/threads/:threadId/messages') route = handlers.at(-1);

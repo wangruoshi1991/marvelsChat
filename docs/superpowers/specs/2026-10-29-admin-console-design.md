@@ -6,11 +6,11 @@
 
 ## 核心约束
 
-- `agent_catalog` 是 Agent 展示身份的唯一来源。名称、描述、头像标识、形状、颜色、上架状态及其版本由目录合同提供。
+- 已发布 `agent_releases`/`product_versions` 快照是 App 可发现 Agent 展示身份的唯一来源；`agent_catalog` 只保留部署投影。名称、描述、头像标识、形状、颜色、版本和发布状态必须来自同一份合同。
 - Agent 的代码注册事实、运营目录审核状态和面向用户的产品发布状态分开存储，任何一个状态都不能隐式替代另一个状态。
 - 移动端妙页、讯页、聊天详情、我页、动态和任务卡统一消费同一份 Agent identity；禁止静态头像、旧字段或页面专用 fallback。
-- 缺少目录 identity 是数据合同错误，接口返回明确错误并记录审计；客户端和后台不得用旧身份继续渲染。
-- 目录上架只控制可发现性和产品投影，不创建执行器、不绕过用户授权、不改变 Agent 权限。
+- 缺少 release/product identity 是数据合同错误，接口返回明确错误并记录审计；客户端和后台不得用旧身份继续渲染。
+- 产品发布控制可发现性和产品投影，不创建执行器、不绕过用户授权、不改变 Agent 权限；目录投影不能绕过 release 合同。
 - 产品目录与 Agent 注册表分离。产品绑定已部署 Agent、权限要求、版本、平台和展示身份；上架前必须通过依赖和配置就绪检查。
 - 所有管理变更必须经过后端权限校验、幂等保护和审计记录；前端隐藏按钮不能代替后端授权。
 - 统计只能使用真实数据库记录。未知成本、缺少 token 或没有记录时保持未知/空态，不用零值或示例数据填充。
@@ -41,10 +41,10 @@ flowchart LR
 ```
 
 1. **代码注册**：开发者新增 `agents/<key>.agent.js`，文件名必须与 `key` 一致。registry 校验 key、版本、标准 identity、权限声明、workspace capability 和可执行方法。CI 只接受校验通过的 Agent；代码注册本身不代表已上架。
-2. **制品部署**：后端发布制品包含该 Agent 的代码和 registry。部署后的同步任务把 registry 快照写入 `agent_registry`/`agent_catalog`，新 Agent 初始为待审核；不再使用运行时硬编码 key 列表决定默认上架。
-3. **目录审核**：后台 Agent 中心读取代码版本、权限、contract hash、配置就绪度和目录 identity。管理员必须填写完整 `AgentIdentity`，确认展示名、描述、头像标识、形状、颜色、权限和支持能力；缺项、版本不匹配或 provider 未配置时不能提交审核。
-4. **产品绑定**：后台产品中心创建产品版本，绑定一个或多个已注册 Agent、所需 scopes、支持平台和产品入口。产品提交审核时校验依赖 Agent 已通过目录审核且 executor/readiness 正常；产品上架是独立状态，不等于单个 Agent 自动上架。
-5. **发布投影**：审核通过后，后台事务将 Agent 目录和产品版本置为 `published`，写入状态历史与审计。`bootstrap/sync` 只投影已发布且 identity 完整的产品和 Agent，并返回目录 revision/version；未上架或过期内容不进入推荐目录。
+2. **制品部署**：后端发布制品包含该 Agent 的代码和 registry。部署后的同步任务把 registry 快照写入 `agent_registry`/`agent_releases`，并维护 `agent_catalog` 投影；新 release 初始为待审核，不使用运行时硬编码 key 列表决定上架。
+3. **release 审核**：后台 Agent 中心读取代码版本、权限、contract hash、配置就绪度和 release identity。管理员必须填写完整 `AgentIdentity`，确认展示名、描述、头像标识、形状、颜色、权限和支持能力；缺项、版本不匹配或 provider 未配置时不能提交审核。
+4. **产品绑定**：后台产品中心创建产品版本，绑定一个或多个已发布 release、所需 scopes、支持平台和产品入口。产品提交审核时校验每个依赖 release 已发布且 executor/readiness 正常；产品上架是独立状态，不等于单个 Agent 自动上架。
+5. **发布投影**：审核通过后，后台事务将产品版本置为 `published`，同步 release identity 到目录投影并写入状态历史与审计。`bootstrap/sync` 只投影已发布且 identity 完整的产品和 Agent，并返回目录 revision/version；未上架或过期内容不进入推荐目录。
 6. **用户启用**：App 在“我”页或产品入口展示已发布产品。用户确认产品所需 scopes 后，后端事务写入产品 entitlement 和对应 `user_agents`，创建 Agent 会话/欢迎消息；产品发布不能绕过用户授权，后台代授权也必须走同一权限和审计合同。
 7. **执行与追踪**：执行前后端同时校验 entitlement、Agent enabled、granted scopes、registry version/contract hash 和产品版本。执行记录写入 `agent_runs`、任务事件和审计，运行时只能调用代码 registry 中的真实 executor。
 8. **下架与升级**：下架/暂停禁止新用户发现和启用，保留已有 entitlement、会话和历史记录，并向 App 返回明确 `unavailable` 原因。代码版本、权限或 identity contract 改变时生成新 release，旧版本进入审核或迁移；既有授权在 scopes/hash 不匹配时必须重新同意，不能静默兼容旧合同。
@@ -55,23 +55,25 @@ flowchart LR
 
 ### 当前实现的实际链路与改造边界
 
-当前代码已经具备一条可运行但不完整的链路：
+当前代码已经具备一条可运行、并在隔离数据库/HTTP 中验证过的链路（尚未部署本轮工作区变更）：
 
 ```text
 agents/<key>.agent.js
   -> agents/registry.js 动态加载与声明校验
-  -> listRegisteredAgentsWithCatalogue()
-  -> agent_catalog（展示字段 + published）
+  -> agent_registry + agent_releases（版本/contract/readiness）
+  -> admin release review/publish
+  -> products/product_versions（依赖与平台）
+  -> admin product publish
   -> /api/app/bootstrap 或 /api/app/sync
-  -> App “我”页 PATCH /api/me/agents/:agentId
-  -> user_agents + chat_threads
+  -> App 用户 consent /api/me/products/:productId/enable
+  -> user_entitlements + user_agents + chat_threads
   -> assertAgentAvailable / assertCurrentAgentAccess
   -> registry executor + agent_runs
 ```
 
-后台现在能编辑目录身份和 `published`，但缺少 release 快照、产品依赖、审核状态、配置就绪门禁和版本/contract hash 校验。因此“代码文件存在”目前仍可能被误解成“可以直接上架”，需要改成代码注册、目录审核和产品发布三层状态。
+`agent_catalog` 仅作为已发布 release 的展示投影；后台不能通过直接编辑目录绕过 release 或产品发布。代码注册、release 审核、产品发布和用户授权是四个独立状态，任一合同不完整或过期都返回明确错误，不使用旧头像或旧字段兼容。
 
-头像不一致的具体原因是移动端 `identity` 仍是可选值：部分页面用 `owned.identity`，部分页面用 `registered.identity` 兜底，`AgentGlyphAvatar` 还会按 Agent key/category 使用旧 glyph，讯页另有静态人物头像表。改造后所有页面必须接收同一个完整 `AgentIdentity`；如果目录投影缺失或过期，页面显示合同错误/不可用状态，禁止继续使用旧头像、Agent key 或 category 生成替代视觉。若产品需要讯页人物头像，它必须作为目录 identity 的标准 presentation/asset 字段由后台发布，不能由客户端按 key 私自映射。
+早期头像不一致来自移动端 `identity` 可选、页面间相互兜底和讯页静态人物头像表。当前实现已要求所有页面接收同一个完整 `AgentIdentity`；如果 release/product 投影缺失或过期，页面显示合同错误/不可用状态，禁止使用旧头像、Agent key 或 category 生成替代视觉。若产品需要讯页人物头像，它必须作为发布 identity 的标准 presentation/asset 字段由后台提供，不能由客户端按 key 私自映射。
 
 ## 信息架构
 
@@ -115,7 +117,7 @@ agents/<key>.agent.js
 - 现有账号、权限、Agent 目录、使用监控、审计和服务状态接口迁移到模块化资源命名，并在一次切换中删除旧兼容路由。
 - 所有写接口使用 Zod schema、资源级权限、幂等键和事务；响应统一为 `{ data, meta }`，错误统一包含稳定 `code` 和用户可读 message。
 - 数据库新增 Agent registry/release 快照、产品目录、产品依赖、用户 entitlement、版本/状态历史和必要的聚合索引；迁移必须可重复检查并保留审计来源。
-- `AgentIdentity` 在共享合同中定义必填字段：`key`、`displayName`、`description`、`mark`、`shape`、`colors`、`published`、`source`、`updatedAt`。服务端拒绝不完整身份，客户端不做旧字段映射。
+- `AgentIdentity` 在共享合同中定义必填字段：`key`、`avatarKind`、`displayName`、`description`、`mark`、`shape`、`colors`、`published`、`source`、`updatedAt`。服务端拒绝不完整身份，客户端不做旧字段映射。
 - `AgentRelease` 必须携带 `agentKey`、`version`、`contractHash`、声明 scopes、readiness、目录状态和发布时间；`ProductVersion` 必须携带依赖 Agent 及其 scopes、平台和状态。
 
 ## 前端结构

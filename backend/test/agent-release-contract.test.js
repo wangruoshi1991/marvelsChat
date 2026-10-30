@@ -19,6 +19,7 @@ import {
 
 const identity = {
   key: "demo-agent",
+  avatarKind: "agent-mark",
   displayName: "演示 Agent",
   description: "用于测试的 Agent",
   mark: "演",
@@ -40,7 +41,7 @@ const release = {
 };
 
 test("AgentIdentity has the required shared fields and rejects malformed identity", () => {
-  assert.deepEqual(AGENT_IDENTITY_FIELDS, ["key", "displayName", "description", "mark", "shape", "colors", "published", "source", "updatedAt"]);
+  assert.deepEqual(AGENT_IDENTITY_FIELDS, ["key", "avatarKind", "displayName", "description", "mark", "shape", "colors", "published", "source", "updatedAt"]);
   assert.equal(isCompleteAgentIdentity(identity), true);
   assert.deepEqual(agentIdentitySchema.parse(identity), identity);
   assert.throws(() => agentIdentitySchema.parse({ ...identity, colors: { background: "bad" } }));

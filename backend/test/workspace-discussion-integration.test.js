@@ -5,6 +5,7 @@ import express from "express";
 import { query, withTransaction, closeDatabase } from "../src/db.js";
 import { authenticate, hashToken } from "../src/auth.js";
 import { getAgent } from "../../agents/registry.js";
+import { computeAgentReleaseContractHash } from "../../shared/agent-catalog.js";
 import { createWorkspaceInTransaction } from "../src/agent-workspace-repository.js";
 import { createWorkspaceDiscussionService } from "../src/workspace-discussion-service.js";
 import { registerMessageRoutes } from "../src/routes/message-routes.js";
@@ -26,6 +27,43 @@ before(async () => {
   assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname));
   assert.match(decodeURIComponent(url.pathname), /_migration_test$/);
   assert.match((await query("SELECT current_database() AS name"))[0].name, /_migration_test$/);
+  // A direct user_agents fixture is only the access projection. The current
+  // execution gate also requires a published, version-matched catalog
+  // identity, so make that release contract explicit for this isolated suite.
+  const identity = {
+    key: butler.key,
+    avatarKind: "agent-mark",
+    displayName: butler.name,
+    description: butler.description,
+    mark: butler.identity.mark,
+    shape: butler.identity.shape,
+    colors: butler.identity.colors,
+    published: true,
+    source: "integration-test",
+    updatedAt: "2026-10-30T00:00:00.000Z",
+  };
+  const contractHash = computeAgentReleaseContractHash({
+    key: butler.key,
+    version: butler.version,
+    permissions: butler.permissions,
+    identity,
+  });
+  await query(`INSERT INTO agent_catalog
+      (agent_id, display_name, description, identity_mark, identity_shape,
+       identity_colors, status, release_version, contract_hash, source)
+    VALUES (?, ?, ?, ?, ?, ?::jsonb, 'published', ?, ?, 'integration-test')
+    ON CONFLICT (agent_id) DO UPDATE SET
+      display_name = EXCLUDED.display_name,
+      description = EXCLUDED.description,
+      identity_mark = EXCLUDED.identity_mark,
+      identity_shape = EXCLUDED.identity_shape,
+      identity_colors = EXCLUDED.identity_colors,
+      status = 'published',
+      release_version = EXCLUDED.release_version,
+      contract_hash = EXCLUDED.contract_hash,
+      source = EXCLUDED.source`,
+    [butler.key, identity.displayName, identity.description, identity.mark,
+      identity.shape, JSON.stringify(identity.colors), butler.version, contractHash]);
   const app = express();
   app.use(express.json());
   registerMessageRoutes(app, { authenticate, asyncHandler: fn => (req,res,next) => Promise.resolve(fn(req,res,next)).catch(next),

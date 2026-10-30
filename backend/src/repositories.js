@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { config } from "./config.js";
 import { query, withTransaction } from "./db.js";
+import { computeAgentReleaseContractHash, isCompleteAgentIdentity } from "../../shared/agent-catalog.js";
 import { getAgent } from "../../agents/registry.js";
 import { createPlainToken, hashToken, sessionExpiryDate } from "./auth.js";
 import { HttpError } from "./http-error.js";
@@ -260,12 +261,12 @@ async function listOwnedAgents(userId, registeredAgents = []) {
     const agent = registry.get(row.agent_id);
     return {
       id: row.agent_id,
-      name: row.alias || agent?.name || row.agent_id,
-      description: agent?.description || "",
-      category: agent?.category || "",
+      name: row.alias || agent?.identity?.displayName || null,
+      description: agent?.description ?? null,
+      category: agent?.category ?? null,
       enabled: Boolean(row.enabled),
       grantedScopes: parseJson(row.granted_scopes, []),
-      published: agent?.published !== false,
+      published: agent?.published === true,
       identity: agent?.identity || null,
       createdAt: toIso(row.created_at),
     };
@@ -371,37 +372,52 @@ export async function ensureDefaultButlerAccess({ userId, connection = null }) {
   const queryFn = transactionQuery(connection);
   const registeredAgent = await getAgent("miaoxun-butler");
   if (!registeredAgent) throw new Error("The default Butler Agent is not registered.");
-  // New accounts must use the same operator-controlled display identity as
-  // existing accounts. Keep the registry as the executable source of truth;
-  // the catalogue only overlays presentation fields when the migration exists.
-  const catalogueRows = typeof connection?.query === "function"
-    ? await queryFn(
-        `SELECT display_name, description, identity_mark, identity_shape,
-                identity_colors, status
-           FROM agent_catalog
-          WHERE agent_id = ?
-          LIMIT 1`,
-        [registeredAgent.key],
-      )
-    : [];
+  // New accounts must use one complete, current, operator-published identity.
+  // The registry supplies executable permissions and version; presentation is
+  // read from the release-backed catalog projection only.
+  const catalogueRows = await queryFn(
+    `SELECT display_name, description, identity_mark, identity_shape,
+            identity_colors, status, release_version, contract_hash,
+            source, updated_at
+       FROM agent_catalog
+      WHERE agent_id = ?
+      LIMIT 1`,
+    [registeredAgent.key],
+  );
   const catalogue = catalogueRows?.[0];
-  const catalogueColors = parseJson(catalogue?.identity_colors, {});
-  const agent = catalogue
+  const catalogueIdentity = catalogue
     ? {
-        ...registeredAgent,
-        name: catalogue.display_name ?? registeredAgent.name,
-        description: catalogue.description ?? registeredAgent.description,
+        key: registeredAgent.key,
+        avatarKind: "agent-mark",
+        displayName: catalogue.display_name,
+        description: catalogue.description,
+        mark: catalogue.identity_mark,
+        shape: catalogue.identity_shape,
+        colors: parseJson(catalogue.identity_colors, {}),
         published: catalogue.status === "published",
-        identity: {
-          ...registeredAgent.identity,
-          ...(catalogue.identity_mark ? { mark: catalogue.identity_mark } : {}),
-          ...(catalogue.identity_shape ? { shape: catalogue.identity_shape } : {}),
-          ...(Object.keys(catalogueColors).length
-            ? { colors: { ...registeredAgent.identity?.colors, ...catalogueColors } }
-            : {}),
-        },
+        source: catalogue.source,
+        updatedAt: toIso(catalogue.updated_at),
       }
-    : registeredAgent;
+    : null;
+  const expectedContractHash = catalogueIdentity && isCompleteAgentIdentity(catalogueIdentity)
+    ? computeAgentReleaseContractHash({
+        key: registeredAgent.key,
+        version: registeredAgent.version,
+        permissions: registeredAgent.permissions,
+        identity: catalogueIdentity,
+      })
+    : null;
+  if (!catalogue || !isCompleteAgentIdentity(catalogueIdentity) || catalogue.status !== "published" ||
+      catalogue.release_version !== registeredAgent.version || catalogue.contract_hash !== expectedContractHash) {
+    throw new HttpError(409, "默认妙讯管家尚未完成发布身份合同", { code: "AGENT_IDENTITY_CONTRACT_INCOMPLETE" });
+  }
+  const agent = {
+    ...registeredAgent,
+    name: catalogueIdentity.displayName,
+    description: catalogueIdentity.description,
+    published: true,
+    identity: catalogueIdentity,
+  };
   const grantedScopes = resolveAgentGrantedScopes(agent, agent.permissions);
   const users = await queryFn("SELECT id FROM users WHERE id = ? FOR UPDATE", [
     userId,

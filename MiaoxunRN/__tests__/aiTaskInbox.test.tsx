@@ -50,9 +50,9 @@ const agents: AgentDTO[] = [
     version: '1',
     category: 'media-management',
     identity: {
-      avatarKind: 'agent-mark',
+      avatarKind: 'agent-mark' as const,
       mark: '测',
-      shape: 'circle',
+      shape: 'circle' as const,
       colors: {
         background: '#123456',
         foreground: '#ffffff',
@@ -70,9 +70,9 @@ const agents: AgentDTO[] = [
     version: '1',
     category: 'site-builder',
     identity: {
-      avatarKind: 'agent-mark',
+      avatarKind: 'agent-mark' as const,
       mark: '测',
-      shape: 'circle',
+      shape: 'circle' as const,
       colors: {
         background: '#123456',
         foreground: '#ffffff',

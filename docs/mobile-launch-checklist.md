@@ -22,15 +22,16 @@
 当前 API 配置：
 
 ```text
-iOS Debug:   http://127.0.0.1:4390
+iOS Debug:   https://8.153.167.11（仓库当前显式 build setting；本地联调需显式覆盖）
 iOS Release: https://8.153.167.11
+Android:     构建时显式传入 MIAOXUN_API_BASE_URL（无默认值）
 ```
 
 说明：
 
-- Debug 默认用于本机后端联调；正式 Release 已加构建校验，只允许公网 HTTPS origin，不能使用 localhost 或 loopback URL。
-- 如需本地后端调试，必须显式改为 Mac 局域网地址或单独建 Debug 配置；同一次扫码联调不能混用两套后端。
-- Android 构建必须显式传入 `MIAOXUN_API_BASE_URL`。正式上线 Release 必须使用 HTTPS API。
+- Debug 与 Release 的 origin 都由构建配置显式提供；正式 Release 已加构建校验，只允许公网 HTTPS origin，不能使用 localhost 或 loopback URL。
+- 如需本地后端调试，必须显式将 Debug 配置改为 Mac 局域网地址或单独建 Debug 配置；同一次扫码联调不能混用两套后端。
+- Android 构建没有正式 IP 或其他静默默认值，必须显式传入 `MIAOXUN_API_BASE_URL`；缺失或非法 origin 直接构建失败。正式上线 Release 必须使用 HTTPS API。
 
 当前后端入口：
 
@@ -38,7 +39,7 @@ iOS Release: https://8.153.167.11
 正式 API origin: https://8.153.167.11
 可选域名 origin: https://api.marvelschat.com
 业务路径前缀: /api
-管理后台: https://8.153.167.11/admin/
+管理后台历史入口: https://8.153.167.11/admin/（线上版本以当前交接和实读为准）
 ```
 
 正式包必须使用受信任的 HTTPS API，不能使用 `127.0.0.1` 或局域网地址。当前 Let's Encrypt 证书的 SAN 直接覆盖固定公网 IP；域名完成后可切换 origin，但不是 App Store 上架的技术前置条件。
@@ -58,7 +59,7 @@ iOS Release: https://8.153.167.11
 | 语音转文字输入 | 已接入 iOS / Android 系统语音识别 | 识别结果只回填输入框，由用户确认发送；真机验证权限和识别可用性 |
 | 关注 / 好友申请 / 通知 | 已接入关注、申请、通过、拒绝、取消和通知闭环 | 操作中、成功、失败状态完整 |
 | 小站基础资料 | 已接入 profile | 修改资料必须走后端保存 |
-| 后端部署 | 已部署 ECS + 本机 PostgreSQL 18 | 保持 IP HTTPS、健康与 readiness、日志、迁移账本、worker 和备份任务稳定 |
+| 后端部署 | 历史/能力基线：曾部署 ECS + 本机 PostgreSQL 18 | 当前线上状态、本机数据库迁移和运行进程以 [当前交接](handoffs/CURRENT.md) 与实读为准；保持 IP HTTPS、健康与 readiness、日志、迁移账本、worker 和备份任务稳定 |
 | iOS TestFlight | 已具备历史上传基础 | Release 使用证书覆盖的固定公网 IP HTTPS；上传前必须递增 build 并完成真机回归 |
 | Android 基础构建 | 工程存在 Android 目录 | 上线前补签名、权限、真机回归 |
 
@@ -68,7 +69,7 @@ iOS Release: https://8.153.167.11
 | --- | --- | --- |
 | 扫码看主页 | 已接入 iOS / Android 原生桥接和后端解析 | 可作为早期亮点，但要真机验证相机权限和失败态 |
 | 定位名称解析 | 已接系统定位和高德逆地理编码；无地图展示 | 暂不作为首版必需；上线前确认生产授权、配额和隐私披露 |
-| 管理后台 | 已部署静态后台 | 内部使用即可，不作为公开产品入口 |
+| 管理后台 | 代码与隔离验证已具备；当前工作区 046–048 尚未部署到线上 | 内部使用即可，不作为公开产品入口；线上版本以当前交接和实读为准 |
 | 3D 小站形象 | 已接入私有照片、四视图确认、Tripo 任务和移动端 GLB | 上线前完成真实付费链路、内容审核、失败计费、保留策略和真机性能回归 |
 
 ### 暂缓正式上线
@@ -333,7 +334,7 @@ scripts/check-launch-readiness.sh
 2. ECS 公网 IP 保持固定；IP 变化会导致现有 App 无法连接并需要发布新版本。
 3. iOS Release `MIAOXUN_API_BASE_URL=https://8.153.167.11`。
 4. Release 不包含 HTTP ATS 例外。
-5. `CURRENT_PROJECT_VERSION` 递增；当前工程为 42，下一次上传不得复用已存在的构建号。
+5. `CURRENT_PROJECT_VERSION` 递增；以当前 Xcode 工程和 App Store Connect 已占用的 build 号实读为准，下一次上传不得复用已存在的构建号。
 6. `npx tsc --noEmit` 通过。
 7. `npm test -- --runInBand` 通过。
 8. `npm run lint` 无 error；warning 可登记后续处理。

@@ -10,9 +10,22 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-29-admin-console-design.md`
 
+## Execution status (2026-10-29)
+
+The implementation steps in this plan have been completed in the current worktree. The
+repository check, Admin tests/build, isolated PostgreSQL migration replay (001–048),
+HTTP release/product/consent flow, and stale-contract/dependency gate checks have passed.
+Evidence is kept in `/tmp/miaoxun-migration-replay-20261029.log`,
+`/tmp/miaoxun-release-http-20261029.log`, and
+`/tmp/miaoxun-release-gates-20261029.log`. The worktree changes are still uncommitted;
+no production deployment, database migration, Git push, TestFlight upload, or paid model
+call was performed. The unchecked task boxes below are retained as the original execution
+trace; current status and remaining boundaries are authoritative in
+[`docs/handoffs/CURRENT.md`](../../handoffs/CURRENT.md).
+
 ## Global Constraints
 
-- `agent_catalog` 是最终发布的 Agent 展示 identity 来源；移动端不得按 key、category 或旧 glyph 生成替代身份。
+- 已发布 product/release snapshot 是 App 可发现 Agent 展示 identity 的唯一来源；`agent_catalog` 仅保留部署投影，移动端不得按 key、category 或旧 glyph 生成替代身份。
 - 代码注册、目录审核、产品发布和用户授权是独立状态；发布不能代替用户授权。
 - identity、版本、权限或 contract hash 缺失/不匹配必须返回明确错误或 `reconsent_required`，不能静默兼容。
 - 所有管理写操作使用后端资源权限、事务、幂等键和审计记录。

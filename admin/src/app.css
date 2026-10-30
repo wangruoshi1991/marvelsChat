@@ -1,0 +1,29 @@
+html, body, #admin-root { min-height: 100%; margin: 0; }
+body { background: #f3f5f5; }
+.app-layout { min-height: 100vh; }
+.app-sider .ant-menu { background: #122b2a; border: 0; }
+.app-sider .ant-menu-item-selected { background: #28564f !important; }
+.sider-brand { height: 76px; display: flex; align-items: center; gap: 12px; padding: 0 20px; color: white; }
+.sider-brand strong, .sider-brand span { display: block; }
+.sider-brand span { font-size: 10px; color: #9bb7b2; letter-spacing: .08em; margin-top: 3px; }
+.brand-mark { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 12px; background: #39c9a3; color: #102b27; font-size: 25px; font-weight: 700; }
+.brand-mark.small { width: 36px; height: 36px; font-size: 19px; border-radius: 8px; }
+.app-header { background: white; height: 64px; line-height: normal; display: flex; justify-content: space-between; align-items: center; padding: 0 28px; border-bottom: 1px solid #e9eded; }
+.header-divider { padding: 0 12px; color: #c7d0ce; }
+.header-user { display: flex; align-items: center; gap: 9px; }
+.app-content { padding: 25px 28px 40px; min-width: 0; }
+.page-title { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 16px; }
+.page-title h2 { margin: 0 0 4px !important; }
+.page-surface { background: #fff; border: 1px solid #e6ebea; border-radius: 7px; padding: 20px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.toolbar .ant-input-affix-wrapper { max-width: 280px; }
+.loading-screen { min-height: 100vh; display: grid; place-items: center; }
+.login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; gap: 100px; background: #f2f6f5; padding: 24px; }
+.login-brand { max-width: 360px; }
+.login-brand h1 { margin: 18px 0 8px !important; }
+.login-panel { background: white; padding: 36px; width: 390px; border: 1px solid #e5ecea; border-radius: 10px; box-shadow: 0 18px 60px #163f3310; }
+.login-panel h3 { margin-top: 0 !important; margin-bottom: 6px !important; }
+.login-panel form { margin-top: 26px; }
+.login-error { margin-top: 20px; }
+.detail-json { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; background: #f6f8f8; padding: 14px; }
+@media (max-width: 768px) { .login-page { flex-direction: column; gap: 30px; } .login-panel { max-width: 100%; } .app-content { padding: 18px 12px; } .app-header { padding: 0 14px; } .header-user span { display: none; } }

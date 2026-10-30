@@ -6,10 +6,8 @@ import { query, closeDatabase } from "../src/db.js";
 import { authenticate, hashToken } from "../src/auth.js";
 import { registerMessageRoutes } from "../src/routes/message-routes.js";
 import { createRequestErrorHandler } from "../src/request-observability.js";
-import { createMessageTaskExecutor } from "../src/ai-message-task-service.js";
-import { createAITaskRunner } from "../src/ai-task-runner.js";
-import { getAITask } from "../src/ai-task-repository.js";
 import { getAgent } from "../../agents/registry.js";
+import { computeAgentReleaseContractHash } from "../../shared/agent-catalog.js";
 
 const enabled = process.env.RUN_AI_MESSAGE_RECALL_INTEGRATION === "1" || process.env.RUN_AI_TASK_INTEGRATION === "1";
 const integration = (name, work) => test(name, {
@@ -29,6 +27,9 @@ const realtime = [];
 const logger = { error() {} };
 let server;
 let origin;
+let runtime = async () => {
+  throw new Error("Test runtime must be configured before specialist execution");
+};
 
 before(async () => {
   if (!enabled) return;
@@ -51,6 +52,44 @@ before(async () => {
   }
   await query(`INSERT INTO user_agents (user_id,agent_id,enabled,granted_scopes)
     VALUES (?, 'album-manager', true, ?::jsonb)`, [owner, JSON.stringify((await getAgent("album-manager")).permissions)]);
+  // This suite exercises the current specialist message route. Seed the
+  // operator-published catalog identity explicitly; a direct user_agents row
+  // is only an access projection and cannot certify executable Agent access.
+  const album = await getAgent("album-manager");
+  const identity = {
+    key: album.key,
+    avatarKind: "agent-mark",
+    displayName: album.name,
+    description: album.description,
+    mark: album.identity.mark,
+    shape: album.identity.shape,
+    colors: album.identity.colors,
+    published: true,
+    source: "integration-test",
+    updatedAt: "2026-10-30T00:00:00.000Z",
+  };
+  const contractHash = computeAgentReleaseContractHash({
+    key: album.key,
+    version: album.version,
+    permissions: album.permissions,
+    identity,
+  });
+  await query(`INSERT INTO agent_catalog
+      (agent_id, display_name, description, identity_mark, identity_shape,
+       identity_colors, status, release_version, contract_hash, source)
+    VALUES (?, ?, ?, ?, ?, ?::jsonb, 'published', ?, ?, 'integration-test')
+    ON CONFLICT (agent_id) DO UPDATE SET
+      display_name = EXCLUDED.display_name,
+      description = EXCLUDED.description,
+      identity_mark = EXCLUDED.identity_mark,
+      identity_shape = EXCLUDED.identity_shape,
+      identity_colors = EXCLUDED.identity_colors,
+      status = 'published',
+      release_version = EXCLUDED.release_version,
+      contract_hash = EXCLUDED.contract_hash,
+      source = EXCLUDED.source`,
+    [album.key, identity.displayName, identity.description, identity.mark,
+      identity.shape, JSON.stringify(identity.colors), album.version, contractHash]);
   await query(`INSERT INTO media_retrieval_profiles (user_id,index_state,consent_version,consent_granted_at)
     VALUES (?, 'enabled', 'media-retrieval-consent-v1', CURRENT_TIMESTAMP)`, [owner]);
   const app = express();
@@ -59,6 +98,7 @@ before(async () => {
   registerMessageRoutes(app, {
     authenticate, asyncHandler, getOnlineUserIds: () => [],
     sendRealtimeToUser: (userId, event) => realtime.push({ userId, event }),
+    runAgentRuntime: options => runtime(options),
   });
   app.use(createRequestErrorHandler({ production: true, logger }));
   await new Promise(resolve => { server = app.listen(0, "127.0.0.1", resolve); });
@@ -81,7 +121,7 @@ after(async () => {
 
 const request = async (path, body = {}, authToken = token) => {
   const response = await fetch(`${origin}${path}`, {
-    method: "POST", headers: { Authorization: `Bearer ${authToken}`, "Content-Type": "application/json", "X-Miaoxun-AI-Contract": "1" }, body: JSON.stringify(body),
+    method: "POST", headers: { Authorization: `Bearer ${authToken}`, "Content-Type": "application/json", "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": "6" }, body: JSON.stringify(body),
   });
   return { status: response.status, ...await response.json() };
 };
@@ -98,47 +138,35 @@ const insertMessage = async ({ userId = owner, threadId = agentThread, senderTyp
   return id;
 };
 
-integration("HTTP recall of an owner Agent input prevents a queued task from calling the model", async () => {
-  const submitted = await send();
-  assert.equal(submitted.status, 202);
-  const input = submitted.data.messages[0];
-  assert.equal(submitted.data.task.goal, input.content);
-  assert.equal(input.metadata.source, undefined);
-  assert.equal(input.metadata.persistedByApp, undefined);
-  assert.equal(input.userId, undefined);
-  assert.equal(input.metadata.senderUserId, undefined);
-  const recalled = await recall(input.id);
-  assert.equal(recalled.status, 200);
-  assert.ok(recalled.data.message.recalledAt);
-  assert.equal(recalled.data.message.content, "");
-  assert.equal(recalled.data.message.metadata.taskId, undefined);
-  assert.equal(recalled.data.message.metadata.recalledByUserId, undefined);
-  assert.equal((await stored(input.id)).metadata.taskId, submitted.data.task.id);
-  let calls = 0;
-  const execute = createMessageTaskExecutor({ runAgentRuntime: async () => { calls++; throw new Error("Recalled input must not reach model"); } });
-  await createAITaskRunner({ executors: { agent_message: execute }, logger }).runOnce();
-  assert.equal(calls, 0);
-  const task = await getAITask({ userId: owner, taskId: submitted.data.task.id });
-  assert.equal(task.status, "failed");
-  assert.equal(task.goal, "");
-  assert.equal(task.error.code, "AI_INPUT_UNAVAILABLE");
-  assert.equal((await query("SELECT id FROM chat_messages WHERE thread_id = ?", [agentThread])).length, 1);
-  await query("UPDATE chat_messages SET created_at = CURRENT_TIMESTAMP - INTERVAL '2 minutes' WHERE id = ?", [input.id]);
-  assert.equal((await recall(input.id)).data.message.recalledAt, recalled.data.message.recalledAt);
+integration("HTTP recall during specialist execution prevents a late model result from being committed", async () => {
+  const clientMessageId = crypto.randomUUID();
+  runtime = async options => {
+    await options.beforeModelCall();
+    const [input] = await query("SELECT id FROM chat_messages WHERE user_id = ? AND client_message_id = ?", [owner, clientMessageId]);
+    assert.ok(input);
+    assert.equal((await recall(input.id)).status, 200);
+    return { reply: JSON.stringify({ type: "reply", reply: "Must not be delivered" }), provider: "test-only", latencyMs: 1, tokenUsage: { prompt: 1, completion: 1, total: 2 } };
+  };
+  const result = await send(agentThread, clientMessageId);
+  assert.equal(result.status, 409);
+  assert.equal(result.error.details.code, "SPECIALIST_INPUT_CHANGED");
+  const [input] = await query("SELECT * FROM chat_messages WHERE user_id = ? AND client_message_id = ?", [owner, clientMessageId]);
+  assert.ok(input.recalled_at);
+  assert.equal((await query("SELECT id FROM chat_messages WHERE thread_id = ? AND sender_type = 'agent'", [agentThread])).length, 0);
 });
 
-integration("HTTP recall while a task is running rejects the late output commit", async () => {
-  const submitted = await send();
-  const execute = createMessageTaskExecutor({ runAgentRuntime: async options => {
+integration("HTTP recall before the model gate rejects execution without creating an output", async () => {
+  const clientMessageId = crypto.randomUUID();
+  runtime = async options => {
+    const [input] = await query("SELECT id FROM chat_messages WHERE user_id = ? AND client_message_id = ?", [owner, clientMessageId]);
+    assert.ok(input);
+    assert.equal((await recall(input.id)).status, 200);
     await options.beforeModelCall();
-    assert.equal((await recall(submitted.data.messages[0].id)).status, 200);
     return { reply: "Must not be delivered", provider: "test-only", latencyMs: 1, tokenUsage: { prompt: 1, completion: 1, total: 2 } };
-  } });
-  await createAITaskRunner({ executors: { agent_message: execute }, logger }).runOnce();
-  const task = await getAITask({ userId: owner, taskId: submitted.data.task.id });
-  assert.equal(task.status, "failed");
-  assert.equal(task.goal, "");
-  assert.equal(task.error.code, "AI_INPUT_UNAVAILABLE");
+  };
+  const result = await send(agentThread, clientMessageId);
+  assert.equal(result.status, 409);
+  assert.equal(result.error.details.code, "SPECIALIST_INPUT_CHANGED");
   assert.equal((await query("SELECT id FROM chat_messages WHERE thread_id = ? AND sender_type = 'agent'", [agentThread])).length, 0);
 });
 

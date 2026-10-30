@@ -3,12 +3,14 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -61,6 +63,7 @@ test("packages only a clean committed source tree with fresh frontend builds", (
       "agents/media-retrieval/tests/agent-contract.test.js",
       "agents/media-retrieval/fixtures/secret-fixture.json",
       "shared/contract.js",
+      "shared/agent-catalog.js",
       "shared/site-document.js",
       "shared/media-retrieval-public-contract.js",
       "shared/site-document.d.ts",
@@ -89,6 +92,13 @@ test("packages only a clean committed source tree with fresh frontend builds", (
       .filter(name => name.endsWith(".js"));
     for (const name of agentSources) {
       copyFileSync(join(repositoryRoot, "agents", name), join(fixture, "agents", name));
+    }
+    // Import the actual backend entry points from the extracted runtime.  This
+    // catches a missing shared or backend module even when the archive itself
+    // and the Agent registry build successfully.
+    cpSync(join(repositoryRoot, "backend/src"), join(fixture, "backend/src"), { recursive: true });
+    for (const name of ["agent-catalog.js", "site-document.js", "media-retrieval-public-contract.js"]) {
+      copyFileSync(join(repositoryRoot, "shared", name), join(fixture, "shared", name));
     }
     write(fixture, "backend/package.json", `${JSON.stringify({
       name: "@miaoxun/backend",
@@ -186,7 +196,7 @@ test("packages only a clean committed source tree with fresh frontend builds", (
     assert.equal(manifest.sourceTree, run("git", ["rev-parse", "HEAD^{tree}"], fixture));
     assert.equal(manifest.includesWorkingTreeChanges, false);
     assert.deepEqual(manifest.runtimePackageProjection.backendScripts, [
-      "admin:bootstrap", "avatar3d:backfill-mobile", "db:migrate", "ops:ai-tasks",
+      "admin:bootstrap", "avatar3d:backfill-mobile", "db:migrate", "ops:ai-tasks", "ops:legacy-publishing-backfill",
       "start", "worker:ai-tasks", "worker:media-retrieval",
     ]);
     assert.equal(readFileSync(join(runtime, "admin/index.html"), "utf8"), "fresh-build");
@@ -215,6 +225,14 @@ test("packages only a clean committed source tree with fresh frontend builds", (
     assert.deepEqual(packagedAgents, agentSources
       .filter(name => name.endsWith(".agent.js"))
       .map(name => name.slice(0, -".agent.js".length)).sort());
+    // Dependencies are installed separately on the deployment host; provide
+    // the already-installed backend dependencies without adding them to the
+    // artifact. No database, provider, or persistent listener is started.
+    symlinkSync(join(repositoryRoot, "backend/node_modules"), join(runtime, "backend/node_modules"), "dir");
+    const backendImports = run("node", ["--input-type=module", "--eval",
+      'await import("./backend/src/server.js"); await import("./backend/src/ai-task-worker.js"); await import("./backend/src/media-retrieval-worker.js"); console.log("backend-imports-ok"); process.exit(0);',
+    ], runtime, { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: "test", MIAOXUN_DOTENV_ENABLED: "false", HOST: "127.0.0.1", PORT: "0" });
+    assert.equal(backendImports, "backend-imports-ok");
     assert.ok(existsSync(join(runtime, "agents/chat-history.js")));
     assert.ok(existsSync(join(runtime, "agents/workspace-contribution.js")));
     assert.ok(existsSync(join(runtime, "shared/site-document.js")));

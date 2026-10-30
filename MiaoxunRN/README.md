@@ -4,7 +4,7 @@
 
 以下描述当前源码能力；实际服务器版本、设备安装和验收状态见[当前交接](../docs/handoffs/CURRENT.md)。
 
-截至当前交接，服务端合同为 `aiTasks:1 / siteDocuments:2 / agentWorkspaces:6`、数据库迁移为 043，Build52 已进入 TestFlight；本地源码和未提交修复可能领先于已分发构建。运行版本、设备和验收结论只以[当前交接](../docs/handoffs/CURRENT.md)为准。
+截至当前交接，客户端合同为 `aiTasks:1 / siteDocuments:2 / agentWorkspaces:6`；发布目录与 entitlement 链路的迁移 046–048 已在隔离 PostgreSQL 验证，尚未据此宣称生产已部署。Build54 的 TestFlight 状态、设备安装和验收结论只以[当前交接](../docs/handoffs/CURRENT.md)为准；本地源码和未提交修复可能领先于已分发构建。
 
 底栏为妙、讯、我，冷启动和切换账号默认进入讯。妙展示真实任务动态；卡片读取真实 `GET /api/tasks` 与 `GET /api/agent-workspaces`，展示目标、执行状态和已持久化的工作空间信息。普通同步对话不混入任务动态。Agent 添加管理保留在我的小站入口。讯使用“对话 / 任务”分段及独立通知入口。
 
@@ -175,7 +175,8 @@ xcrun devicectl device process launch \
 Android 使用与当前交接一致的版本计划和正式 API。在 `MiaoxunRN/android` 中构建：
 
 ```sh
-./gradlew assembleDebug
+./gradlew assembleDebug \
+  -PMIAOXUN_API_BASE_URL=https://8.153.167.11
 ```
 
 构建参数仍可显式传入 `MIAOXUN_API_BASE_URL`、`MIAOXUN_VERSION_CODE` 和 `MIAOXUN_VERSION_NAME`；后续版本递增需同步iOS与Android发布计划。真机或Android做隔离后端验证时，必须明确配置设备可访问的origin；仅绑定本机的4391验证服务不能直接作为真机LAN服务使用。

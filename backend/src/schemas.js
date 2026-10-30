@@ -549,6 +549,21 @@ export const limitSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional().default(80),
 });
 
+export const adminPageSchema = z.object({
+  page: z.coerce.number().int().min(1).max(100000).optional().default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).optional(),
+  // Legacy console callers used limit; it remains accepted while new callers
+  // should send page/pageSize for deterministic pagination.
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  query: z.string().trim().max(190).optional().default(""),
+  sortBy: z.string().trim().min(1).max(40).optional(),
+  sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),
+  status: z.string().trim().min(1).max(40).optional(),
+  role: z.string().trim().min(1).max(40).optional(),
+  agentId: z.string().trim().min(1).max(120).optional(),
+  userId: z.string().uuid().optional(),
+}).strict().transform((value) => ({ ...value, pageSize: value.pageSize ?? value.limit ?? 50 }));
+
 export const adminUsageWindowSchema = z.object({
   days: z.coerce.number().int().min(1).max(365).optional().default(30),
 });
@@ -626,6 +641,7 @@ export const profileAdminSchema = z.object({
 
 export const agentAccessSchema = z.object({
   enabled: z.boolean(),
+  consent: z.literal(true).optional(),
   alias: z.string().trim().max(80).optional().default(""),
   grantedScopes: z.array(z.string().trim().min(1).max(80)).optional(),
   albumAIConsentVersion: z.literal(MEDIA_RETRIEVAL_CONSENT_VERSION).optional(),
@@ -635,6 +651,13 @@ export const agentAccessSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["grantedScopes"],
       message: "Enabling an Agent requires explicitly confirmed grantedScopes.",
+    });
+  }
+  if (body.enabled && body.consent !== true) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["consent"],
+      message: "Enabling an Agent requires explicit product consent.",
     });
   }
 }).transform(body => ({ ...body, grantedScopes: body.enabled ? body.grantedScopes : [] }));
@@ -653,6 +676,7 @@ const uniqueScopesSchema = z.array(scopeSchema).max(64).refine((scopes) => new S
 
 export const agentIdentitySchema = z.object({
   key: agentKeySchema,
+  avatarKind: z.literal("agent-mark"),
   displayName: z.string().trim().min(1).max(120),
   description: z.string().max(2000),
   mark: z.string().trim().min(1).max(40),

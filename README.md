@@ -21,7 +21,7 @@ marvelsChat/
 ## 技术栈边界
 
 - 移动端：`MiaoxunRN/` 是唯一正式 App 主线，采用 React Native + TypeScript；钥匙串、推送、文件权限等系统能力通过 iOS / Android 薄原生层接入。
-- 后台管理前端：独立 `admin/` 工程，当前为 Vite + 原生 JavaScript/CSS，后续也可迁 Vue。它只调用 `/api/admin/*` 和认证接口，不单独拥有后端服务。
+- 后台管理前端：独立 `admin/` 工程，当前为 Vite + React + Refine + Ant Design，按资源与工作域提供侧栏、表格、详情和受权限控制的操作。它只调用 `/api/admin/*` 和认证接口，不单独拥有后端服务。
 - 后端：Node.js + Express + 数据库层。当前实现使用 PostgreSQL。后端负责 API、鉴权、数据读写、后台管理、Agent 注册、Agent 调用编排、模型供应商适配和审计记录。
 - Agent：独立放在 `agents/` 工程。Agent 以声明式文件注册能力、权限和提示词计划，由后端运行时加载。前端只消费后端返回的 Agent 列表、授权状态和消息结果。
 - Python：当前主工程尚未接入 Python 服务；只有当后续需要独立 AI 任务队列、视频/图片/3D 模型处理、文件解析等 Node.js 不适合长期承载的能力时，再作为独立 worker/service 引入，并通过后端 API 或队列调用。
@@ -79,13 +79,13 @@ http://127.0.0.1:4390/api/health
 http://127.0.0.1:4390/api/ready
 ```
 
-`MiaoxunRN` iOS API 地址来自 Xcode build setting，并通过 `MiaoxunConfigModule` 暴露给 JS。当前 Debug 与 Release 默认均使用 ECS 的受信任 IP HTTPS origin：
+`MiaoxunRN` iOS API 地址来自 Xcode build setting，并通过 `MiaoxunConfigModule` 暴露给 JS。当前仓库中的 Debug 与 Release build setting 都显式写入 ECS 的受信任 IP HTTPS origin：
 
 ```text
 MIAOXUN_API_BASE_URL=https://8.153.167.11
 ```
 
-正式发布要求是公网 HTTPS、有效证书和稳定 API，不强制使用域名。域名审核完成后可把 origin 切换为 `https://api.marvelschat.com`，数据库和业务路径不需要迁移。
+正式发布要求是公网 HTTPS、有效证书和稳定 API，不强制使用域名。Android 不提供默认 origin，构建时必须显式传入 `-PMIAOXUN_API_BASE_URL=...` 或同名环境变量；缺失或非法值直接让 Gradle 失败。需要本地联调时也必须显式改写对应 Debug 配置，不能依赖静默默认。域名审核完成后可把 origin 切换为 `https://api.marvelschat.com`，数据库和业务路径不需要迁移。
 
 需要本地后端调试时，必须显式新建或修改 Debug 配置为 Mac 局域网 IP 或本机测试后端地址；不能让同一次扫码联调里一端连本地、一端连线上。
 
@@ -93,7 +93,7 @@ MIAOXUN_API_BASE_URL=https://8.153.167.11
 
 当前 iOS 真机调试使用 `MiaoxunRN/ios/MiaoxunRN.xcworkspace` 构建，项目已配置 Apple Development 自动签名；首次安装到个人设备后，需要在 iPhone 的“设置 -> 通用 -> VPN 与设备管理”中信任开发者证书，之后才能由 Mac 启动 App。真机命令和签名要求见 [iOS 客户端规划](docs/ios.md)。
 
-Agent 注册列表：
+已发布 Agent 公共列表（仅返回完成 release/product 发布且 identity 完整的项）：
 
 ```text
 http://127.0.0.1:4390/api/agents

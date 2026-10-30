@@ -8,6 +8,7 @@
     "check": "node ../scripts/check-source-syntax.mjs src scripts test",
     "test": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/*.test.js",
     "test:api-integration": "node scripts/check-api-integration.js",
+    "test:agent-publishing": "node scripts/check-agent-publishing-integration.js",
     "test:media-retrieval": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/media-retrieval-*.test.js",
     "test:media-retrieval-migration": "RUN_MEDIA_RETRIEVAL_MIGRATION_INTEGRATION=1 NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/media-retrieval-migration.test.js",
     "smoke:media-retrieval": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node scripts/media-retrieval-smoke.js",
@@ -19,6 +20,7 @@
     "test:ai-tasks": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/ai-*.test.js",
     "db:migrate": "node scripts/db-migrate.js",
     "admin:bootstrap": "node scripts/admin-bootstrap.js",
+    "ops:legacy-publishing-backfill": "node scripts/legacy-publishing-backfill.js",
     "avatar3d:backfill-mobile": "node scripts/avatar-3d-backfill-mobile-models.js"
   },
   "dependencies": {

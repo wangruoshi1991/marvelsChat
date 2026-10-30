@@ -2,9 +2,11 @@
 
 妙讯正式 iOS App 当前以 `MiaoxunRN/` 为唯一移动端主线，采用 React Native 承接上线实现。旧 SwiftUI 原型已从主工程移除。
 
-本文包含历史构建记录；当前服务器、Build52、签名和真机验收状态只以[当前交接](handoffs/CURRENT.md)为准。
+本文包含历史构建记录；当前服务器、Build54、签名和真机验收状态只以[当前交接](handoffs/CURRENT.md)为准。历史构建段落中的固定 Build、旧 HEAD 和部署描述不能推断当前工作区、TestFlight 或生产状态。
 
-2026-09-16：`1.0 (43)` 已用标准自动签名归档并上传 App Store Connect，正式 API 为
+### 历史构建记录：2026-09-16 / `1.0 (43)`
+
+`1.0 (43)` 已用标准自动签名归档并上传 App Store Connect，正式 API 为
 `https://8.153.167.11`。包含资料精简/定位、全局内容操作、小站交互和私有素材检索界面；
 检索运营开关仍关闭。正式模拟器保留原账号数据，已验证定位候选/取消草稿/键盘顶栏。
 详细构建、签名、上传与分发结果见[本次发布记录](reviews/2026-09-16-production-and-testflight-43.md)。
@@ -77,12 +79,12 @@ Android: android/app/src/main/java/com/wangruoshi/miaoxun/MiaoxunLocationModule.
 
 iOS 原生工程通过 `Info.plist` 的 `MiaoxunAPIBaseURL` 注入 API 地址，值来自 Xcode build setting `MIAOXUN_API_BASE_URL`。React Native 业务代码不直接读取 `SettingsManager`，而是通过项目自有原生桥接 `MiaoxunConfigModule.apiBaseURL` 获取配置，避免依赖 React Native 内部设置模块是否导出自定义 `Info.plist` 字段。
 
-正式发布目标：Debug 默认指向本机后端，Release 指向证书有效的公网 HTTPS origin。当前 Let's Encrypt 证书的 SAN 覆盖 `8.153.167.11`，因此可以直接使用 IP HTTPS；构建脚本会阻止 HTTP、localhost 和 loopback API URL。
+正式发布目标：Debug 与 Release 都由 build setting 显式提供 API origin；Release 必须指向证书有效的公网 HTTPS origin。当前 Let's Encrypt 证书的 SAN 覆盖 `8.153.167.11`，因此可以直接使用 IP HTTPS；构建脚本会阻止 HTTP、localhost 和 loopback API URL。
 
-当前配置：
+当前仓库显式配置（实际设备/线上状态见当前交接）：
 
 ```text
-Debug:   http://127.0.0.1:4390
+Debug:   https://8.153.167.11
 Release: https://8.153.167.11
 ```
 
@@ -307,7 +309,7 @@ POST /api/auth/logout
 GET /api/me
 GET /api/app/bootstrap
 GET /api/app/sync
-GET /api/agents
+GET /api/agents（已发布且 identity 完整的 Agent 公共列表）
 POST /api/scan/resolve
 GET /api/profiles/ai/:aiId
 POST /api/social/follows/:targetUserId
@@ -419,7 +421,7 @@ TestFlight 手机端必须安装包含本次原生补丁的新 build 后才能�
 
 该 2026-08-04 基线中的 HTTP IP 策略已于 2026-09-09 被 IP HTTPS 正式配置取代；当前 Release 不再使用临时标记或公网 HTTP ATS 例外。
 
-## 2026-08-31 Build 42 小站崩溃定位
+## 2026-08-31 Build 42 小站崩溃定位（历史）
 
 Build 41 与 Build 42 的 App Store Connect 真机报告均通过 `RCTExceptionsManager.reportFatal` 终止，根因是线上 bootstrap 的 `stationContent` 缺少移动端必填的 `posts` 数组。Build 41 在打开“生活”时首次读取该字段，Build 42 因五个小站页签同时挂载而在进入“小站”时立即读取，因此两版表现不同但属于同一个接口契约错误。
 

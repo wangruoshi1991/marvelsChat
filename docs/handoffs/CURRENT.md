@@ -1,15 +1,112 @@
 # 妙讯当前交接入口
 
-更新：2026-10-29。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
+更新：2026-10-30。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
 
-### 2026-10-29 Agent 目录与后台线上部署（最新）
+#### 2026-10-30 React/Refine 后台统一入口（当前工作区，未部署）
+
+- 后台前端已切换为 Vite + React + Refine + Ant Design 资源型架构，入口为 `admin/index.html` → `admin/src/main.jsx`；旧线上 `/admin/` 仍是历史 runtime，尚未替换。
+- 已接入真实 React 页面：运营总览、用户与权限、Agent release、产品目录、任务、运行监控、审计、媒体检索和系统配置。用户列表、事件、Agent runs、release 和产品列表支持服务端分页/搜索/筛选；详情、创建、资料语言、权限、会话撤销、Agent 撤权和发布动作均由后端权限及幂等接口校验。
+- 新后台不提供模型供应商连通测试按钮，不替管理员启用普通 Agent；发布、暂停、撤权、任务取消/重试和媒体预算/Provider 控制均有确认并保留审计。CSP 示例已允许 Ant Design 运行时样式注入（`style-src 'unsafe-inline'`），上线时必须随制品同步。
+- Admin 当前验证：`npm --prefix admin run check` 30 files、`npm --prefix admin test` 32/32、`npm --prefix admin run build` 通过；`npm audit --omit=dev` 0 vulnerabilities。React 页面已在本地 Vite `http://127.0.0.1:5175/admin/login` 渲染，真实本机 backend `http://127.0.0.1:4391` 的管理员 API smoke 通过（`/api/me`、users/releases/products/events 分页、tasks、monitoring、media overview、model status 均 200）。
+- 新增服务端分页实现 `backend/src/admin-list-repository.js`，真实 Docker 隔离 PostgreSQL 集成测试覆盖 users/events/runs/releases/products 的分页、总数、搜索和 `%` 转义并通过；测试容器已清理。当前生产仍是旧 001–045 runtime，工作区含未提交 046–048 与后台改动，不能直接部署。
+- 生产预检：SSH、备份、systemd 服务、`/api/health`/`/api/ready` 均正常；`scripts/prepare-runtime-release.mjs` 因 dirty worktree 正确拒绝打包。正式替换仍需审查后的 clean commit、停写备份、迁移 046–048、原子切换和线上 smoke，当前未部署/未提交/未推送。
+
+### 2026-10-30 当前工作区实读边界（优先于历史段落）
+
+- 当前分支为 `feature/redesign-by-prototype`，工作区保留大量未提交修改和新增文件；未执行 reset、clean、覆盖、删除、提交或推送。实际文件状态以 `git status --short --branch`、`git diff --stat` 和 `git diff --check` 为准。
+- 本机官方开发 backend 当前监听 `127.0.0.1:4391` 并由 `/api/health` 返回 200；旧端口 `4390` 无监听。共享 PostgreSQL 的 `marvels_chat` 账本实读到迁移 `026_agent_granted_scopes.sql`。不能把历史生产040–045、隔离 `_migration_test` 或旧 HEAD/Build42 记录当作当前本机或线上状态。
+- 本轮 046–048 发布合同、产品目录、consent、entitlement、bootstrap/sync 及暂停/撤权门禁必须使用全新的 loopback `_migration_test` 数据库串行验证；隔离日志与 HTTP 日志只证明对应隔离环境，不证明生产已部署。268 个 PostgreSQL 环境门控测试的 skipped 必须单独记录，不能写成通过。
+- Build54 已在 TestFlight 历史页面显示“正在测试”，但本轮没有上传或替换实体设备 App。Build54 真机验收仍需逐项执行：二楼落地页与各子页上滑退出；讯页对话/任务、新建、搜索和返回；妙页与讯页长按菜单；语音入口与识别卡；我页 Agent 卡片、折叠恢复和头像一致性；聊天详情、任务详情、输入框、提示条滑动及各种状态切换。模拟器、组件测试和 TestFlight 页面状态不能代替实体 iPhone 结论。
+- 本轮不部署生产、不上传 TestFlight、不调用付费模型。真实 health/ready、迁移、Worker、生产用户流程和第三方模型费用需要另行获得范围明确的现场/只读证据；下一阶段负责人按本页“尚未闭环”执行。
+
+#### 2026-10-30 后台管理系统 P0/P1 重构（当前工作区，未部署）
+
+- 已修复“所有能力集中在一个页面”的前端信息架构问题：`admin/src/app-shell.js`、`admin/src/router.js` 和 `admin/admin.css` 现在提供按工作台、用户与权限、Agent 与产品、任务与监控、审计与系统分组的固定侧栏；每个模块拥有独立 `/admin/<module>` 路由、中文导航说明、面包屑、页面容器、`aria-current`、刷新状态和移动端抽屉。
+- 账号页已接入真实账号搜索/状态/角色筛选、详情、创建账号、资料编辑、角色/状态变更、会话撤销和密码重置；Agent 页支持 release 搜索/状态筛选、审核和发布；产品页支持状态/关键字筛选、显式 JSON 合同草稿、提交/发布/暂停；任务页支持状态、Agent、用户、时间窗口筛选和服务端幂等取消/重试。
+- 监控页支持 7/30/90 天窗口；审计页支持真实事件搜索；系统页展示脱敏模型配置；媒体检索已拆成独立诊断页，读取 Worker 可用性、队列、预算和脱敏失败诊断，并通过服务端审计控制 Agent、Provider 调用和索引队列。后台不生成示例记录，权限和生命周期仍由后端最终校验。
+- Admin 验证：`npm --prefix admin test` 29/29、`npm --prefix admin run check` 27 files、`npm --prefix admin run build` 通过，`git diff --check` 通过；本地 mock API 渲染验收确认登录后工作台、账号页、产品页和独立路由可见。该 mock 只用于本地 UI 检查，不代表隔离数据库或生产通过。
+- 当前仍未部署本轮工作区后台到线上，未触碰生产后台；旧线上 044/045 后台不能当作本轮模块化版本。用户已明确暂缓第三项实体 iPhone 验收，待后台系统完成后再由用户进行真机验证。下一步是启动隔离 backend + Admin 做真实管理员登录、发布/产品/任务/媒体操作验收，再单独评估部署范围。
+
+#### 2026-10-30 Admin 本地登录端口修复
+
+- 定位到后台“点击进入后台无法登录”的真实原因：官方开发运行器使用 `127.0.0.1:4391`，而 Vite 代理、`file:` 页面 API fallback 仍写死 `4390`；修复后由 `admin/src/runtime-config.js` 统一默认地址，`MIAOXUN_ADMIN_API_TARGET` 仍可显式覆盖。
+- 修复后重启本地 Vite 5175 实例，`GET http://127.0.0.1:5175/api/health` 与后端 `GET http://127.0.0.1:4391/api/health` 均返回 200；浏览器登录页当前显示 `API：http://127.0.0.1:4391`，不再把请求发往旧端口。
+- Admin 验证已更新为 `npm --prefix admin test` 31/31、`npm --prefix admin run check` 通过、`npm --prefix admin run build` 通过，`git diff --check` 通过。未使用或记录任何用户密码；未提交、推送或部署生产。
+
+#### 2026-10-30 Admin 登录继续修复
+
+- 进一步复现发现旧进程虽然返回 `/api/ready` 200，但运行来源不是当前工作区，数据库账本只有 001–045；`node scripts/miaoxun-development.mjs verify-local-restart` 已保留本地数据并补齐 046–048，当前状态为 `schemaMigrations=48`、`sourceMatchesCheckout=true`。
+- 当前隔离开发库原本只有普通开发账号，没有管理员账号；按本地 `backend/.env` 的既有管理员配置创建了 `admin` 管理员身份和 `*` 后台权限，没有写入管家 entitlement、伪造模型配置或调用供应商。密码未写入文档或日志。
+- 通过 `http://127.0.0.1:5175` 实际登录后已进入“运营总览”，页面可见账户中心、发布中心、运营中心和系统中心；这证明端口、迁移、管理员身份、登录接口和前端会话链路均已闭环。未提交、推送或部署生产。
+
+#### 2026-10-30 PostgreSQL 门控审计增补
+
+- 修复后的隔离 PostgreSQL 门控已重新串行执行并保留新鲜日志：`/tmp/miaoxun-pg-gates-20261030/fresh_ai_task.log`（16/16）、`fresh_butler_workspace.log`（23/23）、`fresh_workspace_discussion.log`（19/19）、`fresh_ai_message_recall.log`（6/6）；每组对应的 `fresh_*.migrate.log` 均显示 48 项迁移已执行，测试数据库随后删除。默认管家迁移使用 `default_butler_migration_fixture3.log`（3/3）。这些结果取代同目录中修复前的 stale 日志。
+- 当前可执行的 PostgreSQL 门控已在本轮审计中通过：共 29 个 suite、332 个测试，覆盖 Agent workspace continuation/direct/repository/service/submission/text、任务与站点、消息历史、专业 Agent、文件来源、站点所有权、迁移回放、pgvector 媒体检索和消息幂等，均有对应逐文件日志。四组修复后的核心日志为 `/tmp/miaoxun-pg-gates-20261030/fresh_ai_task.log`、`fresh_butler_workspace.log`、`fresh_workspace_discussion.log`、`fresh_ai_message_recall.log`；Docker 门控为 `fresh_media_retrieval_migration_fixed.log`（12/12）和 `fresh_message_idempotency_postgres_fixed.log`（3/3）。
+- 两项 Docker 门控修复均只改测试：媒体检索夹具显式传入 `grantedScopes: ["album:read"]`；消息幂等测试在 Compose 发布临时端口后同步更新已加载的测试 `config.db`。生产授权和数据库运行时代码没有放宽。共享 `marvels_chat` 未触碰；临时门控数据库和本次测试创建的 Docker 资源已清理，其他既有 Docker 容器未操作。
+
+#### 2026-10-30 发布撤权链路补审
+
+- 复核发现产品级 `DELETE /api/me/products/:productId/enable` 之前直接调用 repository，绕过相册产品生命周期 hook；已改为统一经过 `agentPublishingService.disableProduct`，确保产品撤权和 Agent 级撤权使用同一 entitlement projection / 媒体索引清理路径。
+- 新增 `backend/test/agent-product-access.test.js` 的直接产品撤权回归；定向发布合同、幂等、配置和网络 origin 测试共 33/33 通过。新鲜隔离 HTTP 验收 `/tmp/miaoxun-release-revoke-http-20261030.log` 已覆盖 release review/publish、product submit/publish、用户 consent、bootstrap/sync、projection、幂等重放和产品撤权。
+
+#### 2026-10-30 收尾边界
+
+- `xcrun xcdevice list --timeout 10` 当前可见并配对实体 iPhone 14 Pro（`available: true`），但本轮没有替换设备上的 TestFlight Build54，也没有把静态设备可见性写成真机 UI 验收。二楼手势、语音识别、长按菜单、输入滚动、聊天/任务详情和头像一致性仍需在 Build54 上由人工逐项复验。
+- 本轮没有生产部署、Git 提交/推送、TestFlight 上传或付费模型调用。实体设备复验仍需单独完成。
+
+#### 2026-10-30 最终整仓检查
+
+- `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 于本轮最后重新执行并退出 0，完整输出：`/tmp/miaoxun-repository-check-20261030-final7.log`。backend 1185 项中 917 passed、268 个 PostgreSQL 环境门控 skipped、0 failed；RN 76 suites / 1008 tests；Agent、Admin、avatar-web、media-retrieval-web 检查与构建均通过，RN format/lint/typecheck 通过，仓库检查最终打印 `All repository checks passed.`。
+- RN 测试日志仍有既存 React `act(...)` console warning，但没有失败测试；这不改变退出码或通过计数，后续可单独收敛测试异步包装。
+- 文档与移动端配置漂移复核已补齐：`MiaoxunRN/README.md`、`docs/mobile-launch-checklist.md`、`docs/ios.md`、`docs/ai-interaction-system.md`、`docs/agents.md`、`docs/file-processing.md` 和 `docs/deployment.md` 均明确区分合同6/043历史部署、工作区046–048隔离验证与未部署生产状态；Android 示例显式传入 `MIAOXUN_API_BASE_URL`，不再保留 Build42/Build52 当前描述。`backend/test/release-network-config.test.js` 11/11 通过，`git diff --check` 通过。
+
+#### 2026-10-30 隔离验收最终证据
+
+- `/tmp/miaoxun-migration-replay-20261030.log`：全新 loopback `_migration_test` 首次执行迁移 001–048 为 48/48，重复回放为 0/48 unchanged，检查通过。
+- `/tmp/miaoxun-release-http-20261030.log`：真实 HTTP 链路覆盖 registry sync → release review/publish → product submit/publish → explicit consent → entitlement、`user_agents`、bootstrap/sync 和 chat thread projection。
+- `/tmp/miaoxun-pause-revoke-old-session-20261030.log`：撤权、产品暂停和旧 session 门禁通过；旧 session 对重新启用返回 409，暂停后 entitlement、目录和 projection 均按预期失效。
+- `/tmp/miaoxun-repository-check-20261030-final.log`：backend 1184 项（916 passed、268 PostgreSQL 环境门控 skipped、0 failed），RN 76 suites / 1008 tests，其他工程检查通过。
+- 上述验证使用临时隔离库，临时库已清理；共享 `marvels_chat` 数据库未触碰。本轮日志只证明隔离环境和当前工作区检查结果，不代表生产部署或实体 iPhone 验收。
+
+#### 2026-10-30 PostgreSQL 门控 fixture 收口与最终整仓检查
+
+- 原先门控失败已按当前产品合同修正测试夹具，而不是放宽生产授权：`ai-task-integration.test.js` 为 album-manager、site-builder、miaoxun-butler 建立 registry/release/catalog、published product、dependency 和 explicit entitlement；`butler-workspace-integration.test.js` 建立三组相同的发布链路；`workspace-discussion-integration.test.js` 补齐 Butler 当前 identity contract；`ai-message-recall.test.js` 按当前 specialist dispatch 合同加入 workspace contract，并覆盖 model gate 前后 recall 阻止迟到结果；`default-butler-migration.test.js` 补齐 044→048 升级所需的发布身份夹具。
+- 新鲜隔离 PostgreSQL 结果：ai-task 16/16、butler-workspace 23/23、workspace-discussion 19/19、ai-message-recall 6/6、default-butler-migration 3/3；每组均使用 loopback `*_migration_test`，测试后临时库已删除。完整门控审计及逐文件日志保留在 `/tmp/miaoxun-postgres-gates-20261030.log` 和 `/tmp/miaoxun-pg-gates-20261030/`；共享 `marvels_chat` 未触碰。
+- 最终整仓命令 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0，完整输出记录于 `/tmp/miaoxun-repository-check-20261030-final.log`：backend 1184 项中 916 passed、268 个 PostgreSQL 环境门控 skipped、0 failed；agents 50、Admin 23、avatar-web 29、media-retrieval-web 3；RN 76 suites / 1008 tests；Admin/Vite、avatar-web、media-retrieval-web 构建及 RN format/lint/typecheck 全通过；`git diff --check` 通过。
+- 这些门控与整仓结果只证明当前工作区和隔离数据库；本机 backend 仍未启动，生产 046–048、真实模型调用、Build54 实体 iPhone/TestFlight 验收仍未闭环。
+
+### 2026-10-29 标准化 Agent 发布链路与后台运营（当前工作区，未部署）
+
+- 已完成并验证迁移 046–048 的 Agent release、产品版本、依赖合同、用户 entitlement 与状态历史；合同哈希包含 Agent key、版本、权限和标准化 identity，审计历史使用 `RESTRICT` 保护。全新隔离 PostgreSQL 已完成 001–048 首次迁移和第二次幂等回放，证据为 `/tmp/miaoxun-migration-replay-20261029.log`；当前开发数据库仍以实际 `schema_migrations` 为准，不能把隔离库证据当作本地或线上已迁移。
+- 后端新增 release/product repository、发布服务和路由：代码注册 -> release draft/review/published -> 产品版本绑定具体 release -> 产品发布 -> 用户显式 consent -> entitlement、`user_agents` 和 Agent 会话同事务写入。发布、启用、重复请求和合同不一致返回显式错误码，不使用旧目录上架或前端兜底。
+- `/api/app/bootstrap` 与真实增量 `/api/app/sync` 返回已发布产品、目录 revision 和用户 entitlement；已移除重复的全量 sync 路由及旧的直接 PATCH 目录上架入口。运行前继续校验 release 状态、版本、合同和用户授权。
+- 当前普通 Agent 授权入口只接受已发布产品 entitlement；`user_agents` 仅作为 entitlement projection。新账号和管理员初始化中的 `ensureDefaultButlerAccess`/迁移 040 是明确的系统默认妙讯管家初始化边界，不是通用授权兜底；若要完全统一，需另行执行“先发布 Butler 产品、再批量回填历史 entitlement、最后移除直写路径”的迁移窗口。
+- 后台任务运营和监控已接入真实 `ai_tasks`、`agent_workspaces`、`agent_runs`、产品 entitlement 聚合：总览支持 7/30/90 天，任务筛选/取消/失败重试带幂等审计，未知 token/成本/耗时保留为空。后台产品、release、任务和监控模块已按真实接口数据形状更新。
+- 文档已同步 `docs/admin.md`、`docs/agents.md`、`docs/architecture.md` 和数据库说明，旧的“直接编辑 agent_catalog 即上架”描述已删除；此前重复注册的 `/api/app/sync` 已收口到 App 路由并按 `chat_threads.updated_at` 返回增量线程。Admin 测试、Admin build、backend syntax 和发布/运营定向测试均通过；当前总证据仍以本节及命令输出为准。
+- 当前阶段最新验证证据：整仓 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 通过，backend 1178 项（910 passed、268 PostgreSQL 环境门控 skipped、0 failed），RN 74 suites / 991 tests，Admin 23 tests，Agent 50 tests，avatar-web 29 tests，media-retrieval-web 3 tests；RN TypeScript、ESLint、Prettier、各 Web build 和 `git diff --check` 均通过。全新 loopback `_migration_test` PostgreSQL 已完成 001–048 首次迁移及重复回放，证据为 `/tmp/miaoxun-migration-replay-20261029.log`；API HTTP 集成在显式执行一次性 `admin:bootstrap` 初始化默认妙讯管家发布合同后通过，证据为 `/tmp/miaoxun-api-http-20261029.log`。新增 `backend` 的 `npm run test:agent-publishing` 通过，覆盖完整发布、consent、幂等、bootstrap/sync 与数据库投影，证据为 `/tmp/miaoxun-release-http-20261029.log`；验证库均已清理。这些均为本地或隔离库证据，不代表生产或实体真机验收。
+- 隔离 HTTP 验证已通过 registry sync -> release review/publish -> product create/submit/publish -> user consent -> entitlement/`user_agents`/`chat_threads` -> App bootstrap/sync，证据为 `/tmp/miaoxun-release-http-20261029.log`；未发布依赖和篡改 contract hash 均按预期返回 409，证据为 `/tmp/miaoxun-release-gates-20261029.log`。
+- 本轮仍未生产部署、未上传 TestFlight、未推送 Git、未调用付费模型。当前工作区的 046–048 变更必须在另行授权后，使用干净制品、停写备份、迁移和同源 API/Worker 配套部署；隔离验证不能替代线上验收。
+
+#### 当前工作区后续审查修复（2026-10-29）
+
+- 修复发布身份合同在重复 registry sync 后被降级的问题：同一 Agent、运行版本和声明权限范围下，后台 `source=admin` 的运营 identity/release 会被保留；代码版本或权限变化仍生成新的 release。管理员提交 identity 时由服务端写入 `source=admin`、`published=false` 和当前时间，不接受客户端伪造来源或时间。
+- 发布与启用门禁现在区分执行合同和展示合同：运行时版本、声明 scopes、readiness 必须与 registry 当前事实一致；展示 identity 和 release contract 由已审核 release 提供，允许运营者维护标准化展示身份。发布 release 还会拒绝 registry 权限范围已变化的旧 release。
+- 禁止同一个 `Idempotency-Key` 跨产品启用和停用复用；重复请求返回原状态，跨动作复用返回明确 `IDEMPOTENCY_CONFLICT`。
+- Agent release identity 修改现在也要求 `Idempotency-Key`；服务端把 identity 合同 hash 写入状态历史，重试返回原 release，同键不同 identity 返回 `IDEMPOTENCY_CONFLICT`。
+- RN session 已将 bootstrap/sync 的 `products`、`entitlements`、`catalogRevision` 作为必填发布合同保存、刷新和登出清理；Admin identity 卡片严格校验 `avatarKind`、形状和三项六位颜色，并对运营文本统一 HTML 转义。Admin 数据表、发布卡片、监控、总览和系统状态均不再直接插入未转义服务端值。
+- 新鲜定向验证：发布/幂等测试 21/21，identity 幂等回归 7/7，RN sessionSync 27/27；上述整仓检查与隔离 PostgreSQL/HTTP 证据均已在本轮重新执行，未使用生产数据库或供应商调用。
+
+本节是当前状态的优先来源。下面带有“历史”或“当时”的段落保留原始部署、测试和设计证据；其中 044–045 的旧目录投影部署记录不能解释为当前 046–048 发布链路已部署。
+
+### 2026-10-29 Agent 目录与后台线上部署（历史，已被当前工作区链路取代）
 
 - 已按维护窗口部署后台目录与 Agent 展示链路到阿里云 ECS `8.153.167.11`。线上 runtime 为 `/opt/projects/marvels-chat/releases/agent-catalog-admin-20261029/runtime`，制品包含 backend、Admin 静态资源、avatar-web 和 迁移 044/045；服务器运行制品文件哈希与本地发布制品一致。服务器 manifest 记录来源提交 `2cc75b12c01fc888e7ea39b73eb3b5fbcc5d0096`；随后本地将同一已审查内容及其新增 RN 资源、回归测试整理为提交 `3784b06ebded16fde2b963d07ce9a6343026a323`，runtime 白名单文件内容未改变。
 - 停写备份 `/opt/projects/marvels-chat/database/backups/marvels_chat-20261029T082200Z.dump` 的 SHA-256 为 `3a33087b7e1d98860275b5bea4e50eaee67b2ec34d7de8b8267042a3ad90f132`，`pg_restore --list` 共 518 项；迁移账本现为 45 条，最新为 `045_agent_alias_source.sql`。迁移使用维护窗口执行，未调用模型供应商。
 - 部署后 `marvels-chat-backend`、`marvels-chat-ai-task-worker`、`marvels-chat-media-retrieval-worker` 均 active；本机和公网 HTTPS `/api/health`、`/api/ready` 均返回 200，ready 报告数据库已连接且 `migrationsCurrent=true`；`marvels-chat-database-backup.timer` active。后台 `/api/admin/agent-catalog` 已由线上服务返回 200，线上管理台可使用目录配置与使用监控模块。
 - 本次部署未上传 TestFlight、未推送 Git、未创建生产测试账号、未触发付费模型调用。当前仍需用户在后台浏览器刷新后复核目录表单，并在实体真机复验 App 对线上目录变更的同步；域名/DNS 的既有 4 项 readiness 警告仍未改变。
 
-### 2026-10-29 Agent 目录隔离验证与别名边界（最新）
+### 2026-10-29 Agent 目录隔离验证与别名边界（历史，044–045）
 
 - 完成全新 loopback PostgreSQL 隔离库迁移 `001–045`（45/45），验证 `agent_catalog` 首次种入当前 9 个已部署 Agent 且默认上架；新增未登记 Agent 通过目录同步默认未上架；后台目录改名、描述/身份颜色合并、上架/下架和 App 目录投影均按真实数据库返回。
 - 使用真实 `agent_runs` 夹具验证 7/30/90 天窗口的运行、生命周期成功/失败、Token、成本和延迟聚合：排队/未知字段不会被伪装成成功或已知成本，空统计保留空态/null。临时 55443 集群已停止；本地开发数据库随后重启到迁移 45，`/api/ready` 200、`sourceMatchesCheckout=true`。
@@ -18,7 +115,7 @@
 - 后台审查通过：六模块导航、目录编辑、真实使用监控空态/错误态与权限隐藏；admin 测试 15/15、语法检查和 Vite 构建通过。固定 iPhone 17 已由当前源码成功构建、安装、启动，截图证据 `/tmp/miaoxun-check/catalog-current.png`；当前讯页显示统一 V20 妙讯管家头像。此次只做本地/模拟器验证，未部署、未上传 TestFlight、未推送 Git、未调用模型供应商。
 - 最终整仓检查在上述补充后再次通过：backend 876 通过、268 项 PostgreSQL 环境门控跳过且 0 失败；RN 73 套 / 986 项通过；Agent 50、Admin 15、avatar-web 29、media-retrieval-web 3 通过，`git diff --check` 通过。后台目录配置的实际入口是 Admin Web，不是手机端；手机端只消费 bootstrap/sync 并保留用户自己的授权/移除。当前线上浏览器仍是未包含本轮目录表单的旧部署版本；要让线上后台出现新表单，需要另行授权部署后端、迁移 045 和 Admin 静态资源。
 
-### 2026-10-29 Agent 目录与全链路整理（当前工作区）
+### 2026-10-29 Agent 目录与全链路整理（历史基础，已被 046–048 链路取代）
 
 - 补齐 Agent 目录链路：新增 `agent_catalog` 迁移与目录仓储；后台提供 `GET/PATCH /api/admin/agent-catalog`，可维护已部署 Agent 的展示名称、描述、头像标识/颜色和 App 推荐上架状态。新注册文件首次同步默认为未上架，后台上架不创建执行器，也不代替用户授权；下架不撤销已有 `user_agents`。
 - App bootstrap 将目录元数据合并到所有已注册执行项；已授权但下架的 Agent 仍保留在 owned/已有会话展示，推荐添加过滤未上架项，添加接口拒绝未上架 Agent。App 前台恢复、进入“我”页或切换小站子页会刷新 bootstrap，使后台目录变更在合理时机到达 App。
@@ -308,3 +405,17 @@ Build48同步故障、前向恢复、227项manifest和备份证据保存在[历�
 - 用户指出Xcode已登录；在 Xcode Settings → Apple Accounts 实看`Rose Wang Developer Team`账号、Admin角色及Certificates/Identifiers/Profiles权限。项目与Build52 archive使用Team `R8K5DUTWB6`；本机3个有效代码签名身份中有一张Apple Development身份属于该Team，且与正式Bundle开发profile内的证书匹配。该正式开发profile覆盖当前iPhone 14 Pro；本机缓存profile均只覆盖正式Bundle `com.wangruoshi.miaoxun`，没有独立QA Bundle `com.wangruoshi.miaoxun.stationQA20261022`的profile。
 - 再次以命令行Bundle ID覆盖并启用`-allowProvisioningUpdates`执行完整合成fixture真机构建，仍退出65并报告`No Accounts`和缺少QA Bundle profile；这与GUI账号可见状态并存，CLI账户发现差异尚未定位。独立Metro bundle编译成功。fixture位于`/Users/gary/Library/Application Support/MiaoxunReleasePreparations/contract6-release-preparation-20261021-120344/station-ui-qa-physical-20261022/`，直接导入当前工作区`StationScreen`、全部拦截网络、无账号，并移除程序化滚动钩子以便后续真手指操作；未改仓库源码。该次未产出签名QA App，设备安装清单仍只有正式Build52及原旧版Bundle；未观察到创建QA App ID/profile。本轮未在Developer Portal手动修改资源。用户回复已打开Developer Portal，但本轮共享Chrome读取仍是`idmsa.apple.com`登录加载页，未见Identifiers列表，需先对齐当前浏览器页面。已配对设备当前available，Build52和旧版Bundle仍在。本地修复尚不能算真机验收通过。
 - 本轮未安装候选到实体设备、未上传TestFlight、未部署生产、未调用真实模型或供应商。文件本地错误态仍未验：没有专用无私人内容的空TXT样例；未选择私人文件。文档更新后重跑`MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh`退出0，RN 72套／921项通过；环境门控的隔离PostgreSQL用例未运行、不计作PG实测。`git diff --check`通过。
+## 2026-10-30 后台资源型架构与完整运营信息
+
+- 用户明确指出后台不能把所有内容平铺在侧栏，也不能只用卡片显示数据。本轮将 Admin 主架构收敛为五个一级工作域：工作台、账户中心、发布中心、运营中心、系统中心；原有 `/admin/overview`、`/admin/accounts`、`/admin/agents`、`/admin/products`、`/admin/media-retrieval`、`/admin/tasks`、`/admin/monitoring`、`/admin/audit`、`/admin/system` 路由和服务端权限保留，进入工作域后由主区二级页签切换资源。
+- 工作台新增真实 `daily` 趋势、每日运行明细、最近账号和窗口/数据新鲜度显示；账号中心列表补充联系方式、presence、消息量，详情补充登录名、会话摘要、Agent 授权、会话、最近 Agent runs 与审计摘要；Agent 中心补充完整上线流程、contract/readiness/scopes/registry 门禁和 identity 编辑入口；产品中心补充依赖 release 的状态、就绪、registry 版本和合同门禁；运营中心补充任务阶段/版本/失败原因和完整监控聚合表（Agent、产品、用户、任务状态）。
+- 参考并在 `docs/admin.md` 记录了 Ant Design Pro/ProTable、Tabler、Grafana、React-admin 的公开信息架构和交互模式，未复制代码或品牌。后台仍只显示真实服务端数据，未知成本/token 保持未知，不使用假统计。
+- 本轮 Admin 验证：`npm --prefix admin test` 31 项通过；`npm --prefix admin run check` 27 文件通过；`npm --prefix admin run build` 通过；`git diff --check` 通过。Playwright 本地 mock 浏览器截图已确认五项一级导航、主区工作台明细和浅色运营控制台；mock API 与本地开发服务器未作为生产上线证据。
+- 真机验收按用户要求暂缓；未部署生产、未上传 TestFlight、未提交或推送。线上仍需在工作区后台完成隔离 PostgreSQL/HTTP 全链路验收后再决定部署。
+
+## 2026-10-30 后台隔离验收与展示
+
+- 隔离 PostgreSQL 门控已补跑：29 个 suite，共 332 tests，332 passed、0 failed、0 skipped。覆盖任务恢复/续作、Agent workspace direct/service/repository/continuation/text/submission、专业 Agent、文件来源、站点 ownership、消息历史/幂等、Agent 授权撤销、pgvector media retrieval、默认 Butler、迁移相关。汇总日志：`/tmp/miaoxun-postgres-gates-20261030.log`；各 suite 使用独立 loopback `*_migration_test` 数据库，未触碰共享 DB/生产。
+- 后台到 App 隔离 HTTP 全链路已通过：独立数据库 `niaoxun_admin_http_20261030_migration_test` 完成 48 项迁移；验证 registry sync、release identity/review/publish、product submit/publish、用户明确 consent、幂等 replay/conflict、bootstrap/sync、entitlement、`user_agents`、chat thread projection、product revoke，以及 readiness、注册/登录、profile、privacy/ownership、管理员授权/编辑和非管理员 403、消息 sync、logout/account deletion。日志：`/tmp/miaoxun-admin-http-e2e-20261030.log`、`/tmp/miaoxun-api-http-e2e-20261030.log`；隔离数据库已删除。
+- Admin 当前本地预览已打开：`http://127.0.0.1:5175/admin/`。截图证据：`output/playwright/miaoxun-admin-current.png`、`output/playwright/miaoxun-admin-mobile-final.png`。浏览器 mock session 只用于展示五个一级工作域、主区二级导航和完整工作台布局，不代表生产数据。
+- 部署只读审计完成：`admin/vite.config.js` 使用 `/admin/` base，构建产物由 `scripts/prepare-runtime-release.mjs` 从干净已提交源码生成并复制到 runtime；Nginx 模板已提供 `/admin` 重定向、SPA 深链 fallback 和安全头。当前工作区未提交，不能作为生产制品；线上后台仍可能是旧 runtime。生产部署前必须在服务器执行 `nginx -t`、reload 和 `/admin/`、`/admin/products` 深链 curl 验证。未部署、未提交、未推送。

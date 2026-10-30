@@ -2,7 +2,12 @@ import React from 'react';
 import { Alert, Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { StationAgentsPanel } from '../src/features/station/StationAgentsPanel';
-import { AgentDTO, OwnedAgentDTO } from '../src/models/api';
+import {
+  AgentDTO,
+  OwnedAgentDTO,
+  ProductCatalogProductDTO,
+  ProductEntitlementDTO,
+} from '../src/models/api';
 import {} from '../src/features/session/sessionDefaults';
 import { palettes } from '../src/shared/theme';
 import { mediaRetrievalApi } from '../src/services/api/mediaRetrievalApi';
@@ -21,14 +26,15 @@ const agent: AgentDTO = {
   version: '0.3.1',
   category: 'station-builder',
   identity: {
-    avatarKind: 'agent-mark',
+    avatarKind: 'agent-mark' as const,
     mark: '测',
-    shape: 'circle',
+    shape: 'circle' as const,
     colors: { background: '#123456', foreground: '#ffffff', accent: '#abcdef' },
   },
   description: '生成个人页面',
   capabilities: [],
   permissions: ['station:read', 'album:read'],
+  published: true,
   status: 'registered',
 };
 const owned: OwnedAgentDTO = {
@@ -37,12 +43,13 @@ const owned: OwnedAgentDTO = {
   description: agent.description,
   category: agent.category,
   identity: {
-    avatarKind: 'agent-mark',
+    avatarKind: 'agent-mark' as const,
     mark: '测',
-    shape: 'circle',
+    shape: 'circle' as const,
     colors: { background: '#123456', foreground: '#ffffff', accent: '#abcdef' },
   },
   enabled: true,
+  published: true,
   grantedScopes: ['station:read', 'files:read'],
 };
 let renderer: TestRenderer.ReactTestRenderer;
@@ -52,6 +59,30 @@ const props = () => ({
   language: 'zh' as const,
   agents: [agent],
   ownedAgents: [owned],
+  products: [
+    {
+      id: 'product-site-builder',
+      productKey: 'site-builder',
+      version: '1.0.0',
+      displayName: '建站 Agent',
+      description: '真实产品目录',
+      supportedPlatforms: ['ios', 'android'],
+      status: 'published',
+      productVersionId: 'product-version-site-builder',
+      contractHash: 'contract-site-builder',
+      dependencies: [
+        {
+          agentKey: 'site-builder',
+          agentReleaseId: 'release-site-builder',
+          version: agent.version,
+          scopes: agent.permissions,
+          contractHash: 'contract-site-builder',
+        },
+      ],
+    },
+  ],
+  entitlements: [],
+  catalogRevision: 'test-catalog',
   agentReadiness: {},
   onOpenAgentThread: jest.fn(),
   onSetAgentEnabled: jest.fn<
@@ -73,12 +104,69 @@ const albumProps = (): AccessProps => ({
     },
   ],
   ownedAgents: [],
+  products: [
+    {
+      ...props().products[0],
+      id: 'product-album-manager',
+      productKey: 'album-manager',
+      productVersionId: 'product-version-album-manager',
+      dependencies: [
+        {
+          agentKey: 'album-manager',
+          agentReleaseId: 'release-album-manager',
+          version: agent.version,
+          scopes: ['album:read', 'album:write'],
+          contractHash: 'contract-album-manager',
+        },
+      ],
+    },
+  ],
+  entitlements: [],
+  catalogRevision: 'test-catalog',
 });
 const renderSurface = (
   values: AccessProps,
   token = 'first-session',
   active = true,
 ) => <StationAgentsPanel {...values} token={token} active={active} />;
+
+const productFor = (
+  status: string = 'published',
+): ProductCatalogProductDTO => ({
+  id: 'product-site-builder',
+  productKey: 'site-builder',
+  version: '1.0.0',
+  displayName: '建站 Agent',
+  description: '真实产品目录',
+  supportedPlatforms: ['ios', 'android'],
+  status,
+  productVersionId: 'product-version-site-builder',
+  contractHash: 'contract-site-builder',
+  dependencies: [
+    {
+      agentKey: 'site-builder',
+      agentReleaseId: 'release-site-builder',
+      version: agent.version,
+      scopes: agent.permissions,
+      contractHash: 'contract-site-builder',
+    },
+  ],
+});
+
+const entitlementFor = (
+  status: ProductEntitlementDTO['status'],
+): ProductEntitlementDTO => ({
+  id: 'entitlement-site-builder',
+  productId: 'product-site-builder',
+  productVersionId: 'product-version-site-builder',
+  productKey: 'site-builder',
+  version: '1.0.0',
+  status,
+  grantedScopes: agent.permissions,
+  contractHash: 'contract-site-builder',
+  consentVersion: status === 'enabled' ? 'consent-v1' : null,
+  unavailableReason: status === 'unavailable' ? '产品依赖暂不可用' : null,
+});
 const accessButton = (label: string) =>
   renderer.root
     .findAll(item => typeof item.props.onPress === 'function')
@@ -98,6 +186,78 @@ afterEach(() => {
 });
 
 describe('My Agents confirms the complete declaration when adding an agent', () => {
+  test.each([
+    [
+      'paused product',
+      productFor('paused'),
+      entitlementFor('disabled'),
+      '产品已暂停',
+    ],
+    [
+      'unavailable entitlement',
+      productFor(),
+      entitlementFor('unavailable'),
+      '授权暂不可用',
+    ],
+    [
+      'reconsent entitlement',
+      productFor(),
+      entitlementFor('reconsent_required'),
+      '需要重新同意授权',
+    ],
+  ])(
+    '%s is shown as unavailable and cannot be added',
+    (label, product, entitlement, expectedStatus) => {
+      const values = { ...props(), ownedAgents: [] };
+      act(() => {
+        renderer = TestRenderer.create(
+          renderSurface({
+            ...values,
+            products: [product],
+            entitlements: [entitlement],
+            catalogRevision: 'catalog-1',
+          } as never),
+        );
+      });
+      const text = renderer.root
+        .findAllByType(Text)
+        .map(item => item.props.children)
+        .flat()
+        .join(' ');
+      expect(text).toContain(expectedStatus);
+      expect(accessButton('添加建站')).toEqual(
+        expect.objectContaining({
+          props: expect.objectContaining({ disabled: true }),
+        }),
+      );
+      expect(label).toBeTruthy();
+    },
+  );
+
+  test('published product with enabled entitlement keeps the confirmation and idempotent add path', async () => {
+    const values = { ...props(), ownedAgents: [] };
+    act(() => {
+      renderer = TestRenderer.create(
+        renderSurface({
+          ...values,
+          products: [productFor()],
+          entitlements: [entitlementFor('enabled')],
+          catalogRevision: 'catalog-1',
+        } as never),
+      );
+    });
+    press('添加建站');
+    expect(alert).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await alert.mock.calls[0][2][1].onPress();
+    });
+    expect(values.onSetAgentEnabled).toHaveBeenCalledWith(
+      'site-builder',
+      true,
+      agent.permissions,
+    );
+  });
+
   test('first album access uses one combined confirmation and explicitly sends cloud consent', async () => {
     jest
       .mocked(mediaRetrievalApi.status)
@@ -333,6 +493,13 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
       ...props(),
       ownedAgents: [],
       agents: [{ ...agent, permissions: ['station:read', 'internal:future'] }],
+      products: props().products.map(item => ({
+        ...item,
+        dependencies: item.dependencies.map(dependency => ({
+          ...dependency,
+          scopes: ['station:read', 'internal:future'],
+        })),
+      })),
     };
     act(() => {
       renderer = TestRenderer.create(renderSurface(values));

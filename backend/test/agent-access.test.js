@@ -10,6 +10,8 @@ const {
   setUserAgentAccess,
 } = await import("../src/repositories.js");
 const { agentAccessSchema } = await import("../src/schemas.js");
+const { getAgent } = await import("../../agents/registry.js");
+const { computeAgentReleaseContractHash } = await import("../../shared/agent-catalog.js");
 const { assertCurrentAgentAccess } = await import("../src/ai-agent-access.js");
 const { registerAppRoutes } = await import("../src/routes/app-routes.js");
 const { createAdminAgentAccessHandler, registerAdminRoutes } = await import(
@@ -22,6 +24,36 @@ const { createSafeErrorResponse } = await import(
 const agent = {
   key: "example-agent",
   permissions: ["profile:read", "station:read"],
+};
+const registeredButler = await getAgent("miaoxun-butler");
+const butlerCatalogIdentity = {
+  key: registeredButler.key,
+  avatarKind: "agent-mark",
+  displayName: registeredButler.name,
+  description: registeredButler.description,
+  mark: registeredButler.identity.mark,
+  shape: registeredButler.identity.shape,
+  colors: registeredButler.identity.colors,
+  published: true,
+  source: "registry",
+  updatedAt: "2026-10-29T00:00:00.000Z",
+};
+const butlerCatalogRow = {
+  display_name: butlerCatalogIdentity.displayName,
+  description: butlerCatalogIdentity.description,
+  identity_mark: butlerCatalogIdentity.mark,
+  identity_shape: butlerCatalogIdentity.shape,
+  identity_colors: JSON.stringify(butlerCatalogIdentity.colors),
+  status: "published",
+  release_version: registeredButler.version,
+  contract_hash: computeAgentReleaseContractHash({
+    key: registeredButler.key,
+    version: registeredButler.version,
+    permissions: registeredButler.permissions,
+    identity: butlerCatalogIdentity,
+  }),
+  source: "registry",
+  updated_at: butlerCatalogIdentity.updatedAt,
 };
 
 test("new accounts receive the default Butler grant and conversation in the account transaction", async () => {
@@ -43,6 +75,7 @@ test("new accounts receive the default Butler grant and conversation in the acco
         await work({
           execute: async (sql, params = []) => {
             calls.push({ sql, params });
+            if (sql.includes("FROM agent_catalog")) return [[butlerCatalogRow]];
             if (sql.includes("SELECT id FROM users WHERE id = ? FOR UPDATE"))
               return [[{ id: params[0] }]];
             return sql.includes("nextval") ? [[{ value: "51" }]] : [[]];
@@ -129,6 +162,7 @@ test("a failed default Butler welcome write rolls back the new account transacti
           work({
             execute: async (sql, params = []) => {
               calls.push({ sql, params });
+              if (sql.includes("FROM agent_catalog")) return [[butlerCatalogRow]];
               if (sql.includes("SELECT id FROM users WHERE id = ? FOR UPDATE"))
                 return [[{ id: params[0] }]];
               if (sql.includes("INSERT INTO chat_messages"))
@@ -166,6 +200,7 @@ for (const originalAccess of [
     const connection = {
       execute: async (sql, params = []) => {
         calls.push({ sql, params });
+        if (sql.includes("FROM agent_catalog")) return [[butlerCatalogRow]];
         if (sql.startsWith("SELECT id FROM users"))
           return [[{ id: "test-owner" }]];
         if (sql.includes("FROM user_agents") && sql.includes("FOR UPDATE"))
@@ -281,10 +316,19 @@ test("external enable requests require an explicit array before declaration vali
   }
   for (const grantedScopes of [[], ["profile:read"]]) {
     assert.deepEqual(
-      agentAccessSchema.parse({ enabled: true, grantedScopes }).grantedScopes,
+      agentAccessSchema.parse({ enabled: true, consent: true, grantedScopes }).grantedScopes,
       grantedScopes
     );
   }
+});
+
+test("external enable requests require explicit product consent", () => {
+  const result = agentAccessSchema.safeParse({
+    enabled: true,
+    grantedScopes: ["profile:read"],
+  });
+  assert.equal(result.success, false);
+  assert.ok(result.error.issues.some((issue) => issue.path[0] === "consent"));
 });
 
 test("external disable requests normalize omitted or supplied scopes to an empty grant", () => {
@@ -410,6 +454,7 @@ test("persistence revokes disabled grants and requires explicit scopes for every
       userId: "test-owner",
       agent,
       enabled: true,
+      consent: true,
       connection: {
         query: async () => assert.fail("must reject before persistence"),
       },
@@ -471,7 +516,7 @@ test("Agent grant resolution never defaults omitted scopes to registry permissio
   );
 });
 
-test("admin Album AI enable cannot substitute for the account holder consent", async () => {
+test("admin Agent enable cannot substitute for the account holder product consent", async () => {
   const calls = [];
   const handler = createAdminAgentAccessHandler({
     findUser: async () => ({
@@ -486,8 +531,7 @@ test("admin Album AI enable cannot substitute for the account holder consent", a
         permissions: ["album:read"],
       },
     ],
-    setAccess: async (...args) => calls.push(["setAccess", ...args]),
-    setAlbumAccess: async (...args) => calls.push(["setAlbumAccess", ...args]),
+    setProductAccess: async (...args) => calls.push(["setProductAccess", ...args]),
     recordEvent: async (...args) => calls.push(["event", ...args]),
   });
   await assert.rejects(
@@ -502,12 +546,12 @@ test("admin Album AI enable cannot substitute for the account holder consent", a
     ),
     (error) =>
       error?.status === 409 &&
-      error?.details?.code === "ALBUM_OWNER_CONSENT_REQUIRED"
+      error?.details?.code === "USER_CONSENT_REQUIRED"
   );
   assert.deepEqual(calls, []);
 });
 
-test("admin Album removal uses the shared consent/index lifecycle and caller idempotency key", async () => {
+test("admin Agent removal revokes the published product entitlement with caller idempotency key", async () => {
   const calls = [];
   const handler = createAdminAgentAccessHandler({
     findUser: async () => ({
@@ -522,10 +566,9 @@ test("admin Album removal uses the shared consent/index lifecycle and caller ide
         permissions: ["album:read"],
       },
     ],
-    setAccess: async (...args) => calls.push(["setAccess", ...args]),
-    setAlbumAccess: async (...args) => {
-      calls.push(["setAlbumAccess", ...args]);
-      return [{ id: "album-manager", enabled: false, grantedScopes: [] }];
+    setProductAccess: async (...args) => {
+      calls.push(["setProductAccess", ...args]);
+      return { id: "entitlement-1", status: "disabled", grantedScopes: [] };
     },
     recordEvent: async (...args) => calls.push(["event", ...args]),
   });
@@ -544,17 +587,14 @@ test("admin Album removal uses the shared consent/index lifecycle and caller ide
       },
     }
   );
-  assert.equal(calls[0][0], "setAlbumAccess");
+  assert.equal(calls[0][0], "setProductAccess");
   assert.equal(calls[0][1].idempotencyKey, "revoke-album-0001");
-  assert.deepEqual(calls[0][1].body.grantedScopes, []);
-  assert.equal(
-    calls.some((call) => call[0] === "setAccess"),
-    false
-  );
+  assert.equal(calls[0][1].enabled, false);
+  assert.deepEqual(calls[0][1].grantedScopes, []);
   assert.equal(response.data.agent.enabled, false);
 });
 
-test("admin non-Album enable retains explicit full declaration scope contract", async () => {
+test("admin non-Album enable is rejected even when scopes are complete", async () => {
   const calls = [];
   const handler = createAdminAgentAccessHandler({
     findUser: async () => ({
@@ -563,15 +603,10 @@ test("admin non-Album enable retains explicit full declaration scope contract", 
       email: "owner@example.test",
     }),
     listRegisteredAgents: async () => [agent],
-    setAccess: async (args) => {
-      calls.push(args);
-      return [
-        { id: agent.key, enabled: true, grantedScopes: args.grantedScopes },
-      ];
-    },
+    setProductAccess: async (args) => calls.push(args),
     recordEvent: async () => {},
   });
-  await handler(
+  await assert.rejects(handler(
     {
       user: { id: "admin", role: "admin", adminPermissions: ["*"] },
       params: { userId: "owner", agentId: agent.key },
@@ -580,16 +615,16 @@ test("admin non-Album enable retains explicit full declaration scope contract", 
       ip: "127.0.0.1",
     },
     { json: () => {} }
-  );
-  assert.deepEqual(calls[0].grantedScopes, agent.permissions);
+  ), { details: { code: "USER_CONSENT_REQUIRED" } });
+  assert.equal(calls.length, 0);
 });
 
 test("admin enable rejects a partial grant before persistence or audit", async () => {
   const handler = createAdminAgentAccessHandler({
     findUser: async () => ({ id: "owner", role: "user" }), listRegisteredAgents: async () => [agent],
-    setAccess: async () => assert.fail("must not persist"), recordEvent: async () => assert.fail("must not audit an accepted change"),
+    setProductAccess: async () => assert.fail("must not persist"), recordEvent: async () => assert.fail("must not audit an accepted change"),
   });
   await assert.rejects(handler({ user: { id: "admin", role: "admin", adminPermissions: ["*"] },
     params: { userId: "owner", agentId: agent.key }, body: { enabled: true, grantedScopes: ["profile:read"] } }, {}),
-  { details: { code: "AGENT_FULL_ACCESS_REQUIRED" } });
+  { details: { code: "USER_CONSENT_REQUIRED" } });
 });

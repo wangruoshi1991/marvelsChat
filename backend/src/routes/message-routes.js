@@ -35,7 +35,7 @@ import {
   resolveButlerRequestMessages,
   buildButlerWorkspaceGoal,
 } from "../butler-dispatch.js";
-import { publicMessage, publicMessagesByThread } from "../public-message.js";
+import { publicMessage } from "../public-message.js";
 export {
   assertAgentAvailable,
   buildAgentAppContext,
@@ -54,8 +54,6 @@ import {
   listMessagesForThreads,
   listAgentHistoryBeforeInput,
   listRecentMessagesForThread,
-  listThreadIdsUpdatedSince,
-  listThreadsForUser,
   markThreadReadForUser,
   mirrorDirectMessageToPeer,
   recallMessageForUser,
@@ -65,12 +63,9 @@ import {
   createUsageEvent,
   getAgentContextForUser,
   hashRequestIp,
-  listNotificationsForUser,
-  unreadNotificationCount,
 } from "../repositories.js";
 import {
   incrementalMessagesSchema,
-  incrementalSyncSchema,
   messageSchema,
   threadPreferencesSchema,
 } from "../schemas.js";
@@ -238,69 +233,6 @@ export function registerMessageRoutes(
             req.params.threadId
           ] || [];
       res.json({ data: messages.map(publicMessage) });
-    }),
-  );
-
-  app.get(
-    "/api/app/sync",
-    authenticate,
-    asyncHandler(async (req, res) => {
-      const { updatedAfter } = incrementalSyncSchema.parse(req.query);
-      const serverTime = new Date().toISOString();
-      const threadIds = await listThreadIdsUpdatedSince(
-        req.user.id,
-        updatedAfter || null,
-      );
-      const threads = threadIds.length
-        ? (await listThreadsForUser(req.user.id, getOnlineUserIds())).filter(
-            (thread) => threadIds.includes(thread.id),
-          )
-        : [];
-      const messagesByThread = await listMessagesForThreads(
-        req.user.id,
-        threadIds,
-      );
-      const [notices, unreadNoticeCount] = await Promise.all([
-        listNotificationsForUser(req.user.id),
-        unreadNotificationCount(req.user.id),
-      ]);
-
-      // Agent presentation and publication state can change in the admin
-      // console while the app remains open. Include the current catalogue in
-      // every incremental sync so the client refreshes its Agent directory
-      // without requiring a full bootstrap. Existing authorizations are kept
-      // in `owned`; unpublished entries remain visible there for continuity,
-      // while new recommendations include published executors only.
-      const allRegisteredAgents = await listRegisteredAgentsWithCatalogue(
-        await listAgents(),
-      );
-      const publishedAgents = allRegisteredAgents.filter(
-        (agent) => agent.published !== false,
-      );
-      const agentContext = await getAgentContextForUser(
-        req.user,
-        publishedAgents,
-        allRegisteredAgents,
-      );
-      const ownedIds = new Set(
-        agentContext.ownedAgents.map((agent) => agent.id),
-      );
-
-      res.json({
-        data: {
-          threads,
-          messagesByThread: publicMessagesByThread(messagesByThread),
-          notices,
-          unreadNoticeCount,
-          agents: {
-            registered: allRegisteredAgents.filter(
-              (agent) => agent.published !== false || ownedIds.has(agent.key),
-            ),
-            owned: agentContext.ownedAgents,
-          },
-          serverTime,
-        },
-      });
     }),
   );
 

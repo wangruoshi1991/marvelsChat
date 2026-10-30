@@ -12,6 +12,10 @@ function isUnavailable(
   return 'status' in identity && identity.status === 'unavailable';
 }
 
+function identityDiscStyle(backgroundColor: string) {
+  return { backgroundColor };
+}
+
 /** The one Agent visual used by every surface. Identity comes from the published directory. */
 export function AgentGlyphAvatar({
   agentId,
@@ -61,10 +65,9 @@ export function AgentGlyphAvatar({
       style={[
         styles.disc,
         !isXun && !isXunTask && sharedStyles.avatarRing,
-        {
-          backgroundColor:
-            isXun || isXunTask ? '#f4f5fa' : resolvedIdentity.colors.background,
-        },
+        isXun || isXunTask
+          ? styles.xunDisc
+          : identityDiscStyle(resolvedIdentity.colors.background),
         { borderRadius, height: size, width: size },
       ]}
       testID={testID}
@@ -94,6 +97,7 @@ export function AgentGlyphAvatar({
 
 const styles = StyleSheet.create({
   disc: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  xunDisc: { backgroundColor: '#f4f5fa' },
   mark: { fontWeight: '800', textAlign: 'center' },
   xunOverlay: { ...StyleSheet.absoluteFill, borderWidth: 1 },
   contractError: {

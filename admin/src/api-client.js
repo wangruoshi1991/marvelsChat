@@ -1,6 +1,7 @@
 import { AdminApiError } from "../admin-core.js";
+import { DEFAULT_LOCAL_API_ORIGIN } from "./runtime-config.js";
 
-const apiOrigin = typeof window !== "undefined" && window.location.protocol === "file:" ? "http://127.0.0.1:4390" : "";
+const apiOrigin = typeof window !== "undefined" && window.location.protocol === "file:" ? DEFAULT_LOCAL_API_ORIGIN : "";
 
 function requestId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();

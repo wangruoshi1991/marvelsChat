@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { createAiId } from "./ai-id.js";
 import { hashPassword } from "./auth.js";
+import { ensureInitialDefaultButlerPublication } from "./default-butler-publication.js";
 import { ensureDefaultButlerAccess } from "./repositories.js";
 
 const adminPermissions = JSON.stringify(["*"]);
@@ -21,7 +22,12 @@ async function ensureAdminProfile(connection, { userId, displayName }) {
   );
 }
 
-export async function bootstrapDefaultAdmin(connection, defaultAdmin) {
+export async function bootstrapDefaultAdmin(connection, defaultAdmin, { initializeDefaultButler = false, readiness = null } = {}) {
+  if (initializeDefaultButler) {
+    await ensureInitialDefaultButlerPublication(connection, {
+      ...(readiness ? { readiness } : {}),
+    });
+  }
   const [rows] = await connection.execute(
     `SELECT id
     FROM users

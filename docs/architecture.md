@@ -27,7 +27,7 @@ backend ai-task-worker -> PostgreSQL tasks/workspaces/nodes / agents / configure
 ```
 
 - `MiaoxunRN`：正式移动端主线。采用 React Native，并通过 iOS 原生工程接入 Keychain、权限、启动配置和后续推送能力。
-- `admin`：后台管理系统前端。当前为 Vite + 原生 JavaScript/CSS，调用 `/api/admin/*`，但不单独拥有后台后端服务。
+- `admin`：后台管理系统前端。当前为 Vite + React + Refine + Ant Design，按资源列表、详情抽屉和权限动作组织运营工作域，调用 `/api/admin/*`，但不单独拥有后台后端服务。
 - `backend`：Node.js + Express API、鉴权、PostgreSQL、运营管理、Agent 编排、New API 中转。
 - `backend/database`：PostgreSQL schema，当前包含用户、资料、会话、消息、事件、Agent 运行记录、社交关系、好友申请、通知和搜索历史。迁移 031 增加独立的职业身份、主动展示城市、经验年限及语言列，和现有 `bio` 一起遵守公开简介权限；不放入 `station_config` 或从 GPS 派生。[身份资料闭环](reviews/2026-09-16-profile-identity.md)记录接口、保存一致性与发布顺序；[合作与评分契约](reviews/2026-09-16-cooperation-lifecycle.md)仍待实现。
 - `agents`：每个 Agent 独立声明能力、权限和提示词计划；模型或外部能力未配置时必须明确不可用，不生成替代结果。
@@ -133,21 +133,21 @@ App 启动 -> /api/app/bootstrap -> user_profiles/chat_threads/chat_messages/use
 定位建议 -> CoreLocation/LocationManager -> /api/location/resolve -> configured geocoder
 资料保存 -> /api/me/profile -> user_profiles/avatar_config/community/activity_area
 注册形象 -> backend avatar-service deterministic seed -> user_profiles.avatar_config v2
-Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.registered -> 客户端 AgentAvatar
+Agent 身份 -> registry/release/product publish -> /api/app/bootstrap agents.registered + entitlements -> 客户端 AgentAvatar
 关注/好友 -> social_relationships/social_requests -> notification-service -> notifications
 好友通过 -> social_relationships -> chat_threads(peer_user_id)
 好友聊天 -> current chat_messages -> peer chat_messages + unread_count
 在线好友聊天 -> /api/realtime WebSocket -> thread.message
 妙讯聊天入口 -> 点击或右滑会话进入 ChatScreen / 左滑 ChatScreen 或点击 < 返回妙讯页
 客户端行为 -> /api/events -> usage_events
-后台管理 -> /api/admin/* -> PostgreSQL 聚合查询/账号管理/Agent目录发布
+后台管理 -> /api/admin/* -> PostgreSQL 账号/权限/Agent release/产品发布/任务与监控聚合
 ```
 
 数据库未配置、未迁移或连接失败时，后端返回明确错误。App 不展示原型账号、静态聊天、静态 Agent 或静态内容流作为真实数据；未登录时只进入登录/注册流程。
 
 启动动画只表达“AI 不只问答 / 找人，找东西 / 就上妙讯小站”。登录和注册页不展示未上线的忘记密码、短信或邮件验证说明；对应能力接入后再补真实入口，不在客户端放提前说明。App 不使用 `LogBox.ignoreLogs` 隐藏运行时 warning。3D 查看器源码位于 `avatar-web/src/app-viewer/`，构建产物内嵌到 `MiaoxunRN/src/assets/avatar-viewer/avatar-viewer.html`；仓库检查会验证两者一致，禁止手工维护两份实现。
 
-后台管理系统与 App 使用不同的本地登录态。后台可以创建账号、启用/停用用户、调整角色、编辑资料、管理 Agent 授权、维护已部署 Agent 的目录展示与上架状态、查看全量运行聚合、撤销登录态、重置密码；这些动作会写入 `usage_events`。目录上架不创建执行器、不代替用户授权，下架也不撤销已有授权。
+后台管理系统与 App 使用不同的本地登录态。后台可以创建账号、启用/停用用户、调整角色、编辑资料、审核 Agent release、发布产品版本、查看 entitlement、管理用户授权、查看全量运行聚合、撤销登录态、重置密码；这些动作会写入 `usage_events`。后台发布只改变可发现产品与 release 状态，不代替用户授权；合同变化由执行前检查阻止旧授权继续运行。
 
 ## Agent 运行时
 
@@ -160,16 +160,16 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 
 当前Agent接入分三层：
 
-1. 注册层：每个 Agent 声明 `key`、能力、权限、可见范围、不可编辑的 `identity` 头像标识和默认提示词计划；registry 对 identity 做结构校验，缺失配置时拒绝注册。
+1. 注册层：每个 Agent 声明 `key`、能力、权限、可见范围、标准化 `identity` 头像标识和默认提示词计划；registry 对 identity 做结构校验，缺失配置时拒绝注册。数据库 release 继续保存版本、合同哈希、readiness 和审核历史。
 2. 编排层：`agent-workspace-service.js` 调用管家提出结构化计划，服务端验证目录、授权快照和依赖后持久化节点；现有专业能力包括素材选择、页面草稿及显式文字贡献，完整目录与限制见[工作空间方案](agent-workspace-architecture.md)。当前客户端合同为 `agentWorkspaces:6`；其他普通 Agent 会话仍同步，不能据此视为完整协作执行器。
 3. 交互层：妙展示任务、参与者、进度和成果，我管理Agent；引用与确认使用共享组件。客户端不决定模型供应商，也不通过菜单或卡片扩大授权。
 
 主要现行后端接口与边界：
 
-- `GET /api/agents`：注册 Agent 列表。
+- `GET /api/agents`：已发布且 identity 完整的 Agent 公共列表；代码注册但未完成 release/product 发布的 Agent 不会返回。
 - `GET /api/health`：仅表示进程存活，不探测或暴露依赖状态。
 - `GET /api/ready`：探测 PostgreSQL 连接，并核对发布包迁移文件与 `schema_migrations` 账本；未配置、未连接、迁移待执行、历史校验和不一致或已登记文件缺失时返回 503，供容器和负载均衡判断是否接流量。检查过程只读，不自动迁移。
-- `PATCH /api/admin/users/:userId/agents/:agentId`：授权管理。
+- `PATCH /api/admin/users/:userId/agents/:agentId`：仅撤销用户已有产品 entitlement；管理员不能代替用户启用产品。
 - `POST /api/threads/:threadId/messages`：当前消息入口。`agent_id` 线程必须通过注册与授权校验后触发 Agent runtime，并执行按账号的模型调用限流；`peer_user_id` direct 线程写入当前线程并镜像到对方线程，不使用 Agent 模型限额。
 - `DELETE /api/threads/:threadId/messages/:messageId`：单侧删除当前用户线程里的消息，写入 `deleted_at`，不删除对方线程。
 - `POST /api/threads/:threadId/messages/:messageId/recall`：发送者在发送后 1 分钟内撤回消息；后端用 PostgreSQL `created_at` 和 `CURRENT_TIMESTAMP` 判断撤回窗口，再按 `client_message_id` 更新双方 direct 消息的 `recalled_at`，并通过 WebSocket 推送对方消息更新。历史消息缺少 `client_message_id` 或超过撤回窗口时直接返回明确错误。
@@ -179,7 +179,7 @@ Agent 身份 -> agents/*.agent.js identity -> /api/app/bootstrap agents.register
 - `POST /api/location/resolve`：按坐标调用配置好的 Nominatim-compatible 反向地理编码服务，返回附近社区候选和活动区域候选。
 - `GET /api/realtime`：WebSocket 实时通道。登录用户通过 session token 建立连接，direct 消息写入对方线程后立即推送 `thread.message` 给在线对方；关注、好友申请、好友通过、通知已读会推送 `notification.changed`，关注关系和好友关系变化会推送 `relationships.changed`，在线状态变化会推送 `presence.changed`。客户端收到事件后只重新读取真实通知/增量同步或 bootstrap，不把通知、关系或在线状态复制成第二套状态。客户端按 token 生命周期保持连接，异常断开后只重连同一个 WebSocket 通道，并明确展示未连接/连接中状态，不做短轮询兜底。
 - 客户端发送状态是 UI 内存态，不是后端消息状态；只有 `POST /api/threads/:threadId/messages` 成功返回的 `chat_messages` 记录才表示真实已保存消息。后续如需已送达、已读、正在输入，必须新增后端字段或事件表并通过 API/WebSocket 发布。
-- `GET /api/app/sync`：按 `chat_threads.updated_at` 做增量同步，并返回当前 Agent 目录快照。后台上架、下架或调整身份后，前台保持打开时也能更新 `registered` 与 `owned`；目录变化不会扩大用户授权，已有授权的未上架 Agent 仍保留以避免旧会话消失。
+- `GET /api/app/sync`：按 `chat_threads.updated_at` 做增量同步，并返回当前已发布产品、目录 revision、Agent identity 和用户 entitlement。产品发布、暂停或 release identity 变更会在前台保持打开时更新可发现目录与 `owned` 投影；目录变化不会扩大用户授权，已有 entitlement 的不可用 Agent 仍保留历史并由执行前合同校验阻止继续运行。
 - `POST /api/threads/:threadId/read`：将当前线程未读数清零。
 - `GET /api/tasks`、`GET /api/tasks/:id/events`、`POST /api/tasks/:id/decision`：单Agent持久任务与阶段事件；提交从相册消息/建站接口发起。
 - `POST/GET /api/agent-workspaces`、`GET /api/agent-workspaces/:id`、`POST /api/agent-workspaces/:id/decision`：共同目标、协作节点与确认/取消/澄清。要求 `X-Miaoxun-Agent-Workspace: 6`，缺少或不同声明明确返回 426。

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { bootstrapDefaultAdmin } from "../src/default-admin-bootstrap.js";
+import { getAgent } from "../../agents/registry.js";
+import { computeAgentReleaseContractHash } from "../../shared/agent-catalog.js";
 
 const defaultAdmin = {
   loginName: "admin",
@@ -11,6 +13,37 @@ const defaultAdmin = {
   resetPasswordOnBootstrap: false,
 };
 
+const registeredButler = await getAgent("miaoxun-butler");
+const butlerIdentity = {
+  key: registeredButler.key,
+  avatarKind: "agent-mark",
+  displayName: registeredButler.name,
+  description: registeredButler.description,
+  mark: registeredButler.identity.mark,
+  shape: registeredButler.identity.shape,
+  colors: registeredButler.identity.colors,
+  published: true,
+  source: "registry",
+  updatedAt: "2026-10-29T00:00:00.000Z",
+};
+const butlerCatalogRow = {
+  display_name: butlerIdentity.displayName,
+  description: butlerIdentity.description,
+  identity_mark: butlerIdentity.mark,
+  identity_shape: butlerIdentity.shape,
+  identity_colors: JSON.stringify(butlerIdentity.colors),
+  status: "published",
+  release_version: registeredButler.version,
+  contract_hash: computeAgentReleaseContractHash({
+    key: registeredButler.key,
+    version: registeredButler.version,
+    permissions: registeredButler.permissions,
+    identity: butlerIdentity,
+  }),
+  source: "registry",
+  updated_at: butlerIdentity.updatedAt,
+};
+
 const createConnection = ({ users = [] } = {}) => {
   const calls = [];
   return {
@@ -18,6 +51,7 @@ const createConnection = ({ users = [] } = {}) => {
     connection: {
       execute: async (sql, params = []) => {
         calls.push({ sql, params });
+        if (sql.includes("FROM agent_catalog")) return [[butlerCatalogRow]];
         if (sql.includes("FROM users")) {
           if (sql.includes("FOR UPDATE") && users.length === 0)
             return [[{ id: "bootstrapped-user" }]];

@@ -85,7 +85,7 @@ if (miaoxunVersionCodeValue == null || !(miaoxunVersionCodeValue.toString() ==~ 
 }
 def miaoxunVersionCode = miaoxunVersionCodeValue.toString().toInteger()
 def miaoxunVersionName = (project.findProperty("MIAOXUN_VERSION_NAME") ?: System.getenv("MIAOXUN_VERSION_NAME") ?: "1.0").toString()
-def miaoxunApiBaseUrl = project.findProperty("MIAOXUN_API_BASE_URL") ?: System.getenv("MIAOXUN_API_BASE_URL") ?: "https://8.153.167.11"
+def miaoxunApiBaseUrl = project.findProperty("MIAOXUN_API_BASE_URL") ?: System.getenv("MIAOXUN_API_BASE_URL")
 
 def isInvalidApiBaseUrl = { value ->
     try {

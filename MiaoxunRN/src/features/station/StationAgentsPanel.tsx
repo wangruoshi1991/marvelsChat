@@ -1,7 +1,12 @@
 import React, { useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import { AgentDTO, OwnedAgentDTO } from '../../models/api';
+import {
+  AgentDTO,
+  OwnedAgentDTO,
+  ProductCatalogProductDTO,
+  ProductEntitlementDTO,
+} from '../../models/api';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
@@ -13,7 +18,11 @@ import {
 } from './StationAgentCards';
 import { resolveStationColors } from './stationTheme';
 import { useAgentAccessConfirmation } from '../agents/useAgentAccessConfirmation';
-import { agentAccessMatchesDeclaration } from '../agents/agentAccess';
+import {
+  agentAccessMatchesDeclaration,
+  AgentProductAccessState,
+  resolveAgentProductAccess,
+} from '../agents/agentAccess';
 import type { AlbumAIConsentVersion } from './albumAssistantAuthorization';
 
 export function StationAgentsPanel({
@@ -23,6 +32,9 @@ export function StationAgentsPanel({
   language,
   agents,
   ownedAgents,
+  products,
+  entitlements,
+  catalogRevision,
   onOpenAgentThread,
   onSetAgentEnabled,
   onActionMessage,
@@ -34,6 +46,9 @@ export function StationAgentsPanel({
   language: Language;
   agents: AgentDTO[];
   ownedAgents: OwnedAgentDTO[];
+  products: ProductCatalogProductDTO[];
+  entitlements: ProductEntitlementDTO[];
+  catalogRevision: string | null;
   onOpenAgentThread: (agentId: string) => void;
   onSetAgentEnabled: (
     agentId: string,
@@ -81,10 +96,38 @@ export function StationAgentsPanel({
     return agents.filter(
       agent =>
         agent.key !== 'media-retrieval' &&
-        agent.published !== false &&
+        agent.published === true &&
         !enabledIds.has(agent.key),
     );
   }, [agents, ownedCards]);
+  const productAccess = (agent: AgentDTO): AgentProductAccessState =>
+    resolveAgentProductAccess(agent, {
+      products,
+      entitlements,
+      catalogRevision,
+    });
+  const productStatusLabel = (state: AgentProductAccessState) => {
+    switch (state) {
+      case 'product_paused':
+        return textFor(language, '产品已暂停', 'Product paused');
+      case 'product_unavailable':
+        return textFor(language, '产品暂不可用', 'Product unavailable');
+      case 'entitlement_unavailable':
+        return textFor(language, '授权暂不可用', 'Entitlement unavailable');
+      case 'reconsent_required':
+        return textFor(language, '需要重新同意授权', 'Re-consent required');
+      case 'product_not_published':
+        return textFor(
+          language,
+          '产品未发布，暂不可添加',
+          'Product is not published',
+        );
+      case 'catalog_unavailable':
+        return textFor(language, '目录状态不可用', 'Catalog unavailable');
+      default:
+        return textFor(language, '添加', 'Add');
+    }
+  };
   return (
     <View style={styles.stationPanelStack}>
       <AgentList
@@ -115,58 +158,64 @@ export function StationAgentsPanel({
       <View style={styles.stationRecommendAgents}>
         {recommendedAgents.length ? (
           <View style={styles.stationOwnedAgentGrid}>
-            {recommendedAgents.map(agent => (
-              <Pressable
-                key={agent.key}
-                accessibilityRole="button"
-                accessibilityLabel={textFor(
-                  language,
-                  `添加${agent.name}`,
-                  `Add ${agent.name}`,
-                )}
-                disabled={updatingAgentId === agent.key}
-                onPress={() => confirmAccess(agent.key, 'add')}
-                style={[
-                  styles.stationOwnedAgentCard,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                  },
-                  updatingAgentId === agent.key &&
-                    styles.stationAgentCardDisabled,
-                ]}
-              >
-                <AgentMark palette={palette} agent={agent} />
-                <View style={styles.stationOwnedAgentCopy}>
-                  <Text
-                    style={[
-                      styles.stationOwnedAgentName,
-                      { color: colors.text },
-                    ]}
-                  >
-                    {agent.name}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.stationOwnedAgentDesc,
-                      { color: colors.secondaryText },
-                    ]}
-                  >
-                    {moduleBindingForAgent(agent.key, language)}
-                  </Text>
-                </View>
-                <Text
+            {recommendedAgents.map(agent => {
+              const accessState = productAccess(agent);
+              const isAvailable = accessState === 'available';
+              return (
+                <Pressable
+                  key={agent.key}
+                  accessibilityRole="button"
+                  accessibilityLabel={textFor(
+                    language,
+                    `添加${agent.name}`,
+                    `Add ${agent.name}`,
+                  )}
+                  disabled={updatingAgentId === agent.key || !isAvailable}
+                  onPress={() => {
+                    if (isAvailable) confirmAccess(agent.key, 'add');
+                  }}
                   style={[
-                    styles.stationOwnedAgentStatus,
-                    { backgroundColor: colors.accent, color: colors.surface },
+                    styles.stationOwnedAgentCard,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                    (updatingAgentId === agent.key || !isAvailable) &&
+                      styles.stationAgentCardDisabled,
                   ]}
                 >
-                  {updatingAgentId === agent.key
-                    ? textFor(language, '添加中', 'Adding')
-                    : textFor(language, '添加', 'Add')}
-                </Text>
-              </Pressable>
-            ))}
+                  <AgentMark palette={palette} agent={agent} />
+                  <View style={styles.stationOwnedAgentCopy}>
+                    <Text
+                      style={[
+                        styles.stationOwnedAgentName,
+                        { color: colors.text },
+                      ]}
+                    >
+                      {agent.name}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.stationOwnedAgentDesc,
+                        { color: colors.secondaryText },
+                      ]}
+                    >
+                      {moduleBindingForAgent(agent.key, language)}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.stationOwnedAgentStatus,
+                      { backgroundColor: colors.accent, color: colors.surface },
+                    ]}
+                  >
+                    {updatingAgentId === agent.key
+                      ? textFor(language, '添加中', 'Adding')
+                      : productStatusLabel(accessState)}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         ) : (
           <Text

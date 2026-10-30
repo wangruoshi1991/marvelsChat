@@ -6,6 +6,8 @@ import type {
   BootstrapDTO,
   OwnedAgentDTO,
   ProfileDTO,
+  ProductCatalogProductDTO,
+  ProductEntitlementDTO,
 } from '../src/models/api';
 import { avatar3dAttemptStore } from '../src/services/avatar3dAttemptStore';
 import { apiClient } from '../src/services/apiClient';
@@ -158,6 +160,10 @@ const bootstrap: BootstrapDTO = {
     videoDrafts: [],
   },
   agents: { registered: [], owned: [] },
+  products: [],
+  entitlements: [],
+  catalogRevision: 'catalog-empty',
+  catalogStatus: 'ready',
   agentReadiness: {},
   modules: {},
 };
@@ -190,9 +196,9 @@ function authorizationBootstrap(): BootstrapDTO {
       version: '0.2.3',
       category: 'media-management',
       identity: {
-        avatarKind: 'agent-mark',
+        avatarKind: 'agent-mark' as const,
         mark: '测',
-        shape: 'circle',
+        shape: 'circle' as const,
         colors: {
           background: '#123456',
           foreground: '#ffffff',
@@ -210,9 +216,9 @@ function authorizationBootstrap(): BootstrapDTO {
       version: '0.1.0',
       category: 'station-builder',
       identity: {
-        avatarKind: 'agent-mark',
+        avatarKind: 'agent-mark' as const,
         mark: '测',
-        shape: 'circle',
+        shape: 'circle' as const,
         colors: {
           background: '#123456',
           foreground: '#ffffff',
@@ -238,9 +244,9 @@ function accessGrant(
     description: agent.description,
     category: agent.category,
     identity: {
-      avatarKind: 'agent-mark',
+      avatarKind: 'agent-mark' as const,
       mark: '测',
-      shape: 'circle',
+      shape: 'circle' as const,
       colors: {
         background: '#123456',
         foreground: '#ffffff',
@@ -307,6 +313,10 @@ describe('session synchronization', () => {
       messagesByThread: {},
       notices: [],
       unreadNoticeCount: 0,
+      products: [],
+      entitlements: [],
+      catalogRevision: 'catalog-empty',
+      catalogStatus: 'ready',
       serverTime: '2026-07-10T06:00:01.000Z',
     });
   });
@@ -422,9 +432,9 @@ describe('session synchronization', () => {
       version: '0.1.0',
       category: 'station-builder',
       identity: {
-        avatarKind: 'agent-mark',
+        avatarKind: 'agent-mark' as const,
         mark: '测',
-        shape: 'circle',
+        shape: 'circle' as const,
         colors: {
           background: '#123456',
           foreground: '#ffffff',
@@ -443,9 +453,9 @@ describe('session synchronization', () => {
       version: '0.1.0',
       category: 'creative',
       identity: {
-        avatarKind: 'agent-mark',
+        avatarKind: 'agent-mark' as const,
         mark: '测',
-        shape: 'circle',
+        shape: 'circle' as const,
         colors: {
           background: '#123456',
           foreground: '#ffffff',
@@ -464,9 +474,9 @@ describe('session synchronization', () => {
       description: initialAgent.description,
       category: initialAgent.category,
       identity: {
-        avatarKind: 'agent-mark',
+        avatarKind: 'agent-mark' as const,
         mark: '测',
-        shape: 'circle',
+        shape: 'circle' as const,
         colors: {
           background: '#123456',
           foreground: '#ffffff',
@@ -486,6 +496,10 @@ describe('session synchronization', () => {
       messagesByThread: {},
       notices: [],
       unreadNoticeCount: 0,
+      products: [],
+      entitlements: [],
+      catalogRevision: 'catalog-empty',
+      catalogStatus: 'ready',
       agents: {
         registered: [initialAgent, newlyPublished],
         owned: [{ ...owned, name: '后台更新后的名称' }],
@@ -510,6 +524,66 @@ describe('session synchronization', () => {
       newlyPublished.key,
     ]);
     expect(currentSession?.ownedAgents[0]?.name).toBe('后台更新后的名称');
+    await ReactTestRenderer.act(() => renderer?.unmount());
+  });
+
+  test('bootstrap and incremental sync expose the published product catalog and entitlement state', async () => {
+    const product: ProductCatalogProductDTO = {
+      id: 'product-1',
+      productKey: 'site-builder',
+      version: '1.0.0',
+      displayName: '建站 Agent',
+      description: '已发布能力',
+      supportedPlatforms: ['ios'],
+      status: 'published',
+      productVersionId: 'product-version-1',
+      contractHash: 'contract-1',
+      dependencies: [],
+    };
+    const entitlement: ProductEntitlementDTO = {
+      id: 'entitlement-1',
+      productId: product.id,
+      productVersionId: product.productVersionId!,
+      productKey: product.productKey,
+      version: product.version!,
+      status: 'enabled',
+      grantedScopes: ['station:read'],
+      contractHash: product.contractHash,
+      consentVersion: 'consent-1',
+      unavailableReason: null,
+    };
+    mockedApiClient.bootstrap.mockResolvedValueOnce({
+      ...bootstrap,
+      products: [product],
+      entitlements: [entitlement],
+      catalogRevision: 'catalog-1',
+    });
+    mockedApiClient.sync.mockResolvedValueOnce({
+      threads: [],
+      messagesByThread: {},
+      notices: [],
+      unreadNoticeCount: 0,
+      products: [],
+      entitlements: [{ ...entitlement, status: 'disabled' }],
+      catalogRevision: 'catalog-2',
+      catalogStatus: 'ready',
+      serverTime: '2026-07-10T06:00:05.000Z',
+    });
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    expect(currentSession?.products).toEqual([product]);
+    expect(currentSession?.entitlements).toEqual([entitlement]);
+    expect(currentSession?.catalogRevision).toBe('catalog-1');
+
+    await ReactTestRenderer.act(async () => {
+      await currentSession?.incrementalSync();
+    });
+    expect(currentSession?.products).toEqual([]);
+    expect(currentSession?.entitlements[0]?.status).toBe('disabled');
+    expect(currentSession?.catalogRevision).toBe('catalog-2');
     await ReactTestRenderer.act(() => renderer?.unmount());
   });
 
@@ -1102,6 +1176,10 @@ describe('session synchronization', () => {
         messagesByThread: {},
         notices: [],
         unreadNoticeCount: 3,
+        products: [],
+        entitlements: [],
+        catalogRevision: 'catalog-empty',
+        catalogStatus: 'ready',
         serverTime: '2026-09-16T06:00:00.000Z',
       });
       await pendingSync;

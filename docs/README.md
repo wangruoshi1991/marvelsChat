@@ -1,6 +1,6 @@
 # 妙讯文档索引
 
-现状只维护在[当前交接](handoffs/CURRENT.md)。开始工作先读仓库`AGENTS.md`、根`README.md`和该交接，再核对Git与运行环境。带日期的记录只证明当时发生的事，不代表现在已验收或新操作授权。
+现状只维护在[当前交接](handoffs/CURRENT.md)。开始工作先读仓库`AGENTS.md`、根`README.md`和该交接，再核对Git与运行环境。带日期的记录只证明当时发生的事，不代表现在已验收或新操作授权。移动端 API origin 必须由 iOS build setting 或 Android 构建参数显式提供；缺失/非法配置直接失败，具体示例见[移动端上线清单](mobile-launch-checklist.md)。
 
 ## 产品与实现
 

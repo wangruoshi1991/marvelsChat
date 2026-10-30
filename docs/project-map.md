@@ -9,7 +9,7 @@
 | [MiaoxunRN](../MiaoxunRN/) | 唯一正式移动端；React Native 0.87.1 + TypeScript，版本以 [package.json](../MiaoxunRN/package.json) 为准 |
 | [backend](../backend/) | Node.js + Express API、鉴权、PostgreSQL、Agent 编排；HTTP 入口 [server.js](../backend/src/server.js) |
 | [agents](../agents/) | Agent 声明、权限与执行计划；[registry.js](../agents/registry.js) 动态加载同目录的 Agent 定义 |
-| [admin](../admin/) | Vite + JavaScript/CSS 管理前端；入口 [admin.js](../admin/admin.js)，调用后端管理 API |
+| [admin](../admin/) | Vite + React + Refine + Ant Design 管理前端；入口 [main.jsx](../admin/src/main.jsx)，调用后端管理 API |
 | [avatar-web](../avatar-web/) | 3D Web 工作台；App 内嵌单模型查看器源码位于 [src/app-viewer](../avatar-web/src/app-viewer/) |
 | [media-retrieval-web](../media-retrieval-web/) | 私有媒体检索测试工具；入口 [main.js](../media-retrieval-web/src/main.js) |
 | [shared](../shared/) | 后端与 Web 共用的媒体检索公开契约，以及结构页面契约 |

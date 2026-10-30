@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 
 export const AGENT_IDENTITY_FIELDS = Object.freeze([
   "key",
+  "avatarKind",
   "displayName",
   "description",
   "mark",
@@ -26,7 +27,7 @@ const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 export function isCompleteAgentIdentity(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   if (Object.keys(value).some((key) => !AGENT_IDENTITY_FIELDS.includes(key))) return false;
-  if (!AGENT_KEY.test(value.key || "") || typeof value.displayName !== "string" || !value.displayName.trim() || value.displayName.length > 120) return false;
+  if (!AGENT_KEY.test(value.key || "") || value.avatarKind !== "agent-mark" || typeof value.displayName !== "string" || !value.displayName.trim() || value.displayName.length > 120) return false;
   if (typeof value.description !== "string" || value.description.length > 2000) return false;
   if (typeof value.mark !== "string" || !value.mark.trim() || value.mark.length > 40) return false;
   if (!AGENT_IDENTITY_SHAPES.includes(value.shape)) return false;
@@ -51,6 +52,25 @@ export function canonicalizeContract(value) {
 
 export function computeAgentContractHash(contract) {
   return crypto.createHash("sha256").update(canonicalizeContract(contract), "utf8").digest("hex");
+}
+
+export function computeAgentReleaseContractHash({ key, version, permissions, identity }) {
+  const normalizedIdentity = identity && typeof identity === "object" ? {
+    key: identity.key,
+    avatarKind: identity.avatarKind,
+    displayName: identity.displayName,
+    description: identity.description,
+    mark: identity.mark,
+    shape: identity.shape,
+    colors: identity.colors,
+    source: identity.source,
+  } : null;
+  return computeAgentContractHash({
+    key,
+    version,
+    permissions: [...permissions],
+    identity: normalizedIdentity,
+  });
 }
 
 export const hashAgentContract = computeAgentContractHash;

@@ -157,9 +157,9 @@ describe('station module management', () => {
       version: '1.0.0',
       category: 'advisory',
       identity: {
-        avatarKind: 'agent-mark',
+        avatarKind: 'agent-mark' as const,
         mark: '测',
-        shape: 'circle',
+        shape: 'circle' as const,
         colors: {
           background: '#123456',
           foreground: '#ffffff',
@@ -177,9 +177,9 @@ describe('station module management', () => {
       description: agent.description,
       category: agent.category,
       identity: {
-        avatarKind: 'agent-mark',
+        avatarKind: 'agent-mark' as const,
         mark: '测',
-        shape: 'circle',
+        shape: 'circle' as const,
         colors: {
           background: '#123456',
           foreground: '#ffffff',
@@ -209,6 +209,9 @@ describe('station module management', () => {
           onOpenAgentThread={onOpenAgentThread}
           onSetAgentEnabled={onSetAgentEnabled}
           ownedAgents={[ownedAgent]}
+          products={[]}
+          entitlements={[]}
+          catalogRevision="test-catalog"
           palette={palettes.light}
         />,
       );
@@ -254,9 +257,9 @@ describe('station module management', () => {
       description: '为真实的形象素材提供准备建议，不会直接生成3D模型。',
       category: 'advisory',
       identity: {
-        avatarKind: 'agent-mark',
+        avatarKind: 'agent-mark' as const,
         mark: '测',
-        shape: 'circle',
+        shape: 'circle' as const,
         colors: {
           background: '#123456',
           foreground: '#ffffff',

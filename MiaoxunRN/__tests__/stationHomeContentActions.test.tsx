@@ -311,9 +311,9 @@ describe('Station home content actions', () => {
       key: 'miaoxun-butler',
       name: '妙讯管家',
       identity: {
-        avatarKind: 'agent-mark',
+        avatarKind: 'agent-mark' as const,
         mark: '妙',
-        shape: 'circle',
+        shape: 'circle' as const,
         colors: {
           background: '#000000',
           foreground: '#FFFFFF',

@@ -194,9 +194,10 @@ export type AgentDTO = {
 };
 
 export type AgentIdentityDTO = {
-  avatarKind: string;
+  /** The only supported mobile Agent avatar contract. */
+  avatarKind: 'agent-mark';
   mark: string;
-  shape: string;
+  shape: 'circle' | 'squircle' | 'rounded';
   colors: {
     background: string;
     foreground: string;
@@ -694,6 +695,10 @@ export type BootstrapDTO = {
     siteDocuments?: number;
     agentWorkspaces?: number;
   };
+  products: ProductCatalogProductDTO[];
+  entitlements: ProductEntitlementDTO[];
+  catalogRevision: string;
+  catalogStatus: 'ready';
   serverTime: string;
   user: UserDTO;
   profile: ProfileDTO;
@@ -722,11 +727,47 @@ export type AppSyncDTO = {
   messagesByThread: Record<string, MessageDTO[]>;
   notices: NoticeDTO[];
   unreadNoticeCount: number;
+  products: ProductCatalogProductDTO[];
+  entitlements: ProductEntitlementDTO[];
+  catalogRevision: string;
+  catalogStatus: 'ready';
   agents?: {
     registered: AgentDTO[];
     owned: OwnedAgentDTO[];
   };
   serverTime: string;
+};
+
+export type ProductCatalogProductDTO = {
+  id: string;
+  productKey: string;
+  version: string | null;
+  displayName: string;
+  description: string;
+  supportedPlatforms: string[];
+  status: string;
+  productVersionId: string | null;
+  contractHash: string | null;
+  dependencies: Array<{
+    agentKey: string;
+    agentReleaseId: string;
+    version: string;
+    scopes: string[];
+    contractHash: string | null;
+  }>;
+};
+
+export type ProductEntitlementDTO = {
+  id: string;
+  productId: string;
+  productVersionId: string;
+  productKey: string;
+  version: string;
+  status: 'enabled' | 'disabled' | 'unavailable' | 'reconsent_required';
+  grantedScopes: string[];
+  contractHash: string | null;
+  consentVersion: string | null;
+  unavailableReason: string | null;
 };
 
 export type ButlerClientContextPayload = {

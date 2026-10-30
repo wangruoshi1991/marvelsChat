@@ -5,20 +5,21 @@ import {
 } from "../agent-catalog-repository.js";
 import { aiClientContracts } from "../ai-client-contract.js";
 import { publicMessagesByThread } from "../public-message.js";
-import { checkDatabase, withTransaction } from "../db.js";
+import { checkDatabase } from "../db.js";
 import { HttpError } from "../http-error.js";
 import {
   createUsageEvent,
   getBootstrapForUser,
+  getAgentContextForUser,
   hashRequestIp,
+  listNotificationsForUser,
+  unreadNotificationCount,
   parseAiIdFromScanPayload,
-  setUserAgentAccess,
   resolveAgentGrantedScopes,
   updateUserPresenceMode,
 } from "../repositories.js";
+import { listMessagesForThreads, listThreadIdsUpdatedSince, listThreadsForUser } from "../message-repository.js";
 import { buildPublicStationView } from "../public-station-service.js";
-import { createAlbumAssistantAccessService } from "../album-assistant-access-service.js";
-import { buildMediaRetrievalRuntimeStatus } from "../media-retrieval-runtime-status.js";
 import {
   clearSearchHistory,
   deleteSearchHistoryItem,
@@ -36,15 +37,13 @@ import {
   agentAccessSchema,
   presenceSchema,
   scanPayloadSchema,
+  incrementalSyncSchema,
   searchHistoryParamsSchema,
   searchHistorySchema,
   searchUsersSchema,
 } from "../schemas.js";
-
-const setAlbumAssistantAccess = createAlbumAssistantAccessService({
-  withTransaction,
-  getRuntimeStatus: buildMediaRetrievalRuntimeStatus,
-});
+import { getPublishedProductCatalog } from "../product-catalog-projection.js";
+import { agentPublishingService } from "../agent-publishing-service.js";
 
 export function registerAppRoutes(
   app,
@@ -56,6 +55,14 @@ export function registerAppRoutes(
     checkDatabaseStatus = checkDatabase,
     getBootstrap = getBootstrapForUser,
     resolveRegisteredAgents = null,
+    getPublishedCatalog = getPublishedProductCatalog,
+    setAgentProductAccess = agentPublishingService.setAgentAccessThroughProduct,
+    getAgentContext = getAgentContextForUser,
+    listUpdatedThreadIds = listThreadIdsUpdatedSince,
+    listUserThreads = listThreadsForUser,
+    listUserMessages = listMessagesForThreads,
+    listUserNotifications = listNotificationsForUser,
+    getUnreadNotices = unreadNotificationCount,
   },
 ) {
   app.get("/api/health", (_req, res) => {
@@ -126,7 +133,7 @@ export function registerAppRoutes(
         ? await listRegisteredAgentsWithCatalogue(await listAgents())
         : await listAgents();
       const registeredAgents = allRegisteredAgents.filter(
-        (agent) => agent.published !== false,
+        (agent) => agent.published === true,
       );
       const data = await getBootstrap(
         req.user,
@@ -134,10 +141,11 @@ export function registerAppRoutes(
         getOnlineUserIds(),
         allRegisteredAgents,
       );
+      const catalog = await getPublishedCatalog(req.user.id);
       if (data.agents?.owned && Array.isArray(data.agents.registered)) {
         const ownedKeys = new Set(data.agents.owned.map((agent) => agent.id));
         data.agents.registered = allRegisteredAgents.filter(
-          (agent) => agent.published !== false || ownedKeys.has(agent.key),
+          (agent) => agent.published === true || ownedKeys.has(agent.key),
         );
       }
       res.json({
@@ -145,6 +153,62 @@ export function registerAppRoutes(
           ...data,
           messagesByThread: publicMessagesByThread(data.messagesByThread),
           contracts: aiClientContracts,
+          products: catalog.products,
+          entitlements: catalog.entitlements,
+          catalogRevision: catalog.catalogRevision,
+          catalogStatus: catalog.catalogStatus,
+          ...(catalog.catalogError ? { catalogError: catalog.catalogError } : {}),
+        },
+      });
+    }),
+  );
+
+  app.get(
+    "/api/app/sync",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const { updatedAfter } = incrementalSyncSchema.parse(req.query);
+      // Capture the cursor before database reads. Changes committed while this
+      // snapshot is being assembled must remain eligible for the next sync.
+      const serverTime = new Date().toISOString();
+      const allRegisteredAgents = resolveRegisteredAgents
+        ? await resolveRegisteredAgents()
+        : await listRegisteredAgentsWithCatalogue(await listAgents());
+      const registeredAgents = allRegisteredAgents.filter((agent) => agent.published === true);
+      const onlineUserIds = getOnlineUserIds();
+      const context = await getAgentContext(
+        req.user,
+        registeredAgents,
+        allRegisteredAgents,
+      );
+      const threadIds = await listUpdatedThreadIds(req.user.id, updatedAfter || null);
+      const allThreads = await listUserThreads(req.user.id, onlineUserIds);
+      const threads = allThreads.filter((thread) => threadIds.includes(thread.id));
+      const selectedMessages = await listUserMessages(req.user.id, threadIds);
+      const messagesByThread = publicMessagesByThread(
+        Object.fromEntries(Object.entries(selectedMessages).filter(([threadId]) => threadIds.includes(threadId))),
+      );
+      const [notices, unreadNotices, catalog] = await Promise.all([
+        listUserNotifications(req.user.id),
+        getUnreadNotices(req.user.id),
+        getPublishedCatalog(req.user.id),
+      ]);
+      const ownedKeys = new Set(context.ownedAgents.map((agent) => agent.id));
+      res.json({
+        data: {
+          serverTime,
+          threads,
+          messagesByThread,
+          notices,
+          unreadNoticeCount: unreadNotices,
+          agents: {
+            registered: allRegisteredAgents.filter((agent) => agent.published === true || ownedKeys.has(agent.key)),
+            owned: context.ownedAgents,
+          },
+          products: catalog.products,
+          entitlements: catalog.entitlements,
+          catalogRevision: catalog.catalogRevision,
+          catalogStatus: catalog.catalogStatus,
         },
       });
     }),
@@ -175,21 +239,24 @@ export function registerAppRoutes(
       )
         throw new HttpError(400, "相册 AI 授权请求无效。");
 
-      const [updated] =
-        agent.key === "album-manager"
-          ? await setAlbumAssistantAccess({
-              userId: req.user.id,
-              agent,
-              body,
-              idempotencyKey: req.get("Idempotency-Key"),
-            })
-          : await setUserAgentAccess({
-              userId: req.user.id,
-              agent,
-              enabled: body.enabled,
-              alias: body.alias,
-              grantedScopes: body.grantedScopes,
-            });
+      const entitlement = await setAgentProductAccess({
+        userId: req.user.id,
+        agentKey: agent.key,
+        enabled: body.enabled,
+        grantedScopes: body.grantedScopes,
+        consentVersion: body.albumAIConsentVersion || null,
+        idempotencyKey: req.get("Idempotency-Key") || null,
+      });
+      const updated = {
+        id: agent.key,
+        name: agent.name,
+        description: agent.description || "",
+        category: agent.category || "",
+        enabled: body.enabled,
+        grantedScopes: entitlement.grantedScopes,
+        published: agent.published === true,
+        identity: agent.identity,
+      };
 
       await createUsageEvent({
         userId: req.user.id,
@@ -204,7 +271,7 @@ export function registerAppRoutes(
         userAgent: req.get("user-agent") || "",
       });
 
-      res.json({ data: updated });
+      res.json({ data: updated, entitlement });
     }),
   );
 

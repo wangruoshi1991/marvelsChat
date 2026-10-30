@@ -35,7 +35,7 @@
 
 ## API
 
-`PATCH /api/me/agents/album-manager` 启用时必须显式提交 `enabled: true` 和与当前 Agent 声明完全一致的 `grantedScopes`；不能省略、只传部分范围或由服务端替用户补权。首次云端处理还需 `albumAIConsentVersion: "media-retrieval-consent-v1"`，已有有效同意可复用，但完整权限仍必须明确传入。启用和移除均传 `Idempotency-Key`；移除统一清空权限。非法 scope 在任何索引副作用之前拒绝。
+`PATCH /api/me/agents/album-manager` 启用时必须显式提交 `enabled: true` 和与当前已发布产品依赖完全一致的 `grantedScopes`；不能省略、只传部分范围或由服务端替用户补权。首次云端处理还需 `albumAIConsentVersion: "media-retrieval-consent-v1"`，已有有效同意可复用，但完整权限仍必须明确传入。启用和移除均传 `Idempotency-Key`；服务端先解析唯一已发布产品并写入 entitlement，再重建 Agent 投影；移除统一清空权限。非法 scope 在任何索引副作用之前拒绝。
 
 同意记录、索引任务、Agent access 与聊天线程在同一数据库事务中保存；任一步失败全部回滚。按用户行加锁串行化并发添加/移除，避免创建重复线程。移除的索引清理请求与停用 Agent 也在同一事务中保存；实际异步清理保持原有状态机。已有云端同意直接复用。工具还必须取得已启用Agent的完整当前声明权限，不能只凭profile或单个 `album:read` 执行会话检索。
 

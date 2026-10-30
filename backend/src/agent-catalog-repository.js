@@ -1,5 +1,6 @@
 import { query, withTransaction } from "./db.js";
 import { parseJson, toIso } from "./repository-mappers.js";
+import { computeAgentReleaseContractHash, isCompleteAgentIdentity } from "../../shared/agent-catalog.js";
 
 function mapRow(row) {
   return {
@@ -12,6 +13,7 @@ function mapRow(row) {
     status: row.status || "unpublished",
     releaseVersion: row.release_version ?? null,
     contractHash: row.contract_hash ?? null,
+    source: row.source ?? null,
     // Keep the existing API projection while the database uses one lifecycle
     // status column as its source of truth.
     published: row.status === "published",
@@ -21,27 +23,57 @@ function mapRow(row) {
 }
 
 function applyCatalogueMetadata(agent, metadata) {
-  if (!metadata) return { ...agent, published: false };
-  const identityColors = {
-    ...(agent.identity?.colors || {}),
-    ...(metadata.identityColors || {}),
+  if (!metadata) {
+    return {
+      ...agent,
+      name: null,
+      description: null,
+      published: false,
+      catalogStatus: "unpublished",
+      releaseVersion: null,
+      contractHash: null,
+      identity: null,
+      identityError: { code: "AGENT_IDENTITY_CONTRACT_INCOMPLETE", message: "Agent catalog identity is missing." },
+    };
+  }
+  const identity = {
+    key: agent.key,
+    avatarKind: "agent-mark",
+    displayName: metadata.displayName,
+    description: metadata.description,
+    mark: metadata.identityMark,
+    shape: metadata.identityShape,
+    colors: metadata.identityColors || {},
+    published: metadata.status === "published",
+    source: metadata.source,
+    updatedAt: metadata.updatedAt,
   };
+  const identityComplete = isCompleteAgentIdentity(identity);
+  const releaseCurrent = metadata.releaseVersion === agent.version;
+  const contractCurrent = identityComplete && metadata.contractHash === computeAgentReleaseContractHash({
+    key: agent.key,
+    version: agent.version,
+    permissions: agent.permissions,
+    identity,
+  });
+  const publicationValid = metadata.status === "published" && identityComplete && releaseCurrent && contractCurrent;
   return {
     ...agent,
-    // Empty descriptions are an intentional operator value. Only a missing
-    // database field falls back to the executable registry declaration.
-    name: metadata.displayName ?? agent.name,
-    description: metadata.description ?? agent.description,
-    published: metadata.status === "published",
+    // The operator catalog is the sole presentation source. Missing or stale
+    // fields remain unavailable so release validation fails explicitly.
+    name: identityComplete ? identity.displayName : null,
+    description: identityComplete ? identity.description : null,
+    published: publicationValid,
     catalogStatus: metadata.status,
     releaseVersion: metadata.releaseVersion,
     contractHash: metadata.contractHash,
-    identity: {
-      ...(agent.identity || {}),
-      ...(metadata.identityMark ? { mark: metadata.identityMark } : {}),
-      ...(metadata.identityShape ? { shape: metadata.identityShape } : {}),
-      ...(Object.keys(identityColors).length ? { colors: identityColors } : {}),
-    },
+    identity: identityComplete ? identity : null,
+    ...(publicationValid ? {} : {
+      identityError: {
+        code: "AGENT_IDENTITY_CONTRACT_INCOMPLETE",
+        message: "Agent catalog identity is missing or stale.",
+      },
+    }),
   };
 }
 
@@ -92,7 +124,7 @@ export async function syncAgentCatalogue(registeredAgents) {
 export async function listAgentCatalogue({ includeUnregistered = false } = {}) {
   const rows = await query(
     `SELECT agent_id, display_name, description, identity_mark, identity_shape,
-            identity_colors, status, release_version, contract_hash, created_at, updated_at
+            identity_colors, status, release_version, contract_hash, source, created_at, updated_at
        FROM agent_catalog
       ${includeUnregistered ? "" : "WHERE status = 'published'"}
       ORDER BY updated_at DESC, agent_id ASC`,
@@ -104,7 +136,7 @@ export async function updateAgentCatalogue(agentId, patch) {
   return withTransaction(async ({ query: runQuery }) => {
   const previous = await runQuery(
     `SELECT agent_id, display_name, description, identity_mark, identity_shape,
-            identity_colors, status, release_version, contract_hash, created_at, updated_at
+            identity_colors, status, release_version, contract_hash, source, created_at, updated_at
        FROM agent_catalog
       WHERE agent_id = ?
       LIMIT 1 FOR UPDATE`,
@@ -145,7 +177,7 @@ export async function updateAgentCatalogue(agentId, patch) {
         SET ${assignments.join(", ")}
       WHERE agent_id = ?
       RETURNING agent_id, display_name, description, identity_mark, identity_shape,
-                identity_colors, status, release_version, contract_hash, created_at, updated_at`,
+              identity_colors, status, release_version, contract_hash, source, created_at, updated_at`,
     params,
   );
   if (!rows[0]) return null;
@@ -187,7 +219,7 @@ export async function updateAgentCatalogue(agentId, patch) {
 
 export async function listPublishedRegisteredAgents(registeredAgents) {
   const all = await listRegisteredAgentsWithCatalogue(registeredAgents);
-  return all.filter((agent) => agent.status === "published");
+  return all.filter((agent) => agent.published === true);
 }
 
 /**

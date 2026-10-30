@@ -2,6 +2,7 @@ import pg from "pg";
 import { config } from "../src/config.js";
 import { createConnectionAdapter } from "../src/db.js";
 import { bootstrapDefaultAdmin } from "../src/default-admin-bootstrap.js";
+import { buildAgentReadiness } from "../src/agent-readiness-service.js";
 import { loadMigrationFiles } from "../src/migration-files.js";
 import { checkMigrationStatus } from "../src/migration-ledger.js";
 
@@ -46,9 +47,17 @@ async function main() {
     await client.query("BEGIN");
     let result;
     try {
+      const readiness = await buildAgentReadiness();
       result = await bootstrapDefaultAdmin(
         createConnectionAdapter(client),
         config.defaultAdmin,
+        { initializeDefaultButler: true, readiness: {
+          ready: Boolean(readiness["miaoxun-butler"]?.configured) && !(readiness["miaoxun-butler"]?.missingEnv || []).length,
+          missing: [
+            ...(readiness["miaoxun-butler"]?.missingEnv || []),
+            ...(readiness["miaoxun-butler"]?.capabilityNeeds || []),
+          ],
+        } },
       );
       await client.query("COMMIT");
     } catch (error) {

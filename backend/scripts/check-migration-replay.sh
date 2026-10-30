@@ -141,7 +141,7 @@ WITH checks(check_name, passed) AS (
         AND contype = 'c'
     )),
     ('butler scopes are repaired', (
-      SELECT granted_scopes = '["profile:read", "messages:read", "agents:invoke"]'::jsonb
+      SELECT granted_scopes = '["profile:read", "messages:read", "agents:invoke", "station:read", "album:read"]'::jsonb
       FROM user_agents
       WHERE user_id = '00000000-0000-4000-8000-000000000001'
         AND agent_id = 'miaoxun-butler'

@@ -35,8 +35,9 @@ const runtimeInputs = [
   'backend/package.json', 'backend/package-lock.json',
   'agents',
   'agents/package.json', 'agents/registry.js', 'agents/chat-history.js', 'agents/workspace-contribution.js', 'agents/specialist-dispatch.js',
-  'shared/package.json', 'shared/site-document.js', 'shared/media-retrieval-public-contract.js',
+  'shared/package.json', 'shared/agent-catalog.js', 'shared/site-document.js', 'shared/media-retrieval-public-contract.js',
   'backend/scripts/admin-bootstrap.js',
+  'backend/scripts/legacy-publishing-backfill.js',
   'backend/scripts/avatar-3d-backfill-mobile-models.js',
   'backend/scripts/check-ai-task-operations.js',
   'backend/scripts/db-migrate.js',
@@ -76,7 +77,7 @@ const trackedFiles = trackedTree.toString('utf8').split('\0').filter(Boolean).ma
 }).filter(Boolean);
 const runtimeBackendScripts = new Set([
   'start', 'worker:media-retrieval', 'worker:ai-tasks', 'ops:ai-tasks',
-  'db:migrate', 'admin:bootstrap', 'avatar3d:backfill-mobile',
+  'db:migrate', 'admin:bootstrap', 'ops:legacy-publishing-backfill', 'avatar3d:backfill-mobile',
 ]);
 for (const file of trackedFiles) {
   const sourceRoot = frontendInputs.some(input => file.path.startsWith(`${input}/`))

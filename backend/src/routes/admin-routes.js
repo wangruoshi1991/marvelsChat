@@ -1,9 +1,6 @@
 import { listAgents } from "../../../agents/registry.js";
 import {
-  listAgentCatalogue,
   listRegisteredAgentsWithCatalogue,
-  syncAgentCatalogue,
-  updateAgentCatalogue,
 } from "../agent-catalog-repository.js";
 import { buildAgentReadiness } from "../agent-readiness-service.js";
 import { registerAdminMediaRetrievalRoutes } from "./admin-media-retrieval-routes.js";
@@ -11,10 +8,8 @@ import { registerAdminReleaseRoutes } from "./admin-release-routes.js";
 import { registerAdminProductRoutes } from "./admin-product-routes.js";
 import {
   adminAgentRuns,
-  adminEvents,
   adminOverview,
   adminUserDetail,
-  adminUsers,
   adminAgentUsage,
   updateUserAdminPermissions,
   updateUserPassword,
@@ -29,9 +24,7 @@ import {
   hashPassword,
 } from "../auth.js";
 import { HttpError } from "../http-error.js";
-import { withTransaction } from "../db.js";
-import { createAlbumAssistantAccessService } from "../album-assistant-access-service.js";
-import { buildMediaRetrievalRuntimeStatus } from "../media-retrieval-runtime-status.js";
+import { agentPublishingService } from "../agent-publishing-service.js";
 import {
   createManagedUser,
   createUsageEvent,
@@ -40,18 +33,15 @@ import {
   getRawUserById,
   hashRequestIp,
   revokeSessionsForUser,
-  setUserAgentAccess,
-  resolveAgentGrantedScopes,
 } from "../repositories.js";
 import {
   adminPermissionsSchema,
   agentAccessSchema,
   createAdminUserSchema,
-  limitSchema,
   modelTestSchema,
   profileAdminSchema,
   adminUsageWindowSchema,
-  agentCatalogPatchSchema,
+  adminPageSchema,
   resetPasswordSchema,
   userRoleSchema,
   userStatusSchema,
@@ -62,6 +52,7 @@ import {
   listAdminTasks,
   mutateAdminTask,
 } from "../admin-operations-repository.js";
+import { listAdminPage } from "../admin-list-repository.js";
 import { z } from "zod";
 
 const operationsWindowSchema = z.object({ days: z.coerce.number().int().refine(value => [7, 30, 90].includes(value)).default(30) }).strict();
@@ -75,21 +66,20 @@ const operationsTaskQuerySchema = z.object({
 }).strict();
 const operationsMutationSchema = z.object({ idempotencyKey: z.string().trim().min(8).max(160) }).strict();
 
-const setAlbumAssistantAccess = createAlbumAssistantAccessService({
-  withTransaction,
-  getRuntimeStatus: buildMediaRetrievalRuntimeStatus,
-});
-
 export function createAdminAgentAccessHandler({
   findUser = getRawUserById,
   listRegisteredAgents = async () =>
     listRegisteredAgentsWithCatalogue(await listAgents()),
-  setAccess = setUserAgentAccess,
-  setAlbumAccess = setAlbumAssistantAccess,
+  setProductAccess = agentPublishingService.setAgentAccessThroughProduct,
   recordEvent = createUsageEvent,
 } = {}) {
   return async (req, res) => {
-    const body = agentAccessSchema.parse(req.body);
+    // The admin endpoint intentionally rejects every enable below. Mark the
+    // shape as parsed without accepting admin consent as a substitute for the
+    // account holder's product consent.
+    const body = agentAccessSchema.parse(
+      req.body?.enabled ? { ...req.body, consent: true } : req.body,
+    );
     const target = await findUser(req.params.userId);
     if (!target) throw new HttpError(404, "User not found");
     assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
@@ -97,28 +87,28 @@ export function createAdminAgentAccessHandler({
       (item) => item.key === req.params.agentId
     );
     if (!agent) throw new HttpError(404, "Agent not found");
-    if (body.enabled) resolveAgentGrantedScopes(agent, body.grantedScopes);
-    if (agent.key === "album-manager" && body.enabled) {
-      throw new HttpError(409, "相册 AI 需账户本人从 App 添加授权。", {
-        code: "ALBUM_OWNER_CONSENT_REQUIRED",
+    if (body.enabled) {
+      throw new HttpError(409, "用户 Agent 授权必须由账户本人确认产品权限。", {
+        code: "USER_CONSENT_REQUIRED",
       });
     }
-    const [access] =
-      agent.key === "album-manager"
-        ? await setAlbumAccess({
-            userId: target.id,
-            agent,
-            body,
-            idempotencyKey: req.get("Idempotency-Key"),
-          })
-        : await setAccess({
-            userId: target.id,
-            agent,
-            enabled: body.enabled,
-            alias: body.alias,
-            aliasSource: "system",
-            grantedScopes: body.grantedScopes,
-          });
+    const entitlement = await setProductAccess({
+      userId: target.id,
+      agentKey: agent.key,
+      enabled: false,
+      grantedScopes: [],
+      idempotencyKey: req.get("Idempotency-Key") || null,
+    });
+    const access = {
+      id: agent.key,
+      name: agent.name,
+      description: agent.description || "",
+      category: agent.category || "",
+      enabled: false,
+      grantedScopes: entitlement.grantedScopes,
+      published: agent.published === true,
+      identity: agent.identity,
+    };
     await recordEvent({
       userId: req.user.id,
       eventType: "admin.user.agent",
@@ -133,7 +123,7 @@ export function createAdminAgentAccessHandler({
       ipHash: hashRequestIp(req.ip),
       userAgent: req.get("user-agent") || "",
     });
-    res.json({ data: { agent: access } });
+    res.json({ data: { agent: access, entitlement } });
   };
 }
 
@@ -141,6 +131,7 @@ export function registerAdminRoutes(
   app,
   { authenticate, asyncHandler, requireAdmin }
 ) {
+  const wantsPage = (req) => Object.prototype.hasOwnProperty.call(req.query, "page") || Object.prototype.hasOwnProperty.call(req.query, "pageSize");
   registerAdminMediaRetrievalRoutes(app, {
     authenticate,
     asyncHandler,
@@ -219,8 +210,8 @@ export function registerAdminRoutes(
     authenticate,
     requireAdmin("users:read"),
     asyncHandler(async (req, res) => {
-      const { limit } = limitSchema.parse(req.query);
-      res.json({ data: await adminUsers({ limit }) });
+      const page = await listAdminPage("users", adminPageSchema.parse(req.query));
+      res.json({ data: wantsPage(req) ? page : page.items });
     })
   );
 
@@ -505,8 +496,8 @@ export function registerAdminRoutes(
     authenticate,
     requireAdmin("audit:read"),
     asyncHandler(async (req, res) => {
-      const { limit } = limitSchema.parse(req.query);
-      res.json({ data: await adminEvents({ limit }) });
+      const page = await listAdminPage("events", adminPageSchema.parse(req.query));
+      res.json({ data: wantsPage(req) ? page : page.items });
     })
   );
 
@@ -515,8 +506,8 @@ export function registerAdminRoutes(
     authenticate,
     requireAdmin("audit:read"),
     asyncHandler(async (req, res) => {
-      const { limit } = limitSchema.parse(req.query);
-      res.json({ data: await adminAgentRuns({ limit }) });
+      const page = await listAdminPage("runs", adminPageSchema.parse(req.query));
+      res.json({ data: wantsPage(req) ? page : page.items });
     })
   );
 
@@ -549,50 +540,6 @@ export function registerAdminRoutes(
         })),
       });
     })
-  );
-
-  app.get(
-    "/api/admin/agent-catalog",
-    authenticate,
-    requireAdmin("agents:manage"),
-    asyncHandler(async (_req, res) => {
-      const registered = await listAgents();
-      await syncAgentCatalogue(registered);
-      const catalogue = await listAgentCatalogue({ includeUnregistered: true });
-      const byKey = new Map(catalogue.map((item) => [item.agentId, item]));
-      res.json({
-        data: registered.map((agent) => ({
-          ...agent,
-          catalogue: byKey.get(agent.key) || null,
-        })),
-      });
-    }),
-  );
-
-  app.patch(
-    "/api/admin/agent-catalog/:agentId",
-    authenticate,
-    requireAdmin("agents:manage"),
-    asyncHandler(async (req, res) => {
-      const patch = agentCatalogPatchSchema.parse(req.body);
-      const registered = await listAgents();
-      if (!registered.some((agent) => agent.key === req.params.agentId)) {
-        throw new HttpError(404, "Agent not found in the deployed registry");
-      }
-      await syncAgentCatalogue(registered);
-      const updated = await updateAgentCatalogue(req.params.agentId, patch);
-      if (!updated) throw new HttpError(404, "Agent catalogue entry not found");
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "admin.agent.catalog",
-        targetType: "agent",
-        targetId: req.params.agentId,
-        payload: patch,
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
-      });
-      res.json({ data: updated });
-    }),
   );
 
   app.get(

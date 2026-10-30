@@ -51,13 +51,22 @@ export default {
 
 注册器另含内部 `media-retrieval` 项，它未声明运行模式，RN不将其展示为可添加的AI伙伴；不能把注册器的9项算成9个用户可用Agent。当前可见目录是妙讯管家和上述7个专业Agent。
 
-## 后台目录与 App 展示
+## 注册、发布与 App 展示
 
-`agent_catalog` 保存管理员维护的展示元数据和 `published` 状态。它只覆盖已加载的 `agents/*.agent.js` 注册项，不创建新的执行器；新增注册文件首次同步为未上架。App bootstrap 会把目录元数据合并到 Agent identity、名称和描述中：已上架项进入推荐添加，已经授权的未上架项仍保留在用户自己的 Agent 列表，不会被静默撤权。用户添加 Agent 仍必须在 App 确认完整 `permissions`，后台上架不等于用户授权。
+Agent 发布使用数据库中的四层合同：
 
-目录快照同时通过 `GET /api/app/sync` 返回，因此后台修改展示名称、身份颜色或上架状态后，已登录 App 会在下一次实时增量同步中刷新“我的 Agent”、推荐目录、动态 Agent 标签和任务参与者。增量同步只更新目录数据，不自动新增用户授权；执行权限仍由注册表、当前授权和运行时再次校验。
+1. `agents/*.agent.js` 注册 key、版本、权限和 identity，后端同步为 `agent_registry` 与 `agent_releases`。release 的合同哈希包含 key、版本、权限和标准化 identity；identity 或代码合同变化会产生新的 release。
+2. 后台补齐或修订完整 identity，检查 readiness 后把 release 从 `draft` 提交到 `review`，再发布为 `published`。产品不能直接把代码注册项变成 App 可见能力。
+3. `products` / `product_versions` 绑定具体 `agent_release_id`、key、version、scope 和依赖合同哈希。产品发布会重新验证每个 release 的状态、就绪、identity、声明权限和合同哈希。
+4. 用户在 App 明确确认产品声明权限后创建 `user_entitlements`。同一事务写入 `user_agents` 和 Agent 会话；重复启用按产品版本和幂等键处理，自定义别名不会被系统覆盖。
 
-后台“使用监控”从 `agent_runs` 按时间范围聚合真实运行次数、成功/失败、token、成本和延迟，不能用截断的最近运行列表作为总量。
+首次部署的内置妙讯管家由一次性的 `admin:bootstrap` 初始化：该命令只在尚无已发布 Butler release/product 时，从当前代码注册合同创建并发布初始 release 和产品。已有历史版本、缺失 readiness 或合同不一致都会停止初始化；后续版本必须由后台完成 release review/publish 与 product submit/publish，不能依赖启动脚本自动发布。
+
+App bootstrap 与增量 sync 返回当前已发布产品、产品目录 revision、用户 entitlement 和统一 Agent identity。后台修改不会自动扩大授权；发布暂停、合同变化或 release 下架会阻止新启用，并在执行前返回明确的不可用或重新同意错误。
+
+产品目录快照同时通过 `GET /api/app/sync` 返回，因此已发布产品或 release identity 发生变化后，已登录 App 会在下一次实时增量同步中刷新“我的 Agent”、推荐目录、动态 Agent 标签和任务参与者。同步只更新已发布目录与授权投影，不自动新增用户 entitlement；执行权限仍由注册表、当前合同和运行时再次校验。
+
+后台“使用监控”从 `agent_runs` 按时间范围聚合真实运行次数、成功/失败、token、成本和延迟，不能用截断的最近运行列表作为总量。任务运营同时读取 `ai_tasks` 与 `agent_workspaces`，取消/重试必须带幂等键并写入审计与任务事件。
 
 漫画日记的结构化保存接口只接受一个完整JSON对象，严格检查字段、字数、指定格数和媒体归属。模型缺字段、围栏/混合文字、超长输出、重复或未选素材都明确失败，不补标题、截断文字或抽取JSON后伪装成功。用户省略风格/格数时采用`slice-of-life`/4格，显式无效值直接拒绝。此契约仅用于保存分镜；普通聊天和协作文字成果不套固定结构。
 
@@ -69,7 +78,7 @@ export default {
 - Agent 会话在写入用户消息前校验注册状态和当前账号授权；已移除或已注销的 Agent 不能通过旧会话继续调用。
 - Agent 消息创建按账号执行独立限流，避免旧会话、脚本或异常客户端无限触发模型调用；好友 direct 消息不使用这个模型调用限额。
 - `permissions` 是 Agent 注册声明的完整授权范围，`user_agents.granted_scopes` 保存账号明确确认的范围。二者集合一致才可启用或执行；除下条默认管家约定外，旧不完整或声明已变化的授权要求移除后重新添加，不自动补权。资料、历史消息、小站内容及编排上下文仍由后端按当前权限和任务范围提供。
-- `PATCH /api/me/agents/:agentId` 与 `PATCH /api/admin/users/:userId/agents/:agentId` 在 `enabled:true` 时必须显式传完整 `grantedScopes` 数组；省略、`null`、非数组、空/部分范围及声明外范围均拒绝且不写授权或创建会话。声明本身为空时可明确确认空数组。`enabled:false` 可省略范围，最终统一撤回为空范围。按用户要求，本地注册/管理员建号事务及迁移040默认启用妙讯管家并授予其当前完整声明；其他Agent仍须明确添加授权，旧不完整授权不静默扩权。相册云端同意仅由本人确认，后台不能代签。2026-10-22生产切换记录确认040–043已执行；这不替代当前账号页面与业务验收，运行证据见当前交接。
+- App 的 Agent 授权必须落到已发布产品：`PATCH /api/me/agents/:agentId` 只负责根据 Agent 查找唯一的已发布产品，再调用产品 entitlement 生命周期；它不会直接写 `user_agents`。启用时仍必须显式传完整 `grantedScopes`、产品 consent 和 `Idempotency-Key`，产品不存在或绑定多个产品时返回明确错误；停用同样通过 entitlement 撤权并重建 Agent 投影。后台 `PATCH /api/admin/users/:userId/agents/:agentId` 只允许撤销已发布产品 entitlement，禁止管理员替用户启用 Agent，启用必须由账户本人在 App 确认产品权限。省略、`null`、非数组、空/部分范围及声明外范围均拒绝且不写授权或创建会话。按用户要求，本地注册/管理员建号事务及迁移040默认启用妙讯管家并授予其当前完整声明；其他Agent仍须明确添加授权，旧不完整授权不静默扩权。相册云端同意仅由本人确认，后台不能代签。2026-10-22生产切换记录曾确认040–043已执行；这是历史部署证据，不代表当前工作区的046–048已部署，运行状态和当前账号页面仍以当前交接及实读为准。
 - 未配置模型或调用失败时，用户消息、失败审计和明确的服务失败提示会写入 PostgreSQL；App 不接收供应商原始错误信息，也不会伪造成功回复或 token 用量。
 - 接入真实模型供应商后，后端会写入 `token_prompt`、`token_completion`、`token_total`。
 
@@ -107,7 +116,7 @@ MiaoxunRN/admin -> backend API -> PostgreSQL任务/协作节点
 
 Agent独立模块通过 `workspaceCapabilities` 声明输入引用类型、依赖成果、输出类型与必要权限。registry严格验证声明，后端执行器必须实现匹配合同；名称或提示词本身不具备执行权。管家可协调相册选材与建站页面，并通过明确的`contribute`运行模式交付`text_result`，包括文件文字摘要、漫画分镜、视频脚本、形象建议和管家汇总，不以普通聊天作为执行器兜底。各Agent可声明多个真实能力，逐个匹配执行合同。
 
-当前本地App/API/Worker使用协作合同6，迁移042保留`coordinated`并新增严格专业会话来源`direct`；保留`request_access`、038提交结果账本、039未确认页面来源和041轮次。2026-10-22生产切换记录确认合同6/043，后续运行状态仍须实读核对，详见当前交接，不新增服务或供应商环境变量。管家内容澄清使用`clarify`与`followups`，专业分派以`agentClarification`恢复明确需求链，可用`agentContextReset`重新开始；缺权不能通过回复扩大旧任务快照。仅我页添加时确认全部声明权限；已有不完整授权移除重加，新权限只在新任务生效。文本成果继承全部明确来源，下游以自己的范围重验，不共享私聊或全库。文字成果只投影`kind/id/title`，正文通过`GET /api/agent-workspaces/:workspaceId/text/:nodeId`重新校验当前授权与原始来源后读取；列表、取消或重放不携带正文。PDF/DOCX解析、生图与成片仍未接入，详见[需求驱动协作](agent-workspace-architecture.md#按需求组织协作合同6工作区)。
+当前工作区使用协作合同6，数据库基线为 043（042 保留`coordinated`并新增严格专业会话来源`direct`）；发布目录与 entitlement 层的 046–048 只在隔离数据库验证，尚未据此宣称生产已部署。2026-10-22 的合同6/043生产切换记录是历史部署证据，后续运行状态必须实读核对，详见当前交接，不新增服务或供应商环境变量。管家内容澄清使用`clarify`与`followups`，专业分派以`agentClarification`恢复明确需求链，可用`agentContextReset`重新开始；缺权不能通过回复扩大旧任务快照。仅我页添加时确认全部声明权限；已有不完整授权移除重加，新权限只在新任务生效。文本成果继承全部明确来源，下游以自己的范围重验，不共享私聊或全库。文字成果只投影`kind/id/title`，正文通过`GET /api/agent-workspaces/:workspaceId/text/:nodeId`重新校验当前授权与原始来源后读取；列表、取消或重放不携带正文。PDF/DOCX解析、生图与成片仍未接入，详见[需求驱动协作](agent-workspace-architecture.md#按需求组织协作合同6工作区)。
 
 运行共用现有Node API、AI Worker与PostgreSQL。架构决策与初版合同可参考[协作闭环历史](reviews/2026-10-12-agent-collaboration.md)；现行合同见[统一AI交互](ai-interaction-system.md#任务1页面2与协作6合同)，部署状态只以[当前交接](handoffs/CURRENT.md)中的运行证据为准。
 

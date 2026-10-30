@@ -6,6 +6,8 @@
 backend/database/*.sql
 ```
 
+当前阅读边界（2026-10-30）：本机共享开发库实读到迁移 `026_agent_granted_scopes.sql`；本轮 046–048 release/product/entitlement 链路只允许在全新的 loopback `_migration_test` 数据库验证，不能把隔离库或历史生产记录当作本机或线上已部署。迁移 040–045 的下文保留当时的升级与审计证据，实际部署状态以[当前交接](handoffs/CURRENT.md)和当前数据库账本为准。
+
 ## 本地数据库
 
 本机已检测到 Docker，因此不需要必须安装桌面版 PostgreSQL 或 Homebrew。推荐用 Docker 启动本地数据库：
@@ -48,7 +50,7 @@ DATABASE_URL=postgres://miaoxun:<local-password>@127.0.0.1:5432/marvels_chat
 
 `backend/database/`中的编号SQL是唯一迁移清单，不在文档另维护一份文件列表。`npm run db:migrate`按顺序执行尚未登记的迁移；文件和SHA-256写入`schema_migrations`，每个新迁移及其账本记录在同一事务提交，advisory lock阻止并发迁移。已登记文件被修改或删除会失败，必须用新迁移表达后续变化，不手工改账本。
 
-`016_station_posts.sql`与`021_station_posts_compat.sql`内容相同，但已各自登记，不能去重。旧库首次建立账本时会重放历史迁移；`backend/scripts/check-migration-replay.sh`在空的`_migration_test`数据库重建无账本的pre-023结构、模拟已知漂移、执行升级并确认再次执行为no-op。它属于升级回归，不用于生产。`backend/scripts/check-api-integration.js`同样只使用专属测试库，验证真实HTTP请求与拒绝路径。
+`016_station_posts.sql`与`021_station_posts_compat.sql`内容相同，但已各自登记，不能去重。旧库首次建立账本时会重放历史迁移；`backend/scripts/check-migration-replay.sh`在空的`_migration_test`数据库重建无账本的pre-023结构、模拟已知漂移、执行升级并确认再次执行为no-op。它属于升级回归，不用于生产。`backend/scripts/check-api-integration.js`同样只使用专属测试库，验证真实HTTP请求与拒绝路径。Agent 发布链路使用同一类一次性数据库执行 `npm run test:agent-publishing`：脚本拒绝非 loopback 的 `_migration_test` 数据库，临时启动后端，验证 registry sync → release review/publish → product submit/publish → 用户 consent、幂等重放、bootstrap 与 `/api/app/sync`，不会调用模型或生产服务。
 
 媒体检索迁移回归默认使用一次性Docker数据库；显式提供`MEDIA_RETRIEVAL_MIGRATION_DATABASE_URL`时，测试仍要求`_migration_test`库名和空`public` schema。历史SQL保留PostgreSQL14兼容边界，检索可空run引用使用单列`ON DELETE SET NULL`并由触发器核对归属。
 
@@ -93,8 +95,11 @@ POSTGRES_CONNECTION_LIMIT=10
 - `user_profiles`：小站资料。昵称、头像文字、`avatar_config`、简介、社区、活动区域、`miao_points`、关注/粉丝/收藏计数保存在这里；关注和粉丝计数由社交关系写入后刷新。`avatar_config` 只接受 v2 字段，迁移 `025_avatar_config_v2.sql` 会将旧 `palette` 映射到 `accent`，并从资料和穿搭快照中移除旧 `palette`、`shape` 键。
 - `auth_sessions`：登录 token 的哈希值、过期时间和最近使用时间。
 - `user_agents`：用户已启用的 Agent 和明确授权范围。迁移 `026_agent_granted_scopes.sql` 是历史数据调整；2026-10-14工作区的启用/执行合同要求范围集合与当前注册声明完整一致，除下述默认管家040约定外，旧不完整授权必须移除后重新添加，不自动补权或通过新迁移批量扩权。任务仍保留自己的最小范围与原授权快照。
-- `agent_catalog`：迁移 `044_agent_catalog.sql` 引入的后台 Agent 展示目录。`agent_id` 必须对应已加载的 `agents/*.agent.js` 执行器；展示名称、描述、身份字形、颜色和 `published` 由具备 `agents:manage` 权限的管理员维护。目录不能创建执行器或替用户授权；下架保留既有 `user_agents` 和会话，新推荐和新授权过滤未上架项。颜色补丁按 JSONB 合并，避免只改一个颜色时丢失其余身份字段。
+- `agent_catalog`：迁移 `044_agent_catalog.sql` 引入的 Agent 展示投影，保留已部署执行器的目录元数据，不是独立上架入口。当前可发现性由 `agent_releases`、`products`/`product_versions` 和用户 `entitlements` 的发布链路决定；后台只能通过已审核、合同哈希一致的 release 创建或发布产品版本，不能直接 PATCH 目录绕过 release。展示名称、描述、标准化 identity 和颜色必须来自同一份发布合同；产品暂停或 release 失效时，既有 entitlement 保留历史但会标记不可用，新推荐与新授权被拒绝。
 - `user_agents.alias_source`：迁移 `045_agent_alias_source.sql` 标记 Agent 别名来自系统目录还是用户自定义。后台修改目录展示名时只迁移仍等于旧系统名的别名，不覆盖用户自定义名称。
+- `agent_registry`、`agent_releases`、`agent_release_status_history`：迁移 `046_agent_releases.sql` 保存代码注册快照、版本/contract hash、声明 scopes、readiness、完整 identity 和 release 状态历史。registry 是执行事实，release 审核和发布是独立状态；代码或合同变化产生新的 release，不覆盖已发布快照。
+- `products`、`product_versions`、`product_agent_dependencies`、`product_status_history`：迁移 `047_product_catalog.sql` 保存面向用户的产品版本、平台、依赖 release、所需 scopes、产品合同和状态历史。产品只有在依赖 release 已发布且合同一致时才能发布。
+- `user_entitlements`、`entitlement_status_history`：迁移 `048_agent_entitlements.sql` 保存用户对具体产品版本的显式授权、授权 scopes、consent 版本、合同哈希和不可用/需重新同意原因。启用事务同时写入 entitlement、对应 `user_agents` 与 Agent 会话；暂停或合同变化保留历史并标记状态，不静默扩权。
 - `chat_threads`：妙讯会话，支持绑定 `agent_id`；好友 direct 聊天通过 `peer_user_id` 指向对方用户，并约束同一用户到同一好友只保留一个 direct 线程。
 - `chat_messages`：真实聊天消息。
 - `usage_events`：客户端行为、登录、发送消息等事件。
@@ -175,6 +180,8 @@ DEFAULT_ADMIN_PASSWORD=<至少 16 位的非占位强密码>
 
 初始化成功后立即恢复长期生产配置、清空初始化密码并重启后端。`DEFAULT_ADMIN_RESET_PASSWORD_ON_BOOTSTRAP=false` 必须保持不变；只有明确需要重置该账号密码时才临时开启。未实现邮箱验证前，生产环境不允许通过 `ADMIN_EMAILS` 自动提权。
 
+`admin:bootstrap` 在首次执行时还会在同一事务内完成内置妙讯管家的初始发布合同：从当前代码注册快照创建第一个 release、更新 `agent_catalog` 投影，并创建已发布的 `miaoxun-butler` 产品版本及依赖。此初始化只允许在数据库中尚无已发布的妙讯管家 release/product 时执行；后续版本或合同变化不会由启动脚本自动上架，必须在后台按 release 审核、产品提交和产品发布流程处理。模型运行配置未就绪、已有历史 release/product 状态不一致或合同不匹配时，管理员初始化会明确失败并回滚。
+
 ## 数据原则
 
 - API 不使用客户端静态数组作为业务数据 fallback。
@@ -201,11 +208,11 @@ accepted 回执与工作空间使用 owner 复合外键；删除用户时两者�
 
 迁移从真实已存`site_draft`节点严格回填未确认草稿，冲突明确拒绝并回滚，不从模型标题或不存在的关系猜测来源。草稿列表/bootstrap仅返回六字段metadata，完整正文通过document接口在同一事务重验。新端、API和两个Worker须与039及合同6一起发布；正式038未修改。上线前停写备份须实际恢复并验038→039回填和重复迁移。039新增来源写入后不能将旧038代码直接接到新库或以旧dump覆盖新数据，优先保留来源并前向修复。锁涉及现有草稿与节点，迁移连接应明确设置lock_timeout与statement_timeout。实际本地验证见当前交接。
 
-## 默认妙讯管家（迁移040，已部署状态以当前交接为准）
+## 默认妙讯管家（迁移040，历史说明；已部署状态以当前交接为准）
 
-按用户明确决定，注册与显式管理员初始化在原账号事务内调用 `ensureDefaultButlerAccess`，启用妙讯管家并授予完整当前注册声明；欢迎会话写入失败会使该事务失败。040对存量账号补齐管家的启用、授权和会话，保留原别名、已有会话和消息；重复执行不重复创建。迁移只处理妙讯管家，不补足其他Agent授权、不代签相册云端同意，也不扩大已有任务的授权快照。
+按用户明确决定，注册与显式管理员初始化在原账号事务内调用 `ensureDefaultButlerAccess`，启用妙讯管家并授予完整当前注册声明；欢迎会话写入失败会使该事务失败。040对存量账号补齐管家的启用、授权和会话，保留原别名、已有会话和消息；重复执行不重复创建。它是系统默认身份初始化的历史边界，不是通用 Agent 授权入口；其他 Agent 的启用、撤销和重新同意必须经过已发布产品的 `user_entitlements`。迁移只处理妙讯管家，不补足其他Agent授权、不代签相册云端同意，也不扩大已有任务的授权快照。
 
-040需要与上述账号初始化代码配套；当前生产已随合同6/043切换并在[当前交接](handoffs/CURRENT.md)记录迁移与运行证据，账号页面和业务行为仍需单独验收。
+040需要与上述账号初始化代码配套；历史生产切换记录曾随合同6/043执行并在[当前交接](handoffs/CURRENT.md)留有证据，但不能代表当前工作区的046–048已部署；账号页面和业务行为仍需按当前交接单独验收。
 
 
 ## 工作空间轮次与续作回执（迁移041，已部署状态以当前交接为准）
