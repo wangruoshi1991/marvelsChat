@@ -11,6 +11,7 @@
 - 新增设计与实施记录：`docs/superpowers/specs/2026-11-02-admin-operations-console-completion-design.md`、`docs/superpowers/plans/2026-11-02-admin-operations-console-completion-plan.md`。
 - 已补充 `GET /api/admin/agent-releases/:id` 和 `GET /api/admin/products/:id`：详情返回状态历史、关联产品/Agent、产品 entitlement 状态汇总；发布中心详情抽屉已展示这些真实关联数据。服务配置页继续只读脱敏状态，不自动触发供应商连通测试。
 - 发布审查补强：任务按钮由服务端 `allowedOperations` 和前端权限共同控制；工作台请求和二级导航按资源权限过滤；release 关联产品按 `products:read` 裁剪并统一 camelCase；详情校验 UUID，错误时不冒充零/空记录，抽屉按 ID 隔离旧状态；模块错误边界保留导航，顶栏显示实际 API host。现有 release 列表 GET 会同步 registry，验收须与纯只读详情区分。
+- 首次候选暂存时，官方 npm 最新审计发现既有 body-parser/Zod 高危漏洞和 qs 中危漏洞，未切换生产；已升级 Express 4.22.3、body-parser 1.20.9、qs 6.17.1、Zod 4.6.7，审计为 0 vulnerabilities。Zod 兼容修复保留 avatar 内部默认版本、日记/相册 PATCH 不注入创建默认值和空 PATCH 拒绝，校验错误保持脱敏 400；补压缩 JSON 正常/非法尾随/解压超限回归。需在新候选完成隔离 PostgreSQL、HTTP 和整仓复验后再切换。
 - 当前验证：Admin 35 项测试、语法检查 33 文件、Vite build 通过；后端 admin operations/list/publishing 定向测试 13 passed，任务详情回归通过；完整 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0，日志 `/tmp/miaoxun-repository-check-20261102-admin-completeness.log`（backend 1193 项，924 passed、269 个 PostgreSQL 环境门控 skipped；RN 76 suites/1008 tests；Agent 50；Admin 35；avatar-web 29；media-retrieval-web 3）。正式环境仍运行上一版制品 `admin-console-20261030-blank-fix2`，本轮未部署、未提交、未推送。
 - 下一步：补齐产品/release 状态历史和授权关联只读详情，完成正式后台登录后的只读冒烟，再运行整仓检查；用户可在后台阶段完成后进行 Build54 实体 iPhone 验证。
 

@@ -3,14 +3,21 @@ import test from "node:test";
 import {
   miaoPointLedgerQuerySchema,
   profileSelfSchema,
+  eventSchema,
   stationAlbumParamsSchema,
+  stationAlbumSchema,
   stationAlbumUpdateSchema,
   stationDiaryParamsSchema,
+  stationDiarySchema,
   stationDiaryUpdateSchema,
   stationMediaAssetParamsSchema,
+  stationMediaAssetSchema,
   stationMediaAssetUpdateSchema,
   stationMediaUploadCompleteSchema,
   stationMediaUploadUrlSchema,
+  stationMediaTagsSchema,
+  stationFileAssetSchema,
+  stationOutfitSchema,
   stationPostParamsSchema,
   stationPostInteractionSchema,
   stationPostSchema,
@@ -48,7 +55,34 @@ test("profile avatar config accepts only the current v2 fields", () => {
   );
 });
 
+test("omitted avatar configurations still receive their nested current-version default", () => {
+  assert.deepEqual(profileSelfSchema.parse({ nickname: "Tester" }).avatarConfig, { version: 2 });
+  assert.deepEqual(stationOutfitSchema.parse({ title: "Outfit" }).avatarConfig, { version: 2 });
+});
+
+test("metadata and event records retain nonempty JSON values and reject non-object containers", () => {
+  const metadata = { source: "manual", attributes: { count: 2 }, labels: ["one"], optional: null };
+  for (const [schema, input, field] of [
+    [stationMediaAssetSchema, {}, "metadata"],
+    [stationMediaTagsSchema, { tags: [] }, "metadata"],
+    [stationFileAssetSchema, { originalFilename: "notes.txt" }, "metadata"],
+    [eventSchema, { eventType: "user.view" }, "payload"],
+  ]) {
+    assert.deepEqual(schema.parse({ ...input, [field]: metadata })[field], metadata);
+    assert.deepEqual(schema.parse(input)[field], {});
+    for (const invalid of [[], null, "raw text", 1]) {
+      assert.throws(() => schema.parse({ ...input, [field]: invalid }), (error) => error.name === "ZodError");
+    }
+  }
+});
+
 test("station update schemas require at least one valid field", () => {
+  assert.deepEqual(stationDiarySchema.parse({ title: "Diary", body: "Entry" }), {
+    title: "Diary", body: "Entry", mood: "", visibility: "private",
+  });
+  assert.deepEqual(stationAlbumSchema.parse({ title: "Album" }), {
+    title: "Album", description: "", visibility: "private",
+  });
   assert.deepEqual(stationDiaryUpdateSchema.parse({ mood: "calm" }), {
     mood: "calm",
   });

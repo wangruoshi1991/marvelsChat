@@ -146,7 +146,7 @@ export const profileSelfSchema = z.object({
   bio: z.string().trim().max(500).optional().default(""),
   community: z.string().trim().max(120).optional().default(""),
   activityArea: z.string().trim().max(120).optional().default(""),
-  avatarConfig: avatarConfigSchema.optional().default({}),
+  avatarConfig: avatarConfigSchema.prefault({}),
   ...profileIdentityFields,
 }).strict();
 
@@ -198,14 +198,22 @@ export const stationPostInteractionSchema = z.object({
   active: z.boolean(),
 });
 
-export const stationDiarySchema = z.object({
+const stationDiaryFields = {
   title: z.string().trim().min(1).max(120),
   body: z.string().trim().min(1).max(6000),
-  mood: z.string().trim().max(40).optional().default(""),
-  visibility: stationVisibilitySchema.optional().default("private"),
+  mood: z.string().trim().max(40),
+  visibility: stationVisibilitySchema,
+};
+
+export const stationDiarySchema = z.object({
+  ...stationDiaryFields,
+  mood: stationDiaryFields.mood.optional().default(""),
+  visibility: stationDiaryFields.visibility.optional().default("private"),
 });
 
-export const stationDiaryUpdateSchema = stationDiarySchema
+// PATCH fields have no create-time defaults: an omitted field must never
+// overwrite persisted content or visibility during validation.
+export const stationDiaryUpdateSchema = z.object(stationDiaryFields)
   .partial()
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one diary field is required.",
@@ -215,13 +223,19 @@ export const stationDiaryParamsSchema = z.object({
   entryId: z.string().uuid(),
 });
 
-export const stationAlbumSchema = z.object({
+const stationAlbumFields = {
   title: z.string().trim().min(1).max(120),
-  description: z.string().trim().max(1000).optional().default(""),
-  visibility: stationVisibilitySchema.optional().default("private"),
+  description: z.string().trim().max(1000),
+  visibility: stationVisibilitySchema,
+};
+
+export const stationAlbumSchema = z.object({
+  ...stationAlbumFields,
+  description: stationAlbumFields.description.optional().default(""),
+  visibility: stationAlbumFields.visibility.optional().default("private"),
 });
 
-export const stationAlbumUpdateSchema = stationAlbumSchema
+export const stationAlbumUpdateSchema = z.object(stationAlbumFields)
   .partial()
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one album field is required.",
@@ -402,7 +416,7 @@ export const mediaRetrievalAdminControlsSchema = z
 export const stationOutfitSchema = z.object({
   title: z.string().trim().min(1).max(120),
   note: z.string().trim().max(1000).optional().default(""),
-  avatarConfig: avatarConfigSchema.optional().default({}),
+  avatarConfig: avatarConfigSchema.prefault({}),
   mediaAssetId: z.string().uuid().optional().nullable(),
   visibility: stationVisibilitySchema.optional().default("private"),
 });

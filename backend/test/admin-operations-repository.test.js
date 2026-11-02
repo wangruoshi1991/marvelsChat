@@ -3,8 +3,8 @@ import test from "node:test";
 import { createAdminOperationsRepository } from "../src/admin-operations-repository.js";
 
 const baseTask = {
-  id: "00000000-0000-0000-0000-000000000001",
-  user_id: "00000000-0000-0000-0000-000000000002",
+  id: "00000000-0000-4000-8000-000000000001",
+  user_id: "00000000-0000-4000-8000-000000000002",
   kind: "agent_message",
   agent_id: "miaoxun-butler",
   agent_version: "1.0.0",
@@ -189,7 +189,7 @@ test("workspace cancellation stops queued nodes and preserves running-node drain
       if (sql.includes("FROM agent_workspaces") && sql.includes("FOR UPDATE")) return [{
         id: baseTask.id, user_id: baseTask.user_id, status: "running", revision: 4,
       }];
-      if (sql.includes("FROM agent_workspace_nodes") && sql.includes("status = 'running'")) return [{ id: "00000000-0000-0000-0000-000000000003" }];
+      if (sql.includes("FROM agent_workspace_nodes") && sql.includes("status = 'running'")) return [{ id: "00000000-0000-4000-8000-000000000003" }];
       if (sql.includes("UPDATE agent_workspaces")) return [{ id: baseTask.id, status: "cancelling", revision: 5, updated_at: new Date() }];
       return [];
     },

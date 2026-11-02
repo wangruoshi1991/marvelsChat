@@ -4,6 +4,7 @@ import test from "node:test";
 import { z } from "zod";
 
 import { HttpError } from "../src/http-error.js";
+import { eventSchema, messageSchema } from "../src/schemas.js";
 import {
   createRequestObservabilityMiddleware,
   createSafeErrorResponse,
@@ -97,4 +98,19 @@ test("validation and malformed JSON receive stable public messages", () => {
   assert.equal(validation.body.error.message, "Invalid request payload");
   assert.equal(malformedJson.status, 400);
   assert.equal(malformedJson.body.error.message, "Invalid JSON payload");
+});
+
+test("record and identifier validation failures stay HTTP 400 without echoing submitted private values", () => {
+  for (const [schema, value] of [
+    [eventSchema, { eventType: "user.view", payload: "PRIVATE_EVENT_TEXT" }],
+    [messageSchema, { content: "PRIVATE_MESSAGE", clientMessageId: "invalid-id" }],
+    [messageSchema, { content: "PRIVATE_MESSAGE", clientMessageId: "00000000-0000-0000-0000-000000000001" }],
+  ]) {
+    const result = schema.safeParse(value);
+    assert.equal(result.success, false);
+    const response = createSafeErrorResponse(result.error, { requestId: "validation-request", production: true });
+    assert.equal(response.status, 400);
+    assert.equal(response.body.error.message, "Invalid request payload");
+    assert.doesNotMatch(JSON.stringify(response.body), /PRIVATE_EVENT_TEXT|PRIVATE_MESSAGE/);
+  }
 });

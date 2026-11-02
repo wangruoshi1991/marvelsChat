@@ -138,6 +138,10 @@ release 详情中的关联产品还需要 `products:read`，无权时 `productsV
 
 现有 release 列表 GET 会同步代码 registry，并可能更新就绪信息或生成草稿；它不是纯只读查询。生产浏览器验收可以验证此既有同步行为，但不会因此执行发布、暂停、撤权、产品启用或供应商调用。
 
+2026-11-02 发布前依赖审计修复：后端锁定 Express 4.22.3、body-parser 1.20.9、qs 6.17.1 和 Zod 4.6.7。Zod 升级保持原有 API 默认与 PATCH 语义：avatar 初始化仍补齐内部版本，日记/相册 PATCH 不注入创建默认值，空 PATCH 仍拒绝；校验失败继续返回脱敏的 HTTP 400。压缩 JSON 验证覆盖正常输入、非法尾随数据、解压后超过 1MB 和失败后的继续服务。
+
+空隔离库的 HTTP 验证顺序与 CI 一致：先重放 48 项迁移，再执行 `test:agent-publishing`，通过显式系统初始化建立默认妙讯管家发布合同，最后执行 `test:api-integration`。仅执行迁移后直接注册会明确返回 `AGENT_IDENTITY_CONTRACT_INCOMPLETE`，不能用注册时自动发布或授权 fallback 掩盖缺少的初始化。
+
 ## 保护规则
 
 - 后端禁止管理员停用自己的当前账号。

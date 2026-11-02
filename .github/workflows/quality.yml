@@ -118,11 +118,19 @@ jobs:
         env:
           DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_migration_test
 
+      - name: Verify Agent publishing and initialize the explicit default Butler fixture
+        run: npm run test:agent-publishing
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_migration_test
+          MIAOXUN_DOTENV_ENABLED: "false"
+
       - name: Verify API flows against PostgreSQL
         run: npm run test:api-integration
         working-directory: backend
         env:
           DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_migration_test
+          MIAOXUN_DOTENV_ENABLED: "false"
 
   android-debug:
     name: Android debug compile

@@ -186,7 +186,11 @@ if (process.env.RUN_SITE_DOCUMENT_MIGRATION_INTEGRATION !== "1") {
     await apply(prepared);
     const migrated = await readState();
     const changed = structuredClone(prepared);
-    changed.before.drafts[1].draft.title = "Malicious substitute";
+    // Snapshots sort by random UUID, so an array index can select the applied
+    // draft and trigger the independent profile-copy mismatch check first.
+    const rewrittenDraft = changed.before.drafts.find(row => row.id === draftIds[1]);
+    assert.equal(rewrittenDraft?.status, "draft");
+    rewrittenDraft.draft.title = "Malicious substitute";
     changed.beforeHash = hashSiteDocumentValue(changed.before);
     const { planHash: _hash, ...body } = changed;
     changed.planHash = hashSiteDocumentValue(body);
