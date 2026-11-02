@@ -17,6 +17,7 @@ const taskFilterSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 }).strict();
 const mutationSchema = z.object({ idempotencyKey: z.string().trim().min(8).max(160) }).strict();
+const eventLimit = 200;
 
 const number = value => value == null ? 0 : Number(value);
 const nullableNumber = value => value == null ? null : Number(value);
@@ -43,6 +44,27 @@ function mapMetricRow(row) {
     tokenTotal: nullableNumber(row.token_total),
     costCents: nullableNumber(row.cost_cents),
     averageLatencyMs: row.avg_latency_ms == null ? null : Math.round(Number(row.avg_latency_ms)),
+  };
+}
+
+const operationalCode = value => typeof value === "string" && /^[A-Za-z][A-Za-z0-9._-]{0,99}$/.test(value) ? value : null;
+
+function allowedTaskOperations(type, status) {
+  if (type === "ai_task") {
+    if (status === "failed") return ["retry"];
+    return ["queued", "awaiting_confirmation"].includes(status) ? ["cancel"] : [];
+  }
+  return type === "agent_workspace" && ["queued", "running", "waiting_input", "awaiting_confirmation", "cancelling"].includes(status) ? ["cancel"] : [];
+}
+
+// The admin boundary exposes operational metadata, never task input, user
+// content, approval payloads, or raw provider error messages.
+function mapAdminTask(row) {
+  return {
+    id: row.id, type: row.task_type, userId: row.user_id, kind: row.kind, agentId: row.agent_id || null,
+    agentVersion: row.agent_version || null, status: row.status, phase: row.phase || null, revision: Number(row.revision || 0),
+    createdAt: iso(row.created_at), updatedAt: iso(row.updated_at), threadId: row.thread_id || null,
+    failureCode: operationalCode(row.failure_code), allowedOperations: allowedTaskOperations(row.task_type, row.status),
   };
 }
 
@@ -100,8 +122,8 @@ export function createAdminOperationsRepository({ runQuery = query, transaction 
     if (parsed.to) add("created_at <= ?::timestamptz", parsed.to);
     if (parsed.agentId) add("agent_id = ?", parsed.agentId);
     const where = predicates.length ? `WHERE ${predicates.join(" AND ")}` : "";
-    const common = `SELECT id, user_id, kind, agent_id, agent_version, status, phase, revision, input,
-      error, created_at, updated_at, 'ai_task' AS task_type, thread_id FROM ai_tasks ${where}`;
+    const common = `SELECT id, user_id, kind, agent_id, agent_version, status, phase, revision,
+      error->>'code' AS failure_code, created_at, updated_at, 'ai_task' AS task_type, thread_id FROM ai_tasks ${where}`;
     // Workspaces have no single Agent identity; expose their first persisted node as the task Agent.
     const workspacePredicates = [];
     const workspaceParams = [];
@@ -113,16 +135,11 @@ export function createAdminOperationsRepository({ runQuery = query, transaction 
     if (parsed.agentId) addWorkspace("first_node.agent_id = ?", parsed.agentId);
     const workspaceWhere = workspacePredicates.length ? `WHERE ${workspacePredicates.join(" AND ")}` : "";
     const workspaceSql = `SELECT w.id, w.user_id, 'agent_workspace' AS kind, first_node.agent_id, first_node.agent_version,
-      w.status, NULL AS phase, w.revision, jsonb_build_object('goal', w.goal) AS input, w.error,
+      w.status, NULL AS phase, w.revision, w.error->>'code' AS failure_code,
       w.created_at, w.updated_at, 'agent_workspace' AS task_type, NULL AS thread_id
       FROM agent_workspaces w LEFT JOIN LATERAL (SELECT agent_id, agent_version FROM agent_workspace_nodes n WHERE n.workspace_id = w.id ORDER BY n.created_at,n.id LIMIT 1) first_node ON TRUE ${workspaceWhere}`;
     const rows = await runQuery(`SELECT * FROM (${common} UNION ALL ${workspaceSql}) tasks ORDER BY created_at DESC, id DESC LIMIT ?`, [...params, ...workspaceParams, parsed.limit]);
-    return rows.map(row => ({
-      id: row.id, type: row.task_type, userId: row.user_id, kind: row.kind, agentId: row.agent_id || null, agentVersion: row.agent_version || null,
-      status: row.status, phase: row.phase || null, revision: Number(row.revision || 0), input: row.input || {}, error: row.error || null,
-      createdAt: iso(row.created_at), updatedAt: iso(row.updated_at), threadId: row.thread_id || null,
-      failureCode: row.error?.code || null,
-    }));
+    return rows.map(mapAdminTask);
   };
 
   const adminMonitoring = async ({ days = 30 } = {}) => {
@@ -152,6 +169,27 @@ export function createAdminOperationsRepository({ runQuery = query, transaction 
       taskStatuses: statuses.map(row => ({ status: row.status, count: number(row.count) })),
       empty: { agents: agents.length === 0, products: products.length === 0, users: users.length === 0, taskStatuses: statuses.length === 0 },
     };
+  };
+
+  const getAdminTaskDetail = async (taskId) => {
+    const id = idSchema.parse(taskId);
+    const taskRows = await runQuery(`SELECT id, user_id, kind, agent_id, agent_version, status, phase, revision,
+      error->>'code' AS failure_code, created_at, updated_at, 'ai_task' AS task_type, thread_id FROM ai_tasks WHERE id = ? LIMIT 1`, [id]);
+    if (taskRows[0]) {
+      const row = taskRows[0];
+      const events = await runQuery(`SELECT sequence, payload, created_at FROM ai_task_events WHERE task_id = ? ORDER BY sequence ASC LIMIT ?`, [id, eventLimit + 1]);
+      return { ...mapAdminTask(row), eventKind: "status_events", eventsTruncated: events.length > eventLimit,
+        events: events.slice(0, eventLimit).map((event) => ({ sequence: Number(event.sequence), status: event.payload?.status || null,
+          phase: event.payload?.phase || null, errorCode: operationalCode(event.payload?.errorCode), createdAt: iso(event.created_at) })) };
+    }
+    const workspaceRows = await runQuery(`SELECT id, user_id, status, revision, error->>'code' AS failure_code, created_at, updated_at,
+      'agent_workspace' AS kind, 'agent_workspace' AS task_type FROM agent_workspaces WHERE id = ? LIMIT 1`, [id]);
+    if (!workspaceRows[0]) throw error(404, 'ADMIN_TASK_NOT_FOUND', 'Task not found');
+    const workspace = workspaceRows[0];
+    const nodes = await runQuery(`SELECT id, agent_id, agent_version, status, error->>'code' AS failure_code, created_at, updated_at FROM agent_workspace_nodes WHERE workspace_id = ? ORDER BY created_at ASC, id ASC LIMIT ?`, [id, eventLimit + 1]);
+    return { ...mapAdminTask(workspace), eventKind: "workspace_nodes", eventsTruncated: nodes.length > eventLimit, events: nodes.slice(0, eventLimit).map((node) => ({
+        id: node.id, agentId: node.agent_id || null, agentVersion: node.agent_version || null, status: node.status, errorCode: operationalCode(node.failure_code),
+        createdAt: iso(node.created_at), updatedAt: iso(node.updated_at) })) };
   };
 
   const mutateAdminTask = async ({ taskId, operation, idempotencyKey, actor, requestId = null, ipHash = null, userAgent = "" }) => {
@@ -195,8 +233,8 @@ export function createAdminOperationsRepository({ runQuery = query, transaction 
       return result;
     });
   };
-  return { adminOverview, listAdminTasks, adminMonitoring, mutateAdminTask };
+  return { adminOverview, listAdminTasks, getAdminTaskDetail, adminMonitoring, mutateAdminTask };
 }
 
-export const { adminOverview: adminOperationsOverview, listAdminTasks, adminMonitoring, mutateAdminTask } = createAdminOperationsRepository();
+export const { adminOverview: adminOperationsOverview, listAdminTasks, getAdminTaskDetail, adminMonitoring, mutateAdminTask } = createAdminOperationsRepository();
 export { daysSchema, taskFilterSchema, mutationSchema };

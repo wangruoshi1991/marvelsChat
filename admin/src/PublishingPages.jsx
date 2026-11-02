@@ -39,6 +39,7 @@ const productStatuses = [
 ];
 const statusColors = { draft: "gold", review: "blue", published: "green", unpublished: "orange", paused: "orange", retired: "default", archived: "default" };
 const statusLabels = Object.fromEntries([...releaseStatuses, ...productStatuses].map((item) => [item.value, item.label]));
+const historyColumns = [{ title: "原状态", dataIndex: "fromStatus", render: (value) => value ? <StatusTag value={value} /> : "创建" }, { title: "新状态", dataIndex: "toStatus", render: (value) => <StatusTag value={value} /> }, { title: "原因", dataIndex: "reason", render: (value) => value || "--" }, { title: "操作者", dataIndex: "actorEmail", render: (value) => value || "系统" }, { title: "时间", dataIndex: "createdAt" }];
 
 export function hasAdminPermission(user, permission) {
   const permissions = Array.isArray(user?.adminPermissions) ? user.adminPermissions : [];
@@ -191,6 +192,9 @@ export function AgentReleasesPage({ user: providedUser }) {
   const canWrite = canRead;
   const [filters, setFilters] = useState({ query: "", status: "" });
   const [selected, setSelected] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [detailError, setDetailError] = useState("");
+  useEffect(() => { let active = true; setDetail(null); setDetailError(""); if (selected?.id) request(`/api/admin/agent-releases/${encodeURIComponent(selected.id)}`).then((value) => { if (active) setDetail(value); }).catch((error) => { if (active) setDetailError(errorText(error, "读取 release 详情失败")); }); return () => { active = false; }; }, [selected?.id]);
   const [action, setAction] = useState("");
   const list = usePagedList("/api/admin/agent-releases", filters);
 
@@ -226,13 +230,17 @@ export function AgentReleasesPage({ user: providedUser }) {
     <div className="page-surface">
       <SearchToolbar statusOptions={releaseStatuses} onSubmit={setFilters} initialStatus={filters.status} />
       {list.error && <Alert type="error" showIcon message={list.error} action={<Button onClick={() => list.load()}>重试</Button>} style={{ marginBottom: 16 }} />}
-      <Table rowKey="id" loading={list.loading} dataSource={list.items} columns={columns} scroll={{ x: 1050 }} locale={{ emptyText: <Empty description="暂无真实 Agent release" /> }} pagination={{ current: list.page, pageSize: PAGE_SIZE, total: list.total, showSizeChanger: false, showTotal: (total) => `共 ${total} 条`, onChange: (nextPage) => list.load(nextPage) }} onRow={(row) => ({ onClick: () => setSelected(row), style: { cursor: "pointer" } })} />
+      {!list.error && <Table rowKey="id" loading={list.loading} dataSource={list.items} columns={columns} scroll={{ x: 1050 }} locale={{ emptyText: <Empty description="暂无真实 Agent release" /> }} pagination={{ current: list.page, pageSize: PAGE_SIZE, total: list.total, showSizeChanger: false, showTotal: (total) => `共 ${total} 条`, onChange: (nextPage) => list.load(nextPage) }} onRow={(row) => ({ onClick: () => { setDetail(null); setDetailError(""); setSelected(row); }, style: { cursor: "pointer" } })} />}
     </div>
     <Drawer title={selected ? `${selected.agentKey || "Agent"} · v${selected.version || "--"}` : "Agent release 详情"} width={620} open={Boolean(selected)} onClose={() => setSelected(null)}>
-      {selected && <>
-        <Descriptions bordered column={1} size="small" items={[{ key: "status", label: "状态", children: <StatusTag value={selected.catalogStatus} /> }, { key: "contract", label: "合同 hash", children: selected.contractHash || "缺失" }, { key: "scopes", label: "声明权限", children: selected.declaredScopes?.join("、") || "未声明" }, { key: "readiness", label: "就绪检查", children: selected.readiness?.ready ? "通过" : selected.readiness?.missing?.join("、") || "未通过" }]} />
-        {selected.catalogStatus === "published" && <Alert style={{ marginTop: 16 }} type="info" showIcon message="已发布的 release 不可修改身份，请注册新版本。" />}
-        <IdentityEditor key={selected.id} release={selected} canWrite={canWrite && selected.catalogStatus !== "published"} onSaved={async () => { setSelected(null); await list.load(list.page); }} />
+      {selected && !detail && !detailError && <Alert type="info" showIcon message="正在读取 release 详情" />}
+      {detailError && <Alert type="error" showIcon message="release 详情读取失败" description={detailError} />}
+      {detail?.release?.id === selected?.id && detail?.release && <>
+        <Descriptions bordered column={1} size="small" items={[{ key: "status", label: "状态", children: <StatusTag value={detail.release.catalogStatus} /> }, { key: "contract", label: "合同 hash", children: detail.release.contractHash || "缺失" }, { key: "scopes", label: "声明权限", children: detail.release.declaredScopes?.join("、") || "未声明" }, { key: "readiness", label: "就绪检查", children: detail.release.readiness?.ready ? "通过" : detail.release.readiness?.missing?.join("、") || "未通过" }]} />
+        <Divider orientation="left">发布状态历史</Divider><Table size="small" rowKey="id" pagination={false} dataSource={detail?.history || []} columns={historyColumns} loading={!detail && !detailError} locale={{ emptyText: "暂无状态变更记录" }} />
+        <Divider orientation="left">关联产品</Divider>{detail.productsVisible === false ? <Alert type="info" showIcon message="当前账号无产品读取权限" description="关联产品需要 products:read 权限。" /> : <Table size="small" rowKey={(row) => `${row.id}-${row.version}`} pagination={false} dataSource={detail.products || []} columns={[{ title: "产品", dataIndex: "displayName" }, { title: "Key", dataIndex: "productKey" }, { title: "版本", dataIndex: "version" }, { title: "状态", dataIndex: "status", render: (value) => <StatusTag value={value} /> }]} locale={{ emptyText: "该 release 尚未绑定产品" }} />}
+        {detail.release.catalogStatus === "published" && <Alert style={{ marginTop: 16 }} type="info" showIcon message="已发布的 release 不可修改身份，请注册新版本。" />}
+        <IdentityEditor key={detail.release.id} release={detail.release} canWrite={canWrite && detail.release.catalogStatus !== "published"} onSaved={async () => { setSelected(null); await list.load(list.page); }} />
       </>}
     </Drawer>
   </>;
@@ -271,6 +279,9 @@ export function ProductsPage({ user: providedUser }) {
   const [filters, setFilters] = useState({ query: "", status: "" });
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [detailError, setDetailError] = useState("");
+  useEffect(() => { let active = true; setDetail(null); setDetailError(""); if (selected?.id) request(`/api/admin/products/${encodeURIComponent(selected.id)}`).then((value) => { if (active) setDetail(value); }).catch((error) => { if (active) setDetailError(errorText(error, "读取产品详情失败")); }); return () => { active = false; }; }, [selected?.id]);
   const [action, setAction] = useState("");
   const list = usePagedList("/api/admin/products", filters);
   const act = async (kind, row) => {
@@ -278,6 +289,7 @@ export function ProductsPage({ user: providedUser }) {
     try {
       await request(`/api/admin/products/${encodeURIComponent(row.id)}/${kind}`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey(kind, row.id) } });
       message.success(kind === "submit" ? "已提交产品审核" : kind === "publish" ? "产品已发布" : "产品已暂停");
+      setSelected(null);
       await list.load(list.page);
     } catch (error) { message.error(errorText(error, "产品操作失败")); }
     finally { setAction(""); }
@@ -303,10 +315,12 @@ export function ProductsPage({ user: providedUser }) {
     <div className="page-surface">
       <SearchToolbar statusOptions={productStatuses} onSubmit={setFilters} initialStatus={filters.status} />
       {list.error && <Alert type="error" showIcon message={list.error} action={<Button onClick={() => list.load()}>重试</Button>} style={{ marginBottom: 16 }} />}
-      <Table rowKey="id" loading={list.loading} dataSource={list.items} columns={columns} scroll={{ x: 1250 }} locale={{ emptyText: <Empty description="暂无真实产品版本" /> }} pagination={{ current: list.page, pageSize: PAGE_SIZE, total: list.total, showSizeChanger: false, showTotal: (total) => `共 ${total} 条`, onChange: (nextPage) => list.load(nextPage) }} onRow={(row) => ({ onClick: () => setSelected(row), style: { cursor: "pointer" } })} />
+      {!list.error && <Table rowKey="id" loading={list.loading} dataSource={list.items} columns={columns} scroll={{ x: 1250 }} locale={{ emptyText: <Empty description="暂无真实产品版本" /> }} pagination={{ current: list.page, pageSize: PAGE_SIZE, total: list.total, showSizeChanger: false, showTotal: (total) => `共 ${total} 条`, onChange: (nextPage) => list.load(nextPage) }} onRow={(row) => ({ onClick: () => { setDetail(null); setDetailError(""); setSelected(row); }, style: { cursor: "pointer" } })} />}
     </div>
     <Drawer title={selected ? `${selected.displayName || selected.productKey} · v${selected.version || "--"}` : "产品详情"} width={620} open={Boolean(selected)} onClose={() => setSelected(null)}>
-      {selected && <><Descriptions bordered column={1} size="small" items={[{ key: "status", label: "状态", children: <StatusTag value={selected.status} /> }, { key: "description", label: "描述", children: selected.description || "--" }, { key: "platforms", label: "平台", children: selected.supportedPlatforms?.join("、") || "--" }, { key: "contract", label: "合同 hash", children: selected.contractHash || "缺失" }]} /><Divider orientation="left">Agent 依赖</Divider>{selected.dependencies?.length ? <Table size="small" rowKey={(row) => `${row.agentKey}-${row.agentReleaseId}`} pagination={false} dataSource={selected.dependencies} columns={[{ title: "Agent", dataIndex: "agentKey" }, { title: "版本", dataIndex: "version" }, { title: "release", dataIndex: "releaseStatus", render: (value) => <StatusTag value={value} /> }, { title: "就绪", dataIndex: "readiness", render: (value) => value?.ready ? <Tag color="green">通过</Tag> : <Tag color="red">未通过</Tag> }]} /> : <Empty description="未绑定 Agent 依赖" />}</>}
+      {selected && !detail && !detailError && <Alert type="info" showIcon message="正在读取产品详情" />}
+      {detailError && <Alert type="error" showIcon message="产品详情读取失败" description={detailError} />}
+      {detail?.product?.id === selected?.id && detail?.product && <><Descriptions bordered column={1} size="small" items={[{ key: "status", label: "状态", children: <StatusTag value={detail.product.status} /> }, { key: "description", label: "描述", children: detail.product.description || "--" }, { key: "platforms", label: "平台", children: detail.product.supportedPlatforms?.join("、") || "--" }, { key: "contract", label: "合同 hash", children: detail.product.contractHash || "缺失" }]} /><Divider orientation="left">Agent 依赖与发布门禁</Divider>{detail.product.dependencies?.length ? <Table size="small" rowKey={(row) => `${row.agentKey}-${row.agentReleaseId}`} pagination={false} dataSource={detail.product.dependencies} columns={[{ title: "Agent", dataIndex: "agentKey" }, { title: "版本", dataIndex: "version" }, { title: "release", dataIndex: "releaseStatus", render: (value) => <StatusTag value={value} /> }, { title: "就绪", dataIndex: "readiness", render: (value) => value?.ready ? <Tag color="green">通过</Tag> : <Tag color="red">未通过</Tag> }, { title: "Scopes", dataIndex: "scopes", render: (value) => value?.join("、") || "无" }]} /> : <Empty description="未绑定 Agent 依赖" />}<Divider orientation="left">用户授权汇总</Divider><Table size="small" rowKey="status" pagination={false} dataSource={detail?.entitlementSummary || []} columns={[{ title: "授权状态", dataIndex: "status", render: (value) => <StatusTag value={value} /> }, { title: "用户数", dataIndex: "count" }]} loading={!detail && !detailError} locale={{ emptyText: "暂无用户授权记录" }} /><Divider orientation="left">产品状态历史</Divider><Table size="small" rowKey="id" pagination={false} dataSource={detail?.history || []} columns={historyColumns} loading={!detail && !detailError} locale={{ emptyText: "暂无状态变更记录" }} /></>}
     </Drawer>
     <ProductCreateModal open={createOpen} canWrite={canWrite} onClose={() => setCreateOpen(false)} onCreated={async () => { setCreateOpen(false); await list.load(1); }} />
   </>;

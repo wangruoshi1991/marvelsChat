@@ -1,6 +1,46 @@
 # 妙讯当前交接入口
 
-更新：2026-10-30。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
+更新：2026-11-02。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
+
+#### 2026-11-02 后台运营控制台完善（当前工作区，未部署）
+
+- 已完成后台 React 入口的第二轮运营化改造：侧栏按工作台、账户中心、发布中心、运营中心、系统中心分组；资源子导航同步当前工作域；保留每个模块独立 URL、权限过滤和响应式布局。
+- 工作台现在并行读取真实 `/api/admin/overview`、待审核 Agent release 和运行中任务，显示指标、趋势、待办表格、数据来源和部分读取错误；指标卡只作摘要，管理数据通过表格进入资源模块。
+- 任务中心新增 `GET /api/admin/tasks/:taskId` 只读详情接口，仅返回 AI task 或 Agent workspace 的状态元数据、格式受限的失败代码及最多 200 条事件/节点；不返回用户输入、目标正文、审批内容或供应商原始错误。`eventKind` 明确区分状态事件和节点当前状态，`eventsTruncated` 标明截断；接口受 `tasks:read` 保护，不改变用户 consent 或执行权限。
+- 清理了 React 入口中未使用的旧总览/用户/发布/分页实现，避免两套前端逻辑继续漂移；历史原生后台文件仍保留为审计资产，没有删除或覆盖。
+- 新增设计与实施记录：`docs/superpowers/specs/2026-11-02-admin-operations-console-completion-design.md`、`docs/superpowers/plans/2026-11-02-admin-operations-console-completion-plan.md`。
+- 已补充 `GET /api/admin/agent-releases/:id` 和 `GET /api/admin/products/:id`：详情返回状态历史、关联产品/Agent、产品 entitlement 状态汇总；发布中心详情抽屉已展示这些真实关联数据。服务配置页继续只读脱敏状态，不自动触发供应商连通测试。
+- 发布审查补强：任务按钮由服务端 `allowedOperations` 和前端权限共同控制；工作台请求和二级导航按资源权限过滤；release 关联产品按 `products:read` 裁剪并统一 camelCase；详情校验 UUID，错误时不冒充零/空记录，抽屉按 ID 隔离旧状态；模块错误边界保留导航，顶栏显示实际 API host。现有 release 列表 GET 会同步 registry，验收须与纯只读详情区分。
+- 当前验证：Admin 35 项测试、语法检查 33 文件、Vite build 通过；后端 admin operations/list/publishing 定向测试 13 passed，任务详情回归通过；完整 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0，日志 `/tmp/miaoxun-repository-check-20261102-admin-completeness.log`（backend 1193 项，924 passed、269 个 PostgreSQL 环境门控 skipped；RN 76 suites/1008 tests；Agent 50；Admin 35；avatar-web 29；media-retrieval-web 3）。正式环境仍运行上一版制品 `admin-console-20261030-blank-fix2`，本轮未部署、未提交、未推送。
+- 下一步：补齐产品/release 状态历史和授权关联只读详情，完成正式后台登录后的只读冒烟，再运行整仓检查；用户可在后台阶段完成后进行 Build54 实体 iPhone 验证。
+
+#### 2026-11-02 下一阶段执行顺序
+
+- 后台 P0 已完成：正式环境当前运行 `admin-console-20261030-blank-fix2`，九个模块切换和健康检查已通过。下一步先做一次正式管理员账号的只读功能冒烟：用户列表/详情、Agent release、产品目录、任务、运行监控、审计、媒体检索和系统配置；发布、暂停、撤权、密码重置等写操作必须逐项确认后再执行，不用生产写入冒充验收。
+- 后台只读冒烟通过后，由负责人在 TestFlight Build54 的实体 iPhone 14 Pro 上复验：二楼落地和各子页上滑退出、讯页双 Tab/新建/搜索/返回、妙页和讯页长按菜单、语音入口与识别卡、我页 Agent 卡片/折叠恢复/头像、聊天/任务详情、输入框和提示条滑动。模拟器和组件测试不能替代这一步。
+- 真机结果记录后，再在隔离 PostgreSQL 中串行补跑默认整仓跳过的数据库门控，重点是任务恢复/续作、授权撤销、消息幂等、文件来源校验、Agent workspace、专业 Agent、迁移升级/重复回放；每组保留日志并清理临时库，不触碰共享数据库。
+- 最后更新本节状态，重新执行 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh`，再决定是否需要新的后台制品。当前工作区仍有大量既有未提交修改，禁止 reset、clean、提交或推送；不上传 TestFlight、不部署移动端、不调用付费模型。
+
+#### 2026-10-30 正式后台切换模块白屏已修复
+
+- 根因是 `admin/src/ResourcesPage.jsx` 的总览页把会返回 Promise 的 `load` 直接传给 `useEffect(load, [])`。React 19 在切换侧边栏卸载总览页时把该 Promise 当作清理函数，抛出 `destroy is not a function`，导致整个 `admin-root` 变空白；这不是 API 数据缺失或权限绕过。
+- 已改为 `useEffect(() => { load(); }, [])`，并新增 `admin/test/react-effect-contract.test.js` 防止再次把 Promise 返回值当作 React cleanup。另将 `admin/src/platform.js` 的 `readAuth()` 规范为始终返回对象，避免旧标签把 JSON `null` 当作认证对象时在用户、任务或运营页访问 `.user` 崩溃；`admin/test/platform-session.test.js` 覆盖该状态。修复前本地真实 Vite/React 页面可复现 `destroy is not a function`，修复后 Admin 33/33 通过、构建通过。
+- 最终正式环境制品 `admin-console-20261030-blank-fix2` 已由隔离 clean worktree 临时提交 `e6ebf1372eab91752532a0338c6560aeb219f5c3` 生成，归档 SHA-256 为 `e72fd38e7384aff5c1eeadf491339b2c585e86eb1138c969d7a18c3db0371f29`；运行 manifest 256 文件、`includesWorkingTreeChanges=false`。上一份 `admin-console-20261030-blank-fix` 和原 `admin-console-20261030-fixed` runtime 均保留未删除。
+- 线上 `app` 已原子切换到 `/opt/projects/marvels-chat/releases/admin-console-20261030-blank-fix2/runtime`，保留原有 storage/env 并完成生产权限加固；Nginx 配置检查和 reload 通过。backend、AI Task Worker、media retrieval Worker、Nginx 均 active，公网 `/api/health`、`/api/ready` 均 200，数据库迁移账本保持 current。
+- 使用同一正式 Chrome 登录态复验最终制品侧边栏九个模块：运营总览、用户与权限、Agent 发布、产品目录、任务管理、运行监控、媒体检索、审计记录、服务配置，均等待到对应标题且 `blank=false`；最终复验窗口没有新增 console error/warning。用户刷新正式后台后即可继续使用。
+- 最终整仓命令 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0，完整输出记录于 `/tmp/miaoxun-repository-check-20261030-admin-blank-fix-final.log`：backend 1192 项（923 passed、269 个 PostgreSQL 环境门控 skipped、0 failed），agents 50、Admin 33、avatar-web 29、media-retrieval-web 3，RN 76 suites / 1008 tests；各构建、RN format/lint/typecheck 和 `git diff --check` 均通过。
+
+#### 2026-10-30 正式环境后台替换已完成
+
+- 线上 `/admin/` 已从旧 `agent-catalog-admin-20261029` 原子切换到 `/opt/projects/marvels-chat/releases/admin-console-20261030-fixed/runtime`；旧 runtime 保留作为回滚候选，没有删除历史制品。
+- 发布制品来源为隔离 clean worktree 提交 `61150720f397a6d60b3cc28d625bfd866f8a3b27`，制品 `admin-console-20261030-fixed.tar.gz` SHA-256 为 `dbdbbb0ecca66132cf025ed40e25caad7f23c8f53a8fe75448bce63a8c23b43e`。制品解包后 backend 依赖安装、权限加固、storage 同步和 `release-manifest.json` 校验均通过；当前工作区仍未提交、未推送。
+- 维护窗口内 Nginx 先返回 503/`Retry-After: 120`，API 与两个 Worker 停止后生成停写备份 `/opt/projects/marvels-chat/database/backups/marvels_chat-admin-console-20261030T104159Z.dump`，SHA-256 `6e6e40d1336c8d24a3759a8e52197b11fe93511b573b4679e0e86ec3799fdaf9`，`pg_restore --list` 522 项。迁移前账本为 45 项，迁移 046–048 后为 48 项。
+- 生产 backfill 首次执行为 `9 releases / 9 products / 26 entitlements`，其中 `enabled 7`、`reconsent_required 16`、`disabled 3`；旧 `user_agents` projection 为 `enabled 7`、`disabled 19`。`media-retrieval` 因当前生产能力未就绪保持 `review`/产品 `draft`，没有静默上架。重复执行新增 entitlement 为 0；稳定时间戳修复及回归测试已纳入发布制品。
+- 线上 `/api/health`、`/api/ready` 均为 200；backend、AI Task Worker、media retrieval Worker、Nginx 均 active。`/admin/`、`/admin/login`、`/admin/products` 深链均返回新 React shell；未携带凭据的 `/api/me` 返回 401，符合管理员认证边界。线上 CSP 已同步 `style-src 'self' 'unsafe-inline'`，并核对 HSTS、nosniff、DENY、Referrer Policy、Permissions Policy、COOP。
+- 回滚依据为旧 runtime `/opt/projects/marvels-chat/releases/agent-catalog-admin-20261029/runtime` 和 Nginx 备份 `/opt/projects/marvels-chat/backups/admin-console-20261030/nginx.before-maintenance.conf`；数据库回滚先保留新写入并按同合同前向修复，不能直接用旧 dump 覆盖线上库。
+- 尚未使用管理员密码完成线上登录后的页面操作冒烟，也未上传 TestFlight、部署移动端或调用付费模型；下一步由负责人使用现有管理员账号验证用户、release、产品、任务、监控、审计和媒体页面，以及旧用户 bootstrap/sync。
+- 最后一次当前工作区检查 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0：backend 1192 项（923 passed、269 个 PostgreSQL 环境门控 skipped、0 failed）、agents 50、Admin 32、avatar-web 29、media-retrieval-web 3、RN 76 suites / 1008 tests；各构建、RN format/lint/typecheck 和 `git diff --check` 均通过。工作区仍保持既有未提交修改，未提交或推送。
+- 后续浏览器验收发现旧标签页仍显示部署前的单页后台，原因是浏览器缓存了旧 HTML/脚本；正式 Nginx 已为 `/admin/` 和资源补充 `Cache-Control: no-store, no-cache` 与 `Pragma: no-cache`，刷新原标签后已进入新版 `/admin/releases` 侧边栏后台。配置备份保留在 `/opt/projects/marvels-chat/backups/admin-console-20261030/nginx.before-cache-control.conf`。
 
 #### 2026-10-30 React/Refine 后台统一入口（当前工作区，未部署）
 

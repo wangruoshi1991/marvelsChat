@@ -47,7 +47,7 @@ npm run dev:prod-api
 
 Vite 代理必须开启 `changeOrigin`，否则本地后台代理 HTTPS 线上域名时可能出现 502。默认管理员只用于开发或生产环境的一次性初始化，初始化密码不能常驻服务器环境文件。
 
-后台登录页会显示“当前连接”，用于确认正在管理本机后端还是线上后端。账号不存在和密码错误统一提示“账号或密码不正确”，避免泄露账号是否存在；网络失败单独提示“无法连接后台服务”。
+登录后的顶栏显示实际 API host，用于确认正在管理本机后端还是线上后端。账号不存在和密码错误统一提示“账号或密码不正确”，避免泄露账号是否存在；网络失败显式显示连接错误。
 
 开发默认管理员：
 
@@ -94,16 +94,19 @@ POST /api/admin/users/:userId/reset-password
 GET /api/admin/events?page=1&pageSize=50&query=&sortBy=createdAt&sortOrder=desc
 GET /api/admin/agent-runs?page=1&pageSize=50&query=&agentId=&userId=&status=&sortBy=createdAt&sortOrder=desc
 GET /api/admin/agent-releases?page=1&pageSize=50&query=&status=&sortBy=updatedAt&sortOrder=desc
+GET /api/admin/agent-releases/:id（release identity、readiness、状态历史、关联产品）
 PATCH /api/admin/agent-releases/:id/identity
 POST /api/admin/agent-releases/:id/review
 POST /api/admin/agent-releases/:id/publish
 GET /api/admin/products?page=1&pageSize=50&query=&status=&sortBy=updatedAt&sortOrder=desc
+GET /api/admin/products/:id（产品依赖、状态历史、entitlement 状态汇总）
 POST /api/admin/products
 POST /api/admin/products/:id/submit
 POST /api/admin/products/:id/publish
 POST /api/admin/products/:id/pause
 GET /api/admin/agent-usage?days=30
 GET /api/admin/tasks?agentId=&userId=&status=&from=&to=&limit=
+GET /api/admin/tasks/:taskId（AI task/workspace 状态元数据、状态事件或节点当前状态）
 POST /api/admin/tasks/:taskId/retry
 POST /api/admin/tasks/:taskId/cancel
 GET /api/admin/monitoring?days=7|30|90
@@ -128,6 +131,12 @@ Authorization: Bearer <token>
 上述五个列表接口在传入 `page` 或 `pageSize` 时统一返回 `data: { items, total, page, pageSize }`。`query`、状态/角色/Agent/用户筛选和排序均在 PostgreSQL 查询中执行；`pageSize` 最大为 200。为兼容旧后台调用，不传分页参数时保留原数组响应，并接受 `limit` 作为 `pageSize` 的别名。
 
 任务运营接口需要 `tasks:read`；任务取消和重试还需要 `tasks:write`。产品接口使用 `products:read` 和 `products:write`。监控和审计接口需要 `audit:read`。时间窗口只接受 7、30 或 90 天，成本和 Token 没有账单证据时返回 `null` 或“未知”，不使用估算值。
+
+任务列表和详情仅返回白名单运营元数据，不返回用户输入、目标正文、审批内容或供应商原始错误；失败仅显示格式受限的错误代码。`allowedOperations` 来自后端状态机，前端还校验 `tasks:write`：失败 AI task 可重试，排队/等待确认的 AI task 可取消，非终态 workspace 可申请取消，workspace 不提供后台重试。详情的 `eventKind` 区分 AI 状态事件与 workspace 节点当前状态，最多返回 200 条，超出时 `eventsTruncated=true`；节点快照不能当作历史时间线。
+
+release 详情中的关联产品还需要 `products:read`，无权时 `productsVisible=false`，前端显示权限提示。三个新详情接口对非法 UUID 返回 400、未知记录返回 404；读取失败不回退列表快照或显示假空态。工作台及二级导航按独立资源权限裁剪，模块错误边界保留侧栏供切换和重试。
+
+现有 release 列表 GET 会同步代码 registry，并可能更新就绪信息或生成草稿；它不是纯只读查询。生产浏览器验收可以验证此既有同步行为，但不会因此执行发布、暂停、撤权、产品启用或供应商调用。
 
 ## 保护规则
 

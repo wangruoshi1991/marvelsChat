@@ -50,6 +50,7 @@ import {
   adminOperationsOverview,
   adminMonitoring,
   listAdminTasks,
+  getAdminTaskDetail,
   mutateAdminTask,
 } from "../admin-operations-repository.js";
 import { listAdminPage } from "../admin-list-repository.js";
@@ -179,6 +180,15 @@ export function registerAdminRoutes(
     requireAdmin("audit:read"),
     asyncHandler(async (req, res) => {
       res.json({ data: await adminMonitoring(operationsWindowSchema.parse(req.query)) });
+    }),
+  );
+
+  app.get(
+    "/api/admin/tasks/:taskId",
+    authenticate,
+    requireAdmin("tasks:read"),
+    asyncHandler(async (req, res) => {
+      res.json({ data: await getAdminTaskDetail(req.params.taskId) });
     }),
   );
 

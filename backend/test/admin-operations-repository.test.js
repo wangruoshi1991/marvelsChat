@@ -13,6 +13,7 @@ const baseTask = {
   revision: 2,
   input: { prompt: "test" },
   error: { code: "MODEL_FAILED", message: "provider unavailable" },
+  failure_code: "MODEL_FAILED",
   created_at: new Date("2026-10-29T00:00:00Z"),
   updated_at: new Date("2026-10-29T00:01:00Z"),
   thread_id: null,
@@ -64,6 +65,85 @@ test("task listing exposes ai task identity and failure code without fabricated 
   assert.equal(result[0].type, "ai_task");
   assert.equal(result[0].agentId, "miaoxun-butler");
   assert.equal(result[0].failureCode, "MODEL_FAILED");
+});
+
+test("task detail exposes ordered operational events without private input or provider payloads", async () => {
+  const eventRows = [
+    { sequence: 1, payload: { status: "queued", phase: "queued", prompt: "PRIVATE_EVENT_PROMPT" }, created_at: new Date("2026-10-29T00:00:00Z") },
+    { sequence: 2, payload: { status: "failed", phase: "failed", errorCode: "MODEL_FAILED", error: { message: "PRIVATE_PROVIDER_RESPONSE" }, input: { text: "PRIVATE_EVENT_INPUT" }, sequence: 999 }, created_at: new Date("2026-10-29T00:01:00Z") },
+  ];
+  const repository = createAdminOperationsRepository({ runQuery: async (sql) => {
+    if (sql.includes("FROM ai_tasks WHERE id")) return [baseTask];
+    if (sql.includes("FROM ai_task_events")) return eventRows;
+    throw new Error(`Unexpected detail query: ${sql}`);
+  }});
+  const result = await repository.getAdminTaskDetail(baseTask.id);
+  assert.equal(result.id, baseTask.id);
+  assert.equal(Object.hasOwn(result, "input"), false);
+  assert.equal(Object.hasOwn(result, "error"), false);
+  assert.equal(result.failureCode, "MODEL_FAILED");
+  assert.deepEqual(result.allowedOperations, ["retry"]);
+  assert.equal(result.eventKind, "status_events");
+  assert.equal(result.eventsTruncated, false);
+  assert.deepEqual(result.events.map((event) => event.sequence), [1, 2]);
+  assert.equal(result.events[1].errorCode, "MODEL_FAILED");
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_|provider unavailable|"prompt"/);
+});
+
+test("task lists strip stored content and expose only operations supported by each task type and state", async () => {
+  const cases = [
+    { type: "ai_task", status: "failed", operations: ["retry"] },
+    { type: "ai_task", status: "queued", operations: ["cancel"] },
+    { type: "ai_task", status: "awaiting_confirmation", operations: ["cancel"] },
+    { type: "ai_task", status: "running", operations: [] },
+    { type: "ai_task", status: "interrupted", operations: [] },
+    { type: "agent_workspace", status: "failed", operations: [] },
+    { type: "agent_workspace", status: "running", operations: ["cancel"] },
+    { type: "agent_workspace", status: "waiting_input", operations: ["cancel"] },
+    { type: "agent_workspace", status: "cancelling", operations: ["cancel"] },
+    { type: "agent_workspace", status: "succeeded", operations: [] },
+  ];
+  const repository = createAdminOperationsRepository({ runQuery: async () => cases.map((item) => ({ ...baseTask, task_type: item.type, status: item.status, input: { prompt: "PRIVATE_TASK_PROMPT" }, error: { code: "MODEL_FAILED", message: "PRIVATE_PROVIDER_MESSAGE" } })) });
+  const rows = await repository.listAdminTasks();
+  assert.deepEqual(rows.map((row) => row.allowedOperations), cases.map((item) => item.operations));
+  assert.ok(rows.every((row) => !Object.hasOwn(row, "input") && !Object.hasOwn(row, "error")));
+  assert.doesNotMatch(JSON.stringify(rows), /PRIVATE_/);
+});
+
+test("workspace detail keeps node snapshots separate from state history and strips all private content", async () => {
+  const repository = createAdminOperationsRepository({ runQuery: async (sql) => {
+    if (sql.includes("FROM ai_tasks WHERE id")) return [];
+    if (sql.includes("FROM agent_workspaces WHERE id")) return [{ ...baseTask, task_type: "agent_workspace", kind: "agent_workspace", status: "running", goal: "PRIVATE_GOAL", summary: "PRIVATE_SUMMARY", question: "PRIVATE_QUESTION", approval: { text: "PRIVATE_APPROVAL" } }];
+    if (sql.includes("FROM agent_workspace_nodes")) return [{ id: "node-1", agent_id: "miaoxun-butler", agent_version: "1.0.0", status: "failed", failure_code: "MODEL_FAILED", error: { code: "MODEL_FAILED", message: "PRIVATE_PROVIDER_MESSAGE" }, created_at: baseTask.created_at, updated_at: baseTask.updated_at }];
+    throw new Error(`Unexpected query: ${sql}`);
+  }});
+  const result = await repository.getAdminTaskDetail(baseTask.id);
+  assert.equal(result.type, "agent_workspace");
+  assert.equal(result.eventKind, "workspace_nodes");
+  assert.deepEqual(result.allowedOperations, ["cancel"]);
+  assert.equal(result.events[0].errorCode, "MODEL_FAILED");
+  assert.equal(Object.hasOwn(result.events[0], "sequence"), false);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_|"input"|"goal"|"summary"|"question"|"approval"|"error"/);
+});
+
+test("task detail declares truncation when its bounded state history has more records", async () => {
+  const repository = createAdminOperationsRepository({ runQuery: async (sql) => {
+    if (sql.includes("FROM ai_tasks WHERE id")) return [baseTask];
+    if (sql.includes("FROM ai_task_events")) return Array.from({ length: 201 }, (_, index) => ({ sequence: index + 1, payload: { status: "running", phase: "generating" }, created_at: baseTask.created_at }));
+    throw new Error(`Unexpected query: ${sql}`);
+  }});
+  const result = await repository.getAdminTaskDetail(baseTask.id);
+  assert.equal(result.events.length, 200);
+  assert.equal(result.eventsTruncated, true);
+  assert.equal(result.events.at(-1).sequence, 200);
+});
+
+test("task detail rejects malformed IDs before querying and reports missing tasks explicitly", async () => {
+  let reads = 0;
+  const repository = createAdminOperationsRepository({ runQuery: async () => { reads += 1; return []; } });
+  await assert.rejects(repository.getAdminTaskDetail("not-a-uuid"), (error) => error.name === "ZodError");
+  assert.equal(reads, 0);
+  await assert.rejects(repository.getAdminTaskDetail(baseTask.id), (error) => error.status === 404 && error.code === "ADMIN_TASK_NOT_FOUND");
 });
 
 test("admin cancellation is idempotent and appends a durable task event plus audit", async () => {

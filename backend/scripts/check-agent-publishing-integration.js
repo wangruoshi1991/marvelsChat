@@ -8,6 +8,7 @@ import pg from "pg";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "Set DATABASE_URL to a migrated integration test database");
+assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(new URL(databaseUrl).hostname), "Publishing integration requires a loopback disposable database");
 const database = new pg.Client({ connectionString: databaseUrl });
 try {
   await database.connect();
@@ -163,6 +164,28 @@ try {
   });
   assert.equal(publishedProduct.status, "published");
 
+  const releaseDetail = await request(`/api/admin/agent-releases/${release.id}`, { token });
+  assert.equal(releaseDetail.release.id, release.id);
+  assert.equal(releaseDetail.release.catalogStatus, "published");
+  assert.deepEqual(releaseDetail.history.map((item) => item.toStatus), ["draft", "review", "published"]);
+  const association = releaseDetail.products.find((item) => item.id === product.id);
+  assert.ok(association, "Release detail omitted its associated product");
+  assert.equal(association.productKey, productBody.productKey);
+  assert.equal(association.displayName, productBody.displayName);
+  assert.equal(association.status, "published");
+
+  const productDetail = await request(`/api/admin/products/${product.id}`, { token });
+  assert.equal(productDetail.product.id, product.id);
+  assert.equal(productDetail.product.status, "published");
+  assert.deepEqual(productDetail.history.map((item) => item.toStatus), ["draft", "review", "published"]);
+  assert.deepEqual(productDetail.entitlementSummary, []);
+
+  for (const resource of ["agent-releases", "products", "tasks"]) {
+    await request(`/api/admin/${resource}/${crypto.randomUUID()}`, { token, status: 404 });
+    await request(`/api/admin/${resource}/not-a-uuid`, { token, status: 400 });
+    await request(`/api/admin/${resource}/${product.id}`, { status: 401 });
+  }
+
   const consentKey = `product-consent-${suffix}`;
   const entitlement = await request(`/api/me/products/${product.id}/enable`, {
     method: "POST",
@@ -179,6 +202,8 @@ try {
     status: 201,
   });
   assert.equal(replay.id, entitlement.id, "Consent replay created a second entitlement");
+  const enabledDetail = await request(`/api/admin/products/${product.id}`, { token });
+  assert.deepEqual(enabledDetail.entitlementSummary, [{ status: "enabled", count: 1 }]);
   await request(`/api/me/products/${product.id}/enable`, {
     method: "POST",
     token,
@@ -211,6 +236,93 @@ try {
       WHERE e.id = $1
       GROUP BY e.status, ua.enabled`, [entitlement.id, release.agentKey]);
     assert.deepEqual(rows[0], { entitlement_status: "enabled", agent_enabled: true, thread_count: 1 });
+
+    // Only synthetic data enters this isolated database. No worker is started,
+    // so task metadata verification cannot dispatch a provider request.
+    const privateText = `private-admin-http-${suffix}`;
+    const failure = { code: "PROVIDER_UNAVAILABLE", message: privateText, response: { prompt: privateText } };
+    const taskIds = {};
+    for (const taskStatus of ["failed", "interrupted", "running", "queued"]) {
+      const id = crypto.randomUUID();
+      taskIds[taskStatus] = id;
+      await verify.query(`INSERT INTO ai_tasks
+        (id,user_id,kind,agent_id,agent_version,status,phase,input,error,idempotency_key,request_hash,claim_token,lease_until)
+        VALUES ($1,$2,'site_draft',$3,$4,$5,$6,$7,$8,$9,repeat('a',64),$10,$11)`, [
+        id, login.user.id, release.agentKey, release.version, taskStatus,
+        taskStatus === "running" ? "generating" : taskStatus,
+        JSON.stringify({ prompt: privateText }), JSON.stringify(failure), `task-${taskStatus}-${suffix}`,
+        taskStatus === "running" ? crypto.randomUUID() : null,
+        taskStatus === "running" ? new Date(Date.now() + 60000) : null,
+      ]);
+    }
+    await verify.query(`INSERT INTO ai_task_events(task_id,user_id,sequence,payload)
+      SELECT $1,$2,sequence,jsonb_build_object('status','failed','phase','failed','errorCode','PROVIDER_UNAVAILABLE')
+      FROM generate_series(1,201) AS sequence`, [taskIds.failed, login.user.id]);
+
+    const workspaceId = crypto.randomUUID();
+    const nodeId = crypto.randomUUID();
+    await verify.query("BEGIN");
+    try {
+      await verify.query(`INSERT INTO agent_workspaces
+        (id,user_id,goal,status,coordinator_version,source,context_refs,authority,input,limits,deadline_at,summary,question,approval,error,idempotency_key,request_hash)
+        VALUES ($1,$2,$3,'waiting_input','http-fixture','{"page":"miao","module":null}','[]','{}',$4,'{"deadlineSeconds":300}',clock_timestamp()+interval '5 minutes',$3,$3,$4,$5,$6,repeat('b',64))`, [
+        workspaceId, login.user.id, privateText, JSON.stringify({ text: privateText }), JSON.stringify(failure), `workspace-${suffix}`,
+      ]);
+      await verify.query(`INSERT INTO agent_workspace_rounds(workspace_id,user_id,round_number,instruction,status)
+        VALUES ($1,$2,1,$3,'waiting_input')`, [workspaceId, login.user.id, privateText]);
+      await verify.query(`INSERT INTO agent_workspace_nodes
+        (id,workspace_id,user_id,node_key,agent_id,agent_version,capability,goal,status,summary,error)
+        VALUES ($1,$2,$3,'http-fixture',$4,$5,'site.compose',$6,'failed',$6,$7)`, [
+        nodeId, workspaceId, login.user.id, release.agentKey, release.version, privateText, JSON.stringify(failure),
+      ]);
+      await verify.query("COMMIT");
+    } catch (error) {
+      await verify.query("ROLLBACK");
+      throw error;
+    }
+
+    const taskList = await request("/api/admin/tasks?limit=200", { token });
+    assert.equal(JSON.stringify(taskList).includes(privateText), false, "Task list leaked synthetic private input or provider response");
+    for (const [taskStatus, id] of Object.entries(taskIds)) {
+      const detail = await request(`/api/admin/tasks/${id}`, { token });
+      assert.equal(detail.type, "ai_task");
+      assert.equal(detail.status, taskStatus);
+      assert.equal(detail.failureCode, "PROVIDER_UNAVAILABLE");
+      assert.equal(JSON.stringify(detail).includes(privateText), false, "Task detail leaked synthetic private input or provider response");
+      assert.deepEqual(detail.allowedOperations, taskStatus === "failed" ? ["retry"] : taskStatus === "queued" ? ["cancel"] : []);
+      assert.equal(detail.eventKind, "status_events");
+      assert.equal(detail.eventsTruncated, taskStatus === "failed");
+      assert.equal(detail.events.length, taskStatus === "failed" ? 200 : 0);
+      if (taskStatus === "failed") assert.equal(detail.events[199].sequence, 200);
+      for (const field of ["input", "error", "summary", "question", "approval"]) {
+        assert.equal(Object.hasOwn(detail, field), false, `Task detail must omit ${field}`);
+      }
+    }
+    const workspaceDetail = await request(`/api/admin/tasks/${workspaceId}`, { token });
+    assert.equal(workspaceDetail.type, "agent_workspace");
+    assert.equal(workspaceDetail.eventKind, "workspace_nodes");
+    assert.equal(workspaceDetail.eventsTruncated, false);
+    assert.deepEqual(workspaceDetail.allowedOperations, ["cancel"]);
+    assert.equal(workspaceDetail.events[0].id, nodeId);
+    assert.equal(workspaceDetail.events[0].errorCode, "PROVIDER_UNAVAILABLE");
+    assert.equal(JSON.stringify(workspaceDetail).includes(privateText), false, "Workspace metadata leaked synthetic private text");
+    for (const field of ["input", "goal", "summary", "question", "approval", "error"]) {
+      assert.equal(Object.hasOwn(workspaceDetail, field), false, `Workspace detail must omit ${field}`);
+    }
+
+    const register = (name) => request("/api/auth/register", {
+      method: "POST", status: 201,
+      body: { contactType: "email", email: `${name}-${suffix}@example.invalid`, displayName: name, password: adminPassword },
+    });
+    const user = await register("HttpOrdinaryUser");
+    const restricted = await register("HttpReadOnlyAdmin");
+    await verify.query("UPDATE users SET role='admin', admin_permissions='[\"admin:access\",\"users:read\"]'::jsonb WHERE id=$1", [restricted.user.id]);
+    await request("/api/admin/overview", { token: restricted.session.token });
+    for (const restrictedToken of [user.session.token, restricted.session.token]) {
+      for (const route of [
+        `/api/admin/tasks/${taskIds.failed}`, `/api/admin/agent-releases/${release.id}`, `/api/admin/products/${product.id}`,
+      ]) await request(route, { token: restrictedToken, status: 403 });
+    }
   } finally {
     await verify.end();
   }
@@ -225,7 +337,7 @@ try {
   const afterRevoke = await request("/api/app/bootstrap", { token });
   assert.ok(afterRevoke.entitlements.some((item) => item.id === entitlement.id && item.status === "disabled"));
   assert.equal(afterRevoke.agents.owned.some((item) => item.id === release.agentKey), false);
-  console.log("Agent publishing HTTP integration passed: registry sync, release review/publish, product submit/publish, explicit consent, idempotent replay, bootstrap, sync, entitlement, user_agents, chat thread projection and product revocation.");
+  console.log("Agent publishing HTTP integration passed: registry sync, release review/publish, product submit/publish, explicit consent, idempotent replay, bootstrap, sync, entitlement, user_agents, chat thread projection, product revocation; real release/product/task details, status history, product associations, entitlement counts, UUID validation, missing records, 401/403 boundaries, task operation capabilities, event truncation and private-input/provider-response redaction.");
 } finally {
   backend.kill("SIGTERM");
   await once(backend, "exit").catch(() => undefined);

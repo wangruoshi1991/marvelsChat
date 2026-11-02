@@ -16,5 +16,7 @@ test("a temporary identity request failure preserves the administrator session",
     assert.equal(result.authenticated, true);
     assert.equal(readAuth().token, "session-token");
     assert.ok(result.error);
+    store.set("miaoxun.admin.auth.v2", "null");
+    assert.deepEqual(readAuth(), {});
   } finally { globalThis.window = savedWindow; globalThis.sessionStorage = savedSessionStorage; globalThis.fetch = savedFetch; }
 });
