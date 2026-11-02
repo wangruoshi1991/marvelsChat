@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
-import { AgentDTO, OwnedAgentDTO } from '../../models/api';
+import {
+  AgentDTO,
+  OwnedAgentDTO,
+  ProductCatalogProductDTO,
+} from '../../models/api';
 import { appErrorText, textFor } from '../../shared/i18n';
 import { Language } from '../session/sessionTypes';
 import { agentScopeListLabel, hasUnknownAgentScope } from './agentPresentation';
@@ -19,12 +23,15 @@ type Options = {
   language: Language;
   agents: AgentDTO[];
   ownedAgents: OwnedAgentDTO[];
+  products: ProductCatalogProductDTO[];
+  catalogRevision: string | null;
   externalBusy?: boolean;
   onSetAgentEnabled: (
     id: string,
     enabled: boolean,
     grantedScopes: string[],
     albumAIConsentVersion?: AlbumAIConsentVersion,
+    productVersionId?: string,
   ) => Promise<OwnedAgentDTO>;
   onChanged?: (action: AgentAccessAction) => void;
   onError?: (error: unknown) => void;
@@ -36,7 +43,10 @@ export function useAgentAccessConfirmation(options: Options) {
   const renderSnapshot = JSON.stringify({
     session: options.accessToken,
     active: options.active !== false,
-    access: agentAccessSnapshot(options.agents, options.ownedAgents),
+    access: agentAccessSnapshot(options.agents, options.ownedAgents, {
+      products: options.products,
+      catalogRevision: options.catalogRevision,
+    }),
   });
   const revision = useRef({ snapshot: renderSnapshot, value: 0 });
   if (revision.current.snapshot !== renderSnapshot)
@@ -65,6 +75,10 @@ export function useAgentAccessConfirmation(options: Options) {
       access: agentAccessSnapshot(
         current.current.agents,
         current.current.ownedAgents,
+        {
+          products: current.current.products,
+          catalogRevision: current.current.catalogRevision,
+        },
       ),
     });
   const reportError = (id: string, cause: unknown) => {
@@ -110,6 +124,20 @@ export function useAgentAccessConfirmation(options: Options) {
     }
     const enabled = action !== 'remove';
     const scopes = enabled ? [...agent.permissions] : [];
+    const products = current.current.products.filter(product =>
+      product.dependencies.some(dependency => dependency.agentKey === id),
+    );
+    const product = products.length === 1 ? products[0] : null;
+    if (
+      enabled &&
+      (!current.current.catalogRevision ||
+        product?.status !== 'published' ||
+        !product.productVersionId)
+    ) {
+      reportError(id, new Error('产品版本不可用，请刷新目录后重新确认。'));
+      return;
+    }
+    const productVersionId = enabled ? product?.productVersionId : undefined;
     if (enabled && hasUnknownAgentScope(scopes)) {
       reportError(
         id,
@@ -162,6 +190,7 @@ export function useAgentAccessConfirmation(options: Options) {
       action === 'add' ? 'Add' : 'Remove',
     );
     const description = [
+      enabled && product ? `${product.displayName} · v${product.version}` : '',
       action === 'add'
         ? textFor(language, '授权范围：', 'Access scopes: ') + scopeText(scopes)
         : textFor(language, '移除后撤回：', 'Revoke on removal: ') +
@@ -183,7 +212,9 @@ export function useAgentAccessConfirmation(options: Options) {
             '确认添加即授权以上全部范围。你可以随时在“我的 Agent”移除。',
             'Adding grants all scopes above. You can remove this agent at any time in My Agents.',
           ),
-    ].join('\n\n');
+    ]
+      .filter(Boolean)
+      .join('\n\n');
     const cancel = () => {
       if (confirmation.current === request) confirmation.current += 1;
     };
@@ -230,8 +261,14 @@ export function useAgentAccessConfirmation(options: Options) {
             setErrors(value => ({ ...value, [id]: '' }));
             try {
               const setAccess = current.current.onSetAgentEnabled;
-              await (consentVersion
-                ? setAccess(id, enabled, scopes, consentVersion)
+              await (enabled
+                ? setAccess(
+                    id,
+                    enabled,
+                    scopes,
+                    consentVersion,
+                    productVersionId || undefined,
+                  )
                 : setAccess(id, enabled, scopes));
               if (
                 mounted.current &&

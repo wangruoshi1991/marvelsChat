@@ -67,8 +67,8 @@ Vite 代理必须开启 `changeOrigin`，否则本地后台代理 HTTPS 线上�
 - 账号管理：创建账号、搜索筛选账号、启用/停用账号、设置管理员/普通用户、重置用户密码、撤销目标用户登录态。
 - 账号详情：查看 AI ID、会话、最近事件、最近 Agent 调用，并编辑小站昵称、简介、社区和活动区域。
 - Agent 授权：后台只能撤销用户已有的产品 entitlement；不能替用户启用 Agent。用户必须在 App 对已发布产品完成 consent，服务端再按产品依赖写入 `user_agents` 和 Agent 会话。
-- Agent 发布中心：代码注册只生成待审核的 Agent release；管理员在后台核对版本、完整 identity、声明权限、就绪检查和合同哈希后审核/发布。产品版本再绑定已发布 release，产品发布后才进入 App 目录。手机端没有全局目录管理入口，只读取已发布产品、release identity 和用户 entitlement；后台发布不代替用户授权。
-- Agent 注册：代码 registry 会在 release 页面生成待审核版本；后台只通过 release/product 流程审核和发布，不再提供直接编辑旧目录的上架入口。
+- Agent 发布中心：先从真实 registry 显式创建草稿，配置名称、简介、图形或受管图片头像；审核、发布和身份修订保持独立。完整操作、供应商密钥边界和图片发布顺序见 [代码 Agent 接入与上架](agent-onboarding.md)。
+- Agent 注册：registry 与 release 列表 GET 均不创建草稿；运行 key、版本和权限来自代码，展示身份来自审核 release。产品发布且用户明确 consent 后才可使用，后台不代用户启用。
 - 媒体检索：独立的运行诊断页面读取 Worker 可用性、队列、预算、最近运行和脱敏失败诊断；管理员可在服务端预算校验和审计保护下切换 Agent、Provider 调用和索引队列。页面不展示素材、查询内容或模型原文，也不使用前端示例数据。
 - 使用监控：按 7/30/90 天从 `agent_runs` 全量聚合运行次数、成功/失败、Token、成本和平均耗时；不再用最近 500 条记录估算总量。
 - 任务运营：读取 `ai_tasks` 和 Agent workspace 的真实任务状态，按 Agent、用户、状态和时间窗口筛选；失败任务只允许在服务端确认合同仍有效后重试，运行中任务不会被强制重放，取消与重试均写入审计事件。
@@ -136,11 +136,11 @@ Authorization: Bearer <token>
 
 release 详情中的关联产品还需要 `products:read`，无权时 `productsVisible=false`，前端显示权限提示。三个新详情接口对非法 UUID 返回 400、未知记录返回 404；读取失败不回退列表快照或显示假空态。工作台及二级导航按独立资源权限裁剪，模块错误边界保留侧栏供切换和重试。
 
-现有 release 列表 GET 会同步代码 registry，并可能更新就绪信息或生成草稿；它不是纯只读查询。生产浏览器验收可以验证此既有同步行为，但不会因此执行发布、暂停、撤权、产品启用或供应商调用。
+当前源码的 release 列表与实际 registry GET 均只读；创建草稿为独立 POST。显式系统初始化的同步不扩展成普通 Agent 自动发布。产品改用结构化表单，支持草稿编辑、新增版本和精确版本详情；submit/publish/pause 必须提交 productVersionId，旧用户授权不会随发布自动升级。
 
 2026-11-02 发布前依赖审计修复：后端锁定 Express 4.22.3、body-parser 1.20.9、qs 6.17.1 和 Zod 4.6.7。Zod 升级保持原有 API 默认与 PATCH 语义：avatar 初始化仍补齐内部版本，日记/相册 PATCH 不注入创建默认值，空 PATCH 仍拒绝；校验失败继续返回脱敏的 HTTP 400。压缩 JSON 验证覆盖正常输入、非法尾随数据、解压后超过 1MB 和失败后的继续服务。
 
-空隔离库的 HTTP 验证顺序与 CI 一致：先重放 48 项迁移，再执行 `test:agent-publishing`，通过显式系统初始化建立默认妙讯管家发布合同，最后执行 `test:api-integration`。仅执行迁移后直接注册会明确返回 `AGENT_IDENTITY_CONTRACT_INCOMPLETE`，不能用注册时自动发布或授权 fallback 掩盖缺少的初始化。
+空隔离库的 HTTP 验证顺序与 CI 一致：先执行当前全部迁移（本轮新增 049/050），再执行 `test:agent-publishing`，通过显式系统初始化建立默认妙讯管家发布合同，最后执行 `test:api-integration`。仅执行迁移后直接注册会明确返回 `AGENT_IDENTITY_CONTRACT_INCOMPLETE`，不能用注册时自动发布或授权 fallback 掩盖缺少的初始化。
 
 ## 保护规则
 
@@ -159,3 +159,7 @@ release 详情中的关联产品还需要 `products:read`，无权时 `productsV
 后台“服务配置”页面只读取脱敏的运行配置，不读取或展示明文密钥，也不提供直接供应商连通测试按钮。`GET /api/admin/model-status` 返回是否已配置、缺失的环境变量、模型名、provider 和最终请求 endpoint；真实消息链路仍通过受控的 Agent 会话触发并记录运行用量。
 
 妙讯管家真实消息链路仍通过 `POST /api/threads/:threadId/messages` 触发。线程绑定 `agent_id = 'miaoxun-butler'` 时，后端会调用 `runAgent`，成功后在消息 metadata 和 `agent_runs` 中记录 provider 与 token 用量。
+
+### 2026-11-02 自适应与运营动作验收
+
+后台 shell 按视口固定高度，侧栏、主内容区和长表格分别滚动，表格横向滚动不扩大整页宽度。产品状态操作必须带精确 productVersionId；暂停会使对应授权 unavailable，恢复发布不代替用户重新 consent。审计顶栏刷新重新读取真实事件/运行列表并保留筛选。当前部署状态及桌面/窄屏、真实 HTTP 验收证据见 CURRENT。

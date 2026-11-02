@@ -272,9 +272,9 @@ export async function ensureInitialDefaultButlerPublication(
   );
   await queryRows(
     connection,
-    `INSERT INTO product_versions (id, product_id, version, supported_platforms, status, contract_hash)
-     VALUES (?, ?, ?, ?::jsonb, 'draft', ?)`,
-    [productVersionId, productId, agent.version, JSON.stringify(PRODUCT_PLATFORMS), productContractHash],
+    `INSERT INTO product_versions (id, product_id, version, supported_platforms, status, contract_hash, display_name, description, identity_snapshot)
+     VALUES (?, ?, ?, ?::jsonb, 'draft', ?, ?, ?, ?::jsonb)`,
+    [productVersionId, productId, agent.version, JSON.stringify(PRODUCT_PLATFORMS), productContractHash, agent.name, agent.description, JSON.stringify(identity)],
   );
   await queryRows(
     connection,

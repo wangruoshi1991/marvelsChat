@@ -12,6 +12,7 @@ import { buildPublicStationView } from "../src/public-station-service.js";
 import { getStationSiteDocumentForUser } from "../src/site-document-repository.js";
 import { assertSiteDocument } from "../../shared/site-document.js";
 import { getAgent } from "../../agents/registry.js";
+import { cleanupPublishedAgentConsent, seedPublishedAgentConsent } from "./helpers/agent-publishing-fixture.js";
 const siteScopes = (await getAgent("site-builder")).permissions;
 
 const owner = crypto.randomUUID();
@@ -29,6 +30,7 @@ let repository;
 let service;
 let modelCalls;
 let generateHook;
+let publicationFixture;
 const transaction = async work => {
   const client = await pool.connect();
   try {
@@ -104,11 +106,13 @@ if (process.env.RUN_AI_SITE_TASK_INTEGRATION !== "1") {
         await client.query("INSERT INTO users(id,email,password_hash,display_name,ai_id) VALUES($1,$2,'test-only',$3,$4)", [id, `${id}@example.test`, id, aiId]);
         await client.query("INSERT INTO user_profiles(user_id,nickname,avatar_text) VALUES($1,'Site test','S')", [id]);
       }
-      await client.query("INSERT INTO user_agents(user_id,agent_id,granted_scopes) VALUES($1,'site-builder',$2::jsonb)", [owner, JSON.stringify(siteScopes)]);
       await client.query("INSERT INTO station_media_assets(id,user_id,kind,mime_type,original_filename,status) VALUES($1,$2,'image','image/jpeg','public-fixture.jpg','uploaded')", [mediaId, owner]);
       await client.query("INSERT INTO station_media_assets(id,user_id,kind,mime_type,original_filename,status) VALUES($1,$2,'image','image/jpeg','foreign-fixture.jpg','uploaded')", [foreignMediaId, other]);
       await client.query("INSERT INTO station_diary_entries(id,user_id,title,body) VALUES($1,$2,'Fixture diary','Owned fixture context')", [diaryId, owner]);
     } finally { client.release(); }
+    publicationFixture = await seedPublishedAgentConsent({
+      userId: owner, agentKeys: ["site-builder"], queryFn: createConnectionAdapter(pool).query, transaction,
+    });
     repository = createAITaskRepository({ query: createConnectionAdapter(pool).query, withTransaction: transaction });
     service = createSiteTaskService({ transaction, finishTask: repository.finishAITask, advanceTask: repository.advanceAITask,
       generate: async input => {
@@ -122,7 +126,9 @@ if (process.env.RUN_AI_SITE_TASK_INTEGRATION !== "1") {
   });
   after(async () => {
     if (pool) {
+      await cleanupPublishedAgentConsent({ userIds: [owner, other], queryFn: createConnectionAdapter(pool).query });
       await pool.query("DELETE FROM users WHERE id = ANY($1::text[])", [[owner, other]]);
+      await publicationFixture?.cleanup();
       await pool.end();
     }
   });

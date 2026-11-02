@@ -41,7 +41,7 @@ const release = {
 };
 
 test("AgentIdentity has the required shared fields and rejects malformed identity", () => {
-  assert.deepEqual(AGENT_IDENTITY_FIELDS, ["key", "avatarKind", "displayName", "description", "mark", "shape", "colors", "published", "source", "updatedAt"]);
+  assert.deepEqual(AGENT_IDENTITY_FIELDS, ["key", "avatarKind", "displayName", "description", "mark", "shape", "colors", "published", "source", "updatedAt", "avatar"]);
   assert.equal(isCompleteAgentIdentity(identity), true);
   assert.deepEqual(agentIdentitySchema.parse(identity), identity);
   assert.throws(() => agentIdentitySchema.parse({ ...identity, colors: { background: "bad" } }));
@@ -88,10 +88,11 @@ test("entitlement schema and state machine expose explicit unavailable and recon
 test("migration discovery includes 046-048 in numeric order", async () => {
   const migrations = await loadMigrationFiles();
   const names = migrations.map(({ filename }) => filename);
-  assert.deepEqual(names.slice(-3), ["046_agent_releases.sql", "047_product_catalog.sql", "048_agent_entitlements.sql"]);
-  assert.match(migrations.at(-3).sql, /CREATE TABLE IF NOT EXISTS agent_registry/);
-  assert.match(migrations.at(-2).sql, /CREATE TABLE IF NOT EXISTS products/);
-  assert.match(migrations.at(-1).sql, /CREATE TABLE IF NOT EXISTS user_entitlements/);
+  assert.deepEqual(names.filter((name) => /^04[6-8]_/.test(name)), ["046_agent_releases.sql", "047_product_catalog.sql", "048_agent_entitlements.sql"]);
+  assert.ok(names.includes("049_agent_avatar_assets.sql"));
+  assert.match(migrations.find((item) => item.filename === "046_agent_releases.sql").sql, /CREATE TABLE IF NOT EXISTS agent_registry/);
+  assert.match(migrations.find((item) => item.filename === "047_product_catalog.sql").sql, /CREATE TABLE IF NOT EXISTS products/);
+  assert.match(migrations.find((item) => item.filename === "048_agent_entitlements.sql").sql, /CREATE TABLE IF NOT EXISTS user_entitlements/);
 });
 
 test("release and product migrations keep one catalog status and preserve audit history", async () => {

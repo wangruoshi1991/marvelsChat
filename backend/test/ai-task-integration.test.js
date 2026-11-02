@@ -16,8 +16,7 @@ import { createSiteTaskService } from "../src/ai-site-task-service.js";
 import { createAITaskRunner } from "../src/ai-task-runner.js";
 import * as repository from "../src/ai-task-repository.js";
 import { getAgent } from "../../agents/registry.js";
-import { computeAgentReleaseContractHash } from "../../shared/agent-catalog.js";
-import { computeProductContractHash } from "../src/product-catalog-repository.js";
+import { cleanupPublishedAgentConsent, seedPublishedAgentConsent } from "./helpers/agent-publishing-fixture.js";
 import {
   addMessageToThreadOnce,
   completeAgentMessageOnce,
@@ -42,7 +41,6 @@ const albumId = crypto.randomUUID();
 const token = crypto.randomBytes(32).toString("hex");
 const otherToken = crypto.randomBytes(32).toString("hex");
 const albumScopes = (await getAgent("album-manager")).permissions;
-const siteScopes = (await getAgent("site-builder")).permissions;
 const butlerScopes = (await getAgent("miaoxun-butler")).permissions;
 let server;
 let origin;
@@ -50,142 +48,7 @@ let syncRuntime = async () => {
   throw new Error("Unexpected synchronous runtime call in task tests");
 };
 const logger = { error() {} };
-const fixtureSuffix = crypto.randomBytes(6).toString("hex");
-const seededProductIds = [];
-const seededReleaseIds = [];
-const registrySnapshots = [];
-const catalogSnapshots = [];
-
-async function seedPublishedProduct(agentKey) {
-  // These tests exercise the current worker and HTTP paths. Keep their
-  // disposable grants behind the same published release/product/entitlement
-  // contract as production instead of relying on a user_agents-only shortcut.
-  const agent = await getAgent(agentKey);
-  const identity = {
-    key: agent.key,
-    avatarKind: "agent-mark",
-    displayName: agent.name,
-    description: agent.description,
-    mark: agent.identity.mark,
-    shape: agent.identity.shape,
-    colors: agent.identity.colors,
-    published: true,
-    source: "ai-task-integration",
-    updatedAt: "2026-10-30T00:00:00.000Z",
-  };
-  const releaseHash = computeAgentReleaseContractHash({
-    key: agent.key,
-    version: agent.version,
-    permissions: agent.permissions,
-    identity,
-  });
-  const registryRows = await query(
-    "SELECT agent_key, version, contract_hash, declared_scopes, readiness, registration_status, source FROM agent_registry WHERE agent_key = ?",
-    [agent.key],
-  );
-  registrySnapshots.push(registryRows[0] || null);
-  const catalogRows = await query(
-    "SELECT agent_id, display_name, description, identity_mark, identity_shape, identity_colors, status, release_version, contract_hash, source FROM agent_catalog WHERE agent_id = ?",
-    [agent.key],
-  );
-  catalogSnapshots.push(catalogRows[0] || null);
-  await query(
-    `UPDATE agent_registry
-        SET version = ?, contract_hash = ?, declared_scopes = ?::jsonb,
-            readiness = ?::jsonb, registration_status = 'registered', source = ?
-      WHERE agent_key = ?`,
-    [
-      agent.version,
-      releaseHash,
-      JSON.stringify(agent.permissions),
-      JSON.stringify({ ready: true, missing: [] }),
-      "ai-task-integration",
-      agent.key,
-    ],
-  );
-  await query(
-    `UPDATE agent_catalog
-        SET display_name = ?, description = ?, identity_mark = ?, identity_shape = ?,
-            identity_colors = ?::jsonb, status = 'published', release_version = ?,
-            contract_hash = ?, source = ?
-      WHERE agent_id = ?`,
-    [
-      agent.name,
-      agent.description,
-      identity.mark,
-      identity.shape,
-      JSON.stringify(identity.colors),
-      agent.version,
-      releaseHash,
-      "ai-task-integration",
-      agent.key,
-    ],
-  );
-  const releaseId = crypto.randomUUID();
-  const productId = crypto.randomUUID();
-  const productVersionId = crypto.randomUUID();
-  const productKey = `ai-task-${agent.key}-${fixtureSuffix}`;
-  const productIdentity = {
-    key: productKey,
-    avatarKind: "agent-mark",
-    displayName: `${agent.name} integration product`,
-    description: "Disposable integration fixture",
-    mark: "验",
-    shape: "rounded",
-    colors: { background: "#123456", foreground: "#ffffff", accent: "#facc15" },
-    published: true,
-    source: "ai-task-integration",
-    updatedAt: "2026-10-30T00:00:00.000Z",
-  };
-  const productContract = {
-    productKey,
-    version: "1.0.0",
-    displayName: productIdentity.displayName,
-    description: productIdentity.description,
-    identity: productIdentity,
-    supportedPlatforms: ["ios", "android"],
-    dependencies: [{
-      agentKey: agent.key,
-      agentReleaseId: releaseId,
-      version: agent.version,
-      scopes: agent.permissions,
-      contractHash: releaseHash,
-    }],
-  };
-  const productHash = computeProductContractHash(productContract);
-  await query(
-    `INSERT INTO agent_releases
-      (id, agent_key, version, contract_hash, declared_scopes, readiness, identity_snapshot, catalog_status, published_at)
-      VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, 'published', CURRENT_TIMESTAMP)`,
-    [releaseId, agent.key, agent.version, releaseHash, JSON.stringify(agent.permissions), JSON.stringify({ ready: true, missing: [] }), JSON.stringify(identity)],
-  );
-  await query(
-    `INSERT INTO products
-      (id, product_key, display_name, description, identity_snapshot, status, created_by)
-      VALUES (?, ?, ?, ?, ?::jsonb, 'published', ?)`,
-    [productId, productKey, productIdentity.displayName, productIdentity.description, JSON.stringify(productIdentity), owner],
-  );
-  await query(
-    `INSERT INTO product_versions
-      (id, product_id, version, supported_platforms, status, contract_hash, created_by)
-      VALUES (?, ?, '1.0.0', ?::jsonb, 'published', ?, ?)`,
-    [productVersionId, productId, JSON.stringify(["ios", "android"]), productHash, owner],
-  );
-  await query(
-    `INSERT INTO product_agent_dependencies
-      (product_version_id, agent_key, agent_release_id, version, required_scopes)
-      VALUES (?, ?, ?, ?, ?::jsonb)`,
-    [productVersionId, agent.key, releaseId, agent.version, JSON.stringify(agent.permissions)],
-  );
-  await query(
-    `INSERT INTO user_entitlements
-      (id, user_id, product_id, product_version_id, status, granted_scopes, contract_hash, consent_version)
-      VALUES (?, ?, ?, ?, 'enabled', ?::jsonb, ?, 'ai-task-integration-v1')`,
-    [crypto.randomUUID(), owner, productId, productVersionId, JSON.stringify(agent.permissions), productHash],
-  );
-  seededProductIds.push(productId);
-  seededReleaseIds.push(releaseId);
-}
+let publicationFixture;
 
 before(async () => {
   if (!enabled) return;
@@ -229,22 +92,10 @@ before(async () => {
     "INSERT INTO station_albums (id,user_id,title) VALUES (?, ?, 'Task context album')",
     [albumId, owner],
   );
-  for (const agentKey of ["album-manager", "site-builder", "miaoxun-butler"]) {
-    await seedPublishedProduct(agentKey);
-  }
-  await query(
-    "INSERT INTO user_agents (user_id,agent_id,enabled,granted_scopes) VALUES (?, 'album-manager', true, ?::jsonb), (?, 'site-builder', true, ?::jsonb)",
-    [
-      owner,
-      JSON.stringify(albumScopes),
-      owner,
-      JSON.stringify(siteScopes),
-    ],
-  );
-  await query(
-    "INSERT INTO user_agents (user_id,agent_id,enabled,granted_scopes) VALUES (?, 'miaoxun-butler', true, ?::jsonb)",
-    [owner, JSON.stringify(butlerScopes)],
-  );
+  publicationFixture = await seedPublishedAgentConsent({
+    userId: owner,
+    agentKeys: ["album-manager", "site-builder", "comic-diary", "miaoxun-butler"],
+  });
   await query(
     "INSERT INTO media_retrieval_profiles (user_id,index_state,consent_version,consent_granted_at) VALUES (?, 'enabled', 'media-retrieval-consent-v1', CURRENT_TIMESTAMP)",
     [owner],
@@ -296,33 +147,9 @@ beforeEach(async () => {
 after(async () => {
   if (!enabled) return;
   await new Promise((resolve) => server?.close(resolve));
+  await cleanupPublishedAgentConsent({ userIds: [owner, outsider] });
   await query("DELETE FROM users WHERE id IN (?, ?)", [owner, outsider]);
-  for (const productId of seededProductIds) {
-    await query("DELETE FROM products WHERE id = ?", [productId]);
-  }
-  for (const releaseId of seededReleaseIds) {
-    await query("DELETE FROM agent_releases WHERE id = ?", [releaseId]);
-  }
-  for (const snapshot of registrySnapshots) {
-    if (!snapshot) continue;
-    await query(
-      `UPDATE agent_registry
-          SET version = ?, contract_hash = ?, declared_scopes = ?::jsonb,
-              readiness = ?::jsonb, registration_status = ?, source = ?
-        WHERE agent_key = ?`,
-      [snapshot.version, snapshot.contract_hash, JSON.stringify(snapshot.declared_scopes), JSON.stringify(snapshot.readiness), snapshot.registration_status, snapshot.source, snapshot.agent_key],
-    );
-  }
-  for (const snapshot of catalogSnapshots) {
-    if (!snapshot) continue;
-    await query(
-      `UPDATE agent_catalog
-          SET display_name = ?, description = ?, identity_mark = ?, identity_shape = ?,
-              identity_colors = ?::jsonb, status = ?, release_version = ?, contract_hash = ?, source = ?
-        WHERE agent_id = ?`,
-      [snapshot.display_name, snapshot.description, snapshot.identity_mark, snapshot.identity_shape, JSON.stringify(snapshot.identity_colors), snapshot.status, snapshot.release_version, snapshot.contract_hash, snapshot.source, snapshot.agent_id],
-    );
-  }
+  await publicationFixture?.cleanup();
   await closeDatabase();
 });
 
@@ -370,13 +197,14 @@ const admitAndReplayLegacyAlbum = async (extra = {}) => {
 
 integration("App addition rejects a partial declaration without changing existing access or creating a conversation", async () => {
   const before = await query("SELECT enabled, granted_scopes FROM user_agents WHERE user_id = ? AND agent_id = 'site-builder'", [owner]);
+  const beforeThreads = await query("SELECT id FROM chat_threads WHERE user_id = ? AND agent_id = 'site-builder' ORDER BY id", [owner]);
   const response = await fetch(`${origin}/api/me/agents/site-builder`, { method: "PATCH", headers: {
     Authorization: `Bearer ${token}`, "Content-Type": "application/json",
   }, body: JSON.stringify({ enabled: true, consent: true, grantedScopes: ["profile:read"] }) });
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error.details.code, "AGENT_FULL_ACCESS_REQUIRED");
   assert.deepEqual(await query("SELECT enabled, granted_scopes FROM user_agents WHERE user_id = ? AND agent_id = 'site-builder'", [owner]), before);
-  assert.equal((await query("SELECT id FROM chat_threads WHERE user_id = ? AND agent_id = 'site-builder'", [owner])).length, 0);
+  assert.deepEqual(await query("SELECT id FROM chat_threads WHERE user_id = ? AND agent_id = 'site-builder' ORDER BY id", [owner]), beforeThreads);
   assert.equal((await query("SELECT id FROM ai_tasks WHERE user_id = ?", [owner])).length, 0);
 });
 

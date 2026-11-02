@@ -119,9 +119,22 @@ export function useMiaoxunSession() {
   const agentAccessBlockedRef = useRef(false);
   const agentAccessPendingRef = useRef(new Set<string>());
   const agentAccessAliveRef = useRef(true);
-  const agentAccessStateRef = useRef({ agents, ownedAgents });
-  agentAccessStateRef.current = { agents, ownedAgents };
-  const accessStateSnapshot = agentAccessSnapshot(agents, ownedAgents);
+  const agentAccessStateRef = useRef({
+    agents,
+    ownedAgents,
+    products,
+    catalogRevision,
+  });
+  agentAccessStateRef.current = {
+    agents,
+    ownedAgents,
+    products,
+    catalogRevision,
+  };
+  const accessStateSnapshot = agentAccessSnapshot(agents, ownedAgents, {
+    products,
+    catalogRevision,
+  });
   const accessStateRevisionRef = useRef({
     snapshot: accessStateSnapshot,
     value: 0,
@@ -694,6 +707,7 @@ export function useMiaoxunSession() {
       enabled: boolean,
       grantedScopes?: string[],
       confirmedAlbumConsent?: AlbumAIConsentVersion,
+      confirmedProductVersionId?: string,
     ) => {
       if (!token || tokenRef.current !== token) {
         throw new Error('请先登录。');
@@ -707,7 +721,25 @@ export function useMiaoxunSession() {
       if (enabled && !Array.isArray(grantedScopes))
         throw new Error('请先查看并确认 Agent 的授权范围。');
       const scopes = enabled ? [...grantedScopes!] : [];
-      const confirmedState = agentAccessSnapshot(agents, ownedAgents);
+      const matchingProducts = products.filter(product =>
+        product.dependencies.some(
+          dependency => dependency.agentKey === agentId,
+        ),
+      );
+      const product =
+        matchingProducts.length === 1 ? matchingProducts[0] : null;
+      if (
+        enabled &&
+        (!confirmedProductVersionId ||
+          !catalogRevision ||
+          product?.status !== 'published' ||
+          product.productVersionId !== confirmedProductVersionId)
+      )
+        throw new Error('请先查看并确认当前产品版本。');
+      const confirmedState = agentAccessSnapshot(agents, ownedAgents, {
+        products,
+        catalogRevision,
+      });
       const confirmedRevision = accessStateRevisionRef.current.value;
       const isAccessCurrent = () =>
         confirmedRevision === accessStateRevisionRef.current.value &&
@@ -715,6 +747,10 @@ export function useMiaoxunSession() {
           agentAccessSnapshot(
             agentAccessStateRef.current.agents,
             agentAccessStateRef.current.ownedAgents,
+            {
+              products: agentAccessStateRef.current.products,
+              catalogRevision: agentAccessStateRef.current.catalogRevision,
+            },
           );
       const version = sessionVersionRef.current;
       const generation = agentAccessGenerationRef.current;
@@ -753,6 +789,7 @@ export function useMiaoxunSession() {
           consentVersion,
           createIdempotencyKey(),
           scopes,
+          enabled ? confirmedProductVersionId : undefined,
         );
         assertCurrent();
         setSessionOwnedAgents(current => {
@@ -769,6 +806,8 @@ export function useMiaoxunSession() {
     [
       agents,
       ownedAgents,
+      products,
+      catalogRevision,
       language,
       refreshBootstrap,
       setSessionOwnedAgents,

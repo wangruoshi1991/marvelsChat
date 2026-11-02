@@ -4,7 +4,7 @@ import { getAgent } from "../../agents/registry.js";
 import { withTransaction } from "./db.js";
 import { config } from "./config.js";
 import { HttpError } from "./http-error.js";
-import { agentScopesMatchDeclaration } from "./ai-agent-access.js";
+import { agentScopesMatchDeclaration, assertAgentProductEntitlement } from "./ai-agent-access.js";
 import { resolveAIContextReferences } from "./ai-context.js";
 import { assertAgentExecutionMode, runAgent } from "./agent-runtime.js";
 import { listExecutableWorkspaceCapabilities } from "./agent-workspace-capabilities.js";
@@ -22,7 +22,7 @@ const receiptVersion = 1;
 const snapshot = row => ({ id: row.id, hash: hashSiteDocumentValue([row.sender_type, row.content]) });
 const pendingFailure = () => fail(409, "SPECIALIST_MESSAGE_PENDING", "当前会话有消息仍在处理中，请稍后核对原消息再发送。");
 const interruptedFailure = () => fail(409, "SPECIALIST_MESSAGE_INTERRUPTED", "原消息的模型调用状态未知，未创建任务；原请求已保留，不会自动再次调用模型。请核对会话后另发一条消息。");
-const knownFailures = new Set(["AI_ACCESS_REVOKED", "AI_AGENT_VERSION_CHANGED", "AI_CONTEXT_CHANGED", "AI_CONTEXT_NOT_FOUND",
+const knownFailures = new Set(["AGENT_PRODUCT_ENTITLEMENT_REQUIRED", "AI_ACCESS_REVOKED", "AI_AGENT_VERSION_CHANGED", "AI_CONTEXT_CHANGED", "AI_CONTEXT_NOT_FOUND",
   "AI_CONTEXT_SCOPE_REQUIRED", "SPECIALIST_INPUT_CHANGED", "SPECIALIST_CONTEXT_CHANGED", "SPECIALIST_CONTEXT_LIMIT",
   "SPECIALIST_DISPATCH_INVALID", "SPECIALIST_MESSAGE_PENDING", "SPECIALIST_MESSAGE_INTERRUPTED",
   "WORKSPACE_CAPABILITY_UNAVAILABLE", "WORKSPACE_CONTEXT_INVALID", "WORKSPACE_ACCESS_REVOKED",
@@ -66,6 +66,7 @@ export function createSpecialistMessageService({ transaction = withTransaction, 
     if (!grant?.enabled || !agentScopesMatchDeclaration(agent, grant.granted_scopes)) {
       throw fail(403, "AI_ACCESS_REVOKED", "Agent 授权已撤回或范围已变化，请在“我”核对授权。");
     }
+    await assertAgentProductEntitlement({ userId, agent, queryFn: connection.query.bind(connection) });
     const capabilities = listExecutableWorkspaceCapabilities({ registeredAgents: [agent], grants: [{
       agentId: agent.key, enabled: grant.enabled, grantedScopes: grant.granted_scopes,
     }] });

@@ -445,6 +445,10 @@ export const config = {
   localMediaRoot: path.resolve(
     process.env.MIAOXUN_LOCAL_MEDIA_ROOT || path.join(__dirname, "../storage/station-media"),
   ),
+  agentAvatarRoot: path.resolve(
+    process.env.MIAOXUN_AGENT_AVATAR_ROOT || path.join(__dirname, "../storage/agent-avatars"),
+  ),
+  agentImagePublicationEnabled: process.env.AGENT_IMAGE_PUBLICATION_ENABLED === "true",
   db: {
     configured: hasPostgresConfig,
     databaseUrl,

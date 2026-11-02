@@ -231,7 +231,32 @@ function authorizationBootstrap(): BootstrapDTO {
       status: 'registered',
     },
   ];
-  return { ...bootstrap, agents: { registered, owned: [] } };
+  return {
+    ...bootstrap,
+    agents: { registered, owned: [] },
+    catalogRevision: 'authorization-catalog-1',
+    products: registered.map(agent => ({
+      id: `product-${agent.key}`,
+      productKey: agent.key,
+      version: '1.0.0',
+      displayName: agent.name,
+      description: agent.description,
+      supportedPlatforms: ['ios', 'android'],
+      status: 'published',
+      productVersionId: `product-version-${agent.key}`,
+      contractHash: `contract-${agent.key}`,
+      dependencies: [
+        {
+          agentKey: agent.key,
+          agentReleaseId: `release-${agent.key}`,
+          version: agent.version,
+          scopes: agent.permissions,
+          contractHash: `contract-${agent.key}`,
+          identity: agent.identity,
+        },
+      ],
+    })),
+  };
 }
 
 function accessGrant(
@@ -602,7 +627,13 @@ describe('session synchronization', () => {
     });
     let first!: Promise<OwnedAgentDTO>;
     ReactTestRenderer.act(() => {
-      first = currentWorkspaceAccess!('site-builder', true, ['station:read']);
+      first = currentWorkspaceAccess!(
+        'site-builder',
+        true,
+        ['station:read'],
+        undefined,
+        'product-version-site-builder',
+      );
     });
     await ReactTestRenderer.act(async () => {
       renderer?.update(<SessionHarness workspaceKey="remounted" />);
@@ -610,7 +641,13 @@ describe('session synchronization', () => {
     });
     await ReactTestRenderer.act(async () => {
       await expect(
-        currentWorkspaceAccess!('site-builder', true, ['station:read']),
+        currentWorkspaceAccess!(
+          'site-builder',
+          true,
+          ['station:read'],
+          undefined,
+          'product-version-site-builder',
+        ),
       ).rejects.toThrow('授权正在更新');
     });
     expect(mockedApiClient.setAgentEnabled).toHaveBeenCalledTimes(1);
@@ -643,6 +680,29 @@ describe('session synchronization', () => {
     await ReactTestRenderer.act(() => renderer?.unmount());
   });
 
+  test('missing or stale product version is rejected before cloud consent or authorization PATCH', async () => {
+    mockedApiClient.bootstrap.mockResolvedValue(authorizationBootstrap());
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    for (const productVersionId of [undefined, 'stale-product-version']) {
+      await expect(
+        currentSession!.setAgentEnabled(
+          'album-manager',
+          true,
+          ['album:read'],
+          undefined,
+          productVersionId,
+        ),
+      ).rejects.toThrow('确认当前产品版本');
+    }
+    expect(mockedAlbumConsent).not.toHaveBeenCalled();
+    expect(mockedApiClient.setAgentEnabled).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(() => renderer?.unmount());
+  });
+
   test('confirmed scopes are copied before cloud consent and never expanded by a caller mutation', async () => {
     const initial = authorizationBootstrap();
     const grant = accessGrant(initial.agents.registered[0]);
@@ -663,6 +723,7 @@ describe('session synchronization', () => {
         true,
         approved,
         'media-retrieval-consent-v1',
+        'product-version-album-manager',
       );
     });
     approved.push('files:read');
@@ -683,6 +744,7 @@ describe('session synchronization', () => {
       'media-retrieval-consent-v1',
       expect.any(String),
       ['album:read'],
+      'product-version-album-manager',
     );
     await ReactTestRenderer.act(() => renderer?.unmount());
   });
@@ -706,6 +768,8 @@ describe('session synchronization', () => {
         'album-manager',
         true,
         approvedScopes,
+        undefined,
+        'product-version-album-manager',
       );
     });
     approvedScopes.push('files:read');
@@ -755,7 +819,13 @@ describe('session synchronization', () => {
     let authorization!: Promise<unknown>;
     ReactTestRenderer.act(() => {
       authorization = currentSession!
-        .setAgentEnabled('album-manager', true, ['album:read'])
+        .setAgentEnabled(
+          'album-manager',
+          true,
+          ['album:read'],
+          undefined,
+          'product-version-album-manager',
+        )
         .catch(cause => cause);
     });
     const isCurrent = mockedAlbumConsent.mock.calls[0][2];
@@ -800,7 +870,13 @@ describe('session synchronization', () => {
     let authorization!: Promise<unknown>;
     ReactTestRenderer.act(() => {
       authorization = currentSession!
-        .setAgentEnabled('site-builder', true, ['station:read'])
+        .setAgentEnabled(
+          'site-builder',
+          true,
+          ['station:read'],
+          undefined,
+          'product-version-site-builder',
+        )
         .catch(cause => cause);
     });
     expect(mockedApiClient.setAgentEnabled).toHaveBeenCalledTimes(1);

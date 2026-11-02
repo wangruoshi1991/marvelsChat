@@ -15,6 +15,7 @@ import {
   assertCurrentAgentAccess,
   buildAgentAppContext,
   agentScopesMatchDeclaration,
+  assertAgentProductEntitlement,
 } from "../ai-agent-access.js";
 import { resolveAIContextReferences } from "../ai-context.js";
 import { getAITask } from "../ai-task-repository.js";
@@ -156,6 +157,7 @@ export async function getAuthorizedMediaResults({
       { code: "AI_ACCESS_REVOKED" },
     );
   }
+  await assertAgentProductEntitlement({ userId, agent, queryFn });
   const runIds = message.metadata?.albumAssistant?.retrievalRunIds || [];
   const responses = await Promise.all(
     runIds.slice(0, 1).map((agentRunId) =>
@@ -523,6 +525,7 @@ export function registerMessageRoutes(
       let agentAccess = null;
       if (thread.agentId) {
         agentAccess = assertAgentAvailable(agentContext, thread.agentId);
+        await assertCurrentAgentAccess({ userId: req.user.id, agent: agentAccess.agent, grantedScopes: agentAccess.grantedScopes, contextRefs: [] });
         enforceAgentMessageCreateLimit(req, res);
       }
       let replyTo = null;

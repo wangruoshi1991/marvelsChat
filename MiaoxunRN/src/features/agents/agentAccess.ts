@@ -4,6 +4,7 @@ import {
   ProductCatalogProductDTO,
   ProductEntitlementDTO,
 } from '../../models/api';
+import { isCompleteAgentIdentity } from '../messages/agentIdentity';
 
 export type AgentProductAccessState =
   | 'available'
@@ -16,7 +17,7 @@ export type AgentProductAccessState =
 
 type CurrentAgentContract = Pick<
   AgentDTO,
-  'key' | 'version' | 'permissions' | 'identity'
+  'key' | 'version' | 'permissions' | 'identity' | 'identityError'
 > & { contractHash?: string | null };
 
 function sameScopes(left: string[], right: string[]) {
@@ -29,6 +30,19 @@ function sameIdentity(left: unknown, right: AgentDTO['identity'], key: string) {
   if (!left || typeof left !== 'object' || Array.isArray(left)) return false;
   const candidate = left as Record<string, unknown>;
   const colors = candidate.colors;
+  if (!isCompleteAgentIdentity(left) || !isCompleteAgentIdentity(right))
+    return false;
+  if (
+    left.avatarKind === 'agent-image' &&
+    (right.avatarKind !== 'agent-image' ||
+      left.avatar.assetId !== right.avatar.assetId ||
+      left.avatar.url !== right.avatar.url ||
+      left.avatar.sha256 !== right.avatar.sha256 ||
+      left.avatar.mimeType !== right.avatar.mimeType ||
+      left.avatar.width !== right.avatar.width ||
+      left.avatar.height !== right.avatar.height)
+  )
+    return false;
   return (
     (candidate.key === undefined || candidate.key === key) &&
     candidate.avatarKind === right.avatarKind &&
@@ -56,13 +70,26 @@ export function resolveAgentProductAccess(
   // existing conversation and bootstrap path independent from ordinary Agent
   // products while all other recommendations follow the published catalog.
   if (agent.key === 'miaoxun-butler') return 'available';
+  if (agent.identityError?.code === 'AGENT_PRODUCT_IDENTITY_CONFLICT')
+    return 'catalog_unavailable';
   if (!options.products || !options.entitlements || !options.catalogRevision)
     return 'catalog_unavailable';
-  const candidates = options.products.filter(item =>
+  let candidates = options.products.filter(item =>
     item.dependencies.some(dependency => dependency.agentKey === agent.key),
   );
   if (!candidates.length) return 'product_not_published';
-  if (candidates.length > 1) return 'catalog_unavailable';
+  if (candidates.length > 1) {
+    const enabled = candidates.filter(item =>
+      options.entitlements.some(
+        entitlement =>
+          entitlement.status === 'enabled' &&
+          entitlement.productId === item.id &&
+          entitlement.productVersionId === item.productVersionId,
+      ),
+    );
+    if (enabled.length !== 1) return 'catalog_unavailable';
+    candidates = enabled;
+  }
   const product = candidates[0];
   if (product.status === 'paused') return 'product_paused';
   if (product.status !== 'published') return 'product_unavailable';
@@ -114,6 +141,10 @@ export function agentAccessMatchesDeclaration(
 export function agentAccessSnapshot(
   agents: AgentDTO[],
   ownedAgents: OwnedAgentDTO[],
+  catalog?: {
+    products: ProductCatalogProductDTO[];
+    catalogRevision: string | null;
+  },
 ) {
-  return JSON.stringify({ agents, ownedAgents });
+  return JSON.stringify({ agents, ownedAgents, ...catalog });
 }

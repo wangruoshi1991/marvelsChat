@@ -377,7 +377,7 @@ export async function ensureDefaultButlerAccess({ userId, connection = null }) {
   // read from the release-backed catalog projection only.
   const catalogueRows = await queryFn(
     `SELECT display_name, description, identity_mark, identity_shape,
-            identity_colors, status, release_version, contract_hash,
+            identity_colors, identity_avatar, status, release_version, contract_hash,
             source, updated_at
        FROM agent_catalog
       WHERE agent_id = ?
@@ -388,7 +388,8 @@ export async function ensureDefaultButlerAccess({ userId, connection = null }) {
   const catalogueIdentity = catalogue
     ? {
         key: registeredAgent.key,
-        avatarKind: "agent-mark",
+        avatarKind: catalogue.identity_avatar ? "agent-image" : "agent-mark",
+        ...(catalogue.identity_avatar ? { avatar: parseJson(catalogue.identity_avatar, null) } : {}),
         displayName: catalogue.display_name,
         description: catalogue.description,
         mark: catalogue.identity_mark,

@@ -11,8 +11,9 @@ export const AGENT_IDENTITY_FIELDS = Object.freeze([
   "published",
   "source",
   "updatedAt",
+  "avatar",
 ]);
-export const AGENT_IDENTITY_REQUIRED_FIELDS = AGENT_IDENTITY_FIELDS;
+export const AGENT_IDENTITY_REQUIRED_FIELDS = Object.freeze(AGENT_IDENTITY_FIELDS.filter((field) => field !== "avatar"));
 export const AGENT_IDENTITY_SHAPES = Object.freeze(["circle", "squircle", "rounded"]);
 export const AGENT_IDENTITY_COLOR_FIELDS = Object.freeze(["background", "foreground", "accent"]);
 export const AGENT_RELEASE_CATALOG_STATUSES = Object.freeze(["draft", "review", "published", "unpublished", "archived"]);
@@ -23,11 +24,22 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const AGENT_KEY = /^[a-z][a-z0-9-]{0,79}$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const AVATAR_FIELDS = ["assetId", "url", "sha256", "mimeType", "width", "height"];
+
+export function isCompleteAgentAvatar(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) &&
+    Object.keys(value).length === AVATAR_FIELDS.length && Object.keys(value).every((key) => AVATAR_FIELDS.includes(key)) &&
+    UUID.test(value.assetId || "") && /^[a-f0-9]{64}$/.test(value.sha256 || "") &&
+    value.url === `/api/agent-avatar-assets/${value.assetId}/${value.sha256}.webp` &&
+    value.mimeType === "image/webp" && value.width === 512 && value.height === 512);
+}
 
 export function isCompleteAgentIdentity(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   if (Object.keys(value).some((key) => !AGENT_IDENTITY_FIELDS.includes(key))) return false;
-  if (!AGENT_KEY.test(value.key || "") || value.avatarKind !== "agent-mark" || typeof value.displayName !== "string" || !value.displayName.trim() || value.displayName.length > 120) return false;
+  if (!AGENT_KEY.test(value.key || "") || !["agent-mark", "agent-image"].includes(value.avatarKind) || typeof value.displayName !== "string" || !value.displayName.trim() || value.displayName.length > 120) return false;
+  if (value.avatarKind === "agent-image" ? !isCompleteAgentAvatar(value.avatar) : Object.hasOwn(value, "avatar")) return false;
   if (typeof value.description !== "string" || value.description.length > 2000) return false;
   if (typeof value.mark !== "string" || !value.mark.trim() || value.mark.length > 40) return false;
   if (!AGENT_IDENTITY_SHAPES.includes(value.shape)) return false;
@@ -64,6 +76,7 @@ export function computeAgentReleaseContractHash({ key, version, permissions, ide
     shape: identity.shape,
     colors: identity.colors,
     source: identity.source,
+    ...(identity.avatarKind === "agent-image" ? { avatar: identity.avatar } : {}),
   } : null;
   return computeAgentContractHash({
     key,

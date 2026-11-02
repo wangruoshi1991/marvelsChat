@@ -4,7 +4,7 @@ import { listRegisteredAgentsWithCatalogue } from "./agent-catalog-repository.js
 import { query, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
 import { mapMessage } from "./repository-mappers.js";
-import { assertAgentAvailable, buildAgentAppContext, agentScopesMatchDeclaration } from "./ai-agent-access.js";
+import { assertAgentAvailable, assertAgentProductEntitlement, buildAgentAppContext, agentScopesMatchDeclaration } from "./ai-agent-access.js";
 import { resolveAIContextReferences } from "./ai-context.js";
 import { createAITaskInTransaction, finishAITask, advanceAITask, getAITask } from "./ai-task-repository.js";
 import { getAgentContextForUser, getUserById } from "./repositories.js";
@@ -24,6 +24,7 @@ export async function submitAlbumMessageTask({ user, thread, body, requestFinger
       if (!access[0]?.enabled || !agentScopesMatchDeclaration(agentAccess.agent, access[0].granted_scopes)) {
         throw new HttpError(403, "相册 Agent 授权已撤回或范围已变化，请在“我”移除后重新添加。", { code: "AI_ACCESS_REVOKED" });
       }
+      await assertAgentProductEntitlement({ userId: user.id, agent: agentAccess.agent, queryFn: connection.query.bind(connection) });
       const consent = await connection.query("SELECT index_state, consent_version FROM media_retrieval_profiles WHERE user_id = ? FOR SHARE", [user.id]);
       if (consent[0]?.index_state !== "enabled" || consent[0]?.consent_version !== "media-retrieval-consent-v1") throw new HttpError(403, "请先启用相册 AI 并确认授权。");
       const locked = await connection.query("SELECT id FROM chat_threads WHERE id = ? AND user_id = ? FOR UPDATE", [thread.id, user.id]);
@@ -89,6 +90,7 @@ export function createMessageTaskExecutor({ runAgentRuntime = runAgent, retrieva
       if (!rows[0]?.enabled || !agentScopesMatchDeclaration(access.agent, rows[0].granted_scopes)) {
         throw new HttpError(403, "相册 Agent 授权已撤回或范围已变化，请在“我”移除后重新添加。", { code: "AI_ACCESS_REVOKED" });
       }
+      await assertAgentProductEntitlement({ userId: record.userId, agent: access.agent, queryFn });
       const consent = await queryFn("SELECT index_state, consent_version FROM media_retrieval_profiles WHERE user_id = ?", [record.userId]);
       if (consent[0]?.index_state !== "enabled" || consent[0]?.consent_version !== "media-retrieval-consent-v1") throw new HttpError(403, "相册 AI 授权已撤回。");
       await readInput(queryFn);

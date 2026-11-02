@@ -1,5 +1,5 @@
 import { getAgent } from '../../agents/registry.js';
-import { agentScopesMatchDeclaration } from './ai-agent-access.js';
+import { agentScopesMatchDeclaration, assertAgentProductEntitlement } from './ai-agent-access.js';
 import { fileReference } from './file-content.js';
 import crypto from "node:crypto";
 import { z } from "zod";
@@ -430,7 +430,14 @@ export async function unavailableWorkspaceFileSources(connection, userId, refere
     WHERE user_id=? AND id=ANY(?::text[]) AND deleted_at IS NULL AND extracted_text IS NOT NULL ORDER BY id${lock ? " FOR SHARE" : ""}`, [userId, ids]);
   const [grant] = await connection.query(`SELECT enabled,granted_scopes FROM user_agents WHERE user_id=? AND agent_id='file-preprocessor'${lock ? " FOR SHARE" : ""}`, [userId]);
   const fileAgent = await getAgent('file-preprocessor');
-  const permitted = grant?.enabled && agentScopesMatchDeclaration(fileAgent, grant.granted_scopes);
+  let permitted = grant?.enabled && agentScopesMatchDeclaration(fileAgent, grant.granted_scopes);
+  if (permitted) {
+    try { await assertAgentProductEntitlement({ userId, agent: fileAgent, queryFn: connection.query.bind(connection) }); }
+    catch (error) {
+      if (error.details?.code !== "AGENT_PRODUCT_ENTITLEMENT_REQUIRED") throw error;
+      permitted = false;
+    }
+  }
   const versions = new Map(files.map(file => [file.id, fileReference(file)?.version]));
   return new Set(references.filter(ref => !permitted || versions.get(ref.id) !== ref.version).map(ref => `${ref.id}:${ref.version}`));
 }

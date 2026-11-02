@@ -2,8 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { getAuthorizedMediaResults } from "../src/routes/message-routes.js";
 import { getAgent } from "../../agents/registry.js";
+import { computeProductContractHash, mapProduct } from "../src/product-catalog-repository.js";
 
-const scopes = (await getAgent("album-manager")).permissions;
+const agent = await getAgent("album-manager");
+const scopes = agent.permissions;
+const identity = { ...agent.identity, key: agent.key, displayName: agent.name, description: agent.description || "", published: true, source: "admin", updatedAt: "2026-11-02T00:00:00.000Z" };
+const productRow = { id: "product", product_key: "album-product", product_version_id: "product-version", version: "1.0.0", display_name: "Album product",
+  description: "Explicit consent fixture", identity_snapshot: identity, supported_platforms: ["ios"], version_status: "published" };
+const dependencyRow = { agent_key: agent.key, agent_release_id: "release", version: agent.version, required_scopes: scopes, declared_scopes: scopes,
+  release_contract_hash: "release-hash", identity_snapshot: identity, readiness: { ready: true }, release_status: "published",
+  registry_version: agent.version, registry_declared_scopes: scopes, registry_contract_hash: "release-hash", registry_status: "registered" };
+productRow.contract_hash = computeProductContractHash(mapProduct(productRow, [dependencyRow]));
 
 const owner = "result-owner";
 const request = { userId: owner, threadId: "thread", messageId: "reply" };
@@ -12,9 +21,18 @@ function dependencies(overrides = {}) {
     getMessage: async ({ userId }) => userId === owner ? {
       senderType: "agent", metadata: { albumAssistant: { retrievalRunIds: ["search-run"] } },
     } : null,
-    queryFn: async (_sql, params) => {
-      assert.deepEqual(params, [owner]);
-      return [{ enabled: true, granted_scopes: scopes }];
+    queryFn: async (sql, params) => {
+      if (sql.includes("FROM user_agents")) {
+        assert.deepEqual(params, [owner]);
+        return [{ enabled: true, granted_scopes: scopes }];
+      }
+      if (sql.includes("FROM user_entitlements")) {
+        assert.deepEqual(params, [owner, agent.key]);
+        return [{ product_id: productRow.id, product_version_id: productRow.product_version_id, contract_hash: productRow.contract_hash, granted_scopes: scopes }];
+      }
+      if (sql.includes("FROM products p")) return [productRow];
+      if (sql.includes("FROM product_agent_dependencies")) return [dependencyRow];
+      assert.fail(`Unexpected result authorization query: ${sql}`);
     },
     retrievalRepository: {
       getMediaRetrievalProfile: async ({ userId }) => {
@@ -61,6 +79,12 @@ test("disabled Agent and revoked album scope block reading existing results", as
     [{ enabled: true, granted_scopes: scopes.filter(scope => scope !== "station:write") }]]) {
     await assert.rejects(getAuthorizedMediaResults({ ...request, ...dependencies({ queryFn: async () => access }) }), error => error.status === 403);
   }
+});
+
+test("an enabled album projection cannot read existing results without product entitlement", async () => {
+  const deps = dependencies({ queryFn: async sql => sql.includes("FROM user_agents") ? [{ enabled: true, granted_scopes: scopes }] : [] });
+  deps.retrievalRepository.getMediaRetrievalSearchResponse = async () => assert.fail("Missing entitlement must block historical result access");
+  await assert.rejects(getAuthorizedMediaResults({ ...request, ...deps }), error => error.details?.code === "AGENT_PRODUCT_ENTITLEMENT_REQUIRED");
 });
 
 test("expired epoch results and deleted or changed-kind assets are omitted", async () => {

@@ -2,10 +2,23 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { Refine } from "@refinedev/core";
-import { ConfigProvider } from "antd";
+import { ConfigProvider, unstableSetRender } from "antd";
 import App from "./App.jsx";
 import { authProvider, accessControlProvider, dataProvider } from "./platform.js";
 import "antd/dist/reset.css";
+
+// Ant Design 5's wave effects and static dialogs use its public render adapter.
+// React 19 removed ReactDOM.render, so use the same supported client root API.
+const transientRoots = new WeakMap();
+unstableSetRender((node, container) => {
+  let root = transientRoots.get(container);
+  if (!root) { root = createRoot(container); transientRoots.set(container, root); }
+  root.render(node);
+  return async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (transientRoots.get(container) === root) { root.unmount(); transientRoots.delete(container); }
+  };
+});
 
 createRoot(document.getElementById("admin-root")).render(
   <React.StrictMode>

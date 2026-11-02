@@ -14,6 +14,9 @@ import { createStationSiteDraft, applyStationSiteDraft } from "../src/station-ag
 import { createRequestErrorHandler } from "../src/request-observability.js";
 import { getAgent, listAgents } from "../../agents/registry.js";
 
+import { seedPublishedAgentConsent, cleanupPublishedAgentConsent } from "./helpers/agent-publishing-fixture.js";
+
+let publicationFixture;
 const enabled = process.env.RUN_AGENT_WORKSPACE_TEXT_INTEGRATION === "1";
 const integration = (name, work) => test(name, { skip: !enabled && "Set RUN_AGENT_WORKSPACE_TEXT_INTEGRATION=1 with a migrated disposable loopback *_migration_test database" }, work);
 const owner = crypto.randomUUID(), outsider = crypto.randomUUID();
@@ -89,6 +92,7 @@ before(async () => {
     [selectedMessageId, selectedThreadId, owner, sourceBodySentinel]);
   await query("INSERT INTO chat_messages(id,thread_id,user_id,sender_type,sender_name,content) VALUES(?,?,?,'user','Fixture user',?)",
     [crypto.randomUUID(), privateThreadId, owner, privateSentinel]);
+  publicationFixture = await seedPublishedAgentConsent({ userId: owner, agentKeys: agentIds.filter(id => id !== "miaoxun-butler") });
   executor = createWorkspaceCapabilityExecutor({ loadAgent,
     generateSite: async options => {
       await recordCall(options, async () => { siteInputs.push(options); return "Provider accepted the isolated page fixture"; });
@@ -152,8 +156,9 @@ beforeEach(async () => {
 after(async () => {
   if (!enabled) return;
   await new Promise(resolve => server?.close(resolve));
+  await cleanupPublishedAgentConsent({ userIds: [owner, outsider] });
   await query("DELETE FROM users WHERE id IN (?,?)", [owner, outsider]);
-  await closeDatabase();
+  await publicationFixture?.cleanup(); await closeDatabase();
 });
 
 integration("HTTP non-album non-site Agents deliver prose through a real persisted dependency graph", async () => {

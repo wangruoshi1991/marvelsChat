@@ -8,7 +8,7 @@ import {
 import {
   MEDIA_RETRIEVAL_CONSENT_VERSION,
 } from "./media-retrieval-constants.js";
-import { isAgentIdentityTimestamp } from "../../shared/agent-catalog.js";
+import { isAgentIdentityTimestamp, isCompleteAgentAvatar } from "../../shared/agent-catalog.js";
 
 const phoneNumberSchema = z.string().trim().regex(/^1[3-9]\d{9}$/, "Phone number must be a valid mainland China mobile number");
 
@@ -659,6 +659,7 @@ export const agentAccessSchema = z.object({
   alias: z.string().trim().max(80).optional().default(""),
   grantedScopes: z.array(z.string().trim().min(1).max(80)).optional(),
   albumAIConsentVersion: z.literal(MEDIA_RETRIEVAL_CONSENT_VERSION).optional(),
+  productVersionId: z.string().uuid().optional(),
 }).superRefine((body, context) => {
   if (body.enabled && body.grantedScopes === undefined) {
     context.addIssue({
@@ -690,7 +691,11 @@ const uniqueScopesSchema = z.array(scopeSchema).max(64).refine((scopes) => new S
 
 export const agentIdentitySchema = z.object({
   key: agentKeySchema,
-  avatarKind: z.literal("agent-mark"),
+  avatarKind: z.enum(["agent-mark", "agent-image"]),
+  avatar: z.object({
+    assetId: z.string().uuid(), url: z.string().max(200), sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    mimeType: z.literal("image/webp"), width: z.literal(512), height: z.literal(512),
+  }).strict().refine(isCompleteAgentAvatar, "Avatar must reference a managed Agent image asset").optional(),
   displayName: z.string().trim().min(1).max(120),
   description: z.string().max(2000),
   mark: z.string().trim().min(1).max(40),
@@ -703,6 +708,12 @@ export const agentIdentitySchema = z.object({
   published: z.boolean(),
   source: z.string().trim().min(1).max(40),
   updatedAt: z.string().refine(isAgentIdentityTimestamp, "updatedAt must be a UTC ISO-8601 timestamp"),
+}).strict().refine((identity) => identity.avatarKind === "agent-image" ? Boolean(identity.avatar) : !Object.hasOwn(identity, "avatar"), "Avatar metadata must match avatarKind");
+
+export const createAgentReleaseSchema = z.object({
+  agentKey: agentKeySchema,
+  identity: agentIdentitySchema,
+  sourceReleaseId: z.string().uuid().optional(),
 }).strict();
 
 export const agentReleaseSchema = z.object({
@@ -732,6 +743,9 @@ export const productVersionSchema = z.object({
   dependencies: z.array(productDependencySchema).min(1).max(64),
   status: z.enum(["draft", "review", "published", "paused", "retired"]),
 }).strict();
+
+export const createProductVersionSchema = productVersionSchema.omit({ productKey: true, status: true });
+export const updateProductVersionSchema = createProductVersionSchema;
 
 export const entitlementSchema = z.object({
   userId: z.string().trim().min(1).max(80).optional(),

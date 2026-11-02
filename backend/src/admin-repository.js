@@ -9,7 +9,6 @@ import {
   listAgentAccessForUser,
   revokeSessionsForUser,
 } from "./repositories.js";
-import { listThreadsForUser } from "./message-repository.js";
 import { getProfileForUser } from "./station-repository.js";
 import {
   mapAgentRun,
@@ -125,8 +124,6 @@ export function createAdminUserDetailReader({
             e.event_type,
             e.target_type,
             e.target_id,
-            e.payload,
-            e.user_agent,
             e.created_at
           FROM usage_events e
           LEFT JOIN users u ON u.id = e.user_id
@@ -139,7 +136,10 @@ export function createAdminUserDetailReader({
       includeAudit
         ? runQuery(
           `SELECT
-            r.*,
+            r.id, r.agent_id, r.status, r.user_id, r.thread_id,
+            r.latency_ms, r.token_prompt, r.token_completion, r.token_total,
+            r.cost_cents, r.provider, r.run_type, r.lifecycle_status,
+            r.trace_id, r.attempt, r.failure_code, r.created_at, r.finished_at,
             u.email AS user_email
           FROM agent_runs r
           LEFT JOIN users u ON u.id = r.user_id
@@ -154,7 +154,19 @@ export function createAdminUserDetailReader({
     return {
       user: publicUser(rawUser),
       profile,
-      threads,
+      // Conversation names, status text and lastContent can all be user
+      // authored. Account operators receive only routing/state metadata.
+      threads: threads.map((thread) => ({
+        id: thread.id,
+        agentId: thread.agentId || null,
+        kind: thread.kind || null,
+        pinned: thread.pinned === true,
+        muted: thread.muted === true,
+        unreadCount: Number(thread.unreadCount || 0),
+        createdAt: toIso(thread.createdAt),
+        updatedAt: toIso(thread.updatedAt),
+        lastMessageAt: toIso(thread.lastMessageAt),
+      })),
       agents,
       sessions,
       recentEvents: events.map((row) => ({
@@ -164,11 +176,27 @@ export function createAdminUserDetailReader({
         eventType: row.event_type,
         targetType: row.target_type || "",
         targetId: row.target_id || "",
-        payload: parseJson(row.payload, {}),
-        userAgent: row.user_agent || "",
         createdAt: toIso(row.created_at),
       })),
-      recentRuns: runs.map(mapAgentRun),
+      recentRuns: runs.map((row) => ({
+        id: row.id,
+        agentId: row.agent_id,
+        status: row.status,
+        lifecycleStatus: row.lifecycle_status || null,
+        threadId: row.thread_id || null,
+        latencyMs: row.latency_ms ?? null,
+        tokenPrompt: row.token_prompt ?? null,
+        tokenCompletion: row.token_completion ?? null,
+        tokenTotal: row.token_total ?? null,
+        costCents: row.cost_cents ?? null,
+        provider: row.provider || null,
+        runType: row.run_type || null,
+        traceId: row.trace_id || null,
+        attempt: Number(row.attempt || 1),
+        failureCode: /^[A-Z][A-Z0-9_]{0,99}$/.test(row.failure_code || "") ? row.failure_code : null,
+        createdAt: toIso(row.created_at),
+        finishedAt: toIso(row.finished_at),
+      })),
     };
   };
 }
@@ -176,7 +204,12 @@ export function createAdminUserDetailReader({
 export const adminUserDetail = createAdminUserDetailReader({
   findRawUser: getRawUserById,
   getProfile: getProfileForUser,
-  listThreads: listThreadsForUser,
+  listThreads: async (userId) => {
+    const rows = await query(`SELECT id, agent_id, kind, pinned, muted, unread_count, created_at, updated_at
+      FROM chat_threads WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 100`, [userId]);
+    return rows.map((row) => ({ id: row.id, agentId: row.agent_id, kind: row.kind, pinned: row.pinned,
+      muted: row.muted, unreadCount: row.unread_count, createdAt: row.created_at, updatedAt: row.updated_at }));
+  },
   listAgentAccess: listAgentAccessForUser,
   getSessionSummary: adminSessionSummary,
   runQuery: query,

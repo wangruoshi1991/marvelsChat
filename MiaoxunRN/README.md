@@ -22,6 +22,8 @@
 
 这是妙讯的 React Native 正式实现目录。
 
+Agent 视觉统一经 `AgentGlyphAvatar` 渲染，消费已发布 release identity 的两种正式模式：`agent-mark` 使用合同中的 mark/shape/colors；`agent-image` 使用后台规范化的 512×512 WebP 资产，并保留相同展示字段。图片 identity 必须携带 assetId、sha256、mimeType 和尺寸，URL 必须精确为 `/api/agent-avatar-assets/<assetId>/<sha256>.webp`，客户端通过原生显式 API origin 构造地址，不接受任意远端 URL。图片加载失败显示明确错误，不退回文字头像；产品依赖与 Agent identity 比对包含完整图片资产字段。本地源码支持不代表当前 TestFlight 已包含该模式，分发状态以当前交接为准。 普通 Agent 的明确授权确认同时绑定所展示的 productVersionId；产品目录在确认期间变更会使旧确认失效，客户端不会自动升级授权。撤销不要求产品版本。
+
 ## 定位
 
 `MiaoxunRN/` 是妙讯唯一正式移动端主线，承接 iOS 和 Android 上线实现。历史 SwiftUI 原型已从主工程移除，后续新增能力都应落在 React Native 业务层或明确的原生薄桥接中。

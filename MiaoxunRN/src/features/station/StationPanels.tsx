@@ -50,6 +50,7 @@ export function StationPanel({
     enabled: boolean,
     grantedScopes?: string[],
     albumAIConsentVersion?: AlbumAIConsentVersion,
+    productVersionId?: string,
   ) => Promise<OwnedAgentDTO>;
   onOpenDiaryDetail: (entryId: string) => void;
   onDeletePost: ReturnType<typeof useMiaoxunSession>['deleteStationPost'];

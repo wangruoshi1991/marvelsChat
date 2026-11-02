@@ -8,6 +8,7 @@ import { closeDatabase, query } from "../src/db.js";
 import { registerMessageRoutes } from "../src/routes/message-routes.js";
 import { assertAgentExecutionMode } from "../src/agent-runtime.js";
 import { createRequestErrorHandler } from "../src/request-observability.js";
+import { cleanupPublishedAgentConsent, seedPublishedAgentConsent } from "./helpers/agent-publishing-fixture.js";
 
 const enabled = process.env.RUN_AI_TASK_INTEGRATION === "1";
 const integration = (name, run) => test(name, { skip: !enabled && "Requires migrated disposable PostgreSQL" }, run);
@@ -17,6 +18,7 @@ const threads = new Map(["virtual-character", "site-builder", "album-manager"].m
 const calls = [];
 let server;
 let origin;
+let publicationFixture;
 
 before(async () => {
   if (!enabled) return;
@@ -28,12 +30,10 @@ before(async () => {
   await query("INSERT INTO auth_sessions(id,user_id,token_hash,expires_at) VALUES (?,?,?,clock_timestamp() + INTERVAL '1 hour')",
     [crypto.randomUUID(), owner, hashToken(token)]);
   for (const [key, threadId] of threads) {
-    const agent = await getAgent(key);
-    await query("INSERT INTO user_agents(user_id,agent_id,enabled,granted_scopes) VALUES (?,?,true,?::jsonb)",
-      [owner, key, JSON.stringify(agent.permissions)]);
     await query("INSERT INTO chat_threads(id,user_id,title,agent_id,kind) VALUES (?,?,'Chat fixture',?,'agent')", [threadId, owner, key]);
   }
   await query("INSERT INTO media_retrieval_profiles(user_id,index_state,consent_version,consent_granted_at) VALUES (?,'enabled','media-retrieval-consent-v1',clock_timestamp())", [owner]);
+  publicationFixture = await seedPublishedAgentConsent({ userId: owner, agentKeys: [...threads.keys()] });
   const app = express();
   app.use(express.json());
   registerMessageRoutes(app, { authenticate, asyncHandler: handler => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next),
@@ -53,7 +53,9 @@ beforeEach(() => { calls.length = 0; });
 after(async () => {
   if (!enabled) return;
   if (server) await new Promise(resolve => server.close(resolve));
+  await cleanupPublishedAgentConsent({ userIds: [owner] });
   await query("DELETE FROM users WHERE id = ?", [owner]);
+  await publicationFixture?.cleanup();
   await closeDatabase();
 });
 

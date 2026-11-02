@@ -9,7 +9,7 @@
 - [架构与项目结构](architecture.md)、[开发规范](development-standards.md)：目录职责、服务边界与真实数据原则。
 - [Agent工作空间](agent-workspace-architecture.md)：动态选人、授权、交接及尚未实现的能力。
 - [统一AI交互](ai-interaction-system.md)：消息、持久任务、澄清、成果预览和确认合同。
-- [Agent接入](agents.md)、[Agent SOP](agent-sop/README.md)、[模型配置代码入口](agent-model-configuration.md)：能力声明、执行器与共享供应商配置。
+- [Agent接入](agents.md)、[后台接入与上架](agent-onboarding.md)、[Agent SOP](agent-sop/README.md)、[模型配置代码入口](agent-model-configuration.md)：代码能力、身份修订、产品版本与共享供应商配置。
 - [相册Agent](agents/album-assistant.md)、[媒体检索合同](media-retrieval-product-handoff.md)、[检索验证记录](agents/media-retrieval/release-evidence.md)：素材权限、索引、对话检索及验收边界。
 - [文件上传与专业摘要](file-processing.md)：UTF-8文本格式、上传幂等、完整正文、文件引用及撤权边界。
 - [社交关系](social-graph.md)、[小站能力与缺口](station-feature-closure.md)：真实接口及尚未完成的功能。

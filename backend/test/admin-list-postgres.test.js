@@ -43,7 +43,7 @@ test('PostgreSQL admin pages search and paginate all resources', { skip: !enable
     await client.query(`INSERT INTO agent_registry (agent_key,version,contract_hash) VALUES ($1,'1.0',repeat('a',64))`, [agent]);
     await client.query(`INSERT INTO agent_releases (id,agent_key,version,contract_hash,declared_scopes,readiness,identity_snapshot) VALUES ($1,$2,'1.0',repeat('a',64),'[]','{}',$3)`, [releaseId, agent, JSON.stringify({displayName: `Pagination Release ${i}`})]);
     await client.query(`INSERT INTO products (id,product_key,display_name,identity_snapshot) VALUES ($1,$2,$3,'{}')`, [productId, `pagination-product-${i}`, `Pagination Product ${i}`]);
-    await client.query(`INSERT INTO product_versions (id,product_id,version,supported_platforms) VALUES ($1,$2,'1.0','["ios"]')`, [randomUUID(), productId]);
+    await client.query(`INSERT INTO product_versions (id,product_id,version,supported_platforms,display_name,description,identity_snapshot) VALUES ($1,$2,'1.0','["ios"]',$3,'','{}')`, [randomUUID(), productId, `Pagination Product ${i}`]);
   }
   for (const kind of ['users', 'events', 'runs', 'releases', 'products']) {
     const first = await list(kind, {page: 1, pageSize: 2, query: 'pagination'});
@@ -58,4 +58,24 @@ test('PostgreSQL admin pages search and paginate all resources', { skip: !enable
     const wildcard = await list(kind, {page: 1, pageSize: 10, query: '%'});
     assert.equal(wildcard.total, 0, `${kind} should search literal percent`);
   }
+});
+
+test('product page returns and searches the selected draft presentation without overwriting its published parent', { skip: !enabled && 'set RUN_ADMIN_LIST_POSTGRES=1 for disposable PostgreSQL' }, async () => {
+  const productId = randomUUID();
+  const draftId = randomUUID();
+  const draftIdentity = { displayName: 'DraftBrandBeta' };
+  await client.query(`INSERT INTO products (id,product_key,display_name,description,identity_snapshot,status)
+    VALUES ($1,$2,'OriginalBrandAlpha','Published description','{}','published')`, [productId, `version-brand-${productId}`]);
+  await client.query(`INSERT INTO product_versions (id,product_id,version,supported_platforms,status,display_name,description,identity_snapshot,created_at)
+    VALUES ($1,$2,'1.0.0','["ios"]','published','OriginalBrandAlpha','Published description','{}',CURRENT_TIMESTAMP - INTERVAL '1 hour')`, [randomUUID(), productId]);
+  await client.query(`INSERT INTO product_versions (id,product_id,version,supported_platforms,status,display_name,description,identity_snapshot)
+    VALUES ($1,$2,'2.0.0','["ios"]','draft','DraftBrandBeta','Draft description',$3)`, [draftId, productId, JSON.stringify(draftIdentity)]);
+  const page = await list('products', { page: 1, pageSize: 10, query: 'DraftBrandBeta', sortBy: 'displayName', sortOrder: 'asc' });
+  assert.equal(page.total, 1);
+  assert.equal(page.items[0].productVersionId, draftId);
+  assert.equal(page.items[0].version, '2.0.0');
+  assert.equal(page.items[0].displayName, 'DraftBrandBeta');
+  assert.equal(page.items[0].description, 'Draft description');
+  assert.deepEqual(page.items[0].identity, draftIdentity);
+  assert.equal((await client.query('SELECT display_name FROM products WHERE id = $1', [productId])).rows[0].display_name, 'OriginalBrandAlpha');
 });

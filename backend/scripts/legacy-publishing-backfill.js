@@ -226,7 +226,7 @@ async function ensureProduct(q, item, release) {
   const productId = crypto.randomUUID();
   const versionId = crypto.randomUUID();
   await q("INSERT INTO products (id, product_key, display_name, description, identity_snapshot, status) VALUES (?, ?, ?, ?, ?::jsonb, ?)", [productId, item.product.productKey, item.product.displayName, item.product.description, JSON.stringify(item.product.identity), item.product.status]);
-  await q("INSERT INTO product_versions (id, product_id, version, supported_platforms, status, contract_hash) VALUES (?, ?, ?, ?::jsonb, ?, ?)", [versionId, productId, item.product.version, JSON.stringify(item.product.supportedPlatforms), item.product.status, contractHash]);
+  await q("INSERT INTO product_versions (id, product_id, version, supported_platforms, status, contract_hash, display_name, description, identity_snapshot) VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?::jsonb)", [versionId, productId, item.product.version, JSON.stringify(item.product.supportedPlatforms), item.product.status, contractHash, item.product.displayName, item.product.description, JSON.stringify(item.product.identity)]);
   await q("INSERT INTO product_agent_dependencies (product_version_id, agent_key, agent_release_id, version, required_scopes) VALUES (?, ?, ?, ?, ?::jsonb)", [versionId, item.agentKey, release.id, item.product.version, JSON.stringify(item.product.scopes)]);
   await q("INSERT INTO product_status_history (product_id, product_version_id, from_status, to_status, reason) VALUES (?, ?, NULL, ?, ?)", [productId, versionId, item.product.status, MIGRATION_ID]);
   return { id: productId, product_version_id: versionId, status: item.product.status, version_status: item.product.status, contract_hash: contractHash };

@@ -8,7 +8,7 @@ import { advanceAITask, createAITaskInTransaction, finishAITask } from "./ai-tas
 import { buildSiteDraftResponse, validateSiteDraftContent } from "./site-builder-service.js";
 import { applyStationSiteDraft, createStationSiteDraft } from "./station-agent-repository.js";
 import { hashSiteDocumentValue, readSiteDocumentResources, validateStoredSiteDocument } from "./site-document-repository.js";
-import { agentScopesMatchDeclaration } from "./ai-agent-access.js";
+import { agentScopesMatchDeclaration, assertAgentProductEntitlement } from "./ai-agent-access.js";
 
 export const siteTaskRequestSchema = z.object({
   prompt: z.string().trim().min(1).max(1200),
@@ -27,6 +27,7 @@ async function authorize(connection, userId, agent, { write = false, lockProfile
   if (!grants[0]?.enabled || !agentScopesMatchDeclaration(agent, grants[0].granted_scopes)) {
     fail(403, "SITE_TASK_ACCESS_REVOKED", "建站 Agent 授权已撤回或范围已变化，请在“我”移除后重新添加。");
   }
+  await assertAgentProductEntitlement({ userId, agent, queryFn: connection.query.bind(connection) });
   const profiles = await connection.query(`SELECT p.*, u.ai_id FROM user_profiles p
     JOIN users u ON u.id = p.user_id WHERE p.user_id = ?${lockProfile ? ` FOR ${write ? "UPDATE" : "SHARE"} OF p` : ""}`, [userId]);
   if (!profiles[0]) fail(404, "SITE_TASK_PROFILE_MISSING", "小站资料不存在。");
@@ -98,7 +99,13 @@ export function createSiteTaskService({
     });
     const contextHash = hashSiteTaskValue(context.stationContent);
     await advanceTask({ taskId: record.id, claimToken: record.claimToken, phase: "generating", expectedPhase: "validating" });
-    const generation = await generate({ prompt, user: context.user, profile: context.profile, stationContent: context.stationContent });
+    const generation = await generate({
+      prompt, user: context.user, profile: context.profile, stationContent: context.stationContent,
+      beforeModelCall: async () => transaction(async connection => {
+        const currentAgent = await registeredAgent(record.agentVersion);
+        await authorize(connection, record.userId, currentAgent);
+      }),
+    });
     validateSiteDraftContent(generation.draft);
     return finishTask({
       taskId: record.id, claimToken: record.claimToken,

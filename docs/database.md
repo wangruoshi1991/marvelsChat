@@ -90,6 +90,8 @@ POSTGRES_CONNECTION_LIMIT=10
 
 ## 关键表
 
+本轮新增 `049_agent_avatar_assets.sql`：不可变受管头像的摘要、尺寸、操作者和请求幂等，图片位于持久化 `storage/agent-avatars`（可显式配置）；`agent_catalog.identity_avatar` 是发布投影，不能代替 release identity。`050_product_version_snapshots.sql` 为产品版本保存名称、简介与完整 identity；一次性回填既有版本，此后创建必须显式提供，新草稿不改变已发布合同或用户授权。生产迁移是否执行以 CURRENT 和实际账本为准。
+
 - `users`：注册用户、角色、状态、AI ID、最近登录时间。
 - `schema_migrations`：已执行迁移文件、SHA-256 校验和与执行时间。
 - `user_profiles`：小站资料。昵称、头像文字、`avatar_config`、简介、社区、活动区域、`miao_points`、关注/粉丝/收藏计数保存在这里；关注和粉丝计数由社交关系写入后刷新。`avatar_config` 只接受 v2 字段，迁移 `025_avatar_config_v2.sql` 会将旧 `palette` 映射到 `accent`，并从资料和穿搭快照中移除旧 `palette`、`shape` 键。

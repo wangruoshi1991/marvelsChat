@@ -10,6 +10,7 @@ function mapRow(row) {
     identityMark: row.identity_mark ?? null,
     identityShape: row.identity_shape || null,
     identityColors: parseJson(row.identity_colors, {}),
+    identityAvatar: parseJson(row.identity_avatar, null),
     status: row.status || "unpublished",
     releaseVersion: row.release_version ?? null,
     contractHash: row.contract_hash ?? null,
@@ -38,7 +39,8 @@ function applyCatalogueMetadata(agent, metadata) {
   }
   const identity = {
     key: agent.key,
-    avatarKind: "agent-mark",
+    avatarKind: metadata.identityAvatar ? "agent-image" : "agent-mark",
+    ...(metadata.identityAvatar ? { avatar: metadata.identityAvatar } : {}),
     displayName: metadata.displayName,
     description: metadata.description,
     mark: metadata.identityMark,
@@ -124,7 +126,7 @@ export async function syncAgentCatalogue(registeredAgents) {
 export async function listAgentCatalogue({ includeUnregistered = false } = {}) {
   const rows = await query(
     `SELECT agent_id, display_name, description, identity_mark, identity_shape,
-            identity_colors, status, release_version, contract_hash, source, created_at, updated_at
+            identity_colors, identity_avatar, status, release_version, contract_hash, source, created_at, updated_at
        FROM agent_catalog
       ${includeUnregistered ? "" : "WHERE status = 'published'"}
       ORDER BY updated_at DESC, agent_id ASC`,
@@ -136,7 +138,7 @@ export async function updateAgentCatalogue(agentId, patch) {
   return withTransaction(async ({ query: runQuery }) => {
   const previous = await runQuery(
     `SELECT agent_id, display_name, description, identity_mark, identity_shape,
-            identity_colors, status, release_version, contract_hash, source, created_at, updated_at
+            identity_colors, identity_avatar, status, release_version, contract_hash, source, created_at, updated_at
        FROM agent_catalog
       WHERE agent_id = ?
       LIMIT 1 FOR UPDATE`,
@@ -177,7 +179,7 @@ export async function updateAgentCatalogue(agentId, patch) {
         SET ${assignments.join(", ")}
       WHERE agent_id = ?
       RETURNING agent_id, display_name, description, identity_mark, identity_shape,
-              identity_colors, status, release_version, contract_hash, source, created_at, updated_at`,
+              identity_colors, identity_avatar, status, release_version, contract_hash, source, created_at, updated_at`,
     params,
   );
   if (!rows[0]) return null;

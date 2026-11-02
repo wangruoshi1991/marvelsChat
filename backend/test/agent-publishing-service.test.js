@@ -104,6 +104,7 @@ test("product publication rejects a stale product contract hash", async () => {
 test("repeated release publication delegates to an idempotent transition", async () => {
   let calls = 0;
   const service = createAgentPublishingService({
+    getReadiness: async () => ({ "demo-agent": { configured: true, missingEnv: [] } }),
     listRegisteredAgents: async () => [{ key: "demo-agent", version: "1.0.0", permissions: ["messages:read"] }],
     releaseRepository: {
       getAgentRelease: async () => ({ id: "r1", agentKey: "demo-agent", version: "1.0.0", contractHash: demoContractHash, readiness: { ready: true, missing: [] }, declaredScopes: ["messages:read"], identity }),

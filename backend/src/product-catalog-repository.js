@@ -3,6 +3,7 @@ import { canonicalizeContract, computeAgentContractHash, isCompleteAgentIdentity
 import { query, withTransaction } from "./db.js";
 import { parseJson, toIso } from "./repository-mappers.js";
 import { HttpError } from "./http-error.js";
+import { assertManagedAgentAvatar, assertAgentImagePublicationReady } from "./agent-avatar-assets.js";
 
 const uuid = () => crypto.randomUUID();
 const qFor = (connection) => typeof connection?.query === "function"
@@ -15,9 +16,9 @@ export function mapProduct(row, dependencies = []) {
     id: String(row.id || "").trim(),
     productKey: row.product_key,
     version: row.version || null,
-    displayName: row.display_name,
-    description: row.description || "",
-    identity: parseJson(row.identity_snapshot, null),
+    displayName: row.version_display_name ?? row.display_name,
+    description: row.version_description ?? row.description ?? "",
+    identity: parseJson(row.version_identity_snapshot ?? row.identity_snapshot, null),
     supportedPlatforms: parseJson(row.supported_platforms, []),
     status: row.status,
     productVersionId: row.product_version_id ? String(row.product_version_id).trim() : null,
@@ -169,20 +170,22 @@ export function createProductCatalogRepository({
     }
   }
 
-  async function ensureEntitlementProjection(q, { userId, product }) {
+  async function ensureEntitlementProjection(q, { userId, product, agentKeys = null }) {
     await reconcileUserAgentProjection(q, {
       userId,
-      agentKeys: product.dependencies.map((dependency) => dependency.agentKey),
+      agentKeys: agentKeys || product.dependencies.map((dependency) => dependency.agentKey),
       source: `product_enable:${product.id}`,
     });
   }
 
   async function listProducts({ includeUnpublished = true } = {}) {
     const rows = await runQuery(`SELECT p.*, pv.id AS product_version_id, pv.version,
-      pv.supported_platforms, pv.status AS version_status, pv.contract_hash
+      pv.supported_platforms, pv.status AS version_status, pv.contract_hash,
+      pv.display_name AS version_display_name, pv.description AS version_description, pv.identity_snapshot AS version_identity_snapshot
       FROM products p LEFT JOIN LATERAL (
-        SELECT * FROM product_versions v WHERE v.product_id = p.id ORDER BY v.created_at DESC LIMIT 1
-      ) pv ON TRUE ${includeUnpublished ? "" : "WHERE p.status = 'published' AND pv.status = 'published'"}
+        SELECT * FROM product_versions v WHERE v.product_id = p.id ${includeUnpublished ? "" : "AND v.status = 'published'"}
+        ORDER BY v.created_at DESC, v.id DESC LIMIT 1
+      ) pv ON TRUE ${includeUnpublished ? "" : "WHERE pv.status = 'published'"}
       ORDER BY p.updated_at DESC, p.product_key ASC`);
     const result = [];
     for (const row of rows) {
@@ -201,7 +204,7 @@ export function createProductCatalogRepository({
     return result;
   }
 
-  async function listPublishedProductsForAgent(agentKey, { connection = null, userId = null, publishedOnly = true } = {}) {
+  async function listPublishedProductsForAgent(agentKey, { connection = null, userId = null, publishedOnly = true, productVersionId = null } = {}) {
     const q = connection ? qFor(connection) : runQuery;
     if (!publishedOnly && !userId) throw new HttpError(400, "A user is required to resolve an existing Agent entitlement", { code: "USER_REQUIRED" });
     const rows = await q(`SELECT DISTINCT p.id, p.product_key
@@ -209,23 +212,25 @@ export function createProductCatalogRepository({
       JOIN product_versions pv ON pv.product_id = p.id
       JOIN product_agent_dependencies d ON d.product_version_id = pv.id
       ${publishedOnly ? "" : "LEFT JOIN user_entitlements e ON e.product_version_id = pv.id AND e.user_id = ?"}
-      WHERE ${publishedOnly ? "p.status = 'published' AND pv.status = 'published' AND" : "e.id IS NOT NULL AND"} d.agent_key = ?
-      ORDER BY p.product_key ASC`, publishedOnly ? [agentKey] : [userId, agentKey]);
+      WHERE ${publishedOnly ? "p.status = 'published' AND pv.status = 'published' AND" : "e.id IS NOT NULL AND"} d.agent_key = ?${productVersionId ? " AND pv.id = ?" : ""}
+      ORDER BY p.product_key ASC`, [...(publishedOnly ? [agentKey] : [userId, agentKey]), ...(productVersionId ? [productVersionId] : [])]);
     const products = [];
     for (const row of rows) {
-      const product = await getProduct(row.id, { connection });
-      if (product && (!publishedOnly || productIsExecutable(product))) products.push(product);
+      const product = await getProduct(row.id, { connection, publishedOnly, productVersionId });
+      if (product && (!publishedOnly || (productIsExecutable(product) && product.dependencies.some(dependency => dependency.agentKey === agentKey)))) products.push(product);
     }
     return products;
   }
 
-  async function getProduct(productId, { lock = false, connection = null } = {}) {
+  async function getProduct(productId, { lock = false, connection = null, productVersionId = null, publishedOnly = false } = {}) {
     const q = connection ? qFor(connection) : runQuery;
     const rows = await q(`SELECT p.*, pv.id AS product_version_id, pv.version,
-      pv.supported_platforms, pv.status AS version_status, pv.contract_hash
+      pv.supported_platforms, pv.status AS version_status, pv.contract_hash,
+      pv.display_name AS version_display_name, pv.description AS version_description, pv.identity_snapshot AS version_identity_snapshot
       FROM products p LEFT JOIN product_versions pv ON pv.product_id = p.id
-      WHERE (p.id = ? OR p.product_key = ?) ORDER BY pv.created_at DESC LIMIT 1${lock ? " FOR UPDATE OF p" : ""}`,
-      [productId, productId]);
+      WHERE (p.id = ? OR p.product_key = ?)${productVersionId ? " AND pv.id = ?" : ""}${publishedOnly ? " AND pv.status = 'published'" : ""}
+      ORDER BY pv.created_at DESC, pv.id DESC LIMIT 1${lock ? " FOR UPDATE OF p" : ""}`,
+      [productId, productId, ...(productVersionId ? [productVersionId] : [])]);
     if (!rows[0]) return null;
     const deps = rows[0].product_version_id ? await q(`SELECT d.*, r.identity_snapshot,
       r.readiness, r.declared_scopes AS declared_scopes, r.contract_hash AS release_contract_hash, r.catalog_status AS release_status,
@@ -238,47 +243,132 @@ export function createProductCatalogRepository({
     return mapProduct({ ...rows[0], status: rows[0].version_status || rows[0].status }, deps);
   }
 
-  async function createProduct({ productKey, version, displayName, description = "", identity, supportedPlatforms, dependencies, createdBy = null }) {
+  async function createProduct({ productKey, version, displayName, description = "", identity, supportedPlatforms, dependencies, createdBy = null, requestId = null }) {
     if (!dependencies?.length) throw new HttpError(422, "Product requires at least one Agent dependency", { code: "PRODUCT_DEPENDENCIES_REQUIRED" });
     if (!isCompleteAgentIdentity(identity) || identity.key !== productKey || identity.published) throw new HttpError(422, "Product identity is incomplete or mismatched", { code: "PRODUCT_IDENTITY_INCOMPLETE" });
+    if (identity.displayName !== displayName || identity.description !== description) throw new HttpError(422, "Product identity presentation must match the version", { code: "PRODUCT_IDENTITY_MISMATCH" });
     return transaction(async (connection) => {
       const q = qFor(connection);
+      const fingerprint = computeAgentContractHash({ productKey, version, displayName, description, identity, supportedPlatforms: [...supportedPlatforms].sort(), dependencies: [...dependencies].map(dep => ({ ...dep, scopes: [...(dep.scopes || [])].sort() })).sort((a, b) => a.agentKey.localeCompare(b.agentKey)) });
+      const reason = `create_product:${fingerprint}`;
+      if (requestId) {
+        await q("SELECT pg_advisory_xact_lock(hashtext(?))", [`product-create:${createdBy}:${requestId}`]);
+        const [replay] = await q(`SELECT product_id, product_version_id, reason FROM product_status_history
+          WHERE actor_user_id IS NOT DISTINCT FROM ? AND request_id = ? ORDER BY id DESC LIMIT 1`, [createdBy, requestId]);
+        if (replay) {
+          if (replay.reason !== reason) throw new HttpError(409, "Idempotency-Key was used for another product", { code: "IDEMPOTENCY_CONFLICT" });
+          return getProduct(String(replay.product_id).trim(), { connection, productVersionId: String(replay.product_version_id).trim() });
+        }
+        await q("SELECT pg_advisory_xact_lock(hashtext(?))", [`product-key:${productKey}`]);
+        const duplicate = await q("SELECT id FROM products WHERE product_key = ?", [productKey]);
+        if (duplicate.length) throw new HttpError(409, "Product key already exists; create another version of the existing product", { code: "PRODUCT_EXISTS" });
+      }
       const productId = randomUUID();
       const versionId = randomUUID();
-      const normalizedDependencies = [];
-      for (const dep of dependencies) {
-        const rows = await q("SELECT id, agent_key, version, contract_hash, declared_scopes, catalog_status FROM agent_releases WHERE id = ? LIMIT 1 FOR SHARE", [dep.agentReleaseId]);
-        const release = rows[0];
-        if (!release || release.agent_key !== dep.agentKey || release.version !== dep.version) throw new HttpError(409, "Product dependency release does not match registry", { code: "PRODUCT_DEPENDENCY_MISMATCH" });
-        const declared = parseJson(release.declared_scopes, []);
-        const scopes = [...new Set(dep.scopes || dep.requiredScopes || [])];
-        if (scopes.length !== declared.length || scopes.some((scope) => !declared.includes(scope))) throw new HttpError(422, "Product dependency scopes must match the Agent declaration", { code: "SCOPES_MISMATCH" });
-        normalizedDependencies.push({ ...dep, scopes, contractHash: release.contract_hash });
-      }
+      await assertManagedAgentAvatar(identity, { connection });
+      const normalizedDependencies = await normalizeDependencies(q, dependencies);
       const contractHash = computeProductContractHash({ productKey, version, displayName, description, identity, supportedPlatforms, dependencies: normalizedDependencies });
       await q(`INSERT INTO products (id, product_key, display_name, description, identity_snapshot, status, created_by)
         VALUES (?, ?, ?, ?, ?::jsonb, 'draft', ?)`, [productId, productKey, displayName, description, JSON.stringify(identity), createdBy]);
-      await q(`INSERT INTO product_versions (id, product_id, version, supported_platforms, status, created_by)
-        VALUES (?, ?, ?, ?::jsonb, 'draft', ?)`, [versionId, productId, version, JSON.stringify(supportedPlatforms), createdBy]);
+      await q(`INSERT INTO product_versions (id, product_id, version, supported_platforms, status, created_by, display_name, description, identity_snapshot)
+        VALUES (?, ?, ?, ?::jsonb, 'draft', ?, ?, ?, ?::jsonb)`, [versionId, productId, version, JSON.stringify(supportedPlatforms), createdBy, displayName, description, JSON.stringify(identity)]);
       await q("UPDATE product_versions SET contract_hash = ? WHERE id = ?", [contractHash, versionId]);
       for (const dep of normalizedDependencies) await q(`INSERT INTO product_agent_dependencies
         (product_version_id, agent_key, agent_release_id, version, required_scopes) VALUES (?, ?, ?, ?, ?::jsonb)`, [versionId, dep.agentKey, dep.agentReleaseId, dep.version, JSON.stringify(dep.scopes || dep.requiredScopes || [])]);
-      await q("INSERT INTO product_status_history (product_id, product_version_id, from_status, to_status, actor_user_id, reason) VALUES (?, ?, NULL, 'draft', ?, 'create')", [productId, versionId, createdBy]);
-      return getProduct(productId, { connection });
+      await q("INSERT INTO product_status_history (product_id, product_version_id, from_status, to_status, actor_user_id, reason, request_id) VALUES (?, ?, NULL, 'draft', ?, ?, ?)", [productId, versionId, createdBy, reason, requestId]);
+      return getProduct(productId, { connection, productVersionId: versionId });
+    }).catch(error => {
+      if (error.code === "23505" && error.constraint === "products_product_key_key") throw new HttpError(409, "Product key already exists; create a new product version", { code: "PRODUCT_EXISTS" });
+      throw error;
     });
   }
 
-  async function transitionProduct({ productId, toStatus, actorUserId = null, reason = null, requestId = null, afterProjection = null }) {
+  async function listProductVersions(productId, { connection = null } = {}) {
+    const q = connection ? qFor(connection) : runQuery;
+    const rows = await q(`SELECT pv.id FROM product_versions pv JOIN products p ON p.id = pv.product_id
+      WHERE p.id = ? OR p.product_key = ? ORDER BY pv.created_at DESC, pv.id DESC`, [productId, productId]);
+    const versions = [];
+    for (const row of rows) versions.push(await getProduct(productId, { connection, productVersionId: String(row.id).trim() }));
+    return versions.filter(Boolean);
+  }
+
+  async function normalizeDependencies(q, dependencies) {
+    if (!dependencies?.length) throw new HttpError(422, "Product requires Agent dependencies", { code: "PRODUCT_DEPENDENCIES_REQUIRED" });
+    if (new Set(dependencies.map(dep => dep.agentKey)).size !== dependencies.length) throw new HttpError(422, "Product Agent dependencies must be unique", { code: "PRODUCT_DEPENDENCY_DUPLICATE" });
+    const normalized = [];
+    for (const dep of dependencies) {
+      const [release] = await q("SELECT id, agent_key, version, contract_hash, declared_scopes, catalog_status FROM agent_releases WHERE id = ? LIMIT 1 FOR SHARE", [dep.agentReleaseId]);
+      if (!release || release.agent_key !== dep.agentKey || release.version !== dep.version) throw new HttpError(409, "Product dependency release does not match", { code: "PRODUCT_DEPENDENCY_MISMATCH" });
+      if (release.catalog_status !== "published") throw new HttpError(409, "Product versions must bind published Agent releases", { code: "AGENT_DEPENDENCY_UNAVAILABLE" });
+      const scopes = [...new Set(dep.scopes || [])];
+      if (!sameScopes(scopes, parseJson(release.declared_scopes, []))) throw new HttpError(422, "Product dependency scopes must match Agent declaration", { code: "SCOPES_MISMATCH" });
+      normalized.push({ ...dep, scopes, contractHash: release.contract_hash });
+    }
+    return normalized;
+  }
+
+  async function saveVersion({ productId, productVersionId = null, version, displayName, description = "", identity, supportedPlatforms, dependencies, actorUserId = null, requestId = null }) {
+    return transaction(async connection => {
+      const q = qFor(connection);
+      const [parent] = await q("SELECT id, product_key FROM products WHERE id = ? LIMIT 1 FOR UPDATE", [productId]);
+      if (!parent) throw new HttpError(404, "Product not found", { code: "PRODUCT_NOT_FOUND" });
+      if (!isCompleteAgentIdentity(identity) || identity.key !== parent.product_key || identity.published) throw new HttpError(422, "Product identity does not match", { code: "PRODUCT_IDENTITY_INCOMPLETE" });
+      if (identity.displayName !== displayName || identity.description !== description) throw new HttpError(422, "Product identity presentation must match the version", { code: "PRODUCT_IDENTITY_MISMATCH" });
+      await assertManagedAgentAvatar(identity, { connection });
+      const normalized = await normalizeDependencies(q, dependencies);
+      const contractHash = computeProductContractHash({ productKey: parent.product_key, version, displayName, description, identity, supportedPlatforms, dependencies: normalized });
+      const reason = `${productVersionId ? "edit_version" : "create_version"}:${contractHash}`;
+      if (requestId) {
+        const [replay] = await q("SELECT product_version_id, reason FROM product_status_history WHERE product_id = ? AND request_id = ? ORDER BY id DESC LIMIT 1", [productId, requestId]);
+        if (replay) {
+          if (replay.reason !== reason || (productVersionId && String(replay.product_version_id).trim() !== productVersionId)) throw new HttpError(409, "Idempotency-Key was used for a different product version", { code: "IDEMPOTENCY_CONFLICT" });
+          return getProduct(productId, { connection, productVersionId: String(replay.product_version_id).trim() });
+        }
+      }
+      let versionId = productVersionId;
+      if (versionId) {
+        const existing = await getProduct(productId, { connection, productVersionId: versionId });
+        if (!existing) throw new HttpError(404, "Product version not found", { code: "PRODUCT_VERSION_NOT_FOUND" });
+        if (existing.status !== "draft") throw new HttpError(409, "Only draft product versions can be edited", { code: "PRODUCT_VERSION_NOT_EDITABLE" });
+        const everPublished = await q("SELECT id FROM product_status_history WHERE product_version_id = ? AND to_status = 'published' LIMIT 1", [versionId]);
+        if (everPublished.length) throw new HttpError(409, "Published product versions are immutable", { code: "PRODUCT_VERSION_NOT_EDITABLE" });
+        const duplicate = await q("SELECT id FROM product_versions WHERE product_id = ? AND version = ? AND id <> ?", [productId, version, versionId]);
+        if (duplicate.length) throw new HttpError(409, "Product version already exists", { code: "PRODUCT_VERSION_EXISTS" });
+        await q(`UPDATE product_versions SET version = ?, display_name = ?, description = ?, identity_snapshot = ?::jsonb,
+          supported_platforms = ?::jsonb, contract_hash = ? WHERE id = ?`, [version, displayName, description, JSON.stringify(identity), JSON.stringify(supportedPlatforms), contractHash, versionId]);
+        await q("DELETE FROM product_agent_dependencies WHERE product_version_id = ?", [versionId]);
+      } else {
+        const duplicate = await q("SELECT id FROM product_versions WHERE product_id = ? AND version = ?", [productId, version]);
+        if (duplicate.length) throw new HttpError(409, "Product version already exists", { code: "PRODUCT_VERSION_EXISTS" });
+        versionId = randomUUID();
+        await q(`INSERT INTO product_versions (id, product_id, version, display_name, description, identity_snapshot, supported_platforms, contract_hash, status, created_by)
+          VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, 'draft', ?)`, [versionId, productId, version, displayName, description, JSON.stringify(identity), JSON.stringify(supportedPlatforms), contractHash, actorUserId]);
+      }
+      for (const dep of normalized) await q(`INSERT INTO product_agent_dependencies (product_version_id, agent_key, agent_release_id, version, required_scopes)
+        VALUES (?, ?, ?, ?, ?::jsonb)`, [versionId, dep.agentKey, dep.agentReleaseId, dep.version, JSON.stringify(dep.scopes)]);
+      await q("INSERT INTO product_status_history (product_id, product_version_id, from_status, to_status, actor_user_id, reason, request_id) VALUES (?, ?, ?, 'draft', ?, ?, ?)", [productId, versionId, productVersionId ? "draft" : null, actorUserId, reason, requestId]);
+      return getProduct(productId, { connection, productVersionId: versionId });
+    });
+  }
+
+  async function createProductVersion(args) { return saveVersion({ ...args, productVersionId: null }); }
+  async function updateProductVersion(args) { return saveVersion(args); }
+
+  async function transitionProduct({ productId, productVersionId = null, toStatus, actorUserId = null, reason = null, requestId = null, afterProjection = null }) {
     return transaction(async (connection) => {
       const q = qFor(connection);
-      const product = await getProduct(productId, { connection, lock: true });
+      const product = await getProduct(productId, { connection, lock: true, productVersionId });
       if (!product) throw new HttpError(404, "Product not found", { code: "PRODUCT_NOT_FOUND" });
+      if (["review", "published"].includes(toStatus)) {
+        assertAgentImagePublicationReady(product.identity);
+        for (const dependency of product.dependencies) assertAgentImagePublicationReady(dependency.identity);
+      }
       const from = product.status;
       if (requestId) {
-        const replay = await q(`SELECT to_status FROM product_status_history
+        const replay = await q(`SELECT to_status, product_version_id FROM product_status_history
           WHERE product_id = ? AND request_id = ? ORDER BY id DESC LIMIT 1`, [product.id, requestId]);
         if (replay[0]) {
-          if (replay[0].to_status !== toStatus || from !== toStatus) {
+          if (replay[0].to_status !== toStatus || from !== toStatus || (replay[0].product_version_id && String(replay[0].product_version_id).trim() !== product.productVersionId)) {
             throw new HttpError(409, "Idempotency-Key was already used for a different product transition", { code: "IDEMPOTENCY_CONFLICT" });
           }
           return product;
@@ -301,8 +391,23 @@ export function createProductCatalogRepository({
       const affectedUsers = ["published", "paused", "retired"].includes(toStatus)
         ? await q("SELECT DISTINCT e.user_id FROM user_entitlements e WHERE e.product_version_id = ? AND e.status = 'enabled'", [product.productVersionId])
         : [];
-      await q("UPDATE products SET status = ? WHERE id = ?", [toStatus, product.id]);
+      await assertManagedAgentAvatar(product.identity, { connection });
       await q("UPDATE product_versions SET status = ? WHERE id = ?", [toStatus, product.productVersionId]);
+      await q(`UPDATE products SET status = CASE WHEN EXISTS (SELECT 1 FROM product_versions WHERE product_id = ? AND status = 'published') THEN 'published' ELSE ? END WHERE id = ?`, [product.id, toStatus, product.id]);
+      if (toStatus === "published") {
+        await q("UPDATE products SET display_name = ?, description = ?, identity_snapshot = ?::jsonb WHERE id = ?", [product.displayName, product.description, JSON.stringify(product.identity), product.id]);
+        for (const dep of product.dependencies) {
+          const identity = dep.identity;
+          await assertManagedAgentAvatar(identity, { connection });
+          await q(`INSERT INTO agent_catalog (agent_id, display_name, description, identity_mark, identity_shape, identity_colors, identity_avatar, release_version, contract_hash, source, status)
+            VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, 'published')
+            ON CONFLICT (agent_id) DO UPDATE SET display_name = EXCLUDED.display_name, description = EXCLUDED.description,
+              identity_mark = EXCLUDED.identity_mark, identity_shape = EXCLUDED.identity_shape, identity_colors = EXCLUDED.identity_colors,
+              identity_avatar = EXCLUDED.identity_avatar, release_version = EXCLUDED.release_version,
+              contract_hash = EXCLUDED.contract_hash, source = EXCLUDED.source, status = 'published'`,
+            [dep.agentKey, identity.displayName, identity.description, identity.mark, identity.shape, JSON.stringify(identity.colors), identity.avatar ? JSON.stringify(identity.avatar) : null, dep.version, dep.contractHash, identity.source]);
+        }
+      }
       if (["paused", "retired"].includes(toStatus) && affectedUsers.length) {
         for (const row of affectedUsers) {
           await q("INSERT INTO entitlement_status_history (entitlement_id, from_status, to_status, actor_user_id, reason) SELECT id, status, 'unavailable', ?, ? FROM user_entitlements WHERE user_id = ? AND product_version_id = ? AND status = 'enabled'", [actorUserId, `product_${toStatus}`, row.user_id, product.productVersionId]);
@@ -321,19 +426,24 @@ export function createProductCatalogRepository({
         }
       }
       await q("INSERT INTO product_status_history (product_id, product_version_id, from_status, to_status, actor_user_id, reason, request_id) VALUES (?, ?, ?, ?, ?, ?, ?)", [product.id, product.productVersionId, from, toStatus, actorUserId, reason, requestId]);
-      return getProduct(product.id, { connection });
+      return getProduct(product.id, { connection, productVersionId: product.productVersionId });
     });
   }
 
-  async function createEntitlement({ userId, productId, grantedScopes, consentVersion = null, idempotencyKey = null, actorUserId = userId, afterProjection = null }) {
+  async function createEntitlement({ userId, productId, productVersionId = null, grantedScopes, consentVersion = null, idempotencyKey = null, actorUserId = userId, afterProjection = null }) {
     return transaction(async (connection) => {
       const q = qFor(connection);
       if (!idempotencyKey || typeof idempotencyKey !== "string" || idempotencyKey.trim().length < 8 || idempotencyKey.trim().length > 160) {
         throw new HttpError(400, "An Idempotency-Key is required to enable a product", { code: "IDEMPOTENCY_KEY_REQUIRED" });
       }
       const normalizedIdempotencyKey = idempotencyKey.trim();
-      const product = await getProduct(productId, { connection, lock: true });
-      if (!product) throw new HttpError(404, "Product not found", { code: "PRODUCT_NOT_FOUND" });
+      let selectedVersionId = productVersionId;
+      if (!selectedVersionId) {
+        const existingGrant = await q("SELECT product_version_id FROM user_entitlements WHERE user_id = ? AND product_id = ? AND status = 'enabled' ORDER BY updated_at DESC LIMIT 1", [userId, productId]);
+        selectedVersionId = existingGrant[0]?.product_version_id?.trim() || null;
+      }
+      const product = await getProduct(productId, { connection, lock: true, productVersionId: selectedVersionId, publishedOnly: !selectedVersionId });
+      if (!product) throw new HttpError(404, "Published product version not found", { code: "PRODUCT_NOT_FOUND" });
       if (product.status !== "published") throw new HttpError(409, "Product is unavailable", { code: "PRODUCT_UNAVAILABLE" });
       if (!isCurrentProductContract(product)) {
         throw new HttpError(409, "Product contract is stale", { code: "PRODUCT_CONTRACT_STALE" });
@@ -356,6 +466,28 @@ export function createProductCatalogRepository({
       if (replay[0] && replay[0].product_version_id !== product.productVersionId) {
         throw new HttpError(409, "Idempotency-Key was already used for another product", { code: "IDEMPOTENCY_CONFLICT" });
       }
+      const supersededProducts = [];
+      if (productVersionId) {
+        const superseded = await q("SELECT product_version_id FROM user_entitlements WHERE user_id = ? AND product_id = ? AND product_version_id <> ? AND status = 'enabled'", [userId, product.id, product.productVersionId]);
+        for (const row of superseded) {
+          const previous = await getProduct(product.id, { connection, productVersionId: String(row.product_version_id).trim() });
+          if (previous) supersededProducts.push(previous);
+        }
+        await q(`INSERT INTO entitlement_status_history (entitlement_id, from_status, to_status, actor_user_id, reason)
+          SELECT id, status, 'disabled', ?, 'user_consented_product_version_upgrade' FROM user_entitlements
+          WHERE user_id = ? AND product_id = ? AND product_version_id <> ? AND status = 'enabled'`, [actorUserId, userId, product.id, product.productVersionId]);
+        await q("UPDATE user_entitlements SET status = 'disabled', unavailable_reason = 'User consented to another product version' WHERE user_id = ? AND product_id = ? AND product_version_id <> ? AND status = 'enabled'", [userId, product.id, product.productVersionId]);
+      }
+      const projectConsent = async () => {
+        const agentKeys = [...new Set([product, ...supersededProducts].flatMap(item => item.dependencies.map(dependency => dependency.agentKey)))];
+        await ensureEntitlementProjection(q, { userId, product, agentKeys });
+        if (afterProjection) {
+          for (const previous of supersededProducts) {
+            await afterProjection({ userId, enabled: false, consentVersion: null, idempotencyKey: `product-upgrade-${crypto.createHash("sha256").update(`${normalizedIdempotencyKey}:${previous.productVersionId}`).digest("hex")}`, product: previous, connection });
+          }
+          await afterProjection({ userId, enabled: true, consentVersion, idempotencyKey: normalizedIdempotencyKey, product, connection });
+        }
+      };
       const existing = await q("SELECT * FROM user_entitlements WHERE user_id = ? AND product_version_id = ? FOR UPDATE", [userId, product.productVersionId]);
       if (existing[0]) {
         if (replay[0] && replay[0].id === existing[0].id) {
@@ -373,8 +505,7 @@ export function createProductCatalogRepository({
         } else {
           await q("UPDATE user_entitlements SET idempotency_key = ?, consent_version = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [normalizedIdempotencyKey, consentVersion, existing[0].id]);
         }
-        await ensureEntitlementProjection(q, { userId, product });
-        if (afterProjection) await afterProjection({ userId, enabled: true, consentVersion, idempotencyKey: normalizedIdempotencyKey, product, connection });
+        await projectConsent();
         return mapEntitlement((await q("SELECT * FROM user_entitlements WHERE id = ?", [existing[0].id]))[0]);
       }
       const entitlementId = randomUUID();
@@ -383,19 +514,23 @@ export function createProductCatalogRepository({
       await q(`INSERT INTO user_entitlements (id, user_id, product_id, product_version_id, status, granted_scopes, contract_hash, consent_version, idempotency_key)
         VALUES (?, ?, ?, ?, 'enabled', ?::jsonb, ?, ?, ?)`, [entitlementId, userId, product.id, product.productVersionId, JSON.stringify(scopes), contractHash, consentVersion, normalizedIdempotencyKey]);
       await q("INSERT INTO entitlement_status_history (entitlement_id, from_status, to_status, actor_user_id, reason) VALUES (?, NULL, 'enabled', ?, 'user_consent')", [entitlementId, actorUserId]);
-      await ensureEntitlementProjection(q, { userId, product });
-      if (afterProjection) await afterProjection({ userId, enabled: true, consentVersion, idempotencyKey: normalizedIdempotencyKey, product, connection });
+      await projectConsent();
       return mapEntitlement((await q("SELECT * FROM user_entitlements WHERE id = ?", [entitlementId]))[0]);
     });
   }
 
-  async function disableEntitlement({ userId, productId, idempotencyKey, actorUserId = userId, afterProjection = null }) {
+  async function disableEntitlement({ userId, productId, productVersionId = null, idempotencyKey, actorUserId = userId, afterProjection = null }) {
     return transaction(async (connection) => {
       const q = qFor(connection);
       if (!idempotencyKey || typeof idempotencyKey !== "string" || idempotencyKey.trim().length < 8 || idempotencyKey.trim().length > 160) {
         throw new HttpError(400, "An Idempotency-Key is required to disable a product", { code: "IDEMPOTENCY_KEY_REQUIRED" });
       }
-      const product = await getProduct(productId, { connection, lock: true });
+      let selectedVersionId = productVersionId;
+      if (!selectedVersionId) {
+        const existingGrant = await q("SELECT product_version_id FROM user_entitlements WHERE user_id = ? AND product_id = ? ORDER BY CASE status WHEN 'enabled' THEN 0 ELSE 1 END, updated_at DESC LIMIT 1", [userId, productId]);
+        selectedVersionId = existingGrant[0]?.product_version_id?.trim() || null;
+      }
+      const product = await getProduct(productId, { connection, lock: true, productVersionId: selectedVersionId });
       if (!product) throw new HttpError(404, "Product not found", { code: "PRODUCT_NOT_FOUND" });
       const users = await q("SELECT id FROM users WHERE id = ? FOR UPDATE", [userId]);
       if (!users[0]) throw new HttpError(404, "User not found", { code: "USER_NOT_FOUND" });
@@ -446,24 +581,22 @@ export function createProductCatalogRepository({
       JOIN product_versions pv ON pv.id = e.product_version_id
       WHERE e.user_id = ?
       ORDER BY e.updated_at DESC, e.id DESC`, [userId]);
-    const currentProducts = new Set((await listProducts({ includeUnpublished: false })).map((product) => product.productVersionId));
-    return rows.map((row) => ({
-      id: String(row.id || "").trim(),
-      productId: String(row.product_id || "").trim(),
-      productVersionId: String(row.product_version_id || "").trim(),
-      productKey: row.product_key,
-      version: row.version,
-      status: row.status === "enabled" && !currentProducts.has(String(row.product_version_id || "").trim()) ? "unavailable" : row.status,
-      grantedScopes: parseJson(row.granted_scopes, []),
-      contractHash: row.contract_hash || null,
-      consentVersion: row.consent_version || null,
-      unavailableReason: row.status === "enabled" && !currentProducts.has(String(row.product_version_id || "").trim())
-        ? (row.unavailable_reason || "Product dependency contract is unavailable")
-        : (row.unavailable_reason || null),
-    }));
+    const result = [];
+    for (const row of rows) {
+      const product = row.status === "enabled" ? await getProduct(String(row.product_id).trim(), { productVersionId: String(row.product_version_id).trim() }) : null;
+      const unavailable = row.status === "enabled" && (!product || product.status !== "published" || !productIsExecutable(product) || row.contract_hash !== product.contractHash);
+      result.push({
+        id: String(row.id || "").trim(), productId: String(row.product_id || "").trim(),
+        productVersionId: String(row.product_version_id || "").trim(), productKey: row.product_key, version: row.version,
+        status: unavailable ? "unavailable" : row.status, grantedScopes: parseJson(row.granted_scopes, []),
+        contractHash: row.contract_hash || null, consentVersion: row.consent_version || null,
+        unavailableReason: unavailable ? (row.unavailable_reason || "Product dependency contract is unavailable") : (row.unavailable_reason || null),
+      });
+    }
+    return result;
   }
 
-  return { listProducts, getProduct, listPublishedProductsForAgent, createProduct, transitionProduct, createEntitlement, disableEntitlement, listEntitlementsForUser };
+  return { listProducts, getProduct, listProductVersions, createProductVersion, updateProductVersion, listPublishedProductsForAgent, createProduct, transitionProduct, createEntitlement, disableEntitlement, listEntitlementsForUser };
 }
 
 function mapEntitlement(row) {

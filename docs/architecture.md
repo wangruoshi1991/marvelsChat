@@ -151,6 +151,8 @@ Agent 身份 -> registry/release/product publish -> /api/app/bootstrap agents.re
 
 ## Agent 运行时
 
+代码能力与发布运营按 [接入与上架流程](agent-onboarding.md) 分工：实际 registry 只读展示，后台显式创建草稿、配置身份并审核；已发布 identity 通过新修订迭代，同一运行版本可有多个独立身份合同。产品版本拥有自己的展示快照，已有用户按精确 entitlement 保持仍有效的旧版身份，新授权绑定用户确认的 productVersionId，不以最新版本覆盖旧 consent。统一头像增加受管 agent-image 分支，服务端存储与摘要校验、草稿认证读取、发布门禁及 RN 显式错误共同约束，Build54 配套完成前图片发布默认关闭。
+
 `agents/` 与前后端分离。后端通过 `agents/registry.js` 注册 Agent，再由 `backend/src/agent-runtime.js` 调用。
 
 - 配置 `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL` 后，所有已注册且已授权的 Agent 会话都通过统一模型运行时调用 OpenAI-compatible 或 Anthropic-compatible 接口。
@@ -205,7 +207,7 @@ PostgreSQL 只保存任务、模型状态、字节数和 OSS object key，不保
 
 公开小站资料读取、按 ID 读取媒体文件和按 ID 点赞/收藏分别在服务端校验所有者账号状态、展示开关、内容可见性及好友关系；文件/元信息不授权返回 404。后台 `users:write` 仅可管理普通账号，创建/晋升管理员、修改管理员资料、状态、密码、会话、Agent 授权和管理权限须当前账号持有 `*`，前端禁用不替代服务端校验。授权回归的隔离 PostgreSQL 用例位于 `backend/test/station-access-postgres.test.js`；上线还需核对实际 Nginx 安全头和旧客户端已缓存的媒体副本。
 
-当前没有捏脸、骨骼动作或任意换装编辑器。后续升级商业素材库或动画时，必须继续保留原始生成资产与平台派生资产的边界，并完成授权、审核、移动端性能和跨平台验证。Agent 头像由 Agent 注册 identity 决定，不允许复用用户可编辑形象。收藏列表、签名动态码、群聊、已读回执、正在输入和媒体聊天消息记录在 [社交关系流程](social-graph.md)，后续必须继续按后端校验优先实现。
+当前没有捏脸、骨骼动作或任意换装编辑器。后续升级商业素材库或动画时，必须继续保留原始生成资产与平台派生资产的边界，并完成授权、审核、移动端性能和跨平台验证。Agent 头像由审核发布的 release identity 决定，不复用用户可编辑形象。收藏列表、签名动态码、群聊、已读回执、正在输入和媒体聊天消息记录在 [社交关系流程](social-graph.md)，后续必须继续按后端校验优先实现。
 
 App 通知列表只读取 `notifications` 表；通知创建、标题正文、通知种类集中在后端 `backend/src/notification-service.js`，社交关系仓储只返回创建结果，接口层负责实时推送刷新信号。当前标准通知种类为 `friend.request`、`friend.accepted`、`follow.created`，后续关注的人发布动态、收藏板块更新、系统审核等通知必须先扩展 `notification-service` 枚举和模板，再接入对应业务事件。`usage_events` 和 `agent_runs` 保持为后台审计与运行记录，不进入用户通知流。讯页使用“对话 / 任务”分段及独立通知入口，进入通知列表不会自动清空，点击单条、通过好友申请或显式标记已读才更新 `read_at`。妙讯管家当前聊天页内的同步回复不计入会话未读，只有用户未打开的会话消息才应显示未读数字。
 

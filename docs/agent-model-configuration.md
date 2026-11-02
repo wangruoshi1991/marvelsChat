@@ -1,5 +1,7 @@
 # Agent 模型配置代码入口
 
+后台 [Agent 接入与上架](agent-onboarding.md) 的 key 是代码标识，供应商 API Key 继续由服务端受限环境配置。后台只读缺项和脱敏状态；改名、上传头像、创建产品不会生成执行器或自动测试供应商。
+
 `backend/src/agent-model-config.js` 集中管理文本模型环境读取、chat/planning 选择与 Agent 执行模式映射。`config.js`、Agent runtime 和媒体检索原文解析均消费此入口；配置缺失仍明确报错，调用失败不改模型、协议或供应商。这里不是后台或 App 页面，也不改变 Agent 授权与执行能力。
 
 所有文本角色共享 `NEW_API_BASE_URL` 和 `NEW_API_KEY`。`NEW_API_MODEL` 用于显式`chat`与媒体检索原文解析；`NEW_API_PLANNING_MODEL` 用于`plan/dispatch/coordinate/contribute`，缺省或空值明确继承 `NEW_API_MODEL`。角色只按执行模式选择，不再按有无chat方法猜测plan用途；普通会话不回落生成方法。普通聊天使用`NEW_API_TIMEOUT_MS`；持久工作区的coordinate/contribute使用独立`NEW_API_WORKSPACE_TIMEOUT_MS`，默认180000毫秒，且仍受20分钟工作区总期限约束。超时记录未知结果，不自动重放。视觉/图文向量继续使用独立MEDIA_RETRIEVAL配置，3D继续使用独立供应商。

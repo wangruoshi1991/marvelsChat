@@ -73,13 +73,17 @@ export const profileApi = {
     albumAIConsentVersion?: string,
     idempotencyKey?: string,
     grantedScopes?: string[],
+    productVersionId?: string,
   ) {
+    if (enabled && !productVersionId)
+      throw new Error('请先查看并确认当前产品版本。');
     return request<OwnedAgentDTO>(`/api/me/agents/${agentId}`, {
       method: 'PATCH',
       token,
       body: {
         enabled,
         ...(enabled ? { consent: true } : {}),
+        ...(enabled && productVersionId ? { productVersionId } : {}),
         ...(grantedScopes !== undefined ? { grantedScopes } : {}),
         ...(albumAIConsentVersion ? { albumAIConsentVersion } : {}),
       },

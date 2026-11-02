@@ -86,7 +86,10 @@ export function createAlbumAssistantTools({ userId, operationKey, service, listA
         const response = await service.searchMediaRetrieval({
           userId, ...args, limit: Math.min(args.limit, 10),
           idempotencyKey: `${operationKey}:search`,
-          ...(beforeRetrievalCall ? { beforeModelCall: beforeRetrievalCall } : {}),
+          beforeModelCall: async () => {
+            await assertAccess();
+            return beforeRetrievalCall ? beforeRetrievalCall() : null;
+          },
           ...(afterRetrievalCall ? { afterModelCall: afterRetrievalCall } : {}),
         });
         await assertAccess();

@@ -30,6 +30,7 @@ import { registerNotificationRoutes } from "./routes/notification-routes.js";
 import { registerSocialRoutes } from "./routes/social-routes.js";
 import { registerStationRoutes } from "./routes/station-routes.js";
 import { registerProductRoutes } from "./routes/product-routes.js";
+import { registerAgentAvatarRoutes } from "./routes/agent-avatar-routes.js";
 
 const app = express();
 const host = config.host;
@@ -84,6 +85,7 @@ registerAppRoutes(app, {
   sendPresenceChanged,
 });
 registerProductRoutes(app, { authenticate, asyncHandler });
+registerAgentAvatarRoutes(app, { authenticate, asyncHandler });
 
 registerAuthRoutes(app, { authenticate, asyncHandler });
 

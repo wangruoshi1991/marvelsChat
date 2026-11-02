@@ -8,6 +8,9 @@ import { registerStationFileRoutes } from '../src/routes/station-file-routes.js'
 import { createRequestErrorHandler } from '../src/request-observability.js';
 import { resolveAIContextReferences } from '../src/ai-context.js';
 
+import { seedPublishedAgentConsent, cleanupPublishedAgentConsent } from './helpers/agent-publishing-fixture.js';
+
+let publicationFixture;
 const enabled = process.env.RUN_FILE_SOURCE_INTEGRATION === '1';
 const integration = (name, work) => test(name, { skip: !enabled && 'RUN_FILE_SOURCE_INTEGRATION=1 with migrated disposable loopback *_migration_test database' }, work);
 const owner = crypto.randomUUID(), outsider = crypto.randomUUID();
@@ -30,6 +33,7 @@ before(async () => {
   const agent = await getAgent('file-preprocessor');
   await query("INSERT INTO user_profiles(user_id,nickname,avatar_text) VALUES(?,'File verification','F')",[owner]);
   await query('INSERT INTO user_agents(user_id,agent_id,enabled,granted_scopes) VALUES(?,?,true,?::jsonb)',[owner,agent.key,JSON.stringify(agent.permissions)]);
+  publicationFixture = await seedPublishedAgentConsent({ userId: owner, agentKeys: ['file-preprocessor'] });
   const app = express(); app.use(express.json());
   registerStationFileRoutes(app, { authenticate, asyncHandler: handler => (req,res,next) => Promise.resolve(handler(req,res,next)).catch(next) });
   app.use(createRequestErrorHandler({ production:true, logger:{ error() {} } }));
@@ -39,8 +43,9 @@ before(async () => {
 after(async () => {
   if (!enabled) return;
   if (server) await new Promise(done=>server.close(done));
+  await cleanupPublishedAgentConsent({ userIds: [owner, outsider] });
   await query('DELETE FROM users WHERE id IN (?,?)',[owner,outsider]);
-  await closeDatabase();
+  await publicationFixture?.cleanup(); await closeDatabase();
 });
 integration('raw upload persists full Unicode text, enforces ownership and concurrent idempotency', async () => {
   const content = `${'正文😀'.repeat(1800)}\nEND_OF_FILE_SENTINEL`;

@@ -1,8 +1,5 @@
 import { listAgents } from "../../../agents/registry.js";
-import {
-  listPublishedRegisteredAgents,
-  listRegisteredAgentsWithCatalogue,
-} from "../agent-catalog-repository.js";
+import { listRegisteredAgentsWithCatalogue } from "../agent-catalog-repository.js";
 import { aiClientContracts } from "../ai-client-contract.js";
 import { publicMessagesByThread } from "../public-message.js";
 import { checkDatabase } from "../db.js";
@@ -44,6 +41,7 @@ import {
 } from "../schemas.js";
 import { getPublishedProductCatalog } from "../product-catalog-projection.js";
 import { agentPublishingService } from "../agent-publishing-service.js";
+import { withUserAgentPresentation } from "../agent-user-presentation.js";
 
 export function registerAppRoutes(
   app,
@@ -98,7 +96,9 @@ export function registerAppRoutes(
     "/api/agents",
     asyncHandler(async (_req, res) => {
       const registered = await listAgents();
-      res.json({ data: await listPublishedRegisteredAgents(registered) });
+      const catalog = await getPublishedCatalog();
+      const agents = withUserAgentPresentation(await listRegisteredAgentsWithCatalogue(registered), catalog);
+      res.json({ data: agents.filter((agent) => agent.published === true) });
     }),
   );
 
@@ -127,11 +127,13 @@ export function registerAppRoutes(
     "/api/app/bootstrap",
     authenticate,
     asyncHandler(async (req, res) => {
-      const allRegisteredAgents = resolveRegisteredAgents
+      const sourceAgents = resolveRegisteredAgents
         ? await resolveRegisteredAgents()
         : getBootstrap === getBootstrapForUser
         ? await listRegisteredAgentsWithCatalogue(await listAgents())
         : await listAgents();
+      const catalog = await getPublishedCatalog(req.user.id);
+      const allRegisteredAgents = withUserAgentPresentation(sourceAgents, catalog);
       const registeredAgents = allRegisteredAgents.filter(
         (agent) => agent.published === true,
       );
@@ -141,7 +143,6 @@ export function registerAppRoutes(
         getOnlineUserIds(),
         allRegisteredAgents,
       );
-      const catalog = await getPublishedCatalog(req.user.id);
       if (data.agents?.owned && Array.isArray(data.agents.registered)) {
         const ownedKeys = new Set(data.agents.owned.map((agent) => agent.id));
         data.agents.registered = allRegisteredAgents.filter(
@@ -171,9 +172,11 @@ export function registerAppRoutes(
       // Capture the cursor before database reads. Changes committed while this
       // snapshot is being assembled must remain eligible for the next sync.
       const serverTime = new Date().toISOString();
-      const allRegisteredAgents = resolveRegisteredAgents
+      const sourceAgents = resolveRegisteredAgents
         ? await resolveRegisteredAgents()
         : await listRegisteredAgentsWithCatalogue(await listAgents());
+      const catalog = await getPublishedCatalog(req.user.id);
+      const allRegisteredAgents = withUserAgentPresentation(sourceAgents, catalog);
       const registeredAgents = allRegisteredAgents.filter((agent) => agent.published === true);
       const onlineUserIds = getOnlineUserIds();
       const context = await getAgentContext(
@@ -188,10 +191,9 @@ export function registerAppRoutes(
       const messagesByThread = publicMessagesByThread(
         Object.fromEntries(Object.entries(selectedMessages).filter(([threadId]) => threadIds.includes(threadId))),
       );
-      const [notices, unreadNotices, catalog] = await Promise.all([
+      const [notices, unreadNotices] = await Promise.all([
         listUserNotifications(req.user.id),
         getUnreadNotices(req.user.id),
-        getPublishedCatalog(req.user.id),
       ]);
       const ownedKeys = new Set(context.ownedAgents.map((agent) => agent.id));
       res.json({
@@ -219,9 +221,10 @@ export function registerAppRoutes(
     authenticate,
     asyncHandler(async (req, res) => {
       const body = agentAccessSchema.parse(req.body);
-      const registeredAgents = await listRegisteredAgentsWithCatalogue(
+      const sourceAgents = await listRegisteredAgentsWithCatalogue(
         await listAgents(),
       );
+      const registeredAgents = withUserAgentPresentation(sourceAgents, await getPublishedCatalog(req.user.id));
       const agent = registeredAgents.find(
         (item) => item.key === req.params.agentId,
       );
@@ -245,6 +248,7 @@ export function registerAppRoutes(
         enabled: body.enabled,
         grantedScopes: body.grantedScopes,
         consentVersion: body.albumAIConsentVersion || null,
+        productVersionId: body.productVersionId || null,
         idempotencyKey: req.get("Idempotency-Key") || null,
       });
       const updated = {

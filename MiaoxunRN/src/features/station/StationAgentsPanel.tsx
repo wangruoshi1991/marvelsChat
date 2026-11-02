@@ -55,6 +55,7 @@ export function StationAgentsPanel({
     enabled: boolean,
     grantedScopes?: string[],
     albumAIConsentVersion?: AlbumAIConsentVersion,
+    productVersionId?: string,
   ) => Promise<OwnedAgentDTO>;
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
@@ -65,6 +66,8 @@ export function StationAgentsPanel({
     language,
     agents,
     ownedAgents,
+    products,
+    catalogRevision,
     onSetAgentEnabled,
     onChanged: action =>
       onActionMessage(

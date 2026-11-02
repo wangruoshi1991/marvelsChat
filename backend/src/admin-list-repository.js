@@ -38,9 +38,9 @@ const configurations = {
   },
   products: {
     from: `products p LEFT JOIN LATERAL (SELECT * FROM product_versions v WHERE v.product_id = p.id ORDER BY v.created_at DESC, v.id DESC LIMIT 1) pv ON TRUE`,
-    select: "p.*, pv.id AS product_version_id, pv.version, pv.supported_platforms, pv.status AS version_status, pv.contract_hash",
-    search: ["p.product_key", "p.display_name", "pv.version"], filters: { status: "COALESCE(pv.status, p.status)" },
-    sorts: { updatedAt: "p.updated_at", createdAt: "p.created_at", productKey: "p.product_key", displayName: "p.display_name", version: "pv.version", status: "COALESCE(pv.status, p.status)" }, defaultSort: "updatedAt", tie: "p.id",
+    select: "p.*, pv.id AS product_version_id, pv.version, pv.supported_platforms, pv.status AS version_status, pv.contract_hash, pv.display_name AS version_display_name, pv.description AS version_description, pv.identity_snapshot AS version_identity_snapshot",
+    search: ["p.product_key", "pv.display_name", "pv.version"], filters: { status: "COALESCE(pv.status, p.status)" },
+    sorts: { updatedAt: "p.updated_at", createdAt: "p.created_at", productKey: "p.product_key", displayName: "pv.display_name", version: "pv.version", status: "COALESCE(pv.status, p.status)" }, defaultSort: "updatedAt", tie: "p.id",
   },
 };
 

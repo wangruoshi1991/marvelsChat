@@ -69,6 +69,7 @@ test("disabling a product rejects an idempotency key that already enabled it", a
     idempotency_key: "same-request",
   };
   const connection = { query: async (sql) => {
+    if (sql.startsWith("SELECT product_version_id FROM user_entitlements")) return [{ product_version_id: "version-1" }];
     if (sql.startsWith("SELECT p.*")) return [{
       id: "product-1", product_key: "demo-product", display_name: "演示产品", description: "",
       identity_snapshot: "{}", status: "published", product_version_id: "version-1", version: "1.0.0",
@@ -131,6 +132,7 @@ test("identity updates are server-owned operator snapshots", async () => {
   const calls = [];
   const connection = { query: async (sql, params) => {
     calls.push([sql, params]);
+    if (sql.includes("pg_advisory_xact_lock") || sql.startsWith("SELECT id FROM agent_releases")) return [];
     if (sql.includes("LIMIT 1 FOR UPDATE")) return [release];
     if (sql.startsWith("UPDATE agent_releases")) return [];
     if (sql.startsWith("UPDATE agent_catalog")) return [];
@@ -174,6 +176,7 @@ test("identity update replay is idempotent and a reused key conflicts", async ()
   const connection = { query: async (sql, params = []) => {
     calls.push([sql, params]);
     if (sql.includes("LIMIT 1 FOR UPDATE")) return [release];
+    if (sql.includes("pg_advisory_xact_lock") || sql.startsWith("SELECT id FROM agent_releases")) return [];
     if (sql.includes("FROM agent_release_status_history")) return replay ? [{ to_status: "draft", reason: `admin_identity_update:${contractHash}` }] : [];
     if (sql.startsWith("UPDATE agent_releases") || sql.startsWith("UPDATE agent_catalog") || sql.startsWith("INSERT INTO usage_events") || sql.startsWith("INSERT INTO agent_release_status_history")) return [];
     if (sql.startsWith("SELECT * FROM agent_releases WHERE id = ?")) return [release];

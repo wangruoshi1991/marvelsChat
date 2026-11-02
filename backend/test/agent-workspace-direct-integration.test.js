@@ -9,6 +9,9 @@ import { getStationSiteDocumentForUser } from "../src/site-document-repository.j
 import { createAgentWorkspaceRunner } from "../src/agent-workspace-runner.js";
 import { getAgent } from "../../agents/registry.js";
 
+import { seedPublishedAgentConsent, cleanupPublishedAgentConsent } from "./helpers/agent-publishing-fixture.js";
+
+let publicationFixture;
 const enabled = process.env.RUN_AGENT_WORKSPACE_DIRECT_INTEGRATION === "1";
 const integration = (name, work) => test(name, { skip: !enabled && "RUN_AGENT_WORKSPACE_DIRECT_INTEGRATION=1 with a migrated loopback *_migration_test database" }, work);
 const owner = crypto.randomUUID(), outsider = crypto.randomUUID();
@@ -64,6 +67,7 @@ before(async () => {
     await query("INSERT INTO user_agents(user_id,agent_id,enabled,granted_scopes) VALUES(?,?,true,?::jsonb)", [owner, agentId, JSON.stringify((await getAgent(agentId)).permissions)]);
     await query("INSERT INTO chat_threads(id,user_id,title,agent_id,kind) VALUES(?,?,'Direct fixture',?,'agent')", [threads[agentId], owner, agentId]);
   }
+  publicationFixture = await seedPublishedAgentConsent({ userId: owner, agentKeys: agentIds });
   await query("INSERT INTO station_albums(id,user_id,title) VALUES(?,?,'Direct selected album')", [albumId, owner]);
   await query("INSERT INTO station_media_assets(id,user_id,album_id,kind,mime_type,original_filename,status) VALUES(?,?,?,'image','image/jpeg','fixture.jpg','uploaded')", [mediaId, owner, albumId]);
   await query("INSERT INTO media_retrieval_profiles(user_id,index_state,consent_version,consent_granted_at) VALUES(?,'enabled','media-retrieval-consent-v1',CURRENT_TIMESTAMP)", [owner]);
@@ -107,12 +111,13 @@ beforeEach(async () => {
   await query("DELETE FROM agent_runs WHERE user_id=?", [owner]);
   await query("DELETE FROM chat_messages WHERE user_id=?", [owner]);
   await query("UPDATE users SET status='active' WHERE id=?", [owner]);
+  await query("UPDATE user_entitlements SET status='enabled' WHERE user_id=?", [owner]);
   await query("UPDATE user_profiles SET station_config='{}'::jsonb,bio='' WHERE user_id=?", [owner]);
   await query("UPDATE station_albums SET title='Direct selected album' WHERE id=?", [albumId]);
   await query("UPDATE media_retrieval_profiles SET index_state='enabled',consent_version='media-retrieval-consent-v1' WHERE user_id=?", [owner]);
   for (const agentId of agentIds) await query("UPDATE user_agents SET enabled=true,granted_scopes=?::jsonb WHERE user_id=? AND agent_id=?", [JSON.stringify((await getAgent(agentId)).permissions), owner, agentId]);
 });
-after(async () => { if (enabled) { await query("DELETE FROM users WHERE id IN (?,?)", [owner, outsider]); await closeDatabase(); } });
+after(async () => { if (enabled) { await cleanupPublishedAgentConsent({ userIds: [owner, outsider] }); await query("DELETE FROM users WHERE id IN (?,?)", [owner, outsider]); await publicationFixture?.cleanup(); await closeDatabase(); } });
 
 integration("direct text uses one real specialist, exposes its true source and succeeds without any Butler access", async () => {
   const { request, workspace } = await create();
@@ -216,11 +221,12 @@ for (const interruption of ["unknown", "cancel", "lease", "deadline"]) {
 }
 
 for (const boundary of ["before", "after"]) {
-  for (const mutation of ["grant", "account", "recalled", "deleted", "content", "version"]) {
+  for (const mutation of ["grant", "entitlement", "account", "recalled", "deleted", "content", "version"]) {
     integration(`direct ${mutation} change ${boundary} model dispatch prevents delivery without a fallback Agent`, async () => {
       const { request, workspace } = await create();
       const change = async () => {
         if (mutation === "grant") await query("UPDATE user_agents SET enabled=false WHERE user_id=? AND agent_id='file-preprocessor'", [owner]);
+        else if (mutation === "entitlement") await query("UPDATE user_entitlements SET status='disabled' WHERE user_id=?", [owner]);
         else if (mutation === "account") await query("UPDATE users SET status='disabled' WHERE id=?", [owner]);
         else if (mutation === "version") changedVersion = "file-preprocessor";
         else if (mutation === "content") await query("UPDATE chat_messages SET content='Changed source' WHERE id=?", [request.inputMessageId]);

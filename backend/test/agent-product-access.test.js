@@ -250,6 +250,7 @@ test("product contract hash includes the canonical identity snapshot", async () 
 test("product enable rejects an entitlement whose stored product contract hash is stale", async () => {
   const identity = { key: "site-builder-product", avatarKind: "agent-mark", displayName: "建站产品", description: "", mark: "建", shape: "circle", colors: { background: "#123456", foreground: "#ffffff", accent: "#facc15" }, published: false, source: "admin", updatedAt: "2026-10-29T00:00:00.000Z" };
   const connection = { query: async (sql) => {
+    if (sql.startsWith("SELECT product_version_id FROM user_entitlements")) return [];
     if (sql.startsWith("SELECT p.*")) return [productRow({ identity_snapshot: JSON.stringify(identity), contract_hash: "a".repeat(64) })];
     if (sql.includes("FROM product_agent_dependencies")) {
       assert.match(sql, /r\.declared_scopes AS declared_scopes/);

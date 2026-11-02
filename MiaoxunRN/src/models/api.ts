@@ -186,16 +186,24 @@ export type AgentDTO = {
   description: string;
   capabilities: string[];
   permissions: string[];
-  identity: AgentIdentityDTO;
+  identity: AgentIdentityDTO | null;
+  identityError?: { code: string; message: string };
   /** Operator catalog visibility. Unpublished entries remain available only
    * for existing user authorizations and are excluded from recommendations. */
   published?: boolean;
   status: string;
 };
 
-export type AgentIdentityDTO = {
-  /** The only supported mobile Agent avatar contract. */
-  avatarKind: 'agent-mark';
+export type AgentAvatarAssetDTO = {
+  assetId: string;
+  url: string;
+  sha256: string;
+  mimeType: 'image/webp';
+  width: number;
+  height: number;
+};
+
+type AgentIdentityPresentationDTO = {
   mark: string;
   shape: 'circle' | 'squircle' | 'rounded';
   colors: {
@@ -204,6 +212,13 @@ export type AgentIdentityDTO = {
     accent: string;
   };
 };
+
+/** Both modes are explicit published release contracts. */
+export type AgentIdentityDTO = AgentIdentityPresentationDTO &
+  (
+    | { avatarKind: 'agent-mark'; avatar?: never }
+    | { avatarKind: 'agent-image'; avatar: AgentAvatarAssetDTO }
+  );
 
 export type AgentIdentityUnavailable = {
   status: 'unavailable';
@@ -221,7 +236,7 @@ export type OwnedAgentDTO = {
   enabled: boolean;
   grantedScopes: string[];
   published?: boolean;
-  identity: AgentIdentityDTO;
+  identity: AgentIdentityDTO | null;
   createdAt?: string | null;
 };
 

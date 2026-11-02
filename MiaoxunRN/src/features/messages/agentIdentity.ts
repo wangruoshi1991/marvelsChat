@@ -1,5 +1,6 @@
 import {
   AgentDTO,
+  AgentAvatarAssetDTO,
   AgentIdentityDTO,
   AgentIdentityInput,
   OwnedAgentDTO,
@@ -7,6 +8,39 @@ import {
 
 export const AGENT_IDENTITY_CONTRACT_ERROR =
   'AGENT_IDENTITY_CONTRACT_ERROR' as const;
+
+const assetIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const avatarFields = [
+  'assetId',
+  'url',
+  'sha256',
+  'mimeType',
+  'width',
+  'height',
+];
+
+export function isCompleteAgentAvatarAsset(
+  value: unknown,
+): value is AgentAvatarAssetDTO {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const avatar = value as AgentAvatarAssetDTO;
+  return Boolean(
+    Object.keys(avatar).length === avatarFields.length &&
+      Object.keys(avatar).every(key => avatarFields.includes(key)) &&
+      typeof avatar.assetId === 'string' &&
+      assetIdPattern.test(avatar.assetId) &&
+      typeof avatar.sha256 === 'string' &&
+      /^[0-9a-f]{64}$/.test(avatar.sha256) &&
+      avatar.url ===
+        `/api/agent-avatar-assets/${avatar.assetId}/${avatar.sha256}.webp` &&
+      avatar.mimeType === 'image/webp' &&
+      Number.isInteger(avatar.width) &&
+      avatar.width === 512 &&
+      Number.isInteger(avatar.height) &&
+      avatar.height === 512,
+  );
+}
 
 export class AgentIdentityContractError extends Error {
   readonly code = AGENT_IDENTITY_CONTRACT_ERROR;
@@ -27,7 +61,10 @@ export function isCompleteAgentIdentity(
   const candidate = identity as AgentIdentityDTO | null | undefined;
   return Boolean(
     candidate &&
-      candidate.avatarKind === 'agent-mark' &&
+      ((candidate.avatarKind === 'agent-mark' &&
+        !Object.prototype.hasOwnProperty.call(candidate, 'avatar')) ||
+        (candidate.avatarKind === 'agent-image' &&
+          isCompleteAgentAvatarAsset(candidate.avatar))) &&
       typeof candidate.mark === 'string' &&
       candidate.mark.trim() &&
       ['circle', 'squircle', 'rounded'].includes(candidate.shape) &&
@@ -64,8 +101,28 @@ export function assertAgentDirectoryIdentity(
   registered: AgentDTO[],
   owned: OwnedAgentDTO[],
 ): void {
+  // A server-declared identity conflict is an explicit per-Agent unavailable
+  // state. Unknown/malformed identity failures still reject the snapshot.
+  const conflictingKeys = new Set(
+    registered
+      .filter(
+        agent =>
+          agent.identity === null &&
+          agent.published === false &&
+          agent.identityError?.code === 'AGENT_PRODUCT_IDENTITY_CONFLICT' &&
+          typeof agent.identityError.message === 'string' &&
+          Boolean(agent.identityError.message.trim()),
+      )
+      .map(agent => agent.key),
+  );
   const missing = [...registered, ...owned].find(
-    agent => !isCompleteAgentIdentity(agent.identity),
+    agent =>
+      !isCompleteAgentIdentity(agent.identity) &&
+      !(
+        agent.identity === null &&
+        agent.published === false &&
+        conflictingKeys.has('key' in agent ? agent.key : agent.id)
+      ),
   );
   if (missing) {
     const agentId = 'key' in missing ? missing.key : missing.id;

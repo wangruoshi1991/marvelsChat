@@ -13,6 +13,9 @@ import { createRequestErrorHandler } from "../src/request-observability.js";
 import { getAgent } from "../../agents/registry.js";
 import { assertSiteDocument } from "../../shared/site-document.js";
 
+import { seedPublishedAgentConsent, cleanupPublishedAgentConsent } from "./helpers/agent-publishing-fixture.js";
+
+let publicationFixture;
 const enabled = process.env.RUN_AGENT_WORKSPACE_SERVICE_INTEGRATION === "1";
 const integration = (name, work) => test(name, { skip: !enabled && "Set RUN_AGENT_WORKSPACE_SERVICE_INTEGRATION=1 with a migrated loopback *_migration_test database" }, work);
 const owner = crypto.randomUUID(), outsider = crypto.randomUUID();
@@ -91,6 +94,7 @@ before(async () => {
     const agent = await getAgent(agentId);
     await query("INSERT INTO user_agents(user_id,agent_id,enabled,granted_scopes) VALUES(?,?,true,?::jsonb)", [owner, agentId, JSON.stringify(agent.permissions)]);
   }
+  publicationFixture = await seedPublishedAgentConsent({ userId: owner, agentKeys: ["site-builder", "album-manager"] });
   await query("INSERT INTO station_albums(id,user_id,title) VALUES(?,?,'Workspace scoped album')", [albumId, owner]);
   for (const id of [mediaId, extraMediaId]) await query("INSERT INTO station_media_assets(id,user_id,album_id,kind,mime_type,original_filename,status) VALUES(?,?,?,'image','image/jpeg','isolated-fixture.jpg','uploaded')", [id, owner, albumId]);
   await query("INSERT INTO media_retrieval_profiles(user_id,index_state,consent_version,consent_granted_at) VALUES(?,'enabled','media-retrieval-consent-v1',CURRENT_TIMESTAMP)", [owner]);
@@ -158,8 +162,9 @@ after(async () => {
   if (!enabled) return;
   await new Promise(resolve => server?.close(resolve));
   await query("DELETE FROM agent_runs WHERE user_id IN (?,?)", [owner, outsider]);
+  await cleanupPublishedAgentConsent({ userIds: [owner, outsider] });
   await query("DELETE FROM users WHERE id IN (?,?)", [owner, outsider]);
-  await closeDatabase();
+  await publicationFixture?.cleanup(); await closeDatabase();
 });
 
 integration("HTTP dynamic direct composition, complete, full preview and atomic private confirmation", async () => {

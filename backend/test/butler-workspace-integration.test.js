@@ -75,8 +75,8 @@ async function seedPublishedProduct(agentKey) {
   const productHash = computeProductContractHash(product);
   await query(`INSERT INTO products (id, product_key, display_name, description, identity_snapshot, status)
     VALUES (?, ?, ?, ?, ?::jsonb, 'published')`, [ids.product, agent.key, agent.name, agent.description, JSON.stringify(productIdentity)]);
-  await query(`INSERT INTO product_versions (id, product_id, version, supported_platforms, status, contract_hash)
-    VALUES (?, ?, ?, '["ios","android"]'::jsonb, 'published', ?)`, [ids.version, ids.product, agent.version, productHash]);
+  await query(`INSERT INTO product_versions (id, product_id, version, supported_platforms, status, contract_hash, display_name, description, identity_snapshot)
+    VALUES (?, ?, ?, '["ios","android"]'::jsonb, 'published', ?, ?, ?, ?::jsonb)`, [ids.version, ids.product, agent.version, productHash, agent.name, agent.description, JSON.stringify(productIdentity)]);
   await query(`INSERT INTO product_agent_dependencies (product_version_id, agent_key, agent_release_id, version, required_scopes)
     VALUES (?, ?, ?, ?, ?::jsonb)`, [ids.version, agent.key, ids.release, agent.version, JSON.stringify(agent.permissions)]);
   await query(`INSERT INTO user_entitlements

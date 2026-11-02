@@ -12,8 +12,8 @@ export function registerEventRoutes(app, { authenticate, asyncHandler }) {
     authenticate,
     asyncHandler(async (req, res) => {
       const body = eventSchema.parse(req.body);
-      if (body.eventType === MEDIA_RETRIEVAL_DIAGNOSTIC_EVENT) {
-        throw new HttpError(400, "This event type is reserved for server diagnostics.");
+      if (body.eventType === MEDIA_RETRIEVAL_DIAGNOSTIC_EVENT || /^admin(?:[.:]|$)/i.test(body.eventType)) {
+        throw new HttpError(400, "This event type is reserved for server diagnostics and administration.", { code: "EVENT_TYPE_RESERVED" });
       }
       const event = await createUsageEvent({
         userId: req.user.id,

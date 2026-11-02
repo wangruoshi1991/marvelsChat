@@ -255,6 +255,8 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
       'site-builder',
       true,
       agent.permissions,
+      undefined,
+      'product-version-site-builder',
     );
   });
 
@@ -288,6 +290,7 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
       true,
       ['album:read', 'album:write'],
       'media-retrieval-consent-v1',
+      'product-version-album-manager',
     );
     expect(mediaRetrievalApi.status).toHaveBeenCalledTimes(2);
     expect(alert).toHaveBeenCalledTimes(1);
@@ -338,6 +341,8 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
       'album-manager',
       true,
       ['album:read', 'album:write'],
+      undefined,
+      'product-version-album-manager',
     );
   });
   test('a late album status after an account switch cannot open a confirmation or grant access', async () => {
@@ -482,6 +487,8 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
       'site-builder',
       true,
       ['station:read', 'album:read'],
+      undefined,
+      'product-version-site-builder',
     );
     await act(async () => {
       await alert.mock.calls[0][2][1].onPress();
@@ -562,7 +569,22 @@ test('matched scopes show no update action and never cause an automatic grant', 
 test('the Butler can be removed and added again through the same explicit confirmation', async () => {
   const butler = { ...agent, key: 'miaoxun-butler', name: '妙讯管家' };
   const butlerAccess = { ...owned, id: butler.key, name: butler.name };
-  const values = { ...props(), agents: [butler], ownedAgents: [butlerAccess] };
+  const values = {
+    ...props(),
+    agents: [butler],
+    ownedAgents: [butlerAccess],
+    products: [
+      {
+        ...props().products[0],
+        id: 'product-miaoxun-butler',
+        productKey: 'miaoxun-butler',
+        productVersionId: 'product-version-miaoxun-butler',
+        dependencies: [
+          { ...props().products[0].dependencies[0], agentKey: butler.key },
+        ],
+      },
+    ],
+  };
   act(() => {
     renderer = TestRenderer.create(renderSurface(values));
   });
@@ -585,6 +607,8 @@ test('the Butler can be removed and added again through the same explicit confir
     butler.key,
     true,
     butler.permissions,
+    undefined,
+    'product-version-miaoxun-butler',
   );
 });
 
@@ -649,6 +673,32 @@ test('an unmounted account cannot submit its displayed confirmation', async () =
   act(() => renderer.unmount());
   await act(async () => alert.mock.calls[0][2][1].onPress());
   expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
+});
+
+test('a product-only catalog update invalidates a displayed consent without changing Agent code', async () => {
+  const values = { ...props(), ownedAgents: [] };
+  act(() => {
+    renderer = TestRenderer.create(renderSurface(values));
+  });
+  press('添加建站');
+  expect(alert.mock.calls[0][1]).toContain('建站 Agent · v1.0.0');
+  const products = values.products.map(product => ({
+    ...product,
+    version: '2.0.0',
+    productVersionId: 'product-version-new',
+  }));
+  act(() =>
+    renderer.update(
+      renderSurface({ ...values, products, catalogRevision: 'catalog-new' }),
+    ),
+  );
+  await act(async () => alert.mock.calls[0][2][1].onPress());
+  expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
+  expect(values.onActionError).toHaveBeenCalledWith(
+    expect.objectContaining({
+      message: expect.stringContaining('重新查看范围后确认'),
+    }),
+  );
 });
 
 test.each(['declaration', 'ownership', 'in-place declaration'] as const)(

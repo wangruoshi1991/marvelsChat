@@ -97,3 +97,35 @@ test("user detail requires both RBAC projection decisions explicitly", async () 
     /explicit Agent and audit access flags/,
   );
 });
+
+test("account detail returns metadata without conversation text, provider errors or audit payloads", async () => {
+  const privateValue = "PRIVATE_USER_PROMPT_AND_PROVIDER_RESPONSE";
+  let auditReads = 0;
+  const readDetail = createAdminUserDetailReader({
+    findRawUser: async () => ({ id: "user-1", email: "user@example.com", role: "user", status: "active" }),
+    getProfile: async () => ({ userId: "user-1" }),
+    listThreads: async () => [{ id: "thread-1", title: privateValue, lastContent: privateValue, status: privateValue,
+      avatarConfig: { secret: privateValue }, peerUserId: privateValue, agentId: "site-builder", kind: "agent",
+      updatedAt: "2026-11-02T00:00:00Z", unreadCount: 2 }],
+    listAgentAccess: async () => [],
+    getSessionSummary: async () => ({ active: 1 }),
+    runQuery: async (sql) => {
+      auditReads += 1;
+      if (sql.includes("FROM usage_events")) return [{ id: "event-1", event_type: "admin.user.status",
+        target_type: "user", target_id: "user-1", payload: { prompt: privateValue }, user_agent: privateValue }];
+      return [{ id: "run-1", agent_id: "site-builder", status: "error", failure_code: "PROVIDER_UNAVAILABLE",
+        error_message: privateValue, input: privateValue, output: privateValue, metadata: { secret: privateValue }, token_total: 12 }];
+    },
+  });
+  const detail = await readDetail({ userId: "user-1", registeredAgents: [], includeAgents: false, includeAudit: true });
+  assert.equal(auditReads, 2);
+  assert.equal(detail.threads[0].id, "thread-1");
+  assert.equal(detail.threads[0].unreadCount, 2);
+  assert.equal(detail.recentEvents[0].eventType, "admin.user.status");
+  assert.equal(detail.recentRuns[0].failureCode, "PROVIDER_UNAVAILABLE");
+  assert.equal(detail.recentRuns[0].tokenTotal, 12);
+  assert.doesNotMatch(JSON.stringify(detail), new RegExp(privateValue));
+  assert.equal(Object.hasOwn(detail.threads[0], "title"), false);
+  assert.equal(Object.hasOwn(detail.recentEvents[0], "payload"), false);
+  assert.equal(Object.hasOwn(detail.recentRuns[0], "errorMessage"), false);
+});

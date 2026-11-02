@@ -10,6 +10,8 @@ import { createAgentRun, createUsageEvent } from "../src/repositories.js";
 import { registerStationComicRoutes } from "../src/routes/station-comic-routes.js";
 import { createRequestErrorHandler } from "../src/request-observability.js";
 
+import { seedPublishedAgentConsent, cleanupPublishedAgentConsent } from "./helpers/agent-publishing-fixture.js";
+
 const enabled = process.env.RUN_COMIC_DIARY_ACCESS_INTEGRATION === "1";
 const integration = (name, work) =>
   test(
@@ -22,6 +24,7 @@ const integration = (name, work) =>
     work,
   );
 const owners = [];
+const publicationFixtures = [];
 let agent;
 
 before(async () => {
@@ -42,6 +45,7 @@ before(async () => {
 
 after(async () => {
   if (!enabled) return;
+  await cleanupPublishedAgentConsent({ userIds: owners });
   for (const owner of owners) {
     await query("DELETE FROM usage_events WHERE user_id = ?", [owner]);
     await query("DELETE FROM agent_runs WHERE user_id = ?", [owner]);
@@ -52,6 +56,7 @@ after(async () => {
     [owners],
   );
   assert.deepEqual(remaining, [], "All comic fixtures must be removed");
+  for (const publication of publicationFixtures.reverse()) await publication.cleanup();
   await closeDatabase();
 });
 
@@ -95,11 +100,11 @@ async function fixture(
       String(crypto.randomInt(100000000000, 999999999999)),
     ],
   );
-  if (grant !== null)
-    await query(
-      "INSERT INTO user_agents (user_id, agent_id, granted_scopes, enabled) VALUES (?, 'comic-diary', ?::jsonb, ?)",
-      [id, JSON.stringify(grant), enabledGrant],
-    );
+  if (grant !== null) {
+    publicationFixtures.push(await seedPublishedAgentConsent({ userId: id, agentKeys: ["comic-diary"] }));
+    await query("UPDATE user_agents SET granted_scopes = ?::jsonb, enabled = ? WHERE user_id = ? AND agent_id = 'comic-diary'",
+      [JSON.stringify(grant), enabledGrant, id]);
+  }
   await query(
     "INSERT INTO station_diary_entries (id, user_id, title, body, mood) VALUES (?, ?, 'Selected diary', 'Private selected diary body', 'calm')",
     [f.diary, id],
@@ -360,7 +365,7 @@ integration(
     assert.equal(response.status, 403);
     assert.equal(
       response.body.error.details.code,
-      "COMIC_DIARY_SCOPE_REQUIRED",
+      "AGENT_PRODUCT_ENTITLEMENT_REQUIRED",
     );
     assert.equal(f.providerCalls, 0);
     assert.equal(f.saveCalls, 0);
@@ -610,11 +615,9 @@ integration(
           );
         },
       });
-      assert.equal(
-        (await f.request({ diaryEntryId: f.diary, mediaAssetIds: [f.media] }))
-          .status,
-        409,
-      );
+      const response = await f.request({ diaryEntryId: f.diary, mediaAssetIds: [f.media] });
+      assert.equal(response.status, 403);
+      assert.equal(response.body.error.details.code, "AGENT_PRODUCT_ENTITLEMENT_REQUIRED");
       assert.equal(f.providerCalls, 1);
       assert.equal(f.saveCalls, 0);
       assert.deepEqual(await f.saved(), []);

@@ -151,6 +151,20 @@ export function createAccountRepository({
       );
       await connection.execute("DELETE FROM agent_runs WHERE user_id = ?", [userId]);
       await connection.execute("DELETE FROM notifications WHERE actor_user_id = ?", [userId]);
+      // Personal consent belongs to the deleted account. Remove its restricted
+      // child history explicitly, retaining shared product/release audit rows
+      // and every other account's entitlement history.
+      await connection.execute(
+        "SELECT id FROM user_entitlements WHERE user_id = ? FOR UPDATE",
+        [userId],
+      );
+      await connection.execute(
+        `DELETE FROM entitlement_status_history WHERE entitlement_id IN (
+          SELECT id FROM user_entitlements WHERE user_id = ?
+        )`,
+        [userId],
+      );
+      await connection.execute("DELETE FROM user_entitlements WHERE user_id = ?", [userId]);
       const [rows] = await connection.execute(
         "DELETE FROM users WHERE id = ? RETURNING id",
         [userId],

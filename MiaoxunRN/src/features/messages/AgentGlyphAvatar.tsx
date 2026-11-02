@@ -1,8 +1,12 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { AgentIdentityInput, AgentIdentityUnavailable } from '../../models/api';
-import { unavailableAgentIdentity } from './agentIdentity';
+import {
+  isCompleteAgentIdentity,
+  unavailableAgentIdentity,
+} from './agentIdentity';
+import { buildApiUrl } from '../../services/api/http';
 import { styles as sharedStyles } from '../../shared/styles';
 import { agentGlyphColors } from '../../shared/theme';
 
@@ -14,6 +18,45 @@ function isUnavailable(
 
 function identityDiscStyle(backgroundColor: string) {
   return { backgroundColor };
+}
+
+function AgentImageAvatar({
+  uri,
+  agentId,
+  size,
+  borderRadius,
+  testID,
+}: {
+  uri: string;
+  agentId: string;
+  size: number;
+  borderRadius: number;
+  testID?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (failed)
+    return (
+      <View
+        accessibilityLabel={`Agent ${agentId} 头像加载失败`}
+        style={[
+          styles.contractError,
+          { height: size, width: size, borderRadius },
+        ]}
+        testID={testID || `agent-avatar-image-error-${agentId}`}
+      >
+        <Text style={styles.contractErrorText}>!</Text>
+      </View>
+    );
+  return (
+    <Image
+      accessibilityLabel={`Agent ${agentId} 已发布头像`}
+      source={{ uri }}
+      onError={() => setFailed(true)}
+      resizeMode="cover"
+      style={{ height: size, width: size, borderRadius }}
+      testID={testID || `agent-avatar-image-${agentId}`}
+    />
+  );
 }
 
 /** The one Agent visual used by every surface. Identity comes from the published directory. */
@@ -32,7 +75,10 @@ export function AgentGlyphAvatar({
   variant?: 'default' | 'xun' | 'xun-task';
   radius?: number;
 }) {
-  const resolvedIdentity = identity || unavailableAgentIdentity(agentId);
+  const resolvedIdentity =
+    identity && (isUnavailable(identity) || isCompleteAgentIdentity(identity))
+      ? identity
+      : unavailableAgentIdentity(agentId);
   if (isUnavailable(resolvedIdentity)) {
     return (
       <View
@@ -59,6 +105,20 @@ export function AgentGlyphAvatar({
       : resolvedIdentity.shape === 'rounded'
       ? Math.min(12, size * 0.24)
       : size / 2);
+
+  if (resolvedIdentity.avatarKind === 'agent-image') {
+    const uri = buildApiUrl(resolvedIdentity.avatar.url);
+    return (
+      <AgentImageAvatar
+        key={uri}
+        uri={uri}
+        agentId={agentId}
+        size={size}
+        borderRadius={borderRadius}
+        testID={testID}
+      />
+    );
+  }
 
   return (
     <View

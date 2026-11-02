@@ -14,6 +14,9 @@ import { createStationSiteDraft, applyStationSiteDraft } from "../src/station-ag
 import { createRequestErrorHandler } from "../src/request-observability.js";
 import { getAgent } from "../../agents/registry.js";
 
+import { seedPublishedAgentConsent, cleanupPublishedAgentConsent } from "./helpers/agent-publishing-fixture.js";
+
+let publicationFixture;
 const enabled = process.env.RUN_AGENT_WORKSPACE_CONTINUATION_INTEGRATION === "1";
 const integration = (name, work) => test(name, { skip: !enabled && "RUN_AGENT_WORKSPACE_CONTINUATION_INTEGRATION=1 with a migrated loopback *_migration_test database" }, work);
 const owner = crypto.randomUUID(), outsider = crypto.randomUUID();
@@ -79,6 +82,7 @@ before(async () => {
   for (const agentId of agentIds) await query("INSERT INTO user_agents(user_id,agent_id,enabled,granted_scopes) VALUES(?,?,true,?::jsonb)", [owner, agentId, JSON.stringify((await getAgent(agentId)).permissions)]);
   await query("INSERT INTO chat_threads(id,user_id,title,agent_id,kind) VALUES(?,?,'Selected continuation source','miaoxun-butler','agent')", [threadId, owner]);
   await query("INSERT INTO chat_messages(id,thread_id,user_id,sender_type,sender_name,content) VALUES(?,?,?,'user','Fixture user',?)", [messageId, threadId, owner, sourceBody]);
+  publicationFixture = await seedPublishedAgentConsent({ userId: owner, agentKeys: agentIds.filter(id => id !== "miaoxun-butler") });
   const executor = createWorkspaceCapabilityExecutor({
     runAgentRuntime: options => recordCall(options, async () => {
       textCalls.push(options);
@@ -137,8 +141,9 @@ beforeEach(async () => {
 after(async () => {
   if (!enabled) return;
   await new Promise(resolve => server?.close(resolve));
+  await cleanupPublishedAgentConsent({ userIds: [owner, outsider] });
   await query("DELETE FROM users WHERE id IN (?,?)", [owner, outsider]);
-  await closeDatabase();
+  await publicationFixture?.cleanup(); await closeDatabase();
 });
 
 integration("HTTP text continuation keeps one workspace, immutable earlier output and accepted replay across later rounds", async () => {

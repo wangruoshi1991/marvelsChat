@@ -11,7 +11,7 @@ import * as repository from "./agent-workspace-repository.js";
 import { validateWorkspaceDecision } from "./agent-workspace-plan.js";
 import { workspaceAccessInputRequest } from "./agent-workspace-input-request.js";
 import { classifiedWorkspaceRejection } from "./agent-workspace-submission.js";
-import { agentScopesMatchDeclaration } from "./ai-agent-access.js";
+import { agentScopesMatchDeclaration, assertAgentProductEntitlement } from "./ai-agent-access.js";
 import { executeWorkspaceCapability, listExecutableWorkspaceCapabilities, listUnavailableWorkspaceCapabilities,
   validateWorkspaceMediaSources, validateWorkspaceSiteSources, validateWorkspaceTextSources,
   collectWorkspaceTextSources, parseWorkspaceTextArtifact } from "./agent-workspace-capabilities.js";
@@ -61,7 +61,20 @@ export function createAgentWorkspaceService({ transaction = withTransaction, rep
     const [user] = await connection.query(`SELECT * FROM users WHERE id = ?${lock ? " FOR SHARE" : ""}`, [userId]);
     if (!user || user.status !== "active") fail(403, "WORKSPACE_ACCESS_REVOKED", "账号当前不可执行协作任务。");
     const rows = await connection.query(`SELECT agent_id, enabled, granted_scopes FROM user_agents WHERE user_id = ? ORDER BY agent_id${lock ? " FOR SHARE" : ""}`, [userId]);
-    return { user: publicUser(user), grants: rows.map(row => ({ agentId: row.agent_id, enabled: row.enabled, grantedScopes: row.granted_scopes })) };
+    const grants = [];
+    for (const row of rows) {
+      let enabled = row.enabled;
+      if (enabled && row.agent_id !== coordinatorId) {
+        const agent = await loadAgent(row.agent_id);
+        try { await assertAgentProductEntitlement({ userId, agent, queryFn: connection.query.bind(connection) }); }
+        catch (error) {
+          if (error.details?.code !== "AGENT_PRODUCT_ENTITLEMENT_REQUIRED") throw error;
+          enabled = false;
+        }
+      }
+      grants.push({ agentId: row.agent_id, enabled, grantedScopes: enabled ? row.granted_scopes : [] });
+    }
+    return { user: publicUser(user), grants };
   }
   async function coordinator(connection, workspace, lock = true) {
     const current = await access(connection, workspace.userId, lock);

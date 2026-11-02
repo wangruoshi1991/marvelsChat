@@ -4,6 +4,33 @@ import { createAlbumAssistantTools } from "../src/album-assistant-tools.js";
 import { MediaRetrievalServiceError } from "../src/media-retrieval-user-service.js";
 
 const albumId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+test("every nested retrieval provider call rechecks access and preserves an optional budget receipt", async () => {
+  for (const withBudget of [false, true]) {
+    let enabled = true, modelCalls = 0, reservations = 0;
+    const denial = new Error("Exact product consent was revoked");
+    const reservation = { id: "isolated-budget-receipt" };
+    const tool = createAlbumAssistantTools({ userId: `nested-provider-${withBudget}`, operationKey: "album-chat:nested-provider",
+      assertAccess: async () => { if (!enabled) throw denial; }, listAlbums: async () => [],
+      ...(withBudget ? { beforeRetrievalCall: async () => { reservations++; return reservation; } } : {}),
+      service: {
+        getMediaRetrievalStatus: async () => ({ enabled: true, availability: { canStartRun: true }, backfill: { indexedAssets: 1, skippedAssets: 0, totalAssets: 1 } }),
+        searchMediaRetrieval: async options => {
+          assert.equal(await options.beforeModelCall(), withBudget ? reservation : null);
+          modelCalls++;
+          enabled = false;
+          await options.beforeModelCall();
+          modelCalls++;
+          assert.fail("A second retrieval model must not run after revocation");
+        },
+      },
+    });
+    await assert.rejects(tool.execute("search_media", { query: "isolated selected photo" }), error => error === denial);
+    assert.equal(modelCalls, 1);
+    assert.equal(reservations, withBudget ? 1 : 0);
+    assert.deepEqual(tool.metadata().retrievalRunIds, []);
+  }
+});
 const fixture = ({ enabled = true, indexedAssets = 1, skippedAssets = 0, totalAssets = 1, error = null, results = null, allowedAlbumIds = null } = {}) => {
   const searches = [];
   const tool = createAlbumAssistantTools({

@@ -6,8 +6,7 @@ import { query, closeDatabase } from "../src/db.js";
 import { authenticate, hashToken } from "../src/auth.js";
 import { registerMessageRoutes } from "../src/routes/message-routes.js";
 import { createRequestErrorHandler } from "../src/request-observability.js";
-import { getAgent } from "../../agents/registry.js";
-import { computeAgentReleaseContractHash } from "../../shared/agent-catalog.js";
+import { cleanupPublishedAgentConsent, seedPublishedAgentConsent } from "./helpers/agent-publishing-fixture.js";
 
 const enabled = process.env.RUN_AI_MESSAGE_RECALL_INTEGRATION === "1" || process.env.RUN_AI_TASK_INTEGRATION === "1";
 const integration = (name, work) => test(name, {
@@ -27,6 +26,7 @@ const realtime = [];
 const logger = { error() {} };
 let server;
 let origin;
+let publicationFixture;
 let runtime = async () => {
   throw new Error("Test runtime must be configured before specialist execution");
 };
@@ -50,46 +50,7 @@ before(async () => {
     await query(`INSERT INTO social_relationships (id,follower_user_id,followed_user_id,relation_type,status)
       VALUES (?, ?, ?, 'friend', 'active')`, [crypto.randomUUID(), follower, followed]);
   }
-  await query(`INSERT INTO user_agents (user_id,agent_id,enabled,granted_scopes)
-    VALUES (?, 'album-manager', true, ?::jsonb)`, [owner, JSON.stringify((await getAgent("album-manager")).permissions)]);
-  // This suite exercises the current specialist message route. Seed the
-  // operator-published catalog identity explicitly; a direct user_agents row
-  // is only an access projection and cannot certify executable Agent access.
-  const album = await getAgent("album-manager");
-  const identity = {
-    key: album.key,
-    avatarKind: "agent-mark",
-    displayName: album.name,
-    description: album.description,
-    mark: album.identity.mark,
-    shape: album.identity.shape,
-    colors: album.identity.colors,
-    published: true,
-    source: "integration-test",
-    updatedAt: "2026-10-30T00:00:00.000Z",
-  };
-  const contractHash = computeAgentReleaseContractHash({
-    key: album.key,
-    version: album.version,
-    permissions: album.permissions,
-    identity,
-  });
-  await query(`INSERT INTO agent_catalog
-      (agent_id, display_name, description, identity_mark, identity_shape,
-       identity_colors, status, release_version, contract_hash, source)
-    VALUES (?, ?, ?, ?, ?, ?::jsonb, 'published', ?, ?, 'integration-test')
-    ON CONFLICT (agent_id) DO UPDATE SET
-      display_name = EXCLUDED.display_name,
-      description = EXCLUDED.description,
-      identity_mark = EXCLUDED.identity_mark,
-      identity_shape = EXCLUDED.identity_shape,
-      identity_colors = EXCLUDED.identity_colors,
-      status = 'published',
-      release_version = EXCLUDED.release_version,
-      contract_hash = EXCLUDED.contract_hash,
-      source = EXCLUDED.source`,
-    [album.key, identity.displayName, identity.description, identity.mark,
-      identity.shape, JSON.stringify(identity.colors), album.version, contractHash]);
+  publicationFixture = await seedPublishedAgentConsent({ userId: owner, agentKeys: ["album-manager"] });
   await query(`INSERT INTO media_retrieval_profiles (user_id,index_state,consent_version,consent_granted_at)
     VALUES (?, 'enabled', 'media-retrieval-consent-v1', CURRENT_TIMESTAMP)`, [owner]);
   const app = express();
@@ -115,7 +76,9 @@ beforeEach(async () => {
 after(async () => {
   if (!enabled) return;
   if (server) await new Promise(resolve => server.close(resolve));
+  await cleanupPublishedAgentConsent({ userIds: [owner, peer, outsider] });
   await query("DELETE FROM users WHERE id IN (?, ?, ?)", [owner, peer, outsider]);
+  await publicationFixture?.cleanup();
   await closeDatabase();
 });
 

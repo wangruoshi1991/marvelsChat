@@ -12,9 +12,12 @@ import { messageRequestFingerprint } from "../src/message-request.js";
 import { registerMessageRoutes } from "../src/routes/message-routes.js";
 import { createRequestErrorHandler } from "../src/request-observability.js";
 
+import { seedPublishedAgentConsent, cleanupPublishedAgentConsent } from "./helpers/agent-publishing-fixture.js";
+
 const enabled = process.env.RUN_SPECIALIST_MESSAGE_INTEGRATION === "1";
 const integration = (name, run) => test(name, { skip: !enabled && "Requires a migrated disposable loopback *_migration_test PostgreSQL database" }, run);
 const owners = [];
+const publicationFixtures = [];
 let server, origin, fixture, runtime, invocations, modelCalls;
 const modelResult = decision => ({ reply: JSON.stringify(decision), provider: "isolated-specialist-test", latencyMs: 1,
   tokenUsage: { prompt: 2, completion: 3, total: 5 } });
@@ -39,7 +42,9 @@ before(async () => {
 after(async () => {
   if (!enabled) return;
   await new Promise(resolve => server.close(resolve));
+  await cleanupPublishedAgentConsent({ userIds: owners });
   await query("DELETE FROM users WHERE id = ANY(?::text[])", [owners]);
+  for (const publication of publicationFixtures.reverse()) await publication.cleanup();
   await closeDatabase();
 });
 async function makeOwner(agentId = "file-preprocessor") {
@@ -52,6 +57,7 @@ async function makeOwner(agentId = "file-preprocessor") {
   await query("INSERT INTO user_agents(user_id,agent_id,enabled,granted_scopes) VALUES (?,?,true,?::jsonb)", [userId, agentId, JSON.stringify(agent.permissions)]);
   await query("INSERT INTO chat_threads(id,user_id,title,agent_id,kind) VALUES (?,?,'Specialist fixture',?,'agent')", [threadId, userId, agentId]);
   await query("INSERT INTO auth_sessions(id,user_id,token_hash,expires_at) VALUES (?,?,?,clock_timestamp()+INTERVAL '1 hour')", [crypto.randomUUID(), userId, hashToken(token)]);
+  publicationFixtures.push(await seedPublishedAgentConsent({ userId, agentKeys: [agentId] }));
   return { userId, token, threadId, agent };
 }
 beforeEach(async () => {
@@ -190,6 +196,25 @@ for (const stage of ["before", "after"]) integration(`a revoked specialist grant
   assert.equal((await send(input)).status, 403); assert.equal(invocations, 1);
 });
 
+for (const stage of ["submission", "before", "after"]) integration(`a missing exact product entitlement at ${stage} blocks an enabled projection`, async () => {
+  const revoke = () => query("UPDATE user_entitlements SET status='disabled' WHERE user_id=?", [fixture.userId]);
+  if (stage === "submission") await revoke();
+  runtime = async options => {
+    if (stage === "before") await revoke();
+    await options.beforeModelCall(); modelCalls++;
+    if (stage === "after") await revoke();
+    return modelResult({ type: "workspace", capability: "text.summarize" });
+  };
+  const response = await send(body());
+  assert.equal(response.status, 403, JSON.stringify(response));
+  assert.equal(code(response), "AGENT_PRODUCT_ENTITLEMENT_REQUIRED");
+  assert.equal((await workspaces()).length, 0);
+  assert.equal(modelCalls, stage === "after" ? 1 : 0);
+  assert.equal(invocations, stage === "submission" ? 0 : 1);
+  const [projection] = await query("SELECT enabled FROM user_agents WHERE user_id=? AND agent_id=?", [fixture.userId, fixture.agent.key]);
+  assert.equal(projection.enabled, true, "A stale enabled projection cannot authorize execution");
+});
+
 integration("changing a prior clarification user turn blocks execution instead of silently rebasing its text", async () => {
   runtime = async options => { await options.beforeModelCall(); return modelResult({ type: "clarify", question: "请补充格式" }); };
   const first = await send(body());
@@ -220,12 +245,13 @@ integration("Agent version changes cannot replay old receipts or silently retain
   runtime = async options => { await options.beforeModelCall(); modelCalls++; return modelResult({ type: "clarify", question: "请补充原文" }); };
   const input = body(); assert.equal((await send(input)).status, 201);
   agent.version = "99.0.0";
-  assert.equal(code(await send(input)), "AI_AGENT_VERSION_CHANGED");
-  assert.equal(code(await send(body("补充后的内容"))), "AI_AGENT_VERSION_CHANGED");
+  assert.equal(code(await send(input)), "AGENT_PRODUCT_ENTITLEMENT_REQUIRED");
+  assert.equal(code(await send(body("补充后的内容"))), "AGENT_PRODUCT_ENTITLEMENT_REQUIRED");
   assert.equal((await inputRows()).length, 1); assert.equal(invocations, 1);
   runtime = async options => { assert.deepEqual(options.appContext.specialistDispatch.requestMessages, [{ content: "新的完整需求" }]);
     await options.beforeModelCall(); return modelResult({ type: "reply", reply: "重新讨论" }); };
-  assert.equal((await send({ ...body("新的完整需求"), agentContextReset: true })).status, 201);
+  assert.equal(code(await send({ ...body("新的完整需求"), agentContextReset: true })), "AGENT_PRODUCT_ENTITLEMENT_REQUIRED");
+  assert.equal(invocations, 1, "Resetting conversation context cannot grant consent to a new runtime version");
 });
 
 integration("missing selected albums force clarification; an explicit reset removes the old selection and user chain", async () => {
