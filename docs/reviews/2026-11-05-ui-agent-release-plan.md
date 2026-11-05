@@ -19,7 +19,7 @@
 
 ## 进入维护前的门禁
 
-当前 dirty detached HEAD 不满足正式制品来源条件。`scripts/prepare-runtime-release.mjs` 只打包已提交的 HEAD 文件，并拒绝任何已修改或未跟踪文件。055/056 与其他当前修改必须进入经授权的、审核过的可追溯 clean revision 后才能生成正式制品；不能手工打包工作区或删除文件绕过门禁。Git 提交/推送、生产部署、UI-Agent 发布、付费真实模型调用及 TestFlight 上传各自按用户明确范围执行。
+`scripts/prepare-runtime-release.mjs` 只打包已提交的 HEAD 文件，并拒绝任何已修改或未跟踪文件。055/056与本轮163文件已获准提交为 `cebc1e6d5c7848fc630f1e8453b0c3bfbad774f3`，干净源码生成的正式制品为 `ui-agent-candidate-20261105-cebc1e6`，SHA与284文件核验见 [发布前证据](2026-11-05-release-preflight-evidence.md)。这个本地阶段已完成；不能手工打包后续工作区或删除文件绕过门禁。推送、生产部署、UI-Agent发布、付费真实模型调用及TestFlight上传仍各自按用户明确范围执行。
 
 生产维护前，应准备以下证据，缺一项则保持 `BLOCKED`：
 

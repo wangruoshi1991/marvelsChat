@@ -2,6 +2,17 @@
 
 更新：2026-11-05。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
 
+#### 2026-11-05 已授权本地发布提交与正式制品（未部署）
+
+- 用户明确批准候选清单中的163个文件创建本地发布提交并生成正式后端制品；逐文件核对原清单和SHA后提交为 `cebc1e6d5c7848fc630f1e8453b0c3bfbad774f3`，tree为 `9c187fd8a495edaf92ce0b9b48f94cfff95487ae`。仅额外清除新增测试 `backend/test/ui-preference-preflight.test.js` 一处行尾空格，未扩大文件范围；对应5项测试通过。未执行checkout/reset/clean或覆盖其他工作。
+- 提交前重新运行 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出0：RN86套/1093项、Agents55项、Admin48项通过；Backend1355项中1049通过、306项专用数据库门控跳过。语法、构建、RN TypeScript/ESLint/Prettier和release-package测试通过。暂存后 `git diff --cached --check` 通过；门控数据库的独立实测证据见前述发布前记录，不能把跳过计为通过。
+- 在干净提交上执行 `node scripts/prepare-runtime-release.mjs ui-agent-candidate-20261105-cebc1e6` 退出0。后台和avatar-web用锁文件从临时干净源码重新安装并构建；正式归档含284个运行文件、UI-Agent/shared合同、055/056迁移、API/双Worker及运维入口。归档SHA-256为 `a385f6a054d2ffd2abe2631ba2b0550d94870343ad73ba594f21b00655b1114e`，1264231字节。
+- 制品已保存到 `/Users/gary/Library/Application Support/MiaoxunReleasePreparations/ui-agent-candidate-20261105-cebc1e6/`，含归档、校验文件、manifest、工具链与逐文件验证记录、批准清单及完整检查/构建日志。核验manifest来源、完整文件集合、所有文件哈希、运行源码与提交一致、lockfile原字节、包投影和无敏感文件路径；`includesWorkingTreeChanges=false`。构建环境macOS arm64/Node26.5.0/npm11.17.0；不是Linux生产服务启动证明。
+- 独立只读归档复核同样通过：276个非前端文件对应Git blob或明确package投影，另8个为构建产物；56迁移、10 Agent定义、10条runtime脚本均完整，792个相对导入闭合。未解包落盘或重复安装依赖，未连接任何服务。
+- 制品封存后仅更新本交接及两份发布审查文档，再跑相同整仓检查退出0（日志 `/tmp/miaoxun-20261105-post-artifact-docs-check.log`）；26个本地文档链接有效。三份文档作为独立留证提交保存，不重打包、不改变制品来源；固定目录同时保存此前脱敏的备份恢复、UI-Agent生命周期和Linux依赖证据。
+- 后续仅补交接与发布证据文档，不改变已封存制品的sourceHead；制品来源始终为 `cebc1e6`，不能把后续文档提交称作制品源码。细节见 [发布前证据](../reviews/2026-11-05-release-preflight-evidence.md)。历史下方“尚未提交/无制品/待提交授权”均是本节完成之前的状态。
+- 当前本地提交/制品阶段已完成，生产发布仍为 `BLOCKED`：需单独授权正式维护、停写新备份及owner/ACL恢复核验、055/056迁移和同制品API/双Worker切换；正式UI-Agent上架、用户独立同意、真实模型和新版客户端/实体设备验收仍待各自执行。没有推送、生产部署/迁移、正式产品发布、付费供应商调用或TestFlight上传。Build58仍不包含本轮修改。
+
 #### 2026-11-05 发布前真实备份与干净依赖验证（未提交/未部署）
 
 - 通过已有SSH身份只读复核：生产仍为 `app-collaboration-20261103`、276文件、001–054迁移；API/AI Worker/媒体Worker/备份timer均active，ready正常。已有备份最近任务成功，备份角色有pg_read_all_data。没有停写、重启、创建新生产备份或变更生产数据库。详细版本、命令及边界见 [发布前证据](../reviews/2026-11-05-release-preflight-evidence.md)。

@@ -1,10 +1,36 @@
 # UI-Agent 配套发布前验证记录
 
-日期：2026-11-05。结论：`BLOCKED`，本地与只读准备已推进，但尚无当前修改的正式制品。本文不是生产部署、用户授权或付费模型验收记录。正式移动端为 `MiaoxunRN/`，发布方法见 [执行草稿](2026-11-05-ui-agent-release-plan.md)。
+日期：2026-11-05。结论：本地发布提交与正式制品生成完成；生产发布仍为 `BLOCKED`，尚未执行正式维护、迁移和线上验收。本文不是生产部署、用户授权或付费模型验收记录。正式移动端为 `MiaoxunRN/`，发布方法见 [执行草稿](2026-11-05-ui-agent-release-plan.md)。
+
+## 已授权提交与正式制品
+
+用户明确批准原候选清单163个文件创建本地发布提交并生成正式后端制品。清单原始内容摘要为 `2504544209fee331fa41c9931d6fd0cca2225c893d1a0926ae346ad070f9f7c9`；暂存校验发现新增测试一处行尾空格，清除后定向5/5通过，其余162个文件逐字节保持批准内容。提交无范围扩展，未推送。
+
+| 项目 | 证据 |
+| --- | --- |
+| 源提交 | `cebc1e6d5c7848fc630f1e8453b0c3bfbad774f3`；163文件，12763行新增/699行删除 |
+| 源tree | `9c187fd8a495edaf92ce0b9b48f94cfff95487ae` |
+| 构建命令 | `node scripts/prepare-runtime-release.mjs ui-agent-candidate-20261105-cebc1e6`，退出0 |
+| release ID | `ui-agent-candidate-20261105-cebc1e6` |
+| 归档 | `ui-agent-candidate-20261105-cebc1e6.tar.gz`；1264231字节；284个运行文件 |
+| 归档SHA-256 | `a385f6a054d2ffd2abe2631ba2b0550d94870343ad73ba594f21b00655b1114e` |
+| 构建环境 | macOS26.4/arm64，Node26.5.0/npm11.17.0，Git2.50.1；不是目标Linux上的服务运行证据 |
+| 来源校验 | clean committed HEAD；manifest的sourceHead/sourceTree匹配；`includesWorkingTreeChanges=false` |
+| 内容校验 | 归档安全路径/无重复或符号链接；manifest与完整文件集合一致，284项哈希全部匹配；运行源码逐文件对应提交，backend lockfile原字节保留，package投影有效 |
+| 必要入口 | ui-agent、shared新/legacy合同、055/056、API/双Worker、UI预检/附件/任务运维脚本及两套重建前端均存在 |
+| 排除核对 | 无.env、node_modules、测试/评估、storage内容或密钥文件扩展名；常见密钥内容模式0命中，该扫描不等于穷尽审计 |
+
+固定目录为 `/Users/gary/Library/Application Support/MiaoxunReleasePreparations/ui-agent-candidate-20261105-cebc1e6/`。同目录保留 `.tar.gz.sha256`、`release-manifest.json`、`verification.json`、`source-commit.json`、`approved-candidate-scope.json`、`build.log`、`repository-check.log`。临时构建目录没有作为交付位置。
+
+独立只读复核实际归档也通过：276个非前端文件逐项对应上述提交或明确package投影，另8个为前端产物；56项迁移、10个Agent定义和10条runtime脚本均完整，792个相对import闭合。未解包落盘、安装依赖、启动服务或修改仓库；该复核证明归档内容，不扩大运行验收结论。
+
+提交前命令 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出0，RN86套/1093项、Agents55项、Admin48项通过；Backend1355项中1049通过、306项专用数据库门控跳过，不能计为通过。其余语法、构建、RN类型/lint/格式与打包测试均通过。原日志 `/tmp/miaoxun-20261105-precommit-authorized.log` 已复制到固定目录。随后 `git diff --cached --check` 在行尾空格修复后通过。RN仍有已知act警告；干净前端构建有chunk体积提示及npm可选fsevents安装脚本未批准提示，均不影响命令成功，未扩大安装脚本许可。
+
+制品从上述源提交封存；本节和CURRENT的后续文档记录不包含在归档中，不改变sourceHead。未执行完整候选Linux服务启动或实体设备交互，不能把内容完整性和已有依赖探针当作线上闭环验收。
 
 ## 当前来源与生产只读状态
 
-- 工作区基线 `186e8fece02061ad04dd9eef5644c5bb82c4f117`，detached 且有既有未提交/未跟踪文件。修改明细、状态及内容 SHA-256 冻结在本机 `/tmp/miaoxun-candidate-scope-20261105.json`；这是审查清单，不是正式 runtime 或 Git revision。获得提交授权后须重新核对清单，不能覆盖变化中的文件。
+- 原工作区基线 `186e8fece02061ad04dd9eef5644c5bb82c4f117`，当时detached且有既有未提交/未跟踪文件。修改明细、状态及内容SHA-256冻结在本机 `/tmp/miaoxun-candidate-scope-20261105.json`，获准后重新核对并按上节提交；清单本身不是runtime或Git revision。
 - 通过已有 SSH 身份只读核对，活动目录仍为 `/opt/projects/marvels-chat/releases/app-collaboration-20261103/runtime`，manifest 来源 `80d700945bedcdfa25b98ccad796dd2c038c17f8`，276 个文件。生产迁移为001–054；055表和056索引尚不存在。
 - API、AI Task Worker、媒体 Worker 与备份 timer 均 active；ready 返回数据库 connected/migrationsCurrent。此状态只证明旧版运行正常。
 - 最近已有备份任务 `Result=success / ExecMainStatus=0`，完成于 `2026-11-05 06:19:09 CST`。未触发新的生产备份或停写。备份角色具有 `pg_read_all_data`，正式发布后仍须实测新表备份可读。
@@ -57,13 +83,13 @@
 
 导入探针临时抑制了入口的 `listen` 回调，故只证明依赖解析、模块加载和本地原生依赖，不是服务完整启动或真实任务执行。Docker Hub取amd64超时后使用显式ECR镜像，未修改Docker或系统网络配置。amd64镜像 digest 为 `sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da`。未覆盖生产精确 Node22.22.1 补丁版本。
 
-命令、镜像、输入摘要及日志：`/tmp/miaoxun-prod-deps-probe-20261105-c92f13/verification.md`。正式制品仍须通过干净HEAD门禁生成，并在目标服务器核验实际安装。
+命令、镜像、输入摘要及日志：`/tmp/miaoxun-prod-deps-probe-20261105-c92f13/verification.md`。此探针早于正式制品生成；上节制品已通过干净HEAD门禁，但仍须在获准发布时于目标服务器核验实际安装。
 
 ## 未完成与授权边界
 
-1. 当前修改尚无提交，不能生成正式runtime。下一步需要明确批准本地发布提交的文件范围；本机清单支持审查，不意味着文件均由本轮创建。
-2. 正式制品生成后，生产维护、停写备份、迁移及API/双Worker切换仍须单独授权，并按执行草稿处理部分成功和恢复。
+1. 本地提交与正式制品阶段已完成，未执行推送。163文件包含工作区原有修改，不意味着文件均由本轮创建；只读准备与隔离验证的边界仍保留。
+2. 生产维护、停写新备份及完整owner/ACL恢复核验、迁移及API/双Worker切换仍须单独授权，并按执行草稿处理部分成功和恢复。
 3. UI-Agent正式上架与用户本人独立同意仍待执行；不从隔离测试搬运账号、授权或测试数据到生产。
 4. 真实模型、TestFlight与实体设备交互分别待对应授权和验收。Build58不包含当前修改。
 
-本轮新增工作以只读生产核对和本地隔离验证为主，未提交、推送、部署生产、发布正式产品、发起供应商调用或上传TestFlight。此前整仓与iOS构建结果见 [CURRENT](../handoffs/CURRENT.md)，本轮仅修改发布文档，运行 `git diff --check` 及文档链接检查，不为文档变更重复所有业务测试。
+生产核对与隔离验证之后，新增执行仅为获准的本地提交、干净构建、制品校验和文档留证。没有推送、生产部署/迁移、正式产品发布、供应商调用或TestFlight上传。此前iOS构建与隔离数据库结果见 [CURRENT](../handoffs/CURRENT.md)，本轮提交前整仓检查见上节；最终交接文档另行验证并保存，制品不会随文档更新而静默变化。
