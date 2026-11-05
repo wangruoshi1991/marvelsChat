@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { ImagePlus, Images, Pencil, Plus } from 'lucide-react-native';
+import { Images, Pencil, Plus } from 'lucide-react-native';
 import { StationAlbumDTO, StationMediaAssetDTO } from '../../models/api';
 import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
 import { textFor } from '../../shared/i18n';
@@ -18,18 +18,18 @@ import {
   workspaceStyles,
   workspaceTokens,
 } from '../../shared/workspaceUi';
-import {
-  secondFloorAccent,
-  secondFloorPalette,
-  secondFloorXunStyles,
-} from './secondFloorTheme';
+import { secondFloorAccent, secondFloorPalette } from './secondFloorTheme';
 import { isV6Palette, v6Colors } from '../../shared/v6Palette';
 import { isXunPalette } from '../../shared/xunPalette';
-import { SecondFloorXunSourceIcon } from './SecondFloorSourceIcon';
 import { AlbumContextActions } from '../assist/AlbumContextActions';
 import { AIAssistScene } from '../assist/aiAssistTypes';
 import { Language } from '../session/sessionTypes';
 import { SecondFloorPageScrollProps } from './secondFloorScroll';
+import type {
+  UIComponentPreference,
+  UIPreferences,
+} from '../ui/uiPreferenceTypes';
+import { uiFontSize, uiRowGap } from '../ui/uiPreferences';
 
 function AlbumCover({
   album,
@@ -158,6 +158,9 @@ export function SecondFloorAlbumList({
   token,
   albums,
   mediaAssets,
+  uploadPreference,
+  uiPreferences,
+  buttonScale,
   onCreate,
   onOpen,
   onEdit,
@@ -169,6 +172,9 @@ export function SecondFloorAlbumList({
   token: string;
   albums: StationAlbumDTO[];
   mediaAssets: StationMediaAssetDTO[];
+  uploadPreference?: UIComponentPreference;
+  uiPreferences?: UIPreferences;
+  buttonScale?: number;
   onCreate: () => void;
   onOpen: (id: string) => void;
   onEdit: (id: string) => void;
@@ -177,43 +183,101 @@ export function SecondFloorAlbumList({
   const colors = secondFloorPalette(palette);
   const xun = isXunPalette(colors);
   const accent = secondFloorAccent(colors);
+  const uploadVisible = uploadPreference?.visible !== false;
+  const uploadLabel =
+    uploadPreference?.label ||
+    textFor(language, xun ? '上传' : '新建相册', xun ? 'Upload' : 'New album');
+  const tokens = uiPreferences?.surfaces.secondFloor;
+  const uploadScale = Math.max(
+    0.8,
+    Math.min(
+      1.3,
+      (uploadPreference?.sizeScale ?? 1) *
+        (buttonScale ?? tokens?.buttonScale ?? 1),
+    ),
+  );
+  const uploadStyle = {
+    minHeight: Math.max(44, 44 * uploadScale),
+    minWidth: 44,
+    maxWidth: '100%' as const,
+    borderRadius: tokens?.buttonRadius ?? 12,
+    paddingHorizontal: 8 * uploadScale,
+    paddingVertical: 6 * uploadScale,
+  };
+  const uploadLabelStyle = {
+    fontSize: uiFontSize(uiPreferences, 13) * uploadScale,
+    lineHeight: uiFontSize(uiPreferences, 18) * uploadScale,
+    flexShrink: 1,
+  };
+  const titleStyle = {
+    fontSize: uiFontSize(uiPreferences, 23),
+    lineHeight: uiFontSize(uiPreferences, 29),
+  };
+  const captionStyle = {
+    fontSize: uiFontSize(uiPreferences, 13),
+    lineHeight: uiFontSize(uiPreferences, 22),
+  };
+  const uploadIcon = uploadPreference?.icon;
   return (
     <ScrollView
       {...scrollProps}
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={[s.panel, xun && s.panelXun]}
+      contentContainerStyle={[
+        s.panel,
+        xun && s.panelXun,
+        uiPreferences && {
+          gap: uiRowGap(uiPreferences, 'secondFloor', xun ? 12 : 16),
+        },
+      ]}
     >
       {header}
       <View style={s.pageHeader}>
         <View style={s.pageTitleRow}>
           <Text
             accessibilityRole="header"
-            style={[s.pageTitle, { color: colors.text }]}
+            style={[s.pageTitle, titleStyle, { color: colors.text }]}
           >
             {textFor(language, '相册', 'Albums')}
           </Text>
-          {xun ? (
+          {xun && uploadVisible ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={textFor(
                 language,
-                '上传照片并新建相册',
-                'Upload photos and create album',
+                uploadPreference?.label || '上传照片并新建相册',
+                uploadPreference?.label || 'Upload photos and create album',
               )}
               onPress={onCreate}
               style={({ pressed }) => [
                 s.createLink,
+                uploadStyle,
                 pressed && workspaceStyles.pressed,
               ]}
             >
-              <Plus size={16} color={accent} />
-              <Text style={[s.createLinkLabel, { color: accent }]}>
-                {textFor(language, '上传', 'Upload')}
+              {uploadIcon ? (
+                <Text
+                  style={[
+                    s.createLinkIcon,
+                    uploadLabelStyle,
+                    { color: accent },
+                  ]}
+                >
+                  {uploadIcon}
+                </Text>
+              ) : (
+                <Plus size={16 * uploadScale} color={accent} />
+              )}
+              <Text
+                style={[s.createLinkLabel, uploadLabelStyle, { color: accent }]}
+              >
+                {uploadLabel}
               </Text>
             </Pressable>
           ) : null}
         </View>
-        <Text style={[s.pageHint, { color: colors.secondaryText }]}>
+        <Text
+          style={[s.pageHint, captionStyle, { color: colors.secondaryText }]}
+        >
           {textFor(
             language,
             '让每一张值得珍藏的照片，被好好记住。',
@@ -221,73 +285,47 @@ export function SecondFloorAlbumList({
           )}
         </Text>
       </View>
-      {!xun ? (
+      {!xun && uploadVisible ? (
         <View style={s.heading}>
           <WorkspaceButton
             palette={colors}
-            label={textFor(language, '新建相册', 'New album')}
+            label={uploadLabel || textFor(language, '新建相册', 'New album')}
             onPress={onCreate}
             icon={
-              <Plus
-                size={18}
-                color={isV6Palette(colors) ? v6Colors.onAccent : colors.surface}
-              />
+              uploadIcon ? (
+                <Text
+                  style={{
+                    color: isV6Palette(colors)
+                      ? v6Colors.onAccent
+                      : colors.surface,
+                  }}
+                >
+                  {uploadIcon}
+                </Text>
+              ) : (
+                <Plus
+                  size={18 * uploadScale}
+                  color={
+                    isV6Palette(colors) ? v6Colors.onAccent : colors.surface
+                  }
+                />
+              )
             }
-            style={s.create}
+            labelStyle={uploadLabelStyle}
+            style={[s.create, uploadStyle]}
           />
         </View>
       ) : null}
-      <View
+      <Text
         style={[
-          s.libraryCard,
-          { backgroundColor: colors.surface, borderColor: colors.border },
+          s.sectionTitle,
+          {
+            color: colors.text,
+            fontSize: uiFontSize(uiPreferences, 14),
+            lineHeight: uiFontSize(uiPreferences, 20),
+          },
         ]}
       >
-        <View style={s.libraryHeading}>
-          {xun ? (
-            <SecondFloorXunSourceIcon>
-              <ImagePlus color="#f6f7fa" size={23} strokeWidth={1.7} />
-            </SecondFloorXunSourceIcon>
-          ) : (
-            <View style={[s.libraryIcon, { backgroundColor: colors.soft }]}>
-              <ImagePlus color={accent} size={23} strokeWidth={1.7} />
-            </View>
-          )}
-          <View style={s.libraryCopy}>
-            <Text style={[s.libraryTitle, { color: colors.text }]}>
-              {textFor(
-                language,
-                '连接你的手机相册',
-                'Connect your photo library',
-              )}
-            </Text>
-            <Text style={[s.body, { color: colors.secondaryText }]}>
-              {textFor(
-                language,
-                '仅在你授权后读取所选照片',
-                'Only selected photos are read after you grant access.',
-              )}
-            </Text>
-          </View>
-        </View>
-        <WorkspaceButton
-          palette={colors}
-          label={textFor(
-            language,
-            '选择照片并新建相册',
-            'Choose photos and create album',
-          )}
-          accessibilityLabel={textFor(
-            language,
-            '选择照片并新建相册',
-            'Choose photos and create album',
-          )}
-          onPress={onCreate}
-          labelStyle={xun ? secondFloorXunStyles.primaryLabel : undefined}
-          style={[s.libraryAction, xun && secondFloorXunStyles.primaryButton]}
-        />
-      </View>
-      <Text style={[s.sectionTitle, { color: colors.text }]}>
         {albums.length
           ? textFor(
               language,
@@ -327,6 +365,7 @@ export function SecondFloorAlbumList({
                   {
                     backgroundColor: colors.surface,
                     borderColor: colors.border,
+                    ...(tokens && { borderRadius: tokens.cardRadius }),
                   },
                 ]}
               >
@@ -375,10 +414,25 @@ export function SecondFloorAlbumList({
                     onEdit={() => onEdit(album.id)}
                     style={s.copy}
                   >
-                    <Text style={[s.name, { color: colors.text }]}>
+                    <Text
+                      style={[
+                        s.name,
+                        {
+                          color: colors.text,
+                          fontSize: uiFontSize(uiPreferences, 13),
+                          lineHeight: uiFontSize(uiPreferences, 18),
+                        },
+                      ]}
+                    >
                       {album.title}
                     </Text>
-                    <Text style={[s.body, { color: colors.secondaryText }]}>
+                    <Text
+                      style={[
+                        s.body,
+                        captionStyle,
+                        { color: colors.secondaryText },
+                      ]}
+                    >
                       {textFor(
                         language,
                         `${album.mediaCount} 个素材`,
@@ -437,6 +491,7 @@ const s = StyleSheet.create({
   pageHeader: { gap: 4, paddingBottom: 2 },
   pageTitleRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
@@ -457,34 +512,8 @@ const s = StyleSheet.create({
     gap: 3,
     paddingHorizontal: 2,
   },
+  createLinkIcon: { fontSize: 16, lineHeight: 18, fontWeight: '600' },
   createLinkLabel: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
-  libraryCard: {
-    borderWidth: 1,
-    borderRadius: 23,
-    paddingHorizontal: 17,
-    paddingVertical: 20,
-    gap: 18,
-    shadowColor: '#263a50',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 14,
-    elevation: 1,
-  },
-  libraryHeading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  libraryIcon: {
-    width: 45,
-    height: 45,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  libraryCopy: { flex: 1, minWidth: 0, gap: 2 },
-  libraryTitle: { fontSize: 17, lineHeight: 23, fontWeight: '600' },
-  libraryAction: { width: '100%' },
   sectionTitle: { fontSize: 14, lineHeight: 20, fontWeight: '600' },
   name: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
   body: workspaceTokens.typography.caption,

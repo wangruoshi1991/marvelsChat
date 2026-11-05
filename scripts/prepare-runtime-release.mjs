@@ -35,11 +35,13 @@ const runtimeInputs = [
   'backend/package.json', 'backend/package-lock.json',
   'agents',
   'agents/package.json', 'agents/registry.js', 'agents/chat-history.js', 'agents/workspace-contribution.js', 'agents/specialist-dispatch.js',
-  'shared/package.json', 'shared/agent-catalog.js', 'shared/site-document.js', 'shared/media-retrieval-public-contract.js',
+  'shared/package.json', 'shared/agent-catalog.js', 'shared/site-document.js', 'shared/media-retrieval-public-contract.js', 'shared/ui-preferences.js', 'shared/legacy-ui-preferences.js',
   'backend/scripts/admin-bootstrap.js',
   'backend/scripts/legacy-publishing-backfill.js',
   'backend/scripts/avatar-3d-backfill-mobile-models.js',
   'backend/scripts/check-ai-task-operations.js',
+  'backend/scripts/check-chat-attachment-operations.js',
+  'backend/scripts/check-ui-preference-upgrade.js',
   'backend/scripts/db-migrate.js',
   'backend/scripts/migrate-site-documents.js',
   'scripts/harden-production-release.sh',
@@ -76,7 +78,7 @@ const trackedFiles = trackedTree.toString('utf8').split('\0').filter(Boolean).ma
   return { mode, object, path };
 }).filter(Boolean);
 const runtimeBackendScripts = new Set([
-  'start', 'worker:media-retrieval', 'worker:ai-tasks', 'ops:ai-tasks',
+  'start', 'worker:media-retrieval', 'worker:ai-tasks', 'ops:ai-tasks', 'ops:chat-attachments', 'ops:ui-preference-upgrade',
   'db:migrate', 'admin:bootstrap', 'ops:legacy-publishing-backfill', 'avatar3d:backfill-mobile',
 ]);
 for (const file of trackedFiles) {

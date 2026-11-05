@@ -48,6 +48,7 @@ export function StationProfileHeader({
   avatarText,
   avatarConfig,
   bio,
+  identityTags = [],
   presenceStatus,
   locationLabel,
   renderUserAvatar,
@@ -67,6 +68,8 @@ export function StationProfileHeader({
   avatarText: string;
   avatarConfig: AvatarConfigDTO;
   bio: string;
+  /** Tags derived from saved profile fields; absent data stays empty. */
+  identityTags?: string[];
   presenceStatus?: PublicPresenceStatus;
   /** Display region only (city / province); never a full street address. */
   locationLabel: string;
@@ -305,6 +308,40 @@ export function StationProfileHeader({
               >
                 {bio}
               </Text>
+            ) : null}
+
+            {identityTags.length ? (
+              <View
+                accessibilityLabel={textFor(
+                  language,
+                  '已选标签',
+                  'Selected tags',
+                )}
+                style={styles.stationIdentityTags}
+                testID="station-profile-tags"
+              >
+                {identityTags.map(tag => (
+                  <View
+                    key={tag}
+                    style={[
+                      styles.stationIdentityTag,
+                      {
+                        backgroundColor: colors.soft,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.stationIdentityTagText,
+                        { color: secondaryTextColor },
+                      ]}
+                    >
+                      {tag}
+                    </Text>
+                  </View>
+                ))}
+              </View>
             ) : null}
 
             {onOpenLocation ? (

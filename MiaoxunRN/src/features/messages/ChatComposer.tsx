@@ -101,6 +101,8 @@ export function ChatComposer({
   onFocusInput,
   onOpenAssistant,
   onComposerTool,
+  onStartLongSpeech,
+  onFinishLongSpeech,
   onRecognizeSpeech,
   onSend,
   onQuickCommand,
@@ -125,6 +127,8 @@ export function ChatComposer({
   onFocusInput: () => void;
   onOpenAssistant?: () => void;
   onComposerTool?: (tool: ComposerTool) => void;
+  onStartLongSpeech?: () => void;
+  onFinishLongSpeech?: () => void;
   onRecognizeSpeech: () => void;
   onSend: () => void;
   onQuickCommand?: (command: string) => void;
@@ -134,6 +138,7 @@ export function ChatComposer({
     estimateInputHeight(draft),
   );
   const [composerToolsOpen, setComposerToolsOpen] = React.useState(false);
+  const longSpeechActive = React.useRef(false);
   const inputRef = React.useRef<TextInput>(null);
   const [quickCommandOffset, setQuickCommandOffset] = React.useState(0);
   const [quickCommandViewportWidth, setQuickCommandViewportWidth] =
@@ -424,7 +429,20 @@ export function ChatComposer({
           accessibilityRole="button"
           accessibilityLabel={textFor(language, '语音转文字', 'Speech to text')}
           disabled={isRecognizingSpeech || isSending}
-          onPress={onRecognizeSpeech}
+          onLongPress={() => {
+            if (!onStartLongSpeech || isRecognizingSpeech || isSending) return;
+            longSpeechActive.current = true;
+            onStartLongSpeech();
+          }}
+          onPress={() => {
+            if (longSpeechActive.current) return;
+            onRecognizeSpeech();
+          }}
+          onPressOut={() => {
+            if (!longSpeechActive.current) return;
+            longSpeechActive.current = false;
+            onFinishLongSpeech?.();
+          }}
           style={[
             chatLayoutStyles.composerButton,
             xunTheme && accessStyles.xunCircleButton,

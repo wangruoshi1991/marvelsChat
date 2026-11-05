@@ -3,6 +3,7 @@ import { normalizeAvatarConfig } from "./avatar-service.js";
 import { projectAvatarPhotoQuality } from "./avatar-3d-photo-quality.js";
 import { normalizeLocationText } from "./location-labels.js";
 import { HttpError } from "./http-error.js";
+import { normalizeStoredUIPreferences } from "../../shared/ui-preferences.js";
 
 export const toIso = (value) => (value instanceof Date ? value.toISOString() : value || null);
 
@@ -76,7 +77,10 @@ export const mapProfile = (row) => ({
   followersCount: Number(row.followers_count || 0),
   likesCount: Number(row.likes_count || 0),
   collectionsCount: Number(row.collections_count || 0),
-  stationConfig: parseJson(row.station_config, {}),
+  stationConfig: {
+    ...parseJson(row.station_config, {}),
+    uiPreferences: normalizeStoredUIPreferences(parseJson(row.station_config, {}).uiPreferences),
+  },
   updatedAt: toIso(row.updated_at),
 });
 
@@ -339,6 +343,7 @@ export const mapThread = (row) => ({
     : null,
   agentId: row.agent_id,
   peerUserId: row.peer_user_id || null,
+  groupId: row.group_id || null,
   peerAiId: row.peer_ai_id || null,
   kind: row.kind,
   pinned: Boolean(row.pinned),

@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
-import { query, closeDatabase } from "../src/db.js";
+import { query, closeDatabase, withTransaction } from "../src/db.js";
 import { createAgentReleaseRepository } from "../src/agent-release-repository.js";
 import { createProductCatalogRepository } from "../src/product-catalog-repository.js";
 import { createAgentPublishingService } from "../src/agent-publishing-service.js";
 import { getPublishedProductCatalog } from "../src/product-catalog-projection.js";
 import { assertAgentProductEntitlement } from "../src/ai-agent-access.js";
+import { createUIPreferenceService } from "../src/ui-preference-service.js";
 
 const enabled = process.env.RUN_PUBLISHING_LIFECYCLE_POSTGRES === "1";
 const identityFor = (key, displayName, mark = "演") => ({ key, avatarKind: "agent-mark", displayName, description: "已部署运行能力", mark, shape: "circle", colors: { background: "#123456", foreground: "#ffffff", accent: "#facc15" }, published: false, source: "admin", updatedAt: "2026-11-02T00:00:00.000Z" });
@@ -54,6 +55,99 @@ test("explicit Agent intake and product versions preserve published contracts an
       await service.submitProduct({ productId: product1.id, productVersionId: product1.productVersionId });
       await service.publishProduct({ productId: product1.id, productVersionId: product1.productVersionId });
       await products.createEntitlement({ userId, productId: product1.id, productVersionId: product1.productVersionId, grantedScopes: agent.permissions, consentVersion: "1.0.0", idempotencyKey: `${key}-consent-old` });
+    });
+    await t.test("legacy reconsent restores a disabled Agent projection only after explicit current consent", async () => {
+      // Recreate the entitlement and projection produced by the legacy backfill.
+      await query("UPDATE user_entitlements SET status = 'reconsent_required', contract_hash = NULL, consent_version = NULL WHERE user_id = ? AND product_version_id = ?", [userId, product1.productVersionId]);
+      await query("UPDATE user_agents SET enabled = FALSE, granted_scopes = '[]'::jsonb WHERE user_id = ? AND agent_id = ?", [userId, key]);
+      const catalog = await getPublishedProductCatalog(userId);
+      assert.equal(catalog.products.find(item => item.id === product1.id).productVersionId, product1.productVersionId);
+      assert.equal(catalog.entitlements.find(item => item.productVersionId === product1.productVersionId).status, "reconsent_required");
+      await assert.rejects(assertAgentProductEntitlement({ userId, agent }), error => error.details?.code === "AGENT_PRODUCT_ENTITLEMENT_REQUIRED");
+      await assert.rejects(service.setAgentAccessThroughProduct({ userId, agentKey: key, productVersionId: product1.productVersionId, enabled: true, grantedScopes: [], idempotencyKey: `${key}-reconsent-invalid` }), error => error.details?.code === "PRODUCT_CONSENT_REQUIRED");
+      assert.equal((await query("SELECT enabled FROM user_agents WHERE user_id = ? AND agent_id = ?", [userId, key]))[0].enabled, false);
+      const grant = await service.setAgentAccessThroughProduct({ userId, agentKey: key, productVersionId: product1.productVersionId, enabled: true, grantedScopes: agent.permissions, idempotencyKey: `${key}-reconsent` });
+      assert.equal(grant.status, "enabled");
+      const [projection] = await query("SELECT enabled, granted_scopes FROM user_agents WHERE user_id = ? AND agent_id = ?", [userId, key]);
+      assert.equal(projection.enabled, true);
+      assert.deepEqual(projection.granted_scopes, agent.permissions);
+      const history = await query("SELECT reason FROM entitlement_status_history WHERE entitlement_id = ? AND from_status = 'reconsent_required' AND to_status = 'enabled'", [grant.id]);
+      assert.equal(history[0].reason, "user_reconsent");
+      await assertAgentProductEntitlement({ userId, agent });
+    });
+    await t.test("preference confirmation serializes with product pause, revocation and release withdrawal", async () => {
+      await query("INSERT INTO user_profiles (user_id,nickname,avatar_text) VALUES (?,?,?)", [userId, "test", "T"]);
+      const previewId = randomUUID();
+      await query(`INSERT INTO ui_preference_previews (id,user_id,base_revision,patch,preview,expires_at)
+        VALUES (?,?,0,?::jsonb,'{}'::jsonb,CURRENT_TIMESTAMP + interval '1 hour')`,
+      [previewId, userId, JSON.stringify({ surfaces: { miao: { cardRadius: 20 } } })]);
+      const authorization = { agent, access: { grantedScopes: agent.permissions }, productGrant: await assertAgentProductEntitlement({ userId, agent }) };
+      const barrier = () => {
+        let open;
+        let reached;
+        return { entered: new Promise(resolve => { reached = resolve; }), wait: new Promise(resolve => { open = resolve; }), open: () => open(), reached: () => reached() };
+      };
+      const gated = (gate, match) => work => withTransaction(connection => work({ query: async (sql, params) => {
+        const rows = await connection.query(sql, params);
+        if (match(sql)) { gate.reached(); await gate.wait; }
+        return rows;
+      } }));
+      const signaled = (gate, match) => work => withTransaction(connection => work({ query: async (sql, params) => {
+        if (match(sql)) gate.reached();
+        return connection.query(sql, params);
+      } }));
+      const confirm = (transaction = withTransaction) => createUIPreferenceService({
+        authorize: async () => authorization, recordEvent: async () => {}, transaction,
+      }).confirm({ user: { id: userId }, previewId, baseRevision: 0 });
+      const checkUnchanged = async () => {
+        const [row] = await query("SELECT station_config FROM user_profiles WHERE user_id = ?", [userId]);
+        assert.equal(row.station_config?.uiPreferences, undefined);
+        assert.equal((await query("SELECT status FROM ui_preference_previews WHERE id = ?", [previewId]))[0].status, "pending");
+      };
+      const productLock = sql => sql.includes("FOR UPDATE OF p");
+      for (const action of ["pause", "revoke"]) {
+        const gate = barrier();
+        const repo = createProductCatalogRepository({ withTransaction: gated(gate, productLock) });
+        const mutation = action === "pause"
+          ? repo.transitionProduct({ productId: product1.id, productVersionId: product1.productVersionId, toStatus: "paused" })
+          : repo.disableEntitlement({ userId, productId: product1.id, productVersionId: product1.productVersionId, idempotencyKey: `${key}-race-revoke` });
+        await gate.entered;
+        const attempted = barrier();
+        const pending = confirm(signaled(attempted, sql => sql.startsWith("SELECT id FROM products") && sql.includes("FOR SHARE")));
+        await attempted.entered;
+        gate.open();
+        await mutation;
+        await assert.rejects(pending, error => ["AI_ACCESS_REVOKED", "AGENT_PRODUCT_ENTITLEMENT_REQUIRED"].includes(error.details?.code));
+        await checkUnchanged();
+        if (action === "pause") await products.transitionProduct({ productId: product1.id, productVersionId: product1.productVersionId, toStatus: "published" });
+        await products.createEntitlement({ userId, productId: product1.id, productVersionId: product1.productVersionId, grantedScopes: agent.permissions, idempotencyKey: `${key}-restore-${action}` });
+      }
+      const gate = barrier();
+      const releaseRepo = createAgentReleaseRepository({ withTransaction: gated(gate, sql => sql.includes("SELECT * FROM agent_releases") && sql.includes("FOR UPDATE")) });
+      const withdrawing = releaseRepo.transition({ releaseId: first.release.id, toStatus: "unpublished" });
+      await gate.entered;
+      await assert.rejects(confirm(), error => error.details?.code === "UI_AGENT_AUTHORIZATION_CHANGING");
+      gate.open();
+      await withdrawing;
+      await assert.rejects(confirm(), error => error.details?.code === "AGENT_PRODUCT_ENTITLEMENT_REQUIRED");
+      await checkUnchanged();
+      await releases.transition({ releaseId: first.release.id, toStatus: "published" });
+
+      const confirmGate = barrier();
+      const lockedUI = createUIPreferenceService({ authorize: async () => authorization, recordEvent: async () => {},
+        transaction: gated(confirmGate, sql => sql.startsWith("SELECT id FROM products") && sql.includes("FOR SHARE")) });
+      const confirming = lockedUI.confirm({ user: { id: userId }, previewId, baseRevision: 0 });
+      await confirmGate.entered;
+      const pauseAttempt = barrier();
+      const pauseRepo = createProductCatalogRepository({ withTransaction: signaled(pauseAttempt, productLock) });
+      const pausing = pauseRepo.transitionProduct({ productId: product1.id, productVersionId: product1.productVersionId, toStatus: "paused" });
+      await pauseAttempt.entered;
+      confirmGate.open();
+      assert.equal((await confirming).status, "confirmed");
+      await pausing;
+      assert.equal((await query("SELECT station_config FROM user_profiles WHERE user_id = ?", [userId]))[0].station_config.uiPreferences.revision, 1);
+      await products.transitionProduct({ productId: product1.id, productVersionId: product1.productVersionId, toStatus: "published" });
+      await products.createEntitlement({ userId, productId: product1.id, productVersionId: product1.productVersionId, grantedScopes: agent.permissions, idempotencyKey: `${key}-restore-final` });
     });
     await t.test("a newer draft neither hides the published version nor changes original consent", async () => {
       product2 = await products.createProductVersion({ productId: product1.id, version: "1.1.0", displayName: "新产品", description: "已部署运行能力", identity: identityFor(productKey, "新产品"), supportedPlatforms: ["ios"], dependencies: [{ agentKey: key, agentReleaseId: revision.release.id, version: agent.version, scopes: agent.permissions }], requestId: `${key}-product-revision` });

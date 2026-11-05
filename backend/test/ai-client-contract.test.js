@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aiClientContracts, requireAIClientContract, requireSiteDocumentContract, requireAgentWorkspaceContract, rejectRetiredSiteApply } from "../src/ai-client-contract.js";
+import { aiClientContracts, requireAIClientContract, requireSiteDocumentContract, requireAgentWorkspaceContract, requireUIPreferencesContract, rejectRetiredSiteApply } from "../src/ai-client-contract.js";
 import { createSafeErrorResponse } from "../src/request-observability.js";
 import { registerStationSiteRoutes } from "../src/routes/station-site-routes.js";
 
@@ -17,7 +17,18 @@ test("an AI client must explicitly declare the supported contract, regardless of
   let called = false;
   requireAIClientContract({ get: () => "1" }, null, () => { called = true; });
   assert.equal(called, true);
-  assert.deepEqual(aiClientContracts, { aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6 });
+  assert.deepEqual(aiClientContracts, { aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6, uiPreferences: 1 });
+});
+
+test("UI preference routes require the explicit preference contract", () => {
+  for (const value of [undefined, "", "0", "2", "1, 2"]) {
+    assert.throws(() => requireUIPreferencesContract({ get: () => value }), error =>
+      error.status === 426 && error.details.code === "UI_PREFERENCES_CLIENT_UPDATE_REQUIRED" &&
+      error.details.requiredContract === 1);
+  }
+  let called = false;
+  requireUIPreferencesContract({ get: () => "1" }, null, () => { called = true; });
+  assert.equal(called, true);
 });
 
 test("direct and coordinated workspaces require contract 6 before any business execution", () => {

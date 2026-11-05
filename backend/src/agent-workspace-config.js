@@ -6,5 +6,12 @@ export function createAgentWorkspaceConfig(env = process.env) {
   };
   return Object.freeze({
     deadlineSeconds: integer("AGENT_WORKSPACE_DEADLINE_SECONDS", 1200, 30, 86400),
+    // Independent nodes are safe to execute concurrently. Keep the bound
+    // explicit so the worker can start all currently supported participants
+    // without turning queue pressure into unbounded provider calls.
+    // The planner can persist up to 20 specialist nodes. Keep the default
+    // conservative, but allow an explicitly configured worker pool to run
+    // more than four independent nodes in waves when a task needs it.
+    maxConcurrent: integer("AGENT_WORKSPACE_MAX_CONCURRENT", 4, 1, 20),
   });
 }

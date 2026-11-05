@@ -16,7 +16,6 @@ import { SiteDocumentMedia } from '../src/features/site-document/SiteDocumentMed
 import { StationMediaPreviewScreen } from '../src/features/station/StationMediaPreviewScreen';
 import { SecondFloorFiles } from '../src/features/second-floor/SecondFloorFiles';
 import { useMiaoxunSession } from '../src/features/session/useMiaoxunSession';
-import { StationPageHeading } from '../src/features/station/StationPageHeading';
 
 jest.mock('../src/features/workspaces/useAgentWorkspaces', () => ({
   useAgentWorkspaces: () => mockWorkspaces,
@@ -563,7 +562,7 @@ test('shows retrieval failure and retry rather than claiming there are no result
   expect(mockWorkspaces.refresh).toHaveBeenCalledTimes(1);
 });
 
-test('second floor files lists app-generated outcomes and opens their task', async () => {
+test('second floor files keeps generated outcomes out of the file list', async () => {
   const session = {
     token: 'account-a',
     stationContent: { ...emptyStationContent, siteDrafts: [draft] },
@@ -576,20 +575,16 @@ test('second floor files lists app-generated outcomes and opens their task', asy
         palette={palettes.light}
         language="zh"
         session={session}
-        onOpenWorkspace={open}
       />,
     );
   });
   const texts = renderer.root
     .findAllByType(Text)
     .map(node => node.props.children);
-  expect(texts).toContain('App 生成文件');
-  expect(session.refreshStationContent).toHaveBeenCalled();
-  act(() => card('text:text-1').props.onPress());
-  expect(open).toHaveBeenCalledWith(workspace);
-  expect(card('site:page-1')).toBeTruthy();
+  expect(texts).not.toContain('App 生成文件');
+  expect(texts).not.toContain('我的成果');
+  expect(session.refreshStationContent).not.toHaveBeenCalled();
   expect(
-    renderer.root.findByProps({ testID: 'floor-outcomes-heading' }),
-  ).toBeTruthy();
-  expect(renderer.root.findAllByType(StationPageHeading)).toHaveLength(0);
+    renderer.root.findAllByProps({ testID: 'floor-outcomes-heading' }),
+  ).toHaveLength(0);
 });

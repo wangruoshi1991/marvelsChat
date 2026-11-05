@@ -1,5 +1,12 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import {
   Brain,
   ChevronDown,
@@ -24,6 +31,14 @@ import {
 import { SegmentedControl } from '../../shared/ui';
 import { isXunPalette } from '../../shared/xunPalette';
 import { SecondFloorPageScrollProps } from '../second-floor/secondFloorScroll';
+import type {
+  UIPreferencePreviewDTO,
+  UIPreferences,
+} from '../ui/uiPreferenceTypes';
+import {
+  describeUIPreferenceChanges,
+  formatUIPreferenceValue,
+} from '../ui/uiPreferenceDiff';
 
 export function SettingsScreen({
   palette,
@@ -44,6 +59,11 @@ export function SettingsScreen({
   footer,
   scrollProps,
   scrollable = true,
+  uiPreferences,
+  onPreviewUIPreferences,
+  onConfirmUIPreferences,
+  onResetUIPreferences,
+  onUndoUIPreferences,
 }: {
   header?: React.ReactNode;
   footer?: React.ReactNode;
@@ -70,7 +90,26 @@ export function SettingsScreen({
    * component either way.
    */
   embedded?: boolean;
+  uiPreferences?: UIPreferences;
+  onPreviewUIPreferences?: (
+    instruction: string,
+  ) => Promise<UIPreferencePreviewDTO>;
+  onConfirmUIPreferences?: (
+    previewId: string,
+    baseRevision: number,
+  ) => Promise<unknown>;
+  onResetUIPreferences?: (baseRevision: number) => Promise<unknown>;
+  onUndoUIPreferences?: (baseRevision: number) => Promise<unknown>;
 }) {
+  const [uiInstruction, setUIInstruction] = React.useState('');
+  const [uiPreview, setUIPreview] =
+    React.useState<UIPreferencePreviewDTO | null>(null);
+  const [uiBusy, setUIBusy] = React.useState(false);
+  const [uiError, setUIError] = React.useState('');
+  const uiPreviewChanges =
+    uiPreview && uiPreferences
+      ? describeUIPreferenceChanges(uiPreferences, uiPreview)
+      : [];
   const updateVisibility = (
     key: keyof ProfileVisibilityDTO,
     value: boolean,
@@ -87,6 +126,245 @@ export function SettingsScreen({
   const content = (
     <>
       {header}
+      {uiPreferences && onPreviewUIPreferences ? (
+        <SettingGroup
+          palette={palette}
+          title={textFor(language, 'AI 界面偏好', 'AI interface preferences')}
+        >
+          <Text style={[s.uiHint, { color: palette.secondaryText }]}>
+            {textFor(
+              language,
+              '告诉 UI Agent 你想调整的按钮、布局或手势；先预览，确认后才会保存。',
+              'Describe a button, layout, or gesture change. Preview first, then confirm to save.',
+            )}
+          </Text>
+          <TextInput
+            value={uiInstruction}
+            onChangeText={setUIInstruction}
+            placeholder={textFor(
+              language,
+              '例如：把妙页协作详情按钮放到右上角',
+              'For example: move the collaboration details button to the top right',
+            )}
+            placeholderTextColor={palette.secondaryText}
+            multiline
+            style={[
+              s.uiInput,
+              { color: palette.text, borderColor: palette.border },
+            ]}
+            accessibilityLabel={textFor(
+              language,
+              '界面调整描述',
+              'Interface change description',
+            )}
+          />
+          <Pressable
+            disabled={uiBusy || !uiInstruction.trim()}
+            accessibilityRole="button"
+            accessibilityLabel={textFor(language, '生成预览', 'Preview change')}
+            onPress={async () => {
+              setUIBusy(true);
+              setUIError('');
+              setUIPreview(null);
+              try {
+                setUIPreview(
+                  await onPreviewUIPreferences(uiInstruction.trim()),
+                );
+              } catch (error) {
+                setUIError(
+                  error instanceof Error
+                    ? error.message
+                    : textFor(language, '预览失败', 'Preview failed'),
+                );
+              } finally {
+                setUIBusy(false);
+              }
+            }}
+            style={[
+              s.uiPrimaryButton,
+              { backgroundColor: palette.mint },
+              (uiBusy || !uiInstruction.trim()) && s.uiDisabled,
+            ]}
+          >
+            <Text style={[s.uiPrimaryLabel, { color: palette.background }]}>
+              {uiBusy
+                ? textFor(language, '处理中…', 'Working…')
+                : textFor(language, '生成预览', 'Preview change')}
+            </Text>
+          </Pressable>
+          {uiError ? (
+            <Text
+              accessibilityRole="alert"
+              style={[s.uiHint, { color: palette.rose }]}
+            >
+              {uiError}
+            </Text>
+          ) : null}
+          {uiPreview ? (
+            <View
+              style={[
+                s.uiPreviewCard,
+                {
+                  borderColor: palette.border,
+                  backgroundColor: palette.surface,
+                },
+              ]}
+            >
+              <Text style={[styles.settingsRowTitle, { color: palette.text }]}>
+                {uiPreview.intent}
+              </Text>
+              <Text style={[s.uiHint, { color: palette.secondaryText }]}>
+                {uiPreview.rationale}
+              </Text>
+              <Text style={[s.uiHint, { color: palette.secondaryText }]}>
+                {textFor(
+                  language,
+                  `影响页面：${
+                    uiPreview.affectedSurfaces.join('、') || '当前页面'
+                  }`,
+                  `Affected surfaces: ${
+                    uiPreview.affectedSurfaces.join(', ') || 'current page'
+                  }`,
+                )}
+              </Text>
+              <View
+                accessibilityLabel={textFor(
+                  language,
+                  '界面调整前后对比',
+                  'Interface change comparison',
+                )}
+                style={s.uiPreviewChanges}
+              >
+                <Text style={[s.uiChangeTitle, { color: palette.text }]}>
+                  {textFor(language, '调整前后', 'Before and after')}
+                </Text>
+                {uiPreviewChanges.length ? (
+                  uiPreviewChanges.map(change => (
+                    <Text
+                      key={`${change.path}:${String(change.after)}`}
+                      style={[s.uiHint, { color: palette.secondaryText }]}
+                    >
+                      {`${change.path}: ${formatUIPreferenceValue(
+                        change.before,
+                      )} → ${formatUIPreferenceValue(change.after)}`}
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={[s.uiHint, { color: palette.secondaryText }]}>
+                    {textFor(
+                      language,
+                      '没有检测到可应用的变化。',
+                      'No applicable changes were detected.',
+                    )}
+                  </Text>
+                )}
+              </View>
+              <View style={s.uiPreviewActions}>
+                {onConfirmUIPreferences && uiPreviewChanges.length > 0 ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={async () => {
+                      setUIBusy(true);
+                      setUIError('');
+                      try {
+                        await onConfirmUIPreferences(
+                          uiPreview.id,
+                          uiPreview.baseRevision,
+                        );
+                        setUIPreview(null);
+                        setUIInstruction('');
+                      } catch (error) {
+                        setUIError(
+                          error instanceof Error
+                            ? error.message
+                            : textFor(language, '应用失败', 'Apply failed'),
+                        );
+                      } finally {
+                        setUIBusy(false);
+                      }
+                    }}
+                    style={[
+                      s.uiPrimaryButton,
+                      { backgroundColor: palette.mint },
+                    ]}
+                  >
+                    <Text
+                      style={[s.uiPrimaryLabel, { color: palette.background }]}
+                    >
+                      {textFor(language, '应用调整', 'Apply')}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setUIPreview(null)}
+                  style={[s.uiSecondaryButton, { borderColor: palette.border }]}
+                >
+                  <Text style={[s.uiSecondaryLabel, { color: palette.text }]}>
+                    {textFor(language, '撤销预览', 'Discard preview')}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+          {onResetUIPreferences ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={async () => {
+                setUIBusy(true);
+                setUIError('');
+                try {
+                  await onResetUIPreferences(uiPreferences.revision);
+                } catch (error) {
+                  setUIError(
+                    error instanceof Error
+                      ? error.message
+                      : textFor(language, '恢复默认失败', 'Reset failed'),
+                  );
+                } finally {
+                  setUIBusy(false);
+                }
+              }}
+            >
+              <Text style={[s.uiHint, { color: palette.mint }]}>
+                {textFor(
+                  language,
+                  '恢复界面默认设置',
+                  'Restore interface defaults',
+                )}
+              </Text>
+            </Pressable>
+          ) : null}
+          {onUndoUIPreferences ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={async () => {
+                setUIBusy(true);
+                setUIError('');
+                try {
+                  await onUndoUIPreferences(uiPreferences.revision);
+                } catch (error) {
+                  setUIError(
+                    error instanceof Error
+                      ? error.message
+                      : textFor(language, '撤销调整失败', 'Undo failed'),
+                  );
+                } finally {
+                  setUIBusy(false);
+                }
+              }}
+            >
+              <Text style={[s.uiHint, { color: palette.mint }]}>
+                {textFor(
+                  language,
+                  '撤销上一次已应用调整',
+                  'Undo last applied change',
+                )}
+              </Text>
+            </Pressable>
+          ) : null}
+        </SettingGroup>
+      ) : null}
       {embedded ? null : (
         <View style={styles.settingsHeader}>
           <Pressable
@@ -373,4 +651,46 @@ const s = StyleSheet.create({
     paddingBottom: 24,
     gap: 12,
   },
+  uiHint: { fontSize: 12, lineHeight: 18 },
+  uiInput: {
+    minHeight: 68,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+    textAlignVertical: 'top',
+    marginTop: 8,
+  },
+  uiPrimaryButton: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  uiPrimaryLabel: { fontSize: 13, fontWeight: '700' },
+  uiDisabled: { opacity: 0.5 },
+  uiSecondaryButton: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  uiSecondaryLabel: { fontSize: 13, fontWeight: '600' },
+  uiPreviewCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 10,
+    gap: 6,
+  },
+  uiPreviewChanges: {
+    borderTopWidth: 1,
+    borderTopColor: '#0000001a',
+    paddingTop: 8,
+    gap: 3,
+  },
+  uiChangeTitle: { fontSize: 12, fontWeight: '700' },
+  uiPreviewActions: { flexDirection: 'row', gap: 8, alignItems: 'stretch' },
 });

@@ -1,5 +1,8 @@
 import type { AssistMessageSource } from '../assist/assistMessageSource';
-import type { AIContextReference } from '../../models/aiTask';
+import {
+  isContextReference,
+  type AIContextReference,
+} from '../../models/aiTask';
 import { AITaskCard, Artifact } from '../ai/AIInteraction';
 import { useAITasks } from '../ai/useAITasks';
 import React, {
@@ -31,7 +34,13 @@ import {
   WorkspaceDiscussionContext,
 } from '../../models/workspaceContext';
 import { WorkspaceContextCard } from './WorkspaceContextCard';
-import { recognizeSpeechOnce } from '../../services/speechToText';
+import {
+  prepareSpeechRecognition,
+  recognizeSpeechOnce,
+  startSpeechRecognition,
+  SpeechPermissionPreparation,
+  SpeechRecognitionSession,
+} from '../../services/speechToText';
 import { displayText, publicPresenceText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { isLightPalette, Palette } from '../../shared/theme';
@@ -62,8 +71,16 @@ import { agentScopeListLabel } from '../agents/agentPresentation';
 import { agentReplyPresentation } from './agentReplyPresentation';
 import { pendingConversationClarification } from './butlerClarification';
 import { usesAgentDispatch } from '../../models/agentDispatch';
+import { WorkspaceContributionCard } from './WorkspaceContributionCard';
+import { useWorkspaceContributions } from './useWorkspaceContributions';
+import type { WorkspaceContribution } from './WorkspaceContributionCard';
 
 export type { MessageTab, UserAvatarRenderer };
+
+export type ComposerPreparationResult =
+  | AIContextReference
+  | { reference?: AIContextReference; draftText?: string }
+  | null;
 
 export type ChatDraftSnapshot = {
   text: string;
@@ -115,6 +132,9 @@ export function ChatScreen({
   onPreserveDraftForAccess,
   onRefreshThread,
   onInitialDraftConsumed,
+  onPrepareComposerTool,
+  workspaceContribution,
+  onConfirmUIPreferences,
 }: {
   token?: string;
   onAuthorizeAlbumAI?: () => Promise<unknown>;
@@ -158,9 +178,24 @@ export function ChatScreen({
   onPreserveDraftForAccess?: (draft: ChatDraftSnapshot) => void;
   onRefreshThread?: () => Promise<void>;
   onInitialDraftConsumed?: () => void;
+  /** Runs a real picker/upload and returns a server-backed context reference. */
+  onPrepareComposerTool?: (
+    tool: ComposerTool,
+  ) => Promise<ComposerPreparationResult>;
+  workspaceContribution?: WorkspaceContribution;
+  onConfirmUIPreferences?: (
+    id: string,
+    baseRevision: number,
+  ) => Promise<unknown>;
 }) {
   const assist = useAIAssist();
   const professional = usesAgentDispatch(thread.agentId);
+  const contributions = useWorkspaceContributions(
+    token,
+    thread.agentId && thread.agentId !== 'miaoxun-butler'
+      ? thread.agentId
+      : undefined,
+  );
   const initialContextReset = professional
     ? initialAgentContextReset
     : initialButlerContextReset;
@@ -205,6 +240,10 @@ export function ChatScreen({
   });
   const [isSending, setIsSending] = useState(false);
   const [isRecognizingSpeech, setIsRecognizingSpeech] = useState(false);
+  const speechSessionRef = useRef<SpeechRecognitionSession | null>(null);
+  const speechPermissionRef = useRef<SpeechPermissionPreparation | null>(null);
+  const speechFinishRequestedRef = useRef(false);
+  const speechPrefixRef = useRef('');
   // The composer grows when Butler shortcuts, context references, or a reply
   // preview are visible. Reserve that measured height in the message list so
   // the final bubble can still scroll above the composer instead of being
@@ -288,14 +327,14 @@ export function ChatScreen({
     ? publicPresenceText(language, thread.peerPresenceStatus)
     : '';
   const isSelectedMessageMine = Boolean(messageMenuPosition?.isMine);
-  const scrollToBottom = (animated: boolean) => {
+  const scrollToBottom = useCallback((animated: boolean) => {
     requestAnimationFrame(() => {
       if (interactionBlockedRef.current) {
         return;
       }
       listRef.current?.scrollToEnd({ animated });
     });
-  };
+  }, []);
   const closeMessageMenu = useCallback(() => {
     setSelectedMessage(null);
     setMessageMenuPosition(null);
@@ -408,6 +447,7 @@ export function ChatScreen({
       renderUserAvatar={renderUserAvatar}
       onOpenMessageMenu={openMessageMenu}
       onActionMessage={onActionError}
+      onConfirmUIPreferences={onConfirmUIPreferences}
       onOpenAgentAccess={openAgentAccess}
       onOpenWorkspace={onOpenWorkspace}
       onRestoreWorkspaceContext={context => {
@@ -497,7 +537,7 @@ export function ChatScreen({
     scrollToBottom(false);
     const afterPaint = setTimeout(() => scrollToBottom(false), 80);
     return () => clearTimeout(afterPaint);
-  }, [thread.id, thread.messages.length]);
+  }, [scrollToBottom, thread.id, thread.messages.length]);
 
   useEffect(() => {
     if (
@@ -636,7 +676,7 @@ export function ChatScreen({
       frameSubscription.remove();
       hideSubscription.remove();
     };
-  }, [safeAreaInsets.bottom, windowSize.height]);
+  }, [safeAreaInsets.bottom, scrollToBottom, windowSize.height]);
 
   const send = () => {
     const content = draft.trim();
@@ -693,6 +733,18 @@ export function ChatScreen({
       });
   };
 
+  const appendRecognizedSpeech = useCallback(
+    (text: string) => {
+      draftEdited.current = true;
+      setDraft(current => {
+        const trimmed = current.trimEnd();
+        return trimmed ? `${trimmed} ${text}` : text;
+      });
+      setTimeout(() => scrollToBottom(true), 80);
+    },
+    [scrollToBottom],
+  );
+
   const recognizeSpeech = () => {
     if (isRecognizingSpeech) {
       return;
@@ -702,14 +754,7 @@ export function ChatScreen({
     closeMessageMenu();
     setIsRecognizingSpeech(true);
     Promise.resolve(recognizeSpeechOnce(language))
-      .then(text => {
-        draftEdited.current = true;
-        setDraft(current => {
-          const trimmed = current.trimEnd();
-          return trimmed ? `${trimmed} ${text}` : text;
-        });
-        setTimeout(() => scrollToBottom(true), 80);
-      })
+      .then(appendRecognizedSpeech)
       .catch(error => {
         onActionError(
           error instanceof Error
@@ -719,6 +764,90 @@ export function ChatScreen({
       })
       .finally(() => setIsRecognizingSpeech(false));
   };
+
+  const startLongSpeech = useCallback(() => {
+    if (isRecognizingSpeech || speechSessionRef.current) return;
+    Keyboard.dismiss();
+    closeMessageMenu();
+    speechFinishRequestedRef.current = false;
+    speechPrefixRef.current = draft.trimEnd();
+    setIsRecognizingSpeech(true);
+    let permission: SpeechPermissionPreparation;
+    try {
+      permission = prepareSpeechRecognition();
+      speechPermissionRef.current = permission;
+    } catch (error) {
+      setIsRecognizingSpeech(false);
+      onActionError(
+        error instanceof Error
+          ? error.message
+          : textFor(language, '语音识别失败', 'Speech recognition failed'),
+      );
+      return;
+    }
+    permission.result
+      .then(() => {
+        if (speechFinishRequestedRef.current) return;
+        const session = startSpeechRecognition(language, update => {
+          const text = update.text.trim();
+          if (!text) return;
+          draftEdited.current = true;
+          const prefix = speechPrefixRef.current;
+          setDraft(prefix ? `${prefix} ${text}` : text);
+          setTimeout(() => scrollToBottom(true), 40);
+        });
+        speechSessionRef.current = session;
+        if (speechFinishRequestedRef.current) session.finish();
+        return session.result;
+      })
+      .then(text => {
+        if (typeof text === 'string' && text.trim()) {
+          const prefix = speechPrefixRef.current;
+          draftEdited.current = true;
+          setDraft(prefix ? `${prefix} ${text.trim()}` : text.trim());
+        }
+      })
+      .catch(error => {
+        if (!speechFinishRequestedRef.current) {
+          onActionError(
+            error instanceof Error
+              ? error.message
+              : textFor(language, '语音识别失败', 'Speech recognition failed'),
+          );
+        }
+      })
+      .finally(() => {
+        speechPermissionRef.current = null;
+        speechSessionRef.current = null;
+        speechFinishRequestedRef.current = false;
+        setIsRecognizingSpeech(false);
+      });
+  }, [
+    closeMessageMenu,
+    draft,
+    isRecognizingSpeech,
+    language,
+    onActionError,
+    scrollToBottom,
+  ]);
+
+  const finishLongSpeech = useCallback(() => {
+    speechFinishRequestedRef.current = true;
+    if (speechSessionRef.current) {
+      speechSessionRef.current.finish();
+    } else {
+      speechPermissionRef.current?.cancel();
+    }
+  }, []);
+
+  useEffect(
+    () => () => {
+      speechFinishRequestedRef.current = true;
+      speechSessionRef.current?.cancel();
+      speechPermissionRef.current?.cancel();
+    },
+    [],
+  );
 
   const openConversationAssistant = useCallback(() => {
     // This is a local snapshot of the current conversation entry point. A
@@ -742,15 +871,54 @@ export function ChatScreen({
         openConversationAssistant();
         return;
       }
-      onActionError(
-        textFor(
-          language,
-          `“${tool}”功能暂未接通，请使用已提供的入口。`,
-          `“${tool}” is not connected yet. Please use an available entry point.`,
-        ),
-      );
+      if (!onPrepareComposerTool) {
+        onActionError(
+          textFor(
+            language,
+            `“${tool}”功能暂未接通，请使用已提供的入口。`,
+            `“${tool}” is not connected yet. Please use an available entry point.`,
+          ),
+        );
+        return;
+      }
+      onPrepareComposerTool(tool)
+        .then(result => {
+          if (!result) return;
+          const reference = 'reference' in result ? result.reference : result;
+          if (result && 'draftText' in result && result.draftText?.trim()) {
+            draftEdited.current = true;
+            setDraft(current =>
+              current.trim()
+                ? `${current.trim()}\n${result.draftText!.trim()}`
+                : result.draftText!.trim(),
+            );
+          }
+          if (!reference) return;
+          if (!isContextReference(reference)) {
+            throw new Error('附件引用无效，请重试。');
+          }
+          draftEdited.current = true;
+          setContextRefs(current =>
+            current.some(
+              item => item.kind === reference.kind && item.id === reference.id,
+            )
+              ? current
+              : [...current, { ...reference }],
+          );
+        })
+        .catch(error => {
+          onActionError(
+            error instanceof Error
+              ? error.message
+              : textFor(
+                  language,
+                  '附件处理失败，请重试。',
+                  'Attachment failed. Try again.',
+                ),
+          );
+        });
     },
-    [language, onActionError, openConversationAssistant],
+    [language, onActionError, onPrepareComposerTool, openConversationAssistant],
   );
 
   return (
@@ -823,6 +991,52 @@ export function ChatScreen({
               scrollEnabled={!isChatInteractionBlocked}
               ListFooterComponent={
                 <View>
+                  {contributions.contributions
+                    .slice()
+                    .sort(
+                      (a, b) =>
+                        Number(b.step.id === workspaceContribution?.step.id) -
+                        Number(a.step.id === workspaceContribution?.step.id),
+                    )
+                    .map(contribution => (
+                      <WorkspaceContributionCard
+                        key={contribution.step.id}
+                        contribution={contribution}
+                        agents={agents}
+                        token={token}
+                        palette={messagePalette}
+                        language={language}
+                      />
+                    ))}
+                  {contributions.unavailable ? (
+                    <Text
+                      accessibilityRole="alert"
+                      style={{ color: palette.rose }}
+                    >
+                      {textFor(
+                        language,
+                        '部分协作贡献因授权或来源变化无法读取。',
+                        'Some contributions are unavailable because access or sources changed.',
+                      )}
+                    </Text>
+                  ) : null}
+                  {contributions.hasMore ? (
+                    <Text style={{ color: palette.secondaryText }}>
+                      {textFor(
+                        language,
+                        '仅显示最近 50 条协作贡献。',
+                        'Showing the 50 most recent contributions.',
+                      )}
+                    </Text>
+                  ) : null}
+                  {contributions.error ? (
+                    <Text
+                      accessibilityRole="alert"
+                      style={{ color: palette.rose }}
+                    >
+                      {contributions.error}
+                    </Text>
+                  ) : null}
                   {tasks.error || tasks.decisionError ? (
                     <View>
                       <Text
@@ -1068,6 +1282,8 @@ export function ChatScreen({
             setTimeout(() => scrollToBottom(true), 80);
           }}
           onOpenAssistant={openConversationAssistant}
+          onStartLongSpeech={startLongSpeech}
+          onFinishLongSpeech={finishLongSpeech}
           onRecognizeSpeech={recognizeSpeech}
           onSend={send}
         />

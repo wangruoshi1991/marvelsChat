@@ -46,7 +46,10 @@ import {
 } from './StationHeader';
 import { StationAvatarSpace } from './StationAvatarSpace';
 import { StationPanel } from './StationPanels';
-import { stationDisplayRegionLabel } from './stationProfileIdentity';
+import {
+  profileIdentityTags,
+  stationDisplayRegionLabel,
+} from './stationProfileIdentity';
 import { resolveStationColors } from './stationTheme';
 import type {
   StationContentListKind,
@@ -566,6 +569,7 @@ export function StationScreen({
             avatarText={session.profile.avatarText}
             avatarConfig={session.profile.avatarConfig}
             bio={displayText(language, session.profile.bio)}
+            identityTags={profileIdentityTags(session.profile, language)}
             presenceStatus={
               session.user?.presenceMode === 'online' ? 'online' : 'offline'
             }

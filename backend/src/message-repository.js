@@ -439,6 +439,15 @@ export async function getMessageForUser({ userId, threadId, messageId }) {
   return rows[0] ? mapMessage(rows[0]) : null;
 }
 
+async function lockDirectConversation(connection, userId, peerUserId) {
+  if (!peerUserId) return;
+  // Both sides acquire the same conversation lock before any message row.
+  // Reply insertion and recall cannot publish stale snapshots or lock each
+  // other's local copies in opposite order.
+  const key = `direct:${[userId, peerUserId].sort().join(":")}`;
+  await connection.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text, 0))", [key]);
+}
+
 async function addMessageToThread({
   userId,
   threadId,
@@ -458,16 +467,55 @@ async function addMessageToThread({
       [userId, threadId],
     );
     if (!threads.length) throw new HttpError(404, "Thread not found");
-    const resolvedMetadata =
+    await lockDirectConversation(connection, userId, threads[0].peer_user_id);
+    let resolvedMetadata =
       threads[0].peer_user_id && senderType === "user"
         ? { ...metadata, senderUserId: metadata.senderUserId || userId }
         : metadata;
+    let deliveredContent = content;
+    let recalledAt = null;
+    if (threads[0].peer_user_id && metadata.source === "direct") {
+      // The sender copy can be recalled on another device before this separate
+      // delivery transaction begins. Never resurrect its request-body text.
+      const [original] = await connection.query(`SELECT m.content, m.recalled_at FROM chat_messages m
+        JOIN chat_threads t ON t.id = m.thread_id
+        WHERE t.user_id = ? AND t.peer_user_id = ? AND t.kind = 'direct'
+          AND m.client_message_id = ? AND m.metadata ->> 'source' = 'app'
+          AND m.metadata ->> 'senderUserId' = ?`,
+      [metadata.senderUserId, userId, clientMessageId, metadata.senderUserId]);
+      if (!original) throw new HttpError(404, "Original message not found");
+      deliveredContent = original.recalled_at ? "" : original.content;
+      recalledAt = original.recalled_at;
+    }
+
+    if (metadata.replyTo?.messageId) {
+      const [target] = await connection.query(`SELECT m.* FROM chat_messages m
+        JOIN chat_threads t ON t.id = m.thread_id
+        WHERE m.id = ? AND m.deleted_at IS NULL AND
+          (m.thread_id = ? OR (?::boolean AND t.user_id = ? AND t.peer_user_id = ? AND t.kind = 'direct'))
+        FOR SHARE OF m`, [metadata.replyTo.messageId, threadId,
+        metadata.source === "direct", metadata.senderUserId || userId, userId]);
+      if (!target) throw new HttpError(404, "Reply target not found");
+      let localTargetId = target.id;
+      if (target.thread_id !== threadId) {
+        const [local] = await connection.query(`SELECT id FROM chat_messages
+          WHERE thread_id = ? AND client_message_id = ? AND metadata ->> 'senderUserId' = ?`,
+        [threadId, target.client_message_id, target.metadata?.senderUserId]);
+        if (!local) throw new HttpError(404, "Reply target not found");
+        localTargetId = local.id;
+      }
+      resolvedMetadata = { ...resolvedMetadata, replyTo: {
+        messageId: localTargetId, senderName: target.sender_name,
+        content: target.recalled_at ? "" : target.content,
+        recalledAt: target.recalled_at ? new Date(target.recalled_at).toISOString() : null,
+      } };
+    }
 
     await connection.execute(
       `INSERT INTO chat_messages
-        (id, thread_id, user_id, sender_type, sender_name, content, metadata, client_message_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [messageId, threadId, userId, senderType, senderName, content, JSON.stringify(resolvedMetadata), clientMessageId],
+        (id, thread_id, user_id, sender_type, sender_name, content, metadata, client_message_id, recalled_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [messageId, threadId, userId, senderType, senderName, deliveredContent, JSON.stringify(resolvedMetadata), clientMessageId, recalledAt],
     );
 
     await connection.execute(
@@ -505,8 +553,14 @@ export async function deleteMessageForUser({ userId, threadId, messageId }) {
 
 export async function recallMessageForUser({ userId, threadId, messageId }) {
   return withTransaction(async (connection) => {
+    const [conversation] = await connection.query("SELECT group_id, peer_user_id FROM chat_threads WHERE id = ? AND user_id = ?", [threadId, userId]);
+    if (!conversation) throw new HttpError(404, "Message not found");
+    // Group sends lock the group before reading reply targets. Recall must use
+    // the same order, before taking any original or mirror message lock.
+    if (conversation.group_id) await connection.query("SELECT id FROM chat_groups WHERE id = ? FOR UPDATE", [conversation.group_id]);
+    await lockDirectConversation(connection, userId, conversation.peer_user_id);
     const [row] = await connection.query(
-      `SELECT m.*, t.peer_user_id
+      `SELECT m.*, t.peer_user_id, t.group_id
        FROM chat_messages m
        JOIN chat_threads t ON t.id = m.thread_id
        WHERE t.user_id = ? AND m.user_id = ? AND t.id = ? AND m.id = ? AND m.deleted_at IS NULL
@@ -524,12 +578,11 @@ export async function recallMessageForUser({ userId, threadId, messageId }) {
     if (message.senderType !== "user" || !authoredByUser) {
       throw new HttpError(403, "Only the sender can recall this message");
     }
-    if (message.recalledAt) return { message, peerUserId: null, peerMessage: null };
     if (!row.client_message_id) {
       throw new HttpError(409, "This message was created before recall tracking was enabled");
     }
 
-    const [ownRow] = await connection.query(
+    const [ownRow] = row.recalled_at ? [row] : await connection.query(
       `UPDATE chat_messages
        SET recalled_at = clock_timestamp(), content = '',
          metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('recalledByUserId', ?::text)
@@ -541,6 +594,25 @@ export async function recallMessageForUser({ userId, threadId, messageId }) {
     if (!ownRow) throw new HttpError(409, "消息发出超过 1 分钟，不能撤回");
 
     let peerRow = null;
+    const groupDeliveries = [];
+    const recalledCopies = [ownRow];
+    if (row.group_id) {
+      const mirrors = await connection.query(`UPDATE chat_messages m
+        SET recalled_at = ?::timestamptz, content = '',
+          metadata = COALESCE(m.metadata, '{}'::jsonb) || jsonb_build_object('recalledByUserId', ?::text)
+        FROM chat_threads t
+        WHERE t.id = m.thread_id AND t.group_id = ? AND m.id <> ?
+          AND m.client_message_id = ? AND m.sender_type = 'user'
+          AND m.metadata ->> 'senderUserId' = ? AND m.metadata ->> 'source' = 'group'
+          AND m.recalled_at IS NULL RETURNING m.*`,
+      [ownRow.recalled_at, userId, row.group_id, messageId, row.client_message_id, userId]);
+      for (const mirror of mirrors) groupDeliveries.push({ userId: mirror.user_id, message: mapMessage(mirror) });
+      const allMirrors = await connection.query(`SELECT m.* FROM chat_messages m JOIN chat_threads t ON t.id = m.thread_id
+        WHERE t.group_id = ? AND m.client_message_id = ? AND m.sender_type = 'user'
+          AND m.metadata ->> 'senderUserId' = ? AND m.metadata ->> 'source' = 'group'`,
+      [row.group_id, row.client_message_id, userId]);
+      recalledCopies.push(...allMirrors);
+    }
     if (row.peer_user_id) {
       // Match the reciprocal conversation and original author, not a global
       // client ID. Other users may legitimately choose the same client ID.
@@ -553,6 +625,7 @@ export async function recallMessageForUser({ userId, threadId, messageId }) {
          FOR UPDATE OF m`,
         [row.peer_user_id, row.peer_user_id, userId, row.client_message_id, userId],
       );
+      if (mirror) recalledCopies.push(mirror);
       if (mirror && !mirror.recalled_at) {
         [peerRow] = await connection.query(
           `UPDATE chat_messages SET recalled_at = ?::timestamptz, content = '',
@@ -564,10 +637,26 @@ export async function recallMessageForUser({ userId, threadId, messageId }) {
         );
       }
     }
+    const recalledAt = new Date(ownRow.recalled_at).toISOString();
+    const quotedRows = await connection.query(`UPDATE chat_messages m
+      SET metadata = jsonb_set(m.metadata, '{replyTo}', (m.metadata -> 'replyTo') ||
+        jsonb_build_object('content', '', 'recalledAt', ?::text))
+      WHERE m.thread_id = ANY(?::text[])
+        AND m.metadata -> 'replyTo' ->> 'messageId' = ANY(?::text[])
+        AND (m.metadata -> 'replyTo' ->> 'content' IS DISTINCT FROM ''
+          OR m.metadata -> 'replyTo' ->> 'recalledAt' IS DISTINCT FROM ?::text)
+      RETURNING m.*`, [recalledAt, [...new Set(recalledCopies.map(copy => copy.thread_id))], recalledCopies.map(copy => copy.id), recalledAt]);
+    // Offline/reconnecting clients retrieve these changed snapshots through
+    // the existing per-thread incremental sync as well as realtime delivery.
+    await connection.query("UPDATE chat_threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ANY(?::text[])",
+      [[...new Set([...recalledCopies, ...quotedRows].map(copy => copy.thread_id))]]);
     return {
       message: mapMessage(ownRow),
+      originalChanged: !row.recalled_at,
       peerUserId: peerRow ? row.peer_user_id : null,
       peerMessage: peerRow ? mapMessage(peerRow) : null,
+      groupDeliveries,
+      quoteDeliveries: quotedRows.map(quoted => ({ userId: quoted.user_id, message: mapMessage(quoted) })),
     };
   });
 }

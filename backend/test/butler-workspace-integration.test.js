@@ -13,6 +13,7 @@ import { createAgentWorkspaceRunner } from "../src/agent-workspace-runner.js";
 import { getAgent } from "../../agents/registry.js";
 import { computeAgentReleaseContractHash } from "../../shared/agent-catalog.js";
 import { computeProductContractHash } from "../src/product-catalog-repository.js";
+import { HttpError } from "../src/http-error.js";
 
 const enabled = process.env.RUN_AI_TASK_INTEGRATION === "1";
 const integration = (name, work) => test(name, { skip: !enabled && "Requires migrated disposable PostgreSQL" }, work);
@@ -32,6 +33,9 @@ let server;
 let origin;
 let calls;
 let runtime;
+let uiPreviewCalls;
+let uiPrepare;
+let uiPersist;
 const logger = { error() {} };
 
 const publicationIds = {
@@ -110,6 +114,10 @@ before(async () => {
     assert.equal(options.mode, "dispatch");
     await options.beforeModelCall();
     return runtime(options);
+  }, uiPreferences: {
+    prepare: async args => { uiPreviewCalls.prepare.push(args); return uiPrepare(args); },
+    lockPreparedAuthorization: async args => { uiPreviewCalls.lock.push(args); },
+    persistPrepared: async args => { uiPreviewCalls.persist.push(args); return uiPersist(args); },
   } });
   registerAgentWorkspaceRoutes(app, { authenticate, asyncHandler });
   app.use(createRequestErrorHandler({ production: true, logger }));
@@ -127,6 +135,9 @@ beforeEach(async () => {
   await query("UPDATE user_agents SET granted_scopes = ?::jsonb WHERE user_id = ? AND agent_id = 'site-builder'", [JSON.stringify(siteScopes), owner]);
   await query("UPDATE station_albums SET description = '', deleted_at = NULL WHERE id = ?", [albumId]);
   calls = 0;
+  uiPreviewCalls = { prepare: [], lock: [], persist: [] };
+  uiPrepare = async args => ({ instruction: args.instruction });
+  uiPersist = async () => ({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
   runtime = async () => ({ reply: JSON.stringify(taskDecision), provider: "test-only", latencyMs: 1 });
 });
 
@@ -137,9 +148,10 @@ after(async () => {
   await closeDatabase();
 });
 
-const request = async (path, body, authToken = token, workspaceContract = "6") => {
+const request = async (path, body, authToken = token, workspaceContract = "6", uiContract = "1") => {
   const response = await fetch(`${origin}${path}`, { method: body === undefined ? "GET" : "POST", headers: {
     Authorization: `Bearer ${authToken}`, "Content-Type": "application/json", "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Site-Document": "2",
+    ...(uiContract === null ? {} : { "X-Miaoxun-UI-Preferences": uiContract }),
     ...(workspaceContract === null ? {} : { "X-Miaoxun-Agent-Workspace": workspaceContract }),
   }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { status: response.status, ...await response.json() };
@@ -149,14 +161,78 @@ const input = () => ({ content: "Please prepare a page with material from this a
 const send = body => request(`/api/threads/${threadId}/messages`, body);
 const workspaces = () => query("SELECT * FROM agent_workspaces WHERE user_id = ?", [owner]);
 
+integration("butler routes UI preference requests from persisted user text and replays the same preview", async () => {
+  runtime = async () => ({ reply: JSON.stringify({ type: "ui_preference" }), provider: "test-only", latencyMs: 1 });
+  const body = { content: "把妙页的卡片圆角变大", clientMessageId: crypto.randomUUID() };
+  const accepted = await send(body);
+  assert.equal(accepted.status, 201);
+  assert.deepEqual(accepted.data.messages.at(-1).metadata.uiPreferencePreview, { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+  assert.equal(uiPreviewCalls.prepare.length, 1);
+  assert.equal(uiPreviewCalls.prepare[0].instruction, body.content);
+  assert.equal(uiPreviewCalls.persist.length, 1);
+  assert.equal(uiPreviewCalls.lock.length, 1);
+  assert.equal(uiPreviewCalls.persist[0].inputMessageId, accepted.data.messages[0].id);
+  assert.equal(uiPreviewCalls.persist[0].threadId, threadId);
+  assert.ok(uiPreviewCalls.persist[0].connection);
+  const replay = await send(body);
+  assert.equal(replay.status, 200);
+  assert.deepEqual(replay.data.messages.at(-1).metadata.uiPreferencePreview, { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+  assert.equal(uiPreviewCalls.prepare.length, 1);
+  assert.equal(uiPreviewCalls.persist.length, 1);
+});
+
+integration("older clients receive an update message without generating a UI preview", async () => {
+  runtime = async () => ({ reply: JSON.stringify({ type: "ui_preference" }), provider: "test-only", latencyMs: 1 });
+  const result = await request(`/api/threads/${threadId}/messages`, { content: "调整妙页按钮", clientMessageId: crypto.randomUUID() }, token, "6", null);
+  assert.equal(result.status, 201);
+  assert.match(result.data.messages.at(-1).content, /更新/);
+  assert.equal(result.data.messages.at(-1).metadata.uiPreferencePreview, undefined);
+  assert.equal(uiPreviewCalls.prepare.length, 0);
+});
+
+integration("an unavailable UI Agent produces an explicit message and no preview", async () => {
+  runtime = async () => ({ reply: JSON.stringify({ type: "ui_preference" }), provider: "test-only", latencyMs: 1 });
+  uiPrepare = async () => { throw new HttpError(503, "unavailable", { code: "UI_AGENT_UNAVAILABLE" }); };
+  const result = await send({ content: "调整妙页按钮", clientMessageId: crypto.randomUUID() });
+  assert.equal(result.status, 201);
+  assert.match(result.data.messages.at(-1).content, /UI Agent 暂不可用/);
+  assert.equal(result.data.messages.at(-1).metadata.uiPreferencePreview, undefined);
+  assert.equal(uiPreviewCalls.persist.length, 0);
+});
+
+integration("UI preview is not attached when Butler authorization changes during preparation", async () => {
+  runtime = async () => ({ reply: JSON.stringify({ type: "ui_preference" }), provider: "test-only", latencyMs: 1 });
+  uiPrepare = async args => {
+    await query("UPDATE user_agents SET enabled = false WHERE user_id = ? AND agent_id = 'miaoxun-butler'", [owner]);
+    return { instruction: args.instruction };
+  };
+  const result = await send({ content: "调整妙页按钮", clientMessageId: crypto.randomUUID() });
+  assert.equal(result.status, 201);
+  assert.match(result.data.messages.at(-1).content, /授权或引用内容已变化/);
+  assert.equal(result.data.messages.at(-1).metadata.uiPreferencePreview, undefined);
+  assert.equal(uiPreviewCalls.persist.length, 0);
+});
+
+integration("a preference revision conflict explains why the preview was not attached", async () => {
+  runtime = async () => ({ reply: JSON.stringify({ type: "ui_preference" }), provider: "test-only", latencyMs: 1 });
+  uiPersist = async () => { throw new HttpError(409, "changed", { code: "UI_PREFERENCE_REVISION_CONFLICT" }); };
+  const result = await send({ content: "调整妙页按钮", clientMessageId: crypto.randomUUID() });
+  assert.equal(result.status, 201);
+  assert.match(result.data.messages.at(-1).content, /界面偏好.*变化/);
+  assert.equal(result.data.messages.at(-1).metadata.uiPreferencePreview, undefined);
+});
+
 integration("ordinary butler chat creates one persistent workspace, preserves references/source, and replays the same receipt", async () => {
   const body = input();
   const accepted = await send(body);
-  assert.equal(accepted.status, 201);
+  assert.equal(accepted.status, 201, JSON.stringify(accepted));
   const reply = accepted.data.messages.at(-1);
   assert.match(reply.content, /created your task/);
   assert.doesNotMatch(reply.content, /capabilities|agentId|media\.select/);
   const id = reply.metadata.agentWorkspace.id;
+  const [createdWorkspace] = await workspaces();
+  assert.deepEqual(Object.keys(createdWorkspace.limits), ["deadlineSeconds"]);
+  assert.ok(createdWorkspace.limits.deadlineSeconds >= 30);
   const listed = (await request("/api/agent-workspaces")).data;
   assert.equal(listed.length, 1);
   assert.equal(listed[0].id, id);

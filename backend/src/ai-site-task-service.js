@@ -29,7 +29,8 @@ async function authorize(connection, userId, agent, { write = false, lockProfile
   }
   await assertAgentProductEntitlement({ userId, agent, queryFn: connection.query.bind(connection) });
   const profiles = await connection.query(`SELECT p.*, u.ai_id FROM user_profiles p
-    JOIN users u ON u.id = p.user_id WHERE p.user_id = ?${lockProfile ? ` FOR ${write ? "UPDATE" : "SHARE"} OF p` : ""}`, [userId]);
+    JOIN users u ON u.id = p.user_id
+    WHERE p.user_id = ?${lockProfile ? ` FOR ${write ? "UPDATE" : "SHARE"} OF p` : ""}`, [userId]);
   if (!profiles[0]) fail(404, "SITE_TASK_PROFILE_MISSING", "小站资料不存在。");
   const profile = mapProfile(profiles[0]);
   // Exclude activity counters/timestamps; protect all editable planner context.

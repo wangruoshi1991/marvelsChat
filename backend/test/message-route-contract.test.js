@@ -11,6 +11,7 @@ const {
   buildAgentAppContext,
   registerMessageRoutes,
   messageRequestFingerprint,
+  uiPreferenceFailureReply,
 } = await import("../src/routes/message-routes.js");
 const { messageSchema } = await import("../src/schemas.js");
 
@@ -93,6 +94,12 @@ test("Agent runtime diagnostics never expose provider error messages", () => {
     status: 502,
   });
   assert.doesNotMatch(JSON.stringify(diagnostic), /secret-token/);
+});
+
+test("UI preference chat failures explain no change and invalid suggestions without exposing model output", () => {
+  assert.match(uiPreferenceFailureReply({ details: { code: "UI_PREFERENCE_NO_CHANGE" } }, "zh"), /没有.*变化/);
+  assert.match(uiPreferenceFailureReply({ message: "MODEL_SECRET", details: { code: "UI_AGENT_INVALID_RESPONSE" } }, "zh"), /重试/);
+  assert.doesNotMatch(uiPreferenceFailureReply({ message: "MODEL_SECRET", details: { code: "UI_AGENT_INVALID_RESPONSE" } }, "zh"), /MODEL_SECRET/);
 });
 
 test("Agent chat context includes current station content", () => {

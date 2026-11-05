@@ -19,6 +19,7 @@
 
 - [固定iPhone17联调](local-development-preview.md)、[React Native说明](../MiaoxunRN/README.md)、[iOS配置](ios.md)：唯一日常App、构建和设备验收边界。
 - [部署说明](deployment.md)、[生产运维入口](production-operations.md)：服务配置、制品与操作步骤；先核对当前交接，旧发布段落按日期解释。
+- [UI-Agent 配套发布执行草稿](reviews/2026-11-05-ui-agent-release-plan.md)、[本轮发布前证据](reviews/2026-11-05-release-preflight-evidence.md)：055/056 恢复副本验证、Linux依赖和独立授权证据，不代表生产已发布。
 - [数据库与迁移](database.md)、[备份恢复](database-backup.md)、[恢复负责人手册](database-recovery-owner-guide.md)。
 - [管理后台](admin.md)、[移动端上线清单](mobile-launch-checklist.md)。
 

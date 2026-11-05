@@ -13,6 +13,8 @@ import {
   agentWorkspaceHeaders,
   assertAgentWorkspaceContract,
   assertAIContract,
+  supportsUIPreferences,
+  uiPreferencesHeaders,
 } from '../aiContract';
 
 export const messageApi = {
@@ -97,7 +99,10 @@ export const messageApi = {
       token,
       body,
       timeoutMs,
-      headers: agentWorkspaceHeaders,
+      headers: {
+        ...agentWorkspaceHeaders,
+        ...(supportsUIPreferences(token) ? uiPreferencesHeaders : {}),
+      },
     });
   },
 

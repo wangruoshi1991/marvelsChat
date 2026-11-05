@@ -125,7 +125,7 @@ test('three root tabs retain the station, keep navigation under voice menus, and
     renderer.root.findAllByProps({
       accessibilityLabel: '下拉进入二楼，你的个人空间',
     }),
-  ).not.toHaveLength(0);
+  ).toHaveLength(0);
   act(() => xunVoiceDock?.props.onExpandedChange(true));
   expect(
     renderer.root.findByType(ThreadListScreen).props.messageActionsOpen,

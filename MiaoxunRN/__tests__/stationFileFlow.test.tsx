@@ -1,5 +1,10 @@
 import React from 'react';
-import { AppState, AppStateStatus, NativeModules } from 'react-native';
+import {
+  AppState,
+  AppStateStatus,
+  NativeModules,
+  ScrollView,
+} from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { SecondFloorFiles } from '../src/features/second-floor/SecondFloorFiles';
 import { palettes } from '../src/shared/theme';
@@ -45,7 +50,6 @@ const setup = async (read: jest.Mock, open = jest.fn()) => {
     palette: palettes.light,
     language: 'zh' as const,
     session,
-    onOpenWorkspace: jest.fn(),
     onOpenFileAgent: open,
   };
   await act(async () => {
@@ -78,6 +82,39 @@ test('reads authenticated full text before exposing the Agent action and recheck
   });
   expect(read).toHaveBeenCalledTimes(2);
   expect(open).toHaveBeenCalledWith({ ...reference, version: 'v2' });
+});
+
+test('file detail scrolling does not inherit the floor exit touch handlers', async () => {
+  const read = jest.fn().mockResolvedValue({ ...file, content: 'full text' });
+  const scrollProps = {
+    onTouchStart: jest.fn(),
+    onTouchEnd: jest.fn(),
+    onScrollBeginDrag: jest.fn(),
+  };
+  const session = {
+    token: 'owner',
+    stationContent: { ...emptyStationContent, fileAssets: [file] },
+    stationFileAsset: read,
+  } as any;
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <SecondFloorFiles
+        palette={palettes.light}
+        language="zh"
+        session={session}
+        scrollProps={scrollProps}
+      />,
+    );
+  });
+  await act(async () => {
+    renderer.root
+      .findByProps({ accessibilityLabel: '查看notes.txt' })
+      .props.onPress();
+  });
+  const detailScroll = renderer.root.findByType(ScrollView);
+  expect(detailScroll.props.onTouchStart).toBeUndefined();
+  expect(detailScroll.props.onTouchEnd).toBeUndefined();
+  expect(detailScroll.props.onScrollBeginDrag).toBeUndefined();
 });
 test('registered preview without full content never exposes an authenticated file reference', async () => {
   await setup(
@@ -417,7 +454,6 @@ test.each(['retry', 'discard', 'unmount'] as const)(
               refreshStationContent: refresh,
             } as any
           }
-          onOpenWorkspace={jest.fn()}
         />,
       );
     });
@@ -475,7 +511,6 @@ test('unmount during an upload releases its temporary file only once after the l
             refreshStationContent: jest.fn().mockResolvedValue(undefined),
           } as any
         }
-        onOpenWorkspace={jest.fn()}
       />,
     );
   });

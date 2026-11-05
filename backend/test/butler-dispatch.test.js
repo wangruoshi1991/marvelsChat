@@ -30,6 +30,14 @@ test("plain replies and clarification never require a task or invocation authori
   assert.throws(() => validateButlerDispatch(task, context), error => error.details.code === "BUTLER_DISPATCH_FORBIDDEN");
 });
 
+test("UI preference routing accepts only a decision without model-supplied instructions or authority", () => {
+  const context = makeContext([], ["messages:read"]);
+  assert.deepEqual(validateButlerDispatch({ type: "ui_preference" }, context), { type: "ui_preference" });
+  for (const extra of [{ instruction: "invented" }, { previewId: "invented" }, { grantedScopes: ["ui-preferences:write"] }]) {
+    assert.throws(() => validateButlerDispatch({ type: "ui_preference", ...extra }, context), error => error.details.code === "BUTLER_DISPATCH_INVALID");
+  }
+});
+
 test("unavailable but supported tasks may request access without inventing executable authority", () => {
   const context = makeContext([{ ...album, enabled: false }]);
   assert.deepEqual(context.availableCapabilities, []);

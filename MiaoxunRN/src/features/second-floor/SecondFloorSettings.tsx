@@ -84,6 +84,11 @@ export function SecondFloorSettings({
           onUpdateProfileVisibility={session.updateProfileVisibility}
           palette={colors}
           profileVisibility={session.profileVisibility}
+          uiPreferences={session.uiPreferences}
+          onPreviewUIPreferences={session.previewUIPreferences}
+          onConfirmUIPreferences={session.confirmUIPreferences}
+          onResetUIPreferences={session.resetUIPreferences}
+          onUndoUIPreferences={session.undoUIPreferences}
           scrollable={false}
           userName={session.user?.displayName || '未登录'}
           userRole={session.user?.role || 'user'}

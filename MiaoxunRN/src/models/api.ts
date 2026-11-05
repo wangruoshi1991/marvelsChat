@@ -1,4 +1,5 @@
 import type { AIContextReference, AITaskDTO } from './aiTask';
+import type { UIPreferences } from '../features/ui/uiPreferenceTypes';
 
 export type APIEnvelope<T> = {
   data: T;
@@ -77,6 +78,7 @@ export type ProfileDTO = ProfileIdentityDTO & {
     appearance?: 'light' | 'dark';
     siteDraftId?: string;
     siteLayout?: unknown;
+    uiPreferences?: UIPreferences;
   };
 };
 
@@ -238,6 +240,15 @@ export type OwnedAgentDTO = {
   published?: boolean;
   identity: AgentIdentityDTO | null;
   createdAt?: string | null;
+  /** Count of completed conversations and workspace rounds. */
+  collaborationCount?: number | null;
+  metrics?: {
+    version: number;
+    completedInteractions: number;
+    level: number;
+    preferenceMatchPercent: number | null;
+    preferenceMatchStatus: string;
+  } | null;
 };
 
 type AgentProviderStatusDTO = {
@@ -709,6 +720,7 @@ export type BootstrapDTO = {
     aiTasks?: number;
     siteDocuments?: number;
     agentWorkspaces?: number;
+    uiPreferences?: number;
   };
   products: ProductCatalogProductDTO[];
   entitlements: ProductEntitlementDTO[];

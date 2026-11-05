@@ -7,6 +7,8 @@ import { createAgentWorkspaceRunner } from "./agent-workspace-runner.js";
 import { executeWorkspaceNode } from "./agent-workspace-service.js";
 import { checkDatabase, closeDatabase, query } from "./db.js";
 import { aiClientContracts } from "./ai-client-contract.js";
+import { config } from "./config.js";
+import { createChatAttachmentMaintenance } from "./chat-attachment-lifecycle.js";
 
 // This is a process/database liveness diagnostic, not proof that the queue or a
 // model call is progressing. Check lastSuccessfulPollAt and queue age as well.
@@ -60,7 +62,9 @@ export async function startAITaskWorker({
   check = checkDatabase, close = closeDatabase, createRunner = createAITaskRunner,
   createWorkspaceRunner = createAgentWorkspaceRunner,
   executeWorkspace = executeWorkspaceNode,
+  createAttachmentMaintenance = createChatAttachmentMaintenance,
   createHeartbeat = createAITaskWorkerHeartbeat, runtime = process, logger = console,
+  workspaceMaxConcurrent = config.agentWorkspace.maxConcurrent,
 } = {}) {
   const database = await check();
   if (!database.connected || !database.migrationsCurrent) {
@@ -70,7 +74,7 @@ export async function startAITaskWorker({
     return null;
   }
   const runner = createRunner({ executors: { agent_message: executeMessageTask, site_draft: executeSiteTask }, logger });
-  const workspaceRunner = createWorkspaceRunner({ execute: executeWorkspace, logger });
+  const workspaceRunner = createWorkspaceRunner({ execute: executeWorkspace, logger, maxConcurrent: workspaceMaxConcurrent });
   const monitor = { getState: () => {
     const task = runner.getState();
     const workspace = workspaceRunner.getState();
@@ -79,15 +83,17 @@ export async function startAITaskWorker({
       workspaceLastSuccessfulPollAt: workspace.lastSuccessfulPollAt };
   } };
   const heartbeat = createHeartbeat({ runner: monitor, logger });
+  const attachmentMaintenance = createAttachmentMaintenance({ logger });
   runner.start();
   workspaceRunner.start();
   heartbeat.start();
+  attachmentMaintenance.start();
   logger.log(JSON.stringify({ type: "ai_task_worker_started", contractVersion: aiClientContracts.aiTasks, workspaceContractVersion: aiClientContracts.agentWorkspaces }));
   let stopping = null;
   const stop = () => {
     if (stopping) return stopping;
     heartbeat.stop();
-    const stopped = Promise.all([runner.stop(), workspaceRunner.stop()]);
+    const stopped = Promise.all([runner.stop(), workspaceRunner.stop(), attachmentMaintenance.stop()]);
     logger.log(JSON.stringify({ type: "ai_task_worker_stopping", ...monitor.getState() }));
     const deadline = setTimeout(() => runtime.exit(1), 75000);
     stopping = stopped.then(close).then(() => {

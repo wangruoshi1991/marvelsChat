@@ -5,6 +5,7 @@ import { avatar3dCostVersion } from "./avatar-3d-quality.js";
 import { isModelQueryConfigured } from "./model-provider-endpoint.js";
 import { AGENT_MODEL_ROLE_POLICY, createAgentModelConfig, resolveAgentModelRoute } from "./agent-model-config.js";
 import { createAgentWorkspaceConfig } from "./agent-workspace-config.js";
+import { createChatAttachmentConfig } from "./chat-attachment-config.js";
 import {
   MEDIA_RETRIEVAL_LIMITS,
   MEDIA_RETRIEVAL_RUNTIME_LIMITS,
@@ -421,6 +422,7 @@ export const config = {
       && process.env.OSS_ACCESS_KEY_SECRET
     ),
   },
+  chatAttachments: createChatAttachmentConfig(process.env),
   mediaRetrieval: createMediaRetrievalConfig(process.env),
   geocoding: {
     provider: (process.env.GEOCODING_PROVIDER || "nominatim").trim().toLowerCase(),

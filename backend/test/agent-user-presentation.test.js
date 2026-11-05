@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { withUserAgentPresentation } from "../src/agent-user-presentation.js";
-import { computeProductContractHash } from "../src/product-catalog-repository.js";
+import { computeProductContractHash, resolveEntitlementStatus } from "../src/product-catalog-repository.js";
 import { registerAppRoutes } from "../src/routes/app-routes.js";
 
 const identity = (name) => ({ key: "demo", avatarKind: "agent-mark", displayName: name, description: "", mark: "D", shape: "circle", colors: { background: "#123456", foreground: "#ffffff", accent: "#abcdef" }, published: true, source: "admin", updatedAt: "2026-11-02T00:00:00.000Z" });
@@ -11,6 +11,15 @@ function product(name, { id = "product", versionId = "version-1", agentKey = "de
   return { ...result, contractHash: computeProductContractHash(result) };
 }
 const enabledGrant = (selected) => ({ productId: selected.id, productVersionId: selected.productVersionId, status: "enabled" });
+test("reconsent is required only for changed contracts of executable published products", () => {
+  const published = product("Published");
+  const status = (storedStatus, selected, storedContractHash) => resolveEntitlementStatus({ storedStatus, product: selected, storedContractHash });
+  assert.equal(status("enabled", published, published.contractHash), "enabled");
+  assert.equal(status("enabled", published, "b".repeat(64)), "reconsent_required");
+  assert.equal(status("enabled", { ...published, status: "paused" }, "b".repeat(64)), "unavailable");
+  assert.equal(status("enabled", { ...published, contractHash: "invalid" }, "b".repeat(64)), "unavailable");
+  assert.equal(status("disabled", published, "b".repeat(64)), "disabled");
+});
 test("effective product version preserves a consenting user's release identity independently of global catalog", () => {
   const [resolved] = withUserAgentPresentation([agent], { products: [product("Original name")] });
   assert.equal(resolved.name, "Original name");

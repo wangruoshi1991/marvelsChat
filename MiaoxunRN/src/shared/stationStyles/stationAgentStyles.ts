@@ -223,6 +223,27 @@ export const stationAgentStyles = {
     overflow: 'hidden',
     padding: 12,
   },
+  stationAgentAccessNoticeFill: { flex: 1, marginBottom: 0 },
+  stationAgentReconsentRow: {
+    alignItems: 'stretch',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 17,
+  },
+  stationAgentReconsentButton: {
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: 12,
+  },
+  stationAgentReconsentLabel: { fontSize: 12, fontWeight: '700' },
+  stationAgentActionError: {
+    fontSize: 11,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
   stationAgentListDestination: {
     alignItems: 'center',
     borderRadius: 12,

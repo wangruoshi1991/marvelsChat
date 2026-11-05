@@ -35,9 +35,9 @@ import {
   releaseStationFile,
   PickedStationFile,
 } from '../../services/stationFilePicker';
-import { AgentWorkspace } from '../../models/agentWorkspace';
-import { StationOutcomesPanel } from '../station/StationOutcomesPanel';
 import { SecondFloorPageScrollProps } from './secondFloorScroll';
+import type { UIComponentPreference } from '../ui/uiPreferenceTypes';
+import { uiFontSize, uiRowGap } from '../ui/uiPreferences';
 
 /**
  * Prototype shows readable sizes (「2.4 MB」), not raw bytes. The API reports
@@ -88,9 +88,10 @@ export function SecondFloorFiles({
   palette,
   language,
   session,
+  uploadPreference,
+  buttonScale,
   active = true,
   onBusyChange,
-  onOpenWorkspace,
   onOpenFileAgent,
   scrollProps,
 }: {
@@ -98,9 +99,10 @@ export function SecondFloorFiles({
   palette: Palette;
   language: Language;
   session: ReturnType<typeof useMiaoxunSession>;
+  uploadPreference?: UIComponentPreference;
+  buttonScale?: number;
   active?: boolean;
   onBusyChange?: (busy: boolean) => void;
-  onOpenWorkspace: (workspace: AgentWorkspace) => void;
   onOpenFileAgent?: (reference: AIContextReference) => void;
   scrollProps?: SecondFloorPageScrollProps;
 }) {
@@ -108,6 +110,58 @@ export function SecondFloorFiles({
   const v6 = isV6Palette(colors);
   const xun = isXunPalette(colors);
   const accent = secondFloorAccent(colors);
+  const uploadVisible = uploadPreference?.visible !== false;
+  const uploadLabel =
+    uploadPreference?.label ||
+    textFor(
+      language,
+      xun ? '上传文件' : '选择并上传文件',
+      xun ? 'Upload file' : 'Choose and upload file',
+    );
+  const uiPreferences = session.uiPreferences;
+  const tokens = uiPreferences?.surfaces.secondFloor;
+  const uploadScale = Math.max(
+    0.8,
+    Math.min(
+      1.3,
+      (uploadPreference?.sizeScale ?? 1) *
+        (buttonScale ?? tokens?.buttonScale ?? 1),
+    ),
+  );
+  // Resize inside layout instead of transforming the native touch target.
+  const uploadStyle = {
+    minHeight: Math.max(44, 44 * uploadScale),
+    minWidth: 44,
+    maxWidth: '100%' as const,
+    borderRadius: tokens?.buttonRadius ?? 12,
+    paddingHorizontal: 8 * uploadScale,
+    paddingVertical: 6 * uploadScale,
+  };
+  const uploadLabelStyle = {
+    fontSize: uiFontSize(uiPreferences, 13) * uploadScale,
+    lineHeight: uiFontSize(uiPreferences, 18) * uploadScale,
+    flexShrink: 1,
+  };
+  const titleStyle = {
+    fontSize: uiFontSize(uiPreferences, 23),
+    lineHeight: uiFontSize(uiPreferences, 29),
+  };
+  const captionStyle = {
+    fontSize: uiFontSize(uiPreferences, 13),
+    lineHeight: uiFontSize(uiPreferences, 20),
+  };
+  const nameStyle = {
+    fontSize: uiFontSize(uiPreferences, xun ? 13 : 14),
+    lineHeight: uiFontSize(uiPreferences, xun ? 22 : 20),
+  };
+  const metaStyle = {
+    fontSize: uiFontSize(uiPreferences, xun ? 11 : 13),
+    lineHeight: uiFontSize(uiPreferences, xun ? 19 : 20),
+  };
+  const panelStyle = uiPreferences && {
+    gap: uiRowGap(uiPreferences, 'secondFloor', xun ? 12 : 16),
+  };
+  const uploadIcon = uploadPreference?.icon;
   const [detail, setDetail] = useState<
     (StationFileAssetDTO & { content: string | null }) | null
   >(null);
@@ -364,12 +418,13 @@ export function SecondFloorFiles({
       ? detail
       : session.stationContent.fileAssets.find(file => file.id === selectedId);
   if (selectedId) {
+    // File reading is a nested detail route. Its upward scroll must stay
+    // inside the document instead of being interpreted as floor exit.
     return (
       <ScrollView
-        {...scrollProps}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[s.panel, xun && s.panelXun]}
+        contentContainerStyle={[s.panel, xun && s.panelXun, panelStyle]}
       >
         {header}
         {error ? (
@@ -389,7 +444,7 @@ export function SecondFloorFiles({
         />
         <Text
           accessibilityRole="header"
-          style={[s.name, xun && s.nameXun, { color: colors.text }]}
+          style={[s.name, xun && s.nameXun, nameStyle, { color: colors.text }]}
         >
           {selectedFile?.originalFilename ||
             textFor(language, '文件不存在', 'File unavailable')}
@@ -400,6 +455,7 @@ export function SecondFloorFiles({
               style={[
                 s.body,
                 xun && s.metaXun,
+                metaStyle,
                 { color: colors.secondaryText },
               ]}
             >
@@ -412,6 +468,7 @@ export function SecondFloorFiles({
               style={[
                 s.body,
                 xun && s.metaXun,
+                metaStyle,
                 { color: colors.secondaryText },
               ]}
             >
@@ -421,7 +478,9 @@ export function SecondFloorFiles({
                 : fileStatusText(selectedFile.status, language)}
             </Text>
             {detail && !detail.reference ? (
-              <Text style={[s.body, { color: colors.secondaryText }]}>
+              <Text
+                style={[s.body, captionStyle, { color: colors.secondaryText }]}
+              >
                 {textFor(
                   language,
                   '旧记录没有完整正文，请重新上传后用于摘要。',
@@ -508,7 +567,10 @@ export function SecondFloorFiles({
                 )
               }
             />
-            <Text selectable style={[s.body, { color: colors.text }]}>
+            <Text
+              selectable
+              style={[s.body, captionStyle, { color: colors.text }]}
+            >
               {detail?.content ??
                 (typeof selectedFile.preprocessingResult?.textPreview ===
                   'string' && selectedFile.preprocessingResult.textPreview
@@ -521,7 +583,7 @@ export function SecondFloorFiles({
             </Text>
           </>
         ) : (
-          <Text style={[s.body, { color: colors.secondaryText }]}>
+          <Text style={[s.body, captionStyle, { color: colors.secondaryText }]}>
             {textFor(
               language,
               '该素材已被移除，请返回文件列表。',
@@ -538,80 +600,93 @@ export function SecondFloorFiles({
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={[s.panel, xun && s.panelXun]}
+      contentContainerStyle={[s.panel, xun && s.panelXun, panelStyle]}
     >
       {header}
       <View style={s.pageHeader}>
         <View style={s.headingRow}>
           <Text
             accessibilityRole="header"
-            style={[s.pageTitle, { color: colors.text }]}
+            style={[s.pageTitle, titleStyle, { color: colors.text }]}
           >
             {textFor(language, '文件', 'Files')}
           </Text>
-          {xun ? (
+          {xun && uploadVisible ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={
                 uploadFile
                   ? textFor(language, '重试上传同一文件', 'Retry same file')
-                  : textFor(
-                      language,
-                      '选择并上传文件',
-                      'Choose and upload file',
-                    )
+                  : uploadLabel
               }
               accessibilityState={{ disabled: busy, busy }}
               disabled={busy}
               onPress={upload}
               style={({ pressed }) => [
                 s.headerLink,
+                uploadStyle,
                 pressed && !busy && workspaceStyles.pressed,
               ]}
             >
               {busy ? (
                 <ActivityIndicator size="small" color={accent} />
+              ) : uploadIcon ? (
+                <Text
+                  style={[
+                    s.headerLinkIcon,
+                    uploadLabelStyle,
+                    { color: accent },
+                  ]}
+                >
+                  {uploadIcon}
+                </Text>
               ) : (
-                <Plus size={16} color={accent} />
+                <Plus size={16 * uploadScale} color={accent} />
               )}
-              <Text style={[s.headerLinkLabel, { color: accent }]}>
+              <Text
+                style={[s.headerLinkLabel, uploadLabelStyle, { color: accent }]}
+              >
                 {uploadFile
                   ? textFor(language, '重试上传', 'Retry upload')
-                  : textFor(language, '上传文件', 'Upload file')}
+                  : uploadLabel}
               </Text>
             </Pressable>
-          ) : (
+          ) : !xun && uploadVisible ? (
             <WorkspaceButton
               palette={colors}
               accessibilityLabel={
                 uploadFile
                   ? textFor(language, '重试上传同一文件', 'Retry same file')
-                  : textFor(
-                      language,
-                      '选择并上传文件',
-                      'Choose and upload file',
-                    )
+                  : uploadLabel
               }
               label={
                 uploadFile
                   ? textFor(language, '重试上传同一文件', 'Retry same file')
-                  : textFor(
-                      language,
-                      '选择并上传文件',
-                      'Choose and upload file',
-                    )
+                  : uploadLabel
               }
               busy={busy}
               onPress={upload}
-              style={s.headerAction}
+              labelStyle={uploadLabelStyle}
+              icon={
+                uploadIcon ? (
+                  <Text
+                    style={{ color: v6 ? v6Colors.onAccent : colors.surface }}
+                  >
+                    {uploadIcon}
+                  </Text>
+                ) : undefined
+              }
+              style={[s.headerAction, uploadStyle]}
             />
-          )}
+          ) : null}
         </View>
-        <Text style={[s.pageHint, { color: colors.secondaryText }]}>
+        <Text
+          style={[s.pageHint, captionStyle, { color: colors.secondaryText }]}
+        >
           {textFor(
             language,
-            '你的资料，与 Agent 的成果，都在这里。',
-            'Your materials and Agent outcomes live here.',
+            '你的资料，都在这里。',
+            'Your materials live here.',
           )}
         </Text>
       </View>
@@ -629,7 +704,16 @@ export function SecondFloorFiles({
           }}
         />
       ) : null}
-      <Text style={[s.sectionTitle, { color: colors.text }]}>
+      <Text
+        style={[
+          s.sectionTitle,
+          {
+            color: colors.text,
+            fontSize: uiFontSize(uiPreferences, 14),
+            lineHeight: uiFontSize(uiPreferences, 20),
+          },
+        ]}
+      >
         {textFor(language, '最近文件', 'Recent files')}
       </Text>
       {session.stationContent.fileAssets.length ? (
@@ -657,7 +741,11 @@ export function SecondFloorFiles({
             style={({ pressed }) => [
               s.file,
               xun && s.fileXun,
-              { backgroundColor: colors.surface, borderColor: colors.border },
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                ...(tokens && { borderRadius: tokens.cardRadius }),
+              },
               pressed && !busy && workspaceStyles.pressed,
             ]}
           >
@@ -695,7 +783,12 @@ export function SecondFloorFiles({
             <View style={s.fileCopy}>
               <Text
                 numberOfLines={2}
-                style={[s.name, xun && s.nameXun, { color: colors.text }]}
+                style={[
+                  s.name,
+                  xun && s.nameXun,
+                  nameStyle,
+                  { color: colors.text },
+                ]}
               >
                 {file.originalFilename}
               </Text>
@@ -703,6 +796,7 @@ export function SecondFloorFiles({
                 style={[
                   s.body,
                   xun && s.metaXun,
+                  metaStyle,
                   { color: colors.secondaryText },
                 ]}
               >
@@ -749,7 +843,7 @@ export function SecondFloorFiles({
         labelStyle={xun ? secondFloorXunStyles.primaryLabel : undefined}
         style={[s.add, xun && secondFloorXunStyles.primaryButton]}
       />
-      <Text style={[s.body, { color: colors.secondaryText }]}>
+      <Text style={[s.body, captionStyle, { color: colors.secondaryText }]}>
         {textFor(
           language,
           '也可以直接添加一段文字，交给文件 Agent 阅读和整理。',
@@ -816,19 +910,6 @@ export function SecondFloorFiles({
       {error ? (
         <WorkspaceState palette={colors} title={error} tone="error" />
       ) : null}
-      <Text style={[s.sectionTitle, { color: colors.text }]}>
-        {textFor(language, 'App 生成文件', 'Generated by the app')}
-      </Text>
-      <StationOutcomesPanel
-        token={session.token}
-        active={active && !editing}
-        language={language}
-        palette={palette}
-        headingPresentation="floor"
-        stationContent={session.stationContent}
-        onRefreshStationContent={session.refreshStationContent}
-        onOpenWorkspace={onOpenWorkspace}
-      />
     </ScrollView>
   );
 }
@@ -844,6 +925,7 @@ const s = StyleSheet.create({
   pageTitle: { fontSize: 23, lineHeight: 29, fontWeight: '700' },
   headingRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: workspaceTokens.space.sm,
@@ -857,6 +939,7 @@ const s = StyleSheet.create({
     gap: 3,
     paddingHorizontal: 2,
   },
+  headerLinkIcon: { fontSize: 16, lineHeight: 18, fontWeight: '600' },
   headerLinkLabel: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
   pageHint: { fontSize: 13, lineHeight: 22 },
   body: workspaceTokens.typography.caption,

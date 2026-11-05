@@ -51,6 +51,13 @@ export async function buildAgentReadiness({
       capabilityNeeds: ["agent_orchestration"],
       providers: { model },
     }),
+    "ui-agent": readiness({
+      configured: model.configured,
+      requiredEnv: modelRequired,
+      missingEnv: model.missing,
+      capabilityNeeds: ["ui_preference_preview"],
+      providers: { model },
+    }),
     "virtual-character": readiness({
       configured: model.configured,
       requiredEnv: modelRequired,

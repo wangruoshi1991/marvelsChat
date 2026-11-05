@@ -4,6 +4,7 @@ import {
   ProfileVisibilityDTO,
 } from '../../models/api';
 import { RelationshipsState } from './sessionTypes';
+import { defaultUIPreferences } from '../ui/uiPreferences';
 
 export const realtimeReconnectDelaysMs = [1000, 2000, 5000, 10000];
 
@@ -24,7 +25,7 @@ export const emptyProfile: ProfileDTO = {
   followersCount: 0,
   likesCount: 0,
   collectionsCount: 0,
-  stationConfig: {},
+  stationConfig: { uiPreferences: defaultUIPreferences() },
 };
 
 export const defaultProfileVisibility: ProfileVisibilityDTO = {

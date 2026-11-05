@@ -31,13 +31,15 @@ Git 工作区执行。脚本从 `HEAD` 重建临时源码树，在该树内按�
 构建，再按明确白名单生成 runtime；工作区的 `admin/dist` 与 `avatar-web/dist` 不会被读取或删除。
 `deploy/` 也只收录代码中逐项列出的 systemd、Nginx、数据库和环境
 模板。脚本不会将 `.env*`、凭据、数据库、`node_modules`、本地 storage 或整个工作目录打包。
-runtime 只包含服务源码、迁移、顶层 Agent 定义与运行时 helpers（含专业分派`specialist-dispatch.js`）、两个共享数据合同、明确列出的数据库/Agent 运维入口及生产加固脚本；不包含测试、评测夹具、Agent CLI、本地开发启动器或备份/恢复客户端工具。制品中的后端 `package.json` 仅保留 API、两个 Worker 和已随包运维命令，Agent 包描述仅保留 ESM 与注册器导出。
+runtime 只包含服务源码、迁移、顶层 Agent 定义与运行时 helpers（含专业分派`specialist-dispatch.js`）、明确枚举的共享数据合同、数据库/Agent 运维入口及生产加固脚本；不包含测试、评测夹具、Agent CLI、本地开发启动器或备份/恢复客户端工具。制品中的后端 `package.json` 仅保留 API、两个 Worker 和已随包运维命令，Agent 包描述仅保留 ESM 与注册器导出。
 `release-manifest.json` 记录 `sourceHead`、`sourceTree`、固定构建命令及每个运行文件的
 SHA-256，并明确 `includesWorkingTreeChanges=false`。
 
 发布前必须先把经审查的修改提交为一个可定位的 Git revision，再生成制品；不能以 dirty
 worktree、手工复制的 dist 或“HEAD 加本地修改”作为生产来源。`npm run test:release-package`
-在隔离的临时 Git 仓库中覆盖成功路径、前端重新构建、敏感配置排除、来源 revision 和清单哈希，并在解包产物中实际加载当前全部Agent，验证运行时依赖没有漏包。
+在隔离的临时 Git 仓库中覆盖成功路径、前端重新构建、敏感配置排除、来源 revision 和清单哈希，并在解包产物中加载当前 Agent 和后端入口以发现相对模块漏包。该测试复用开发目录的已安装后端依赖，不能证明生产依赖声明或 Linux 安装完整；正式发布还需在隔离的目标架构环境按真实后端锁文件执行干净的生产依赖安装与导入验证，并单独记录 Node/npm/OS/架构。当前 manifest 没有工具链版本字段，不能仅凭文件摘要宣称完整可复现构建。
+
+055/056 和 UI-Agent 的配套发布、锁失败分支及客户端验收要求见 [2026-11-05 发布执行草稿](reviews/2026-11-05-ui-agent-release-plan.md)。该草稿和本节均不构成提交、生产变更或 TestFlight 上传授权。
 
 ## 此前发布基线（2026-10-10，历史）
 
@@ -689,7 +691,7 @@ health、ready、账号访问范围；此配置变更不涉及数据库恢复。
 
 ### 037发布、备份与回退边界
 
-正式运行单元仍是 `marvels-chat-backend`、`marvels-chat-media-retrieval-worker` 和 `marvels-chat-ai-task-worker`。同一AI Worker同时轮询原持久任务及协作节点，节点并发为2，心跳约30秒；这不是两个AI服务。发布制品必须包含新迁移、共享页面合同、全部Agent模块及相同后端运行代码。沿用现有制品白名单与 `scripts/harden-production-release.sh`：运行代码与父目录由root保护，环境文件为 `root:服务组 0640`，仅素材存储目录由服务账号写入。页面迁移计划保存在release之外的受限恢复目录，不放入应用制品。
+正式运行单元仍是 `marvels-chat-backend`、`marvels-chat-media-retrieval-worker` 和 `marvels-chat-ai-task-worker`。同一 AI Worker 同时轮询原持久任务及协作节点，节点并发为 2 仅是 037 历史合同；当前并发由 `AGENT_WORKSPACE_MAX_CONCURRENT` 显式限制（1–20，默认 4），心跳约 30 秒。这不是两个 AI 服务。发布制品必须包含新迁移、共享页面合同、全部 Agent 模块及相同后端运行代码。沿用现有制品白名单与 `scripts/harden-production-release.sh`：运行代码与父目录由 root 保护，环境文件为 `root:服务组 0640`，仅素材存储目录由服务账号写入。页面迁移计划保存在 release 之外的受限恢复目录，不放入应用制品。
 
 停止API及两个Worker后，先完成036完整备份及隔离恢复校验，再应用037和显式页面迁移，最后启动同一合同的三个运行单元并更新固定iPhone17。页面迁移中的两张表独占锁、时间戳触发器保护和精确恢复条件见[专项说明](reviews/2026-10-12-site-document-migration.md)。升级时保留现有授权和供应商配置，不以环境样例覆盖真实设置。
 

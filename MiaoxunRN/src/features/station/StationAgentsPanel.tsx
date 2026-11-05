@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import {
@@ -60,21 +60,30 @@ export function StationAgentsPanel({
   onActionMessage: (message: string) => void;
   onActionError: (error: unknown) => void;
 }) {
-  const { confirmAccess, updatingAgents } = useAgentAccessConfirmation({
+  const { confirmAccess, updatingAgents, errors } = useAgentAccessConfirmation({
     accessToken: token,
     active,
     language,
     agents,
     ownedAgents,
     products,
+    entitlements,
     catalogRevision,
     onSetAgentEnabled,
     onChanged: action =>
       onActionMessage(
         textFor(
           language,
-          action === 'add' ? 'Agent 已添加' : 'Agent 已移除',
-          action === 'add' ? 'Agent added' : 'Agent removed',
+          action === 'remove'
+            ? 'Agent 已移除'
+            : action === 'reauthorize'
+            ? 'Agent 授权已更新'
+            : 'Agent 已添加',
+          action === 'remove'
+            ? 'Agent removed'
+            : action === 'reauthorize'
+            ? 'Agent access updated'
+            : 'Agent added',
         ),
       ),
     onError: onActionError,
@@ -103,12 +112,27 @@ export function StationAgentsPanel({
         !enabledIds.has(agent.key),
     );
   }, [agents, ownedCards]);
-  const productAccess = (agent: AgentDTO): AgentProductAccessState =>
-    resolveAgentProductAccess(agent, {
-      products,
-      entitlements,
-      catalogRevision,
-    });
+  const productAccess = useCallback(
+    (agent: AgentDTO): AgentProductAccessState =>
+      resolveAgentProductAccess(agent, {
+        products,
+        entitlements,
+        catalogRevision,
+      }),
+    [catalogRevision, entitlements, products],
+  );
+  const reconsentAgentIds = useMemo(
+    () =>
+      new Set(
+        ownedCards
+          .filter(owned => {
+            const agent = registeredByKey.get(owned.id);
+            return agent && productAccess(agent) === 'reconsent_required';
+          })
+          .map(agent => agent.id),
+      ),
+    [ownedCards, productAccess, registeredByKey],
+  );
   const productStatusLabel = (state: AgentProductAccessState) => {
     switch (state) {
       case 'product_paused':
@@ -140,6 +164,9 @@ export function StationAgentsPanel({
         updatingAgentId={updatingAgentId}
         onOpenAgentThread={onOpenAgentThread}
         onRemoveAgent={agentId => confirmAccess(agentId, 'remove')}
+        onReauthorizeAgent={agentId => confirmAccess(agentId, 'reauthorize')}
+        errors={errors}
+        reconsentAgentIds={reconsentAgentIds}
         readdAgentIds={
           new Set(
             ownedCards
@@ -163,19 +190,28 @@ export function StationAgentsPanel({
           <View style={styles.stationOwnedAgentGrid}>
             {recommendedAgents.map(agent => {
               const accessState = productAccess(agent);
-              const isAvailable = accessState === 'available';
+              const isReconsent = accessState === 'reconsent_required';
+              const isAvailable = accessState === 'available' || isReconsent;
               return (
                 <Pressable
                   key={agent.key}
                   accessibilityRole="button"
                   accessibilityLabel={textFor(
                     language,
-                    `添加${agent.name}`,
-                    `Add ${agent.name}`,
+                    isReconsent
+                      ? `重新同意${agent.name}授权`
+                      : `添加${agent.name}`,
+                    isReconsent
+                      ? `Re-consent to ${agent.name}`
+                      : `Add ${agent.name}`,
                   )}
                   disabled={updatingAgentId === agent.key || !isAvailable}
                   onPress={() => {
-                    if (isAvailable) confirmAccess(agent.key, 'add');
+                    if (isAvailable)
+                      confirmAccess(
+                        agent.key,
+                        isReconsent ? 'reauthorize' : 'add',
+                      );
                   }}
                   style={[
                     styles.stationOwnedAgentCard,
@@ -213,7 +249,9 @@ export function StationAgentsPanel({
                     ]}
                   >
                     {updatingAgentId === agent.key
-                      ? textFor(language, '添加中', 'Adding')
+                      ? isReconsent
+                        ? textFor(language, '授权中', 'Authorizing')
+                        : textFor(language, '添加中', 'Adding')
                       : productStatusLabel(accessState)}
                   </Text>
                 </Pressable>

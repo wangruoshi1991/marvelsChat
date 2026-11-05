@@ -79,8 +79,9 @@ test("the explicit worker entry starts the runner and heartbeat and handles shut
       assert.equal(typeof executors.site_draft, "function");
       return { start: () => events.push("runner-started"), stop: async () => { events.push("runner-stopped"); }, getState: () => state };
     },
-    createWorkspaceRunner: ({ execute }) => {
+    createWorkspaceRunner: ({ execute, maxConcurrent }) => {
       assert.equal(typeof execute, "function");
+      assert.equal(maxConcurrent, 4);
       return { start: () => events.push("workspace-started"), stop: async () => { events.push("workspace-stopped"); },
         getState: () => ({ state: "running", activeNodes: 2, lastSuccessfulPollAt: state.lastSuccessfulPollAt }) };
     },
@@ -90,13 +91,17 @@ test("the explicit worker entry starts the runner and heartbeat and handles shut
       assert.equal(runner.getState().workspaceLastSuccessfulPollAt, state.lastSuccessfulPollAt);
       return { start: () => events.push("heartbeat-started"), stop: () => events.push("heartbeat-stopped") };
     },
+    createAttachmentMaintenance: () => ({
+      start: () => events.push("attachment-maintenance-started"),
+      stop: async () => { events.push("attachment-maintenance-stopped"); },
+    }),
   });
-  assert.deepEqual(events, ["runner-started", "workspace-started", "heartbeat-started"]);
+  assert.deepEqual(events, ["runner-started", "workspace-started", "heartbeat-started", "attachment-maintenance-started"]);
   runtime.emit("SIGTERM");
   await worker.stop();
   runtime.emit("SIGINT");
   await worker.stop();
-  assert.deepEqual(events, ["runner-started", "workspace-started", "heartbeat-started", "heartbeat-stopped", "runner-stopped", "workspace-stopped", "database-closed"]);
+  assert.deepEqual(events, ["runner-started", "workspace-started", "heartbeat-started", "attachment-maintenance-started", "heartbeat-stopped", "runner-stopped", "workspace-stopped", "attachment-maintenance-stopped", "database-closed"]);
 });
 
 test("the explicit worker entry refuses startup before database migrations are current", async () => {

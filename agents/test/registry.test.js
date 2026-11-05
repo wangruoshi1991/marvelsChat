@@ -86,6 +86,23 @@ test("site-builder agent is registered with station drafting capabilities", asyn
   assert.ok(siteBuilder.permissions.includes("profile:read"));
 });
 
+test("UI Agent is registered for bounded preference previews", async () => {
+  const agent = await getAgent("ui-agent");
+  assert.ok(agent);
+  assert.equal(agent.category, "ui-preferences");
+  assert.ok(agent.capabilities.includes("ui-preferences-preview"));
+  assert.ok(agent.permissions.includes("ui-preferences:write"));
+  assert.equal(typeof agent.plan, "function");
+  const plan = await agent.plan({
+    input: "把讯页按钮变成圆角并缩小字号",
+    appContext: { client: { language: "zh", currentPage: "messages" } },
+  });
+  assert.equal(plan.responseFormat, "json_object");
+  assert.match(plan.system, /严格 JSON/);
+  assert.match(plan.system, /不要.*CSS/);
+  assert.match(plan.system, /gestures/);
+});
+
 test("unknown Agent keys do not fall back to another definition", async () => {
   assert.equal(await getAgent("missing-agent"), null);
 });

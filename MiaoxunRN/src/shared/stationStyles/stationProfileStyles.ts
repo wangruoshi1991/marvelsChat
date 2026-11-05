@@ -101,6 +101,22 @@ export const stationProfileStyles = {
     lineHeight: 22,
     marginTop: 12,
   },
+  stationIdentityTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+  },
+  stationIdentityTag: {
+    borderRadius: 99,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  stationIdentityTagText: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
   // Prototype `.me-switch`: 2 equal segments in one rounded trough, sitting
   // directly under the profile card.
   stationSwitch: {

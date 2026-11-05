@@ -26,11 +26,14 @@ import { registerAvatar3dAppRoutes } from "./routes/avatar-3d-app-routes.js";
 import { registerAvatar3dRoutes } from "./routes/avatar-3d-routes.js";
 import { registerEventRoutes } from "./routes/event-routes.js";
 import { registerMessageRoutes } from "./routes/message-routes.js";
+import { registerChatAttachmentRoutes } from "./routes/chat-attachment-routes.js";
 import { registerNotificationRoutes } from "./routes/notification-routes.js";
 import { registerSocialRoutes } from "./routes/social-routes.js";
 import { registerStationRoutes } from "./routes/station-routes.js";
 import { registerProductRoutes } from "./routes/product-routes.js";
 import { registerAgentAvatarRoutes } from "./routes/agent-avatar-routes.js";
+import { registerGroupChatRoutes } from "./routes/group-chat-routes.js";
+import { registerUIPreferenceRoutes } from "./routes/ui-preference-routes.js";
 
 const app = express();
 const host = config.host;
@@ -118,11 +121,15 @@ registerMessageRoutes(app, {
   sendRealtimeToUser,
 });
 
+registerChatAttachmentRoutes(app, { authenticate, asyncHandler });
+registerGroupChatRoutes(app, { authenticate, asyncHandler, sendRealtimeToUser });
+
 registerStationRoutes(app, { authenticate, asyncHandler });
 
 registerAgentRunRoutes(app, { authenticate, asyncHandler });
 registerAITaskRoutes(app, { authenticate, asyncHandler });
 registerAgentWorkspaceRoutes(app, { authenticate, asyncHandler });
+registerUIPreferenceRoutes(app, { authenticate, asyncHandler });
 
 registerEventRoutes(app, { authenticate, asyncHandler });
 

@@ -9,6 +9,7 @@ import { isXunPalette } from '../../shared/xunPalette';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { SecondFloorPageScrollProps } from './secondFloorScroll';
 import { SecondFloorAlbumList } from './SecondFloorAlbumList';
+import type { UIComponentPreference } from '../ui/uiPreferenceTypes';
 import { StationContentManageSheet } from '../station/StationContentManageSheet';
 import {
   StationCreatePayload,
@@ -20,6 +21,8 @@ export function SecondFloorAlbums({
   palette,
   language,
   session,
+  uploadPreference,
+  buttonScale,
   onBusyChange,
   scrollProps,
 }: {
@@ -27,6 +30,8 @@ export function SecondFloorAlbums({
   palette: Palette;
   language: Language;
   session: ReturnType<typeof useMiaoxunSession>;
+  uploadPreference?: UIComponentPreference;
+  buttonScale?: number;
   onBusyChange?: (busy: boolean) => void;
   scrollProps?: SecondFloorPageScrollProps;
 }) {
@@ -206,6 +211,9 @@ export function SecondFloorAlbums({
           token={session.token}
           albums={session.stationContent.albums}
           mediaAssets={session.stationContent.mediaAssets}
+          uploadPreference={uploadPreference}
+          uiPreferences={session.uiPreferences}
+          buttonScale={buttonScale}
           onCreate={() => {
             createdAlbum.current = null;
             setMessage('');

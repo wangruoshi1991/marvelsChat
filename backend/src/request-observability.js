@@ -54,6 +54,9 @@ export function createSafeErrorResponse(error, {
   requestId,
   production = config.isProduction,
 } = {}) {
+  if (error?.code === '23503' && error?.constraint === 'chat_attachment_visible_reference') {
+    return { status: 410, body: { error: { message: '待发送附件已过期或不可用，请重新选择后发送。', details: { code: 'CHAT_ATTACHMENT_EXPIRED' }, requestId } } };
+  }
   const isValidationError = error instanceof ZodError;
   const isInvalidJson = error?.type === "entity.parse.failed";
   const isMissingDatabase = ["42P01", "3D000"].includes(error?.code);

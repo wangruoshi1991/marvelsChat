@@ -55,6 +55,48 @@ test('capability is scoped to active session', async () => {
   expect(http).not.toHaveBeenCalled();
 });
 
+test('contribution responses require the requested agent and valid artifact identities', async () => {
+  session();
+  const step = workspaceStep({ agentId: 'album-manager', id: 'step-1' });
+  const item = {
+    workspace: { id: 'workspace-1', revision: 1, executionMode: 'coordinated' },
+    step,
+  };
+  http.mockResolvedValueOnce({
+    contributions: [item, { unavailable: true, id: 'hidden' }],
+    hasMore: false,
+  });
+  await expect(
+    agentWorkspaceApi.contributions('token', 'album-manager'),
+  ).resolves.toEqual({ contributions: [item], unavailable: 1, hasMore: false });
+  http.mockResolvedValueOnce({
+    contributions: [{ ...item, step: { ...step, agentId: 'other' } }],
+    hasMore: false,
+  });
+  await expect(
+    agentWorkspaceApi.contributions('token', 'album-manager'),
+  ).rejects.toThrow('格式');
+  http.mockResolvedValueOnce({
+    contributions: [
+      {
+        ...item,
+        step: {
+          ...step,
+          result: { kind: 'text_result', id: 'different', title: 'text' },
+        },
+      },
+    ],
+    hasMore: false,
+  });
+  await expect(
+    agentWorkspaceApi.contributions('token', 'album-manager'),
+  ).rejects.toThrow('格式');
+  http.mockResolvedValueOnce({ contributions: [item, item], hasMore: false });
+  await expect(
+    agentWorkspaceApi.contributions('token', 'album-manager'),
+  ).rejects.toThrow('重复');
+});
+
 test('contract 5 requires execution mode and an exact direct origin whose executor cannot change', () => {
   const direct = agentWorkspace({
     executionMode: 'direct',

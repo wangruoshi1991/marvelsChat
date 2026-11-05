@@ -49,6 +49,10 @@ export const AIAssistGestureSurface = forwardRef<
     children: React.ReactNode;
     onActiveChange?: (active: boolean) => void;
     onPress?: (event: GestureResponderEvent) => void;
+    onTouchStart?: (event: GestureResponderEvent) => void;
+    onTouchMove?: (event: GestureResponderEvent) => void;
+    onTouchEnd?: (event: GestureResponderEvent) => void;
+    onTouchCancel?: () => void;
     style?: StyleProp<ViewStyle>;
     testID?: string;
     accessibilityLabel?: string;
@@ -61,6 +65,10 @@ export const AIAssistGestureSurface = forwardRef<
     children,
     onActiveChange,
     onPress,
+    onTouchStart,
+    onTouchMove,
+    onTouchEnd,
+    onTouchCancel,
     style,
     testID = 'ai-assist-surface',
     accessibilityLabel,
@@ -198,22 +206,26 @@ export const AIAssistGestureSurface = forwardRef<
           hapticOnOpen: true,
         })
       }
+      onTouchStart={onTouchStart}
       onTouchMove={event => {
         move(
           { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY },
           sourceId,
         );
+        onTouchMove?.(event);
       }}
       onTouchEnd={event => {
         release(
           { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY },
           sourceId,
         );
+        onTouchEnd?.(event);
       }}
       onTouchCancel={() => {
         revisionRef.current += 1;
         bridgeGestureRef.current = null;
         dismiss(sourceId);
+        onTouchCancel?.();
       }}
     >
       {children}

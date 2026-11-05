@@ -32,10 +32,10 @@ export function workspaceFailure(error) {
 // its executor starts: only durable lease recovery may mark it interrupted.
 export function createAgentWorkspaceRunner({
   execute, repository = workspaceRepository, pollMs = 1500, heartbeatMs = 30000,
-  maxConcurrent = 2, logger = console, now = () => Date.now(),
+  maxConcurrent = 4, logger = console, now = () => Date.now(),
 } = {}) {
   if (typeof execute !== "function") throw new TypeError("Workspace runner requires an executor");
-  if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 4) throw new TypeError("Invalid workspace concurrency limit");
+  if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 20) throw new TypeError("Invalid workspace concurrency limit");
   let stopped = true;
   let stopping = false;
   let activeNodes = 0;

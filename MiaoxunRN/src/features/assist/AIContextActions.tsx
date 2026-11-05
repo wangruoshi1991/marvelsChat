@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleProp, ViewStyle } from 'react-native';
+import { GestureResponderEvent, StyleProp, ViewStyle } from 'react-native';
 import { Bot, Eye, MoreHorizontal, Pencil } from 'lucide-react-native';
 import { textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
@@ -20,6 +20,10 @@ export function AIContextActions({
   onPressOverride,
   accessibilityLabel,
   accessibilityHint,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd,
+  onTouchCancel,
   style,
   testID,
   children,
@@ -35,6 +39,10 @@ export function AIContextActions({
   onPressOverride?: () => void;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  onTouchStart?: (event: GestureResponderEvent) => void;
+  onTouchMove?: (event: GestureResponderEvent) => void;
+  onTouchEnd?: (event: GestureResponderEvent) => void;
+  onTouchCancel?: () => void;
   style?: StyleProp<ViewStyle>;
   testID?: string;
   children: React.ReactNode;
@@ -87,6 +95,10 @@ export function AIContextActions({
           'Tap to open; hold for content actions',
         )
       }
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchCancel}
       style={style}
       testID={testID}
     >

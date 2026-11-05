@@ -21,6 +21,8 @@ import { MiaoTaskCard } from './MiaoTaskCard';
 export { MiaoTaskAgent } from './MiaoTaskAgent';
 import { Language } from '../session/sessionTypes';
 import { v6Palette } from '../../shared/v6Palette';
+import type { UIPreferences } from '../ui/uiPreferenceTypes';
+import { isUIModuleVisible, uiFontSize, uiRowGap } from '../ui/uiPreferences';
 
 export function MiaoTaskFeed({
   token,
@@ -32,6 +34,8 @@ export function MiaoTaskFeed({
   voiceMenuExpanded = false,
   onOpenTask,
   onOpenWorkspace,
+  onOpenAgentParticipant,
+  uiPreferences,
 }: {
   token: string;
   active: boolean;
@@ -42,16 +46,23 @@ export function MiaoTaskFeed({
   voiceMenuExpanded?: boolean;
   onOpenTask: (task: AITaskDTO) => void;
   onOpenWorkspace?: (workspace: AgentWorkspace) => void;
+  onOpenAgentParticipant?: (
+    workspace: AgentWorkspace,
+    step: AgentWorkspace['steps'][number],
+  ) => void;
+  uiPreferences?: UIPreferences;
 }) {
   const colors = v6Palette(palette);
   const { width, fontScale } = useWindowDimensions();
+  const miaoRowGap = uiRowGap(uiPreferences, 'miao');
+  const feedVisible = isUIModuleVisible(uiPreferences, 'miao', 'taskFeed');
   const { tasks, hasLoaded, error, refresh } = useAITasks({
     token,
-    active,
+    active: active && feedVisible,
   });
   const collaboration = useAgentWorkspaces({
     token,
-    active: active && Boolean(onOpenWorkspace),
+    active: active && feedVisible && Boolean(onOpenWorkspace),
   });
   const entries = [
     ...tasks.map(task => ({ kind: 'task' as const, task })),
@@ -70,9 +81,9 @@ export function MiaoTaskFeed({
     return () => {
       manualRequest.current = null;
     };
-  }, [active, token]);
+  }, [active, token, feedVisible]);
   const refreshManually = async () => {
-    if (!token || !active || manualRequest.current) return;
+    if (!token || !active || !feedVisible || manualRequest.current) return;
     const request = Symbol('manual-task-refresh');
     manualRequest.current = request;
     setManualRefreshing(true);
@@ -89,6 +100,27 @@ export function MiaoTaskFeed({
   };
   // Large text retains one column rather than squeezing task content.
   const columns = waterfall && width >= 360 && fontScale <= 1.3 ? 2 : 1;
+  if (!feedVisible) {
+    return (
+      <View
+        testID="miao-task-feed-hidden"
+        style={[s.empty, { backgroundColor: colors.background }]}
+      >
+        <Text
+          style={{
+            color: colors.secondaryText,
+            fontSize: uiFontSize(uiPreferences, 14),
+          }}
+        >
+          {textFor(
+            language,
+            '此模块已隐藏，可在设置中恢复默认界面。',
+            'This section is hidden. Restore the default interface in Settings.',
+          )}
+        </Text>
+      </View>
+    );
+  }
   return (
     <FlatList
       key={columns}
@@ -106,8 +138,14 @@ export function MiaoTaskFeed({
         { backgroundColor: colors.background },
         voiceMenuExpanded && s.voiceMenuExpanded,
       ]}
-      contentContainerStyle={[s.content, columns === 2 && s.gridContent]}
-      columnWrapperStyle={columns === 2 ? s.columns : undefined}
+      contentContainerStyle={[
+        s.content,
+        columns === 2 && s.gridContent,
+        { gap: miaoRowGap },
+      ]}
+      columnWrapperStyle={
+        columns === 2 ? [s.columns, { gap: miaoRowGap }] : undefined
+      }
       refreshControl={
         <RefreshControl
           refreshing={manualRefreshing}
@@ -119,7 +157,12 @@ export function MiaoTaskFeed({
       // explicit below it rather than replacing the page context.
       ListHeaderComponent={
         <View>
-          <Text style={[s.title, { color: colors.text }]}>
+          <Text
+            style={[
+              s.title,
+              { color: colors.text, fontSize: uiFontSize(uiPreferences, 19) },
+            ]}
+          >
             {textFor(language, '任务实时动态', 'Live task activity')}
           </Text>
           {loadError ? (
@@ -188,7 +231,11 @@ export function MiaoTaskFeed({
               palette={colors}
               language={language}
               grid={columns === 2}
+              uiPreferences={uiPreferences}
               onOpen={() => onOpenWorkspace?.(item.task)}
+              onOpenParticipant={step =>
+                onOpenAgentParticipant?.(item.task, step)
+              }
             />
           );
         const task = item.task;
@@ -241,6 +288,7 @@ export function MiaoTaskFeed({
             agents={agents}
             grid={columns === 2}
             failed={Boolean(task.error)}
+            uiPreferences={uiPreferences}
             palette={colors}
             language={language}
             openLabel={textFor(language, '查看任务', 'View task')}

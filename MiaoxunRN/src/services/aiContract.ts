@@ -3,12 +3,16 @@ export const siteDocumentHeaders = {
   ...aiContractHeaders,
   'X-Miaoxun-Site-Document': '2',
 };
+export const uiPreferencesHeaders = {
+  'X-Miaoxun-UI-Preferences': '1',
+};
 
 let session: {
   token: string;
   supported: boolean;
   siteDocuments: boolean;
   agentWorkspaces: boolean;
+  uiPreferences: boolean;
 } | null = null;
 
 // Only the active session's accepted bootstrap may establish this contract.
@@ -32,6 +36,11 @@ export function setAIContractSession(token: string, contracts?: unknown) {
           typeof contracts === 'object' &&
           'siteDocuments' in contracts &&
           contracts.siteDocuments === 2,
+        uiPreferences:
+          contracts !== null &&
+          typeof contracts === 'object' &&
+          'uiPreferences' in contracts &&
+          contracts.uiPreferences === 1,
       }
     : null;
 }
@@ -82,4 +91,14 @@ export function assertAgentWorkspaceContract(token: string) {
     throw new Error(
       '当前服务器尚未支持此版本的 Agent 协作与任务续作，请在服务更新后重试。',
     );
+}
+
+export function supportsUIPreferences(token: string) {
+  return Boolean(token && session?.token === token && session.uiPreferences);
+}
+
+export function assertUIPreferencesContract(token: string) {
+  if (!supportsUIPreferences(token)) {
+    throw new Error('当前服务器尚未支持 AI 界面偏好，请在服务更新后重试。');
+  }
 }

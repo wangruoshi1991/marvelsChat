@@ -34,6 +34,8 @@ import {
   MessageTab,
   MessagesScreen,
 } from './features/messages/MessagesScreen';
+import type { ComposerPreparationResult } from './features/messages/MessagesScreen';
+import type { ComposerTool } from './features/messages/ChatComposer';
 import { resolveMessagePalette } from './features/messages/messagePalette';
 import { pendingButlerClarification } from './features/messages/butlerClarification';
 import { workspaceAssistContext } from './features/assist/workspaceAssistContext';
@@ -76,6 +78,16 @@ import {
 } from './features/second-floor/SecondFloorScreen';
 import { workspacePalette } from './shared/workspacePalette';
 import { agentWorkspaceApi } from './services/api/agentWorkspaceApi';
+import type { WorkspaceContribution } from './features/messages/WorkspaceContributionCard';
+import {
+  pickStationPhotoFromLibrary,
+  takeStationPhoto,
+} from './services/stationMediaPicker';
+import {
+  pickStationFile,
+  releaseStationFile,
+} from './services/stationFilePicker';
+import { getCurrentLocation } from './services/location';
 
 function App(): React.JSX.Element {
   const session = useMiaoxunSession();
@@ -112,6 +124,11 @@ function App(): React.JSX.Element {
   const [activeThreadOwner, setActiveThreadOwner] = useState<string | null>(
     null,
   );
+  const [workspaceContribution, setWorkspaceContribution] = useState<{
+    owner: string;
+    threadId: string;
+    contribution: WorkspaceContribution;
+  } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showLaunchAnimation, setShowLaunchAnimation] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -217,6 +234,7 @@ function App(): React.JSX.Element {
     setButlerDraftOwner('');
     setSelectedMiaoTask(null);
     setSelectedWorkspace(null);
+    setWorkspaceContribution(null);
     setRequestDraftState({ owner: '', text: '' });
     setMiaoVoiceExpanded(false);
     setMiaoWaterfall(false);
@@ -238,6 +256,7 @@ function App(): React.JSX.Element {
     setButlerReferences([]);
     setActiveThread(null);
     setActiveThreadOwner(null);
+    setWorkspaceContribution(null);
     setModalRoute(null);
     setIsPostComposerOpen(false);
     setPendingScanRequest(false);
@@ -430,6 +449,7 @@ function App(): React.JSX.Element {
   const closeThread = () => {
     setModalRoute(null);
     setActiveThread(null);
+    setWorkspaceContribution(null);
     session.setActiveThreadId(null);
   };
 
@@ -439,6 +459,31 @@ function App(): React.JSX.Element {
       setToastMessage(current => (current === message ? null : current));
     }, 1600);
   }, []);
+
+  const openAgentWorkspaceParticipant = useCallback(
+    (workspace: AgentWorkspace, step: AgentWorkspace['steps'][number]) => {
+      const thread = session.threads.find(
+        item => item.agentId === step.agentId,
+      );
+      if (!thread) {
+        showToast(
+          textFor(
+            session.language,
+            '这个 Agent 还没有可用会话，请先添加后再查看协作贡献。',
+            'Add this Agent before opening its collaboration contribution.',
+          ),
+        );
+        return;
+      }
+      setWorkspaceContribution({
+        owner: workspaceOwner,
+        threadId: thread.id,
+        contribution: { workspace, step },
+      });
+      openThread(thread);
+    },
+    [openThread, session.language, session.threads, showToast, workspaceOwner],
+  );
 
   const closeWorkspace = () => {
     if (workspaceOwnerRef.current !== workspaceOwner) return;
@@ -511,6 +556,74 @@ function App(): React.JSX.Element {
       openThread(thread);
     },
     [openThread, session.language, session.threads, showToast],
+  );
+
+  // Composer attachments must travel through the same authenticated station
+  // APIs as the second-floor flows. Returning a reference only after the
+  // upload is confirmed prevents a picker result from being mistaken for a
+  // server-backed AI context item.
+  const prepareComposerTool = useCallback(
+    async (tool: ComposerTool): Promise<ComposerPreparationResult> => {
+      if (tool === '相册' || tool === '拍摄') {
+        const media =
+          tool === '拍摄'
+            ? await takeStationPhoto()
+            : await pickStationPhotoFromLibrary();
+        if (!media) return null;
+        const asset = await session.createStationMediaAsset({
+          kind: media.kind,
+          originalFilename: media.originalFilename,
+          mimeType: media.mimeType,
+          byteSize: media.byteSize,
+          width: media.width,
+          height: media.height,
+          localMedia: media,
+        });
+        return {
+          kind: 'station-photo',
+          id: asset.id,
+          title: asset.originalFilename,
+        };
+      }
+
+      if (tool === '文件') {
+        const file = await pickStationFile();
+        if (!file) return null;
+        try {
+          const asset = await session.uploadStationFileAsset(file);
+          if (!asset.reference) {
+            throw new Error('文件解析结果缺少引用，请稍后重试。');
+          }
+          return asset.reference;
+        } finally {
+          await releaseStationFile(file).catch(() => undefined);
+        }
+      }
+
+      if (tool === '位置') {
+        const coordinates = await getCurrentLocation();
+        const location = await session.resolveLocation(coordinates);
+        const detail = [location.displayName, location.activityArea]
+          .filter(Boolean)
+          .join(' · ');
+        return {
+          draftText: detail
+            ? `位置：${detail}`
+            : `位置：${coordinates.latitude.toFixed(
+                5,
+              )}, ${coordinates.longitude.toFixed(5)}`,
+        };
+      }
+
+      throw new Error(
+        textFor(
+          session.language,
+          `“${tool}”暂未接通后端能力。`,
+          `“${tool}” is not connected to a backend capability yet.`,
+        ),
+      );
+    },
+    [session],
   );
 
   const composeWithButler = useCallback(
@@ -826,6 +939,13 @@ function App(): React.JSX.Element {
                   (modalRoute === 'butler' || modalRoute === 'chat') ? (
                     <ChatScreen
                       token={session.token}
+                      onConfirmUIPreferences={session.confirmUIPreferences}
+                      workspaceContribution={
+                        workspaceContribution?.owner === workspaceOwner &&
+                        workspaceContribution.threadId === openedThread.id
+                          ? workspaceContribution.contribution
+                          : undefined
+                      }
                       onOpenWorkspace={(workspace, continuationDraft) => {
                         if (
                           workspaceChatScopeRef.current !== workspaceChatScope
@@ -839,6 +959,7 @@ function App(): React.JSX.Element {
                       }}
                       onAuthorizeAlbumAI={async () => openAgentManagement()}
                       onOpenAgentAccess={openAgentManagement}
+                      onPrepareComposerTool={prepareComposerTool}
                       agentGrantedScopes={
                         session.ownedAgents.find(
                           agent =>
@@ -1038,6 +1159,8 @@ function App(): React.JSX.Element {
                         onOpenTask={task =>
                           setSelectedMiaoTask({ owner: workspaceOwner, task })
                         }
+                        onOpenAgentParticipant={openAgentWorkspaceParticipant}
+                        uiPreferences={session.uiPreferences}
                       />
                     ) : null}
                     {selectedTab === 'messages' && secondFloorOpen ? (
@@ -1085,14 +1208,6 @@ function App(): React.JSX.Element {
                           });
                           openThread(thread);
                         }}
-                        onOpenWorkspace={workspace => {
-                          if (workspaceOwnerRef.current !== workspaceOwner)
-                            return;
-                          setSelectedWorkspace({
-                            owner: workspaceOwner,
-                            workspace,
-                          });
-                        }}
                       />
                     ) : null}
                     {selectedTab === 'messages' && !secondFloorOpen ? (
@@ -1115,7 +1230,9 @@ function App(): React.JSX.Element {
                               workspace,
                             });
                           }}
+                          onOpenAgentParticipant={openAgentWorkspaceParticipant}
                           onOpenSecondFloor={() => setSecondFloorOpen(true)}
+                          uiPreferences={session.uiPreferences}
                           messageActionsOpen={
                             modalRoute === 'message-actions' ||
                             miaoVoiceExpanded

@@ -307,6 +307,56 @@ describe('station module management', () => {
     await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
+  it('renders only the server-provided collaboration count', async () => {
+    const agent = {
+      id: 'album-manager',
+      name: '相册 Agent',
+      description: '整理真实相册素材。',
+      category: 'media',
+      identity: {
+        avatarKind: 'agent-mark' as const,
+        mark: '相',
+        shape: 'circle' as const,
+        colors: {
+          background: '#123456',
+          foreground: '#ffffff',
+          accent: '#abcdef',
+        },
+      },
+      enabled: true,
+      grantedScopes: [],
+      collaborationCount: 3,
+      metrics: {
+        version: 1,
+        completedInteractions: 3,
+        level: 1,
+        preferenceMatchPercent: null,
+        preferenceMatchStatus: 'not_evaluated',
+      },
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <AgentList
+          agents={[agent]}
+          language="zh"
+          onOpenAgentThread={jest.fn()}
+          onRemoveAgent={jest.fn()}
+          palette={palettes.light}
+          updatingAgentId={null}
+        />,
+      );
+    });
+    const text = renderer!.root
+      .findAllByType(Text)
+      .map(item => item.props.children)
+      .join(' ');
+    expect(text).toContain('协作 3 次');
+    expect(text).toContain('Lv.1');
+    expect(text).not.toContain('偏好匹配');
+    await ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
   it('opens an existing diary in the shared editor and exposes swipe handlers', async () => {
     const onOpen = jest.fn();
     const onEdit = jest.fn();

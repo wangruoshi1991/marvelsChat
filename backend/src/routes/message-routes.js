@@ -7,6 +7,7 @@ import { HttpError } from "../http-error.js";
 import {
   requireAIClientContract,
   requireAgentWorkspaceContract,
+  requireUIPreferencesContract,
 } from "../ai-client-contract.js";
 import { createRateLimitMiddleware } from "../rate-limit-service.js";
 import { query, withTransaction } from "../db.js";
@@ -37,6 +38,9 @@ import {
   buildButlerWorkspaceGoal,
 } from "../butler-dispatch.js";
 import { publicMessage } from "../public-message.js";
+import { resolveChatAttachmentsForMessage } from "../chat-attachment-service.js";
+import { sendGroupMessage } from "../group-chat-repository.js";
+import { uiPreferenceService } from "../ui-preference-service.js";
 export {
   assertAgentAvailable,
   buildAgentAppContext,
@@ -82,6 +86,21 @@ const staleAgentMessageMs = Math.max(
 );
 const agentFailureReply =
   "模型服务暂时没有返回。请稍后再试，或让管理员检查后端模型配置。";
+
+export function uiPreferenceFailureReply(error, language) {
+  const english = language === "en";
+  if (error?.details?.code === "UI_PREFERENCE_NO_CHANGE") {
+    return english
+      ? "There are no applicable interface changes. Please describe a different adjustment."
+      : "当前界面没有可应用的变化，请换一种方式描述需求。";
+  }
+  if (["UI_AGENT_INVALID_RESPONSE", "UI_AGENT_EMPTY_RESPONSE"].includes(error?.details?.code)) {
+    return english
+      ? "The interface suggestion could not be validated. Please rephrase your request and retry."
+      : "界面调整建议无效，请调整描述后重试。";
+  }
+  return null;
+}
 const agentMessageCreateLimit = createRateLimitMiddleware({
   action: "agent.message.send",
   limit: 120,
@@ -192,6 +211,7 @@ export function registerMessageRoutes(
     logger = defaultLogger,
     retrievalRepository = mediaRetrievalRepository,
     runAgentRuntime = runAgent,
+    uiPreferences = uiPreferenceService,
   },
 ) {
   const discussWorkspace = createWorkspaceDiscussionService({
@@ -283,11 +303,32 @@ export function registerMessageRoutes(
         threadId: req.params.threadId,
         messageId: req.params.messageId,
       });
+      if (result.originalChanged) {
+        sendRealtimeToUser(req.user.id, {
+          type: "thread.message.updated",
+          threadId: result.message.threadId,
+          message: publicMessage(result.message),
+        });
+      }
       if (result.peerUserId && result.peerMessage) {
         sendRealtimeToUser(result.peerUserId, {
           type: "thread.message.updated",
           threadId: result.peerMessage.threadId,
           message: publicMessage(result.peerMessage),
+        });
+      }
+      for (const delivery of result.groupDeliveries || []) {
+        sendRealtimeToUser(delivery.userId, {
+          type: "thread.message.updated",
+          threadId: delivery.message.threadId,
+          message: publicMessage(delivery.message),
+        });
+      }
+      for (const delivery of result.quoteDeliveries || []) {
+        sendRealtimeToUser(delivery.userId, {
+          type: "thread.message.updated",
+          threadId: delivery.message.threadId,
+          message: publicMessage(delivery.message),
         });
       }
       res.json({ data: { message: publicMessage(result.message) } });
@@ -309,6 +350,42 @@ export function registerMessageRoutes(
         requireAIClientContract(req);
       const clientMessageId = body.clientMessageId || crypto.randomUUID();
       const requestFingerprint = messageRequestFingerprint(body);
+      if (thread.kind === "group") {
+        if (body.contextRefs.length || body.workspaceContext || body.clientContext || body.butlerContextReset !== undefined || body.agentContextReset !== undefined)
+          throw new HttpError(400, "群聊消息不能包含 Agent 执行上下文。");
+        let replyMetadata = {};
+        if (body.replyToMessageId) {
+          const target = await getMessageForUser({ userId: req.user.id, threadId: thread.id, messageId: body.replyToMessageId });
+          if (!target || target.recalledAt) throw new HttpError(404, "回复目标不存在或已撤回。");
+          replyMetadata = { replyTo: { messageId: target.id, senderName: target.senderName, content: target.content.slice(0, 200) } };
+        }
+        const attachments = await resolveChatAttachmentsForMessage({
+          userId: req.user.id,
+          threadId: thread.id,
+          attachmentIds: body.attachmentIds,
+        });
+        const result = await sendGroupMessage({
+          userId: req.user.id,
+          senderName: req.user.displayName,
+          threadId: thread.id,
+          content: body.content,
+          clientMessageId,
+          requestFingerprint,
+          metadata: { ...replyMetadata, ...(attachments.length ? { attachments } : {}) },
+        });
+        if (!result.reused) {
+          for (const delivery of result.deliveries) {
+            sendRealtimeToUser(delivery.userId, {
+              type: "thread.message",
+              threadId: delivery.message.threadId,
+              message: publicMessage(delivery.message),
+            });
+          }
+        }
+        return res.status(result.reused ? 200 : 201).json({
+          data: { messages: [publicMessage(result.message)] },
+        });
+      }
       if (body.workspaceContext) {
         requireAIClientContract(req);
         requireAgentWorkspaceContract(req);
@@ -372,8 +449,8 @@ export function registerMessageRoutes(
             senderUser: req.user,
             content: body.content,
             metadata: message.metadata?.replyTo
-              ? { replyTo: message.metadata.replyTo, requestFingerprint }
-              : { requestFingerprint },
+              ? { replyTo: message.metadata.replyTo, requestFingerprint, ...(message.metadata.attachments ? { attachments: message.metadata.attachments } : {}) }
+              : { requestFingerprint, ...(message.metadata.attachments ? { attachments: message.metadata.attachments } : {}) },
             clientMessageId,
           });
           if (peer)
@@ -634,6 +711,11 @@ export function registerMessageRoutes(
         });
       };
       await assertPendingInput();
+      const attachments = await resolveChatAttachmentsForMessage({
+        userId: req.user.id,
+        threadId: thread.id,
+        attachmentIds: body.attachmentIds,
+      });
 
       const userInsert = await addMessageToThreadOnce({
         userId: req.user.id,
@@ -646,6 +728,7 @@ export function registerMessageRoutes(
           ...replyMetadata,
           requestFingerprint,
           contextRefs: resolvedContext.references,
+          ...(attachments.length ? { attachments, attachmentIds: body.attachmentIds } : {}),
           ...(body.butlerContextReset ? { butlerContextReset: true } : {}),
           ...(continuesPendingContext
             ? { butlerClarification: pendingClarification }
@@ -687,7 +770,7 @@ export function registerMessageRoutes(
           thread,
           senderUser: req.user,
           content: body.content,
-          metadata: { ...replyMetadata, requestFingerprint },
+          metadata: { ...replyMetadata, requestFingerprint, ...(attachments.length ? { attachments, attachmentIds: body.attachmentIds } : {}) },
           clientMessageId,
         });
         if (peerMessage)
@@ -708,6 +791,8 @@ export function registerMessageRoutes(
         let completion;
         let dispatchDecision = null;
         let dispatchContext = null;
+        let uiPreviewPrepared = null;
+        let uiPreviewInstruction = null;
         try {
           const isButler = thread.agentId === "miaoxun-butler";
           if (isButler) {
@@ -773,7 +858,7 @@ export function registerMessageRoutes(
               result.reply,
               dispatchContext,
             );
-          if (dispatchDecision?.type === "workspace" && pendingContextMissing) {
+          if (["workspace", "ui_preference"].includes(dispatchDecision?.type) && pendingContextMissing) {
             dispatchDecision = {
               type: "clarify",
               question:
@@ -790,6 +875,20 @@ export function registerMessageRoutes(
               queryFn: query,
             });
             buildButlerWorkspaceGoal(requestMessages);
+          }
+          if (dispatchDecision?.type === "ui_preference") {
+            requireUIPreferencesContract(req);
+            const requestMessages = await resolveButlerRequestMessages({
+              userId: req.user.id,
+              threadId: thread.id,
+              requestMessageIds: requestContinuation.requestMessageIds,
+              queryFn: query,
+            });
+            uiPreviewInstruction = buildButlerWorkspaceGoal(requestMessages);
+            if (uiPreviewInstruction.length > 1200) {
+              throw new HttpError(422, "界面调整描述超过1200字，请精简后重试。", { code: "UI_PREFERENCE_INSTRUCTION_TOO_LONG" });
+            }
+            uiPreviewPrepared = await uiPreferences.prepare({ user: req.user, instruction: uiPreviewInstruction });
           }
           const clarification =
             dispatchDecision?.type === "reply" && continuesPendingContext
@@ -842,9 +941,15 @@ export function registerMessageRoutes(
           });
           completion = {
             content:
-              error?.details?.code === "BUTLER_GOAL_LIMIT"
+              error?.details?.code === "BUTLER_GOAL_LIMIT" || error?.details?.code === "UI_PREFERENCE_INSTRUCTION_TOO_LONG"
                 ? error.message
-                : agentFailureReply,
+                : error?.details?.code === "UI_PREFERENCES_CLIENT_UPDATE_REQUIRED"
+                  ? "当前客户端不支持界面调整预览，请更新后重试。"
+                  : dispatchDecision?.type === "ui_preference" && uiPreferenceFailureReply(error, body.clientContext?.language)
+                    ? uiPreferenceFailureReply(error, body.clientContext?.language)
+                  : dispatchDecision?.type === "ui_preference" && ([403, 404, 409].includes(error?.status) || error?.details?.code === "UI_AGENT_UNAVAILABLE")
+                    ? "UI Agent 暂不可用或尚未授权，请检查其发布及授权状态后重试。"
+                    : agentFailureReply,
             metadata: {
               provider: "runtime-error",
               errorCode: failure.code,
@@ -869,6 +974,9 @@ export function registerMessageRoutes(
         if (completion.status === "success") {
           try {
             completed = await withTransaction(async (connection) => {
+              if (dispatchDecision?.type === "ui_preference") {
+                await uiPreferences.lockPreparedAuthorization({ user: req.user, prepared: uiPreviewPrepared, connection });
+              }
               return completeAgentMessageOnce({
                 ...completionInput,
                 ...completion,
@@ -893,6 +1001,19 @@ export function registerMessageRoutes(
                     queryFn: lockedConnection.query,
                     lock: true,
                   });
+                  if (dispatchDecision?.type === "ui_preference") {
+                    if (buildButlerWorkspaceGoal(requestMessages) !== uiPreviewInstruction) {
+                      throw new HttpError(409, "原需求已变化，请重新发送。", { code: "BUTLER_CONTEXT_CHANGED" });
+                    }
+                    const preview = await uiPreferences.persistPrepared({
+                      user: req.user, inputMessageId: userMessage.id, threadId: thread.id,
+                      prepared: uiPreviewPrepared, connection: lockedConnection,
+                    });
+                    return {
+                      content: body.clientContext?.language === "en" ? "Review the interface preview before applying it." : "请先查看界面调整预览，确认后才会应用。",
+                      metadata: { uiPreferencePreview: { id: preview.id } },
+                    };
+                  }
                   if (dispatchDecision?.type !== "workspace") return {};
                   const workspace = await submitAgentWorkspace({
                     user: req.user,
@@ -926,7 +1047,9 @@ export function registerMessageRoutes(
             completed = await completeAgentMessageOnce({
               ...completionInput,
               content:
-                "授权或引用内容已变化，本次未交付结果。请核对后重新发送。",
+                error?.details?.code === "UI_PREFERENCE_REVISION_CONFLICT"
+                  ? "界面偏好已发生变化，请重新发送以生成新的预览。"
+                  : "授权或引用内容已变化，本次未交付结果。请核对后重新发送。",
               metadata: {
                 provider: "runtime-error",
                 errorCode: "AI_CONTEXT_CHANGED",

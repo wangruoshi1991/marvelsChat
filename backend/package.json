@@ -17,6 +17,8 @@
     "worker:media-retrieval": "node src/media-retrieval-worker.js",
     "worker:ai-tasks": "node src/ai-task-worker.js",
     "ops:ai-tasks": "node scripts/check-ai-task-operations.js",
+    "ops:chat-attachments": "node scripts/check-chat-attachment-operations.js",
+    "ops:ui-preference-upgrade": "node scripts/check-ui-preference-upgrade.js",
     "test:ai-tasks": "NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/ai-*.test.js",
     "db:migrate": "node scripts/db-migrate.js",
     "admin:bootstrap": "node scripts/admin-bootstrap.js",

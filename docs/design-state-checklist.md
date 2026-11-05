@@ -90,7 +90,7 @@
 
 **骨架轮再改**：个人卡按 `.me-profile` 收敛为五行（kicker / 名字 / ID 胶囊 / 简介 / 位置），二维码、编辑铅笔、标签行移出卡片进页面级 `···` 菜单；在线状态从独立文字行改为 3D 块右下角 23px 对勾徽章（`.me-avatar-badge`）；位置只显示地区（新增 `stationDisplayRegionLabel`，优先 `publicLocation`，不再输出完整地址）；`.me-switch` 严格两段等宽，`···` 移出凹槽。**仍差**：视频时长（DTO 无字段，后端）；「互动」kind 需投票；互动行为点赞/收藏/评论 3 项（原型 2 项，待确认） |
 | 32 | 个人信息收缩状态（P.34） | `station/StationScreen.tsx`（`profileCollapsed`） | 🟡 不一致 | **批次 2 已改 + 骨架轮修正**：收缩后卡片 64px 高、46px 圆形头像、名称 1rem，隐藏 kicker/ID/简介/位置/徽章；展开态卡片按 `.me-profile` 加 `min-height: 35dvh`、12px 圆角、18px 内距。**仍差**：代码用状态切换，设计是 `.34s` 过渡动画；未做吸顶（归入交互与动画批次） |
-| 33 | 我的 Agent（P.35） | `station/StationAgentsPanel.tsx`、`StationAgentCards.tsx` | 🟡 不一致 | V15 卡片结构已对齐：23px 圆角、20/17px 内距、12px 卡距、45px 圆角方头像、真实添加日期/描述和整宽对话入口；授权提示与移除确认保留。数量等级、协作次数、匹配率、星标和原创标记仍无后端字段，未填原型演示值 |
+| 33 | 我的 Agent（P.35） | `station/StationAgentsPanel.tsx`、`StationAgentCards.tsx` | 🟡 不一致 | V15 卡片结构已对齐：23px 圆角、20/17px 内距、12px 卡距、45px 圆角方头像、真实添加日期/描述和整宽对话入口；授权提示与移除确认保留。协作次数现在由成功 Agent run/workspace node 聚合后显示；等级、匹配率、星标和原创标记仍无后端字段，未填原型演示值 |
 
 ---
 
@@ -126,7 +126,7 @@
 - 骨架轮（用户验收「跟改之前没区别」后）：妙页删标题 + 卡片圆角化 + 3px 间距；我页切换栏移入滚动流并吸顶、改两段胶囊；删「能力接入率」；Agent 卡三格改为只显示真实值；我页个人卡按 `.me-profile` 收敛五行 + 对勾徽章 + 地区精简；3D 生成按钮移除、改走 Agent。
 
 **后端依赖清单**（需另行排期，不在本轮范围）：
-1. `OwnedAgentDTO` 补 `level` / `starCount` / `isOriginal` / `addedAt`（33 的等级、星标、原创标记与进度条）
+1. `OwnedAgentDTO` 补 `level` / `starCount` / `isOriginal` / `addedAt`（33 的等级、星标、原创标记与进度条）；协作次数已由真实运行聚合提供
 2. 关系量化评分接口（26 的四项指标）
 3. 妙点累计赚取/消耗聚合，或流水接口返回合计（27）
 4. 信息海多来源接入（28、30）

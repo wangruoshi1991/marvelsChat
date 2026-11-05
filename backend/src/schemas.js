@@ -57,6 +57,7 @@ export const accountDeletionSchema = z.object({
 export const messageSchema = z.object({
   content: z.string().trim().min(1).max(2000),
   contextRefs: aiContextReferencesSchema,
+  attachmentIds: z.array(z.string().uuid()).max(6).optional().default([]),
   butlerContextReset: z.boolean().optional(),
   agentContextReset: z.boolean().optional(),
   workspaceContext: workspaceContextSchema.optional(),
@@ -97,6 +98,24 @@ export const stationConfigSchema = z.object({
   language: z.enum(["zh", "en"]).optional(),
   appearance: z.enum(["light", "dark"]).optional(),
 });
+
+export const uiPreferencePreviewRequestSchema = z.object({
+  instruction: z.string().trim().min(1).max(1200),
+  surface: z.enum(["messages", "miao", "secondFloor"]).optional(),
+}).strict();
+
+export const uiPreferenceConfirmRequestSchema = z.object({
+  previewId: z.string().uuid(),
+  baseRevision: z.number().int().nonnegative(),
+}).strict();
+
+export const uiPreferenceResetRequestSchema = z.object({
+  baseRevision: z.number().int().nonnegative(),
+}).strict();
+
+export const uiPreferenceUndoRequestSchema = z.object({
+  baseRevision: z.number().int().nonnegative(),
+}).strict();
 
 export const miaoPointLedgerQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional().default(80),

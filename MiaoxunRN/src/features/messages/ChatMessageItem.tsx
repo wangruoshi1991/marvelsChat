@@ -38,6 +38,7 @@ import { chatLayoutStyles } from './chatLayoutStyles';
 import { AlbumAssistantResults } from './AlbumAssistantResults';
 import { agentReplyPresentation } from './agentReplyPresentation';
 import { ChatMessageText } from './ChatMessageText';
+import { UIPreferenceChatCard } from './UIPreferenceChatCard';
 import {
   messageTimeText,
   shouldShowMessageTimeSeparator,
@@ -63,6 +64,7 @@ export function ChatMessageItem({
   onRestoreWorkspaceContext,
   onEditWorkspaceDiscussion,
   onActionMessage,
+  onConfirmUIPreferences,
 }: {
   token?: string;
   item: ChatMessage;
@@ -91,6 +93,10 @@ export function ChatMessageItem({
   onRestoreWorkspaceContext?: (context: WorkspaceDiscussionContext) => void;
   onEditWorkspaceDiscussion?: (message: ChatMessage) => void;
   onActionMessage: (message: string) => void;
+  onConfirmUIPreferences?: (
+    id: string,
+    baseRevision: number,
+  ) => Promise<unknown>;
 }) {
   const assist = useAIAssist();
   const workspaceId = messageWorkspaceId(item, thread.agentId, thread.id);
@@ -102,6 +108,23 @@ export function ChatMessageItem({
     ['user', 'agent'].includes(item.senderType) &&
     isWorkspaceDiscussionContext(item.metadata?.workspaceContext)
       ? item.metadata.workspaceContext
+      : null;
+  const uiPreviewReference = item.metadata?.uiPreferencePreview;
+  const uiPreviewId =
+    thread.agentId === 'miaoxun-butler' &&
+    item.senderType === 'agent' &&
+    !item.deletedAt &&
+    !item.recalledAt &&
+    !item.localStatus &&
+    uiPreviewReference &&
+    typeof uiPreviewReference === 'object' &&
+    !Array.isArray(uiPreviewReference) &&
+    'id' in uiPreviewReference &&
+    typeof uiPreviewReference.id === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      uiPreviewReference.id,
+    )
+      ? uiPreviewReference.id
       : null;
   const presentedMessageContent = displayText(
     language,
@@ -332,6 +355,16 @@ export function ChatMessageItem({
           </ChatMessageText>
         </AIAssistGestureSurface>
       </View>
+      {token && uiPreviewId && onConfirmUIPreferences ? (
+        <UIPreferenceChatCard
+          key={`${token}:${currentUserId}:${thread.id}:${item.id}:${uiPreviewId}`}
+          token={token}
+          previewId={uiPreviewId}
+          palette={palette}
+          language={language}
+          onConfirm={onConfirmUIPreferences}
+        />
+      ) : null}
       {token &&
       discussionContext &&
       onOpenWorkspace &&

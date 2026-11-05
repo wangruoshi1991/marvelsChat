@@ -28,6 +28,7 @@ test("model-backed Agents are unavailable until every model setting exists", asy
     "file-preprocessor",
     "comic-diary",
     "video-production",
+    "ui-agent",
   ]) {
     assert.equal(readiness[agentId].configured, false);
     assert.deepEqual(readiness[agentId].missingEnv, ["NEW_API_KEY"]);
@@ -55,11 +56,14 @@ test("model-backed Agents become ready only with a configured provider", async (
     "file-preprocessor",
     "comic-diary",
     "video-production",
+    "ui-agent",
   ]) {
     assert.equal(readiness[agentId].configured, true);
     assert.deepEqual(readiness[agentId].missingEnv, []);
   }
   assert.deepEqual(readiness["video-production"].capabilityNeeds, ["video_generation_provider", "render_queue"]);
+  assert.deepEqual(readiness["ui-agent"].capabilityNeeds, ["ui_preference_preview"]);
+  assert.deepEqual(Object.keys(readiness["ui-agent"].providers), ["model"]);
 });
 
 test("video script readiness depends on text configuration without claiming rendering or requiring media storage", async () => {

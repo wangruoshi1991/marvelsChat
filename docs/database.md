@@ -50,6 +50,8 @@ DATABASE_URL=postgres://miaoxun:<local-password>@127.0.0.1:5432/marvels_chat
 
 `backend/database/`中的编号SQL是唯一迁移清单，不在文档另维护一份文件列表。`npm run db:migrate`按顺序执行尚未登记的迁移；文件和SHA-256写入`schema_migrations`，每个新迁移及其账本记录在同一事务提交，advisory lock阻止并发迁移。已登记文件被修改或删除会失败，必须用新迁移表达后续变化，不手工改账本。
 
+UI 偏好 055 和协作贡献索引 056 上线前，先在生产备份的隔离恢复副本中运行 `npm run ops:ui-preference-upgrade`，并显式配置该副本的数据库连接。该检查使用只读一致性事务，校验迁移账本、待迁移的 055 对象及 056 索引是否存在账本外残留，分批统计资料配置形状、偏好合同及耗尽的 revision；`profiles.unsupportedPreferences` 按用户资料计数，识别历史可读但当前 RN 不支持的位置、属性、模块排序、手势或不可达入口，非零时阻止升级。仅输出汇总数量，不输出用户标识或偏好内容，也不修改原始 JSON。失败时先调查和制定经批准的数据修复方案，不能修改历史迁移或忽略异常。056 在迁移事务内执行普通 `CREATE INDEX`，会阻塞 `agent_workspace_nodes` 写入；上线前应在恢复副本按实际数据量测量建索引耗时，并安排停写和锁超时。检查通过不代替备份恢复演练、正式部署验证或线上数据核对；检查时长与资料量有关。
+
 `016_station_posts.sql`与`021_station_posts_compat.sql`内容相同，但已各自登记，不能去重。旧库首次建立账本时会重放历史迁移；`backend/scripts/check-migration-replay.sh`在空的`_migration_test`数据库重建无账本的pre-023结构、模拟已知漂移、执行升级并确认再次执行为no-op。它属于升级回归，不用于生产。`backend/scripts/check-api-integration.js`同样只使用专属测试库，验证真实HTTP请求与拒绝路径。Agent 发布链路使用同一类一次性数据库执行 `npm run test:agent-publishing`：脚本拒绝非 loopback 的 `_migration_test` 数据库，临时启动后端，验证 registry sync → release review/publish → product submit/publish → 用户 consent、幂等重放、bootstrap 与 `/api/app/sync`，不会调用模型或生产服务。
 
 媒体检索迁移回归默认使用一次性Docker数据库；显式提供`MEDIA_RETRIEVAL_MIGRATION_DATABASE_URL`时，测试仍要求`_migration_test`库名和空`public` schema。历史SQL保留PostgreSQL14兼容边界，检索可空run引用使用单列`ON DELETE SET NULL`并由触发器核对归属。
@@ -90,11 +92,12 @@ POSTGRES_CONNECTION_LIMIT=10
 
 ## 关键表
 
-本轮新增 `049_agent_avatar_assets.sql`：不可变受管头像的摘要、尺寸、操作者和请求幂等，图片位于持久化 `storage/agent-avatars`（可显式配置）；`agent_catalog.identity_avatar` 是发布投影，不能代替 release identity。`050_product_version_snapshots.sql` 为产品版本保存名称、简介与完整 identity；一次性回填既有版本，此后创建必须显式提供，新草稿不改变已发布合同或用户授权。生产迁移是否执行以 CURRENT 和实际账本为准。
+`049_agent_avatar_assets.sql` 保存不可变受管头像的摘要、尺寸、操作者和请求幂等，图片位于持久化 `storage/agent-avatars`（可显式配置）；`agent_catalog.identity_avatar` 是发布投影，不能代替 release identity。`050_product_version_snapshots.sql` 为产品版本保存名称、简介与完整 identity；一次性回填既有版本，此后创建必须显式提供，新草稿不改变已发布合同或用户授权。`051_user_ui_preferences.sql` 保留既有 UI 偏好合同；`055_ui_preference_previews.sql` 保存新的短期 UI 偏好预览，已确认偏好写入 `user_profiles.station_config.uiPreferences`。生产迁移状态以 CURRENT 和实际账本为准。
 
 - `users`：注册用户、角色、状态、AI ID、最近登录时间。
 - `schema_migrations`：已执行迁移文件、SHA-256 校验和与执行时间。
 - `user_profiles`：小站资料。昵称、头像文字、`avatar_config`、简介、社区、活动区域、`miao_points`、关注/粉丝/收藏计数保存在这里；关注和粉丝计数由社交关系写入后刷新。`avatar_config` 只接受 v2 字段，迁移 `025_avatar_config_v2.sql` 会将旧 `palette` 映射到 `accent`，并从资料和穿搭快照中移除旧 `palette`、`shape` 键。
+- `ui_preference_previews`：迁移 `055_ui_preference_previews.sql` 引入的本人预览记录。它只保存服务端验证后的补丁、`before_preferences` 确认前快照和合并快照，10分钟后不可确认；确认、重置、过期和 `undone_at` 都有明确状态，不能跨账号读取或重放。最终 UI 偏好位于 `user_profiles.station_config.uiPreferences`，通过专用 UI 偏好服务写入，不由通用站点配置 PATCH 绕过合同。
 - `auth_sessions`：登录 token 的哈希值、过期时间和最近使用时间。
 - `user_agents`：用户已启用的 Agent 和明确授权范围。迁移 `026_agent_granted_scopes.sql` 是历史数据调整；2026-10-14工作区的启用/执行合同要求范围集合与当前注册声明完整一致，除下述默认管家040约定外，旧不完整授权必须移除后重新添加，不自动补权或通过新迁移批量扩权。任务仍保留自己的最小范围与原授权快照。
 - `agent_catalog`：迁移 `044_agent_catalog.sql` 引入的 Agent 展示投影，保留已部署执行器的目录元数据，不是独立上架入口。当前可发现性由 `agent_releases`、`products`/`product_versions` 和用户 `entitlements` 的发布链路决定；后台只能通过已审核、合同哈希一致的 release 创建或发布产品版本，不能直接 PATCH 目录绕过 release。展示名称、描述、标准化 identity 和颜色必须来自同一份发布合同；产品暂停或 release 失效时，既有 entitlement 保留历史但会标记不可用，新推荐与新授权被拒绝。

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { HttpError } from "../http-error.js";
 import { getAgentWorkspace, listAgentWorkspaces } from "../agent-workspace-repository.js";
-import { submitAgentWorkspace, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, workspaceRequestSchema } from "../agent-workspace-service.js";
+import { submitAgentWorkspace, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, listAgentContributions, workspaceRequestSchema } from "../agent-workspace-service.js";
 import { createRateLimitMiddleware } from "../rate-limit-service.js";
 import { requireAIClientContract, requireAgentWorkspaceContract, requireSiteDocumentContract } from "../ai-client-contract.js";
 
@@ -22,7 +22,7 @@ const submitLimit = createRateLimitMiddleware({ action: "agent_workspace.submit"
 const decisionLimit = createRateLimitMiddleware({ action: "agent_workspace.decision", limit: 60, windowMs: 60000, message: "协作操作过于频繁，请稍后重试。" });
 
 export function registerAgentWorkspaceRoutes(app, { authenticate, asyncHandler,
-  service = { submitAgentWorkspace, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText },
+  service = { submitAgentWorkspace, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, listAgentContributions },
   repository = { getAgentWorkspace, listAgentWorkspaces },
 } = {}) {
   const guard = [authenticate, requireAIClientContract, requireAgentWorkspaceContract];
@@ -31,6 +31,10 @@ export function registerAgentWorkspaceRoutes(app, { authenticate, asyncHandler,
   }));
   app.post("/api/agent-workspaces", ...guard, submitLimit, asyncHandler(async (req, res) => {
     res.status(202).json({ data: await service.submitAgentWorkspace({ user: req.user, ...workspaceRequestSchema.parse(req.body) }) });
+  }));
+  app.get("/api/agent-workspaces/contributions/:agentId", ...guard, asyncHandler(async (req, res) => {
+    const { agentId } = z.object({ agentId: z.string().regex(/^[a-z0-9-]{1,80}$/) }).strict().parse(req.params);
+    res.json({ data: await service.listAgentContributions({ userId: req.user.id, agentId }) });
   }));
   app.get("/api/agent-workspaces/:workspaceId", ...guard, asyncHandler(async (req, res) => {
     const data = await repository.getAgentWorkspace({ userId: req.user.id, ...params.parse(req.params) });

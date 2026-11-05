@@ -1,10 +1,39 @@
 # 统一 AI 交互与持久任务
 
-更新：2026-10-23。本文描述任务1、页面2、协作6接口与权限边界；合同6/043 的生产切换属于历史部署记录，当前工作区的 046–048 发布目录与 entitlement 链路尚未据此宣称生产已部署。客户端完整业务链路和验收状态仍以[当前交接](handoffs/CURRENT.md)为准。本文不构成新的生产操作授权。
+更新：2026-11-05。本文描述任务1、页面2、协作6和界面偏好1接口与权限边界；生产切换属于历史部署记录，当前工作区的迁移、发布目录与 entitlement 链路尚未据此宣称生产已部署。客户端完整业务链路和验收状态仍以[当前交接](handoffs/CURRENT.md)为准。本文不构成新的生产操作授权。
 
 ## 产品行为
 
 统一的交互对象是**用户目标 → 上下文引用 → 任务状态 → 待确认操作 → 成果**。RN 的 `features/ai/AIInteraction.tsx` 提供引用、任务状态、确认和成果四类组件，`useAITasks.ts` 负责恢复与轮询。页面保持妙/讯/我及讯下拉二楼结构；专业媒体查看器和3D工作流继续独立。
+
+### UI-AI 界面偏好架构（合同1，迁移055）
+
+UI Agent 是一个受权限和产品发布链路约束的规划 Agent，只返回严格 JSON 偏好补丁，不生成或执行 CSS、React、Swift、JavaScript、URL 或任意组件代码。`shared/ui-preferences.js` 是后端与客户端共同使用的白名单合同：页面、模块顺序、按钮槽位、固定组件 ID、密度、字号、圆角、间距和四条已注册手势均有固定枚举与数值边界；手势只能绑定对应动作（讯页下拉进入二楼、二楼上滑退出、妙页右滑参与 Agent、左滑当前结果），未知字段、未知模块、越界动画、任意坐标和动作错绑会明确失败。
+
+客户端先调用 `POST /api/ui/preferences/preview`，请求必须带 `X-Miaoxun-UI-Preferences: 1`。服务端重新校验 UI Agent 的注册版本、已发布 release、产品 entitlement、完整授权范围和当前用户资料，调用模型后把临时预览写入 `ui_preference_previews`。预览只保留 10 分钟，包含基准 revision、服务端基线 `beforePreferences`、补丁、合并后的完整偏好和受限的影响页面摘要；它不会改变当前页面，也不会写入用户消息。RN 当前消费固定组件的显隐、插槽、标签、尺寸和妙页/二楼手势阈值，未注册组件不会进入渲染层。
+
+用户明确点击确认后，客户端提交预览 ID 与基准 revision 到 `POST /api/ui/preferences/confirm`。服务端在事务内锁定预览和用户资料，重验过期、重复使用、版本竞争、授权和补丁合同，保存确认前基线并递增 revision 后才写入 `user_profiles.station_config.uiPreferences`；`POST /api/ui/preferences/reset` 以同一授权和 revision 合同恢复默认，并使旧的 pending 预览失效。最近一次仍可撤销的确认可通过 `POST /api/ui/preferences/undo` 携带当前 `baseRevision` 恢复，服务端以 CAS 递增新 revision、标记原确认已撤销并写入审计；重复撤销、无基线、授权撤回和版本冲突都显式失败。RN 只渲染已验证的语义偏好，不能把模型返回的字符串当作可执行样式。
+
+UI Agent 代码注册不等于可用。迁移055、Agent release、产品版本依赖、用户 consent 和 RN 合同头必须同时就绪；缺少任一项时服务端返回明确的 unavailable/entitlement/426 错误，不使用演示偏好或静默回退。当前切片已经包含后端合同、存储、审计和离线服务测试，真实发布、模型调用和真机视觉验收仍需按当前交接单独完成。051 是既有生产 UI 偏好表合同，不得替换或重编号。
+
+当前新提案的能力目录由共享合同导出，Agent 提示词直接引用同一目录。固定组件的可调整范围如下；表外属性明确拒绝，不能把注册 ID 等同于完整动态布局能力。
+
+| 组件 | 可调整属性 | 可调整位置 |
+| --- | --- | --- |
+| `xun.threadList.newThread` | 显隐、尺寸、图标、文案 | `headerRight` / `topRight` |
+| `xun.threadList.openSecondFloor` | 显隐、文案 | 固定无障碍入口；禁用进入手势时显示独立可点按钮 |
+| `miao.taskCard.participants` | 显隐、同槽顺序、尺寸、图标、文案 | `topRight` / `cardFooter` |
+| `miao.taskCard.details` | 显隐、同槽顺序、尺寸、图标、文案 | 固定卡片底部，显式配置后提供进入本卡 S2 的按钮 |
+| `secondFloor.album.upload` | 显隐、尺寸、图标、文案 | 固定上传入口 |
+| `secondFloor.file.upload` | 显隐、尺寸、图标、文案 | 固定上传入口 |
+
+字号与密度是三页共享设置，包含 `fontScale` 或 `density` 的预览必须如实声明三页影响范围；不支持只改变某一页字号或密度。讯列表、妙任务卡、二楼工具及相册/文件消费对应圆角、间距等 Token，聊天输入框不在本轮目录内。按钮合成缩放限制在 0.8–1.3，点击区至少 44×44；二楼卡片圆角按已确认的 `cardRadius`（默认16）统一应用，不暗中保留不同静态值。
+
+模块显隐仅支持讯的 `threadList/taskInbox`、妙的 `taskFeed`、二楼的 `albums/files/relationships/assets/information`。隐藏后显示恢复说明，不改成其他模块；妙任务流隐藏时停止其轮询。讯的 tabs 与二楼必要权限入口保持可达。新模块排序仅支持二楼六个实际工具（含不可隐藏的 permissions），不接受虚拟 toolTray 或讯/妙的历史模块名称。二楼返回按钮可经 `layout.secondFloor.buttonSlots.backAction=headerRight` 真正换到标题右侧。排序按同槽实际可见顺序比较；无可见变化的建议返回 `UI_PREFERENCE_NO_CHANGE`，不创建无效预览。
+
+讯进入手势仅允许向下或向右，防止吞掉普通上滑阅读与聊天行左滑；禁用手势时保留独立可点二楼按钮，可隐藏新建按钮但不能同时隐藏最后一个二楼入口。妙卡片左右手势对应本卡 S1/S2，不能改成纵向。二楼四向退出配置用于固定返回手柄；内容区仅在已测量的底部继续上滑时退出，距离使用合同值，快速滑动使用有效原生时间戳计算速度。文件详情自行滚动，不继承退出触摸处理。
+
+历史 schema1 配置仍原样读取，不重写为新能力。升级预检额外汇总 `unsupportedPreferences`，遇到当前客户端不支持的历史字段或不可达入口即拒绝升级；旧待确认预览与不受支持的撤销基线分别返回明确 409。运维应调查后另行制定数据修复方案，不能把预检当成自动修复。
 
 ### 页面中的 AI 上下文
 
@@ -120,7 +149,7 @@ stateDiagram-v2
   awaiting_confirmation --> cancelled: 取消或拒绝
 ```
 
-- `backend/src/ai-task-worker.js` 是独立进程，`npm run worker:ai-tasks` 启动；与API、媒体Worker使用同一版代码和数据库。单Agent任务路径一次执行一项，协作路径按依赖最多并行两个节点，使用SKIP LOCKED与租约协调；不按Agent另起服务，不阻塞独立媒体索引/清理Worker。
+- `backend/src/ai-task-worker.js` 是独立进程，`npm run worker:ai-tasks` 启动；与API、媒体Worker使用同一版代码和数据库。这里的“最多并行两个节点、使用 SKIP LOCKED”只属于 037 历史合同；当前协作路径按依赖领取真实节点，由 `AGENT_WORKSPACE_MAX_CONCURRENT` 限制并发（1–20，默认 4），并避免 workspace 聚合锁上的 `SKIP LOCKED` 导致独立节点饥饿。不按 Agent 另起服务，不阻塞独立媒体索引/清理 Worker。
 - 每个claim租约5分钟，每30秒续约；阶段推进和最终提交必须持有有效token。首个模型派发使用阶段CAS，重复执行同一claim不能再次发起模型。相册根据实际工具成果结束循环，不固定模型轮数或工具总次数；每轮派发前重新检查任务状态和当前授权，请求超时仍明确失败。
 - 进程退出后尚未领取的任务可继续执行；已领取且租约过期的任务进入interrupted，**不会自动重放**。外部供应商是否已收费可能未知；此阶段不声称可以断点续跑任意工具步骤。
 - RN每3秒读取当前页任务；离开页面、进入后台或切换账号后停止旧轮询，revision和会话作用域阻止迟到响应覆盖新状态。完整成果重新从原业务API获取；网络失败显示错误并可刷新。
@@ -176,7 +205,7 @@ npm run worker:ai-tasks
 
 ## 动态协作现行范围
 
-已部署037保存共同目标/独立节点，主管动态提出严格计划、完成或问询，专业节点按实际依赖分别领取，复用同一AI Worker进程最多并行2个节点。相册交付精确且有版本的真实素材，建站仅消费所选/交付资料。逐调用回执、当前授权、执行时限、幂等、取消与结果未知均有实现；不设固定累计步骤、模型调用次数或协调轮数上限。回执区分配置model与供应商实际servedModel，未报告的字段为null。当前专业能力包括素材选择、页面草稿和显式文字贡献，完整能力与限制见[工作空间方案](agent-workspace-architecture.md)；不执行通用递归委派。初版API/数据库合同见[协作实现记录](reviews/2026-10-12-agent-collaboration.md)。
+当前协作实现保存共同目标/独立节点，主管动态提出严格计划、完成或问询，专业节点按实际依赖分别领取，复用同一 AI Worker 进程并行执行（由 `AGENT_WORKSPACE_MAX_CONCURRENT` 显式限制，范围 1–20，默认 4；超过当前并发上限的真实节点分批执行）。相册交付精确且有版本的真实素材，建站仅消费所选/交付资料。逐调用回执、当前授权、执行时限、幂等、取消与结果未知均有实现；不设固定累计步骤、模型调用次数或协调轮数上限。回执区分配置 model 与供应商实际 servedModel，未报告的字段为 null。当前专业能力包括素材选择、页面草稿和显式文字贡献，完整能力与限制见[工作空间方案](agent-workspace-architecture.md)；不执行通用递归委派。初版 API/数据库合同见[协作实现记录](reviews/2026-10-12-agent-collaboration.md)。
 
 协作合同6使用`/api/agent-workspaces`的创建、列表、详情、文字/素材与decision路径。公开DTO增加`executionMode`和严格`origin`，旧协调任务为`coordinated/null`。`POST /api/agent-workspaces`仍创建协调任务；直接任务仅由专业消息共享用例按可信会话创建，没有接收客户端origin/Agent身份的通用创建接口。协调任务的输入请求DTO和主管决策如下：
 

@@ -39,3 +39,35 @@ test("continuation cannot complete an old result or omit its actual handoff", ()
   assert.equal(validate(plan([revised.key])).type, "plan");
   assert.throws(() => validate(plan([])), error => error.details?.code === "WORKSPACE_PLAN_INVALID");
 });
+
+test("a plan may select four independent specialists and a dependent synthesis node", () => {
+  const catalogue = [
+    ["research", "research.lookup"],
+    ["writer", "writer.draft"],
+    ["reviewer", "reviewer.check"],
+    ["media", "media.select"],
+    ["synth", "synth.combine"],
+  ].map(([agentId, capability]) => ({
+    agentId,
+    agentVersion: "1.0.0",
+    capability,
+    inputKinds: [],
+    dependencyKinds: capability === "synth.combine"
+      ? ["text_result", "media_selection"]
+      : [],
+    outputKind: capability === "media.select" ? "media_selection" : "text_result",
+  }));
+  const steps = [
+    ["research", "research.lookup"],
+    ["writer", "writer.draft"],
+    ["reviewer", "reviewer.check"],
+    ["media", "media.select"],
+  ].map(([key, capability]) => ({ key, agentId: key, capability, goal: `执行 ${key}`, dependsOn: [], contextRefIndexes: [] }));
+  steps.push({ key: "synth", agentId: "synth", capability: "synth.combine", goal: "汇总所有独立成果",
+    dependsOn: ["research", "writer", "reviewer", "media"], contextRefIndexes: [] });
+  const decision = validateWorkspaceDecision({ type: "plan", summary: "并行处理后汇总", steps },
+    { workspace: { nodes: [], contextRefs: [] }, catalogue });
+  assert.equal(decision.nodes.length, 5);
+  assert.deepEqual(decision.nodes.slice(0, 4).map(node => node.dependencies), [[], [], [], []]);
+  assert.deepEqual(decision.nodes[4].dependencies, ["research", "writer", "reviewer", "media"]);
+});

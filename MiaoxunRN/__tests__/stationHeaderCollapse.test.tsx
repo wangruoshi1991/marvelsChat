@@ -25,6 +25,7 @@ function header(collapseProgress: Animated.Value) {
       avatarConfig={{}}
       avatarText="妙"
       bio={longBio}
+      identityTags={['上海', '中文 / English']}
       collapseProgress={collapseProgress}
       language="zh"
       locationLabel="上海"
@@ -88,6 +89,10 @@ describe('station profile collapse', () => {
     expect(texts).toContain('ID · 900000000000001');
     expect(texts).toContain(longBio);
     expect(texts).toContain('上海');
+    expect(texts).toContain('中文 / English');
+    expect(
+      renderer!.root.findByProps({ testID: 'station-profile-tags' }),
+    ).toBeTruthy();
     expect(
       StyleSheet.flatten(
         renderer!.root.findByProps({ testID: 'station-profile-main-row' }).props

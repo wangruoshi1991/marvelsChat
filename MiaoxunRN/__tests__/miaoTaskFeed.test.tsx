@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   FlatList,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +19,7 @@ import { AITaskDTO } from '../src/models/aiTask';
 import { AgentDTO } from '../src/models/api';
 import { palettes } from '../src/shared/theme';
 import { MiaoTaskCard } from '../src/features/miao/MiaoTaskCard';
+import { defaultUIPreferences } from '../src/features/ui/uiPreferences';
 
 jest.mock('../src/features/ai/useAITasks', () => ({ useAITasks: jest.fn() }));
 jest.mock('../src/features/workspaces/useAgentWorkspaces', () => ({
@@ -225,6 +227,22 @@ test('task cards show only their recorded executor and open the original task wi
   expect(useTasks).toHaveBeenCalledWith({ token: 'owner', active: true });
 });
 
+test('hiding the task feed stops polling and shows the recovery path without task contents', () => {
+  const preferences = defaultUIPreferences();
+  preferences.hiddenModules.miao = ['taskFeed'];
+  useTasks.mockReturnValue(state({ tasks: [task()] }));
+  act(() => {
+    renderer = TestRenderer.create(
+      feed({ onOpenWorkspace: jest.fn(), uiPreferences: preferences }),
+    );
+  });
+  expect(renderer!.root.findAllByType(FlatList)).toHaveLength(0);
+  expect(text()).not.toContain(task().goal);
+  expect(text()).toContain('恢复默认界面');
+  expect(useTasks).toHaveBeenCalledWith({ token: 'owner', active: false });
+  expect(useWorkspaces).toHaveBeenCalledWith({ token: 'owner', active: false });
+});
+
 test('the feed uses the V6 dark palette and dims its content while the voice menu is open', () => {
   useTasks.mockReturnValue(state({ tasks: [task()] }));
   act(() => {
@@ -327,6 +345,77 @@ test('task actions preserve the page, real task state and input reference before
     ...surface.props.object,
   });
   expect(open).not.toHaveBeenCalled();
+});
+
+test('collaboration cards honor confirmed detail swipe distance from the feed', () => {
+  useWorkspaces.mockReturnValue({
+    workspaces: [agentWorkspace()],
+    loaded: true,
+    error: '',
+    refresh: jest.fn(),
+  });
+  const preferences = defaultUIPreferences();
+  preferences.gestures['miao.taskCard.detailsSwipe'] = {
+    ...preferences.gestures['miao.taskCard.detailsSwipe']!,
+    distance: 140,
+  };
+  const pan = jest.spyOn(PanResponder, 'create');
+  act(() => {
+    renderer = TestRenderer.create(
+      feed({ onOpenWorkspace: jest.fn(), uiPreferences: preferences }),
+    );
+  });
+  const config = pan.mock.calls.at(-1)?.[0];
+  expect(config).toBeDefined();
+  act(() => {
+    config!.onPanResponderRelease?.(
+      {} as never,
+      {
+        dx: -120,
+        dy: 0,
+        vx: 0,
+        vy: 0,
+      } as never,
+    );
+  });
+  expect(
+    renderer!.root.findAllByProps({ testID: 'miao-workspace-detail' }),
+  ).toHaveLength(0);
+  act(() => {
+    config!.onPanResponderRelease?.(
+      {} as never,
+      {
+        dx: -140,
+        dy: 0,
+        vx: 0,
+        vy: 0,
+      } as never,
+    );
+  });
+  expect(
+    renderer!.root.findAllByProps({ testID: 'miao-workspace-detail' }).length,
+  ).toBeGreaterThan(0);
+});
+
+test('collaboration cards hide the participant control when the confirmed preference requires it', () => {
+  useWorkspaces.mockReturnValue({
+    workspaces: [agentWorkspace({ steps: [workspaceStep()] })],
+    loaded: true,
+    error: '',
+    refresh: jest.fn(),
+  });
+  const preferences = defaultUIPreferences();
+  preferences.components.miao = {
+    'miao.taskCard.participants': { visible: false },
+  };
+  act(() => {
+    renderer = TestRenderer.create(
+      feed({ onOpenWorkspace: jest.fn(), uiPreferences: preferences }),
+    );
+  });
+  expect(
+    renderer!.root.findAllByProps({ accessibilityLabel: '查看 1 个 Agent' }),
+  ).toHaveLength(0);
 });
 
 test('collaboration cards use shared content actions while tap and View workspace open the original workspace', () => {

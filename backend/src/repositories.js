@@ -1,7 +1,10 @@
 import crypto from "crypto";
 import { config } from "./config.js";
 import { query, withTransaction } from "./db.js";
-import { computeAgentReleaseContractHash, isCompleteAgentIdentity } from "../../shared/agent-catalog.js";
+import {
+  computeAgentReleaseContractHash,
+  isCompleteAgentIdentity,
+} from "../../shared/agent-catalog.js";
 import { getAgent } from "../../agents/registry.js";
 import { createPlainToken, hashToken, sessionExpiryDate } from "./auth.js";
 import { HttpError } from "./http-error.js";
@@ -39,6 +42,7 @@ import {
   listThreadsForUser,
 } from "./message-repository.js";
 import { listRelationshipProfiles } from "./social-repository.js";
+import { listAgentUserMetrics } from "./agent-user-metrics.js";
 
 export {
   listNotificationsForUser,
@@ -63,7 +67,7 @@ export async function findUserByEmail(email) {
 export async function findUserByPhoneNumber(phoneNumber) {
   const rows = await query(
     "SELECT * FROM users WHERE phone_number = ? LIMIT 1",
-    [normalizePhoneNumber(phoneNumber)]
+    [normalizePhoneNumber(phoneNumber)],
   );
   return rows[0] || null;
 }
@@ -76,7 +80,7 @@ export async function findUserByLoginIdentifier(identifier) {
     FROM users
     WHERE email = ? OR login_name = ? OR lower(display_name) = ? OR phone_number = ?
     LIMIT 1`,
-    [normalized, normalized, normalized, phoneNumber]
+    [normalized, normalized, normalized, phoneNumber],
   );
   return rows[0] || null;
 }
@@ -84,7 +88,7 @@ export async function findUserByLoginIdentifier(identifier) {
 export async function findUserByDisplayName(displayName) {
   const rows = await query(
     "SELECT * FROM users WHERE lower(display_name) = ? LIMIT 1",
-    [normalizeDisplayName(displayName)]
+    [normalizeDisplayName(displayName)],
   );
   return rows[0] || null;
 }
@@ -105,7 +109,7 @@ export async function getRawUserById(userId) {
 
 export async function createUserWithDefaults(
   { email, phoneNumber = null, displayName, passwordHash, role },
-  { transaction = withTransaction, readUser = getUserById } = {}
+  { transaction = withTransaction, readUser = getUserById } = {},
 ) {
   const normalizedPhoneNumber = phoneNumber
     ? normalizePhoneNumber(phoneNumber)
@@ -114,7 +118,7 @@ export async function createUserWithDefaults(
     email ||
       (normalizedPhoneNumber
         ? `${normalizedPhoneNumber}@phone.miaoxun.local`
-        : "")
+        : ""),
   );
   const userId = crypto.randomUUID();
   const nickname = displayName.trim();
@@ -138,23 +142,23 @@ export async function createUserWithDefaults(
         nickname,
         aiId,
         role,
-      ]
+      ],
     );
 
     const avatarConfig = createAvatarConfig(
-      `${aiId}:${normalizedEmail}:${normalizedPhoneNumber || ""}`
+      `${aiId}:${normalizedEmail}:${normalizedPhoneNumber || ""}`,
     );
 
     await connection.execute(
       `INSERT INTO user_profiles
         (user_id, nickname, avatar_text, avatar_config, bio, community, activity_area, miao_points)
       VALUES (?, ?, ?, ?::jsonb, '', '', '', 0)`,
-      [userId, nickname, avatarText, JSON.stringify(avatarConfig)]
+      [userId, nickname, avatarText, JSON.stringify(avatarConfig)],
     );
 
     await connection.execute(
       "INSERT INTO profile_visibility (user_id) VALUES (?)",
-      [userId]
+      [userId],
     );
 
     await ensureDefaultButlerAccess({ userId, connection });
@@ -188,7 +192,7 @@ export async function createSessionForUser(userId) {
   await query(
     `INSERT INTO auth_sessions (id, user_id, token_hash, expires_at)
     VALUES (?, ?, ?, ?)`,
-    [sessionId, userId, hashToken(token), expiresAt]
+    [sessionId, userId, hashToken(token), expiresAt],
   );
 
   return {
@@ -200,7 +204,7 @@ export async function createSessionForUser(userId) {
 export async function markLogin(userId) {
   await query(
     "UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
-    [userId]
+    [userId],
   );
 }
 
@@ -208,7 +212,7 @@ export async function revokeSession(sessionId) {
   if (!sessionId) return;
   await query(
     "UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?",
-    [sessionId]
+    [sessionId],
   );
 }
 
@@ -217,7 +221,7 @@ export async function revokeSessionsForUser(userId) {
     `UPDATE auth_sessions
     SET revoked_at = CURRENT_TIMESTAMP
     WHERE user_id = ? AND revoked_at IS NULL`,
-    [userId]
+    [userId],
   );
 }
 
@@ -229,7 +233,7 @@ export async function adminSessionSummary(userId) {
       SUM(CASE WHEN revoked_at IS NOT NULL THEN 1 ELSE 0 END) AS revoked
     FROM auth_sessions
     WHERE user_id = ?`,
-    [userId]
+    [userId],
   );
 
   return {
@@ -253,9 +257,10 @@ async function listOwnedAgents(userId, registeredAgents = []) {
     WHERE user_id = ?
       AND enabled = TRUE
     ORDER BY created_at ASC`,
-    [userId]
+    [userId],
   );
   const registry = new Map(registeredAgents.map((agent) => [agent.key, agent]));
+  const metrics = await listAgentUserMetrics(userId, rows.map((row) => row.agent_id));
 
   return rows.map((row) => {
     const agent = registry.get(row.agent_id);
@@ -269,6 +274,8 @@ async function listOwnedAgents(userId, registeredAgents = []) {
       published: agent?.published === true,
       identity: agent?.identity || null,
       createdAt: toIso(row.created_at),
+      metrics: metrics.get(row.agent_id),
+      collaborationCount: metrics.get(row.agent_id).completedInteractions,
     };
   });
 }
@@ -276,14 +283,14 @@ async function listOwnedAgents(userId, registeredAgents = []) {
 export async function listAgentAccessForUser(
   userId,
   registeredAgents = [],
-  queryFn = query
+  queryFn = query,
 ) {
   const rows = await queryFn(
     `SELECT user_id, agent_id, alias, enabled, granted_scopes, created_at, updated_at
     FROM user_agents
     WHERE user_id = ?
     ORDER BY created_at ASC`,
-    [userId]
+    [userId],
   );
   const access = new Map(rows.map((row) => [row.agent_id, row]));
 
@@ -320,7 +327,7 @@ async function ensureAgentThread(
   const queryFn = transactionQuery(connection);
   const existingThreads = await queryFn(
     "SELECT id FROM chat_threads WHERE user_id = ? AND agent_id = ? LIMIT 1",
-    [userId, agent.key]
+    [userId, agent.key],
   );
   if (existingThreads.length) {
     await queryFn(
@@ -328,7 +335,7 @@ async function ensureAgentThread(
       SET status_text = '在线 · Agent', kind = 'agent'
       WHERE user_id = ? AND agent_id = ?
         AND (status_text IS DISTINCT FROM '在线 · Agent' OR kind IS DISTINCT FROM 'agent')`,
-      [userId, agent.key]
+      [userId, agent.key],
     );
     return;
   }
@@ -340,7 +347,7 @@ async function ensureAgentThread(
     `INSERT INTO chat_threads
         (id, user_id, title, status_text, avatar_text, agent_id, kind, pinned)
       VALUES (?, ?, ?, '在线 · Agent', ?, ?, 'agent', FALSE)`,
-    [threadId, userId, resolvedAlias, displayInitial(resolvedAlias), agent.key]
+    [threadId, userId, resolvedAlias, displayInitial(resolvedAlias), agent.key],
   );
   await connection.execute(
     `INSERT INTO chat_messages
@@ -353,7 +360,7 @@ async function ensureAgentThread(
       resolvedAlias,
       `${resolvedAlias} 已添加，可以开始对话。`,
       JSON.stringify({ source: welcomeSource, agentId: agent.key }),
-    ]
+    ],
   );
 }
 
@@ -364,14 +371,15 @@ async function ensureAgentThread(
  */
 export async function ensureDefaultButlerAccess({ userId, connection = null }) {
   if (!connection) {
-    return withTransaction(transaction =>
-      ensureDefaultButlerAccess({ userId, connection: transaction })
+    return withTransaction((transaction) =>
+      ensureDefaultButlerAccess({ userId, connection: transaction }),
     );
   }
 
   const queryFn = transactionQuery(connection);
   const registeredAgent = await getAgent("miaoxun-butler");
-  if (!registeredAgent) throw new Error("The default Butler Agent is not registered.");
+  if (!registeredAgent)
+    throw new Error("The default Butler Agent is not registered.");
   // New accounts must use one complete, current, operator-published identity.
   // The registry supplies executable permissions and version; presentation is
   // read from the release-backed catalog projection only.
@@ -389,7 +397,9 @@ export async function ensureDefaultButlerAccess({ userId, connection = null }) {
     ? {
         key: registeredAgent.key,
         avatarKind: catalogue.identity_avatar ? "agent-image" : "agent-mark",
-        ...(catalogue.identity_avatar ? { avatar: parseJson(catalogue.identity_avatar, null) } : {}),
+        ...(catalogue.identity_avatar
+          ? { avatar: parseJson(catalogue.identity_avatar, null) }
+          : {}),
         displayName: catalogue.display_name,
         description: catalogue.description,
         mark: catalogue.identity_mark,
@@ -400,17 +410,25 @@ export async function ensureDefaultButlerAccess({ userId, connection = null }) {
         updatedAt: toIso(catalogue.updated_at),
       }
     : null;
-  const expectedContractHash = catalogueIdentity && isCompleteAgentIdentity(catalogueIdentity)
-    ? computeAgentReleaseContractHash({
-        key: registeredAgent.key,
-        version: registeredAgent.version,
-        permissions: registeredAgent.permissions,
-        identity: catalogueIdentity,
-      })
-    : null;
-  if (!catalogue || !isCompleteAgentIdentity(catalogueIdentity) || catalogue.status !== "published" ||
-      catalogue.release_version !== registeredAgent.version || catalogue.contract_hash !== expectedContractHash) {
-    throw new HttpError(409, "默认妙讯管家尚未完成发布身份合同", { code: "AGENT_IDENTITY_CONTRACT_INCOMPLETE" });
+  const expectedContractHash =
+    catalogueIdentity && isCompleteAgentIdentity(catalogueIdentity)
+      ? computeAgentReleaseContractHash({
+          key: registeredAgent.key,
+          version: registeredAgent.version,
+          permissions: registeredAgent.permissions,
+          identity: catalogueIdentity,
+        })
+      : null;
+  if (
+    !catalogue ||
+    !isCompleteAgentIdentity(catalogueIdentity) ||
+    catalogue.status !== "published" ||
+    catalogue.release_version !== registeredAgent.version ||
+    catalogue.contract_hash !== expectedContractHash
+  ) {
+    throw new HttpError(409, "默认妙讯管家尚未完成发布身份合同", {
+      code: "AGENT_IDENTITY_CONTRACT_INCOMPLETE",
+    });
   }
   const agent = {
     ...registeredAgent,
@@ -430,14 +448,14 @@ export async function ensureDefaultButlerAccess({ userId, connection = null }) {
     FROM user_agents
     WHERE user_id = ? AND agent_id = ?
     FOR UPDATE`,
-    [userId, agent.key]
+    [userId, agent.key],
   );
   if (existing.length) {
     const hasDefaultGrant =
       Boolean(existing[0].enabled) &&
       agentScopesMatchDeclaration(
         agent,
-        parseJson(existing[0].granted_scopes, [])
+        parseJson(existing[0].granted_scopes, []),
       );
     if (hasDefaultGrant) {
       await ensureAgentThread(connection, {
@@ -453,7 +471,7 @@ export async function ensureDefaultButlerAccess({ userId, connection = null }) {
       `UPDATE user_agents
       SET enabled = TRUE, granted_scopes = ?, updated_at = CURRENT_TIMESTAMP
       WHERE user_id = ? AND agent_id = ?`,
-      [JSON.stringify(grantedScopes), userId, agent.key]
+      [JSON.stringify(grantedScopes), userId, agent.key],
     );
     await ensureAgentThread(connection, {
       userId,
@@ -479,7 +497,7 @@ export async function ensureDefaultButlerAccess({ userId, connection = null }) {
       targetId: agent.key,
       payload: { grantedScopes, source: "account_default" },
     },
-    queryFn
+    queryFn,
   );
   return { added: !existing.length, enabled: true, grantedScopes };
 }
@@ -508,7 +526,7 @@ export async function setUserAgentAccess({
         grantedScopes,
         connection: transaction,
         welcomeSource,
-      })
+      }),
     );
   }
   const queryFn = transactionQuery(connection);
@@ -518,12 +536,16 @@ export async function setUserAgentAccess({
   ]);
   if (!users[0]) throw new HttpError(404, "User not found");
   const requestedAlias = String(alias || "").trim();
-  const resolvedAlias = aliasSource === "system"
-    ? (agent.name || agent.key)
-    : (requestedAlias || agent.name || agent.key);
-  const resolvedAliasSource = aliasSource === "system" || aliasSource === "custom"
-    ? aliasSource
-    : requestedAlias ? "custom" : "system";
+  const resolvedAlias =
+    aliasSource === "system"
+      ? agent.name || agent.key
+      : requestedAlias || agent.name || agent.key;
+  const resolvedAliasSource =
+    aliasSource === "system" || aliasSource === "custom"
+      ? aliasSource
+      : requestedAlias
+        ? "custom"
+        : "system";
   const accessRows = await queryFn(
     `INSERT INTO user_agents
       (user_id, agent_id, alias, enabled, granted_scopes, alias_source)
@@ -544,7 +566,14 @@ export async function setUserAgentAccess({
       granted_scopes = EXCLUDED.granted_scopes,
       updated_at = CURRENT_TIMESTAMP
     RETURNING alias`,
-    [userId, agent.key, resolvedAlias, enabled, JSON.stringify(resolvedScopes), resolvedAliasSource]
+    [
+      userId,
+      agent.key,
+      resolvedAlias,
+      enabled,
+      JSON.stringify(resolvedScopes),
+      resolvedAliasSource,
+    ],
   );
   const effectiveAlias = accessRows[0]?.alias || resolvedAlias;
 
@@ -558,7 +587,7 @@ export async function setUserAgentAccess({
   } else {
     await queryFn(
       "UPDATE chat_threads SET status_text = '已停用' WHERE user_id = ? AND agent_id = ?",
-      [userId, agent.key]
+      [userId, agent.key],
     );
   }
 
@@ -575,34 +604,41 @@ export function resolveAgentGrantedScopes(agent, requestedScopes) {
   ) {
     throw new HttpError(
       400,
-      "Agent access requires explicitly confirmed scopes."
+      "Agent access requires explicitly confirmed scopes.",
     );
   }
   const scopes = requestedScopes;
   const unknownScopes = scopes.filter(
-    (scope) => !declaredScopes.includes(scope)
+    (scope) => !declaredScopes.includes(scope),
   );
   if (unknownScopes.length) {
     throw new HttpError(
       400,
-      `Unsupported Agent scopes: ${unknownScopes.join(", ")}`
+      `Unsupported Agent scopes: ${unknownScopes.join(", ")}`,
     );
   }
   if (!agentScopesMatchDeclaration(agent, scopes)) {
-    throw new HttpError(400, "添加 Agent 需要确认全部声明权限，请在“我”移除后重新添加。", { code: "AGENT_FULL_ACCESS_REQUIRED" });
+    throw new HttpError(
+      400,
+      "添加 Agent 需要确认全部声明权限，请在“我”移除后重新添加。",
+      { code: "AGENT_FULL_ACCESS_REQUIRED" },
+    );
   }
   return Array.from(new Set(scopes));
 }
 
-export async function createUsageEvent({
-  userId,
-  eventType,
-  targetType = null,
-  targetId = null,
-  payload = {},
-  ipHash = null,
-  userAgent = "",
-}, queryFn = query) {
+export async function createUsageEvent(
+  {
+    userId,
+    eventType,
+    targetType = null,
+    targetId = null,
+    payload = {},
+    ipHash = null,
+    userAgent = "",
+  },
+  queryFn = query,
+) {
   const id = crypto.randomUUID();
   await queryFn(
     `INSERT INTO usage_events
@@ -617,7 +653,7 @@ export async function createUsageEvent({
       JSON.stringify(payload),
       ipHash,
       userAgent,
-    ]
+    ],
   );
   return { id };
 }
@@ -647,7 +683,7 @@ export async function createAgentRun(run, queryFn = query) {
       run.tokenTotal ?? null,
       run.costCents ?? null,
       run.errorMessage || null,
-    ]
+    ],
   );
 
   const rows = await queryFn("SELECT * FROM agent_runs WHERE id = ? LIMIT 1", [
@@ -689,7 +725,7 @@ export async function getBootstrapForUser(
   ]);
   const messagesByThread = await listMessagesForThreads(
     user.id,
-    threads.map((thread) => thread.id)
+    threads.map((thread) => thread.id),
   );
 
   return {
@@ -725,7 +761,7 @@ export async function updateUserPresenceMode(userId, presenceMode) {
     SET presence_mode = ?
     WHERE id = ?
     RETURNING *`,
-    [normalized, userId]
+    [normalized, userId],
   );
   if (!rows.length) {
     throw new HttpError(404, "User not found");
@@ -791,17 +827,17 @@ export function buildAppModules({
           likes: Number(profile?.likesCount || 0),
           collections: Number(profile?.collectionsCount || 0),
         },
-      }
+      },
     ),
     messages: connected(
       "messages",
       "妙讯会话",
-      "会话与消息来自 chat_threads / chat_messages。"
+      "会话与消息来自 chat_threads / chat_messages。",
     ),
     notices: connected(
       "notices",
       "通知",
-      "通知来自 notifications 表中的社交与系统通知。"
+      "通知来自 notifications 表中的社交与系统通知。",
     ),
     agents: connected("agents", "AI伙伴", "已授权 Agent 来自 user_agents。", {
       enabledCount: ownedAgents.length,
@@ -810,54 +846,54 @@ export function buildAppModules({
     aiQr: connected(
       "ai-qr",
       "AI ID 动态码",
-      "由真实 AI ID 在前端生成短效动态码。"
+      "由真实 AI ID 在前端生成短效动态码。",
     ),
     search: connected(
       "search",
       "搜索",
-      "搜索记录来自 search_history；好友、会话和 Agent 使用真实同步数据检索。"
+      "搜索记录来自 search_history；好友、会话和 Agent 使用真实同步数据检索。",
     ),
     points: connected(
       "points",
       "妙点明细",
-      "余额来自 user_profiles，明细来自 miao_point_ledger。"
+      "余额来自 user_profiles，明细来自 miao_point_ledger。",
     ),
     privacy: connected(
       "privacy",
       "主页可见范围",
-      "主页字段和内容可见范围由 profile_visibility 与内容 visibility 校验。"
+      "主页字段和内容可见范围由 profile_visibility 与内容 visibility 校验。",
     ),
     notifications: pending(
       "notifications",
       "通知偏好",
       "通知由真实事件聚合，偏好配置表尚未接入。",
-      ["notification_preferences"]
+      ["notification_preferences"],
     ),
     createGroup: pending(
       "createGroup",
       "创建群",
       "保留创建群入口，尚未接入群组与成员表。",
-      ["groups", "group_members"]
+      ["groups", "group_members"],
     ),
     addFriend: connected(
       "addFriend",
       "添加好友",
-      "好友申请写入 social_requests，通知写入 notifications。"
+      "好友申请写入 social_requests，通知写入 notifications。",
     ),
     scan: connected(
       "scan",
       "扫码",
-      "扫码结果经后端解析 AI ID 后打开公开主页。"
+      "扫码结果经后端解析 AI ID 后打开公开主页。",
     ),
     stationAvatar: connected(
       "station-avatar",
       "3D个人形象",
-      "App 通过独立的3D形象流程读取 avatar_3d_models，不绑定 Agent 会话。"
+      "App 通过独立的3D形象流程读取 avatar_3d_models，不绑定 Agent 会话。",
     ),
     posts: connected(
       "posts",
       "我的动态",
-      "动态来自 station_posts，媒体关联来自 station_post_media。"
+      "动态来自 station_posts，媒体关联来自 station_post_media。",
     ),
     diary: agentRegistered("comic-diary")
       ? connected(
@@ -866,7 +902,7 @@ export function buildAppModules({
           "漫画日记 Agent 已注册；手写日记来自 station_diary_entries，分镜草稿保存到 station_comic_diaries。",
           {
             needs: ["image_generation", "comic_rendering"],
-          }
+          },
         )
       : connected(
           "diary",
@@ -874,7 +910,7 @@ export function buildAppModules({
           "手写日记来自 station_diary_entries；Agent 生成和漫画分镜仍需单独接入。",
           {
             needs: ["generation_jobs", "diary_frames"],
-          }
+          },
         ),
     video: agentRegistered("video-production")
       ? connected(
@@ -887,13 +923,13 @@ export function buildAppModules({
               "render_queue",
               "asset_storage",
             ],
-          }
+          },
         )
       : pending(
           "video",
           "视频脚本",
           "视频脚本 Agent 尚未注册；当前不支持视频成片。",
-          ["video_production_agent"]
+          ["video_production_agent"],
         ),
     album: agentRegistered("album-manager")
       ? connected(
@@ -902,7 +938,7 @@ export function buildAppModules({
           "支持用户标签和文字查找；相册 Agent 通过已授权的视觉索引检索真实素材。",
           {
             needs: ["storage_provider", "vision_captioning", "media_audits"],
-          }
+          },
         )
       : connected(
           "album",
@@ -910,19 +946,19 @@ export function buildAppModules({
           "相册元数据来自 station_albums，媒体资产来自 station_media_assets。",
           {
             needs: ["storage_provider", "upload_credentials", "media_audits"],
-          }
+          },
         ),
     music: pending(
       "music",
       "音乐菜单",
       "保留音乐菜单入口，尚未接入音乐偏好与外部授权。",
-      ["music_items", "external_music_auth"]
+      ["music_items", "external_music_auth"],
     ),
     social: connected(
       "social",
       "社交网络",
       "关注、粉丝、好友关系和关系列表来自 social_relationships。",
-      { needs: ["trust_scores", "interaction_events"] }
+      { needs: ["trust_scores", "interaction_events"] },
     ),
     outfits: connected(
       "outfits",
@@ -930,7 +966,7 @@ export function buildAppModules({
       "穿搭记录来自 station_outfits，当前保存 avatar_config 快照；正式衣物素材库仍需接入。",
       {
         needs: ["wardrobe_assets", "asset_audits"],
-      }
+      },
     ),
     files: agentRegistered("file-preprocessor")
       ? connected(
@@ -939,13 +975,13 @@ export function buildAppModules({
           "登记文字预览和文件信息；需要模型摘要时在对话中提供文字，设备文件上传与解析尚未开放。",
           {
             needs: ["storage_provider", "memory_items", "document_parsers"],
-          }
+          },
         )
       : pending(
           "files",
           "我的文件",
           "保留文件入口，尚未接入云存储、记忆和资产归档。",
-          ["file_assets", "memory_items", "storage_provider"]
+          ["file_assets", "memory_items", "storage_provider"],
         ),
     siteAgent: agentRegistered("site-builder")
       ? connected("site-agent", "建站 Agent", "site-builder Agent 已注册。")
@@ -957,13 +993,13 @@ export function buildAppModules({
             "agents/site-builder.agent.js",
             "station_templates",
             "generation_jobs",
-          ]
+          ],
         ),
     publish: connected(
       "publish",
       "发布动态",
       "发布内容写入 station_posts，图片和视频通过 station_media_assets 关联。",
-      { needs: ["content_moderation", "post_audits"] }
+      { needs: ["content_moderation", "post_audits"] },
     ),
   };
 }

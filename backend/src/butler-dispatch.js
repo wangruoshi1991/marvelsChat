@@ -8,6 +8,7 @@ const capability = z.object({
 const decisionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("reply"), reply: z.string().trim().min(1).max(4000) }).strict(),
   z.object({ type: z.literal("clarify"), question: z.string().trim().min(1).max(2000) }).strict(),
+  z.object({ type: z.literal("ui_preference") }).strict(),
   z.object({ type: z.literal("workspace"),
     capabilities: z.array(capability).min(1).max(20) }).strict(),
 ]);

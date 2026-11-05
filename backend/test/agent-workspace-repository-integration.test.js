@@ -3,11 +3,13 @@ import crypto from "node:crypto";
 import test, { before, beforeEach, after } from "node:test";
 import { query, withTransaction, closeDatabase } from "../src/db.js";
 import * as repository from "../src/agent-workspace-repository.js";
+import { createAgentWorkspaceRunner } from "../src/agent-workspace-runner.js";
 
 const enabled = process.env.RUN_AGENT_WORKSPACE_INTEGRATION === "1";
 const integration = (name, work) => test(name, { skip: !enabled && "Set RUN_AGENT_WORKSPACE_INTEGRATION=1 with a migrated disposable PostgreSQL database" }, work);
 const owner = crypto.randomUUID();
 const outsider = crypto.randomUUID();
+const logger = { error() {} };
 const limits = { deadlineSeconds: 600 };
 const source = { page: "miao", module: "task-composer" };
 const submission = overrides => ({ userId: owner, goal: "Find suitable media and compose a private page", source, contextRefs: [],
@@ -114,6 +116,42 @@ integration("two independent nodes may own leases concurrently without duplicate
   const coordinator = await repository.claimWorkspaceNode();
   assert.equal(coordinator.node.capability, "workspace.coordinate");
   assert.equal(coordinator.workspace.nodes.filter(node => node.status === "succeeded").length, 3);
+});
+
+integration("parallel workers can claim independent nodes from one workspace in the same poll", async () => {
+  await create();
+  await plan(await repository.claimWorkspaceNode(), [specialist("landscape"), specialist("portraits")]);
+  const [one, two] = await Promise.all([repository.claimWorkspaceNode(), repository.claimWorkspaceNode()]);
+  assert.ok(one, "the first worker should claim an independent node");
+  assert.ok(two, "the second worker should claim the other independent node");
+  assert.notEqual(one.node.id, two.node.id);
+  assert.deepEqual([one.node.key, two.node.key].sort(), ["landscape", "portraits"]);
+  await Promise.all([finish(one, { result: selection() }), finish(two, { result: selection() })]);
+});
+
+integration("workspace runner dispatches independent nodes concurrently through the real repository", async () => {
+  await create();
+  await plan(await repository.claimWorkspaceNode(), [specialist("landscape"), specialist("portraits")]);
+  let resolveStarted;
+  let resolveRelease;
+  const started = new Promise(resolve => { resolveStarted = resolve; });
+  const release = new Promise(resolve => { resolveRelease = resolve; });
+  const startedKeys = [];
+  const runner = createAgentWorkspaceRunner({ repository, maxConcurrent: 2, logger,
+    execute: async claim => {
+      startedKeys.push(claim.node.key);
+      if (startedKeys.length === 2) resolveStarted();
+      await release;
+      await finish(claim, { result: selection() });
+    },
+  });
+  const first = runner.runOnce();
+  const second = runner.runOnce();
+  await started;
+  assert.deepEqual(startedKeys.sort(), ["landscape", "portraits"]);
+  resolveRelease();
+  await Promise.all([first, second]);
+  assert.equal(runner.getState().activeNodes, 0);
 });
 
 integration("invalid graphs, duplicate keys and cross-workspace dependencies roll back atomically", async () => {

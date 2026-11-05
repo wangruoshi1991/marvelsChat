@@ -7,6 +7,8 @@ import {
   assertAgentWorkspace,
   assertWorkspaceTextDocument,
   isWorkspaceRequest,
+  WorkspaceContribution,
+  assertWorkspaceContribution,
 } from '../../models/agentWorkspace';
 import { StationMediaAssetDTO } from '../../models/api';
 import {
@@ -54,6 +56,50 @@ async function continueWorkspace(
   return accepted;
 }
 export const agentWorkspaceApi = {
+  async contributions(token: string, agentId: string) {
+    assertAgentWorkspaceContract(token);
+    if (!/^[a-z0-9-]{1,80}$/.test(agentId)) throw new Error('Agent 标识无效。');
+    const result = await request<unknown>(
+      `${path}/contributions/${encodeURIComponent(agentId)}`,
+      {
+        token,
+        headers: agentWorkspaceHeaders,
+      },
+    );
+    if (
+      !result ||
+      typeof result !== 'object' ||
+      !('contributions' in result) ||
+      !Array.isArray(result.contributions) ||
+      result.contributions.length > 50 ||
+      !('hasMore' in result) ||
+      typeof result.hasMore !== 'boolean'
+    )
+      throw new Error('协作贡献列表格式不受支持。');
+    const contributions: WorkspaceContribution[] = [];
+    let unavailable = 0;
+    for (const item of result.contributions) {
+      if (
+        item &&
+        typeof item === 'object' &&
+        'unavailable' in item &&
+        item.unavailable === true &&
+        'id' in item &&
+        typeof item.id === 'string'
+      ) {
+        unavailable += 1;
+        continue;
+      }
+      assertWorkspaceContribution(item, agentId);
+      contributions.push(item);
+    }
+    if (
+      new Set(contributions.map(item => item.step.id)).size !==
+      contributions.length
+    )
+      throw new Error('协作贡献列表包含重复项目。');
+    return { contributions, unavailable, hasMore: result.hasMore };
+  },
   async list(token: string) {
     assertAgentWorkspaceContract(token);
     const result = await request<unknown>(`${path}?limit=30`, {

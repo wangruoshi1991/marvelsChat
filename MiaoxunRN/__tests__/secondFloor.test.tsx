@@ -37,6 +37,7 @@ import { palettes } from '../src/shared/theme';
 import { xunPalette } from '../src/shared/xunPalette';
 import { AIAssistGestureSurface } from '../src/features/assist/AIAssistGestureSurface';
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
+import { defaultUIPreferences } from '../src/features/ui/uiPreferences';
 
 // The files panel lists app-generated outcomes; keep these tests off the network.
 jest.mock('../src/services/api/agentWorkspaceApi', () => ({
@@ -123,7 +124,6 @@ const floorProps = (session = sessionForFloor()) => ({
   onOpenDeleteAccount: jest.fn(),
   onOpenNotices: jest.fn(),
   onOpenPostComposer: jest.fn(),
-  onOpenWorkspace: jest.fn(),
 });
 let renderer: TestRenderer.ReactTestRenderer;
 const text = () =>
@@ -313,11 +313,11 @@ test('V15 Xun floor opens on the personal-space landing with six visible tools',
 
   act(() => tool('albums').props.onPress());
   expect(tool('albums').props.accessibilityState.selected).toBe(true);
-  expect(text()).toContain('新建相册');
+  expect(text()).toContain('上传');
   // Re-tapping the active V15 entrance keeps the current panel open.
   act(() => tool('albums').props.onPress());
   expect(tool('albums').props.accessibilityState.selected).toBe(true);
-  expect(text()).toContain('新建相册');
+  expect(text()).toContain('上传');
 });
 
 test('V15 floor pages scroll their header while the tool tray stays outside', async () => {
@@ -496,6 +496,32 @@ test('V15 settings keeps a real scrolling viewport before bottom-edge return is 
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 
+test('bottom-edge return honors a configured distance below the legacy 100px guard', async () => {
+  const preferences = defaultUIPreferences();
+  preferences.gestures['secondFloor.swipeToExit'] = {
+    ...preferences.gestures['secondFloor.swipeToExit']!,
+    distance: 60,
+  };
+  const props = {
+    ...floorProps(sessionForFloor({ uiPreferences: preferences })),
+    palette: xunPalette(palettes.light),
+  };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+  await act(async () => tool('relationships').props.onPress());
+  const scroll = renderer.root
+    .findByType(SecondFloorRelationships)
+    .findByType(ScrollView).props;
+
+  // The page is at its measured bottom. A 61px upward release must use the
+  // configured 60px threshold instead of the old unconditional 100px floor.
+  act(() => scroll.onTouchStart(floorTouchEvent(500)));
+  act(() => scroll.onScrollBeginDrag(floorScrollEvent(499, 1000, 500)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(439, 120, 0)));
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+});
+
 test('return release reads changedTouches coordinates and rejects missing release points', async () => {
   const props = { ...floorProps(), palette: xunPalette(palettes.light) };
   await act(async () => {
@@ -547,7 +573,7 @@ test('bottom-edge release ignores short, sideways, downward, multitouch and canc
     .findByType(SecondFloorRelationships)
     .findByType(ScrollView).props;
   for (const [endY, endX] of [
-    [400, 120],
+    [446, 120],
     [399, 320],
     [650, 120],
   ]) {
@@ -778,6 +804,36 @@ test('return responder only handles upward vertical motion and ignores inactive 
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 
+test('return responder consumes configured direction and distance', async () => {
+  const pan = jest.spyOn(PanResponder, 'create');
+  const preferences = defaultUIPreferences();
+  preferences.gestures['secondFloor.swipeToExit'] = {
+    ...preferences.gestures['secondFloor.swipeToExit']!,
+    direction: 'left',
+    distance: 120,
+  };
+  const props = floorProps(sessionForFloor({ uiPreferences: preferences }));
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+  const config = pan.mock.calls[0]?.[0];
+  expect(config).toBeDefined();
+  const event = {} as Parameters<
+    NonNullable<typeof config.onPanResponderRelease>
+  >[0];
+  const gesture = (dx: number, dy = 0) =>
+    ({ dx, dy, vx: 0, vy: 0 } as Parameters<
+      NonNullable<typeof config.onPanResponderRelease>
+    >[1]);
+
+  expect(config.onMoveShouldSetPanResponder?.(event, gesture(-20))).toBe(true);
+  expect(config.onMoveShouldSetPanResponder?.(event, gesture(20))).toBe(false);
+  act(() => config.onPanResponderRelease?.(event, gesture(-119)));
+  expect(props.onClose).not.toHaveBeenCalled();
+  act(() => config.onPanResponderRelease?.(event, gesture(-121)));
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+});
+
 test('album creation blocks internal back until finished; details and editing return to their real parent', async () => {
   const work = deferred<{ id: string }>();
   const busy = jest.fn();
@@ -832,7 +888,7 @@ test('album creation blocks internal back until finished; details and editing re
   expect(renderer.root.findByType(SecondFloorAlbumList)).toBeTruthy();
 });
 
-test('album landing explains selective photo access and opens the real creation flow', () => {
+test('album landing keeps one upload entry and opens the real creation flow', () => {
   act(() => {
     renderer = TestRenderer.create(
       <SecondFloorAlbums
@@ -843,23 +899,13 @@ test('album landing explains selective photo access and opens the real creation 
     );
   });
 
-  expect(text()).toContain('连接你的手机相册');
-  expect(text()).toContain('仅在你授权后读取所选照片');
+  expect(text()).not.toContain('连接你的手机相册');
+  expect(text()).not.toContain('仅在你授权后读取所选照片');
   expect(text()).not.toContain('演示图');
-  const upload = renderer.root
-    .findAllByType(Text)
-    .find(node => node.props.children === '上传')!;
-  expect(StyleSheet.flatten(upload.props.style).color).toBe('#008f95');
-  const createAlbum = button('选择照片并新建相册');
-  expect(StyleSheet.flatten(createAlbum.props.style)).toMatchObject({
-    borderRadius: 12,
-    paddingHorizontal: 17,
-    paddingVertical: 13,
-  });
-  expect(
-    StyleSheet.flatten(createAlbum.findByType(Text).props.style),
-  ).toMatchObject({ color: '#073b3d', fontSize: 13, fontWeight: '600' });
-  act(() => button('选择照片并新建相册').props.onPress());
+  expect(text()).not.toContain('选择照片并新建相册');
+  const upload = button('上传照片并新建相册');
+  expect(upload).toBeTruthy();
+  act(() => upload.props.onPress());
   expect(renderer.root.findByType(StationCreateSheet).props.kind).toBe('album');
 });
 
@@ -1033,7 +1079,6 @@ test('file detail shows actual preview and explicit unsupported/unknown states, 
   const props = {
     palette: xunPalette(palettes.light),
     language: 'zh' as const,
-    onOpenWorkspace: jest.fn(),
     session: sessionForFloor({
       stationFileAsset: jest.fn(async () => ({
         ...file,

@@ -199,12 +199,6 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
       entitlementFor('unavailable'),
       '授权暂不可用',
     ],
-    [
-      'reconsent entitlement',
-      productFor(),
-      entitlementFor('reconsent_required'),
-      '需要重新同意授权',
-    ],
   ])(
     '%s is shown as unavailable and cannot be added',
     (label, product, entitlement, expectedStatus) => {
@@ -233,6 +227,81 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
       expect(label).toBeTruthy();
     },
   );
+
+  test('a previously granted agent can be reauthorized after its projection is disabled', async () => {
+    const values = {
+      ...props(),
+      ownedAgents: [],
+      products: [productFor()],
+      entitlements: [entitlementFor('reconsent_required')],
+      catalogRevision: 'catalog-1',
+    };
+    act(() => {
+      renderer = TestRenderer.create(renderSurface(values as never));
+    });
+    const button = accessButton('重新同意建站授权');
+    expect(button?.props.disabled).toBe(false);
+    press('重新同意建站授权');
+    await act(async () => {
+      await alert.mock.calls[0][2][1].onPress();
+    });
+    expect(values.onSetAgentEnabled).toHaveBeenCalledWith(
+      'site-builder',
+      true,
+      agent.permissions,
+      undefined,
+      'product-version-site-builder',
+    );
+  });
+
+  test('a changed entitlement invalidates an open re-consent confirmation', async () => {
+    const values = {
+      ...props(),
+      ownedAgents: [],
+      entitlements: [entitlementFor('reconsent_required')],
+    };
+    act(() => {
+      renderer = TestRenderer.create(renderSurface(values as never));
+    });
+    press('重新同意建站授权');
+    act(() => {
+      renderer.update(
+        renderSurface({
+          ...values,
+          entitlements: [entitlementFor('unavailable')],
+        } as never),
+      );
+    });
+    await act(async () => {
+      await alert.mock.calls[0][2][1].onPress();
+    });
+    expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
+  });
+
+  test('an owned agent with a reconsent requirement exposes an explicit retry action', async () => {
+    const values = {
+      ...props(),
+      products: [productFor()],
+      entitlements: [entitlementFor('reconsent_required')],
+      catalogRevision: 'catalog-1',
+    };
+    act(() => {
+      renderer = TestRenderer.create(renderSurface(values as never));
+    });
+    expect(accessButton('重新同意建站授权')).toBeDefined();
+    press('重新同意建站授权');
+    expect(alert).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await alert.mock.calls[0][2][1].onPress();
+    });
+    expect(values.onSetAgentEnabled).toHaveBeenCalledWith(
+      'site-builder',
+      true,
+      agent.permissions,
+      undefined,
+      'product-version-site-builder',
+    );
+  });
 
   test('published product with enabled entitlement keeps the confirmation and idempotent add path', async () => {
     const values = { ...props(), ownedAgents: [] };

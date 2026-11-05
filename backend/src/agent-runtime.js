@@ -321,7 +321,7 @@ export async function runAgent({ agentId, input, user, thread = null, messages =
       : config.newApi.timeoutMs;
     completion = await callNewApi(plan, {
       model, conversation, tools: tools?.definitions, finalTurn, timeoutMs: Math.min(configuredTimeoutMs, remainingExecutionMs()),
-      jsonObject: mode === "dispatch" || mode === "coordinate",
+      jsonObject: mode === "dispatch" || mode === "coordinate" || plan.responseFormat === "json_object",
     });
     if (afterModelCall) await afterModelCall({
       receipt, provider: providerName(model), model, servedModel: completion.servedModel,

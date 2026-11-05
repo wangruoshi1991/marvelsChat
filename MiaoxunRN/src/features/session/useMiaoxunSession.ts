@@ -57,6 +57,8 @@ import {
 import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
 import { agentAccessSnapshot } from '../agents/agentAccess';
 import { assertAgentDirectoryIdentity } from '../messages/agentIdentity';
+import { defaultUIPreferences } from '../ui/uiPreferences';
+import type { UIPreferences } from '../ui/uiPreferenceTypes';
 
 export type { ChatMessage, ChatThread, Language } from './sessionTypes';
 
@@ -106,6 +108,8 @@ export function useMiaoxunSession() {
     useState<StationContentDTO>(emptyStationContent);
   const [language, setLanguage] = useState<Language>('zh');
   const [appearance, setAppearance] = useState<Appearance>('light');
+  const [uiPreferences, setUIPreferences] =
+    useState<UIPreferences>(defaultUIPreferences);
   const [isBusy, setIsBusy] = useState(false);
   const [isRestoring, setIsRestoring] = useState(true);
   const [restoreStatus, setRestoreStatus] = useState<RestoreStatus>('checking');
@@ -251,6 +255,7 @@ export function useMiaoxunSession() {
     setRelationships(emptyRelationships);
     stationContentMutationRevisionRef.current += 1;
     setStationContent(emptyStationContent);
+    setUIPreferences(defaultUIPreferences());
     setRealtimeNotificationNotice(null);
     lastSyncAtRef.current = null;
     activeThreadIdRef.current = null;
@@ -323,6 +328,10 @@ export function useMiaoxunSession() {
         setProfile(bootstrap.profile);
         setLanguage(bootstrap.profile.stationConfig.language || 'zh');
         setAppearance(bootstrap.profile.stationConfig.appearance || 'light');
+        setUIPreferences(
+          bootstrap.profile.stationConfig.uiPreferences ||
+            defaultUIPreferences(),
+        );
       }
       setThreads(buildThreads(bootstrap));
       setModules(bootstrap.modules);
@@ -918,6 +927,67 @@ export function useMiaoxunSession() {
       setUser: setSessionUser,
     });
 
+  const previewUIPreferences = useCallback(
+    (instruction: string, surface?: 'messages' | 'miao' | 'secondFloor') =>
+      apiClient.previewUIPreferences(token, instruction, surface),
+    [token],
+  );
+  const confirmUIPreferences = useCallback(
+    async (previewId: string, baseRevision: number) => {
+      const result = await apiClient.confirmUIPreferences(
+        token,
+        previewId,
+        baseRevision,
+      );
+      if (tokenRef.current !== token)
+        throw new Error('登录状态已变更，请重新操作');
+      setUIPreferences(result.preferences);
+      setSessionProfile(current => ({
+        ...current,
+        stationConfig: {
+          ...current.stationConfig,
+          uiPreferences: result.preferences,
+        },
+      }));
+      return result;
+    },
+    [setSessionProfile, token],
+  );
+  const resetUIPreferences = useCallback(
+    async (baseRevision: number) => {
+      const result = await apiClient.resetUIPreferences(token, baseRevision);
+      if (tokenRef.current !== token)
+        throw new Error('登录状态已变更，请重新操作');
+      setUIPreferences(result.preferences);
+      setSessionProfile(current => ({
+        ...current,
+        stationConfig: {
+          ...current.stationConfig,
+          uiPreferences: result.preferences,
+        },
+      }));
+      return result;
+    },
+    [setSessionProfile, token],
+  );
+  const undoUIPreferences = useCallback(
+    async (baseRevision: number) => {
+      const result = await apiClient.undoUIPreferences(token, baseRevision);
+      if (tokenRef.current !== token)
+        throw new Error('登录状态已变更，请重新操作');
+      setUIPreferences(result.preferences);
+      setSessionProfile(current => ({
+        ...current,
+        stationConfig: {
+          ...current.stationConfig,
+          uiPreferences: result.preferences,
+        },
+      }));
+      return result;
+    },
+    [setSessionProfile, token],
+  );
+
   const {
     refreshStationContent,
     listMiaoPointLedger,
@@ -968,6 +1038,11 @@ export function useMiaoxunSession() {
     stationContent,
     language,
     appearance,
+    uiPreferences,
+    previewUIPreferences,
+    confirmUIPreferences,
+    resetUIPreferences,
+    undoUIPreferences,
     isBusy,
     isRestoring,
     restoreStatus,

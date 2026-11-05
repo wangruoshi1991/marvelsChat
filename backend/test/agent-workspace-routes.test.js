@@ -6,11 +6,16 @@ import { registerAgentWorkspaceRoutes, workspaceActionSchema } from "../src/rout
 import { createRequestErrorHandler } from "../src/request-observability.js";
 import { createAgentWorkspaceConfig } from "../src/agent-workspace-config.js";
 
-test("workspace config defines only a validated execution deadline", () => {
-  assert.deepEqual(createAgentWorkspaceConfig({}), { deadlineSeconds: 1200 });
+test("workspace config defines a validated deadline and explicit concurrency bound", () => {
+  assert.deepEqual(createAgentWorkspaceConfig({}), { deadlineSeconds: 1200, maxConcurrent: 4 });
   for (const value of ["0", "29", "86401", "", "1.5", "invalid"]) {
     assert.throws(() => createAgentWorkspaceConfig({ AGENT_WORKSPACE_DEADLINE_SECONDS: value }), /AGENT_WORKSPACE_DEADLINE_SECONDS/);
   }
+  for (const value of ["0", "21", "", "1.5", "invalid"]) {
+    assert.throws(() => createAgentWorkspaceConfig({ AGENT_WORKSPACE_MAX_CONCURRENT: value }), /AGENT_WORKSPACE_MAX_CONCURRENT/);
+  }
+  assert.equal(createAgentWorkspaceConfig({ AGENT_WORKSPACE_MAX_CONCURRENT: "3" }).maxConcurrent, 3);
+  assert.equal(createAgentWorkspaceConfig({ AGENT_WORKSPACE_MAX_CONCURRENT: "20" }).maxConcurrent, 20);
 });
 
 test("decisions reject ambiguous or extra operation fields", () => {
@@ -46,6 +51,7 @@ test("real HTTP routes reject missing contracts before dispatch, and require doc
       async decideAgentWorkspace(args) { calls.push(args); return { id: workspaceId }; },
       async getWorkspaceMedia(args) { calls.push(args); return { id: args.assetId }; },
       async getWorkspaceText(args) { calls.push(args); return { id: args.nodeId, title: "内容", content: "按需鉴权读取的正文" }; },
+      async listAgentContributions(args) { calls.push(args); return { contributions: [], hasMore: false }; },
     },
     repository: { async getAgentWorkspace(args) { calls.push(args); return { id: workspaceId }; }, async listAgentWorkspaces(args) { calls.push(args); return []; } },
   });
@@ -86,5 +92,11 @@ test("real HTTP routes reject missing contracts before dispatch, and require doc
     assert.equal(calls.length, 3);
     assert.equal((await request(`/api/agent-workspaces/${workspaceId}/decision`, continuation, supported)).status, 200);
     assert.deepEqual(calls[3], { userId: owner, workspaceId, ...continuation });
+    assert.equal((await request('/api/agent-workspaces/contributions/site-builder', null, {})).status, 426);
+    assert.equal((await request('/api/agent-workspaces/contributions/invalid_agent', null, supported)).status, 400);
+    const contributions = await request('/api/agent-workspaces/contributions/site-builder', null, supported);
+    assert.equal(contributions.status, 200);
+    assert.deepEqual((await contributions.json()).data, { contributions: [], hasMore: false });
+    assert.deepEqual(calls[4], { userId: owner, agentId: 'site-builder' });
   } finally { await new Promise(resolve => server.close(resolve)); }
 });

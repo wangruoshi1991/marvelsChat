@@ -32,6 +32,43 @@ import { AITaskInbox } from '../ai/AITaskInbox';
 import { AgentWorkspace } from '../../models/agentWorkspace';
 import { agentReplyPresentation } from './agentReplyPresentation';
 import { messageTextPreview } from './messageTextPresentation';
+import type { UIPreferences } from '../ui/uiPreferenceTypes';
+import {
+  componentUIPreference,
+  gestureUIPreference,
+  isUIModuleVisible,
+  uiButtonSlot,
+  uiFontSize,
+  uiRowGap,
+} from '../ui/uiPreferences';
+
+function pullDirectionMatches(
+  direction: 'left' | 'right' | 'up' | 'down',
+  dx: number,
+  dy: number,
+  distance: number,
+) {
+  const horizontal = Math.abs(dx) > Math.abs(dy) * 1.4;
+  const vertical = Math.abs(dy) > Math.abs(dx) * 1.4;
+  if (direction === 'left') return dx <= -distance && horizontal;
+  if (direction === 'right') return dx >= distance && horizontal;
+  if (direction === 'up') return dy <= -distance && vertical;
+  return dy >= distance && vertical;
+}
+
+function pullVelocityMatches(
+  direction: 'left' | 'right' | 'up' | 'down',
+  vx: number,
+  vy: number,
+  threshold: number,
+) {
+  const horizontal = Math.abs(vx) > Math.abs(vy) * 1.4;
+  const vertical = Math.abs(vy) > Math.abs(vx) * 1.4;
+  if (direction === 'left') return vx <= -threshold && horizontal;
+  if (direction === 'right') return vx >= threshold && horizontal;
+  if (direction === 'up') return vy <= -threshold && vertical;
+  return vy >= threshold && vertical;
+}
 
 function ThreadSwipeRow({
   thread,
@@ -40,6 +77,7 @@ function ThreadSwipeRow({
   agents,
   renderUserAvatar,
   onOpenThread,
+  uiPreferences,
 }: {
   thread: ChatThread;
   palette: Palette;
@@ -47,6 +85,7 @@ function ThreadSwipeRow({
   agents: AgentDTO[];
   renderUserAvatar: UserAvatarRenderer;
   onOpenThread: (thread: ChatThread) => void;
+  uiPreferences?: UIPreferences;
 }) {
   const v6Theme = isV6Palette(palette);
   const xunTheme = isXunPalette(palette);
@@ -179,6 +218,7 @@ function ThreadSwipeRow({
                 : 'transparent'
               : palette.surface,
             borderColor: v6Theme || xunTheme ? 'transparent' : palette.border,
+            borderRadius: uiPreferences?.surfaces.messages.cardRadius ?? 7,
           },
         ]}
       >
@@ -214,7 +254,10 @@ function ThreadSwipeRow({
               style={[
                 s.threadTitle,
                 xunTheme && s.xunThreadTitle,
-                { color: palette.text },
+                {
+                  color: palette.text,
+                  fontSize: uiFontSize(uiPreferences, 15),
+                },
               ]}
             >
               {displayText(language, thread.title)}
@@ -227,7 +270,10 @@ function ThreadSwipeRow({
               s.preview,
               xunTheme && s.xunPreview,
               xunTheme && thread.unreadCount > 0 && s.xunUnreadPreview,
-              { color: palette.secondaryText },
+              {
+                color: palette.secondaryText,
+                fontSize: uiFontSize(uiPreferences, 12),
+              },
             ]}
           >
             {displayText(language, preview) ||
@@ -259,7 +305,7 @@ export function ThreadListScreen({
   renderUserAvatar,
   onOpenThread,
   onOpenMessageActions,
-  messageActionsOpen = false,
+  messageActionsOpen: _messageActionsOpen = false,
   onOpenSearch,
   onSelectMessageTab,
   onMarkNotificationRead,
@@ -268,6 +314,8 @@ export function ThreadListScreen({
   onOpenSecondFloor,
   onOpenTask,
   onOpenWorkspace,
+  onOpenAgentParticipant,
+  uiPreferences,
 }: {
   token?: string;
   active?: boolean;
@@ -290,6 +338,11 @@ export function ThreadListScreen({
   onOpenSecondFloor?: () => void;
   onOpenTask?: (task: AITaskDTO) => void;
   onOpenWorkspace?: (workspace: AgentWorkspace) => void;
+  onOpenAgentParticipant?: (
+    workspace: AgentWorkspace,
+    step: AgentWorkspace['steps'][number],
+  ) => void;
+  uiPreferences?: UIPreferences;
 }) {
   const assist = useAIAssist();
   const v6Theme = isV6Palette(palette);
@@ -326,20 +379,64 @@ export function ThreadListScreen({
     }),
     [colors.border, colors.surface, xunTheme],
   );
-  const { height } = useWindowDimensions();
+  const { height, width } = useWindowDimensions();
+  const newActionPreference = componentUIPreference(
+    uiPreferences,
+    'messages',
+    'xun.threadList.newThread',
+  );
+  const openSecondFloorPreference = componentUIPreference(
+    uiPreferences,
+    'messages',
+    'xun.threadList.openSecondFloor',
+  );
+  const messageButtonScale = uiPreferences?.surfaces.messages.buttonScale ?? 1;
+  const newActionScale = Math.max(
+    0.8,
+    Math.min(1.3, messageButtonScale * (newActionPreference.sizeScale ?? 1)),
+  );
+  const messageRowGap = uiRowGap(uiPreferences, 'messages', xunTheme ? 0 : 3);
+  const newActionSlot = uiButtonSlot(
+    uiPreferences,
+    'messages',
+    'newAction',
+    'xun.threadList.newThread',
+  );
+  const pullGesture = gestureUIPreference(
+    uiPreferences,
+    'messages.pullToSecondFloor',
+  );
+  const supportedEntranceGesture =
+    pullGesture.enabled && ['down', 'right'].includes(pullGesture.direction);
   const newButton = useRef<View>(null);
   const scrollOffset = useRef(0);
   const pullStartAtTop = useRef(false);
   const opening = useRef(false);
   const pullOffset = useRef(new Animated.Value(0)).current;
+  const pullOffsetX = useRef(new Animated.Value(0)).current;
+  const pullCueDistance = useRef(new Animated.Value(0)).current;
   const resetPull = useCallback(() => {
-    Animated.spring(pullOffset, {
-      toValue: 0,
-      useNativeDriver: true,
-      speed: 22,
-      bounciness: 3,
-    }).start();
-  }, [pullOffset]);
+    Animated.parallel([
+      Animated.spring(pullOffset, {
+        toValue: 0,
+        useNativeDriver: true,
+        speed: 22,
+        bounciness: 3,
+      }),
+      Animated.spring(pullOffsetX, {
+        toValue: 0,
+        useNativeDriver: true,
+        speed: 22,
+        bounciness: 3,
+      }),
+      Animated.spring(pullCueDistance, {
+        toValue: 0,
+        useNativeDriver: true,
+        speed: 22,
+        bounciness: 3,
+      }),
+    ]).start();
+  }, [pullCueDistance, pullOffset, pullOffsetX]);
   const resetPullState = useCallback(() => {
     // The conversation list is retained while the root tab or a modal route
     // changes. Stop an interrupted entrance animation so a later return to
@@ -347,8 +444,12 @@ export function ThreadListScreen({
     opening.current = false;
     pullStartAtTop.current = false;
     pullOffset.stopAnimation();
+    pullOffsetX.stopAnimation();
+    pullCueDistance.stopAnimation();
     pullOffset.setValue(0);
-  }, [pullOffset]);
+    pullOffsetX.setValue(0);
+    pullCueDistance.setValue(0);
+  }, [pullCueDistance, pullOffset, pullOffsetX]);
   const pullResponder = useMemo(
     () =>
       PanResponder.create({
@@ -358,25 +459,84 @@ export function ThreadListScreen({
         },
         onMoveShouldSetPanResponderCapture: (_event, gesture) =>
           Boolean(onOpenSecondFloor) &&
+          supportedEntranceGesture &&
           !opening.current &&
           !assist.isActive &&
           selectedMessageTab === 'chat' &&
           pullStartAtTop.current &&
-          gesture.dy > 12 &&
-          gesture.dy > Math.abs(gesture.dx) * 1.4,
+          (pullDirectionMatches(
+            pullGesture.direction,
+            gesture.dx,
+            gesture.dy,
+            10,
+          ) ||
+            pullVelocityMatches(
+              pullGesture.direction,
+              gesture.vx,
+              gesture.vy,
+              0.1,
+            )),
         onPanResponderMove: (_event, gesture) =>
-          pullOffset.setValue(Math.min(132, Math.max(0, gesture.dy * 0.56))),
+          (() => {
+            const horizontal =
+              pullGesture.direction === 'left' ||
+              pullGesture.direction === 'right';
+            const movement = horizontal ? gesture.dx : gesture.dy;
+            const offset = Math.max(-150, Math.min(150, movement * 0.72));
+            if (horizontal) {
+              pullOffsetX.setValue(offset);
+              pullOffset.setValue(0);
+            } else {
+              pullOffset.setValue(offset);
+              pullOffsetX.setValue(0);
+            }
+            pullCueDistance.setValue(Math.abs(offset));
+          })(),
         onPanResponderRelease: (_event, gesture) => {
           if (
-            gesture.dy * 0.56 >= 86 &&
-            gesture.dy > Math.abs(gesture.dx) * 1.4
+            pullGesture.enabled &&
+            (pullDirectionMatches(
+              pullGesture.direction,
+              gesture.dx,
+              gesture.dy,
+              pullGesture.distance,
+            ) ||
+              pullVelocityMatches(
+                pullGesture.direction,
+                gesture.vx,
+                gesture.vy,
+                pullGesture.velocityThreshold,
+              ))
           ) {
             opening.current = true;
-            Animated.timing(pullOffset, {
-              toValue: height,
-              duration: 240,
-              useNativeDriver: true,
-            }).start(({ finished }) => {
+            const horizontal =
+              pullGesture.direction === 'left' ||
+              pullGesture.direction === 'right';
+            const target =
+              pullGesture.direction === 'left'
+                ? -width
+                : pullGesture.direction === 'right'
+                ? width
+                : pullGesture.direction === 'up'
+                ? -height
+                : height;
+            Animated.parallel([
+              Animated.timing(pullOffsetX, {
+                toValue: horizontal ? target : 0,
+                duration: pullGesture.animationMs,
+                useNativeDriver: true,
+              }),
+              Animated.timing(pullOffset, {
+                toValue: horizontal ? 0 : target,
+                duration: pullGesture.animationMs,
+                useNativeDriver: true,
+              }),
+              Animated.timing(pullCueDistance, {
+                toValue: Math.max(width, height),
+                duration: pullGesture.animationMs,
+                useNativeDriver: true,
+              }),
+            ]).start(({ finished }) => {
               opening.current = false;
               if (finished) onOpenSecondFloor?.();
             });
@@ -388,9 +548,14 @@ export function ThreadListScreen({
       assist.isActive,
       height,
       onOpenSecondFloor,
+      supportedEntranceGesture,
+      pullCueDistance,
       pullOffset,
+      pullOffsetX,
       resetPull,
       selectedMessageTab,
+      pullGesture,
+      width,
     ],
   );
   React.useEffect(() => {
@@ -418,11 +583,23 @@ export function ThreadListScreen({
         style={[
           s.pullCue,
           {
-            opacity: pullOffset.interpolate({
+            opacity: pullCueDistance.interpolate({
               inputRange: [0, 28, 80],
               outputRange: [0, 0.5, 1],
               extrapolate: 'clamp',
             }),
+            transform: [
+              {
+                rotate:
+                  pullGesture.direction === 'up'
+                    ? '180deg'
+                    : pullGesture.direction === 'left'
+                    ? '-90deg'
+                    : pullGesture.direction === 'right'
+                    ? '90deg'
+                    : '0deg',
+              },
+            ],
           },
         ]}
       >
@@ -433,32 +610,45 @@ export function ThreadListScreen({
           s.screen,
           {
             backgroundColor: pageBackground,
-            transform: [{ translateY: pullOffset }],
+            transform: [
+              { translateX: pullOffsetX },
+              { translateY: pullOffset },
+            ],
           },
         ]}
       >
-        {xunTheme && selectedMessageTab === 'chat' && !messageActionsOpen ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={textFor(
-              language,
-              '下拉进入二楼，你的个人空间',
-              'Pull down to enter your personal space on the second floor',
-            )}
-            onPress={onOpenSecondFloor}
-            style={s.xunPullHint}
-          >
-            <ChevronDown color="#999999" size={15} />
-            <Text style={s.xunPullHintText}>
-              {textFor(
-                language,
-                '下拉进入二楼 · 你的个人空间',
-                'Pull down to second floor · Your space',
-              )}
-            </Text>
-          </Pressable>
-        ) : null}
-        <View style={[s.topBar, xunTheme && s.xunTopBar]}>
+        <View
+          style={[
+            s.topBar,
+            xunTheme && s.xunTopBar,
+            { gap: Math.max(4, messageRowGap) },
+          ]}
+        >
+          {!noticeMode &&
+          !supportedEntranceGesture &&
+          onOpenSecondFloor &&
+          openSecondFloorPreference.visible !== false ? (
+            <Pressable
+              testID="second-floor-fallback-entry"
+              accessibilityRole="button"
+              accessibilityLabel={
+                openSecondFloorPreference.label ||
+                textFor(language, '打开二楼', 'Open second floor')
+              }
+              onPress={onOpenSecondFloor}
+              style={[s.iconButton, s.secondFloorFallback]}
+            >
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: uiFontSize(uiPreferences, 12),
+                }}
+              >
+                {openSecondFloorPreference.label ||
+                  textFor(language, '二楼', 'Second floor')}
+              </Text>
+            </Pressable>
+          ) : null}
           {noticeMode ? (
             <Pressable
               accessibilityRole="button"
@@ -486,7 +676,7 @@ export function ThreadListScreen({
             >
               {textFor(language, '通知', 'Notices')}
             </Text>
-          ) : (
+          ) : isUIModuleVisible(uiPreferences, 'messages', 'tabs') ? (
             <View
               style={[
                 s.switch,
@@ -522,6 +712,10 @@ export function ThreadListScreen({
                             : s.xunSwitchInactiveText),
                         {
                           color: selected ? colors.text : colors.secondaryText,
+                          fontSize: uiFontSize(
+                            uiPreferences,
+                            xunTheme ? 16 : 14,
+                          ),
                         },
                       ]}
                     >
@@ -560,53 +754,82 @@ export function ThreadListScreen({
                 );
               })}
             </View>
-          )}
+          ) : null}
           {noticeMode ? (
             <View style={s.topBarSpacer} />
-          ) : (
+          ) : newActionPreference.visible !== false ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={textFor(language, '新建', 'New')}
+              accessibilityLabel={
+                newActionPreference.label || textFor(language, '新建', 'New')
+              }
               ref={newButton}
               accessibilityActions={
-                onOpenSecondFloor
+                onOpenSecondFloor && openSecondFloorPreference.visible !== false
                   ? [
                       {
                         name: 'openSecondFloor',
-                        label: textFor(
-                          language,
-                          '打开二楼',
-                          'Open second floor',
-                        ),
+                        label:
+                          openSecondFloorPreference.label ||
+                          textFor(language, '打开二楼', 'Open second floor'),
                       },
                     ]
                   : undefined
               }
               onAccessibilityAction={event => {
-                if (event.nativeEvent.actionName === 'openSecondFloor')
+                if (
+                  event.nativeEvent.actionName === 'openSecondFloor' &&
+                  openSecondFloorPreference.visible !== false
+                )
                   onOpenSecondFloor?.();
               }}
               hitSlop={4}
               onPress={() => {
-                const pullHintVisible =
-                  xunTheme && selectedMessageTab === 'chat';
                 if (!newButton.current) {
-                  onOpenMessageActions(undefined, pullHintVisible);
+                  onOpenMessageActions(undefined, false);
                   return;
                 }
                 newButton.current.measureInWindow(
                   (_x, y, _width, buttonHeight) =>
-                    onOpenMessageActions(y + buttonHeight - 6, pullHintVisible),
+                    onOpenMessageActions(y + buttonHeight - 6, false),
                 );
               }}
               style={[
                 s.iconButton,
-                xunTheme && s.xunTopAction,
+                xunTheme &&
+                  (newActionSlot === undefined ||
+                    newActionSlot === 'topRight') &&
+                  s.xunTopAction,
+                newActionSlot === 'headerRight' && s.headerRightAction,
+                newActionSlot === 'topRight' && s.topRightAction,
                 topActionThemeStyle,
+                s.minimumTouchTarget,
+                {
+                  width: Math.max(
+                    newActionPreference.label ? 64 : 44,
+                    44 * newActionScale,
+                  ),
+                  height: Math.max(44, 44 * newActionScale),
+                  borderRadius:
+                    uiPreferences?.surfaces.messages.buttonRadius ?? 7,
+                },
               ]}
             >
-              {xunTheme ? (
-                <Svg height={25} viewBox="0 0 24 24" width={25}>
+              {newActionPreference.icon ? (
+                <Text
+                  style={[
+                    s.newActionIcon,
+                    { color: colors.text, fontSize: 17 * newActionScale },
+                  ]}
+                >
+                  {newActionPreference.icon}
+                </Text>
+              ) : xunTheme ? (
+                <Svg
+                  height={25 * newActionScale}
+                  viewBox="0 0 24 24"
+                  width={25 * newActionScale}
+                >
                   <Path
                     d="M12 4v16M4 12h16"
                     fill="none"
@@ -617,12 +840,28 @@ export function ThreadListScreen({
                   />
                 </Svg>
               ) : (
-                <Plus size={20} color={colors.text} />
+                <Plus size={20 * newActionScale} color={colors.text} />
               )}
+              {newActionPreference.label ? (
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    s.newActionLabel,
+                    {
+                      color: colors.text,
+                      fontSize: uiFontSize(uiPreferences, 10),
+                    },
+                  ]}
+                >
+                  {newActionPreference.label}
+                </Text>
+              ) : null}
             </Pressable>
-          )}
+          ) : null}
         </View>
-        {!noticeMode && (!xunTheme || selectedMessageTab === 'chat') ? (
+        {!noticeMode &&
+        (!xunTheme || selectedMessageTab === 'chat') &&
+        isUIModuleVisible(uiPreferences, 'messages', 'composer') ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={textFor(
@@ -633,7 +872,11 @@ export function ThreadListScreen({
             onPress={onOpenSearch}
             style={[
               s.searchBar,
-              { backgroundColor: colors.surface, borderColor: colors.border },
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderRadius: uiPreferences?.surfaces.messages.cardRadius ?? 30,
+              },
             ]}
           >
             {xunTheme ? (
@@ -658,7 +901,13 @@ export function ThreadListScreen({
               <Search size={20} color={colors.secondaryText} />
             )}
             <Text
-              style={[s.searchPlaceholder, { color: colors.secondaryText }]}
+              style={[
+                s.searchPlaceholder,
+                {
+                  color: colors.secondaryText,
+                  fontSize: uiFontSize(uiPreferences, 13),
+                },
+              ]}
             >
               {textFor(
                 language,
@@ -668,7 +917,8 @@ export function ThreadListScreen({
             </Text>
           </Pressable>
         ) : null}
-        {selectedMessageTab === 'chat' ? (
+        {selectedMessageTab === 'chat' &&
+        isUIModuleVisible(uiPreferences, 'messages', 'threadList') ? (
           <FlatList
             // Recreate swipe rows when the retained 讯 surface is revisited
             // or its tab changes. Each row owns an animated swipe offset and
@@ -683,7 +933,11 @@ export function ThreadListScreen({
             showsVerticalScrollIndicator={false}
             data={visibleThreads}
             keyExtractor={item => item.id}
-            contentContainerStyle={[s.list, xunTheme && s.xunList]}
+            contentContainerStyle={[
+              s.list,
+              xunTheme && s.xunList,
+              { gap: messageRowGap },
+            ]}
             style={s.screen}
             ListEmptyComponent={
               <View style={s.empty}>
@@ -707,10 +961,12 @@ export function ThreadListScreen({
                 agents={agents}
                 renderUserAvatar={renderUserAvatar}
                 onOpenThread={onOpenThread}
+                uiPreferences={uiPreferences}
               />
             )}
           />
-        ) : selectedMessageTab === 'tasks' ? (
+        ) : selectedMessageTab === 'tasks' &&
+          isUIModuleVisible(uiPreferences, 'messages', 'taskInbox') ? (
           <AITaskInbox
             token={token}
             active={active}
@@ -719,8 +975,9 @@ export function ThreadListScreen({
             agents={agents}
             onOpenTask={task => onOpenTask?.(task)}
             onOpenWorkspace={onOpenWorkspace}
+            onOpenAgentParticipant={onOpenAgentParticipant}
           />
-        ) : (
+        ) : noticeMode ? (
           <NoticeList
             palette={colors}
             language={language}
@@ -729,6 +986,16 @@ export function ThreadListScreen({
             onAcceptFriendRequest={onAcceptFriendRequest}
             onRejectFriendRequest={onRejectFriendRequest}
           />
+        ) : (
+          <View testID="messages-module-hidden" style={s.empty}>
+            <Text style={{ color: colors.secondaryText }}>
+              {textFor(
+                language,
+                '此模块已隐藏，可在设置中恢复默认界面。',
+                'This section is hidden. Restore the default interface in Settings.',
+              )}
+            </Text>
+          </View>
         )}
       </Animated.View>
     </View>
@@ -737,17 +1004,6 @@ export function ThreadListScreen({
 const s = StyleSheet.create({
   screen: { flex: 1 },
   pullCue: { position: 'absolute', top: 22, alignSelf: 'center' },
-  xunPullHint: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 2,
-    justifyContent: 'center',
-    paddingBottom: 8,
-    paddingTop: 1,
-    width: '100%',
-    zIndex: 2,
-  },
-  xunPullHintText: { fontSize: 12, color: '#999999' },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -766,6 +1022,12 @@ const s = StyleSheet.create({
     height: 25,
     borderWidth: 0,
   },
+  topRightAction: {
+    alignSelf: 'flex-end',
+  },
+  headerRightAction: {
+    marginLeft: 'auto',
+  },
   iconButton: {
     width: 40,
     height: 40,
@@ -773,6 +1035,16 @@ const s = StyleSheet.create({
     borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  newActionIcon: { fontSize: 17 },
+  minimumTouchTarget: { minWidth: 44, minHeight: 44 },
+  newActionLabel: { maxWidth: '100%' },
+  secondFloorFallback: {
+    minWidth: 44,
+    minHeight: 44,
+    width: 'auto',
+    paddingHorizontal: 8,
+    maxWidth: 120,
   },
   switch: {
     flex: 1,

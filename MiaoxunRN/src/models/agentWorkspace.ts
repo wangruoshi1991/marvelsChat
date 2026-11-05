@@ -57,6 +57,10 @@ export type WorkspaceStep = {
   createdAt: string;
   updatedAt: string;
 };
+export type WorkspaceContribution = {
+  workspace: Pick<AgentWorkspace, 'id' | 'revision' | 'executionMode'>;
+  step: WorkspaceStep;
+};
 export type WorkspaceRequest = {
   goal: string;
   contextRefs: AIContextReference[];
@@ -312,6 +316,49 @@ export function isWorkspaceRequest(v: unknown): v is WorkspaceRequest {
     Array.isArray(v.contextRefs) &&
     v.contextRefs.every(isContextReference)
   );
+}
+export function assertWorkspaceContribution(
+  value: unknown,
+  agentId: string,
+): asserts value is WorkspaceContribution {
+  const invalid = () => new Error('协作贡献数据格式不受支持。');
+  if (!record(value) || !record(value.workspace) || !record(value.step))
+    throw invalid();
+  const w = value.workspace;
+  const s = value.step;
+  if (
+    !exactKeys(value, ['workspace', 'step']) ||
+    !exactKeys(w, ['id', 'revision', 'executionMode']) ||
+    !nonempty(w.id) ||
+    !integer(w.revision) ||
+    !['direct', 'coordinated'].includes(String(w.executionMode)) ||
+    !['id', 'key', 'agentId', 'agentVersion', 'capability', 'goal'].every(k =>
+      nonempty(s[k]),
+    ) ||
+    s.agentId !== agentId ||
+    !integer(s.round) ||
+    Number(s.round) < 1 ||
+    !Array.isArray(s.dependencies) ||
+    !s.dependencies.every(nonempty) ||
+    !unique(s.dependencies) ||
+    ![
+      'queued',
+      'running',
+      'succeeded',
+      'failed',
+      'interrupted',
+      'cancelled',
+    ].includes(String(s.status)) ||
+    !string(s.summary) ||
+    !error(s.error) ||
+    !date(s.createdAt) ||
+    !date(s.updatedAt) ||
+    (s.result !== null && !isWorkspaceArtifact(s.result)) ||
+    (record(s.result) &&
+      s.result.kind === 'text_result' &&
+      s.result.id !== s.id)
+  )
+    throw invalid();
 }
 export function assertAgentWorkspace(v: unknown): asserts v is AgentWorkspace {
   const invalid = () =>

@@ -92,6 +92,12 @@ function productIsExecutable(product) {
     isCurrentProductContract(product);
 }
 
+export function resolveEntitlementStatus({ storedStatus, product, storedContractHash }) {
+  if (storedStatus !== "enabled") return storedStatus;
+  if (!product || product.status !== "published" || !productIsExecutable(product)) return "unavailable";
+  return storedContractHash === product.contractHash ? "enabled" : "reconsent_required";
+}
+
 export function createProductCatalogRepository({
   query: runQuery = query,
   withTransaction: transaction = withTransaction,
@@ -584,13 +590,15 @@ export function createProductCatalogRepository({
     const result = [];
     for (const row of rows) {
       const product = row.status === "enabled" ? await getProduct(String(row.product_id).trim(), { productVersionId: String(row.product_version_id).trim() }) : null;
-      const unavailable = row.status === "enabled" && (!product || product.status !== "published" || !productIsExecutable(product) || row.contract_hash !== product.contractHash);
+      const status = resolveEntitlementStatus({ storedStatus: row.status, product, storedContractHash: row.contract_hash });
       result.push({
         id: String(row.id || "").trim(), productId: String(row.product_id || "").trim(),
         productVersionId: String(row.product_version_id || "").trim(), productKey: row.product_key, version: row.version,
-        status: unavailable ? "unavailable" : row.status, grantedScopes: parseJson(row.granted_scopes, []),
+        status, grantedScopes: parseJson(row.granted_scopes, []),
         contractHash: row.contract_hash || null, consentVersion: row.consent_version || null,
-        unavailableReason: unavailable ? (row.unavailable_reason || "Product dependency contract is unavailable") : (row.unavailable_reason || null),
+        unavailableReason: status === "unavailable" ? (row.unavailable_reason || "Product dependency contract is unavailable")
+          : status === "reconsent_required" ? "Published product contract changed; review and confirm the current access scopes."
+            : (row.unavailable_reason || null),
       });
     }
     return result;

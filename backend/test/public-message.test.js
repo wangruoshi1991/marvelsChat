@@ -116,3 +116,12 @@ test("bootstrap and sync message maps use the same public message projection", (
   ]);
   assert.deepEqual(projected.thread[0].metadata, {});
 });
+
+test("public preview reference contains only the server-issued id and disappears after recall", () => {
+  const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const message = { senderType: "agent", metadata: { uiPreferencePreview: { id, patch: { unsafe: true } } } };
+  assert.deepEqual(publicMessage(message).metadata.uiPreferencePreview, { id });
+  assert.equal(publicMessage({ ...message, recalledAt: "2026-11-04T00:00:00Z" }).metadata.uiPreferencePreview, undefined);
+  assert.equal(publicMessage({ ...message, senderType: "user" }).metadata.uiPreferencePreview, undefined);
+  assert.equal(publicMessage({ ...message, metadata: { uiPreferencePreview: { id: "not-a-uuid" } } }).metadata.uiPreferencePreview, undefined);
+});

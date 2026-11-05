@@ -105,7 +105,8 @@ export const hashWorkspaceProfile = profile => hashSiteDocumentValue({
 
 async function profileForSources(connection, userId) {
   const rows = await connection.query(`SELECT p.*, u.ai_id FROM user_profiles p
-    JOIN users u ON u.id = p.user_id WHERE p.user_id = ? FOR SHARE OF p`, [userId]);
+    JOIN users u ON u.id = p.user_id
+    WHERE p.user_id = ? FOR SHARE OF p`, [userId]);
   if (!rows[0]) fail(404, "WORKSPACE_PROFILE_MISSING", "小站资料不存在。");
   const profile = mapProfile(rows[0]);
   return { profile, profileHash: hashWorkspaceProfile(profile) };

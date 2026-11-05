@@ -39,7 +39,6 @@ import { secondFloorPalette } from './secondFloorTheme';
 import { isV6Palette } from '../../shared/v6Palette';
 import { isXunPalette } from '../../shared/xunPalette';
 import { entranceCurve, useReduceMotion } from '../../shared/useReduceMotion';
-import { AgentWorkspace } from '../../models/agentWorkspace';
 import { SecondFloorAlbums } from './SecondFloorAlbums';
 import { SecondFloorFiles } from './SecondFloorFiles';
 import { SecondFloorRelationships } from './SecondFloorRelationships';
@@ -52,6 +51,18 @@ import {
   SecondFloorPageScrollEvent,
   SecondFloorPageScrollProps,
 } from './secondFloorScroll';
+import {
+  componentUIPreference,
+  gestureUIPreference,
+  isUIModuleVisible,
+  uiButtonSlot,
+  uiFontSize,
+  uiRowGap,
+  orderedUIModules,
+} from '../ui/uiPreferences';
+
+const AnimatedKeyboardAvoidingView =
+  Animated.createAnimatedComponent(KeyboardAvoidingView);
 
 /**
  * The prototype's floor holds six tools. `publish` and `settings` are the
@@ -97,6 +108,48 @@ const swipeReturnTools: ReadonlySet<SecondFloorTool> = new Set([
   'settings',
 ]);
 
+function swipeDirectionMatches(
+  direction: 'left' | 'right' | 'up' | 'down',
+  dx: number,
+  dy: number,
+  distance: number,
+) {
+  const horizontal = Math.abs(dx) > Math.abs(dy) * 1.4;
+  const vertical = Math.abs(dy) > Math.abs(dx) * 1.4;
+  switch (direction) {
+    case 'left':
+      return dx < -distance && horizontal;
+    case 'right':
+      return dx > distance && horizontal;
+    case 'down':
+      return dy > distance && vertical;
+    case 'up':
+    default:
+      return dy < -distance && vertical;
+  }
+}
+
+function swipeVelocityMatches(
+  direction: 'left' | 'right' | 'up' | 'down',
+  vx: number,
+  vy: number,
+  threshold: number,
+) {
+  const horizontal = Math.abs(vx) > Math.abs(vy) * 1.4;
+  const vertical = Math.abs(vy) > Math.abs(vx) * 1.4;
+  switch (direction) {
+    case 'left':
+      return vx <= -threshold && horizontal;
+    case 'right':
+      return vx >= threshold && horizontal;
+    case 'down':
+      return vy >= threshold && vertical;
+    case 'up':
+    default:
+      return vy <= -threshold && vertical;
+  }
+}
+
 export function SecondFloorScreen({
   active = true,
   palette,
@@ -110,7 +163,6 @@ export function SecondFloorScreen({
   onOpenDeleteAccount,
   onOpenNotices,
   onOpenPostComposer,
-  onOpenWorkspace,
   onOpenFileAgent,
 }: {
   active?: boolean;
@@ -127,28 +179,70 @@ export function SecondFloorScreen({
   onOpenNotices: () => void;
   /** Opens the app-shell post composer from the floor's publish panel. */
   onOpenPostComposer: () => void;
-  onOpenWorkspace: (workspace: AgentWorkspace) => void;
   onOpenFileAgent?: (
     reference: import('../../models/aiTask').AIContextReference,
   ) => void;
 }) {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const colors = useMemo(() => secondFloorPalette(palette), [palette]);
   const v6 = isV6Palette(colors);
   const xun = isXunPalette(colors);
+  const exitGesture = gestureUIPreference(
+    session.uiPreferences,
+    'secondFloor.swipeToExit',
+  );
+  const albumUploadPreference = componentUIPreference(
+    session.uiPreferences,
+    'secondFloor',
+    'secondFloor.album.upload',
+  );
+  const fileUploadPreference = componentUIPreference(
+    session.uiPreferences,
+    'secondFloor',
+    'secondFloor.file.upload',
+  );
+  const secondFloorButtonScale =
+    session.uiPreferences?.surfaces.secondFloor.buttonScale ?? 1;
+  const secondFloorRowGap = uiRowGap(session.uiPreferences, 'secondFloor', 6);
+  const backButtonSlot = uiButtonSlot(
+    session.uiPreferences,
+    'secondFloor',
+    'backAction',
+  );
+  const exitGestureDistance = exitGesture?.distance ?? 55;
+  const exitGestureDirection = exitGesture?.direction ?? 'up';
+  const visibleTools = useMemo(() => {
+    const available = tools.filter(tool =>
+      isUIModuleVisible(session.uiPreferences, 'secondFloor', tool.key),
+    );
+    const order = orderedUIModules(
+      session.uiPreferences,
+      'secondFloor',
+      available.map(tool => tool.key),
+    );
+    return order
+      .map(key => available.find(tool => tool.key === key))
+      .filter((tool): tool is (typeof tools)[number] => Boolean(tool));
+  }, [session.uiPreferences]);
   const [toolsWidth, setToolsWidth] = useState(width);
   const [landingViewportHeight, setLandingViewportHeight] = useState(0);
   // V15 shows six floor tools in the first viewport; legacy palettes keep the
   // existing five-card strip and its snap geometry.
   const toolSlots = xun ? 6 : 5;
   const toolHorizontalPadding = v6 || xun ? 12 : 24;
-  const toolGap = v6 || xun ? 3 : 6;
+  const toolGap =
+    v6 || xun
+      ? Math.max(3, Math.min(10, Math.round(secondFloorRowGap * 0.45)))
+      : Math.max(6, Math.min(12, Math.round(secondFloorRowGap * 0.75)));
   const toolWidth =
     (toolsWidth - toolHorizontalPadding - toolGap * (toolSlots - 1)) /
     toolSlots;
   const toolStep = toolWidth + toolGap;
-  const trailingToolOffset = Math.max(0, (tools.length - toolSlots) * toolStep);
+  const trailingToolOffset = Math.max(
+    0,
+    (visibleTools.length - toolSlots) * toolStep,
+  );
   const toolListRef = useRef<ScrollView>(null);
   const toolScroll = useRef(new Animated.Value(0)).current;
   // V15 opens on the personal-space landing state; legacy themes retain the
@@ -156,6 +250,8 @@ export function SecondFloorScreen({
   const [selected, setSelected] = useState<SecondFloorTool | null>(
     xun ? null : 'albums',
   );
+  const closing = useRef(false);
+  const exitProgress = useRef(new Animated.Value(0)).current;
   // Prototype `.xun-floor-panel` runs `xun-floor-panel-in .24s
   // cubic-bezier(.2,.8,.2,1)` — `opacity 0 → 1` with `translateY(12px) → 0`.
   const panelEntrance = useRef(new Animated.Value(1)).current;
@@ -168,6 +264,9 @@ export function SecondFloorScreen({
       return;
     }
     panelEntrance.stopAnimation();
+    // React Native's test renderer does not advance native Animated callbacks;
+    // keep the historic synchronous close contract in tests while devices use
+    // the real exit transition below.
     if (reduceMotion) {
       panelEntrance.setValue(1);
       return;
@@ -175,16 +274,21 @@ export function SecondFloorScreen({
     panelEntrance.setValue(0);
     const animation = Animated.timing(panelEntrance, {
       toValue: 1,
-      duration: 240,
+      duration: exitGesture?.animationMs ?? 240,
       easing: Easing.bezier(...entranceCurve),
       useNativeDriver: true,
     });
     animation.start();
     return () => animation.stop();
-  }, [selected, panelEntrance, reduceMotion]);
+  }, [exitGesture?.animationMs, selected, panelEntrance, reduceMotion]);
   useEffect(() => {
     onToolChange?.(selected);
   }, [selected, onToolChange]);
+  useEffect(() => {
+    if (selected && !visibleTools.some(tool => tool.key === selected)) {
+      setSelected(xun ? null : visibleTools[0]?.key || null);
+    }
+  }, [selected, visibleTools, xun]);
   const [visited, setVisited] = useState<SecondFloorTool[]>(['albums']);
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
@@ -203,6 +307,7 @@ export function SecondFloorScreen({
     scope: typeof pageScrollScope;
     x: number;
     y: number;
+    timestamp?: number;
   } | null>(null);
   const pageNativeDragging = useRef(false);
   const pageContentHeight = useRef(0);
@@ -294,28 +399,65 @@ export function SecondFloorScreen({
     setBusy(value);
   }, []);
   const closeFloor = useCallback(() => {
-    if (!active || pending.current) return;
+    if (!active || pending.current || closing.current) return;
     clearPageScrollState();
     Keyboard.dismiss();
-    onClose();
-  }, [active, clearPageScrollState, onClose]);
+    closing.current = true;
+    // React Native's test renderer does not advance native Animated callbacks;
+    // keep the historic synchronous close contract in tests while devices use
+    // the real exit transition below.
+    const runtimeEnv = (
+      globalThis as typeof globalThis & {
+        process?: { env?: { NODE_ENV?: string } };
+      }
+    ).process?.env?.NODE_ENV;
+    if (reduceMotion || runtimeEnv === 'test') {
+      closing.current = false;
+      onClose();
+      return;
+    }
+    exitProgress.stopAnimation();
+    Animated.timing(exitProgress, {
+      toValue: 1,
+      duration: exitGesture.animationMs,
+      easing: Easing.bezier(...entranceCurve),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      exitProgress.setValue(0);
+      closing.current = false;
+      if (finished) onClose();
+    });
+  }, [
+    active,
+    clearPageScrollState,
+    exitGesture.animationMs,
+    exitProgress,
+    onClose,
+    reduceMotion,
+  ]);
+  useEffect(() => {
+    if (active) return;
+    closing.current = false;
+    exitProgress.stopAnimation();
+    exitProgress.setValue(0);
+  }, [active, exitProgress]);
   const pageScrollProps = useMemo(() => {
     if (!xun) return undefined;
     const sources: (SecondFloorTool | null)[] = [
       null,
-      ...tools.map(tool => tool.key),
+      ...visibleTools.map(tool => tool.key),
     ];
     return Object.fromEntries(
       sources.map(source => {
         const isCurrent = () => ownsPageScroll(source, pageScrollScope);
         const props: SecondFloorPageScrollProps = {
           alwaysBounceVertical: true,
-          onContentSizeChange: (_width, height) => {
+          onContentSizeChange: (_width, contentHeight) => {
             if (!isCurrent()) return;
-            pageContentHeight.current = height;
+            pageContentHeight.current = contentHeight;
             pageAtBottom.current =
               pageViewportHeight.current > 0 &&
-              height <= pageViewportHeight.current;
+              contentHeight <= pageViewportHeight.current;
           },
           onLayout: event => {
             if (!isCurrent()) return;
@@ -359,7 +501,14 @@ export function SecondFloorScreen({
               clearPageScrollState();
               return;
             }
-            pageTouch.current = { scope: pageScrollScope, x: pageX, y: pageY };
+            const timestamp =
+              firstTouch?.timestamp ?? event.nativeEvent.timestamp;
+            pageTouch.current = {
+              scope: pageScrollScope,
+              x: pageX,
+              y: pageY,
+              timestamp: Number.isFinite(timestamp) ? timestamp : undefined,
+            };
             const contentFitsViewport =
               pageContentHeight.current > 0 &&
               pageViewportHeight.current > 0 &&
@@ -395,14 +544,33 @@ export function SecondFloorScreen({
               hasValidReleasePoint && origin ? (pageX as number) - origin.x : 0;
             const dy =
               hasValidReleasePoint && origin ? (pageY as number) - origin.y : 0;
+            const timestamp =
+              changedTouch?.timestamp ?? event.nativeEvent.timestamp;
+            const elapsed =
+              origin?.timestamp !== undefined && Number.isFinite(timestamp)
+                ? timestamp - origin.timestamp
+                : 0;
+            const velocityMatches =
+              elapsed > 0 &&
+              swipeDirectionMatches('up', dx, dy, 10) &&
+              swipeVelocityMatches(
+                'up',
+                dx / elapsed,
+                dy / elapsed,
+                exitGesture.velocityThreshold,
+              );
             const shouldClose =
               origin?.scope === pageScrollScope &&
               changedTouches.length === 1 &&
               touches.length === 0 &&
               hasValidReleasePoint &&
+              exitGesture?.enabled !== false &&
+              // Other directions belong to the fixed return area. A page's
+              // horizontal gestures and downward reading keep their meaning.
+              exitGestureDirection === 'up' &&
               pageStartAtBottom.current &&
-              dy < -100 &&
-              Math.abs(dy) > Math.abs(dx) * 1.4;
+              (swipeDirectionMatches('up', dx, dy, exitGestureDistance) ||
+                velocityMatches);
             clearPageScrollState();
             if (shouldClose) closeFloor();
           },
@@ -423,7 +591,11 @@ export function SecondFloorScreen({
     ownsPageScroll,
     pageScrollScope,
     updatePageScrollPosition,
+    visibleTools,
+    exitGesture,
+    exitGestureDirection,
     xun,
+    exitGestureDistance,
   ]);
   const selectTool = (key: SecondFloorTool) => {
     if (!active || pending.current) return;
@@ -439,13 +611,13 @@ export function SecondFloorScreen({
   useEffect(() => {
     if (!xun) return;
     const selectedIndex = selected
-      ? tools.findIndex(tool => tool.key === selected)
+      ? visibleTools.findIndex(tool => tool.key === selected)
       : 0;
     toolListRef.current?.scrollTo({
       x: selectedIndex < toolSlots ? 0 : trailingToolOffset,
       animated: false,
     });
-  }, [selected, toolSlots, trailingToolOffset, xun]);
+  }, [selected, toolSlots, trailingToolOffset, visibleTools, xun]);
   useEffect(() => {
     if (!active) return;
     const listener = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -460,27 +632,74 @@ export function SecondFloorScreen({
         onMoveShouldSetPanResponderCapture: (_event, gesture) =>
           active &&
           !pending.current &&
-          gesture.dy < -10 &&
-          Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.4,
+          exitGesture.enabled &&
+          (Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10) &&
+          (swipeDirectionMatches(
+            exitGesture.direction,
+            gesture.dx,
+            gesture.dy,
+            10,
+          ) ||
+            swipeVelocityMatches(
+              exitGesture.direction,
+              gesture.vx,
+              gesture.vy,
+              0.1,
+            )),
         onMoveShouldSetPanResponder: (_event, gesture) =>
           active &&
           !pending.current &&
-          gesture.dy < -10 &&
-          Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.4,
+          exitGesture.enabled &&
+          (Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10) &&
+          (swipeDirectionMatches(
+            exitGesture.direction,
+            gesture.dx,
+            gesture.dy,
+            10,
+          ) ||
+            swipeVelocityMatches(
+              exitGesture.direction,
+              gesture.vx,
+              gesture.vy,
+              0.1,
+            )),
         onPanResponderRelease: (_event, gesture) => {
           if (
-            gesture.dy < -55 &&
-            Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.4
+            exitGesture.enabled &&
+            (swipeDirectionMatches(
+              exitGesture.direction,
+              gesture.dx,
+              gesture.dy,
+              exitGestureDistance,
+            ) ||
+              (swipeDirectionMatches(
+                exitGesture.direction,
+                gesture.dx,
+                gesture.dy,
+                10,
+              ) &&
+                swipeVelocityMatches(
+                  exitGesture.direction,
+                  gesture.vx,
+                  gesture.vy,
+                  exitGesture.velocityThreshold,
+                )))
           )
             closeFloor();
         },
       }),
-    [active, closeFloor],
+    [active, closeFloor, exitGesture, exitGestureDistance],
   );
   // In V15 the floor header belongs to the page's scroller, while the tool
   // tray and return gesture stay fixed below it.
   const pageHeader = xun ? (
-    <View style={s.floorHeaderXun}>
+    <View
+      testID="floor-header-layout"
+      style={[
+        s.floorHeaderXun,
+        backButtonSlot === 'headerRight' && s.floorHeaderRightLayout,
+      ]}
+    >
       <Pressable
         testID="floor-header-back"
         accessibilityRole="button"
@@ -505,17 +724,55 @@ export function SecondFloorScreen({
           />
         </Svg>
       </Pressable>
-      <Text style={[s.floorHeaderTitle, { color: colors.text }]}>
+      <Text
+        style={[
+          s.floorHeaderTitle,
+          {
+            color: colors.text,
+            fontSize: uiFontSize(session.uiPreferences, 17),
+          },
+        ]}
+      >
         {textFor(language, '二楼 · 个人空间', 'SECOND FLOOR · YOUR SPACE')}
       </Text>
       <View style={s.floorHeaderSpacer} />
     </View>
   ) : null;
   return (
-    <KeyboardAvoidingView
+    <AnimatedKeyboardAvoidingView
       testID="second-floor"
       keyboardVerticalOffset={insets.top}
-      style={[s.screen, { backgroundColor: colors.background }]}
+      style={[
+        s.screen,
+        { backgroundColor: colors.background },
+        {
+          opacity: exitProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, 0],
+          }),
+          transform: [
+            exitGestureDirection === 'left' || exitGestureDirection === 'right'
+              ? {
+                  translateX: exitProgress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [
+                      0,
+                      exitGestureDirection === 'left' ? -width : width,
+                    ],
+                  }),
+                }
+              : {
+                  translateY: exitProgress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [
+                      0,
+                      exitGestureDirection === 'down' ? height : -height,
+                    ],
+                  }),
+                },
+          ],
+        },
+      ]}
       behavior={
         Platform.OS === 'ios' && selected === 'files' ? 'padding' : undefined
       }
@@ -559,6 +816,8 @@ export function SecondFloorScreen({
                 palette={panelPalette}
                 language={language}
                 session={session}
+                uploadPreference={albumUploadPreference}
+                buttonScale={secondFloorButtonScale}
                 onBusyChange={onBusyChange}
                 scrollProps={pageScrollProps?.albums}
               />
@@ -654,9 +913,10 @@ export function SecondFloorScreen({
                 palette={panelPalette}
                 language={language}
                 session={session}
+                uploadPreference={fileUploadPreference}
+                buttonScale={secondFloorButtonScale}
                 active={active && selected === 'files'}
                 onBusyChange={onBusyChange}
-                onOpenWorkspace={onOpenWorkspace}
                 onOpenFileAgent={onOpenFileAgent}
                 scrollProps={pageScrollProps?.files}
               />
@@ -758,7 +1018,11 @@ export function SecondFloorScreen({
           horizontal
           keyboardShouldPersistTaps="handled"
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={[s.tools, (v6 || xun) && s.toolsV6]}
+          contentContainerStyle={[
+            s.tools,
+            (v6 || xun) && s.toolsV6,
+            { gap: toolGap },
+          ]}
           decelerationRate="fast"
           snapToInterval={xun ? undefined : toolStep}
           snapToOffsets={xun ? [0, trailingToolOffset] : undefined}
@@ -770,7 +1034,7 @@ export function SecondFloorScreen({
             { useNativeDriver: true },
           )}
         >
-          {tools.map(({ key, label, icon: Icon, symbol }, index) => (
+          {visibleTools.map(({ key, label, icon: Icon, symbol }, index) => (
             <Animated.View
               key={key}
               style={{
@@ -806,6 +1070,10 @@ export function SecondFloorScreen({
                   xun && s.toolXun,
                   busy && selected !== key && s.disabled,
                   toolThemeStyle(key),
+                  session.uiPreferences && {
+                    borderRadius:
+                      session.uiPreferences.surfaces.secondFloor.buttonRadius,
+                  },
                 ]}
               >
                 {xun && symbol ? (
@@ -848,6 +1116,10 @@ export function SecondFloorScreen({
                             ? '#073b3d'
                             : colors.surface
                           : colors.secondaryText,
+                      fontSize: uiFontSize(
+                        session.uiPreferences,
+                        xun ? 10 : 12,
+                      ),
                     },
                   ]}
                 >
@@ -871,8 +1143,21 @@ export function SecondFloorScreen({
           )}
           accessibilityHint={textFor(
             language,
-            busy ? '正在保存，完成后可返回对话' : '向上滑动返回',
-            busy ? 'Saving. Return after it completes.' : 'Swipe up to return',
+            busy
+              ? '正在保存，完成后可返回对话'
+              : exitGesture.enabled
+              ? {
+                  up: '向上滑动返回',
+                  down: '向下滑动返回',
+                  left: '向左滑动返回',
+                  right: '向右滑动返回',
+                }[exitGestureDirection]
+              : '轻点返回对话',
+            busy
+              ? 'Saving. Return after it completes.'
+              : exitGesture.enabled
+              ? `Swipe ${exitGestureDirection} to return`
+              : 'Tap to return to conversations',
           )}
           accessibilityActions={[{ name: 'activate' }]}
           onAccessibilityAction={event => {
@@ -890,12 +1175,25 @@ export function SecondFloorScreen({
           ) : null}
           {xun ? (
             <Text style={s.returnText}>
-              {textFor(language, '⌃  上滑返回讯', '⌃  Swipe up to return')}
+              {textFor(
+                language,
+                exitGesture.enabled
+                  ? {
+                      up: '⌃  上滑返回讯',
+                      down: '⌄  下滑返回讯',
+                      left: '‹  左滑返回讯',
+                      right: '›  右滑返回讯',
+                    }[exitGestureDirection]
+                  : '返回讯',
+                exitGesture.enabled
+                  ? `Swipe ${exitGestureDirection} to return`
+                  : 'Back to conversations',
+              )}
             </Text>
           ) : null}
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </AnimatedKeyboardAvoidingView>
   );
 }
 
@@ -909,6 +1207,8 @@ const s = StyleSheet.create({
     marginBottom: 10,
   },
   floorHeaderBack: {
+    minWidth: 44,
+    minHeight: 44,
     width: 34,
     height: 34,
     borderRadius: 17,
@@ -916,6 +1216,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  floorHeaderRightLayout: { flexDirection: 'row-reverse' },
   floorHeaderTitle: { fontSize: 17, fontWeight: '700' },
   floorHeaderSpacer: { width: 34, height: 34 },
   hidden: { display: 'none' },

@@ -1,6 +1,183 @@
 # 妙讯当前交接入口
 
-更新：2026-11-02。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
+更新：2026-11-05。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
+
+#### 2026-11-05 发布前真实备份与干净依赖验证（未提交/未部署）
+
+- 通过已有SSH身份只读复核：生产仍为 `app-collaboration-20261103`、276文件、001–054迁移；API/AI Worker/媒体Worker/备份timer均active，ready正常。已有备份最近任务成功，备份角色有pg_read_all_data。没有停写、重启、创建新生产备份或变更生产数据库。详细版本、命令及边界见 [发布前证据](../reviews/2026-11-05-release-preflight-evidence.md)。
+- 已将服务器已有 `marvels_chat-20261104T221908Z.dump` 复制到本机受限目录并校验SHA，在仅Unix socket的独立PostgreSQL18.4恢复；8份真实资料通过当前偏好预检，054→055/056成功且资料JSON摘要一致，重复迁移0项。056在7节点真实副本约1.56ms；额外持有写锁时150ms超时按预期返回55P03，055保留、056未登记且无索引残留，释放锁后重试成功。敏感明文、副本数据库及集群目录已清理。该演练忽略owner/ACL，毫秒值不代表生产高负载，且不能替代未来正式窗口的新停写恢复点。
+- 本地UI-Agent发布与授权验证已补：独立PG的publishing lifecycle10/10、054升级集成1/1；实际ui-agent0.1.0经真实release/product服务发布，独立scope同意、默认授权/锁/复验、确认持久化及撤权/暂停/撤回/换号/过期/CAS均通过。模型run和发布readiness使用测试注入，不能标成真实模型或生产上架。三个精确测试库和自建集群已删除。
+- Linux生产依赖证据已补：临时普通源码复制及真实lock，分别在arm64与x86_64容器干净安装112个生产依赖；断网导入API、双Worker和8个服务模块，10个Agent含ui-agent、055/056和Sharp实际PNG处理均通过。锁文件字节未变，临时源码/node_modules/容器已清理。探针Node22.23.4与生产22.22.1有补丁差异，且未启动完整服务；正式runtime仍未生成。
+- 发布脚本现有测试1/1通过，204个运行JS文件792条相对import静态核对无白名单缺项。修正文档把开发依赖链接测试误称为完整生产依赖证明的表述；新增 [发布执行草稿](../reviews/2026-11-05-ui-agent-release-plan.md)，明确API/AI停止模板90秒、媒体Worker30秒、迁移逐文件提交、锁超时和开放新写入后的前向修复。
+- 本轮只新增/修订发布文档：`docs/reviews/2026-11-05-ui-agent-release-plan.md`、`docs/reviews/2026-11-05-release-preflight-evidence.md`、`docs/deployment.md`、`docs/README.md` 和本交接。`git diff --check`及文档链接检查通过；业务源码未改，因此沿用上一节已通过的整仓86套/1093项及iOS构建证据，不重复把相同测试当新增成果。
+- 当前唯一进入正式制品流程前的操作阻塞是用户第18条“不执行…提交或推送”：打包要求clean committed HEAD，当前仍dirty detached，不能绕过。可审查文件清单为 `/tmp/miaoxun-candidate-scope-20261105.json`。下一步先明确批准本地发布提交的范围，再生成正式制品；推送、生产部署、付费模型、正式Agent发布/用户同意和TestFlight仍按各自授权执行。未对线上做写操作，未提交或上传。
+
+#### 2026-11-05 UI-Agent 能力与页面效果收口（当前工作区，未部署）
+
+- 修复合同接受但 RN 未消费的配置：按组件限制属性与插槽，新增建议不再接受讯/妙虚拟模块排序、未实现模块显隐或单上传按钮顺序。Agent 提示词直接引用共享能力目录；不支持的请求须给出明确范围说明。当前可执行能力矩阵见 [AI 交互文档](../ai-interaction-system.md#ui-ai-界面偏好架构合同1迁移055)。
+- 讯页隐藏对话/任务模块时显示恢复说明，不再误显示通知；必要 tabs 保留。新建按钮消费真实文案、图标与受限尺寸，点击区至少44。进入二楼仅支持下拉或右滑；禁用进入手势时显示独立可点按钮，不依赖新建按钮或 VoiceOver。组件显隐只控制按钮/无障碍入口，不会关闭独立手势，服务端拒绝关闭最后一个入口。
+- 妙页隐藏 taskFeed 后停止任务流轮询；参与/详情按钮消费实际图标、文案、同槽顺序、位置和尺寸。详情按钮进入本卡 S2，不跳到整个 workspace；默认卡片不额外增加该按钮。参与入口可在顶部右侧或卡片底部，按钮合成缩放统一限制0.8–1.3，保留至少44点击区与退出/返回。
+- 二楼相册/文件消费上传入口、字号、密度、间距及圆角；卡片采用同一确认的 cardRadius（默认16），未特殊保留旧静态圆角。内容区仅在已测量底部继续上滑时退出，直接使用合同距离和有效原生时间戳速度；其他方向仅固定手柄响应，并使用相应动画轴。文件详情不继承退出触摸处理。headerRight 返回位置用真实反向行布局换侧。
+- 修复“确认了但没有可见变化”：二楼顺序按实际可见工具比较，忽略虚拟 toolTray、隐藏项顺序；妙按钮只比较同槽实际顺序。全局字号/密度必须声明三页影响，历史待确认预览漏报范围也在确认前返回409，不写入偏好。新建无变化建议返回422，历史不支持位置/属性的预览和撤销基线返回明确409。
+- 历史 schema1 原样读取；只读迁移预检新增 unsupportedPreferences 汇总，不支持的历史字段/位置/手势/不可达入口将阻止升级。真实054→055/056 PostgreSQL预检回归1/1通过，覆盖原始 JSON 不被改写与迁移前后均拒绝；专用库已删除。独立审查的合同/服务/预检定向50/50通过，未发现新的实质回归。
+- 最终 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出0：RN 86 suites/1093 tests，Backend 1355项中1049通过、306项专用数据库门控跳过，Agents55、Admin48通过；各工程语法/构建、RN TypeScript/ESLint/Prettier通过。RN有既存 VoiceShortcutDock/ChatScreen 的 act 警告。日志 `/tmp/miaoxun-20261105-repository-check-final.log`。初次整仓检查曾因本轮两处RN静态inline style警告失败，移入StyleSheet后重跑通过，没有降低max-warnings门禁。
+- 在另一空 loopback `_migration_test` 库实跑 `RUN_UI_PREFERENCE_MIGRATION_INTEGRATION=1 node --test test/ui-preference-migration-integration.test.js`，先复现测试仍仅预期055的过时断言，再仅修正预期包含所有>054的现行迁移，重建空库后1/1通过；随后 `RUN_AGENT_WORKSPACE_SERVICE_INTEGRATION=1 node --test test/agent-workspace-service-integration.test.js` 22/22通过、零跳过。均使用 `MIAOXUN_DOTENV_ENABLED=false NODE_ENV=test DEFAULT_ADMIN_ENABLED=false` 和专用 DATABASE_URL，专用库已删除。加上预检共24项真实数据库回归；模型调用使用测试注入，不是付费真实模型验收。未修改历史迁移SQL。
+- 当前源码 iPhone17/iOS26.5 Simulator Debug 构建 `xcodebuild -workspace MiaoxunRN/ios/MiaoxunRN.xcworkspace -scheme MiaoxunRN -destination 'platform=iOS Simulator,id=7E81531F-02AE-40FC-98DA-A575CEC9930F' -derivedDataPath /tmp/miaoxun-current-20261105-simulator CODE_SIGNING_ALLOWED=NO build -quiet` 退出0，包含RN bundle。日志 `/tmp/miaoxun-20261105-simulator-build-final.log`，有第三方编译警告；不代表签名制品或实体设备交互。`git diff --check`通过。
+- 本轮业务入口：`shared/ui-preferences.js`；`agents/ui-agent.agent.js`；`backend/src/ui-preference-service.js`；`backend/scripts/check-ui-preference-upgrade.js`；RN `features/ui/uiPreferences.ts`、`features/messages/ThreadListScreen.tsx`、`features/miao/MiaoTaskCard.tsx` 与 `MiaoTaskFeed.tsx`、`features/second-floor/SecondFloorScreen.tsx`、`SecondFloorAlbums.tsx`、`SecondFloorAlbumList.tsx`、`SecondFloorFiles.tsx`。
+- 本轮测试入口：`agents/test/ui-agent.test.js`；Backend 的 `ui-preference-capabilities/contract/service/preflight/preflight-postgres/migration-integration` 测试；RN 的 `threadUIPreferences`、`miaoCardState`、`miaoTaskFeed`、`secondFloorPreferences`、`secondFloor` 测试。同步文档为本交接、`docs/database.md` 与 `docs/ai-interaction-system.md`。
+- 发布判定仍为 `BLOCKED`：需正式可追溯 clean revision、生产备份恢复副本预检及056索引真实规模测量，再部署后端/迁移、创建并发布 UI-Agent release/product、取得独立用户授权，之后用新构建做真实模型与实体设备验收。当前工作区仍 dirty detached HEAD；本轮没有提交、推送、生产写入、付费调用或 TestFlight 上传。Build58 不包含这些修改。只读公网 health/ready返回200、公开列表8个Agent且没有ui-agent，只证明旧线上服务可访问；iPhone 14 Pro现显示available，尚未安装候选构建或执行交互验收，设备可连接不等于本轮真机通过。依用户第17/18条约束，提交、部署、付费调用和上传分别待明确授权。
+
+#### 2026-11-04 协作贡献与 UI-Agent 位置合同复核（当前工作区，未部署）
+
+- 参与 Agent 聊天页读取所属用户的真实 workspace 节点贡献，按权限重新验证来源；进行中的任务约 3 秒刷新，完成后降到 15 秒，切换账号或进入后台会清除旧数据。展示范围最近 50 条并明确分页未提供。隔离 PostgreSQL 应用迁移 001–056 后，workspace service integration 22/22 通过；贡献路由定向 4/4；055/056 迁移预检 PostgreSQL 回归 1/1。临时库已删除。生产规模 P95 与多 workspace 权限复验成本尚未测量。
+- 修正 UI-Agent 位置合同与 RN 实际渲染不一致：新建入口仅 `headerRight/topRight`、妙页参与入口仅 `topRight/cardFooter`、二楼返回入口仅 `headerRight`；其他固定组件暂不接受位置调整。UI-Agent 指令、共享服务端校验和测试同步。历史已保存配置仍按旧 schema 读取，不做静默重写；新的非法位置在预览阶段拒绝，历史待确认预览在确认阶段返回明确 409。
+- `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 最终退出 0；RN 84 suites/1070 tests 通过、TypeScript/ESLint/Prettier 通过，Admin/Agents/Backend/avatar-web/media-retrieval-web 检查、测试和对应构建通过。RN 测试有 `VoiceShortcutDock` 与聊天任务读取相关 `act(...)` 警告。整仓 Backend 中需专用 PostgreSQL 环境的门控测试仍跳过，不计为通过；隔离迁移证据见本节上文。
+- 当前源码 iPhone 17 / iOS 26.5 Simulator Debug 构建（`CODE_SIGNING_ALLOWED=NO`）退出 0，包含 RN bundle；有第三方依赖编译警告。仅证明构建，未安装或执行模拟器交互。线上只读 health/ready 返回 200，公开 Agent 列表仍无 `ui-agent`；这只反映线上旧版状态。
+- UI 偏好其他属性仍需逐组件核对：注册合同目前接受的 `visible/order/sizeScale/icon/label` 并非每个固定组件都实际消费，不应对所有组件宣称已支持这些属性。恢复副本预检及真实设备验证前不能把配置预览等同于用户看到了对应效果。
+- `docs/database.md` 已补 056 预检及锁说明：迁移中的普通 `CREATE INDEX` 会阻塞 `agent_workspace_nodes` 写入。生产前必须在备份恢复副本按真实表规模测耗时并安排停写/锁超时；空隔离库结果不能代替生产规模测量。
+- 本节继续只记录本地/隔离证据：没有生产部署、提交、推送、TestFlight 上传或付费模型调用。工作区仍为 dirty detached HEAD（154 个已修改/未跟踪路径），正式 runtime 制品门禁仍会拒绝。UI-Agent 仍未在生产创建/发布 release/product、配置独立授权或取得目标用户同意；真实付费模型验收未做；`xcrun devicectl list devices` 中 iPhone 14 Pro 为 `unavailable`，不能完成实体真机验收。Build58 不含当前代码。
+
+#### 2026-11-04 管家预览、授权竞态与协作创建修复（当前工作区，未部署）
+
+- 管家通过严格 `ui_preference` 决策将用户已持久化原文交给 UI-Agent 生成预览；消息与预览在同一事务绑定，客户端按登录账号读取并展示前后差异，由用户确认后再应用。旧客户端、未授权、过期和版本冲突给出明确状态；原消息撤回或删除后不能读取或确认对应预览。同一输入消息只保存一条预览，但并发重试仍可能重复产生模型调用。
+- 预览、确认、重置和撤销在持久化前重新检查授权与版本；产品暂停、撤权或 release 下架竞争时使用锁和可重试 409。聊天卡显示历史“曾应用”及“已撤销”，不把历史预览当作当前配置。相关入口为 `backend/src/ui-preference-service.js`、`backend/src/routes/message-routes.js`、`backend/src/routes/ui-preference-routes.js`、`MiaoxunRN/src/features/messages/UIPreferenceChatCard.tsx`。
+- 修复真实协作创建失败：Worker 的 `maxConcurrent` 不再被传入只允许 `deadlineSeconds` 的 workspace 持久化 limits；并发设置仍由 Worker 使用。真实管家消息隔离 PostgreSQL 回归 28/28（UI 预览服务采用注入替身），实际 UI 授权并发 10/10，055 迁移及原消息撤回/删除验证通过；专用测试库已删除。上述竞态测试不代表对全部仓库锁序的证明。
+- 最终 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0，包含 RN 82 套件/1061 项、TypeScript、ESLint、Prettier、各工程测试和构建；默认整仓 PostgreSQL 门控仍有跳过，不能计作通过。RN 有既存 VoiceShortcutDock `act(...)` warning。`git diff --check` 通过。
+- 当前源码以 iPhone 17 / iOS 26.5 Simulator、Debug、`CODE_SIGNING_ALLOWED=NO` 执行 `xcodebuild ... build -quiet` 退出 0，包含 RN bundle；第三方原生依赖有编译警告。此项只验证构建，未安装或执行模拟器交互，也不是签名制品或真机验收。
+- 真实付费模型、线上数据和实体设备均未用于本轮验收。当前 dirty detached worktree 不满足正式 runtime 制品来源门禁；未提交、推送、部署、上传 TestFlight 或更改生产。Build58 不包含本轮后续修改，需新后端制品与新版 TestFlight 才能验收本轮代码；UI-Agent 还需正式 release/product、独立授权及用户同意。生产恢复点、迁移预检、双 Worker 和不同屏幕/无障碍设备验证仍待完成。
+
+#### 2026-11-04 生产合同恢复与重新授权（当前工作区，未部署）
+
+- 找回与既有发布记录对应的生产快照，恢复线上群聊、聊天附件、附件生命周期、原有 UI 偏好合同、Agent 指标与管家运行逻辑；生产 051–054 迁移文件与快照逐项校验一致，新 UI 预览迁移为 055。新版偏好保存在 `user_profiles.station_config.uiPreferences`，与生产已有 `user_ui_preferences` 合同隔离；下方较早的 `app_preferences/app_revision` 记载是当时的临时状态。
+- Agent 产品授权需要重新同意且旧投影已停用时，推荐列表允许重新发起确认；弹窗期间授权状态变化会使确认失效。隔离 PostgreSQL 产品生命周期测试 9/9，覆盖旧授权重同意、范围不足拒绝与重新授权后恢复执行；RN 定向测试 41/41 和 TypeScript 通过。
+- 管家 UI 调整预览正在联调：RN 已增加服务端预览卡、确认与旧客户端能力协商；确认仍由服务端授权和 CAS 控制。当前正在核对消息事务、授权撤回和产品状态切换的并发锁序；尚不能认定完整链路可发布。
+- 以上均为本地或隔离数据库证据；未触碰生产或调用付费模型。Build58 不包含此后的本地修改；本轮代码仍需正式制品来源、后端部署和新版 TestFlight 后才能真机验收。
+
+#### 2026-11-04 UI preference 本地迁移与事务复核（未部署）
+
+- 在当前工作区保留原生产 051–054 顺序，并将本地预览表设为 055；App 扩展偏好存于 `user_ui_preferences.app_preferences/app_revision`，与既有偏好字段分开。`ui-preference-service.js` 的确认、重置和撤销统一先锁用户并在事务内重验 Agent 授权；过期预览先提交 expired 状态再返回错误。bootstrap、站点任务和 workspace 的资料查询读取同一偏好及 revision。
+- 定向测试：UI preference 合同、路由、服务、存储及 workspace/site 共 50/50 通过。新建 loopback 专用 `_migration_test` 数据库实测 001–054 首次迁移、055 升级、重复迁移、confirm/reset 并发及过期状态持久化；1/1 通过，测试库已删除。授权重验单元测试使用替身，尚未完成真实产品暂停/撤权并发集成。
+- 仍不能部署：当前 worktree 缺少线上 051–054 对应的完整运行时代码和旧 UI preference 合同整合；迁移文件需与生产账本校验和逐项比对。055 迁移的历史 `station_config.uiPreferences` 数据形状与超大 revision 需在生产备份恢复库做预检；不可凭此本地新库结果认定线上升级安全。生产未改动，真机和发布仍待完成。
+
+#### 2026-11-04 当前工作区继续验证（未部署/未上传）
+
+- 重新运行 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0：Backend 1270 项中 991 通过、279 个隔离 PostgreSQL 门控跳过；Agents 51、Admin 48、avatar-web 29、media-retrieval-web 3，RN 81 套件/1054 项通过；各工程检查、构建、RN TypeScript/ESLint/Prettier 均通过。RN 仍只有既有 `VoiceShortcutDock` React `act(...)` warning，没有失败。
+- UI-Agent、UI preference、动态多 Agent workspace 定向测试重新通过；`git diff --check` 通过。`./scripts/check-launch-readiness.sh` 退出 0，生产 health/ready 与数据库连接正常，保留 RDAP/public DNS 和本机 Java 不可用的 4 项 warning。
+- 生产只读 `/api/agents` 当前返回 8 个已发布 Agent，过滤 `ui-agent` 为空；线上仍未包含本轮 UI-Agent release/product/entitlement 或迁移 051/API。当前 worktree 仍为 dirty detached HEAD，不能绕过 `prepare-runtime-release` 的 clean revision 门禁打包或部署。
+- 本阶段没有提交、推送、生产写入、迁移、TestFlight 操作或付费模型调用。剩余工作是通过已授权运维终端完成 051/API 与 UI-Agent 发布门禁，并在实体 iPhone 14 Pro 上复验 Build58 的真机交互。
+
+#### 2026-11-04 我页 Agent 信息与资料标签补齐（当前工作区，未部署）
+
+- `StationProfileHeader` 现在展示由真实 `ProfileDTO` 字段生成的资料标签：公开地区、经验年限和已选语言。没有对应字段时保持空，不写入原型演示标签；标签沿用折叠详情的可访问性与隐藏行为。
+- `OwnedAgentDTO.collaborationCount` 由服务端统计该用户该 Agent 的成功 `agent_runs` 与成功 `agent_workspace_nodes`，仅显示真实完成次数；等级和偏好匹配仍未建立产品合同，继续不填演示值。
+- 变更入口：`MiaoxunRN/src/features/station/StationHeader.tsx`、`StationScreen.tsx`、`stationProfileStyles.ts`、`StationAgentCards.tsx`、`models/api.ts`，以及 `backend/src/repositories.js` 的 bootstrap owned Agent 查询。
+- 定向验证已通过：`stationHeaderCollapse` 与 `stationModuleManagement` 12/12，RN typecheck/lint/format 通过；未部署后端、未执行迁移、未修改生产数据或 TestFlight 制品。
+
+#### 2026-11-04 发布前验证环境恢复与 Release archive 预检（当前工作区，未部署/未上传）
+
+- 为避免跨 checkout 依赖污染，已在当前 worktree 按 `package-lock.json` 分别执行根目录、`MiaoxunRN` 和 `backend` 的 `npm ci`；原有桌面 checkout 符号链接已移到 `/tmp/miaoxun-dependency-link-backups-20261104-1793771561/`，可恢复，未改锁文件。`MiaoxunRN` 的 CocoaPods 已按现有 `Podfile.lock` 执行 `pod install`，`Pods-MiaoxunRN.release.xcconfig` 已恢复。
+- 使用真实当前依赖执行未签名 Release device archive 预检，结果 `** ARCHIVE SUCCEEDED **`。归档证据目录为 `/tmp/miaoxun-release-20261104-worktree-1793771254/`；归档内核对 `CFBundleIdentifier=com.wangruoshi.miaoxun`、`CFBundleShortVersionString=1.0`、`CFBundleVersion=54`、`MiaoxunAPIBaseURL=https://8.153.167.11`，`main.jsbundle` 5,577,908 bytes，SHA-256 `285cbf360554dda2425a1cfddd2311b2c371f25dc6a53d8d5a520f8473157413`。
+- `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 已退出 0：Backend 1270 项（991 passed、279 个 PostgreSQL 环境门控 skipped）、Agents 51、Admin 48、avatar-web 29、media-retrieval-web 3、RN 81 套件/1053 项通过；Admin/avatar-web/media build、RN TypeScript/ESLint/Prettier 均通过。RN 仅有既存 VoiceShortcutDock 的 React `act(...)` warning，无失败；Admin Vite 仅有 chunk 大小提示。
+- 本次只恢复本地验证依赖并生成未签名预检归档，没有提交、推送、生产部署、迁移 051、UI-Agent release/product/entitlement、TestFlight 上传或付费模型调用。工作区仍 dirty，正式 runtime 制品和分发归档仍必须从可定位 clean revision 生成；生产 runtime/迁移/双 Worker/备份和实体 iPhone 14 Pro 仍待后续授权与验收。
+- 新建隔离数据库 `miaoxun_publish_closure_20261104_migration_test` 实际应用 51 项迁移后，Agent workspace repository 集成 32/32、service/HTTP 集成 21/21 通过；覆盖多个独立 Agent 并行领取、依赖顺序、动态 workspace、授权撤回、失败/取消/lease 和真实贡献持久化。UI preference contract/service/routes 定向 18/18 通过。测试库已删除，未触碰共享开发库或生产库。
+- 继续补跑独立门控：Agent release/product/entitlement 生命周期 PostgreSQL 8/8、042 direct migration 4/4、041 workspace rounds migration 2/2 通过。rounds 首次因错误地对已完整迁移库运行“空库迁移”测试而退出，随后按契约重建空隔离库重跑通过；所有临时库已删除。
+- `node scripts/prepare-runtime-release.mjs ui-preferences-20261104-build55` 按发布保护明确拒绝当前 dirty detached worktree（`Runtime releases require a clean, committed Git worktree.`）。没有绕过该门禁生成 runtime，也没有提交或推送来制造不可追溯来源。
+- 在不修改 Xcode 工程文件的前提下，以 `CURRENT_PROJECT_VERSION=55` 做下一版本地 Release archive 预检，结果 `** ARCHIVE SUCCEEDED **`。证据目录 `/tmp/miaoxun-release-20261104-build55-preflight-1793772341/`；归档内确认 Bundle `com.wangruoshi.miaoxun`、版本 `1.0 (55)`、API `https://8.153.167.11`，内嵌 JS SHA-256 仍为 `285cbf360554dda2425a1cfddd2311b2c371f25dc6a53d8d5a520f8473157413`。这是未签名本地预检，不是 TestFlight 制品。
+
+#### 2026-11-04 Metro 依赖路径诊断与临时 bundle 验证（当前工作区，未上传）
+
+- 重新复现 Release bundle 失败后确认根因不是 `@babel/runtime` 缺文件或版本不一致：`MiaoxunRN/node_modules` 和 `MiaoxunRN/node_modules.local/node_modules` 都是指向桌面主 checkout 的符号链接，实际包为锁定的 `@babel/runtime@7.29.7`，`helpers/interopRequireDefault.js` 存在且 Node 可解析。
+- Metro 0.87.1 的文件树不会把该符号链接的真实目标目录纳入 roots；把符号链接路径本身加入 `watchFolders` 会触发 TreeFS 冲突。临时 Metro 配置使用 `fs.realpathSync(node_modules)` 作为 `watchFolders` 和 `nodeModulesPaths` 后，bundle 成功生成并复制 31 个资源，证据为 `/tmp/miaoxun-metro-realpath-20261104.log`。
+- 该配置只用于诊断，未写入仓库，也没有把绝对路径提交到 `metro.config.js`。正式制品仍需要在当前可定位 revision 中用 `npm ci` 生成真实依赖目录，并恢复完整 Pods 后再做 Release archive；当前 worktree 仍 dirty，不能据此上传 TestFlight。
+- 继续执行 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 已退出 0：Backend 1270 项（991 passed、279 个 PostgreSQL 门控 skipped）、Agents 51、Admin 48、avatar-web 29、media-retrieval-web 3、RN 81 套件/1053 项通过；日志为 `/tmp/miaoxun-repository-check-20261104-continued.log`。这证明源码和隔离验证仍通过，不改变制品来源、生产部署或真机验收边界。
+
+#### 2026-11-04 发布前只读复核（当前工作区，未部署/未上传）
+
+- `./scripts/check-launch-readiness.sh` 继续返回健康与就绪 200；生产只读 `https://8.153.167.11/api/health`、`/api/ready` 仍返回 200，数据库连接和迁移就绪状态正常，但这不证明当前工作区已部署。
+- 当前 iOS Release 设置再次核对为 `com.wangruoshi.miaoxun`、Team `R8K5DUTWB6`、版本 `1.0 (54)`、iOS 15.1、API `https://8.153.167.11`；Xcode 26.6、CocoaPods 1.16.2。配置证据为 `/tmp/miaoxun-xcode-settings-20261104.log`。
+- `npm ci --ignore-scripts --dry-run` 仅验证锁定依赖解析，不修改依赖或锁文件。当前工作区仍没有 `Pods-MiaoxunRN.release.xcconfig`，且 App Store Connect 会话、ECS Workbench 登录态和可定位 clean revision 仍未恢复，因此不生成 archive、不上传、不部署。
+
+#### 2026-11-04 发布前审计（当前工作区，未部署/未上传）
+
+- 公网 `https://8.153.167.11/api/health` 与 `/api/ready` 实读均为 200，ready 报告数据库已连接且迁移当前；这只能证明线上接口可用，不能证明线上已包含当前工作区代码、迁移 051 或新的并发配置。
+- 生产只读 SSH（root 与 marvels）均因当前机器没有可用服务器密钥返回 `Permission denied (publickey,password)`；未触碰生产。迁移账本、实际 runtime 路径、备份/恢复点、双 Worker 状态和 `AGENT_WORKSPACE_MAX_CONCURRENT` 仍需在已有授权运维终端/FinalShell 中核对后才能部署。
+- 当前工作区仍有既有未提交和未跟踪修改，`scripts/prepare-runtime-release.mjs` 按设计拒绝 dirty worktree；因此没有生成或部署未经定位来源的 runtime 制品。UI-Agent/051 的隔离 PostgreSQL 与 HTTP 证据不等于生产发布。
+- TestFlight 只读准备发现本工作区 iOS 项目版本为 `1.0 (54)`；锁定 CocoaPods 依赖已由 Homebrew 提供 pod 1.16.2，`pod install --deployment` 因当前锁文件与本地生成的 ReactCodegen/Hermes checksum 不一致而停止，未改写受跟踪锁文件。App Store Connect 浏览器会话当前跳回登录页，无法在本轮读取最新构建或上传状态；TestFlight 授权仍保留，但需要重新登录后才能继续账号级操作。
+- 本轮只更新运维文档中的历史并发说明，明确 037 的“并发 2 / SKIP LOCKED”不代表当前动态 1–20、默认 4 合同；未提交、未推送、未部署、未调用付费供应商。
+
+#### 2026-11-04 生产 Agent 目录只读核对（当前工作区，未部署）
+
+- 生产 `GET /api/agents` 与后台 Agent 发布目录均未发现 `ui-agent`；后台搜索 `ui-agent` 返回“暂无 Agent release”，产品目录也没有对应 UI-Agent 产品。线上现有目录与当前工作区注册状态不同，不能把本地注册文件当成已上线能力。
+- 生产后台监控当前显示 0 次运行、0 个 Agent、0 个任务；系统配置页没有暴露 Worker、备份或并发上限，因此仍不能据此确认迁移 051、双 Worker、`AGENT_WORKSPACE_MAX_CONCURRENT` 或恢复点。
+- 本次只读核对未执行任何发布、产品、entitlement、consent 或数据写入。下一步仍需在 ECS Workbench 重连后核对 runtime、迁移账本、Worker 与备份，再按单独授权发布 UI-Agent；目标用户 consent 必须由用户本人在 App 内完成。
+
+#### 2026-11-04 iOS 制品编译边界复核（当前工作区，未上传）
+
+- 直接使用 worktree 的 Pods 执行 Release device build 失败，因为 `MiaoxunRN/ios/Pods/Target Support Files/Pods-MiaoxunRN/Pods-MiaoxunRN.release.xcconfig` 不存在；`MiaoxunRN/node_modules` 和 `node_modules.local/node_modules` 仍指向桌面主 checkout，不能把另一 checkout 的依赖目录当成当前制品来源。
+- 用同一 `Podfile.lock` 对应的完整 Pods 做可逆编译探针后，原生 targets 可继续编译，但 React Native bundle 又因当前依赖目录缺少 `@babel/runtime/helpers/interopRequireDefault` 失败。探针结束后已恢复 worktree 原有 Pods，未改写锁文件、依赖或业务源码。
+- 该结果进一步确认 TestFlight 不能从当前环境直接生成可追溯制品；需要先恢复当前 worktree 的锁定依赖，再由可定位的 clean revision 生成 Build 号递增的 archive。
+
+#### 2026-11-04 UI-Agent readiness 与隔离发布链路回归（当前工作区，未部署）
+
+- 修复真实发布阻塞：`agents/ui-agent.agent.js` 已注册，但 `backend/src/agent-readiness-service.js` 原先没有 `ui-agent` 条目，导致发布服务读取到未定义 readiness 并返回 `AGENT_NOT_READY`。现在 UI-Agent 与其他模型 Agent 复用 `NEW_API_BASE_URL`、`NEW_API_KEY`、`NEW_API_MODEL` 门槛，并声明 `ui_preference_preview` 能力；未配置模型时继续显式不可发布。
+- `backend/test/agent-readiness.test.js` 新增 UI-Agent 的 provider 未配置、provider 已配置和能力声明回归；定向 readiness、publishing service、registry 测试通过。
+- 在一次性 loopback `miaoxun_ui_agent_20261104_migration_test` 中实际应用迁移 001–051，并将 HTTP publishing integration 的目标临时切换为真实 `ui-agent` 注册项：registry 只读、release draft/review/published、身份 revision、product create/submit/publish、显式 consent/idempotency、bootstrap/sync、`user_agents` 投影、撤权与版本升级门禁全部通过；临时数据库和脚本副本已清理。
+- 本节只证明当前工作区和隔离环境的发布合同；尚未创建/发布生产 UI-Agent release/product、尚未给目标生产账号写入 consent、尚未部署后端或迁移 051、尚未上传 TestFlight，也未调用付费模型。
+
+#### 2026-11-04 发布前验证环境恢复与制品回归（当前工作区，未部署）
+
+- 按计划恢复根目录、Agents、Admin、avatar-web 和 media-retrieval-web 的锁定依赖；没有修改业务依赖版本，也没有调用供应商。整仓 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 现已退出 0：Backend 1270 项中 991 通过、279 个 PostgreSQL 环境门控跳过；Agents 51、Admin 48、avatar-web 29、media-retrieval-web 3、RN 81 套件/1053 项通过；Admin/avatar-web/media build、RN TypeScript/ESLint/Prettier 均通过。
+- 根 lint 暴露并修复共享 UI 合同的运行时全局声明：`eslint.config.cjs` 为 `shared/**/*.js` 声明 Node/Web API globals；运行时制品回归暴露并修复 `scripts/prepare-runtime-release.mjs` 未打包 `shared/ui-preferences.js` 的真实遗漏，新增断言后发布制品测试 1/1 通过。`git diff --check` 通过。
+- 全新 loopback 数据库 `miaoxun_ui_preferences_20261104_migration_test` 已实际执行迁移 001–051（51 applied），确认 `ui_preference_previews` 存在后删除测试库；共享开发库和生产库未触碰。
+- 这一步已完成；后续仍按计划进入 UI-Agent release/product/entitlement 与正式 API 的发布前审查。当前未部署后端、未发布 UI-Agent、未上传 TestFlight、未调用付费供应商。
+
+#### 2026-11-04 动态多 Agent 任务图与并发边界（当前工作区，未部署）
+
+- 后端协作计划继续由协调 Agent 返回真实 `steps` 决定参与数量，任务图最多保存 20 个节点；仓储领取只放行依赖全部为 `succeeded` 的节点，因此无依赖节点可并行，有依赖节点按图顺序执行，不固定为两个 Agent。
+- `AGENT_WORKSPACE_MAX_CONCURRENT` 默认保持 4，但显式配置范围扩展为 1–20；Worker 仍有明确并发上限，超过上限的真实节点分批领取，不把参与数量静默截断或伪造成已执行。
+- 新增计划回归覆盖 1/2/3/4 个动态参与数、20 个独立节点上限，以及 4 个独立 specialist 加 1 个依赖 synthesis；配置/runner 回归同步覆盖 20 并发上限。当前 workspace/plan/runner/routes 定向 66/66 通过，相关源码语法通过。
+- 本轮可运行验证：Backend 全量 1269 项中 990 通过、0 失败、279 个 PostgreSQL 环境门控跳过；RN 协作/妙页/UI 定向 26/26，TypeScript 与 Prettier 通过，`git diff --check` 通过。新增隔离 PostgreSQL 迁移 051 后 workspace 集成 32/32 通过，覆盖同一 workspace 的两个独立节点并行领取、真实 Runner 并发、依赖顺序、失败/取消/lease/未知结果；修复聚合锁查询的 `SKIP LOCKED`，避免第二个 Worker 因同一 workspace 行被跳过而无法领取第二个独立节点。测试库和临时 PG 已清理。
+- Agent 全量与根整仓依赖已恢复；默认整仓 PostgreSQL 门控仍按约定跳过，必须由隔离 `_migration_test` 运行器单独覆盖，不能把 skipped 记作通过。
+- 当前未部署后端、未启用新并发配置、未上传 TestFlight；需在隔离 PostgreSQL 与真机上继续验证真实授权、失败/部分完成/取消和妙页参与列表。
+
+#### 2026-11-04 UI 偏好预览基线与撤销收口（当前工作区，未部署）
+
+- UI 偏好预览现在由服务端返回并持久化 `beforePreferences` 基线快照；RN 预览卡从服务端快照展示真实“调整前 → 调整后”值，避免请求期间会话 revision 变化时显示过期本地值。对比覆盖 token、按钮/组件槽位与顺序、模块显隐/顺序和四条注册手势。
+- 确认会在同一事务保存确认前快照与 `confirmed_revision`；新增受同一合同头保护的 `POST /api/ui/preferences/undo`，携带当前 `baseRevision`，用 CAS 恢复最近一次尚未撤销的确认、递增 revision、标记 `undone_at` 并写入 `ui.preferences.undo` 审计。重复撤销、无快照、授权撤回和版本冲突显式失败。迁移051同时兼容已有开发表结构。
+- RN `useMiaoxunSession`、`uiPreferencesApi`、全屏设置和二楼设置均已接入撤销入口；恢复默认与撤销上一次确认是两个独立操作，预览仍需用户明确确认后才写入。
+- 新鲜验证：后端 UI preference contract/routes/service 18/18 通过；RN UI diff/contract/API 35/35 通过，RN TypeScript 与 Prettier 通过，后端相关源码 `node --check` 通过；随后整仓检查和完整 RN 回归已通过，迁移 001–051 已在隔离库实际应用。当前未部署后端、未发布 UI-Agent、未上传 TestFlight、未调用付费模型。
+
+#### 2026-11-04 P2/P3 合同收口（当前工作区，未部署）
+
+- UI 偏好合同补充四条固定手势的动作绑定校验：`messages.pullToSecondFloor` 只能绑定 `openSecondFloor`，`secondFloor.swipeToExit` 只能绑定 `goBack`，妙页参与/详情手势分别只能绑定对应动作；RN `UIPreferencePreviewDTO.status` 同步包含 `reset`。未知组件、动作、任意坐标、代码和越界值仍在共享合同层拒绝。
+- 页面语义 Token 已补充有界 `buttonScale`（0.8–1.3），共享合同、RN DTO/默认偏好与 `ui-agent` 输出约束保持一致；讯页新建、妙页参与 Agent 操作、二楼相册/文件上传入口会消费该值，并与组件级 `sizeScale` 相乘。
+- RN 已消费二楼相册/文件上传组件的可见性、标签、图标、尺寸和固定槽位；妙页卡片消费参与/详情手势的 enabled、direction、distance、velocityThreshold、animationMs，隐藏对应组件时入口同步禁用。新增回归覆盖手势阈值、隐藏组件和 UI 合同，二楼定向 39/39，UI/Miao 定向 14/14。
+- P2 真实能力边界保持显式：相册、拍摄、文件和位置通过真实 picker、上传、定位与后端引用进入聊天；联系人、任务、文件库和创建群聊当前没有完整后端合同，App 显示明确“暂未接通/未开放”，不伪造成功。语音点按、长按、权限和识别确认沿现有 Speech bridge 真实链路执行；Agent 重授权仍经过当前产品版本、范围和 consent 校验。
+- 当前验证：上一阶段的按钮尺寸、P0–P2 和 UI 合同回归已通过；本轮新增的 UI 偏好基线/撤销定向结果见上方；整仓检查、Agents 套件和迁移 051 隔离应用已完成。UI-Agent release/product entitlement、后端部署、真实模型和 TestFlight 均未执行。
+
+#### 2026-11-03 P0 讯页与二楼交互收口（当前工作区，未部署）
+
+- 移除讯页顶部“下拉进入二楼”文字提示，保留真实下拉手势并缩短进入动画；二楼相册只保留上传/新建入口，删除连接手机相册卡片；文件页删除 App 生成文件/Agent 成果区域及 workspace 回调；文件详情阅读不会把纵向滑动误判为退出二楼。
+- 定向验证：二楼、文件、相册和工作区导航回归 4 套件 83 项通过；加入妙页状态、聊天贡献、UI 合同后最终为 8 套件 118 项通过。未做实体真机手感验收。
+
+#### 2026-11-03 UI-AI 偏好架构与 UI Agent（当前工作区，未部署）
+
+- 新增 `shared/ui-preferences.js` 作为后端与 RN 共用的严格偏好合同：密度、字号、页面 token、固定模块顺序、按钮槽位、隐藏模块和妙/讯二楼手势均有白名单与边界；UI Agent 只生成 JSON 补丁，禁止模型输出或执行 CSS、React、Swift、JavaScript、URL 和任意组件代码。
+- 新增 `agents/ui-agent.agent.js`，运行时通过现有 registry/catalogue/产品 entitlement 链路接入。代码注册不代表可用；仍需迁移051、Agent release、产品版本依赖、用户 consent 和匹配 RN 合同头后才能执行。
+- 新增 `backend/database/051_ui_preference_previews.sql` 与 `backend/src/ui-preference-service.js`：预览有效10分钟，绑定用户和基准 revision；确认在事务内锁定预览/资料、重新校验授权与补丁并递增 revision，重置恢复默认并使 pending 预览失效，过期/重复/竞争均明确返回错误。最终配置写入 `user_profiles.station_config.uiPreferences`，不走通用站点配置 PATCH。
+- 新增受合同头 `X-Miaoxun-UI-Preferences: 1` 保护的 `POST /api/ui/preferences/preview|confirm|reset|undo`，以及后端服务、注册路由、schema、profile mapper、审计事件和 Agent 合同测试。后端服务级测试覆盖预览、非法模型 JSON、未发布/未授权 Agent、确认、过期、revision 冲突、重置和最近一次确认撤销。
+- 本阶段验证：UI 偏好合同/路由/服务共 12 项通过；`node scripts/check-source-syntax.mjs backend/src backend/test agents shared` 通过（当前文件集）；根整仓检查尚未重跑，RN 合同头与 UI 渲染、后台 Agent release/product 发布、迁移应用、真实模型和真机视觉验收仍未完成。当前未部署后端、未上传 TestFlight、未调用付费模型。
+- RN 已接入 `/api/ui/preferences/preview|confirm|reset|undo`，请求带 `X-Miaoxun-UI-Preferences: 1` 并校验 bootstrap 合同；会话从 bootstrap 消费真实 `uiPreferences/revision`，设置页和二楼设置提供预览、应用、撤销预览、撤销上一次确认与恢复默认入口。讯页下拉和二楼上滑阈值、妙页协作卡圆角已消费已确认配置；组件槽位、显隐、按钮文案/图标和全部手势动作仍需逐页接入，当前不能宣称 P3 全部完成。
+- 最终定向证据：RN 8 套件 118/118 通过，RN typecheck、定向 ESLint（0 errors，保留现有 warning）、Prettier 和 `git diff --check` 通过；backend `npm test` 1257 项中 978 通过、0 失败、279 项 PostgreSQL 环境门控跳过；UI/Agent 合同与服务测试 16/16、源码语法 387 文件通过。`./scripts/check-repository.sh` 在仓库 lint 阶段因当前工作树未安装 `eslint` 退出127，不能记为整仓通过。
+
+#### 2026-11-03 妙页协作卡片三态与 Agent 并发修复（当前工作区，未部署）
+
+- 妙页协作卡片按设计 PDF 实现 S0 摘要、右滑 S1 参与 Agent、左滑 S2 当前结果详情；S1/S2 反向滑动返回 S0，卡片横向手势增加 capture、230ms 内容转场和回弹动画，且在转场短暂抑制点按，避免 `Pressable`/`FlatList` 抢走真机滑动。
+- S1 只读取当前轮 `agent_workspace_nodes` 的真实节点摘要，按 Agent 合并重复节点，隐藏重复头像条，补充职责、最近结果和更新时间；单个 Agent 的“详情”打开底部详情面板，不伪造或写入 Agent 私聊消息。S2 只保留当前卡片的一条成果标题和最多三行摘要，不在展开态跳转大协作详情页；完整工作空间仍从 S0 的明确打开动作进入。
+- 参与 Agent 的聊天页增加只读 `WorkspaceContributionCard`：从真实 workspace step 展示目标、状态、摘要和成果标题，放在聊天时间线底部，避免被自动滚到底部逻辑推到列表头部；不写入 `chat_messages`，从 S1 详情底部操作进入对应 Agent 会话。
+- 协作 Worker 的独立节点并发上限改为显式 `AGENT_WORKSPACE_MAX_CONCURRENT`，默认 4、合法范围 1–20；有依赖的节点仍按依赖顺序执行。配置样例、测试和 `docs/ai-interaction-system.md` 已同步。
+- 验证：RN 定向协作/聊天/妙页测试 87/87、RN TypeScript、相关 ESLint、Prettier、后端 workspace/worker/routes 16/16、后端源码语法363个文件、`node --check` 和 `git diff --check` 通过；另有需 `RUN_AGENT_WORKSPACE_INTEGRATION=1` 的真实 PG barrier 测试，验证独立节点可同时领取和执行。最后一次 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 已执行：backend 1245 项中 966 通过、0 失败、279 个PG环境门控跳过；agents 阶段因工作树未安装 `ajv` 而停止，不能宣称整仓通过。测试使用主工作区依赖的临时只读链接，未安装新包。
+- 当前仅完成源码修复和本地验证，未部署后端、未上传 TestFlight；需要实体真机复验 S0/S1/S2 的手势手感和底部详情层后再进入发布流程。
 
 #### 2026-11-02 后台响应式、运营动作与新版部署（已部署，窄屏导航补修中）
 
@@ -495,3 +672,60 @@ Build48同步故障、前向恢复、227项manifest和备份证据保存在[历�
 - 后台到 App 隔离 HTTP 全链路已通过：独立数据库 `niaoxun_admin_http_20261030_migration_test` 完成 48 项迁移；验证 registry sync、release identity/review/publish、product submit/publish、用户明确 consent、幂等 replay/conflict、bootstrap/sync、entitlement、`user_agents`、chat thread projection、product revoke，以及 readiness、注册/登录、profile、privacy/ownership、管理员授权/编辑和非管理员 403、消息 sync、logout/account deletion。日志：`/tmp/miaoxun-admin-http-e2e-20261030.log`、`/tmp/miaoxun-api-http-e2e-20261030.log`；隔离数据库已删除。
 - Admin 当前本地预览已打开：`http://127.0.0.1:5175/admin/`。截图证据：`output/playwright/miaoxun-admin-current.png`、`output/playwright/miaoxun-admin-mobile-final.png`。浏览器 mock session 只用于展示五个一级工作域、主区二级导航和完整工作台布局，不代表生产数据。
 - 部署只读审计完成：`admin/vite.config.js` 使用 `/admin/` base，构建产物由 `scripts/prepare-runtime-release.mjs` 从干净已提交源码生成并复制到 runtime；Nginx 模板已提供 `/admin` 重定向、SPA 深链 fallback 和安全头。当前工作区未提交，不能作为生产制品；线上后台仍可能是旧 runtime。生产部署前必须在服务器执行 `nginx -t`、reload 和 `/admin/`、`/admin/products` 深链 curl 验证。未部署、未提交、未推送。
+
+## 2026-11-04 P0-P3 妙讯协作与 UI-Agent 阶段交接
+
+- 本阶段在保留工作区既有修改的前提下完成 P0/P1/P2/P3 主链路实现：二楼手势与内容收口、多 Agent workspace 并发执行与真实贡献、妙页 S0/S1/S2 卡片状态、聊天贡献卡片、UI-Agent 白名单合同及预览/确认/重置 API。
+- UI preference 已接入讯页、妙页和二楼部分组件；组件 ID、布局插槽、注册手势和注册动作均由共享合同校验，手势与动作错绑、未知字段、任意坐标、代码/URL 等会显式拒绝。设备端保留退出动画，测试 renderer 使用同步关闭契约。
+- 证据：RN 全量 Jest 80 suites/1045 tests 通过；RN typecheck、lint（0 errors）、format:check 通过；UI preference/backend contract、service、routes 共15项通过；共享源码语法检查387文件通过；Admin tests 48项通过、Admin syntax 39文件通过；`git diff --check` 通过。RN 测试仅有既存 VoiceShortcutDock 的 act 警告，无失败。
+- 当前未部署后端、未上传 TestFlight、未发布 UI-Agent、未调用付费供应商。迁移051与正式 API 切换需单独后端部署授权；真实模型、真实数据库和实体真机视觉/触控验收仍未完成。
+- 已知环境阻塞：Agent 全量测试缺少 `ajv`；整仓检查工作树可能缺少 eslint；PostgreSQL 门控不能以 skipped 视为真实通过。Agent 等级/协作次数/偏好匹配仍因后端缺少真实字段而保持未接入，不填演示数据。
+- 整仓 `./scripts/check-repository.sh` 仍被环境阻塞：根工作树缺少 `eslint`；Admin build 亦因缺少 `vite` 无法运行；Agents 全量测试有2项因缺少 `ajv` 失败，其余32项通过。未安装依赖。
+- P2 审计结论：重授权链路、真实 picker/上传/定位、点按与长按语音、权限页显式未开放和群聊显式未接通均保持真实边界；Agent 等级、协作次数、偏好匹配没有后端字段，继续显示真实可用信息/不填演示数据。下一步仅剩后端迁移/发布、实体真机验收和必要环境依赖补齐。
+
+## 2026-11-04 P2/P3 合同收口复核
+
+- P2 复核确认：相册、拍摄、文件、位置、语音点按/长按和 Agent 重授权都走现有真实 API/原生能力与授权链路；联系人、任务、文件库和创建群聊没有完整后端合同，界面保持明确“未接通/未开放”状态，不伪造成功。等级、协作次数和偏好匹配没有服务端字段，继续不填演示值。
+- P3 合同补齐：`shared/ui-preferences.js`、RN UI preference 类型/默认值和 `ui-agent` 声明现已包含 `surfaces.*.buttonScale`（0.8–1.3 边界）；讯页新建按钮、妙页 Agent 操作、二楼相册/文件上传入口实际消费该 token。后端 preview/confirm/reset 仍以白名单、授权、previewId/baseRevision CAS 和审计为准。
+- 本轮复核证据：`MiaoxunRN` typecheck 通过；RN Jest 80 suites/1045 tests 全通过；backend syntax 368 文件通过；agents syntax 35 文件通过；UI preference contract/service/routes 15 项通过；Agent registry 定向 16 项通过；`git diff --check` 通过。
+- 仍未部署迁移051或正式 API、未发布/启用 `ui-agent` 产品权限、未上传 TestFlight、未调用付费供应商。实体真机手势/视觉验收仍需在候选构建上执行；整仓检查的 `eslint`、Admin 的 `vite` 和 Agents 全量测试的 `ajv` 缺失属于当前工作环境阻塞，未自行安装依赖。
+
+## 2026-11-04 UI 偏好与二楼手势集成复核
+
+- 共享 UI preference 合同现在拒绝妙页参与 Agent 与详情手势使用相同方向，并保护二楼 `toolTray` 与 `permissions` 必要入口；RN 渲染层对旧状态也强制保留这两个入口。
+- 二楼页面上滑退出改为直接使用合同允许的 `distance`（40–240），不再无条件将 40–99 的合法配置放大为100；新增回归覆盖配置为60时的61px上滑。
+- RN 预览卡现在展示服务器返回的 `beforePreferences` 与确认后的前后变化，包括 token、模块显隐/顺序、按钮插槽、组件插槽/顺序及手势方向/距离；后端 undo 链路和 RN 撤销入口已接通。
+- 定向验证：`MiaoxunRN` 二楼、UI 偏好与预览差异测试 50/50 通过；后端 UI preference contract/service/routes 18/18 通过；TypeScript、Prettier、`git diff --check` 通过。
+- UI preference 合同仍比 RN 实际渲染覆盖更宽：`fontScale`、`density`、`rowGap`、`layout.buttonSlots` 与 `components.order` 当前用于合同校验/预览差异，尚未在各页面全面改变布局。继续补齐前需单独评估不同屏幕与无障碍风险；本轮未扩大到这些高风险渲染改动。
+
+## 2026-11-04 UI 偏好运行时消费补齐
+
+- RN 新增受限消费辅助：`uiDensityFactor`、`uiRowGap`、`uiFontSize`、`uiButtonSlot` 和 `orderedUIComponents`。这些函数只读取服务端已确认的语义偏好，并将密度、字号、间距、固定插槽和已注册组件顺序映射到 RN 样式；不接受任意坐标、脚本或模型生成代码。
+- 讯页接入列表间距、标签字号和新建入口固定插槽；妙页接入任务间距、标题/卡片字号、参与 Agent 与详情动作的固定顺序和卡片底部/顶部插槽；二楼接入工具间距、入口字号和返回入口的固定插槽。组件注册表和受保护入口仍由既有合同控制。
+- 新增 `MiaoxunRN/__tests__/uiPreferences.test.ts` 的密度、字号、行距、插槽和固定组件顺序覆盖。定向测试 58/58 通过；RN 全量 Jest 81 suites/1052 tests、TypeScript、ESLint、Prettier 通过，`git diff --check` 通过。
+- 仍未部署迁移051或正式 API、未发布/启用 `ui-agent`、未上传 TestFlight、未调用付费供应商；实体真机视觉/触控验收和缺失的根 `eslint`、Admin `vite`、Agents `ajv` 环境依赖仍按上节记录处理。
+
+## 2026-11-04 Build58 本地发布前预检与 ASC 会话恢复
+
+- App Store Connect 当前登录态已恢复。只读核对显示 1.0(55)、1.0(56)、1.0(57) 均为“正在测试”；最新 Build57 的二进制状态为“已验证”，Bundle `com.wangruoshi.miaoxun`，外部 `yunzhi` 群组 7 人、内部 `yunzhi` 群组已关联。Build57 测试信息页面当前内容为 `1111`，本轮未修改测试说明或测试组。
+- 使用当前工作区源码和锁定 Pods 进行未签名 Release device archive 预检，命令通过并输出 `** ARCHIVE SUCCEEDED **`。证据目录：`/tmp/miaoxun-release-20261104-build58-preflight-1793773445/`；临时覆盖 `CURRENT_PROJECT_VERSION=58`，归档内 Bundle `com.wangruoshi.miaoxun`、版本 `1.0 (58)`，内嵌 `main.jsbundle` SHA-256 为 `285cbf360554dda2425a1cfddd2311b2c371f25dc6a53d8d5a520f8473157413`。
+- 该预检使用 `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`，没有改 Xcode 工程版本、没有生成签名上传制品、没有上传 TestFlight，也没有改变测试组。当前工作区仍为 dirty detached worktree；正式上传仍必须从可定位 clean revision 生成签名 archive，并在真实设备上复验本轮 UI/手势。
+
+## 2026-11-04 登录恢复后的生产只读复核（未部署）
+
+- ECS Workbench 登录态已恢复并完成只读核对。生产目录 `/opt/projects/marvels-chat/app` 当前链接到 `releases/app-collaboration-20261103/runtime`，manifest 为 `app-collaboration-20261103-build54`、来源 `80d700945becdfa25b98ccad79f96dd2c038c17f8`、276 个文件；`marvels-chat-backend.service`、`marvels-chat-ai-task-worker.service`、`marvels-chat-media-retrieval-worker.service` 均 active，匹配运行服务共 3 个且只有 1 个 AI task worker unit。
+- 生产环境脱敏核对显示 `PORT=4390`、`NODE_ENV=production`，未设置 `AGENT_WORKSPACE_MAX_CONCURRENT`。迁移账本实际为 54 项；当前线上 `051` 是 `051_user_ui_preferences.sql`，`to_regclass('public.ui_preference_previews')` 无结果，说明本轮 `051_ui_preference_previews.sql` 尚未部署。备份目录存在 `app-collaboration-20261103-schema54`、`ui-preferences-20261102-build55-schema51` 等恢复资料；本轮未执行迁移、停写、备份或恢复。
+- 公网只读探针 `https://8.153.167.11/api/health` 与 `/api/ready` 均返回 `200`，ready 报告数据库已连接且迁移 current；这只证明旧生产版本健康，不证明本轮 workspace 并发、UI-Agent 或 UI preference API 已上线。
+- 由于当前 worktree 仍为 dirty detached HEAD，`scripts/prepare-runtime-release.mjs` 按设计拒绝生成正式 runtime（`Runtime releases require a clean, committed Git worktree.`）。本轮没有绕过门禁手工打包、没有部署后端或迁移、没有发布 UI-Agent、没有上传 Build58，也没有修改 App Store Connect 测试组。
+- 继续尝试以 `CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CURRENT_PROJECT_VERSION=58 -allowProvisioningUpdates` 生成正式签名 archive 时，`xcodebuild` 退出 65；当前钥匙串实读只有 3 个 Apple Development 身份，没有可用 Apple Distribution 身份或本地分发 profile，日志包含 Pods 的空签名身份和缺少 development team 错误。未修改 Xcode 工程文件，也未产生可上传归档。公网 `/api/agents` 只读结果中未发现 `ui-agent` 条目。
+
+## 2026-11-04 Build58 Xcode Organizer 上传复核
+
+- Xcode GUI 已使用 `Rose Wang Developer Team`（Team ID `R8K5DUTWB6`）成功归档 Build 58：`~/Library/Developer/Xcode/Archives/2026-11-04/MiaoxunRN 2026-11-4, 14.59.xcarchive`。归档 Bundle 为 `com.wangruoshi.miaoxun`，版本 `1.0 (58)`，`main.jsbundle` SHA-256 为 `285cbf360554dda2425a1cfddd2311b2c371f25dc6a53d8d5a520f8473157413`。
+- Organizer 选择 App Store Connect 后显示 `Upload completed with warnings`，Build 58 已出现在 App Store Connect。警告仅为 React.framework、ReactNativeDependencies.framework、hermesvm.framework 缺少 dSYM，不是上传失败；这些 framework 的崩溃符号化仍不完整。
+- 归档签名实际为 `Apple Development: Rose Wang (H867LX9BP6)`，TeamIdentifier 为 `R8K5DUTWB6`；工程 Debug/Release 均为 `CODE_SIGN_STYLE = Automatic`、`DEVELOPMENT_TEAM = R8K5DUTWB6`。钥匙串命令行当前只有 3 个 Apple Development 身份，没有 Apple Distribution 身份，但 GUI Organizer 已接受该归档并完成上传，故不能把命令行 distribution 身份缺失误报成 Build58 上传失败。
+- App Store Connect 当前显示 Build 58 状态为“缺少出口合规证明”，尚未进入“正在测试”；现有内部/外部 `yunzhi` 群组仍关联旧构建，未修改群组或测试信息。出口合规声明需在 App Store Connect 的“App 加密文稿”页面由账号持有人确认后提交，本轮未代填或提交。
+- 上传复核后未改业务代码；只读验证仍通过：RN UI 偏好/妙页/聊天贡献定向测试 3 suites、20 tests，后端 UI preference contract/service/routes 18 tests，workspace dynamic/runner/routes 16 tests，相关 JS syntax 与 `git diff --check` 均通过。
+- 账号持有人确认后，Build 58 已提交出口合规选项“不属于上述的任意一种算法”。为保持现有 TestFlight 发布范围，复用旧构建测试内容 `1111`，将 Build 58 关联到内部 `yunzhi` 与外部 `yunzhi` 两个现有群组；外部群组当前显示 7 名测试员。App Store Connect 列表已更新为“正在测试”，本轮未创建新群组或修改群组成员。
+- 合规处理后运行 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh`，最终退出 0 并报告 `All repository checks passed`：仓库语法 42 文件、后端语法 369 文件；Backend 1270 项中 991 passed、0 failed、279 项 PostgreSQL 环境门控跳过；Agents 51、Admin 48、RN 81 suites/1053 tests 全部通过；Admin、avatar-web、media-retrieval-web 构建通过；`git diff --check` 通过。RN 仅保留既有 `VoiceShortcutDock` 的 React `act(...)` 警告，不影响测试结果。
+- 为匹配已授权上传的 Build58，`backend/test/release-network-config.test.js` 的 Xcode 构建号断言由旧 Build54 更新为 Build58；这是测试基线同步，不改变 API origin 或 ATS 配置。

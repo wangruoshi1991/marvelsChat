@@ -7,6 +7,8 @@ import {
   updateUserStationConfig,
 } from "../station-repository.js";
 import { createUsageEvent, hashRequestIp } from "../repositories.js";
+import { z } from "zod";
+import { getUserUiPreferences, updateUserUiPreferences } from "../ui-preferences-repository.js";
 import {
   locationResolveSchema,
   miaoPointLedgerQuerySchema,
@@ -15,7 +17,35 @@ import {
   stationConfigSchema,
 } from "../schemas.js";
 
-export function registerStationProfileRoutes(app, { authenticate, asyncHandler }) {
+const uiPreferencesUpdateSchema = z.object({
+  expectedRevision: z.number().int().min(0).max(2147483646),
+  confirmed: z.literal(true),
+  preferences: z.unknown(),
+  source: z.enum(["user_confirmed", "ai_confirmed"]).default("user_confirmed"),
+}).strict();
+
+export function registerStationProfileRoutes(app, { authenticate, asyncHandler, uiPreferencesRepository = { getUserUiPreferences, updateUserUiPreferences } }) {
+  app.get(
+    "/api/me/ui-preferences",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      res.json({ data: await uiPreferencesRepository.getUserUiPreferences(req.user.id) });
+    }),
+  );
+
+  app.patch(
+    "/api/me/ui-preferences",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const body = uiPreferencesUpdateSchema.parse(req.body);
+      const data = await uiPreferencesRepository.updateUserUiPreferences({
+        ...body,
+        userId: req.user.id,
+        audit: { ipHash: hashRequestIp(req.ip), userAgent: req.get("user-agent") || "" },
+      });
+      res.json({ data });
+    }),
+  );
   app.get(
     "/api/me/miao-points",
     authenticate,

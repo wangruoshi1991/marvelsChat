@@ -50,6 +50,8 @@ test("packages only a clean committed source tree with fresh frontend builds", (
       "backend/scripts/admin-bootstrap.js",
       "backend/scripts/avatar-3d-backfill-mobile-models.js",
       "backend/scripts/check-ai-task-operations.js",
+      "backend/scripts/check-chat-attachment-operations.js",
+      "backend/scripts/check-ui-preference-upgrade.js",
       "backend/scripts/db-migrate.js",
       "backend/scripts/migrate-site-documents.js",
       "backend/scripts/live-eval-provider.js",
@@ -97,7 +99,7 @@ test("packages only a clean committed source tree with fresh frontend builds", (
     // catches a missing shared or backend module even when the archive itself
     // and the Agent registry build successfully.
     cpSync(join(repositoryRoot, "backend/src"), join(fixture, "backend/src"), { recursive: true });
-    for (const name of ["agent-catalog.js", "site-document.js", "media-retrieval-public-contract.js"]) {
+    for (const name of ["agent-catalog.js", "site-document.js", "media-retrieval-public-contract.js", "ui-preferences.js", "legacy-ui-preferences.js"]) {
       copyFileSync(join(repositoryRoot, "shared", name), join(fixture, "shared", name));
     }
     write(fixture, "backend/package.json", `${JSON.stringify({
@@ -113,6 +115,8 @@ test("packages only a clean committed source tree with fresh frontend builds", (
         "worker:media-retrieval": "node src/media-retrieval-worker.js",
         "worker:ai-tasks": "node src/ai-task-worker.js",
         "ops:ai-tasks": "node scripts/check-ai-task-operations.js",
+        "ops:chat-attachments": "node scripts/check-chat-attachment-operations.js",
+        "ops:ui-preference-upgrade": "node scripts/check-ui-preference-upgrade.js",
         "db:migrate": "node scripts/db-migrate.js",
         "admin:bootstrap": "node scripts/admin-bootstrap.js",
         "avatar3d:backfill-mobile": "node scripts/avatar-3d-backfill-mobile-models.js",
@@ -196,7 +200,7 @@ test("packages only a clean committed source tree with fresh frontend builds", (
     assert.equal(manifest.sourceTree, run("git", ["rev-parse", "HEAD^{tree}"], fixture));
     assert.equal(manifest.includesWorkingTreeChanges, false);
     assert.deepEqual(manifest.runtimePackageProjection.backendScripts, [
-      "admin:bootstrap", "avatar3d:backfill-mobile", "db:migrate", "ops:ai-tasks", "ops:legacy-publishing-backfill",
+      "admin:bootstrap", "avatar3d:backfill-mobile", "db:migrate", "ops:ai-tasks", "ops:chat-attachments", "ops:legacy-publishing-backfill", "ops:ui-preference-upgrade",
       "start", "worker:ai-tasks", "worker:media-retrieval",
     ]);
     assert.equal(readFileSync(join(runtime, "admin/index.html"), "utf8"), "fresh-build");
@@ -237,12 +241,16 @@ test("packages only a clean committed source tree with fresh frontend builds", (
     assert.ok(existsSync(join(runtime, "agents/workspace-contribution.js")));
     assert.ok(existsSync(join(runtime, "shared/site-document.js")));
     assert.ok(existsSync(join(runtime, "shared/media-retrieval-public-contract.js")));
+    assert.ok(existsSync(join(runtime, "shared/ui-preferences.js")));
+    assert.ok(existsSync(join(runtime, "shared/legacy-ui-preferences.js")));
     assert.ok(existsSync(join(runtime, "backend/scripts/check-ai-task-operations.js")));
+    assert.ok(existsSync(join(runtime, "backend/scripts/check-chat-attachment-operations.js")));
+    assert.ok(existsSync(join(runtime, "backend/scripts/check-ui-preference-upgrade.js")));
     assert.equal(existsSync(join(runtime, "backend/scripts/live-eval-provider.js")), false);
     assert.ok(existsSync(join(runtime, "scripts/harden-production-release.sh")));
     const runtimePackage = JSON.parse(readFileSync(join(runtime, "backend/package.json"), "utf8"));
     assert.deepEqual(Object.keys(runtimePackage.scripts).sort(), [
-      "admin:bootstrap", "avatar3d:backfill-mobile", "db:migrate", "ops:ai-tasks",
+      "admin:bootstrap", "avatar3d:backfill-mobile", "db:migrate", "ops:ai-tasks", "ops:chat-attachments", "ops:ui-preference-upgrade",
       "start", "worker:ai-tasks", "worker:media-retrieval",
     ]);
     for (const value of Object.values(runtimePackage.scripts)) {

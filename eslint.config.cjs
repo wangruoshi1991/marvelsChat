@@ -56,6 +56,15 @@ module.exports = [
     },
   },
   {
+    files: ["shared/**/*.js"],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...webApiGlobals,
+      },
+    },
+  },
+  {
     files: ["admin/admin.js", "admin/admin-core.js"],
     languageOptions: {
       globals: {

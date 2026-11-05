@@ -4,18 +4,19 @@ import {
   AgentDTO,
   OwnedAgentDTO,
   ProductCatalogProductDTO,
+  ProductEntitlementDTO,
 } from '../../models/api';
 import { appErrorText, textFor } from '../../shared/i18n';
 import { Language } from '../session/sessionTypes';
 import { agentScopeListLabel, hasUnknownAgentScope } from './agentPresentation';
-import { agentAccessSnapshot } from './agentAccess';
+import { agentAccessSnapshot, resolveAgentProductAccess } from './agentAccess';
 import {
   AlbumAIConsentVersion,
   albumAssistantConsentRequirement,
   albumAssistantDisclosure,
 } from '../station/albumAssistantAuthorization';
 
-export type AgentAccessAction = 'add' | 'remove';
+export type AgentAccessAction = 'add' | 'remove' | 'reauthorize';
 
 type Options = {
   accessToken: string;
@@ -24,6 +25,7 @@ type Options = {
   agents: AgentDTO[];
   ownedAgents: OwnedAgentDTO[];
   products: ProductCatalogProductDTO[];
+  entitlements: ProductEntitlementDTO[];
   catalogRevision: string | null;
   externalBusy?: boolean;
   onSetAgentEnabled: (
@@ -43,6 +45,7 @@ export function useAgentAccessConfirmation(options: Options) {
   const renderSnapshot = JSON.stringify({
     session: options.accessToken,
     active: options.active !== false,
+    entitlements: options.entitlements,
     access: agentAccessSnapshot(options.agents, options.ownedAgents, {
       products: options.products,
       catalogRevision: options.catalogRevision,
@@ -72,6 +75,7 @@ export function useAgentAccessConfirmation(options: Options) {
     JSON.stringify({
       session: current.current.accessToken,
       active: current.current.active !== false,
+      entitlements: current.current.entitlements,
       access: agentAccessSnapshot(
         current.current.agents,
         current.current.ownedAgents,
@@ -108,7 +112,14 @@ export function useAgentAccessConfirmation(options: Options) {
     if (
       !current.current.accessToken ||
       !agent ||
-      (action === 'add' ? !!owned : !owned)
+      (action === 'remove' && !owned) ||
+      (action === 'add' && !!owned) ||
+      (action === 'reauthorize' &&
+        resolveAgentProductAccess(agent, {
+          products: current.current.products,
+          entitlements: current.current.entitlements,
+          catalogRevision: current.current.catalogRevision,
+        }) !== 'reconsent_required')
     ) {
       reportError(
         id,
@@ -186,12 +197,20 @@ export function useAgentAccessConfirmation(options: Options) {
     const scopeText = (items: string[]) => agentScopeListLabel(items, language);
     const label = textFor(
       language,
-      action === 'add' ? '添加' : '移除',
-      action === 'add' ? 'Add' : 'Remove',
+      action === 'remove'
+        ? '移除'
+        : action === 'reauthorize'
+        ? '重新同意'
+        : '添加',
+      action === 'remove'
+        ? 'Remove'
+        : action === 'reauthorize'
+        ? 'Re-consent'
+        : 'Add',
     );
     const description = [
       enabled && product ? `${product.displayName} · v${product.version}` : '',
-      action === 'add'
+      action === 'add' || action === 'reauthorize'
         ? textFor(language, '授权范围：', 'Access scopes: ') + scopeText(scopes)
         : textFor(language, '移除后撤回：', 'Revoke on removal: ') +
           scopeText(owned?.grantedScopes || []),
@@ -209,8 +228,12 @@ export function useAgentAccessConfirmation(options: Options) {
         ? albumAssistantDisclosure(language)
         : textFor(
             language,
-            '确认添加即授权以上全部范围。你可以随时在“我的 Agent”移除。',
-            'Adding grants all scopes above. You can remove this agent at any time in My Agents.',
+            action === 'reauthorize'
+              ? '确认重新同意即授权以上全部范围。你可以随时在“我的 Agent”移除。'
+              : '确认添加即授权以上全部范围。你可以随时在“我的 Agent”移除。',
+            action === 'reauthorize'
+              ? 'Re-consenting grants all scopes above. You can remove this agent at any time in My Agents.'
+              : 'Adding grants all scopes above. You can remove this agent at any time in My Agents.',
           ),
     ]
       .filter(Boolean)

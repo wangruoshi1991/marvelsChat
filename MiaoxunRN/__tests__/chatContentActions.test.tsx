@@ -20,10 +20,22 @@ import { ChatComposer } from '../src/features/messages/ChatComposer';
 import { ChatMessageItem } from '../src/features/messages/ChatMessageItem';
 import { ChatMessageMenu } from '../src/features/messages/ChatMessageMenu';
 import { ChatScreen } from '../src/features/messages/MessagesScreen';
+import { WorkspaceContributionCard } from '../src/features/messages/WorkspaceContributionCard';
 import { ChatMessage, ChatThread } from '../src/features/session/sessionTypes';
 import { emptyProfile } from '../src/features/session/sessionDefaults';
 import { palettes, productColors } from '../src/shared/theme';
 import { MessageInlineAction } from '../src/shared/ui';
+import { agentWorkspace, workspaceStep } from '../__fixtures__/agentWorkspace';
+import { useWorkspaceContributions } from '../src/features/messages/useWorkspaceContributions';
+
+jest.mock('../src/features/messages/useWorkspaceContributions', () => ({
+  useWorkspaceContributions: jest.fn(() => ({
+    contributions: [],
+    unavailable: 0,
+    hasMore: false,
+    error: '',
+  })),
+}));
 
 const mockAssist = {
   isActive: false,
@@ -65,6 +77,12 @@ describe('Chat content actions', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(useWorkspaceContributions).mockReturnValue({
+      contributions: [],
+      unavailable: 0,
+      hasMore: false,
+      error: '',
+    });
     mockAssist.isActive = false;
   });
 
@@ -639,6 +657,56 @@ describe('Chat content actions', () => {
     expect(footer().props.style).toEqual(
       expect.arrayContaining([expect.objectContaining({ height: 136 })]),
     );
+  });
+
+  it('keeps a real workspace contribution at the end of the Agent chat timeline', async () => {
+    const workspace = agentWorkspace({
+      steps: [
+        workspaceStep({
+          agentId: 'album-manager',
+          goal: '筛选旅行照片',
+          summary: '已筛出 8 张候选照片。',
+          status: 'succeeded',
+        }),
+      ],
+    });
+    jest.mocked(useWorkspaceContributions).mockReturnValue({
+      contributions: [{ workspace, step: workspace.steps[0] }],
+      unavailable: 0,
+      hasMore: false,
+      error: '',
+    });
+    const props = {
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread: { ...thread, agentId: 'album-manager' },
+      agents: [],
+      renderUserAvatar: () => <View />,
+      onBack: jest.fn(),
+      onSend: jest.fn(),
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError: jest.fn(),
+      token: 'owner-token',
+      workspaceContribution: { workspace, step: workspace.steps[0] },
+    };
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    const list = renderer.root.findByType(FlatList);
+    const footer = list.props.ListFooterComponent as React.ReactElement<{
+      children?: React.ReactNode;
+    }>;
+    expect(footer).toBeTruthy();
+    const children = React.Children.toArray(footer.props.children);
+    const contribution = children.find(
+      child =>
+        React.isValidElement(child) && child.type === WorkspaceContributionCard,
+    );
+    expect(Boolean(contribution)).toBe(true);
   });
 
   it('does not append the same Butler quick command twice', async () => {

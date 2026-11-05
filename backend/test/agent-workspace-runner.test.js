@@ -23,7 +23,7 @@ test("workspace runner persists unknown results once and never repeats provider 
   assert.doesNotMatch(JSON.stringify(failures), /secret-provider-response/);
 });
 
-test("workspace runner allows independent calls up to its hard concurrency bound", async () => {
+test("workspace runner allows independent calls up to its configured concurrency bound", async () => {
   const queued = [claim("one"), claim("two"), claim("three")];
   const executing = [];
   const release = deferred();
@@ -74,7 +74,7 @@ test("shutdown while a workspace claim commits leaves it to lease recovery witho
 test("shutdown waits for all active workspace nodes before reporting stopped", async () => {
   const done = [deferred(), deferred()]; const started = deferred();
   let calls = 0;
-  const runner = createAgentWorkspaceRunner({ logger,
+  const runner = createAgentWorkspaceRunner({ logger, maxConcurrent: 2,
     repository: { recoverInterruptedWorkspaceNodes: async () => {}, claimWorkspaceNode: async () => claim(String(calls)) },
     execute: async () => { const index = calls++; if (calls === 2) started.resolve(); await done[index].promise; },
   });
@@ -112,5 +112,5 @@ test("failure to settle a stale lease is logged safely and never retried", async
 
 test("workspace runner rejects missing executors and unbounded concurrency", () => {
   assert.throws(() => createAgentWorkspaceRunner(), /executor/);
-  assert.throws(() => createAgentWorkspaceRunner({ execute() {}, maxConcurrent: 100 }), /concurrency/);
+  assert.throws(() => createAgentWorkspaceRunner({ execute() {}, maxConcurrent: 21 }), /concurrency/);
 });

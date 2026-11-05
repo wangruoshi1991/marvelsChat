@@ -37,6 +37,10 @@ type AITaskInboxProps = {
   agents: AgentDTO[];
   onOpenTask: (task: AITaskDTO) => void;
   onOpenWorkspace?: (workspace: AgentWorkspace) => void;
+  onOpenAgentParticipant?: (
+    workspace: AgentWorkspace,
+    step: AgentWorkspace['steps'][number],
+  ) => void;
 };
 
 type InboxEntry =
@@ -71,6 +75,7 @@ export function AITaskInbox({
   agents,
   onOpenTask,
   onOpenWorkspace,
+  onOpenAgentParticipant,
 }: AITaskInboxProps) {
   const legacy = useAITasks({
     token,
@@ -350,6 +355,9 @@ export function AITaskInbox({
               language={language}
               grid={false}
               onOpen={() => onOpenWorkspace?.(item.task)}
+              onOpenParticipant={step =>
+                onOpenAgentParticipant?.(item.task, step)
+              }
             />
           );
         }

@@ -69,7 +69,10 @@ export function AgentList({
   updatingAgentId,
   onOpenAgentThread,
   onRemoveAgent,
+  onReauthorizeAgent,
   readdAgentIds,
+  reconsentAgentIds,
+  errors,
 }: {
   palette: Palette;
   language: Language;
@@ -77,7 +80,10 @@ export function AgentList({
   updatingAgentId: string | null;
   onOpenAgentThread: (agentId: string) => void;
   onRemoveAgent: (agentId: string) => void;
+  onReauthorizeAgent?: (agentId: string) => void;
   readdAgentIds?: ReadonlySet<string>;
+  reconsentAgentIds?: ReadonlySet<string>;
+  errors?: Readonly<Record<string, string>>;
 }) {
   const colors = resolveStationColors(palette);
 
@@ -86,11 +92,30 @@ export function AgentList({
       {agents.length ? (
         <View style={styles.stationAgentList}>
           {agents.map(agent => {
-            // V15's levels, collaboration counts, matches and stars have no
-            // API fields. Show the real description instead of demo metrics.
             const addedDate = agent.createdAt
               ? formatAddedDate(agent.createdAt)
               : '';
+            const collaborationCount =
+              typeof agent.collaborationCount === 'number' &&
+              Number.isSafeInteger(agent.collaborationCount) &&
+              agent.collaborationCount >= 0
+                ? agent.collaborationCount
+                : null;
+            const level = agent.metrics?.level;
+            const validLevel =
+              typeof level === 'number' &&
+              Number.isSafeInteger(level) &&
+              level > 0
+                ? level
+                : null;
+            const match = agent.metrics?.preferenceMatchPercent;
+            const validMatch =
+              typeof match === 'number' &&
+              Number.isFinite(match) &&
+              match >= 0 &&
+              match <= 100
+                ? match
+                : null;
             return (
               <View
                 key={agent.id}
@@ -166,6 +191,36 @@ export function AgentList({
                   {agent.description ||
                     moduleBindingForAgent(agent.id, language)}
                 </Text>
+                {validLevel !== null ||
+                collaborationCount !== null ||
+                validMatch !== null ? (
+                  <Text
+                    style={[
+                      styles.stationAgentListDescription,
+                      { color: colors.secondaryText },
+                    ]}
+                  >
+                    {[
+                      validLevel !== null ? `Lv.${validLevel}` : null,
+                      collaborationCount !== null
+                        ? textFor(
+                            language,
+                            `协作 ${collaborationCount} 次`,
+                            `${collaborationCount} collaborations`,
+                          )
+                        : null,
+                      validMatch !== null
+                        ? textFor(
+                            language,
+                            `偏好匹配 ${validMatch}%`,
+                            `Preference match ${validMatch}%`,
+                          )
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join('  ·  ')}
+                  </Text>
+                ) : null}
                 {readdAgentIds?.has(agent.id) ? (
                   <Text
                     style={[
@@ -181,6 +236,61 @@ export function AgentList({
                       '授权范围不同，请移除后重新添加。',
                       'Access scopes differ. Remove and add this agent again.',
                     )}
+                  </Text>
+                ) : null}
+                {reconsentAgentIds?.has(agent.id) ? (
+                  <View style={styles.stationAgentReconsentRow}>
+                    <Text
+                      style={[
+                        styles.stationAgentAccessNotice,
+                        styles.stationAgentAccessNoticeFill,
+                        {
+                          backgroundColor: colors.soft,
+                          color: colors.accent,
+                        },
+                      ]}
+                    >
+                      {textFor(
+                        language,
+                        '授权版本已更新，需要重新同意后才能协作。',
+                        'The access version changed. Re-consent before collaboration.',
+                      )}
+                    </Text>
+                    {onReauthorizeAgent ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={textFor(
+                          language,
+                          `重新同意${agent.name}授权`,
+                          `Re-consent to ${agent.name}`,
+                        )}
+                        onPress={() => onReauthorizeAgent(agent.id)}
+                        style={[
+                          styles.stationAgentReconsentButton,
+                          { borderColor: colors.border },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.stationAgentReconsentLabel,
+                            { color: colors.text },
+                          ]}
+                        >
+                          {textFor(language, '重新同意', 'Re-consent')}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                ) : null}
+                {errors?.[agent.id] ? (
+                  <Text
+                    accessibilityRole="alert"
+                    style={[
+                      styles.stationAgentActionError,
+                      { color: palette.rose },
+                    ]}
+                  >
+                    {errors[agent.id]}
                   </Text>
                 ) : null}
                 <Pressable

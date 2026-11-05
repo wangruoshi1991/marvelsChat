@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { z } from "zod";
 import { getAgent, listAgents } from "../../agents/registry.js";
 import { config } from "./config.js";
-import { withTransaction } from "./db.js";
+import { query, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
 import { aiContextReferencesSchema, resolveAIContextReferences } from "./ai-context.js";
 import { publicUser, mapStationMediaAsset } from "./repository-mappers.js";
@@ -52,10 +52,10 @@ const directRequestSchema = workspaceRequestSchema.omit({ goal: true }).extend({
 const directInputSchema = z.object({ requestMessageIds: z.array(z.string().uuid()).min(1),
   requestMessagesHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 
-export function createAgentWorkspaceService({ transaction = withTransaction, repo = repository,
+export function createAgentWorkspaceService({ transaction = withTransaction, query: runQuery = query, repo = repository,
   loadAgent = getAgent, loadAgents = listAgents, run = runAgent, executeCapability = executeWorkspaceCapability,
   createDraft = createStationSiteDraft, applyDraft = applyStationSiteDraft,
-  limits = config.agentWorkspace, now = () => Date.now(),
+  limits = { deadlineSeconds: config.agentWorkspace.deadlineSeconds }, now = () => Date.now(),
 } = {}) {
   async function access(connection, userId, lock = true) {
     const [user] = await connection.query(`SELECT * FROM users WHERE id = ?${lock ? " FOR SHARE" : ""}`, [userId]);
@@ -79,8 +79,11 @@ export function createAgentWorkspaceService({ transaction = withTransaction, rep
   async function coordinator(connection, workspace, lock = true) {
     const current = await access(connection, workspace.userId, lock);
     const agent = await loadAgent(coordinatorId);
-    const expected = workspace.authority.coordinator;
     if (!agent || agent.version !== workspace.coordinatorVersion || typeof agent.coordinate !== "function") fail(409, "WORKSPACE_AGENT_CHANGED", "协调 Agent 已更新，请重新创建任务。");
+    return coordinatorGrant(connection, workspace, current, agent, lock);
+  }
+  async function coordinatorGrant(connection, workspace, current, agent, lock = true) {
+    const expected = workspace.authority.coordinator;
     const grant = current.grants.find(item => item.agentId === coordinatorId);
     if (!expected || !grant?.enabled || !agentScopesMatchDeclaration(agent, grant.grantedScopes) || !expected.scopes.includes("agents:invoke") ||
       !expected.scopes.every(scope => grant.grantedScopes.includes(scope) && agent.permissions.includes(scope))) fail(403, "WORKSPACE_ACCESS_REVOKED", "妙讯管家授权已撤回或范围已变化，请在“我”移除后重新添加。");
@@ -158,6 +161,30 @@ export function createAgentWorkspaceService({ transaction = withTransaction, rep
       grantedScopes: declared.requiredScopes, queryFn: connection.query.bind(connection), lock: true });
     return { ...current, declaration: declared };
   }
+  // Reading an existing delivery does not dispatch new work, but its grants,
+  // capability contract and source references must still be valid.
+  async function authorizeCompletedNodeRead(connection, workspace, node) {
+    const current = await access(connection, workspace.userId);
+    const agent = await loadAgent(coordinatorId);
+    if (!agent || typeof agent.coordinate !== "function") fail(409, "WORKSPACE_AGENT_CHANGED", "协调 Agent 已更新，请重新创建任务。");
+    await coordinatorGrant(connection, workspace, current, agent);
+    const snapshot = workspace.authority.capabilities.find(entry => entry.agentId === node.agentId &&
+      entry.agentVersion === node.agentVersion && entry.capability === node.capability);
+    const entries = listExecutableWorkspaceCapabilities({ registeredAgents: await loadAgents(), grants: current.grants });
+    const declared = snapshot && entries.find(entry => {
+      if (entry.agentId !== snapshot.agentId || entry.capability !== snapshot.capability) return false;
+      const currentContract = { ...entry }, previousContract = { ...snapshot };
+      if (entry.agentId === coordinatorId) {
+        delete currentContract.agentVersion; delete previousContract.agentVersion;
+        delete currentContract.description; delete previousContract.description;
+      }
+      return hashSiteDocumentValue(currentContract) === hashSiteDocumentValue(previousContract);
+    });
+    if (!declared) fail(403, "WORKSPACE_ACCESS_REVOKED", "专业 Agent 的授权或能力声明已变化，成果目前不可读取。");
+    await resolveAIContextReferences({ userId: workspace.userId, refs: node.contextRefIndexes.map(index => workspace.contextRefs[index]),
+      grantedScopes: snapshot.requiredScopes, queryFn: connection.query.bind(connection), lock: true });
+    return { ...current, declaration: snapshot };
+  }
   async function readSiteDelivery(connection, workspace, node) {
     const [row] = await connection.query(`SELECT * FROM station_site_drafts
       WHERE id = ? AND user_id = ? AND source = 'model' AND deleted_at IS NULL FOR SHARE`,
@@ -196,7 +223,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, rep
       dependencyResults: dependencies,
     }, requiredScopes, { allowSiteDrafts: node.capability === "site.compose" });
   }
-  async function validateDelivery(connection, workspace, node, { visited = new Set(), validated = new Map(), checkProfile = false } = {}) {
+  async function validateDelivery(connection, workspace, node, { visited = new Set(), validated = new Map(), checkProfile = false, completedRead = false } = {}) {
     if (!node) fail(409, "WORKSPACE_DEPENDENCY_INVALID", "协作成果依赖缺失。");
     if (visited.has(node.key)) fail(409, "WORKSPACE_DEPENDENCY_INVALID", "协作成果依赖循环。");
     // Only reuse validation inside this transaction/read. Diamond-shaped
@@ -204,7 +231,9 @@ export function createAgentWorkspaceService({ transaction = withTransaction, rep
     const validationKey = `${node.id}:${checkProfile}`;
     if (validated.has(validationKey)) return validated.get(validationKey);
     visited.add(node.key);
-    const authorized = await authorizeNode(connection, workspace, node);
+    const authorized = completedRead && workspace.status === "succeeded" && workspace.executionMode !== "direct"
+      ? await authorizeCompletedNodeRead(connection, workspace, node)
+      : await authorizeNode(connection, workspace, node);
     if (node.status !== "succeeded" || !node.result?.artifact) fail(409, "WORKSPACE_RESULT_UNAVAILABLE", "协作成果尚未完成。");
     if (node.result.artifact.kind === "site_draft") {
       // Applying another page locks the profile before updating old applied
@@ -216,7 +245,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, rep
     for (const key of node.dependencies) {
       const dependency = workspace.nodes.find(item => item.key === key);
       if (!dependency) fail(409, "WORKSPACE_DEPENDENCY_INVALID", "协作成果依赖缺失。");
-      const sourceReferences = await validateDelivery(connection, workspace, dependency, { visited: new Set(visited), validated });
+      const sourceReferences = await validateDelivery(connection, workspace, dependency, { visited: new Set(visited), validated, completedRead });
       dependencies.push(await deliveredInput(connection, workspace, dependency, sourceReferences));
     }
     if (node.result.artifact.kind === "media_selection") {
@@ -520,10 +549,52 @@ export function createAgentWorkspaceService({ transaction = withTransaction, rep
     if (node?.status !== "succeeded" || node.result?.artifact?.kind !== "text_result") {
       fail(404, "WORKSPACE_TEXT_NOT_FOUND", "此文字内容不属于已完成的协作成果。");
     }
-    await validateDelivery(connection, workspace, node);
+    await validateDelivery(connection, workspace, node, { completedRead: true });
     const { title, content } = parseWorkspaceTextArtifact(node.result.artifact);
     return { id: node.id, title, content };
   });
+  const listAgentContributions = async ({ userId, agentId }) => {
+    z.string().uuid().parse(userId);
+    z.string().regex(/^[a-z0-9-]{1,80}$/).parse(agentId);
+    const rows = await runQuery(`SELECT id,workspace_id FROM agent_workspace_nodes
+      WHERE user_id = ? AND agent_id = ? AND capability <> 'workspace.coordinate'
+      ORDER BY updated_at DESC,id DESC LIMIT 51`, [userId, agentId]);
+    const groups = new Map();
+    for (const row of rows.slice(0, 50)) {
+      const group = groups.get(row.workspace_id) ?? [];
+      group.push(row.id);
+      groups.set(row.workspace_id, group);
+    }
+    const results = new Map();
+    for (const [workspaceId, nodeIds] of groups) {
+      await transaction(async connection => {
+        let workspace;
+        try { workspace = await repo.readOwnedWorkspaceRecord(connection, { userId, workspaceId }); }
+        catch (error) {
+          if (error instanceof HttpError && error.status === 404) return;
+          throw error;
+        }
+        const validated = new Map();
+        for (const nodeId of nodeIds) {
+          const node = workspace.nodes.find(item => item.id === nodeId && item.agentId === agentId);
+          if (!node) continue;
+          try {
+            if (node.status === 'succeeded' && node.result?.artifact) {
+              await validateDelivery(connection, workspace, node, { completedRead: true, validated });
+            } else {
+              await authorizeNode(connection, workspace, node);
+            }
+            results.set(node.id, { workspace: { id: workspace.id, revision: workspace.revision, executionMode: workspace.executionMode },
+              step: workspace.steps.find(item => item.id === node.id) });
+          } catch (error) {
+            if (!(error instanceof HttpError) || ![403, 404, 409].includes(error.status)) throw error;
+            results.set(node.id, { unavailable: true, id: node.id });
+          }
+        }
+      });
+    }
+    return { contributions: rows.slice(0, 50).map(row => results.get(row.id)).filter(Boolean), hasMore: rows.length > 50 };
+  };
   const authorizeWorkspaceSiteDraftRead = async ({ connection, userId, draftId, workspaceNodeId }) => {
     const [identity] = await connection.query("SELECT workspace_id FROM agent_workspace_nodes WHERE id = ? AND user_id = ?", [workspaceNodeId, userId]);
     if (!identity) fail(404, "SITE_DOCUMENT_UNAVAILABLE", "页面草稿已不可用。");
@@ -539,6 +610,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, rep
       }
       await validateDelivery(connection, workspace, node, {
         checkProfile: node.round === workspace.currentRound && workspace.status === "awaiting_confirmation",
+        completedRead: true,
       });
     }
     const [draft] = await connection.query("SELECT * FROM station_site_drafts WHERE id = ? AND user_id = ? AND source = 'model' FOR SHARE", [draftId, userId]);
@@ -546,7 +618,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, rep
     if (draft.workspace_node_id !== binding.workspace_node_id) fail(409, "WORKSPACE_SITE_BINDING_INVALID", "页面草稿所属任务已变化。");
     return draft;
   };
-  return { submitAgentWorkspace, submitDirectAgentWorkspace, executeWorkspaceNode, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, authorizeWorkspaceSiteDraftRead };
+  return { submitAgentWorkspace, submitDirectAgentWorkspace, executeWorkspaceNode, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, listAgentContributions, authorizeWorkspaceSiteDraftRead };
 }
 
-export const { submitAgentWorkspace, submitDirectAgentWorkspace, executeWorkspaceNode, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, authorizeWorkspaceSiteDraftRead } = createAgentWorkspaceService();
+export const { submitAgentWorkspace, submitDirectAgentWorkspace, executeWorkspaceNode, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, listAgentContributions, authorizeWorkspaceSiteDraftRead } = createAgentWorkspaceService();

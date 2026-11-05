@@ -473,13 +473,15 @@ export function createAgentWorkspaceRepository({ query: runQuery = query, withTr
   const claimWorkspaceNode = async () => transaction(async connection => {
     // Lock the aggregate before a node everywhere. The short aggregate lock
     // serializes decisions while claimed independent nodes execute concurrently.
+    // Do not use SKIP LOCKED on this aggregate: a second worker must wait for
+    // the first claim, then re-read the queued siblings in this workspace.
     const rows = await connection.query(`SELECT w.*, clock_timestamp() AS database_now FROM agent_workspaces w
       WHERE w.status IN ('queued','running') AND w.deadline_at > clock_timestamp() AND EXISTS (
         SELECT 1 FROM agent_workspace_nodes n WHERE n.workspace_id = w.id AND n.status = 'queued'
         AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(n.dependencies) d(dependency_key)
           LEFT JOIN agent_workspace_nodes dep ON dep.workspace_id = n.workspace_id AND dep.node_key = d.dependency_key
           WHERE dep.id IS NULL OR dep.status <> 'succeeded'))
-      ORDER BY w.created_at,w.id LIMIT 1 FOR UPDATE OF w SKIP LOCKED`);
+      ORDER BY w.created_at,w.id LIMIT 1 FOR UPDATE OF w`);
     if (!rows[0]) return null;
     const row = rows[0];
     const candidates = await connection.query(`SELECT n.* FROM agent_workspace_nodes n WHERE n.workspace_id = ? AND n.status = 'queued'

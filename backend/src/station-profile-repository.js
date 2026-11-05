@@ -174,6 +174,10 @@ export async function getPublicProfileByAiId({ viewerUserId, aiId, onlineUserIds
 }
 
 export async function updateUserStationConfig(userId, stationConfig = {}) {
+  if (!stationConfig || typeof stationConfig !== "object" || Array.isArray(stationConfig) ||
+      Object.keys(stationConfig).some((key) => !["language", "appearance"].includes(key))) {
+    throw new HttpError(400, "Unsupported station configuration field.", { code: "STATION_CONFIG_INVALID" });
+  }
   await query(
     `UPDATE user_profiles
     SET station_config = COALESCE(station_config, '{}'::jsonb) || ?::jsonb

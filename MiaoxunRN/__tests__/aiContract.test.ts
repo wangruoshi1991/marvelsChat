@@ -1,8 +1,10 @@
 import {
   assertAIContract,
+  assertUIPreferencesContract,
   clearAIContractSession,
   setAIContractSession,
 } from '../src/services/aiContract';
+import { uiPreferencesApi } from '../src/services/api/uiPreferencesApi';
 import { aiTaskApi } from '../src/services/api/aiTaskApi';
 import { messageApi } from '../src/services/api/messageApi';
 import { stationAgentApi } from '../src/services/api/stationAgentApi';
@@ -105,6 +107,37 @@ test('accepted bootstrap applies only to its active login and is cleared on sess
   expect(() => assertAIContract('other')).toThrow();
 });
 
+test('UI preference requests require the bootstrap UI preference contract', async () => {
+  expect(() =>
+    uiPreferencesApi.previewUIPreferences('owner', '把妙页卡片变紧凑', 'miao'),
+  ).toThrow('界面偏好');
+  setAIContractSession('owner', { uiPreferences: 1 });
+  mockedRequest.mockResolvedValue({
+    id: 'preview',
+    status: 'pending',
+    baseRevision: 0,
+    expiresAt: '2026-11-03T04:10:00Z',
+    patch: {},
+    preferences: {},
+    intent: '调整界面',
+    rationale: '测试',
+    affectedSurfaces: ['miao'],
+  });
+  await uiPreferencesApi.previewUIPreferences(
+    'owner',
+    '把妙页卡片变紧凑',
+    'miao',
+  );
+  expect(mockedRequest).toHaveBeenCalledWith(
+    '/api/ui/preferences/preview',
+    expect.objectContaining({
+      headers: { 'X-Miaoxun-UI-Preferences': '1' },
+      token: 'owner',
+    }),
+  );
+  expect(() => assertUIPreferencesContract('other')).toThrow();
+});
+
 test('ordinary message and draft metadata reads do not require the AI contract', async () => {
   mockedRequest
     .mockResolvedValueOnce({ messages: [] })
@@ -112,6 +145,24 @@ test('ordinary message and draft metadata reads do not require the AI contract',
   await messageApi.sendMessage('direct-thread', 'Hello', 'owner');
   await stationAgentApi.stationSiteDrafts('owner');
   expect(mockedRequest).toHaveBeenCalledTimes(2);
+});
+
+test('message requests advertise UI preview support only for the active compatible session', async () => {
+  setAIContractSession('owner', { uiPreferences: 1 });
+  await messageApi.sendMessage('butler-thread', '调整按钮', 'owner');
+  expect(mockedRequest).toHaveBeenLastCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      headers: expect.objectContaining({ 'X-Miaoxun-UI-Preferences': '1' }),
+    }),
+  );
+  await messageApi.sendMessage('butler-thread', '调整按钮', 'other');
+  expect(mockedRequest).toHaveBeenLastCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      headers: expect.not.objectContaining({ 'X-Miaoxun-UI-Preferences': '1' }),
+    }),
+  );
 });
 
 test('an older task server cannot receive structured-page generation or confirmation', async () => {

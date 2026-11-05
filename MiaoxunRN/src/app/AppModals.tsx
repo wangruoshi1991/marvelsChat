@@ -130,6 +130,11 @@ export function AppModals({
             language={session.language}
             appearance={session.appearance}
             profileVisibility={session.profileVisibility}
+            uiPreferences={session.uiPreferences}
+            onPreviewUIPreferences={session.previewUIPreferences}
+            onConfirmUIPreferences={session.confirmUIPreferences}
+            onResetUIPreferences={session.resetUIPreferences}
+            onUndoUIPreferences={session.undoUIPreferences}
             onBack={onCloseModal}
             onSetLanguage={session.setLanguage}
             onSetAppearance={session.setAppearance}

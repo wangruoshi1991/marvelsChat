@@ -192,6 +192,23 @@ integration("HTTP dynamic direct composition, complete, full preview and atomic 
   assert.equal(modelCalls, 3); assert.equal(await repository.claimWorkspaceNode(), null);
 });
 
+integration("agent contributions are scoped to owner and agent and redact revoked results", async () => {
+  const first = await waiting();
+  const second = await waiting();
+  const path = '/api/agent-workspaces/contributions/site-builder';
+  const ownerResponse = await request(path);
+  assert.equal(ownerResponse.status, 200);
+  assert.equal(ownerResponse.data.hasMore, false);
+  assert.deepEqual(new Set(ownerResponse.data.contributions.map(item => item.workspace.id)), new Set([first.id, second.id]));
+  assert.ok(ownerResponse.data.contributions.every(item => item.step.agentId === 'site-builder'));
+  assert.equal((await request(path, undefined, { token: outsiderToken })).data.contributions.length, 0);
+  assert.equal((await request('/api/agent-workspaces/contributions/album-manager')).data.contributions.length, 0);
+  await query("UPDATE user_agents SET enabled=false WHERE user_id=? AND agent_id='site-builder'", [owner]);
+  const revoked = await request(path);
+  assert.equal(revoked.status, 200);
+  assert.ok(revoked.data.contributions.every(item => item.unavailable === true && Object.keys(item).length === 2));
+});
+
 integration("old workspace contract fails before writes, models and idempotent replay", async () => {
   const { user, ...body } = input();
   for (const version of [null, "0", "1", "2", "3", "4", "5"]) {
