@@ -17,7 +17,7 @@
 - 最新源码已构建并安装到隔离 iPhone17 Simulator Bundle `com.wangruoshi.miaoxun.collaborationQA20261110`。首次无完整模拟器签名安装出现 Keychain entitlement 错误，重新以正常 Xcode 身份构建并原位安装后恢复 QA1010 的本地登录态；正式 Bundle、登录态和后端未改。
 - 实际打开妙页只看到服务器真实空状态，当前隔离 DB/API 没有可展示 workspace；因此没有卡片视觉/S1/S2/连续滑动/动画的本轮设备证据。隔离 Agent 目录仍只有管家和站点 Agent，无法证明多专业并行。未伪造任务、摘要或贡献，也未调用模型。
 - 头像隔离资源仍因磁盘文件缺失而返回 `AGENT_AVATAR_STORAGE_MISSING`；合成图需经隔离 Admin 正常上传/发布流程。本轮没有把资源写入未核实隔离性的共享头像目录或拷贝生产头像。具体改动、验证与后续条件见[妙页内容密度记录](../reviews/2026-11-10-miao-card-summary-and-result-collapse.md)。
-- 本轮未部署、未上传 TestFlight、未产生付费调用。代码待提交/推送；之后需补隔离 Admin 头像上传和真实 workspace 画面验收，最后在实体设备验收手势/动画。
+- 本轮未部署、未上传 TestFlight、未产生付费调用。实现已提交 `dcb3ae4` 并推送到当前功能分支；之后需补隔离 Admin 头像资源上传/发布和真实 workspace 画面验收，最后在实体设备验收手势/动画。
 
 #### 2026-11-10 推送后后端与 Agent 隔离验收
 
