@@ -504,9 +504,13 @@ curl -i -X DELETE "$API_BASE/station/media-retrieval/index" \
 - Android 每次构建都必须显式提供正整数 `MIAOXUN_VERSION_CODE`；Release 且启用当前检索能力时
   不得低于 45。示例和 CI 使用的旧构建号仅用于 Debug/历史合同，不代表当前 Agent 兼容版本。
 
-开发验证 Web 的目录是 `media-retrieval-web`。它没有同步 2026-09-18 搜索幂等请求合同，不能
-连接新后端作为正式能力验收入口，也不应作为移动端发布物或对外产品入口。正式验收只使用
-同步新合同的 RN 客户端和受控 API 流程。
+开发验证 Web 的目录是 `media-retrieval-web`。2026-11-06已补齐搜索必填幂等键：
+`mediaRetrievalApi.search(token, input, idempotencyKey)`要求调用方显式提供8–160位合法键，
+同一次操作重放使用原键，新搜索使用新键；页面在用户提交新搜索时生成一次键，不自动重试。
+检索及事件请求声明合同2；RN搜索请求也显式声明合同2。真实loopback HTTP验证已通过后端
+合同门禁与操作键校验，但使用冻结结果fixture，不代表供应商检索质量、完整Web交互或
+线上可用性。该工具仍不是移动端发布物或对外产品入口；正式产品验收使用RN客户端和
+受控API流程。当前证据见[检索入口续验](reviews/2026-11-06-retrieval-entry-followup.md)。
 
 ## 15. 回滚和数据清理
 

@@ -168,6 +168,7 @@ export type MessageDTO = {
     };
     agentContextReset?: boolean;
     workspaceContext?: import('./workspaceContext').WorkspaceDiscussionContext;
+    contributionDiscussion?: { state: 'available' | 'failed' };
     butlerClarification?: {
       contextRefs: AIContextReference[];
       source: { currentPage: string };

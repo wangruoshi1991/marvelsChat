@@ -38,6 +38,7 @@ import { chatLayoutStyles } from './chatLayoutStyles';
 import { AlbumAssistantResults } from './AlbumAssistantResults';
 import { agentReplyPresentation } from './agentReplyPresentation';
 import { ChatMessageText } from './ChatMessageText';
+import { ContributionDiscussionReply } from './ContributionDiscussionReply';
 import { UIPreferenceChatCard } from './UIPreferenceChatCard';
 import {
   messageTimeText,
@@ -101,7 +102,8 @@ export function ChatMessageItem({
   const assist = useAIAssist();
   const workspaceId = messageWorkspaceId(item, thread.agentId, thread.id);
   const discussionContext =
-    thread.agentId === 'miaoxun-butler' &&
+    (thread.agentId === 'miaoxun-butler' ||
+      Boolean(item.metadata?.workspaceContext?.nodeId)) &&
     !item.deletedAt &&
     !item.recalledAt &&
     !item.localStatus &&
@@ -110,6 +112,13 @@ export function ChatMessageItem({
       ? item.metadata.workspaceContext
       : null;
   const uiPreviewReference = item.metadata?.uiPreferencePreview;
+  const protectedDiscussion =
+    item.senderType === 'agent' &&
+    !item.deletedAt &&
+    !item.recalledAt &&
+    !item.localStatus &&
+    Boolean(discussionContext?.nodeId) &&
+    item.metadata?.contributionDiscussion?.state === 'available';
   const uiPreviewId =
     thread.agentId === 'miaoxun-butler' &&
     item.senderType === 'agent' &&
@@ -284,6 +293,7 @@ export function ChatMessageItem({
         }}
       >
         <AIAssistGestureSurface
+          accessible={!protectedDiscussion}
           actions={assistActions}
           object={assistObject}
           palette={palette}
@@ -341,18 +351,29 @@ export function ChatMessageItem({
             palette={palette}
             language={language}
           />
-          <ChatMessageText
-            testID={`chat-message-content-${item.id}`}
-            style={[
-              chatLayoutStyles.body,
-              xunTheme && xunStyles.body,
-              { color: palette.text },
-            ]}
-            formatted={item.senderType === 'agent'}
-            palette={palette}
-          >
-            {presentedMessageContent}
-          </ChatMessageText>
+          {protectedDiscussion && token ? (
+            <ContributionDiscussionReply
+              key={`${token}:${currentUserId}:${thread.id}:${item.id}`}
+              token={token}
+              threadId={thread.id}
+              messageId={item.id}
+              palette={palette}
+              language={language}
+            />
+          ) : (
+            <ChatMessageText
+              testID={`chat-message-content-${item.id}`}
+              style={[
+                chatLayoutStyles.body,
+                xunTheme && xunStyles.body,
+                { color: palette.text },
+              ]}
+              formatted={item.senderType === 'agent'}
+              palette={palette}
+            >
+              {presentedMessageContent}
+            </ChatMessageText>
+          )}
         </AIAssistGestureSurface>
       </View>
       {token && uiPreviewId && onConfirmUIPreferences ? (
@@ -373,6 +394,7 @@ export function ChatMessageItem({
           key={`${token}:${currentUserId}:${thread.id}:${item.id}:${discussionContext.id}:${discussionContext.revision}`}
           token={token}
           context={discussionContext}
+          agentId={thread.agentId}
           palette={palette}
           language={language}
           historical

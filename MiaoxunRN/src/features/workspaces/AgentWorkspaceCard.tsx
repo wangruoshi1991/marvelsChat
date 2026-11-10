@@ -1,6 +1,14 @@
 import React from 'react';
-import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  AppState,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { AgentDTO } from '../../models/api';
 import { AgentWorkspace } from '../../models/agentWorkspace';
 import { Palette } from '../../shared/theme';
@@ -14,13 +22,17 @@ import {
 } from './workspacePresentation';
 import { workspaceAssistContext } from '../assist/workspaceAssistContext';
 import { textFor } from '../../shared/i18n';
+import { WorkspaceTextResult } from './WorkspaceTextResult';
 import {
   MiaoParticipantProjection,
+  MiaoCardViewState,
   participantProjection,
 } from '../miao/miaoCardState';
 
 export function AgentWorkspaceCard({
   workspace,
+  token,
+  active,
   agents,
   palette,
   language,
@@ -28,8 +40,12 @@ export function AgentWorkspaceCard({
   onOpenParticipant,
   grid,
   uiPreferences,
+  viewState,
+  onViewStateChange,
 }: {
   workspace: AgentWorkspace;
+  token: string;
+  active: boolean;
   agents: AgentDTO[];
   palette: Palette;
   language: Language;
@@ -37,13 +53,24 @@ export function AgentWorkspaceCard({
   onOpenParticipant?: (step: AgentWorkspace['steps'][number]) => void;
   grid: boolean;
   uiPreferences?: UIPreferences;
+  viewState?: MiaoCardViewState;
+  onViewStateChange?: (state: MiaoCardViewState) => void;
 }) {
+  const [foreground, setForeground] = useState(
+    AppState.currentState !== 'background' &&
+      AppState.currentState !== 'inactive',
+  );
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      setForeground(state === 'active');
+    });
+    return () => subscription.remove();
+  }, []);
   const [selectedParticipant, setSelectedParticipant] =
     useState<MiaoParticipantProjection | null>(null);
   const participantItems = participantProjection(workspace, agents).filter(
     item => item.step.round === workspace.currentRound,
   );
-  const currentSteps = participantItems.map(item => item.step);
   // Keep every real workspace participant reachable. The coordinator row is
   // useful context when a specialist has no direct chat message of its own.
   const participants = participantItems.map(item => item.agentId);
@@ -69,6 +96,9 @@ export function AgentWorkspaceCard({
   return (
     <>
       <MiaoTaskCard
+        viewState={viewState}
+        onViewStateChange={onViewStateChange}
+        active={active && foreground}
         testID={`miao-workspace-${workspace.id}`}
         object={workspaceAssistContext(workspace, agents, language)}
         goal={workspace.goal}
@@ -76,6 +106,7 @@ export function AgentWorkspaceCard({
         // S0 keeps the single real workspace summary. S1/S2 replace the body
         // with participant/current-result content instead of duplicating it.
         detail={content.detail}
+        updatedLabel={workspaceUpdatedLabel(workspace.updatedAt, language)}
         participantIds={participants}
         agents={agents}
         grid={grid}
@@ -107,15 +138,26 @@ export function AgentWorkspaceCard({
                   participantItems.map(({ step, agent }) => {
                     const summary = step.summary.trim() || step.goal.trim();
                     return (
-                      <View key={step.id} style={s.agentRow}>
+                      <View
+                        key={step.id}
+                        style={[
+                          s.agentRow,
+                          { borderBottomColor: palette.border },
+                        ]}
+                      >
                         <MiaoTaskAgent
                           agentId={step.agentId}
                           agent={agent || undefined}
                           palette={palette}
                           language={language}
                           compact
+                          showName={false}
+                          size={30}
                         />
                         <View style={s.agentCopy}>
+                          <Text style={[s.agentRole, { color: palette.text }]}>
+                            {taskAgentDisplayName(agent || undefined, language)}
+                          </Text>
                           <Text
                             numberOfLines={2}
                             style={[s.agentRole, { color: palette.text }]}
@@ -176,8 +218,15 @@ export function AgentWorkspaceCard({
               </View>
             );
           }
-          const finalStep = [...currentSteps]
-            .filter(step => step.status === 'succeeded' && step.result)
+          // Participant rows collapse repeated Agent steps, while deliveries
+          // must retain an earlier success even if that Agent later failed.
+          const finalStep = workspace.steps
+            .filter(
+              step =>
+                step.round === workspace.currentRound &&
+                step.status === 'succeeded' &&
+                step.result,
+            )
             .sort(
               (left, right) =>
                 Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
@@ -202,6 +251,28 @@ export function AgentWorkspaceCard({
                     'The collaboration result is still being prepared.',
                   )}
               </Text>
+              {artifact?.kind === 'text_result' ? (
+                <View
+                  testID="miao-workspace-text-reader"
+                  accessibilityLabel={textFor(
+                    language,
+                    '当前文字成果',
+                    'Current text result',
+                  )}
+                  style={s.textResultReader}
+                >
+                  <WorkspaceTextResult
+                    artifact={artifact}
+                    token={token}
+                    workspaceId={workspace.id}
+                    foreground={active && foreground && Boolean(token)}
+                    disabled={!active || !foreground}
+                    refreshKey={workspace.revision}
+                    palette={palette}
+                    language={language}
+                  />
+                </View>
+              ) : null}
             </View>
           );
         }}
@@ -248,34 +319,44 @@ export function AgentWorkspaceCard({
         animationType="slide"
         onRequestClose={() => setSelectedParticipant(null)}
       >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={textFor(
-            language,
-            '关闭 Agent 详情',
-            'Close Agent details',
-          )}
-          style={s.modalBackdrop}
-          onPress={() => setSelectedParticipant(null)}
+        <View
+          accessible={false}
+          accessibilityViewIsModal
+          onAccessibilityEscape={() => setSelectedParticipant(null)}
+          style={s.modalContainer}
         >
           <Pressable
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={textFor(
+              language,
+              '关闭 Agent 详情',
+              'Close Agent details',
+            )}
+            style={s.modalBackdrop}
+            onPress={() => setSelectedParticipant(null)}
+          />
+          <View
+            accessible={false}
             style={[
               s.modalSheet,
               { backgroundColor: palette.surface, borderColor: palette.border },
             ]}
-            onPress={event => event.stopPropagation()}
           >
             {selectedParticipant ? (
               <>
                 <View style={s.modalHeader}>
-                  <MiaoTaskAgent
-                    agentId={selectedParticipant.agentId}
-                    agent={selectedParticipant.agent || undefined}
-                    palette={palette}
-                    language={language}
-                    compact
-                  />
+                  <View style={s.modalAgent}>
+                    <MiaoTaskAgent
+                      agentId={selectedParticipant.agentId}
+                      agent={selectedParticipant.agent || undefined}
+                      palette={palette}
+                      language={language}
+                      compact
+                    />
+                  </View>
                   <Pressable
+                    accessible
                     accessibilityRole="button"
                     accessibilityLabel={textFor(language, '关闭', 'Close')}
                     onPress={() => setSelectedParticipant(null)}
@@ -286,32 +367,42 @@ export function AgentWorkspaceCard({
                     </Text>
                   </Pressable>
                 </View>
-                <Text style={[s.modalRole, { color: palette.text }]}>
-                  {selectedParticipant.step.goal}
-                </Text>
-                <Text style={[s.modalMeta, { color: palette.secondaryText }]}>
-                  {workspaceUpdatedLabel(
-                    selectedParticipant.step.updatedAt,
-                    language,
-                  )}
-                  {' · '}
-                  {workspaceStatusLabel(
-                    selectedParticipant.step.status,
-                    language,
-                    workspace.executionMode,
-                  )}
-                </Text>
-                <Text
-                  style={[s.modalSummary, { color: palette.secondaryText }]}
+                <ScrollView
+                  accessible={false}
+                  testID="workspace-participant-reader"
+                  directionalLockEnabled
+                  nestedScrollEnabled
+                  style={s.modalBody}
+                  contentContainerStyle={s.modalBodyContent}
                 >
-                  {selectedParticipant.step.summary.trim() ||
-                    textFor(
+                  <Text style={[s.modalRole, { color: palette.text }]}>
+                    {selectedParticipant.step.goal}
+                  </Text>
+                  <Text style={[s.modalMeta, { color: palette.secondaryText }]}>
+                    {workspaceUpdatedLabel(
+                      selectedParticipant.step.updatedAt,
                       language,
-                      '该 Agent 尚未提交摘要。',
-                      'This Agent has not submitted a summary yet.',
                     )}
-                </Text>
+                    {' · '}
+                    {workspaceStatusLabel(
+                      selectedParticipant.step.status,
+                      language,
+                      workspace.executionMode,
+                    )}
+                  </Text>
+                  <Text
+                    style={[s.modalSummary, { color: palette.secondaryText }]}
+                  >
+                    {selectedParticipant.step.summary.trim() ||
+                      textFor(
+                        language,
+                        '该 Agent 尚未提交摘要。',
+                        'This Agent has not submitted a summary yet.',
+                      )}
+                  </Text>
+                </ScrollView>
                 <Pressable
+                  accessible
                   accessibilityRole="button"
                   accessibilityLabel={textFor(
                     language,
@@ -340,8 +431,8 @@ export function AgentWorkspaceCard({
                 </Pressable>
               </>
             ) : null}
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </>
   );
@@ -372,11 +463,7 @@ const s = StyleSheet.create({
   detail: { fontSize: 13, lineHeight: 20 },
   name: { fontWeight: '600' },
   attention: { fontSize: 14, lineHeight: 21, fontWeight: '500' },
-  agentList: {
-    gap: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#d9d9d9',
-  },
+  agentList: { gap: 0 },
   agentRow: {
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -389,33 +476,52 @@ const s = StyleSheet.create({
   agentCopy: { flex: 1, gap: 3, minWidth: 0 },
   agentRole: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
   agentMeta: { fontSize: 11, lineHeight: 15 },
-  agentDetail: { paddingHorizontal: 3, paddingVertical: 7 },
+  agentDetail: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   detailLink: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
   detailPanel: { gap: 8, paddingTop: 4 },
+  // S2 grows the current feed item; the outer list owns vertical reading.
+  textResultReader: { minHeight: 48 },
   resultTitle: { fontSize: 14, lineHeight: 20, fontWeight: '600' },
-  modalBackdrop: {
-    backgroundColor: 'rgba(0,0,0,0.42)',
+  modalContainer: {
     flex: 1,
     justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.42)',
   },
   modalSheet: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: StyleSheet.hairlineWidth,
     gap: 12,
+    maxHeight: '85%',
     padding: 20,
     paddingBottom: 30,
   },
   modalHeader: {
     alignItems: 'center',
     flexDirection: 'row',
+    gap: 12,
     justifyContent: 'space-between',
   },
+  modalAgent: { flex: 1, minWidth: 0 },
+  modalBody: { flexGrow: 0, flexShrink: 1 },
+  modalBodyContent: { gap: 12 },
   closeButton: {
     alignItems: 'center',
-    height: 32,
+    height: 44,
     justifyContent: 'center',
-    width: 32,
+    width: 44,
   },
   modalRole: { fontSize: 16, lineHeight: 22, fontWeight: '600' },
   modalMeta: { fontSize: 12, lineHeight: 17 },

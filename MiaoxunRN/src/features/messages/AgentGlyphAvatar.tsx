@@ -25,12 +25,18 @@ function AgentImageAvatar({
   agentId,
   size,
   borderRadius,
+  backgroundColor,
+  ring,
+  outlineColor,
   testID,
 }: {
   uri: string;
   agentId: string;
   size: number;
   borderRadius: number;
+  backgroundColor: string;
+  ring: boolean;
+  outlineColor?: string;
   testID?: string;
 }) {
   const [failed, setFailed] = useState(false);
@@ -48,14 +54,33 @@ function AgentImageAvatar({
       </View>
     );
   return (
-    <Image
-      accessibilityLabel={`Agent ${agentId} 已发布头像`}
-      source={{ uri }}
-      onError={() => setFailed(true)}
-      resizeMode="cover"
-      style={{ height: size, width: size, borderRadius }}
-      testID={testID || `agent-avatar-image-${agentId}`}
-    />
+    <View
+      style={[
+        styles.disc,
+        ring && sharedStyles.avatarRing,
+        { backgroundColor, borderRadius, height: size, width: size },
+      ]}
+      testID={`agent-avatar-frame-${agentId}`}
+    >
+      <Image
+        accessibilityLabel={`Agent ${agentId} 已发布头像`}
+        accessibilityIgnoresInvertColors
+        source={{ uri }}
+        onError={() => setFailed(true)}
+        resizeMode="cover"
+        style={styles.image}
+        testID={testID || `agent-avatar-image-${agentId}`}
+      />
+      {outlineColor ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.xunOverlay,
+            { borderColor: outlineColor, borderRadius },
+          ]}
+        />
+      ) : null}
+    </View>
   );
 }
 
@@ -115,6 +140,9 @@ export function AgentGlyphAvatar({
         agentId={agentId}
         size={size}
         borderRadius={borderRadius}
+        backgroundColor={resolvedIdentity.colors.background}
+        ring={!isXun && !isXunTask}
+        outlineColor={isXun || isXunTask ? disc : undefined}
         testID={testID}
       />
     );
@@ -157,6 +185,7 @@ export function AgentGlyphAvatar({
 
 const styles = StyleSheet.create({
   disc: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  image: { height: '100%', width: '100%' },
   xunDisc: { backgroundColor: '#f4f5fa' },
   mark: { fontWeight: '800', textAlign: 'center' },
   xunOverlay: { ...StyleSheet.absoluteFill, borderWidth: 1 },

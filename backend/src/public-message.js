@@ -46,6 +46,10 @@ function publicMetadata(value, suppressAttachments = false, isAgent = false) {
   }
   const workspaceContext = publicWorkspaceContext(value.workspaceContext);
   if (workspaceContext) metadata.workspaceContext = workspaceContext;
+  if (!suppressAttachments && isAgent && workspaceContext?.nodeId &&
+      text(value.workspaceContributionDiscussion?.reply)) {
+    metadata.contributionDiscussion = { state: "available" };
+  }
   if (text(value.senderUserId)) metadata.senderUserId = value.senderUserId;
   if (value.butlerContextReset === true) metadata.butlerContextReset = true;
   if (value.agentContextReset === true) metadata.agentContextReset = true;

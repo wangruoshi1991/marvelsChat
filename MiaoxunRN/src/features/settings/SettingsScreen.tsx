@@ -106,6 +106,31 @@ export function SettingsScreen({
     React.useState<UIPreferencePreviewDTO | null>(null);
   const [uiBusy, setUIBusy] = React.useState(false);
   const [uiError, setUIError] = React.useState('');
+  const uiActionInFlight = React.useRef(false);
+  const runUIAction = async (
+    action: () => Promise<void>,
+    errorZh: string,
+    errorEn: string,
+  ) => {
+    // State disables the controls after rendering; the ref also guards two
+    // presses in the same frame and competing preference operations.
+    if (uiActionInFlight.current) return;
+    uiActionInFlight.current = true;
+    setUIBusy(true);
+    setUIError('');
+    try {
+      await action();
+    } catch (error) {
+      setUIError(
+        error instanceof Error
+          ? error.message
+          : textFor(language, errorZh, errorEn),
+      );
+    } finally {
+      uiActionInFlight.current = false;
+      setUIBusy(false);
+    }
+  };
   const uiPreviewChanges =
     uiPreview && uiPreferences
       ? describeUIPreferenceChanges(uiPreferences, uiPreview)
@@ -141,10 +166,11 @@ export function SettingsScreen({
           <TextInput
             value={uiInstruction}
             onChangeText={setUIInstruction}
+            editable={!uiBusy}
             placeholder={textFor(
               language,
-              '例如：把妙页协作详情按钮放到右上角',
-              'For example: move the collaboration details button to the top right',
+              '例如：把妙页参与 Agent 按钮放到右上角',
+              'For example: move the participating Agents button to the top right',
             )}
             placeholderTextColor={palette.secondaryText}
             multiline
@@ -160,26 +186,24 @@ export function SettingsScreen({
           />
           <Pressable
             disabled={uiBusy || !uiInstruction.trim()}
+            accessibilityState={{
+              disabled: uiBusy || !uiInstruction.trim(),
+              busy: uiBusy,
+            }}
             accessibilityRole="button"
             accessibilityLabel={textFor(language, '生成预览', 'Preview change')}
-            onPress={async () => {
-              setUIBusy(true);
-              setUIError('');
-              setUIPreview(null);
-              try {
-                setUIPreview(
-                  await onPreviewUIPreferences(uiInstruction.trim()),
-                );
-              } catch (error) {
-                setUIError(
-                  error instanceof Error
-                    ? error.message
-                    : textFor(language, '预览失败', 'Preview failed'),
-                );
-              } finally {
-                setUIBusy(false);
-              }
-            }}
+            onPress={() =>
+              runUIAction(
+                async () => {
+                  setUIPreview(null);
+                  setUIPreview(
+                    await onPreviewUIPreferences(uiInstruction.trim()),
+                  );
+                },
+                '预览失败',
+                'Preview failed',
+              )
+            }
             style={[
               s.uiPrimaryButton,
               { backgroundColor: palette.mint },
@@ -262,30 +286,28 @@ export function SettingsScreen({
               <View style={s.uiPreviewActions}>
                 {onConfirmUIPreferences && uiPreviewChanges.length > 0 ? (
                   <Pressable
+                    disabled={uiBusy}
+                    accessibilityState={{ disabled: uiBusy, busy: uiBusy }}
                     accessibilityRole="button"
-                    onPress={async () => {
-                      setUIBusy(true);
-                      setUIError('');
-                      try {
-                        await onConfirmUIPreferences(
-                          uiPreview.id,
-                          uiPreview.baseRevision,
-                        );
-                        setUIPreview(null);
-                        setUIInstruction('');
-                      } catch (error) {
-                        setUIError(
-                          error instanceof Error
-                            ? error.message
-                            : textFor(language, '应用失败', 'Apply failed'),
-                        );
-                      } finally {
-                        setUIBusy(false);
-                      }
-                    }}
+                    accessibilityLabel={textFor(language, '应用调整', 'Apply')}
+                    onPress={() =>
+                      runUIAction(
+                        async () => {
+                          await onConfirmUIPreferences(
+                            uiPreview.id,
+                            uiPreview.baseRevision,
+                          );
+                          setUIPreview(null);
+                          setUIInstruction('');
+                        },
+                        '应用失败',
+                        'Apply failed',
+                      )
+                    }
                     style={[
                       s.uiPrimaryButton,
                       { backgroundColor: palette.mint },
+                      uiBusy && s.uiDisabled,
                     ]}
                   >
                     <Text
@@ -296,9 +318,15 @@ export function SettingsScreen({
                   </Pressable>
                 ) : null}
                 <Pressable
+                  disabled={uiBusy}
+                  accessibilityState={{ disabled: uiBusy, busy: uiBusy }}
                   accessibilityRole="button"
                   onPress={() => setUIPreview(null)}
-                  style={[s.uiSecondaryButton, { borderColor: palette.border }]}
+                  style={[
+                    s.uiSecondaryButton,
+                    { borderColor: palette.border },
+                    uiBusy && s.uiDisabled,
+                  ]}
                 >
                   <Text style={[s.uiSecondaryLabel, { color: palette.text }]}>
                     {textFor(language, '撤销预览', 'Discard preview')}
@@ -309,22 +337,25 @@ export function SettingsScreen({
           ) : null}
           {onResetUIPreferences ? (
             <Pressable
+              disabled={uiBusy}
+              accessibilityState={{ disabled: uiBusy, busy: uiBusy }}
               accessibilityRole="button"
-              onPress={async () => {
-                setUIBusy(true);
-                setUIError('');
-                try {
-                  await onResetUIPreferences(uiPreferences.revision);
-                } catch (error) {
-                  setUIError(
-                    error instanceof Error
-                      ? error.message
-                      : textFor(language, '恢复默认失败', 'Reset failed'),
-                  );
-                } finally {
-                  setUIBusy(false);
-                }
-              }}
+              accessibilityLabel={textFor(
+                language,
+                '恢复界面默认设置',
+                'Restore interface defaults',
+              )}
+              onPress={() =>
+                runUIAction(
+                  async () => {
+                    await onResetUIPreferences(uiPreferences.revision);
+                    setUIPreview(null);
+                  },
+                  '恢复默认失败',
+                  'Reset failed',
+                )
+              }
+              style={uiBusy && s.uiDisabled}
             >
               <Text style={[s.uiHint, { color: palette.mint }]}>
                 {textFor(
@@ -337,22 +368,25 @@ export function SettingsScreen({
           ) : null}
           {onUndoUIPreferences ? (
             <Pressable
+              disabled={uiBusy}
+              accessibilityState={{ disabled: uiBusy, busy: uiBusy }}
               accessibilityRole="button"
-              onPress={async () => {
-                setUIBusy(true);
-                setUIError('');
-                try {
-                  await onUndoUIPreferences(uiPreferences.revision);
-                } catch (error) {
-                  setUIError(
-                    error instanceof Error
-                      ? error.message
-                      : textFor(language, '撤销调整失败', 'Undo failed'),
-                  );
-                } finally {
-                  setUIBusy(false);
-                }
-              }}
+              accessibilityLabel={textFor(
+                language,
+                '撤销上一次已应用调整',
+                'Undo last applied change',
+              )}
+              onPress={() =>
+                runUIAction(
+                  async () => {
+                    await onUndoUIPreferences(uiPreferences.revision);
+                    setUIPreview(null);
+                  },
+                  '撤销调整失败',
+                  'Undo failed',
+                )
+              }
+              style={uiBusy && s.uiDisabled}
             >
               <Text style={[s.uiHint, { color: palette.mint }]}>
                 {textFor(

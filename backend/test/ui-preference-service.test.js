@@ -83,6 +83,49 @@ test("preview authorizes before reading and persists a bounded proposal", async 
   assert.equal(calls.events[0].eventType, "ui.preferences.preview");
 });
 
+test("UI preview revalidates access and the originating message at the actual model dispatch boundary", async () => {
+  const checkpoints = [];
+  const receipt = { provider: "fixture-provider", latencyMs: 4, tokenUsage: { prompt: 3, completion: 2, total: 5 } };
+  const { service } = createService({
+    revalidate: async () => { checkpoints.push("authorization"); },
+    run: async options => {
+      await options.beforeModelCall();
+      checkpoints.push("model");
+      return { reply: replyFor({ surfaces: { miao: { cardRadius: 20 } } }), ...receipt };
+    },
+  });
+  const prepared = await service.prepare({ user, instruction: "调整圆角",
+    beforeModelCall: async () => { checkpoints.push("message"); } });
+  assert.deepEqual(checkpoints, ["authorization", "message", "model"]);
+  assert.deepEqual(prepared.receipt, receipt);
+});
+
+test("authorization withdrawal before UI model dispatch prevents the request and preview", async () => {
+  let dispatched = false;
+  const { service, calls } = createService({
+    revalidate: async () => { throw new HttpError(403, "revoked"); },
+    run: async options => {
+      await options.beforeModelCall();
+      dispatched = true;
+      return { reply: replyFor({ surfaces: { miao: { cardRadius: 20 } } }) };
+    },
+  });
+  await assert.rejects(service.preview({ user, instruction: "调整圆角" }), error => error.status === 403);
+  assert.equal(dispatched, false);
+  assert.equal(calls.db.length, 0);
+});
+
+test("UI prepare reports only the known receipt before rejecting a malformed model suggestion", async () => {
+  const receipt = { provider: "fixture-provider", latencyMs: 4, tokenUsage: { prompt: 3, completion: 2, total: 5 } };
+  const receipts = [];
+  const { service, calls } = createService({ run: async () => ({ reply: "INVALID_MODEL_BODY", ...receipt }) });
+  await assert.rejects(service.prepare({ user, instruction: "调整妙页", onModelReceipt: value => { receipts.push(value); } }),
+    error => error.details.code === "UI_AGENT_INVALID_RESPONSE");
+  assert.deepEqual(receipts, [receipt]);
+  assert.equal(calls.db.length, 0);
+  assert.equal(calls.events.length, 0);
+});
+
 test("chat preview persists once per user message and requires current authorization", async () => {
   const stored = [];
   const { service, calls } = createService();

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Text } from 'react-native';
+import { Image, StyleSheet, Text } from 'react-native';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 
 import { AgentGlyphAvatar } from '../src/features/messages/AgentGlyphAvatar';
@@ -112,4 +112,66 @@ test('invalid image identity renders a contract error before any remote load', (
     size: 40,
   });
   expect(element.props.testID).toBe('agent-identity-error-image-agent');
+});
+
+test('transparent published images keep their identity backdrop and avatar frame at every size', async () => {
+  for (const size of [26, 40, 54]) {
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AgentGlyphAvatar
+          agentId="image-agent"
+          identity={identity}
+          size={size}
+        />,
+      );
+    });
+    const frame = renderer.root.findByProps({
+      testID: 'agent-avatar-frame-image-agent',
+    });
+    expect(StyleSheet.flatten(frame.props.style)).toMatchObject({
+      width: size,
+      height: size,
+      backgroundColor: identity.colors.background,
+      borderRadius: Math.min(12, size * 0.24),
+      overflow: 'hidden',
+      borderColor: '#FFFFFF',
+      borderWidth: 3,
+    });
+    expect(
+      StyleSheet.flatten(renderer.root.findByType(Image).props.style),
+    ).toMatchObject({
+      width: '100%',
+      height: '100%',
+    });
+    await act(async () => renderer.unmount());
+  }
+});
+
+test('contextual image frames respect explicit radius without changing the published image', async () => {
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = ReactTestRenderer.create(
+      <AgentGlyphAvatar
+        agentId="image-agent"
+        identity={identity}
+        size={32}
+        radius={16}
+        variant="xun-task"
+      />,
+    );
+  });
+  const frame = renderer.root.findByProps({
+    testID: 'agent-avatar-frame-image-agent',
+  });
+  expect(StyleSheet.flatten(frame.props.style)).toMatchObject({
+    width: 32,
+    height: 32,
+    backgroundColor: identity.colors.background,
+    borderRadius: 16,
+  });
+  expect(renderer.root.findByType(Image).props.source.uri).toBe(
+    buildApiUrl(identity.avatar.url),
+  );
+  await act(async () => renderer.unmount());
 });

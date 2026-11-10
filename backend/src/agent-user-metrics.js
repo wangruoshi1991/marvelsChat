@@ -42,8 +42,14 @@ export async function listAgentUserMetrics(userId, agentIds, queryFn = query) {
           FROM agent_workspace_nodes n
           JOIN agent_workspace_rounds r ON r.workspace_id = n.workspace_id
             AND r.user_id = n.user_id AND r.round_number = n.round_number
+          JOIN agent_workspaces workspace ON workspace.id = r.workspace_id
+            AND workspace.user_id = r.user_id
          WHERE n.user_id = ? AND n.agent_id = ANY(?::text[])
-           AND n.status = 'succeeded' AND r.status = 'succeeded'
+           AND n.status = 'succeeded'
+           -- The active round lives on the workspace; its round row is frozen
+           -- only when a continuation opens the following round.
+           AND (CASE WHEN r.round_number = workspace.current_round
+             THEN workspace.status ELSE r.status END) = 'succeeded'
       ) completed GROUP BY completed.agent_id
   )
   SELECT k.agent_id, COALESCE(c.successful_conversations, 0) AS successful_conversations,

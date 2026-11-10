@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aiClientContracts, requireAIClientContract, requireSiteDocumentContract, requireAgentWorkspaceContract, requireUIPreferencesContract, rejectRetiredSiteApply } from "../src/ai-client-contract.js";
+import { aiClientContracts, requireAIClientContract, requireSiteDocumentContract, requireAgentWorkspaceContract, requireUIPreferencesContract, requireWorkspaceContributionsContract, rejectRetiredSiteApply } from "../src/ai-client-contract.js";
 import { createSafeErrorResponse } from "../src/request-observability.js";
 import { registerStationSiteRoutes } from "../src/routes/station-site-routes.js";
 
@@ -17,7 +17,19 @@ test("an AI client must explicitly declare the supported contract, regardless of
   let called = false;
   requireAIClientContract({ get: () => "1" }, null, () => { called = true; });
   assert.equal(called, true);
-  assert.deepEqual(aiClientContracts, { aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6, uiPreferences: 1 });
+  assert.deepEqual(aiClientContracts, { aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6, workspaceContributions: 3, uiPreferences: 1 });
+});
+
+test("strict contribution timeline DTO requires its own version before reading protected records", () => {
+  for (const value of [undefined, "", "1", "4", "2, 1"]) {
+    assert.throws(() => requireWorkspaceContributionsContract({ get: () => value }), error =>
+      error.status === 426 && error.details.code === "WORKSPACE_CONTRIBUTIONS_CLIENT_UPDATE_REQUIRED");
+  }
+  for (const value of ["2", "3"]) {
+    let next = false;
+    requireWorkspaceContributionsContract({ get: () => value }, null, () => { next = true; });
+    assert.equal(next, true);
+  }
 });
 
 test("UI preference routes require the explicit preference contract", () => {

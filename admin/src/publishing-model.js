@@ -8,6 +8,31 @@ export function validateAvatarFile(file) {
     throw new Error("图片大小必须在 1 字节至 2 MB 之间");
 }
 
+export function avatarPreviewFrame(identity, size) {
+  const borderRadius =
+    identity?.shape === "circle"
+      ? size / 2
+      : identity?.shape === "rounded"
+        ? Math.min(12, size * 0.24)
+        : Math.min(16, size * 0.32);
+  return {
+    width: size,
+    height: size,
+    flexShrink: 0,
+    overflow: "hidden",
+    borderRadius,
+    border: "3px solid #FFFFFF",
+    boxSizing: "border-box",
+    background: identity?.background || identity?.colors?.background,
+    color: identity?.foreground || identity?.colors?.foreground,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: Math.round(size * 0.4),
+    fontWeight: 800,
+  };
+}
+
 export function identityFormValues(identity = {}, key = "") {
   return {
     key: identity.key || key,

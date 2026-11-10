@@ -1,10 +1,20 @@
 import { HttpError } from "./http-error.js";
 
-export const aiClientContracts = Object.freeze({ aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6, uiPreferences: 1 });
+export const aiClientContracts = Object.freeze({ aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6, workspaceContributions: 3, uiPreferences: 1 });
 export const aiContractHeader = "X-Miaoxun-AI-Contract";
 export const siteDocumentContractHeader = "X-Miaoxun-Site-Document";
 export const agentWorkspaceContractHeader = "X-Miaoxun-Agent-Workspace";
 export const uiPreferencesContractHeader = "X-Miaoxun-UI-Preferences";
+export const workspaceContributionsContractHeader = "X-Miaoxun-Workspace-Contributions";
+
+export function requireWorkspaceContributionsContract(req, _res, next) {
+  if (!["2", "3"].includes(req.get(workspaceContributionsContractHeader))) {
+    throw new HttpError(426, "当前客户端不支持协作会话时间线，请更新客户端。", {
+      code: "WORKSPACE_CONTRIBUTIONS_CLIENT_UPDATE_REQUIRED", requiredContract: aiClientContracts.workspaceContributions,
+    });
+  }
+  next?.();
+}
 
 export function requireUIPreferencesContract(req, _res, next) {
   if (req.get(uiPreferencesContractHeader) !== String(aiClientContracts.uiPreferences)) {

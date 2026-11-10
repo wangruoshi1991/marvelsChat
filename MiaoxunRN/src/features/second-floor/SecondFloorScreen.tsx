@@ -11,7 +11,6 @@ import {
   Easing,
   Keyboard,
   KeyboardAvoidingView,
-  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -36,6 +35,7 @@ import { Palette } from '../../shared/theme';
 import { textFor } from '../../shared/i18n';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { secondFloorPalette } from './secondFloorTheme';
+import { useStablePanResponder } from '../../shared/gestures/useStablePanResponder';
 import { isV6Palette } from '../../shared/v6Palette';
 import { isXunPalette } from '../../shared/xunPalette';
 import { entranceCurve, useReduceMotion } from '../../shared/useReduceMotion';
@@ -626,69 +626,100 @@ export function SecondFloorScreen({
     });
     return () => listener.remove();
   }, [active, closeFloor]);
-  const responder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponderCapture: (_event, gesture) =>
-          active &&
-          !pending.current &&
+  const responder = useStablePanResponder(
+    {
+      onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+        active &&
+        !pending.current &&
+        exitGesture.enabled &&
+        (Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10) &&
+        (swipeDirectionMatches(
+          exitGesture.direction,
+          gesture.dx,
+          gesture.dy,
+          10,
+        ) ||
+          swipeVelocityMatches(
+            exitGesture.direction,
+            gesture.vx,
+            gesture.vy,
+            0.1,
+          )),
+      onMoveShouldSetPanResponder: (_event, gesture) =>
+        active &&
+        !pending.current &&
+        exitGesture.enabled &&
+        (Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10) &&
+        (swipeDirectionMatches(
+          exitGesture.direction,
+          gesture.dx,
+          gesture.dy,
+          10,
+        ) ||
+          swipeVelocityMatches(
+            exitGesture.direction,
+            gesture.vx,
+            gesture.vy,
+            0.1,
+          )),
+      onPanResponderGrant: () => {
+        exitProgress.stopAnimation();
+      },
+      onPanResponderMove: (_event, gesture) => {
+        if (reduceMotion || closing.current || pending.current) return;
+        const horizontal =
+          exitGesture.direction === 'left' || exitGesture.direction === 'right';
+        const movement = horizontal ? gesture.dx : gesture.dy;
+        const directed = ['up', 'left'].includes(exitGesture.direction)
+          ? -movement
+          : movement;
+        const extent = horizontal ? width : height;
+        exitProgress.setValue(
+          Math.max(0, Math.min(0.25, (directed * 0.72) / extent)),
+        );
+      },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderTerminate: () => {
+        Animated.spring(exitProgress, {
+          toValue: 0,
+          useNativeDriver: true,
+          speed: 22,
+          bounciness: 3,
+        }).start();
+      },
+      onPanResponderRelease: (_event, gesture) => {
+        if (
           exitGesture.enabled &&
-          (Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10) &&
           (swipeDirectionMatches(
             exitGesture.direction,
             gesture.dx,
             gesture.dy,
-            10,
+            exitGestureDistance,
           ) ||
-            swipeVelocityMatches(
-              exitGesture.direction,
-              gesture.vx,
-              gesture.vy,
-              0.1,
-            )),
-        onMoveShouldSetPanResponder: (_event, gesture) =>
-          active &&
-          !pending.current &&
-          exitGesture.enabled &&
-          (Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10) &&
-          (swipeDirectionMatches(
-            exitGesture.direction,
-            gesture.dx,
-            gesture.dy,
-            10,
-          ) ||
-            swipeVelocityMatches(
-              exitGesture.direction,
-              gesture.vx,
-              gesture.vy,
-              0.1,
-            )),
-        onPanResponderRelease: (_event, gesture) => {
-          if (
-            exitGesture.enabled &&
             (swipeDirectionMatches(
               exitGesture.direction,
               gesture.dx,
               gesture.dy,
-              exitGestureDistance,
-            ) ||
-              (swipeDirectionMatches(
+              10,
+            ) &&
+              swipeVelocityMatches(
                 exitGesture.direction,
-                gesture.dx,
-                gesture.dy,
-                10,
-              ) &&
-                swipeVelocityMatches(
-                  exitGesture.direction,
-                  gesture.vx,
-                  gesture.vy,
-                  exitGesture.velocityThreshold,
-                )))
-          )
-            closeFloor();
-        },
-      }),
-    [active, closeFloor, exitGesture, exitGestureDistance],
+                gesture.vx,
+                gesture.vy,
+                exitGesture.velocityThreshold,
+              )))
+        )
+          closeFloor();
+        else
+          Animated.spring(exitProgress, {
+            toValue: 0,
+            useNativeDriver: true,
+            speed: 22,
+            bounciness: 3,
+          }).start();
+      },
+    },
+    active && !busy,
   );
   // In V15 the floor header belongs to the page's scroller, while the tool
   // tray and return gesture stay fixed below it.

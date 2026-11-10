@@ -59,19 +59,41 @@ test('contribution responses require the requested agent and valid artifact iden
   session();
   const step = workspaceStep({ agentId: 'album-manager', id: 'step-1' });
   const item = {
-    workspace: { id: 'workspace-1', revision: 1, executionMode: 'coordinated' },
+    workspace: {
+      id: 'workspace-1',
+      revision: 1,
+      executionMode: 'coordinated',
+      goal: '真实协作任务',
+      currentRound: 1,
+    },
     step,
   };
   http.mockResolvedValueOnce({
     contributions: [item, { unavailable: true, id: 'hidden' }],
     hasMore: false,
+    nextCursor: null,
   });
   await expect(
     agentWorkspaceApi.contributions('token', 'album-manager'),
-  ).resolves.toEqual({ contributions: [item], unavailable: 1, hasMore: false });
+  ).resolves.toEqual({
+    contributions: [item],
+    unavailable: 1,
+    hasMore: false,
+    nextCursor: null,
+    scannedIds: ['step-1', 'hidden'],
+  });
+  expect(http).toHaveBeenLastCalledWith(
+    '/api/agent-workspaces/contributions/album-manager',
+    expect.objectContaining({
+      headers: expect.objectContaining({
+        'X-Miaoxun-Workspace-Contributions': '3',
+      }),
+    }),
+  );
   http.mockResolvedValueOnce({
     contributions: [{ ...item, step: { ...step, agentId: 'other' } }],
     hasMore: false,
+    nextCursor: null,
   });
   await expect(
     agentWorkspaceApi.contributions('token', 'album-manager'),
@@ -87,14 +109,59 @@ test('contribution responses require the requested agent and valid artifact iden
       },
     ],
     hasMore: false,
+    nextCursor: null,
   });
   await expect(
     agentWorkspaceApi.contributions('token', 'album-manager'),
   ).rejects.toThrow('格式');
-  http.mockResolvedValueOnce({ contributions: [item, item], hasMore: false });
+  http.mockResolvedValueOnce({
+    contributions: [item, item],
+    hasMore: false,
+    nextCursor: null,
+  });
   await expect(
     agentWorkspaceApi.contributions('token', 'album-manager'),
   ).rejects.toThrow('重复');
+});
+
+test('an exact contribution read validates the Agent, node identity and contribution protocol', async () => {
+  session();
+  const nodeId = '12a41286-e950-42a7-b482-1d1c56414e89';
+  const workspace = agentWorkspace();
+  const { id, revision, executionMode, goal, currentRound } = workspace;
+  const contribution = {
+    workspace: { id, revision, executionMode, goal, currentRound },
+    step: workspaceStep({
+      id: nodeId,
+      agentId: 'comic-diary',
+      capability: 'comic.storyboard',
+    }),
+  };
+  http.mockResolvedValueOnce({ contribution });
+  await expect(
+    agentWorkspaceApi.contribution('token', 'comic-diary', nodeId),
+  ).resolves.toEqual(contribution);
+  expect(http).toHaveBeenLastCalledWith(
+    `/api/agent-workspaces/contributions/comic-diary/${nodeId}`,
+    expect.objectContaining({
+      headers: expect.objectContaining({
+        'X-Miaoxun-Workspace-Contributions': '3',
+      }),
+    }),
+  );
+  http.mockResolvedValueOnce({ contribution: null });
+  await expect(
+    agentWorkspaceApi.contribution('token', 'comic-diary', nodeId),
+  ).resolves.toBeNull();
+  http.mockResolvedValueOnce({
+    contribution: {
+      ...contribution,
+      step: { ...contribution.step, id: 'different' },
+    },
+  });
+  await expect(
+    agentWorkspaceApi.contribution('token', 'comic-diary', nodeId),
+  ).rejects.toThrow('贡献');
 });
 
 test('contract 5 requires execution mode and an exact direct origin whose executor cannot change', () => {

@@ -18,6 +18,22 @@ import {
 } from '../aiContract';
 
 export const messageApi = {
+  async contributionDiscussion(
+    threadId: string,
+    messageId: string,
+    token: string,
+  ) {
+    assertAgentWorkspaceContract(token);
+    const data = await request<{ content: string }>(
+      `/api/threads/${encodeURIComponent(
+        threadId,
+      )}/messages/${encodeURIComponent(messageId)}/contribution-discussion`,
+      { token, headers: agentWorkspaceHeaders },
+    );
+    if (!data || typeof data.content !== 'string' || !data.content.trim())
+      throw new Error('协作讨论正文无效，请重新读取。');
+    return { content: data.content };
+  },
   messages(threadId: string, token: string) {
     return request<MessageDTO[]>(`/api/threads/${threadId}/messages`, {
       token,

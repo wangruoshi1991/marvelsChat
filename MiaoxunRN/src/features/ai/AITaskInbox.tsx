@@ -350,6 +350,8 @@ export function AITaskInbox({
           return (
             <AgentWorkspaceCard
               workspace={item.task}
+              token={token}
+              active={active}
               agents={agents}
               palette={palette}
               language={language}

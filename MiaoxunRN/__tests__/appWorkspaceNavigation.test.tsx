@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Animated,
   AppState,
   AppStateStatus,
   FlatList,
@@ -324,66 +325,115 @@ test('pull-down opens only from the top, and short or horizontal gestures preser
 test('retained conversation surface clears an interrupted pull when leaving and returning', async () => {
   jest.useFakeTimers();
   const open = jest.fn();
-  await act(async () => {
-    renderer = TestRenderer.create(
-      <AIAssistProvider routeKey="unit-test" onAskButler={jest.fn()}>
-        <ThreadListScreen
-          active
-          palette={palettes.light}
-          language="zh"
-          threads={[]}
-          agents={[]}
-          notices={[]}
-          unreadNoticeCount={0}
-          selectedMessageTab="chat"
-          renderUserAvatar={() => <View />}
-          onOpenThread={jest.fn()}
-          onOpenMessageActions={jest.fn()}
-          onOpenSearch={jest.fn()}
-          onSelectMessageTab={jest.fn()}
-          onMarkNotificationRead={jest.fn()}
-          onAcceptFriendRequest={jest.fn()}
-          onRejectFriendRequest={jest.fn()}
-          onOpenSecondFloor={open}
-        />
-      </AIAssistProvider>,
-    );
-  });
-  // Obtain the handlers from the rendered surface itself.
-  const surface = renderer.root.findByProps({
-    testID: 'messages-pull-surface',
-  });
-  const gesture = { dx: 0, dy: 180 } as never;
-  surface.props.onStartShouldSetPanResponderCapture?.({}, gesture);
-  surface.props.onMoveShouldSetPanResponderCapture?.({}, gesture);
-  surface.props.onPanResponderRelease?.({}, gesture);
-  await act(async () =>
-    renderer.update(
-      <AIAssistProvider routeKey="unit-test" onAskButler={jest.fn()}>
-        <ThreadListScreen
-          active={false}
-          palette={palettes.light}
-          language="zh"
-          threads={[]}
-          agents={[]}
-          notices={[]}
-          unreadNoticeCount={0}
-          selectedMessageTab="chat"
-          renderUserAvatar={() => <View />}
-          onOpenThread={jest.fn()}
-          onOpenMessageActions={jest.fn()}
-          onOpenSearch={jest.fn()}
-          onSelectMessageTab={jest.fn()}
-          onMarkNotificationRead={jest.fn()}
-          onAcceptFriendRequest={jest.fn()}
-          onRejectFriendRequest={jest.fn()}
-          onOpenSecondFloor={open}
-        />
-      </AIAssistProvider>,
-    ),
+  const screen = (active: boolean) => (
+    <AIAssistProvider routeKey="unit-test" onAskButler={jest.fn()}>
+      <ThreadListScreen
+        active={active}
+        palette={palettes.light}
+        language="zh"
+        threads={[]}
+        agents={[]}
+        notices={[]}
+        unreadNoticeCount={0}
+        selectedMessageTab="chat"
+        renderUserAvatar={() => <View />}
+        onOpenThread={jest.fn()}
+        onOpenMessageActions={jest.fn()}
+        onOpenSearch={jest.fn()}
+        onSelectMessageTab={jest.fn()}
+        onMarkNotificationRead={jest.fn()}
+        onAcceptFriendRequest={jest.fn()}
+        onRejectFriendRequest={jest.fn()}
+        onOpenSecondFloor={open}
+      />
+    </AIAssistProvider>
   );
+  await act(async () => {
+    renderer = TestRenderer.create(screen(true));
+  });
+  const surface = () =>
+    renderer.root.findByProps({ testID: 'messages-pull-surface' });
+  const translationY = () => {
+    const content = surface()
+      .findAllByType(Animated.View)
+      .find(node =>
+        StyleSheet.flatten(node.props.style)?.transform?.some(
+          (transform: { translateY?: unknown }) => 'translateY' in transform,
+        ),
+      )!;
+    const translation = StyleSheet.flatten(content.props.style)
+      .transform![1] as { translateY: { __getValue: () => number } };
+    return translation.translateY.__getValue();
+  };
+  const touch = (
+    previousY: number,
+    currentY: number,
+    timestamp: number,
+    active = true,
+  ) => ({
+    nativeEvent: {
+      timestamp,
+      touches: active ? [{ identifier: 0, pageX: 100, pageY: currentY }] : [],
+    },
+    touchHistory: {
+      numberActiveTouches: active ? 1 : 0,
+      indexOfSingleActiveTouch: 0,
+      mostRecentTimeStamp: timestamp,
+      touchBank: [
+        {
+          touchActive: active,
+          startTimeStamp: 1000,
+          startPageX: 100,
+          startPageY: 100,
+          previousTimeStamp: timestamp - 20,
+          previousPageX: 100,
+          previousPageY: previousY,
+          currentTimeStamp: timestamp,
+          currentPageX: 100,
+          currentPageY: currentY,
+        },
+      ],
+    },
+  });
+  // Exercise the rendered responder handlers, including RN's touch-history
+  // calculation and grant reset, rather than calling the PanResponder config.
+  expect(
+    surface().props.onStartShouldSetResponderCapture(touch(100, 100, 1000)),
+  ).toBe(false);
+  const captureMove = touch(100, 120, 1020);
+  expect(surface().props.onMoveShouldSetResponderCapture(captureMove)).toBe(
+    true,
+  );
+  act(() => {
+    surface().props.onResponderGrant(captureMove);
+    surface().props.onResponderMove(touch(120, 280, 1120));
+  });
+  expect(translationY()).toBeGreaterThan(0);
+  act(() => surface().props.onResponderRelease(touch(280, 280, 1140, false)));
+  expect(open).not.toHaveBeenCalled();
+  // Release has started the entrance animation: another pull is blocked until
+  // it finishes. Leaving must cancel that animation and clear its opening lock.
+  surface().props.onStartShouldSetResponderCapture(touch(100, 100, 1200));
+  expect(
+    surface().props.onMoveShouldSetResponderCapture(touch(100, 120, 1220)),
+  ).toBe(false);
+  await act(async () => renderer.update(screen(false)));
+  expect(translationY()).toBe(0);
   act(() => jest.runAllTimers());
   expect(open).not.toHaveBeenCalled();
+  await act(async () => renderer.update(screen(true)));
+  expect(translationY()).toBe(0);
+  surface().props.onStartShouldSetResponderCapture(touch(100, 100, 2000));
+  expect(
+    surface().props.onMoveShouldSetResponderCapture(touch(100, 120, 2020)),
+  ).toBe(true);
+  act(() => {
+    surface().props.onResponderGrant(touch(100, 120, 2020));
+    surface().props.onResponderMove(touch(120, 280, 2120));
+    surface().props.onResponderRelease(touch(280, 280, 2140, false));
+    jest.runAllTimers();
+  });
+  expect(open).toHaveBeenCalledTimes(1);
 });
 
 test('voice keeps the retained navigation anchored and drafts are isolated by account', async () => {

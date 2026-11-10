@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { HttpError } from "../http-error.js";
 import { getAgentWorkspace, listAgentWorkspaces } from "../agent-workspace-repository.js";
-import { submitAgentWorkspace, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, listAgentContributions, workspaceRequestSchema } from "../agent-workspace-service.js";
+import { submitAgentWorkspace, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, listAgentContributions, getAgentContribution, workspaceRequestSchema } from "../agent-workspace-service.js";
 import { createRateLimitMiddleware } from "../rate-limit-service.js";
-import { requireAIClientContract, requireAgentWorkspaceContract, requireSiteDocumentContract } from "../ai-client-contract.js";
+import { requireAIClientContract, requireAgentWorkspaceContract, requireSiteDocumentContract, requireWorkspaceContributionsContract, workspaceContributionsContractHeader } from "../ai-client-contract.js";
 
 const params = z.object({ workspaceId: z.string().uuid() }).strict();
 const list = z.object({ limit: z.coerce.number().int().min(1).max(50).default(30) }).strict();
+const contributionPage = z.object({ before: z.string().uuid().optional() }).strict();
 export const workspaceActionSchema = z.object({
   revision: z.number().int().positive(), operation: z.enum(["cancel", "confirm", "reject", "reply", "continue"]),
   approvalId: z.string().uuid().optional(), text: z.string().trim().min(1).max(2000).optional(),
@@ -22,7 +23,7 @@ const submitLimit = createRateLimitMiddleware({ action: "agent_workspace.submit"
 const decisionLimit = createRateLimitMiddleware({ action: "agent_workspace.decision", limit: 60, windowMs: 60000, message: "协作操作过于频繁，请稍后重试。" });
 
 export function registerAgentWorkspaceRoutes(app, { authenticate, asyncHandler,
-  service = { submitAgentWorkspace, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, listAgentContributions },
+  service = { submitAgentWorkspace, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, listAgentContributions, getAgentContribution },
   repository = { getAgentWorkspace, listAgentWorkspaces },
 } = {}) {
   const guard = [authenticate, requireAIClientContract, requireAgentWorkspaceContract];
@@ -32,9 +33,15 @@ export function registerAgentWorkspaceRoutes(app, { authenticate, asyncHandler,
   app.post("/api/agent-workspaces", ...guard, submitLimit, asyncHandler(async (req, res) => {
     res.status(202).json({ data: await service.submitAgentWorkspace({ user: req.user, ...workspaceRequestSchema.parse(req.body) }) });
   }));
-  app.get("/api/agent-workspaces/contributions/:agentId", ...guard, asyncHandler(async (req, res) => {
+  app.get("/api/agent-workspaces/contributions/:agentId", ...guard, requireWorkspaceContributionsContract, asyncHandler(async (req, res) => {
     const { agentId } = z.object({ agentId: z.string().regex(/^[a-z0-9-]{1,80}$/) }).strict().parse(req.params);
-    res.json({ data: await service.listAgentContributions({ userId: req.user.id, agentId }) });
+    const pagination = req.get(workspaceContributionsContractHeader) === "3";
+    const page = (pagination ? contributionPage : z.object({}).strict()).parse(req.query);
+    res.set("Cache-Control", "no-store").json({ data: await service.listAgentContributions({ userId: req.user.id, agentId, ...page, pagination }) });
+  }));
+  app.get("/api/agent-workspaces/contributions/:agentId/:nodeId", ...guard, requireWorkspaceContributionsContract, asyncHandler(async (req, res) => {
+    const ids = z.object({ agentId: z.string().regex(/^[a-z0-9-]{1,80}$/), nodeId: z.string().uuid() }).strict().parse(req.params);
+    res.set("Cache-Control", "no-store").json({ data: await service.getAgentContribution({ userId: req.user.id, ...ids }) });
   }));
   app.get("/api/agent-workspaces/:workspaceId", ...guard, asyncHandler(async (req, res) => {
     const data = await repository.getAgentWorkspace({ userId: req.user.id, ...params.parse(req.params) });

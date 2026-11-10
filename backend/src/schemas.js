@@ -84,9 +84,9 @@ export const messageSchema = z.object({
   if (!value.workspaceContext) return;
   if (!value.clientMessageId) context.addIssue({ code: z.ZodIssueCode.custom,
     path: ["clientMessageId"], message: "Workspace discussion requires a stable client message ID" });
-  if (value.contextRefs.length || value.replyToMessageId || value.butlerContextReset !== undefined || value.agentContextReset !== undefined) {
+  if (value.contextRefs.length || value.attachmentIds.length || value.replyToMessageId || value.butlerContextReset !== undefined || value.agentContextReset !== undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["workspaceContext"],
-      message: "Workspace discussion cannot include selected references, reply targets, or conversation context resets" });
+      message: "Workspace discussion cannot include attachments, selected references, reply targets, or conversation context resets" });
   }
 });
 

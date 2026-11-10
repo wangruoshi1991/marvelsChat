@@ -8,6 +8,6 @@
 
 文件导出的浮生推荐profile只有非密钥配置：`https://fushengyunsuan.cn/v1`、chat/planning均为`gpt-6.1-sol`，以及所需环境变量名。三份环境样例也列出该地址和普通模型，planning留空明确继承同一模型。profile与样例不会自动覆盖实际环境；Key只放受限运行配置，不进入代码。当前正式环境的实际配置与验证边界统一见[CURRENT](handoffs/CURRENT.md)，不再在多份文档重复维护部署状态。
 
-用户指定vip；正式Agent不引入评测批次的调用次数或费用限制。独立评测保留有限案例、输出和超时，未知回执不重放，不虚构费用或上游身份。此前真实调用与部署证据保留在[Build48历史](handoffs/2026-10-14-build48-history.md)，不代表任意需求、延迟或当前版本已经验收。旧cicadas项目凭据和临时材料已清理，用户Codex或CC Switch连接不属于项目配置。
+用户指定vip；正式Agent不引入评测批次的调用次数或费用限制。独立评测保留有限案例和超时；按2026-11-05最新开发要求，token/费用上限暂不启用，只在仓库外验收配置 `budget.maxOutputTokens` / `budget.maxCostFen` 留可选入口（显式null关闭）。这是验收工具设置，不是Admin可编辑预算页。未知回执不重放，不虚构费用或上游身份。此前真实调用与部署证据保留在[Build48历史](handoffs/2026-10-14-build48-history.md)，不代表任意需求、延迟或当前版本已经验收。旧cicadas项目凭据和临时材料已清理，用户Codex或CC Switch连接不属于项目配置。
 
 当前仍为同一 API 与 Worker 加载独立 Agent 模块。本文件可作为将来拆分部署时复用的配置入口；独立进程、鉴权、队列与部署隔离尚未因此实现。

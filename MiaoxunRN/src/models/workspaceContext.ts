@@ -4,6 +4,7 @@ export type WorkspaceContextSelector = {
   id: string;
   revision: number;
   currentRound: number;
+  nodeId?: string;
 };
 
 export type WorkspaceDiscussionContext = WorkspaceContextSelector & {
@@ -30,7 +31,9 @@ export function isWorkspaceContextSelector(
     Number.isSafeInteger(item.revision) &&
     (item.revision as number) > 0 &&
     Number.isSafeInteger(item.currentRound) &&
-    (item.currentRound as number) > 0
+    (item.currentRound as number) > 0 &&
+    (item.nodeId === undefined ||
+      (typeof item.nodeId === 'string' && workspaceIdPattern.test(item.nodeId)))
   );
 }
 
@@ -55,14 +58,35 @@ export function workspaceContextSelector(
     id: value.id,
     revision: value.revision,
     currentRound: value.currentRound,
+    ...(value.nodeId ? { nodeId: value.nodeId } : {}),
   };
 }
 
 export function workspaceDiscussionContext(
   workspace: AgentWorkspace,
+  nodeId?: string,
+  agentId?: string,
 ): WorkspaceDiscussionContext {
+  if (workspace.readAccess?.state === 'unavailable')
+    throw new Error('原任务来源不可用，请检查授权后重试。');
+  if (nodeId) {
+    const node = workspace.steps.find(step => step.id === nodeId);
+    if (
+      !agentId ||
+      !node ||
+      node.agentId !== agentId ||
+      node.round !== workspace.currentRound ||
+      node.status !== 'succeeded' ||
+      node.result?.kind !== 'text_result' ||
+      node.result.id !== node.id
+    )
+      throw new Error(
+        '这份贡献已变化或不属于当前 Agent，请返回原任务重新选择当前成果。',
+      );
+  }
   const value = {
     ...workspaceContextSelector(workspace),
+    ...(nodeId ? { nodeId } : {}),
     goal: workspace.goal,
   };
   if (!isWorkspaceDiscussionContext(value))
@@ -77,6 +101,7 @@ export function sameWorkspaceContext(
   return (
     left.id === right.id &&
     left.revision === right.revision &&
-    left.currentRound === right.currentRound
+    left.currentRound === right.currentRound &&
+    left.nodeId === right.nodeId
   );
 }

@@ -22,6 +22,7 @@ import { resolveAIContextReferences } from "../ai-context.js";
 import { getAITask } from "../ai-task-repository.js";
 import { submitAgentWorkspace } from "../agent-workspace-service.js";
 import { createWorkspaceDiscussionService } from "../workspace-discussion-service.js";
+import { readContributionDiscussion } from "../contribution-discussion-reader.js";
 import { createSpecialistMessageService } from "../specialist-message-service.js";
 import {
   assertMatchingMessageRetry,
@@ -62,6 +63,7 @@ import {
   markThreadReadForUser,
   mirrorDirectMessageToPeer,
   recallMessageForUser,
+  recordDiscardedUIAgentMessageReceipt,
   setThreadMutedForUser,
 } from "../message-repository.js";
 import {
@@ -221,6 +223,16 @@ export function registerMessageRoutes(
     runAgentRuntime,
   });
   app.get(
+    "/api/threads/:threadId/messages/:messageId/contribution-discussion",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      requireAIClientContract(req);
+      requireAgentWorkspaceContract(req);
+      const data = await readContributionDiscussion({ userId: req.user.id, threadId: req.params.threadId, messageId: req.params.messageId });
+      res.set("Cache-Control", "no-store").json({ data });
+    }),
+  );
+  app.get(
     "/api/threads/:threadId/messages/:messageId/media-results",
     authenticate,
     asyncHandler(async (req, res) => {
@@ -348,6 +360,18 @@ export function registerMessageRoutes(
       if (!thread) throw new HttpError(404, "Thread not found");
       if (thread.agentId === "album-manager" || body.contextRefs.length)
         requireAIClientContract(req);
+      const isUIAgent = thread.agentId === "ui-agent";
+      if (isUIAgent) {
+        requireAIClientContract(req);
+        requireUIPreferencesContract(req);
+        if (!body.clientMessageId || body.contextRefs.length || body.attachmentIds.length ||
+            body.workspaceContext || body.agentContextReset !== undefined || body.butlerContextReset !== undefined) {
+          throw new HttpError(400, "UI Agent 仅接受带消息标识的界面调整文字，请移除附件和任务引用后重试。", { code: "UI_PREFERENCE_MESSAGE_INVALID" });
+        }
+        if (body.content.length > 1200) {
+          throw new HttpError(422, "界面调整描述超过1200字，请精简后重试。", { code: "UI_PREFERENCE_INSTRUCTION_TOO_LONG" });
+        }
+      }
       const clientMessageId = body.clientMessageId || crypto.randomUUID();
       const requestFingerprint = messageRequestFingerprint(body);
       if (thread.kind === "group") {
@@ -390,7 +414,10 @@ export function registerMessageRoutes(
         requireAIClientContract(req);
         requireAgentWorkspaceContract(req);
         enforceAgentMessageCreateLimit(req, res);
-        const result = await discussWorkspace({
+        const discussion = body.workspaceContext.nodeId
+          ? createWorkspaceDiscussionService({ runAgentRuntime, agentId: thread.agentId, contribution: true })
+          : discussWorkspace;
+        const result = await discussion({
           userId: req.user.id,
           threadId: thread.id,
           body,
@@ -577,7 +604,7 @@ export function registerMessageRoutes(
         return existing.metadata?.specialistMessage
           ? specialist()
           : replay(existing);
-      if (thread.agentId && thread.agentId !== "miaoxun-butler")
+      if (thread.agentId && thread.agentId !== "miaoxun-butler" && !isUIAgent)
         return specialist();
       if (body.butlerContextReset && thread.agentId !== "miaoxun-butler") {
         throw new HttpError(400, "仅妙管家支持清除待续需求上下文。", {
@@ -631,7 +658,7 @@ export function registerMessageRoutes(
           "AI context references require an Agent conversation",
         );
       const messageMode =
-        thread.agentId === "miaoxun-butler" ? "dispatch" : "chat";
+        isUIAgent ? "plan" : thread.agentId === "miaoxun-butler" ? "dispatch" : "chat";
       if (thread.agentId) {
         // A generation plan is not a conversation. Reject unsupported chat
         // before persisting a new message or attempting a model call.
@@ -793,6 +820,7 @@ export function registerMessageRoutes(
         let dispatchContext = null;
         let uiPreviewPrepared = null;
         let uiPreviewInstruction = null;
+        let uiModelReceipt = null;
         try {
           const isButler = thread.agentId === "miaoxun-butler";
           if (isButler) {
@@ -811,7 +839,28 @@ export function registerMessageRoutes(
               })),
             };
           }
-          const result = await runAgentRuntime({
+          let result;
+          if (isUIAgent) {
+            // The UI Agent has a dedicated preview contract, not a generic
+            // specialist dispatch or a chat fallback to raw model JSON.
+            dispatchDecision = { type: "ui_preference" };
+            const requestMessages = await resolveButlerRequestMessages({
+              userId: req.user.id, threadId: thread.id, requestMessageIds: [userMessage.id], queryFn: query,
+            });
+            uiPreviewInstruction = buildButlerWorkspaceGoal(requestMessages);
+            uiPreviewPrepared = await uiPreferences.prepare({
+              user: req.user, instruction: uiPreviewInstruction,
+              onModelReceipt: receipt => { uiModelReceipt = receipt; },
+              beforeModelCall: async () => {
+                await resolveButlerRequestMessages({
+                  userId: req.user.id, threadId: thread.id, requestMessageIds: [userMessage.id], queryFn: query,
+                });
+                await assertCurrentAgentAccess({ userId: req.user.id, agent: agentAccess.agent,
+                  grantedScopes: agentAccess.grantedScopes, contextRefs: [] });
+              },
+            });
+            result = uiPreviewPrepared.receipt;
+          } else result = await runAgentRuntime({
             agentId: thread.agentId,
             mode: messageMode,
             input: body.content,
@@ -876,7 +925,7 @@ export function registerMessageRoutes(
             });
             buildButlerWorkspaceGoal(requestMessages);
           }
-          if (dispatchDecision?.type === "ui_preference") {
+          if (dispatchDecision?.type === "ui_preference" && !isUIAgent) {
             requireUIPreferencesContract(req);
             const requestMessages = await resolveButlerRequestMessages({
               userId: req.user.id,
@@ -888,7 +937,16 @@ export function registerMessageRoutes(
             if (uiPreviewInstruction.length > 1200) {
               throw new HttpError(422, "界面调整描述超过1200字，请精简后重试。", { code: "UI_PREFERENCE_INSTRUCTION_TOO_LONG" });
             }
-            uiPreviewPrepared = await uiPreferences.prepare({ user: req.user, instruction: uiPreviewInstruction });
+            uiPreviewPrepared = await uiPreferences.prepare({
+              user: req.user, instruction: uiPreviewInstruction,
+              beforeModelCall: async () => {
+                await assertPendingInput();
+                await resolveButlerRequestMessages({ userId: req.user.id, threadId: thread.id,
+                  requestMessageIds: requestContinuation.requestMessageIds, queryFn: query });
+                await assertCurrentAgentAccess({ userId: req.user.id, agent: agentAccess.agent,
+                  grantedScopes: agentAccess.grantedScopes, contextRefs: resolvedContext.references });
+              },
+            });
           }
           const clarification =
             dispatchDecision?.type === "reply" && continuesPendingContext
@@ -951,14 +1009,15 @@ export function registerMessageRoutes(
                     ? "UI Agent 暂不可用或尚未授权，请检查其发布及授权状态后重试。"
                     : agentFailureReply,
             metadata: {
-              provider: "runtime-error",
+              provider: uiModelReceipt?.provider || "runtime-error",
               errorCode: failure.code,
               ...(requestContinuation
                 ? { butlerClarification: requestContinuation }
                 : {}),
             },
             status: "error",
-            provider: "runtime-error",
+            provider: uiModelReceipt?.provider || "runtime-error",
+            tokenUsage: uiModelReceipt?.tokenUsage ?? null,
             latencyMs: Date.now() - startedAt,
             errorMessage: failure.code,
           };
@@ -969,6 +1028,19 @@ export function registerMessageRoutes(
           inputMessageId: userMessage.id,
           agentId: thread.agentId,
           senderName: thread.title,
+        };
+        const completeFailure = async failure => {
+          try {
+            return await completeAgentMessageOnce({ ...completionInput, ...failure });
+          } catch (error) {
+            if (isUIAgent && uiModelReceipt && error?.status === 404) {
+              await recordDiscardedUIAgentMessageReceipt({
+                userId: req.user.id, threadId: thread.id, inputMessageId: userMessage.id,
+                receipt: uiModelReceipt, latencyMs: Date.now() - startedAt,
+              });
+            }
+            throw error;
+          }
         };
         let completed;
         if (completion.status === "success") {
@@ -983,12 +1055,12 @@ export function registerMessageRoutes(
                 connection,
                 prepareCompletion: async (lockedConnection) => {
                   await assertPendingInput(lockedConnection.query, true);
-                  const requestMessages = requestContinuation
+                  const requestMessages = requestContinuation || isUIAgent
                     ? await resolveButlerRequestMessages({
                         userId: req.user.id,
                         threadId: thread.id,
                         requestMessageIds:
-                          requestContinuation.requestMessageIds,
+                          requestContinuation?.requestMessageIds || [userMessage.id],
                         queryFn: lockedConnection.query,
                         lock: true,
                       })
@@ -1044,30 +1116,27 @@ export function registerMessageRoutes(
             });
           } catch (error) {
             if (![403, 404, 409].includes(error?.status)) throw error;
-            completed = await completeAgentMessageOnce({
-              ...completionInput,
+            completed = await completeFailure({
               content:
                 error?.details?.code === "UI_PREFERENCE_REVISION_CONFLICT"
                   ? "界面偏好已发生变化，请重新发送以生成新的预览。"
                   : "授权或引用内容已变化，本次未交付结果。请核对后重新发送。",
               metadata: {
-                provider: "runtime-error",
+                provider: uiModelReceipt?.provider || "runtime-error",
                 errorCode: "AI_CONTEXT_CHANGED",
                 ...(requestContinuation
                   ? { butlerClarification: requestContinuation }
                   : {}),
               },
               status: "error",
-              provider: "runtime-error",
+              provider: uiModelReceipt?.provider || "runtime-error",
+              tokenUsage: uiModelReceipt?.tokenUsage ?? null,
               latencyMs: Date.now() - startedAt,
               errorMessage: "AI_CONTEXT_CHANGED",
             });
           }
         } else {
-          completed = await completeAgentMessageOnce({
-            ...completionInput,
-            ...completion,
-          });
+          completed = await completeFailure(completion);
         }
         responseMessages.push(completed.outputMessage);
       }

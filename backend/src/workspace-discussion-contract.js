@@ -4,6 +4,7 @@ export const workspaceContextSchema = z.object({
   id: z.string().uuid(),
   revision: z.number().int().positive().safe(),
   currentRound: z.number().int().positive().safe(),
+  nodeId: z.string().uuid().optional(),
 }).strict();
 
 const publicContextSchema = workspaceContextSchema.extend({ goal: z.string().min(1).max(2000) });
@@ -11,6 +12,7 @@ const publicContextSchema = workspaceContextSchema.extend({ goal: z.string().min
 export function publicWorkspaceContext(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const parsed = publicContextSchema.safeParse({ id: value.id, revision: value.revision,
-    currentRound: value.currentRound, goal: value.goal });
+    currentRound: value.currentRound, goal: value.goal,
+    ...(value.nodeId !== undefined ? { nodeId: value.nodeId } : {}) });
   return parsed.success ? parsed.data : undefined;
 }

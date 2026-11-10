@@ -20,7 +20,13 @@ import {
   normalizeAssistMessageSource,
 } from '../assist/assistMessageSource';
 import { appErrorMessage } from './sessionDefaults';
-import { mapMessage, mergeMessages, mergeThreads } from './sessionMappers';
+import {
+  mapMessage,
+  mergeMessages,
+  mergeThreads,
+  mergeThreadMessageActivity,
+  sortThreadsByActivity,
+} from './sessionMappers';
 import { ChatMessage, ChatThread } from './sessionTypes';
 
 type UseMessageActionsOptions = {
@@ -107,7 +113,7 @@ export function useMessageActions({
           throw new Error('专业 Agent 不能使用管家上下文重置。');
         if (
           submittedWorkspace !== undefined &&
-          (!isButler ||
+          ((!isButler && !(isProfessional && submittedWorkspace.nodeId)) ||
             !isWorkspaceDiscussionContext(submittedWorkspace) ||
             submittedReferences.length ||
             submittedReplyToMessageId ||
@@ -168,7 +174,6 @@ export function useMessageActions({
                         : message,
                     )
                   : [...item.messages, optimistic],
-                lastContent: submittedContent,
               }
             : item,
         ),
@@ -233,20 +238,23 @@ export function useMessageActions({
         );
         const incoming = response.messages.map(mapMessage);
         setThreads(current =>
-          current.map(item =>
-            item.id === threadId
-              ? {
-                  ...item,
-                  messages: mergeMessages(
-                    item.messages.filter(
-                      message => message.id !== optimisticId,
+          sortThreadsByActivity(
+            current.map(item =>
+              item.id === threadId
+                ? {
+                    ...mergeThreadMessageActivity(
+                      {
+                        ...item,
+                        messages: item.messages.filter(
+                          message => message.id !== optimisticId,
+                        ),
+                      },
+                      incoming,
                     ),
-                    incoming,
-                  ),
-                  lastContent: incoming.at(-1)?.content || item.lastContent,
-                  unreadCount: 0,
-                }
-              : item,
+                    unreadCount: 0,
+                  }
+                : item,
+            ),
           ),
         );
         return true;
@@ -303,17 +311,12 @@ export function useMessageActions({
         .messages(threadId, token)
         .then(messages => {
           setThreads(current =>
-            current.map(thread =>
-              thread.id === threadId
-                ? {
-                    ...thread,
-                    messages: mergeMessages(
-                      thread.messages,
-                      messages.map(mapMessage),
-                    ),
-                    lastContent: messages.at(-1)?.content || thread.lastContent,
-                  }
-                : thread,
+            sortThreadsByActivity(
+              current.map(thread =>
+                thread.id === threadId
+                  ? mergeThreadMessageActivity(thread, messages.map(mapMessage))
+                  : thread,
+              ),
             ),
           );
         })

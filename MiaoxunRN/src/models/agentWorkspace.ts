@@ -58,7 +58,10 @@ export type WorkspaceStep = {
   updatedAt: string;
 };
 export type WorkspaceContribution = {
-  workspace: Pick<AgentWorkspace, 'id' | 'revision' | 'executionMode'>;
+  workspace: Pick<
+    AgentWorkspace,
+    'id' | 'revision' | 'executionMode' | 'goal' | 'currentRound'
+  >;
   step: WorkspaceStep;
 };
 export type WorkspaceRequest = {
@@ -328,8 +331,18 @@ export function assertWorkspaceContribution(
   const s = value.step;
   if (
     !exactKeys(value, ['workspace', 'step']) ||
-    !exactKeys(w, ['id', 'revision', 'executionMode']) ||
+    !exactKeys(w, [
+      'id',
+      'revision',
+      'executionMode',
+      'goal',
+      'currentRound',
+    ]) ||
     !nonempty(w.id) ||
+    !nonempty(w.goal) ||
+    w.goal.length > 2000 ||
+    !integer(w.currentRound) ||
+    Number(w.currentRound) < 1 ||
     !integer(w.revision) ||
     !['direct', 'coordinated'].includes(String(w.executionMode)) ||
     !['id', 'key', 'agentId', 'agentVersion', 'capability', 'goal'].every(k =>

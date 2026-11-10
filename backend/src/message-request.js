@@ -15,8 +15,9 @@ export function messageRequestFingerprint(body) {
   if (body.butlerContextReset === true) semanticInput.push({ butlerContextReset: true });
   if (body.agentContextReset === true) semanticInput.push({ agentContextReset: true });
   if (body.workspaceContext) {
-    const { id, revision, currentRound } = body.workspaceContext;
-    semanticInput.push({ workspaceContext: { id, revision, currentRound } });
+    const { id, revision, currentRound, nodeId } = body.workspaceContext;
+    semanticInput.push({ workspaceContext: { id, revision, currentRound,
+      ...(nodeId ? { nodeId } : {}) } });
   }
   return crypto.createHash("sha256").update(JSON.stringify(semanticInput)).digest("hex");
 }

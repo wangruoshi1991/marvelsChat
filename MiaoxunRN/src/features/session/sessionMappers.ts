@@ -71,6 +71,58 @@ export function mergeMessages(
   ]);
 }
 
+function activityTime(value?: string | null) {
+  const parsed = value ? Date.parse(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : -Infinity;
+}
+
+// Workspace projections also own lastContent/lastMessageAt. A message-only
+// receipt may advance that activity, but must never replace a newer projection.
+export function mergeThreadMessageActivity(
+  thread: ChatThread,
+  incoming: ChatMessage[],
+): ChatThread {
+  const messages = mergeMessages(thread.messages, incoming);
+  const latest = messages.reduce<ChatMessage | undefined>(
+    (current, message) => {
+      if (message.localStatus || activityTime(message.createdAt) === -Infinity)
+        return current;
+      return !current ||
+        activityTime(message.createdAt) >= activityTime(current.createdAt)
+        ? message
+        : current;
+    },
+    undefined,
+  );
+  if (
+    !latest ||
+    activityTime(latest.createdAt) < activityTime(thread.lastMessageAt)
+  )
+    return { ...thread, messages };
+  return {
+    ...thread,
+    messages,
+    lastMessageAt: latest.createdAt,
+    lastContent:
+      latest.deletedAt || latest.recalledAt
+        ? ''
+        : latest.metadata?.workspaceContext?.nodeId
+        ? latest.senderType === 'agent'
+          ? '协作讨论已回复'
+          : '正在讨论协作成果'
+        : latest.content,
+  };
+}
+
+export function sortThreadsByActivity(threads: ChatThread[]) {
+  return [...threads].sort(
+    (left, right) =>
+      Number(right.pinned) - Number(left.pinned) ||
+      activityTime(right.lastMessageAt) - activityTime(left.lastMessageAt) ||
+      0,
+  );
+}
+
 function sortMessages(messages: ChatMessage[]) {
   return [...messages].sort((left, right) => {
     const leftTime = left.createdAt

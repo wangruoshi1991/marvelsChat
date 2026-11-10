@@ -553,12 +553,45 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
     const { title, content } = parseWorkspaceTextArtifact(node.result.artifact);
     return { id: node.id, title, content };
   });
-  const listAgentContributions = async ({ userId, agentId }) => {
+  // Share the original delivery gate, including transitive sources and product
+  // entitlement, with discussion admission/dispatch/delivery and later reads.
+  // No dependency bodies or other Agent conversations leave this boundary.
+  const readContributionDiscussionContext = async ({ connection, userId, agentId, selector }) => {
+    const workspace = await repo.readOwnedWorkspaceRecord(connection, { userId, workspaceId: selector.id });
+    const node = workspace.nodes.find(item => item.id === selector.nodeId && item.agentId === agentId && item.round === selector.currentRound);
+    if (node?.status !== "succeeded" || node.result?.artifact?.kind !== "text_result") {
+      fail(409, "WORKSPACE_CONTRIBUTION_UNAVAILABLE", "所选 Agent 的这份文字贡献尚未完成或已不可访问。");
+    }
+    await validateDelivery(connection, workspace, node, { completedRead: true });
+    const { title, content } = parseWorkspaceTextArtifact(node.result.artifact);
+    return { goal: workspace.goal, contribution: { title, content } };
+  };
+  const listAgentContributions = async ({ userId, agentId, before, pagination = true }) => {
     z.string().uuid().parse(userId);
     z.string().regex(/^[a-z0-9-]{1,80}$/).parse(agentId);
-    const rows = await runQuery(`SELECT id,workspace_id FROM agent_workspace_nodes
-      WHERE user_id = ? AND agent_id = ? AND capability <> 'workspace.coordinate'
-      ORDER BY updated_at DESC,id DESC LIMIT 51`, [userId, agentId]);
+    if (before !== undefined) z.string().uuid().parse(before);
+    let rows;
+    if (before === undefined) {
+      rows = await runQuery(`SELECT id,workspace_id FROM agent_workspace_nodes
+        WHERE user_id = ? AND agent_id = ? AND capability <> 'workspace.coordinate'
+        ORDER BY ${pagination ? 'created_at' : 'updated_at'} DESC,id DESC LIMIT 51`, [userId, agentId]);
+    } else {
+      // Keep cursor validation and page selection in one snapshot, including
+      // the valid-but-empty page case, without rounding PostgreSQL timestamps.
+      rows = await runQuery(`WITH anchor AS (
+          SELECT id,created_at FROM agent_workspace_nodes
+          WHERE id = ? AND user_id = ? AND agent_id = ? AND capability <> 'workspace.coordinate'
+        ), page AS (
+          SELECT node.id,node.workspace_id,node.created_at FROM agent_workspace_nodes node CROSS JOIN anchor
+          WHERE node.user_id = ? AND node.agent_id = ? AND node.capability <> 'workspace.coordinate'
+            AND (node.created_at,node.id) < (anchor.created_at,anchor.id)
+          ORDER BY node.created_at DESC,node.id DESC LIMIT 51
+        )
+        SELECT page.id,page.workspace_id FROM anchor LEFT JOIN page ON true
+        ORDER BY page.created_at DESC,page.id DESC`, [before, userId, agentId, userId, agentId]);
+      if (rows.length === 0) fail(404, "WORKSPACE_CONTRIBUTION_CURSOR_INVALID", "协作贡献分页位置不存在或不可用，请重新加载。");
+      if (rows[0].id === null) rows = [];
+    }
     const groups = new Map();
     for (const row of rows.slice(0, 50)) {
       const group = groups.get(row.workspace_id) ?? [];
@@ -571,20 +604,27 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
         let workspace;
         try { workspace = await repo.readOwnedWorkspaceRecord(connection, { userId, workspaceId }); }
         catch (error) {
-          if (error instanceof HttpError && error.status === 404) return;
+          if (error instanceof HttpError && error.status === 404) {
+            if (pagination) for (const id of nodeIds) results.set(id, { unavailable: true, id });
+            return;
+          }
           throw error;
         }
         const validated = new Map();
         for (const nodeId of nodeIds) {
           const node = workspace.nodes.find(item => item.id === nodeId && item.agentId === agentId);
-          if (!node) continue;
+          if (!node) {
+            if (pagination) results.set(nodeId, { unavailable: true, id: nodeId });
+            continue;
+          }
           try {
             if (node.status === 'succeeded' && node.result?.artifact) {
               await validateDelivery(connection, workspace, node, { completedRead: true, validated });
             } else {
               await authorizeNode(connection, workspace, node);
             }
-            results.set(node.id, { workspace: { id: workspace.id, revision: workspace.revision, executionMode: workspace.executionMode },
+            results.set(node.id, { workspace: { id: workspace.id, revision: workspace.revision, executionMode: workspace.executionMode,
+              goal: workspace.goal, currentRound: workspace.currentRound },
               step: workspace.steps.find(item => item.id === node.id) });
           } catch (error) {
             if (!(error instanceof HttpError) || ![403, 404, 409].includes(error.status)) throw error;
@@ -593,7 +633,26 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
         }
       });
     }
-    return { contributions: rows.slice(0, 50).map(row => results.get(row.id)).filter(Boolean), hasMore: rows.length > 50 };
+    const hasMore = rows.length > 50;
+    const contributions = rows.slice(0, 50).map(row => results.get(row.id)).filter(Boolean);
+    return pagination ? { contributions, hasMore, nextCursor: hasMore ? rows[49].id : null } : { contributions, hasMore };
+  };
+  const getAgentContribution = async ({ userId, agentId, nodeId }) => {
+    z.string().uuid().parse(userId);
+    z.string().uuid().parse(nodeId);
+    z.string().regex(/^[a-z0-9-]{1,80}$/).parse(agentId);
+    return transaction(async connection => {
+      const [identity] = await connection.query(`SELECT workspace_id FROM agent_workspace_nodes
+        WHERE id = ? AND user_id = ? AND agent_id = ? AND capability <> 'workspace.coordinate'`, [nodeId, userId, agentId]);
+      if (!identity) return { contribution: null };
+      const workspace = await repo.readOwnedWorkspaceRecord(connection, { userId, workspaceId: identity.workspace_id });
+      const node = workspace.nodes.find(item => item.id === nodeId && item.agentId === agentId && item.capability !== 'workspace.coordinate');
+      if (!node) return { contribution: null };
+      if (node.status === 'succeeded' && node.result?.artifact) await validateDelivery(connection, workspace, node, { completedRead: true });
+      else await authorizeNode(connection, workspace, node);
+      return { contribution: { workspace: { id: workspace.id, revision: workspace.revision, executionMode: workspace.executionMode,
+        goal: workspace.goal, currentRound: workspace.currentRound }, step: workspace.steps.find(item => item.id === node.id) } };
+    });
   };
   const authorizeWorkspaceSiteDraftRead = async ({ connection, userId, draftId, workspaceNodeId }) => {
     const [identity] = await connection.query("SELECT workspace_id FROM agent_workspace_nodes WHERE id = ? AND user_id = ?", [workspaceNodeId, userId]);
@@ -618,7 +677,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
     if (draft.workspace_node_id !== binding.workspace_node_id) fail(409, "WORKSPACE_SITE_BINDING_INVALID", "页面草稿所属任务已变化。");
     return draft;
   };
-  return { submitAgentWorkspace, submitDirectAgentWorkspace, executeWorkspaceNode, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, listAgentContributions, authorizeWorkspaceSiteDraftRead };
+  return { submitAgentWorkspace, submitDirectAgentWorkspace, executeWorkspaceNode, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, readContributionDiscussionContext, listAgentContributions, getAgentContribution, authorizeWorkspaceSiteDraftRead };
 }
 
-export const { submitAgentWorkspace, submitDirectAgentWorkspace, executeWorkspaceNode, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, listAgentContributions, authorizeWorkspaceSiteDraftRead } = createAgentWorkspaceService();
+export const { submitAgentWorkspace, submitDirectAgentWorkspace, executeWorkspaceNode, decideAgentWorkspace, getWorkspaceMedia, getWorkspaceText, readContributionDiscussionContext, listAgentContributions, getAgentContribution, authorizeWorkspaceSiteDraftRead } = createAgentWorkspaceService();

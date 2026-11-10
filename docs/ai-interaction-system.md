@@ -1,6 +1,6 @@
 # 统一 AI 交互与持久任务
 
-更新：2026-11-05。本文描述任务1、页面2、协作6和界面偏好1接口与权限边界；生产切换属于历史部署记录，当前工作区的迁移、发布目录与 entitlement 链路尚未据此宣称生产已部署。客户端完整业务链路和验收状态仍以[当前交接](handoffs/CURRENT.md)为准。本文不构成新的生产操作授权。
+更新：2026-11-06。本文描述任务1、页面2、协作6和界面偏好1接口与权限边界；生产切换属于历史部署记录，当前工作区的迁移、发布目录与 entitlement 链路尚未据此宣称生产已部署。客户端完整业务链路和验收状态仍以[当前交接](handoffs/CURRENT.md)为准。本文不构成新的生产操作授权。
 
 ## 产品行为
 
@@ -12,7 +12,7 @@ UI Agent 是一个受权限和产品发布链路约束的规划 Agent，只返�
 
 客户端先调用 `POST /api/ui/preferences/preview`，请求必须带 `X-Miaoxun-UI-Preferences: 1`。服务端重新校验 UI Agent 的注册版本、已发布 release、产品 entitlement、完整授权范围和当前用户资料，调用模型后把临时预览写入 `ui_preference_previews`。预览只保留 10 分钟，包含基准 revision、服务端基线 `beforePreferences`、补丁、合并后的完整偏好和受限的影响页面摘要；它不会改变当前页面，也不会写入用户消息。RN 当前消费固定组件的显隐、插槽、标签、尺寸和妙页/二楼手势阈值，未注册组件不会进入渲染层。
 
-用户明确点击确认后，客户端提交预览 ID 与基准 revision 到 `POST /api/ui/preferences/confirm`。服务端在事务内锁定预览和用户资料，重验过期、重复使用、版本竞争、授权和补丁合同，保存确认前基线并递增 revision 后才写入 `user_profiles.station_config.uiPreferences`；`POST /api/ui/preferences/reset` 以同一授权和 revision 合同恢复默认，并使旧的 pending 预览失效。最近一次仍可撤销的确认可通过 `POST /api/ui/preferences/undo` 携带当前 `baseRevision` 恢复，服务端以 CAS 递增新 revision、标记原确认已撤销并写入审计；重复撤销、无基线、授权撤回和版本冲突都显式失败。RN 只渲染已验证的语义偏好，不能把模型返回的字符串当作可执行样式。
+用户明确点击确认后，客户端提交预览 ID 与基准 revision 到 `POST /api/ui/preferences/confirm`。服务端在事务内锁定预览和用户资料，重验过期、重复使用、版本竞争、授权和补丁合同，保存确认前基线并递增 revision 后才写入 `user_profiles.station_config.uiPreferences`；`POST /api/ui/preferences/reset` 以同一授权和 revision 合同恢复默认，并把该用户所有 pending 预览和尚未撤销的 confirmed 记录标为 reset，关闭旧撤销历史。这样恢复默认后不会再通过撤销恢复已丢弃的旧偏好；新确认仍能正常撤销。最近一次仍可撤销的确认可通过 `POST /api/ui/preferences/undo` 携带当前 `baseRevision` 恢复，按 `confirmed_revision` 倒序取回，避免 PostgreSQL 事务起始时间与确认顺序相反时选错记录。服务端以 CAS 递增新 revision、标记原确认已撤销并写入审计；重复撤销、无基线、授权撤回和版本冲突都显式失败。RN 只渲染已验证的语义偏好，不能把模型返回的字符串当作可执行样式。
 
 UI Agent 代码注册不等于可用。迁移055、Agent release、产品版本依赖、用户 consent 和 RN 合同头必须同时就绪；缺少任一项时服务端返回明确的 unavailable/entitlement/426 错误，不使用演示偏好或静默回退。当前切片已经包含后端合同、存储、审计和离线服务测试，真实发布、模型调用和真机视觉验收仍需按当前交接单独完成。051 是既有生产 UI 偏好表合同，不得替换或重编号。
 
@@ -117,6 +117,8 @@ UI Agent 代码注册不等于可用。迁移055、Agent release、产品版本�
 | 同一消息接口（切换前已接受相册key） | 原正文、原key及原引用；任务1声明 | 200 `{data:{messages,task}}`，返回原ai_tasks和已有成果；不再分派，不另建workspace，异参409 |
 | 同一消息接口（妙管家） | content、clientMessageId、可选replyToMessageId/contextRefs/butlerContextReset；任务1与协作6声明 | 同步返回答复/澄清、带`metadata.agentWorkspace.id`的任务回复，或任务讨论回复；任务回复与工作空间同事务提交，专业节点异步执行 |
 | 同一消息接口（绑定原任务讨论） | `content`、必需UUID `clientMessageId`、`workspaceContext:{id,revision,currentRound}`；不可与`contextRefs`、replyTo或任何会话重置标记混用 | 仅妙讯管家接受；服务端校验本人所有权、当前轮次/revision、当前管家授权和会话。用户消息和答复公开带`metadata.workspaceContext:{id,revision,currentRound,goal}`；重放同一key不重复调用模型，失败回执不进入普通澄清恢复 |
+| 同一消息接口（选中贡献讨论） | `workspaceContext:{id,revision,currentRound,nodeId}`、正文和稳定消息UUID；AI任务1/工作空间6；不能混用附件、素材、回复或重置 | 当前轮成功文字节点必须属于该会话Agent；原成果/来源/产品授权在受理、模型前、交付复验。公开答复只有安全占位、selector及`contributionDiscussion:{state:"available"}`，不创建/修改任务 |
+| `GET /api/threads/:threadId/messages/:messageId/contribution-discussion` | AI任务1/工作空间6、本人会话/答复ID | 重新验证原贡献、授权、版本、输入/输出消息及传递讨论历史，返回`{content}`，`Cache-Control:no-store`；失效明确拒绝 |
 | 同一消息接口（好友） | content、clientMessageId及可选replyToMessageId；不接受AI引用或Agent重置标记 | 原同步消息与对端镜像结果 |
 | `POST /api/station/site-drafts` | prompt、idempotencyKey | 202 `{data:{task}}`；重复原请求返回原任务，改参数409；`apply`字段拒绝 |
 | `GET /api/tasks` | 可选threadId、kind，limit 1–50，默认30 | `{data:Task[]}`；活跃任务优先，剩余为最近历史；目前无全历史分页 |
@@ -233,6 +235,16 @@ npm run worker:ai-tasks
 未知响应/超时有自己的持久失败回执，迟到回复不能覆盖已固定的失败，也不会进入普通管家的陈旧消息修复路径。失败重试保留原正文、selector和key，不自动选择新轮次或重新调用模型。普通聊天历史在最近一次任务讨论处断开；主动移除关联后，客户端另发送 `butlerContextReset:true`，避免复活更早普通澄清。
 
 历史消息入口会重新读取本人任务才恢复绑定。任务已变化时保留用户草稿，先显示当前轮次并要求显式核对；不根据模型回复中的ID导航。用户点击“继续修改此任务”只传自己的可编辑草稿和原selector到详情，详情先读取服务端和本机Keychain；已有未知续作请求优先，外部草稿不能覆盖它。最终执行仍是下面的 `continue` 决定。
+
+### 在原 Agent 会话讨论选中贡献
+
+额外的可选UUID `workspaceContext.nodeId` 区分精确贡献讨论。它必须指向本人任务中属于当前会话Agent、当前轮已成功的`text_result`；metadata-only管家讨论仍不读取正文，专业会话不能省略nodeId借用元信息讨论。nodeId纳入语义指纹，同键换节点、正文、轮次或版本返回409，不自动重试模型。附件也不能与任何任务讨论混用。
+
+`workspace-discussion-service.js` 对选中贡献使用现有Agent的`chat`能力与聊天模型，运行时`contribution-discussion-plan.js`追加只读讨论约束，拒绝工具/dispatch/未声明上下文。模型仅获得服务器校验的`{goal,language,contribution:{title,content}}`及同账号/会话/任务/节点/轮次/revision/Agent版本的最近6对成功讨论；不额外读取源正文或其他节点正文。原成果校验仍遍历必要来源和依赖，但不将其正文作为额外模型上下文。正式修改必须回到原任务使用现有确认流程。
+
+派生答复不会复制到普通消息正文。内部`metadata.workspaceContributionDiscussion`保存答复和所选成果hash，普通消息保存固定占位；`publicMessage`只提供可读标记。专用正文GET每次重新验证原成果来源与授权、原输入/输出是否删除或撤回，以及本答复使用过的讨论历史hash。`workspace-discussion-history.js`递归验证讨论来源链，超过6对窗口的祖先撤回也不能靠后续答复重新泄露。该检查同时用于新讨论受理、模型前和交付；元信息管家历史hash保留既有字节协议。
+
+客户端不将该正文写入session消息、复制/引用内容或普通模型历史；前后台/账号/会话变化清除临时文本，前台15秒复验，失败移除旧正文并显示重读入口。选择关联和刷新都GET服务端当前任务，不静默替换nodeId。会话内贡献按节点创建时间混排，节点状态更新不制造重复卡。讯页预览和sync使用原节点/工作空间时间，仅投影固定状态；未读数仍只使用原真实聊天计数。贡献列表的独立版本为`X-Miaoxun-Workspace-Contributions:2`，缺失/旧版426，工作空间主合同维持6。
 
 ### 续作提交与历史成果
 

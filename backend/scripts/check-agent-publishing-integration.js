@@ -177,12 +177,18 @@ try {
     beforeRegistry,
     "Reading registry must not create release drafts"
   );
-  const uploadImage = async (color, key = `avatar-${suffix}`, status = 201) => {
-    const bytes = await sharp({
-      create: { width: 96, height: 96, channels: 3, background: color },
-    })
-      .png()
-      .toBuffer();
+  const uploadImage = async (
+    source,
+    key = `avatar-${suffix}`,
+    status = 201
+  ) => {
+    const bytes = Buffer.isBuffer(source)
+      ? source
+      : await sharp({
+          create: { width: 96, height: 96, channels: 3, background: source },
+        })
+          .png()
+          .toBuffer();
     const response = await fetch(
       `http://127.0.0.1:${port}/api/admin/agent-avatar-assets`,
       {
@@ -223,16 +229,126 @@ try {
     if (expectedStatus === 200) {
       assert.match(response.headers.get("content-type"), /image\/webp/);
       assert.equal(
-        crypto
-          .createHash("sha256")
-          .update(Buffer.from(await response.arrayBuffer()))
-          .digest("hex"),
+        response.headers.get("cache-control"),
+        authenticated
+          ? "private, no-store"
+          : "public, max-age=300, must-revalidate"
+      );
+      assert.equal(response.headers.get("etag"), `"${asset.sha256}"`);
+      assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+      const bytes = Buffer.from(await response.arrayBuffer());
+      assert.equal(
+        crypto.createHash("sha256").update(bytes).digest("hex"),
         asset.sha256
       );
+      return bytes;
     }
   };
   await readImage(imageAsset, 404);
   await readImage(imageAsset, 200, true);
+  // Real uploaded synthetic images exercise center cropping and alpha, rather
+  // than testing only a uniform color which cannot expose a crop regression.
+  const evidenceDirectory = process.env.MIAOXUN_AVATAR_EVIDENCE_DIR;
+  if (evidenceDirectory) await fs.mkdir(evidenceDirectory, { recursive: true });
+  const imageChecks = [];
+  for (const fixture of [
+    { name: "square", width: 96, height: 96, transparent: false },
+    { name: "landscape", width: 192, height: 96, transparent: false },
+    { name: "portrait", width: 96, height: 192, transparent: false },
+    { name: "transparent", width: 96, height: 96, transparent: true },
+  ]) {
+    const subjectSize = fixture.transparent ? 48 : 96;
+    const subject = await sharp({
+      create: {
+        width: subjectSize,
+        height: subjectSize,
+        channels: 4,
+        background: { r: 24, g: 170, b: 90, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
+    const source = await sharp({
+      create: {
+        width: fixture.width,
+        height: fixture.height,
+        channels: 4,
+        background: {
+          r: 230,
+          g: 40,
+          b: 40,
+          alpha: fixture.transparent ? 0 : 1,
+        },
+      },
+    })
+      .composite([
+        {
+          input: subject,
+          left: (fixture.width - subjectSize) / 2,
+          top: (fixture.height - subjectSize) / 2,
+        },
+      ])
+      .png()
+      .toBuffer();
+    const asset = await uploadImage(source, `avatar-${fixture.name}-${suffix}`);
+    await readImage(asset, 404);
+    const normalized = await readImage(asset, 200, true);
+    const metadata = await sharp(normalized).metadata();
+    assert.equal(metadata.width, 512);
+    assert.equal(metadata.height, 512);
+    assert.equal(metadata.exif, undefined);
+    const { data, info } = await sharp(normalized)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const centerOffset = (256 * info.width + 256) * info.channels;
+    assert.ok(
+      data[centerOffset + 1] > 150,
+      `${fixture.name} lost its centered subject`
+    );
+    assert.equal(
+      data[3],
+      fixture.transparent ? 0 : 255,
+      `${fixture.name} alpha changed`
+    );
+    // Ignore the resampling kernel's one-pixel blend at crop boundaries.
+    const insetOffset = (16 * info.width + 16) * info.channels;
+    if (!fixture.transparent)
+      assert.ok(
+        data[insetOffset + 1] > 150,
+        `${fixture.name} did not crop to the centered square`
+      );
+    imageChecks.push({
+      name: fixture.name,
+      sourceWidth: fixture.width,
+      sourceHeight: fixture.height,
+      normalizedWidth: 512,
+      normalizedHeight: 512,
+      alphaPreserved: true,
+      draftPublicStatus: 404,
+      authenticatedReadStatus: 200,
+      contentHash: asset.sha256,
+    });
+    if (evidenceDirectory) {
+      await fs.writeFile(
+        path.join(evidenceDirectory, `${fixture.name}-source.png`),
+        source
+      );
+      await fs.writeFile(
+        path.join(evidenceDirectory, `${fixture.name}-normalized.webp`),
+        normalized
+      );
+    }
+  }
+  if (evidenceDirectory)
+    await fs.writeFile(
+      path.join(evidenceDirectory, "avatar-upload-evidence.json"),
+      JSON.stringify(
+        { isolated: true, modelCalls: 0, checks: imageChecks },
+        null,
+        2
+      )
+    );
   const releaseIdentity = {
     ...codeAgent.identity,
     key: codeAgent.key,
@@ -752,8 +868,8 @@ try {
         taskStatus === "failed"
           ? ["retry"]
           : taskStatus === "queued"
-          ? ["cancel"]
-          : []
+            ? ["cancel"]
+            : []
       );
       assert.equal(detail.eventKind, "status_events");
       assert.equal(detail.eventsTruncated, taskStatus === "failed");
@@ -906,14 +1022,35 @@ try {
     headers: { "Idempotency-Key": `product-pause-${suffix}` },
     body: { productVersionId: nextDraft.productVersionId },
   };
-  const paused = await request(`/api/admin/products/${product.id}/pause`, pauseOptions);
+  const paused = await request(
+    `/api/admin/products/${product.id}/pause`,
+    pauseOptions
+  );
   assert.equal(paused.productVersionId, nextDraft.productVersionId);
   assert.equal(paused.status, "paused");
-  assert.equal((await request(`/api/admin/products/${product.id}/pause`, pauseOptions)).status, "paused");
+  assert.equal(
+    (await request(`/api/admin/products/${product.id}/pause`, pauseOptions))
+      .status,
+    "paused"
+  );
   const pausedBootstrap = await request("/api/app/bootstrap", { token });
-  assert.equal(pausedBootstrap.entitlements.find((item) => item.id === upgraded.id).status, "unavailable");
-  assert.equal(pausedBootstrap.agents.owned.some((item) => item.id === revision.agentKey), false);
-  assert.equal((await request(`/api/admin/products/${product.id}?productVersionId=${product.productVersionId}`, { token })).product.status, "published");
+  assert.equal(
+    pausedBootstrap.entitlements.find((item) => item.id === upgraded.id).status,
+    "unavailable"
+  );
+  assert.equal(
+    pausedBootstrap.agents.owned.some((item) => item.id === revision.agentKey),
+    false
+  );
+  assert.equal(
+    (
+      await request(
+        `/api/admin/products/${product.id}?productVersionId=${product.productVersionId}`,
+        { token }
+      )
+    ).product.status,
+    "published"
+  );
   const resumed = await request(`/api/admin/products/${product.id}/publish`, {
     method: "POST",
     token,
@@ -922,8 +1059,15 @@ try {
   });
   assert.equal(resumed.status, "published");
   const resumedBootstrap = await request("/api/app/bootstrap", { token });
-  assert.equal(resumedBootstrap.entitlements.find((item) => item.id === upgraded.id).status, "unavailable");
-  assert.equal(resumedBootstrap.agents.owned.some((item) => item.id === revision.agentKey), false);
+  assert.equal(
+    resumedBootstrap.entitlements.find((item) => item.id === upgraded.id)
+      .status,
+    "unavailable"
+  );
+  assert.equal(
+    resumedBootstrap.agents.owned.some((item) => item.id === revision.agentKey),
+    false
+  );
   const reconsented = await request(`/api/me/products/${product.id}/enable`, {
     method: "POST",
     token,
@@ -937,7 +1081,11 @@ try {
     status: 201,
   });
   assert.equal(reconsented.status, "enabled");
-  assert.ok((await request("/api/app/bootstrap", { token })).agents.owned.some((item) => item.id === revision.agentKey));
+  assert.ok(
+    (await request("/api/app/bootstrap", { token })).agents.owned.some(
+      (item) => item.id === revision.agentKey
+    )
+  );
   console.log(
     "Agent publishing HTTP integration passed: pure registry reads, explicit deployed-code draft creation, managed image upload/idempotency/authenticated preview/draft 404/published public image/hash, same-runtime identity revision/review withdrawal/immutable published release, structured product draft and version editing/publication, old accepted contract preservation, explicit upgrade consent, exact-version pause/idempotent replay/resume without implicit consent/re-consent, bootstrap/sync/entitlement/user_agents/thread projection/revocation; operational detail/status history/associations/counts/UUID/401/403 read and mutation/task operation/truncation/privacy checks."
   );

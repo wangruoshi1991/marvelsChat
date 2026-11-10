@@ -21,6 +21,7 @@ export function WorkspaceContextCard({
   language,
   draft,
   historical = false,
+  agentId,
   onChangeContext,
   onRemove,
   onOpenWorkspace,
@@ -31,6 +32,7 @@ export function WorkspaceContextCard({
   language: Language;
   draft?: string;
   historical?: boolean;
+  agentId?: string | null;
   onChangeContext: (context: WorkspaceDiscussionContext) => void;
   onRemove?: () => void;
   onOpenWorkspace: (
@@ -54,6 +56,7 @@ export function WorkspaceContextCard({
       AppState.currentState !== 'background' &&
       AppState.currentState !== 'inactive';
     setBusy(false);
+    setError('');
     setCandidate(null);
     const subscription = AppState.addEventListener('change', state => {
       foreground.current = state === 'active';
@@ -69,7 +72,14 @@ export function WorkspaceContextCard({
       generation.current += 1;
       subscription.remove();
     };
-  }, [token, context.id, context.revision, context.currentRound]);
+  }, [
+    token,
+    context.id,
+    context.revision,
+    context.currentRound,
+    context.nodeId,
+    agentId,
+  ]);
   const read = async (action: 'view' | 'prepare' | 'restore') => {
     if (!alive.current || !foreground.current || pending.current) return;
     const seq = ++generation.current;
@@ -84,7 +94,11 @@ export function WorkspaceContextCard({
       if (!alive.current || !foreground.current || generation.current !== seq)
         return;
       if (action === 'restore') {
-        const latest = workspaceDiscussionContext(workspace);
+        const latest = workspaceDiscussionContext(
+          workspace,
+          context.nodeId,
+          agentId || undefined,
+        );
         if (sameWorkspaceContext(context, latest)) onChangeContext(latest);
         else setCandidate(latest);
       } else {
@@ -160,7 +174,7 @@ export function WorkspaceContextCard({
           />
         ) : null}
       </View>
-      {!historical ? (
+      {!historical && !context.nodeId ? (
         <WorkspaceButton
           palette={palette}
           variant="secondary"

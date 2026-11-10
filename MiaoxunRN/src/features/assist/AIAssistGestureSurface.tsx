@@ -28,7 +28,7 @@ export {
 } from './assistLayout';
 export type { AIAssistTargetLayout } from './assistLayout';
 export type AIAssistGestureHandle = {
-  activateAt: (point: AIAssistPoint) => void;
+  activateAt: (point?: AIAssistPoint) => void;
   moveTo: (point: AIAssistPoint) => void;
   releaseAt: (point: AIAssistPoint) => void;
   cancel: () => void;
@@ -55,6 +55,7 @@ export const AIAssistGestureSurface = forwardRef<
     onTouchCancel?: () => void;
     style?: StyleProp<ViewStyle>;
     testID?: string;
+    accessible?: boolean;
     accessibilityLabel?: string;
     accessibilityHint?: string;
   }
@@ -71,6 +72,7 @@ export const AIAssistGestureSurface = forwardRef<
     onTouchCancel,
     style,
     testID = 'ai-assist-surface',
+    accessible = true,
     accessibilityLabel,
     accessibilityHint,
   },
@@ -182,6 +184,7 @@ export const AIAssistGestureSurface = forwardRef<
       collapsable={false}
       style={style}
       testID={testID}
+      accessible={accessible}
       accessibilityRole="button"
       accessibilityLabel={
         accessibilityLabel ||

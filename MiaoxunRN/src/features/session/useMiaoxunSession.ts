@@ -110,6 +110,7 @@ export function useMiaoxunSession() {
   const [appearance, setAppearance] = useState<Appearance>('light');
   const [uiPreferences, setUIPreferences] =
     useState<UIPreferences>(defaultUIPreferences);
+  const uiPreferencesRef = useRef<UIPreferences>(uiPreferences);
   const [isBusy, setIsBusy] = useState(false);
   const [isRestoring, setIsRestoring] = useState(true);
   const [restoreStatus, setRestoreStatus] = useState<RestoreStatus>('checking');
@@ -212,22 +213,42 @@ export function useMiaoxunSession() {
     setRealtimeNotificationNotice,
   );
 
+  const applyProfileUIPreferences = useCallback((savedProfile: ProfileDTO) => {
+    const incoming =
+      savedProfile.stationConfig.uiPreferences || defaultUIPreferences();
+    // Profile and appearance responses contain snapshots too. A delayed one
+    // must not replace a newer server-confirmed UI preference revision.
+    if (incoming.revision < uiPreferencesRef.current.revision) {
+      return {
+        ...savedProfile,
+        stationConfig: {
+          ...savedProfile.stationConfig,
+          uiPreferences: uiPreferencesRef.current,
+        },
+      };
+    }
+    uiPreferencesRef.current = incoming;
+    setUIPreferences(incoming);
+    return savedProfile;
+  }, []);
+
   const applySavedProfile = useCallback(
     (savedProfile: ProfileDTO) => {
       if (!token || tokenRef.current !== token) return;
       profileRevisionRef.current += 1;
-      setSessionProfile(savedProfile);
+      setSessionProfile(applyProfileUIPreferences(savedProfile));
       setSessionUser(current =>
         current ? { ...current, displayName: savedProfile.nickname } : current,
       );
     },
-    [setSessionProfile, setSessionUser, token],
+    [applyProfileUIPreferences, setSessionProfile, setSessionUser, token],
   );
 
   const updateToken = useCallback((nextToken: string) => {
     clearAIContractSession();
     sessionVersionRef.current += 1;
     profileRevisionRef.current = 0;
+    uiPreferencesRef.current = defaultUIPreferences();
     bootstrapPromiseRef.current = null;
     syncPromiseRef.current = null;
     if (nextToken) {
@@ -324,14 +345,24 @@ export function useMiaoxunSession() {
           ? { ...bootstrap.user, displayName: current.displayName }
           : bootstrap.user,
       );
+      // UI preferences have their own server CAS revision. A newer UI
+      // revision remains valid even if a local identity save superseded
+      // the rest of this bootstrap's profile snapshot.
+      const previousUIRevision = uiPreferencesRef.current.revision;
+      const preferenceProfile = applyProfileUIPreferences(bootstrap.profile);
       if (!profileChanged) {
-        setProfile(bootstrap.profile);
+        setProfile(preferenceProfile);
         setLanguage(bootstrap.profile.stationConfig.language || 'zh');
         setAppearance(bootstrap.profile.stationConfig.appearance || 'light');
-        setUIPreferences(
-          bootstrap.profile.stationConfig.uiPreferences ||
-            defaultUIPreferences(),
-        );
+      } else if (uiPreferencesRef.current.revision > previousUIRevision) {
+        const preferences = uiPreferencesRef.current;
+        setProfile(current => ({
+          ...current,
+          stationConfig: {
+            ...current.stationConfig,
+            uiPreferences: preferences,
+          },
+        }));
       }
       setThreads(buildThreads(bootstrap));
       setModules(bootstrap.modules);
@@ -354,7 +385,7 @@ export function useMiaoxunSession() {
       }
       lastSyncAtRef.current = bootstrap.serverTime;
     },
-    [],
+    [applyProfileUIPreferences],
   );
 
   const refreshBootstrap = useCallback(
@@ -681,9 +712,12 @@ export function useMiaoxunSession() {
           language: nextLanguage,
           appearance: nextAppearance,
         });
+        if (tokenRef.current !== token) return;
+        profileRevisionRef.current += 1;
+        const updated = applyProfileUIPreferences(updatedProfile);
         setSessionProfile(current => ({
           ...current,
-          stationConfig: updatedProfile.stationConfig,
+          stationConfig: updated.stationConfig,
         }));
       } catch (error) {
         setSessionError(
@@ -691,7 +725,7 @@ export function useMiaoxunSession() {
         );
       }
     },
-    [setSessionError, setSessionProfile, token],
+    [applyProfileUIPreferences, setSessionError, setSessionProfile, token],
   );
 
   const setLanguageAndSync = useCallback(
@@ -927,6 +961,25 @@ export function useMiaoxunSession() {
       setUser: setSessionUser,
     });
 
+  const applyConfirmedUIPreferences = useCallback(
+    (saved: UIPreferences) => {
+      // An older bootstrap in flight must not undo a successful mutation.
+      // Conversely, a newer bootstrap can beat this mutation's HTTP receipt.
+      if (saved.revision < uiPreferencesRef.current.revision) return;
+      profileRevisionRef.current += 1;
+      uiPreferencesRef.current = saved;
+      setUIPreferences(saved);
+      setSessionProfile(current => ({
+        ...current,
+        stationConfig: {
+          ...current.stationConfig,
+          uiPreferences: saved,
+        },
+      }));
+    },
+    [setSessionProfile],
+  );
+
   const previewUIPreferences = useCallback(
     (instruction: string, surface?: 'messages' | 'miao' | 'secondFloor') =>
       apiClient.previewUIPreferences(token, instruction, surface),
@@ -941,51 +994,30 @@ export function useMiaoxunSession() {
       );
       if (tokenRef.current !== token)
         throw new Error('登录状态已变更，请重新操作');
-      setUIPreferences(result.preferences);
-      setSessionProfile(current => ({
-        ...current,
-        stationConfig: {
-          ...current.stationConfig,
-          uiPreferences: result.preferences,
-        },
-      }));
+      applyConfirmedUIPreferences(result.preferences);
       return result;
     },
-    [setSessionProfile, token],
+    [applyConfirmedUIPreferences, token],
   );
   const resetUIPreferences = useCallback(
     async (baseRevision: number) => {
       const result = await apiClient.resetUIPreferences(token, baseRevision);
       if (tokenRef.current !== token)
         throw new Error('登录状态已变更，请重新操作');
-      setUIPreferences(result.preferences);
-      setSessionProfile(current => ({
-        ...current,
-        stationConfig: {
-          ...current.stationConfig,
-          uiPreferences: result.preferences,
-        },
-      }));
+      applyConfirmedUIPreferences(result.preferences);
       return result;
     },
-    [setSessionProfile, token],
+    [applyConfirmedUIPreferences, token],
   );
   const undoUIPreferences = useCallback(
     async (baseRevision: number) => {
       const result = await apiClient.undoUIPreferences(token, baseRevision);
       if (tokenRef.current !== token)
         throw new Error('登录状态已变更，请重新操作');
-      setUIPreferences(result.preferences);
-      setSessionProfile(current => ({
-        ...current,
-        stationConfig: {
-          ...current.stationConfig,
-          uiPreferences: result.preferences,
-        },
-      }));
+      applyConfirmedUIPreferences(result.preferences);
       return result;
     },
-    [setSessionProfile, token],
+    [applyConfirmedUIPreferences, token],
   );
 
   const {

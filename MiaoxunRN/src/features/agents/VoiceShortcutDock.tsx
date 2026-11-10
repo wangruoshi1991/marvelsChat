@@ -1274,12 +1274,12 @@ export function VoiceShortcutDock({
               ? '长按后滑向语音、未读或规划；原地松开取消。轻点仅关闭已展开的快捷入口。'
               : `长按后滑向键盘、妙管家或${optionText(
                   'feed',
-                )}；原地松开取消。轻点仅关闭已展开的快捷入口。`,
+                )}；原地松开取消。轻点仅关闭已展开的快捷入口。也可通过无障碍操作打开快捷菜单或切换任务布局，无需语音权限。`,
             tone === 'xun'
               ? 'Hold and slide to Voice, Unread or Plan. Release in place to cancel. A tap only closes an open menu.'
               : `Hold and slide to Type, Butler or ${optionText(
                   'feed',
-                )}. Release in place to cancel. A tap only closes an open menu.`,
+                )}. Release in place to cancel. A tap only closes an open menu. Accessibility actions can open shortcuts or change the task layout without voice permission.`,
           )}
           accessibilityState={{
             expanded,
@@ -1294,16 +1294,42 @@ export function VoiceShortcutDock({
                 tone === 'xun' ? 'Open voice menu' : 'Start voice input',
               ),
             },
+            ...(tone === 'miao'
+              ? [
+                  {
+                    name: 'open-shortcuts',
+                    label: textFor(
+                      language,
+                      '打开快捷菜单',
+                      'Open shortcut menu',
+                    ),
+                  },
+                  {
+                    name: 'toggle-task-layout',
+                    label: textFor(
+                      language,
+                      '切换任务布局',
+                      'Switch task layout',
+                    ),
+                  },
+                ]
+              : []),
           ]}
           onAccessibilityAction={event => {
-            if (event.nativeEvent.actionName !== 'longpress') return;
-            if (tone === 'xun') openShortcuts();
-            else start();
+            if (!active) return;
+            const { actionName } = event.nativeEvent;
+            if (actionName === 'longpress') {
+              if (tone === 'xun') openShortcuts();
+              else start();
+            } else if (tone === 'miao') {
+              if (actionName === 'open-shortcuts') openShortcuts();
+              else if (actionName === 'toggle-task-layout') deliver('feed');
+            }
           }}
           // A regular tap deliberately does not open the radial menu. V15
           // treats this control as a long-press affordance; an accessibility
-          // tap only dismisses an already-open menu. VoiceOver users can use
-          // the explicit `longpress` accessibility action below.
+          // tap only dismisses an already-open menu. VoiceOver users can choose
+          // speech or the separate shortcuts/layout accessibility actions.
           onAccessibilityTap={() => {
             if (expandedRef.current) close();
           }}

@@ -1,22 +1,25 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   Animated,
   LayoutAnimation,
-  PanResponder,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native';
-import { ChevronDown, ChevronUp, Eye } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react-native';
 import { AgentDTO } from '../../models/api';
 import { Palette } from '../../shared/theme';
+import { textFor } from '../../shared/i18n';
 import { Language } from '../session/sessionTypes';
-import { AIContextActions } from '../assist/AIContextActions';
+import {
+  AIContextActions,
+  AIContextActionsHandle,
+} from '../assist/AIContextActions';
 import { MiaoTaskAgent } from './MiaoTaskAgent';
 import { MiaoCardViewState, nextMiaoCardState } from './miaoCardState';
+import { useMiaoCardGesture } from './useMiaoCardGesture';
 import type { UIPreferences } from '../ui/uiPreferenceTypes';
 import {
   componentUIPreference,
@@ -33,33 +36,41 @@ export function MiaoTaskCard({
   goal,
   status,
   detail,
+  updatedLabel,
   participantIds,
   agents,
   palette,
   language,
   grid,
   failed,
-  showAgentNames = false,
   renderState,
   children,
   uiPreferences,
+  active = true,
+  viewState: controlledViewState,
+  onViewStateChange,
   ...actions
-}: Omit<React.ComponentProps<typeof AIContextActions>, 'children' | 'style'> & {
+}: Omit<
+  React.ComponentProps<typeof AIContextActions>,
+  'children' | 'style' | 'ref'
+> & {
   goal: string;
   status: string;
   detail?: string | null;
+  updatedLabel?: string;
   participantIds: string[];
   agents: AgentDTO[];
   palette: Palette;
   language: Language;
   grid: boolean;
   failed: boolean;
-  /** Optional fixed names for callers outside the collapsible feed. */
-  showAgentNames?: boolean;
   /** Content for the PDF's S1/S2 states. Summary children stay in S0. */
   renderState?: (state: MiaoCardViewState) => React.ReactNode;
   children?: React.ReactNode;
   uiPreferences?: UIPreferences;
+  active?: boolean;
+  viewState?: MiaoCardViewState;
+  onViewStateChange?: (state: MiaoCardViewState) => void;
 }) {
   const { onOpen, openLabel, ...assistActions } = actions;
   const { width } = useWindowDimensions();
@@ -93,8 +104,18 @@ export function MiaoTaskCard({
     uiPreferences,
     'miao.taskCard.detailsSwipe',
   );
-  const [viewState, setViewState] = useState<MiaoCardViewState>('summary');
+  const [localViewState, setLocalViewState] =
+    useState<MiaoCardViewState>('summary');
+  const viewState = controlledViewState ?? localViewState;
+  const setViewState = useCallback(
+    (next: MiaoCardViewState) => {
+      if (controlledViewState === undefined) setLocalViewState(next);
+      onViewStateChange?.(next);
+    },
+    [controlledViewState, onViewStateChange],
+  );
   const translateX = useRef(new Animated.Value(0)).current;
+  const assistSurface = useRef<AIContextActionsHandle>(null);
   const suppressPressUntil = useRef(0);
   const detailText = detail?.trim();
   const showDetail =
@@ -103,30 +124,39 @@ export function MiaoTaskCard({
     id,
     agent: agents.find(candidate => candidate.key === id),
   }));
-  const [agentsExpanded, setAgentsExpanded] = useState(false);
-  const namesVisible = showAgentNames || agentsExpanded;
-  const ToggleIcon =
-    viewState !== 'summary' || agentsExpanded ? ChevronUp : ChevronDown;
-  const agentNodes = participants.map(({ id, agent }, index) => (
+  const DetailsIcon = viewState === 'summary' ? ChevronDown : ChevronUp;
+  const agentNodes = participants.map(({ id, agent }) => (
     <MiaoTaskAgent
       key={id}
       agentId={id}
       agent={agent}
       palette={palette}
       language={language}
-      size={33}
-      showName={namesVisible || !agent}
+      size={grid ? 26 : 30}
+      header
+      gridHeader={grid}
+      showName
       constrainName
-      overlap={!namesVisible && index > 0}
     />
   ));
   const participantsVisible = participantsPreference.visible !== false;
-  const detailsGestureEnabled = detailsPreference.visible !== false;
-  // The prototype's default card keeps its original compact controls. A
-  // customized details component has an explicit entry into this card's S2;
-  // the unrelated avatar-name toggle never consumes its preferences.
-  const showDetailsAction =
-    detailsGestureEnabled && Object.keys(detailsPreference).length > 0;
+  // Legacy single-task cards only supply navigation. Inline states require an
+  // explicit renderer so their tap/swipe can never reveal an empty body.
+  const inlineStatesAvailable = Boolean(renderState);
+  const participantsGestureEnabled =
+    inlineStatesAvailable && participantsVisible;
+  const detailsGestureEnabled =
+    inlineStatesAvailable && detailsPreference.visible !== false;
+  // The PDF's disclosure expands the current result in this same card. The
+  // participant count is the separate entry into S1.
+  const showDetailsAction = detailsGestureEnabled || viewState !== 'summary';
+  const detailsActionLabel =
+    viewState === 'agents'
+      ? textFor(language, '收起 Agent', 'Collapse Agents')
+      : viewState === 'detail'
+      ? textFor(language, '收起详情', 'Collapse details')
+      : detailsPreference.label ||
+        textFor(language, '展开详情', 'Expand details');
   const controlScale = (scale = 1) =>
     Math.max(0.8, Math.min(1.3, scale * miaoButtonScale));
   const participantsScale = controlScale(participantsPreference.sizeScale);
@@ -190,7 +220,7 @@ export function MiaoTaskCard({
         useNativeDriver: true,
       }).start();
     },
-    [translateX],
+    [setViewState, translateX],
   );
   const oppositeDirection = (direction: 'left' | 'right' | 'up' | 'down') =>
     direction === 'left'
@@ -239,7 +269,7 @@ export function MiaoTaskCard({
           : oppositeDirection(entryPreference.direction);
       const accepted =
         viewState === 'summary'
-          ? (participantsVisible &&
+          ? (participantsGestureEnabled &&
               direction === participantsGesture.direction &&
               gestureMatches(participantsGesture, direction, dx, dy, vx)) ||
             (direction === detailsGesture.direction &&
@@ -280,60 +310,29 @@ export function MiaoTaskCard({
       detailsGesture,
       detailsGestureEnabled,
       participantsGesture,
-      participantsVisible,
+      participantsGestureEnabled,
       resetTranslation,
       viewState,
     ],
   );
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_event, responder) =>
-          ((participantsVisible && participantsGesture.enabled) ||
-            (detailsGestureEnabled && detailsGesture.enabled)) &&
-          Math.abs(responder.dx) > 8 &&
-          Math.abs(responder.dx) > Math.abs(responder.dy) * 1.25,
-        onMoveShouldSetPanResponderCapture: (_event, responder) =>
-          ((participantsVisible && participantsGesture.enabled) ||
-            (detailsGestureEnabled && detailsGesture.enabled)) &&
-          Math.abs(responder.dx) > 8 &&
-          Math.abs(responder.dx) > Math.abs(responder.dy) * 1.25,
-        // The card is nested in Pressable and FlatList. Capture the horizontal
-        // gesture before either parent can turn it into a tap or vertical list
-        // scroll; vertical movement remains owned by the list.
-        // Once a horizontal swipe is captured, keep ownership until release.
-        // The inner Pressable must not cancel the card transition.
-        onPanResponderTerminationRequest: () => false,
-        onPanResponderGrant: () => {
-          translateX.stopAnimation();
-          translateX.setValue(0);
-        },
-        onPanResponderMove: (_event, responder) => {
-          const limit = Math.max(120, Math.min(width * 0.72, 300));
-          translateX.setValue(Math.max(-limit, Math.min(limit, responder.dx)));
-        },
-        onPanResponderRelease: (_event, responder) =>
-          finishSwipe(responder.dx, responder.dy, responder.vx),
-        onPanResponderTerminate: resetTranslation,
-      }),
-    [
-      detailsGesture.enabled,
-      detailsGestureEnabled,
-      finishSwipe,
-      participantsGesture.enabled,
-      participantsVisible,
-      resetTranslation,
-      translateX,
-      width,
-    ],
-  );
+  const panHandlers = useMiaoCardGesture({
+    enabled:
+      active &&
+      ((participantsGestureEnabled && participantsGesture.enabled) ||
+        (detailsGestureEnabled && detailsGesture.enabled)),
+    width,
+    translation: translateX,
+    finish: finishSwipe,
+    reset: resetTranslation,
+  });
   const stateContent =
     viewState === 'summary' ? children : renderState?.(viewState);
   const participantAction =
-    participants.length && participantsVisible ? (
+    participants.length && participantsGestureEnabled ? (
       <Pressable
         key="participants"
         testID="miao-card-participants-action"
+        accessible
         accessibilityRole="button"
         accessibilityLabel={
           participantsPreference.label || `查看 ${participants.length} 个 Agent`
@@ -343,7 +342,7 @@ export function MiaoTaskCard({
         onPress={event => {
           event.stopPropagation();
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setViewState(value => (value === 'agents' ? 'summary' : 'agents'));
+          setViewState(viewState === 'agents' ? 'summary' : 'agents');
           resetTranslation();
         }}
         style={[s.agentCount, controlStyle(participantsScale)]}
@@ -379,13 +378,14 @@ export function MiaoTaskCard({
     <Pressable
       key="details"
       testID="miao-card-details-action"
+      accessible
       accessibilityRole="button"
-      accessibilityLabel={detailsPreference.label || openLabel}
+      accessibilityLabel={detailsActionLabel}
       accessibilityState={{ expanded: viewState === 'detail' }}
       onPress={event => {
         event.stopPropagation();
         animateState(
-          viewState === 'detail' ? 'summary' : 'detail',
+          viewState === 'summary' ? 'detail' : 'summary',
           detailsGesture.animationMs,
         );
       }}
@@ -404,7 +404,7 @@ export function MiaoTaskCard({
           {detailsPreference.icon}
         </Text>
       ) : (
-        <Eye
+        <DetailsIcon
           color={palette.secondaryText}
           size={16 * detailsScale}
           strokeWidth={1.6}
@@ -420,70 +420,58 @@ export function MiaoTaskCard({
           },
         ]}
       >
-        {detailsPreference.label || openLabel}
+        {detailsActionLabel}
       </Text>
     </Pressable>
   ) : null;
-  const toggleAction = (
-    <Pressable
-      key="avatar-toggle"
-      accessibilityRole="button"
-      accessibilityLabel={
-        viewState === 'detail'
-          ? '收起详情'
-          : viewState === 'agents'
-          ? '收起 Agent'
-          : agentsExpanded
-          ? '收起 Agent'
-          : '展开 Agent'
-      }
-      accessibilityState={{
-        expanded: viewState !== 'summary' || agentsExpanded,
-      }}
-      hitSlop={8}
-      onPress={event => {
-        event.stopPropagation();
-        if (viewState !== 'summary') {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setViewState('summary');
-          resetTranslation();
-        } else {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setAgentsExpanded(value => !value);
-        }
-      }}
-      style={s.toggle}
+  const pressCard = () => {
+    if (Date.now() < suppressPressUntil.current) return;
+    if (!inlineStatesAvailable) {
+      onOpen();
+      return;
+    }
+    // A summary tap expands S2 in place. The content menu retains the
+    // explicit full-workspace action; reading S1/S2 never navigates.
+    if (viewState === 'summary' && detailsGestureEnabled)
+      animateState('detail', detailsGesture.animationMs);
+  };
+  const title = (
+    <Text
+      accessible={!inlineStatesAvailable}
+      numberOfLines={grid ? 5 : 3}
+      style={[
+        s.description,
+        {
+          color: palette.text,
+          fontSize: uiFontSize(uiPreferences, 15.5),
+        },
+      ]}
     >
-      <ToggleIcon color={palette.secondaryText} size={22} strokeWidth={1.6} />
-    </Pressable>
+      {highlightTaskNumbers(goal)}
+    </Text>
   );
   return (
     <Animated.View
-      {...panResponder.panHandlers}
-      style={{ transform: [{ translateX }] }}
+      {...panHandlers}
+      testID="miao-card-gesture-surface"
+      style={grid ? s.grid : undefined}
     >
       <AIContextActions
         {...assistActions}
+        ref={assistSurface}
+        accessible={!inlineStatesAvailable}
         object={object}
         palette={palette}
         language={language}
         onOpen={onOpen}
-        openLabel={detailsPreference.label || openLabel}
-        onPressOverride={() => {
-          if (Date.now() < suppressPressUntil.current) return;
-          // S1/S2 remain an in-feed preview. The explicit S0 card action is
-          // the route to the full workspace screen, so tapping expanded
-          // content cannot unexpectedly replace the PDF-style card state.
-          if (viewState === 'summary' && detailsPreference.visible !== false)
-            onOpen();
-        }}
+        openLabel={openLabel}
+        onPressOverride={pressCard}
         style={[
           s.card,
-          grid && s.grid,
           {
             backgroundColor: palette.surface,
             borderColor: palette.border,
-            borderRadius: uiPreferences?.surfaces.miao.cardRadius ?? 19,
+            borderRadius: uiPreferences?.surfaces.miao.cardRadius ?? 10,
           },
         ]}
       >
@@ -492,19 +480,66 @@ export function MiaoTaskCard({
             {participantAction}
           </View>
         ) : null}
-        <View testID="miao-card-animated-content">
-          <Text
-            numberOfLines={grid ? 5 : 3}
-            style={[
-              s.description,
-              {
-                color: palette.secondaryText,
-                fontSize: uiFontSize(uiPreferences, 15.5),
-              },
-            ]}
+        <View testID="miao-card-agent-header" style={s.headerRow}>
+          <View style={[s.agentStrip, grid && s.gridAgentStrip]}>
+            {participantsVisible ? agentNodes : null}
+          </View>
+          <Pressable
+            testID="miao-card-content-menu"
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={
+              object.kind === 'agent-workspace'
+                ? textFor(
+                    language,
+                    '更多协作操作',
+                    'More collaboration actions',
+                  )
+                : textFor(language, '更多任务操作', 'More task actions')
+            }
+            onPress={event => {
+              event.stopPropagation();
+              if (Date.now() < suppressPressUntil.current) return;
+              assistSurface.current?.openMenu();
+            }}
+            style={s.menuAction}
           >
-            {highlightTaskNumbers(goal)}
-          </Text>
+            <MoreHorizontal
+              accessible={false}
+              color={palette.secondaryText}
+              size={22}
+              strokeWidth={1.6}
+            />
+          </Pressable>
+        </View>
+        <Animated.View
+          testID="miao-card-animated-content"
+          style={{ transform: [{ translateX }] }}
+        >
+          {viewState !== 'agents' ? (
+            inlineStatesAvailable ? (
+              <Pressable
+                testID="miao-card-title-action"
+                accessible
+                accessibilityLabel={goal}
+                accessibilityRole={
+                  viewState === 'summary' && detailsGestureEnabled
+                    ? 'button'
+                    : 'header'
+                }
+                disabled={viewState !== 'summary' || !detailsGestureEnabled}
+                onPress={event => {
+                  event.stopPropagation();
+                  pressCard();
+                }}
+                style={s.titleAction}
+              >
+                {title}
+              </Pressable>
+            ) : (
+              title
+            )
+          ) : null}
           {viewState === 'summary' && showDetail ? (
             <Text
               numberOfLines={2}
@@ -514,48 +549,32 @@ export function MiaoTaskCard({
             </Text>
           ) : null}
           {stateContent}
-        </View>
-        {grid || !participants.length ? taskStatus : null}
-        {participants.length || showDetailsAction || viewState !== 'summary' ? (
-          <View style={[s.footer, { gap: Math.max(4, miaoRowGap) }]}>
-            {viewState === 'summary' && participantsVisible ? (
-              namesVisible ? (
-                <View style={[s.agentScroller, s.strip, s.expandedStrip]}>
-                  {agentNodes}
-                </View>
-              ) : (
-                <ScrollView
-                  horizontal
-                  style={s.agentScroller}
-                  contentContainerStyle={s.strip}
-                  scrollEnabled={participants.length > 1}
-                  showsHorizontalScrollIndicator={false}
-                >
-                  {agentNodes}
-                </ScrollView>
-              )
-            ) : (
-              <View style={s.agentScroller} />
-            )}
-            <View
-              testID="miao-card-footer-actions"
-              style={[s.footerActions, { gap: Math.max(4, miaoRowGap / 2) }]}
-            >
-              {!grid && participants.length ? taskStatus : null}
-              {actionOrder.map(id =>
-                id === 'miao.taskCard.participants'
-                  ? participantsSlot !== 'topRight'
-                    ? participantAction
-                    : null
-                  : detailsAction,
-              )}
-              {(participants.length && participantsVisible) ||
-              viewState !== 'summary'
-                ? toggleAction
-                : null}
-            </View>
+        </Animated.View>
+        <View style={[s.footer, { gap: Math.max(4, miaoRowGap / 2) }]}>
+          <View style={s.footerMeta}>
+            {taskStatus}
+            {updatedLabel ? (
+              <Text
+                testID="miao-card-update-time"
+                style={[s.status, { color: palette.secondaryText }]}
+              >
+                {updatedLabel}
+              </Text>
+            ) : null}
           </View>
-        ) : null}
+          <View
+            testID="miao-card-footer-actions"
+            style={[s.footerActions, { gap: Math.max(4, miaoRowGap / 2) }]}
+          >
+            {actionOrder.map(id =>
+              id === 'miao.taskCard.participants'
+                ? participantsSlot !== 'topRight'
+                  ? participantAction
+                  : null
+                : detailsAction,
+            )}
+          </View>
+        </View>
       </AIContextActions>
     </Animated.View>
   );
@@ -581,17 +600,25 @@ export function highlightTaskNumbers(text: string) {
 }
 
 const s = StyleSheet.create({
-  // V6 `.brief-card`: a rounded card on the dark task-feed canvas.
+  // PDF content card: persistent Agent header, replaceable body, shared footer.
   card: {
-    borderRadius: 19,
-    borderWidth: 0,
-    gap: 7,
-    padding: 18,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    padding: 12,
+    overflow: 'hidden',
   },
   grid: {
     flex: 1,
-    maxWidth: '50%',
-    borderRadius: 19,
+    minWidth: 0,
+  },
+  headerRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 8 },
+  titleAction: { minHeight: 44, justifyContent: 'center' },
+  menuAction: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    minWidth: 44,
   },
   footer: {
     alignItems: 'center',
@@ -601,36 +628,31 @@ const s = StyleSheet.create({
     marginTop: 8,
     minHeight: 33,
   },
-  // V20 keeps a compact, overlapping Agent stack below the brief text.
-  agentScroller: { flex: 1, minWidth: 0 },
-  strip: {
-    alignItems: 'flex-start',
+  agentStrip: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
-    gap: 0,
-    paddingRight: 4,
+    flexWrap: 'wrap',
+    gap: 8,
+    rowGap: 8,
   },
-  expandedStrip: { gap: 10, flexWrap: 'wrap', rowGap: 12 },
+  gridAgentStrip: { gap: 4, rowGap: 4 },
+  footerMeta: { gap: 2, flexShrink: 1 },
   footerActions: {
     alignItems: 'center',
     flexDirection: 'row',
     flexWrap: 'wrap',
-    flexShrink: 1,
+    flex: 1,
     gap: 4,
     justifyContent: 'flex-end',
   },
   status: { fontSize: 11, lineHeight: 16, maxWidth: 90 },
   // In a two-column card, status must not take the avatar viewport's width.
   gridStatus: { maxWidth: '100%' },
-  toggle: {
-    alignItems: 'center',
-    height: 44,
-    justifyContent: 'center',
-    width: 44,
-  },
   description: {
     fontSize: 15.5,
     lineHeight: 24,
-    fontWeight: '400',
+    fontWeight: '600',
   },
   taskNumber: { fontSize: 18, fontWeight: '800' },
   detail: { fontSize: 13, lineHeight: 20 },

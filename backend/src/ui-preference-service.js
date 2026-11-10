@@ -220,9 +220,11 @@ export function createUIPreferenceService({
     current,
     surface,
     authorization = null,
+    beforeModelCall = null,
+    onModelReceipt = null,
   }) => {
-    const { agent, access, context } =
-      authorization || (await authorize({ user }));
+    const authorized = authorization || (await authorize({ user }));
+    const { agent, access, context } = authorized;
     const result = await run({
       agentId: agent.key,
       mode: "plan",
@@ -235,21 +237,34 @@ export function createUIPreferenceService({
         }),
         uiPreferences: current,
       },
+      beforeModelCall: async () => {
+        await revalidate({ user, authorization: authorized, queryFn: dbQuery });
+        await beforeModelCall?.();
+      },
+      ...(onModelReceipt ? { afterModelCall: onModelReceipt } : {}),
     });
-    return parseAgentReply(result.reply);
+    const receipt = {
+      provider: result.provider, latencyMs: result.latencyMs, tokenUsage: result.tokenUsage,
+    };
+    // Keep known usage even if the suggestion fails the strict patch contract.
+    // This callback is internal only; no model body or patch is persisted here.
+    await onModelReceipt?.(receipt);
+    return { generated: parseAgentReply(result.reply), receipt };
   };
 
-  const prepare = async ({ user, instruction, surface = null }) => {
+  const prepare = async ({ user, instruction, surface = null, beforeModelCall = null, onModelReceipt = null }) => {
     // Authorize before reading the profile so an unavailable Agent cannot
     // reveal whether a profile exists or consume a model call.
     const authorization = await authorize({ user });
     const current = normalizeUIPreferences(await read(user.id));
-    const generated = await generate({
+    const { generated, receipt } = await generate({
       user,
       instruction,
       current,
       surface,
       authorization,
+      beforeModelCall,
+      onModelReceipt,
     });
     let next;
     try {
@@ -258,7 +273,7 @@ export function createUIPreferenceService({
       fail(502, "UI_AGENT_INVALID_RESPONSE", "界面调整建议无效，请调整描述后重试。");
     }
     assertPreferenceChange(current, next);
-    return { authorization, current, generated, next };
+    return { authorization, current, generated, next, receipt };
   };
 
   const previewDTO = row => {
@@ -510,9 +525,11 @@ export function createUIPreferenceService({
         preferences: next,
         queryFn: connection.query.bind(connection),
       });
-      // A reset supersedes previews that were generated from the old revision.
+      // Restoring defaults is also the boundary of the undo stack. Retaining
+      // old confirmations would let Undo revive settings discarded by Reset.
       await connection.query(
-        "UPDATE ui_preference_previews SET status = 'reset' WHERE user_id = ? AND status = 'pending'",
+        `UPDATE ui_preference_previews SET status = 'reset'
+         WHERE user_id = ? AND (status = 'pending' OR (status = 'confirmed' AND undone_at IS NULL))`,
         [user.id],
       );
       await recordEvent(
@@ -548,7 +565,7 @@ export function createUIPreferenceService({
       const rows = await connection.query(
         `SELECT * FROM ui_preference_previews
          WHERE user_id = ? AND status = 'confirmed' AND undone_at IS NULL
-         ORDER BY confirmed_at DESC NULLS LAST, created_at DESC
+         ORDER BY confirmed_revision DESC NULLS LAST, confirmed_at DESC NULLS LAST, created_at DESC
          LIMIT 1 FOR UPDATE`,
         [user.id],
       );

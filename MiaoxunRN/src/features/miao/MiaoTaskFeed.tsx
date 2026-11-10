@@ -12,12 +12,15 @@ import { useAgentWorkspaces } from '../workspaces/useAgentWorkspaces';
 import { AgentWorkspaceCard } from '../workspaces/AgentWorkspaceCard';
 import { AgentDTO } from '../../models/api';
 import { AITaskDTO } from '../../models/aiTask';
-import { textFor } from '../../shared/i18n';
+import { displayText, textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
 import { WorkspaceState, workspaceTokens } from '../../shared/workspaceUi';
 import { useAITasks } from '../ai/useAITasks';
 import { taskPhaseLabel, taskStatusLabel } from '../ai/taskPresentation';
 import { MiaoTaskCard } from './MiaoTaskCard';
+import { MiaoCardViewState } from './miaoCardState';
+import { miaoFeedEntryId, miaoFeedRows, MiaoFeedEntry } from './miaoFeedRows';
+import { relativeTimeText } from '../messages/messageUtils';
 export { MiaoTaskAgent } from './MiaoTaskAgent';
 import { Language } from '../session/sessionTypes';
 import { v6Palette } from '../../shared/v6Palette';
@@ -100,6 +103,115 @@ export function MiaoTaskFeed({
   };
   // Large text retains one column rather than squeezing task content.
   const columns = waterfall && width >= 360 && fontScale <= 1.3 ? 2 : 1;
+  // Local presentation belongs to the account and entry, not the row. Row
+  // regrouping or polling snapshots must not collapse an expanded card.
+  const currentToken = useRef(token);
+  currentToken.current = token;
+  const [presentation, setPresentation] = useState<{
+    token: string;
+    states: Record<string, MiaoCardViewState>;
+  }>({ token, states: {} });
+  useEffect(() => {
+    setPresentation({ token, states: {} });
+  }, [token]);
+  const cardStates = presentation.token === token ? presentation.states : {};
+  const updateCardState = (id: string, next: MiaoCardViewState) => {
+    if (currentToken.current !== token) return;
+    setPresentation(previous => ({
+      token,
+      states: {
+        ...(previous.token === token ? previous.states : {}),
+        [id]: next,
+      },
+    }));
+  };
+  const rows = miaoFeedRows(entries, columns, cardStates);
+  const renderEntry = (item: MiaoFeedEntry, grid: boolean) => {
+    if (item.kind === 'workspace')
+      return (
+        <AgentWorkspaceCard
+          viewState={cardStates[miaoFeedEntryId(item)] || 'summary'}
+          onViewStateChange={next =>
+            updateCardState(miaoFeedEntryId(item), next)
+          }
+          workspace={item.task}
+          token={token}
+          active={active}
+          agents={agents}
+          palette={colors}
+          language={language}
+          grid={grid}
+          uiPreferences={uiPreferences}
+          onOpen={() => onOpenWorkspace?.(item.task)}
+          onOpenParticipant={step => onOpenAgentParticipant?.(item.task, step)}
+        />
+      );
+    const task = item.task;
+    return (
+      <MiaoTaskCard
+        viewState={cardStates[miaoFeedEntryId(item)] || 'summary'}
+        onViewStateChange={next => updateCardState(miaoFeedEntryId(item), next)}
+        active={active}
+        testID={`miao-task-${task.id}`}
+        object={{
+          kind: 'ai-task',
+          id: task.id,
+          title: task.goal,
+          scene: {
+            page: 'miao.feed',
+            label: textFor(language, '妙 · 任务动态', 'Miao · Task activity'),
+            module: {
+              key: 'task-feed',
+              label: textFor(language, '任务动态', 'Task activity'),
+            },
+            task: {
+              id: task.id,
+              goal: task.goal,
+              status: task.status,
+              phase: task.phase,
+              agentId: task.agentId,
+              revision: task.revision,
+              inputMessageId: task.inputMessageId,
+            },
+          },
+        }}
+        goal={
+          task.goal.trim() ||
+          textFor(
+            language,
+            '原任务内容已不可用',
+            'Original task content is unavailable',
+          )
+        }
+        status={taskStatusLabel(task.status, language)}
+        updatedLabel={displayText(language, relativeTimeText(task.updatedAt))}
+        detail={
+          task.status === 'cancelled'
+            ? null
+            : task.status === 'running'
+            ? taskPhaseLabel(task.phase, language)
+            : task.artifacts[0]?.title
+        }
+        participantIds={[task.agentId]}
+        agents={agents}
+        grid={grid}
+        failed={Boolean(task.error)}
+        uiPreferences={uiPreferences}
+        palette={colors}
+        language={language}
+        openLabel={textFor(language, '查看任务', 'View task')}
+        accessibilityLabel={
+          task.goal.trim() ||
+          textFor(
+            language,
+            '原任务内容已不可用',
+            'Original task content is unavailable',
+          )
+        }
+        onOpen={() => onOpenTask(task)}
+      />
+    );
+  };
   if (!feedVisible) {
     return (
       <View
@@ -123,16 +235,15 @@ export function MiaoTaskFeed({
   }
   return (
     <FlatList
-      key={columns}
       testID="miao-task-feed"
       accessibilityLabel={textFor(
         language,
         'Agent 任务动态',
         'Agent task activity',
       )}
-      data={entries}
-      keyExtractor={entry => `${entry.kind}:${entry.task.id}`}
-      numColumns={columns}
+      data={rows}
+      keyExtractor={row => row.key}
+      numColumns={1}
       style={[
         s.screen,
         { backgroundColor: colors.background },
@@ -143,9 +254,6 @@ export function MiaoTaskFeed({
         columns === 2 && s.gridContent,
         { gap: miaoRowGap },
       ]}
-      columnWrapperStyle={
-        columns === 2 ? [s.columns, { gap: miaoRowGap }] : undefined
-      }
       refreshControl={
         <RefreshControl
           refreshing={manualRefreshing}
@@ -222,88 +330,18 @@ export function MiaoTaskFeed({
           </Text>
         ) : null
       }
-      renderItem={({ item }) => {
-        if (item.kind === 'workspace')
-          return (
-            <AgentWorkspaceCard
-              workspace={item.task}
-              agents={agents}
-              palette={colors}
-              language={language}
-              grid={columns === 2}
-              uiPreferences={uiPreferences}
-              onOpen={() => onOpenWorkspace?.(item.task)}
-              onOpenParticipant={step =>
-                onOpenAgentParticipant?.(item.task, step)
-              }
-            />
-          );
-        const task = item.task;
-        return (
-          <MiaoTaskCard
-            testID={`miao-task-${task.id}`}
-            object={{
-              kind: 'ai-task',
-              id: task.id,
-              title: task.goal,
-              scene: {
-                page: 'miao.feed',
-                label: textFor(
-                  language,
-                  '妙 · 任务动态',
-                  'Miao · Task activity',
-                ),
-                module: {
-                  key: 'task-feed',
-                  label: textFor(language, '任务动态', 'Task activity'),
-                },
-                task: {
-                  id: task.id,
-                  goal: task.goal,
-                  status: task.status,
-                  phase: task.phase,
-                  agentId: task.agentId,
-                  revision: task.revision,
-                  inputMessageId: task.inputMessageId,
-                },
-              },
-            }}
-            goal={
-              task.goal.trim() ||
-              textFor(
-                language,
-                '原任务内容已不可用',
-                'Original task content is unavailable',
-              )
-            }
-            status={taskStatusLabel(task.status, language)}
-            detail={
-              task.status === 'cancelled'
-                ? null
-                : task.status === 'running'
-                ? taskPhaseLabel(task.phase, language)
-                : task.artifacts[0]?.title
-            }
-            participantIds={[task.agentId]}
-            agents={agents}
-            grid={columns === 2}
-            failed={Boolean(task.error)}
-            uiPreferences={uiPreferences}
-            palette={colors}
-            language={language}
-            openLabel={textFor(language, '查看任务', 'View task')}
-            accessibilityLabel={
-              task.goal.trim() ||
-              textFor(
-                language,
-                '原任务内容已不可用',
-                'Original task content is unavailable',
-              )
-            }
-            onOpen={() => onOpenTask(task)}
-          />
-        );
-      }}
+      renderItem={({ item: row }) => (
+        <View testID="miao-feed-row" style={[s.row, { gap: miaoRowGap }]}>
+          {row.entries.map(entry => (
+            <View key={miaoFeedEntryId(entry)} style={s.cell}>
+              {renderEntry(entry, !row.fullWidth)}
+            </View>
+          ))}
+          {!row.fullWidth && row.entries.length === 1 ? (
+            <View style={s.cell} />
+          ) : null}
+        </View>
+      )}
     />
   );
 }
@@ -332,7 +370,8 @@ const s = StyleSheet.create({
     marginBottom: 14,
   },
   gridContent: { gap: workspaceTokens.space.sm },
-  columns: { gap: workspaceTokens.space.sm },
+  row: { flexDirection: 'row', alignItems: 'flex-start' },
+  cell: { flex: 1, minWidth: 0 },
   // Prototype `.task-card + .task-card { margin-top: 3px }`.
   gap: { height: 3 },
   empty: {

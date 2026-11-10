@@ -8,26 +8,7 @@ import { AIAssistGestureSurface } from './AIAssistGestureSurface';
 import { useAIAssist } from './AIAssistProvider';
 import { AIAssistAction, AIAssistObjectReference } from './aiAssistTypes';
 
-export function AIContextActions({
-  object,
-  palette,
-  language,
-  onOpen,
-  openLabel,
-  onEdit,
-  editLabel,
-  onMore,
-  onPressOverride,
-  accessibilityLabel,
-  accessibilityHint,
-  onTouchStart,
-  onTouchMove,
-  onTouchEnd,
-  onTouchCancel,
-  style,
-  testID,
-  children,
-}: {
+type AIContextActionsProps = {
   object: AIAssistObjectReference;
   palette: Palette;
   language: Language;
@@ -37,6 +18,7 @@ export function AIContextActions({
   editLabel?: string;
   onMore?: () => void;
   onPressOverride?: () => void;
+  accessible?: boolean;
   accessibilityLabel?: string;
   accessibilityHint?: string;
   onTouchStart?: (event: GestureResponderEvent) => void;
@@ -46,8 +28,42 @@ export function AIContextActions({
   style?: StyleProp<ViewStyle>;
   testID?: string;
   children: React.ReactNode;
-}) {
+};
+
+export type AIContextActionsHandle = { openMenu: () => void };
+
+export const AIContextActions = React.forwardRef<
+  AIContextActionsHandle,
+  AIContextActionsProps
+>(function AIContextActionsComponent(
+  {
+    object,
+    palette,
+    language,
+    onOpen,
+    openLabel,
+    onEdit,
+    editLabel,
+    onMore,
+    onPressOverride,
+    accessible = true,
+    accessibilityLabel,
+    accessibilityHint,
+    onTouchStart,
+    onTouchMove,
+    onTouchEnd,
+    onTouchCancel,
+    style,
+    testID,
+    children,
+  },
+  ref,
+) {
   const assist = useAIAssist();
+  // A tapped menu is independent from the surrounding long-press gesture.
+  // Its touch-end/cancel events must not release or dismiss this new menu.
+  const menuSourceId = React.useId();
+  const { dismiss, routeKey } = assist;
   const actions: AIAssistAction[] = [
     {
       direction: 'up',
@@ -80,12 +96,26 @@ export function AIContextActions({
       accent: palette.text,
       onSelect: onMore,
     });
+  React.useImperativeHandle(ref, () => ({
+    openMenu: () =>
+      assist.open({
+        object,
+        actions,
+        sourceId: menuSourceId,
+        hapticOnOpen: true,
+      }),
+  }));
+  React.useEffect(
+    () => () => dismiss(menuSourceId),
+    [dismiss, menuSourceId, routeKey],
+  );
   return (
     <AIAssistGestureSurface
       object={object}
       actions={actions}
       palette={palette}
       onPress={onPressOverride || onOpen}
+      accessible={accessible}
       accessibilityLabel={accessibilityLabel || object.title}
       accessibilityHint={
         accessibilityHint ||
@@ -105,4 +135,4 @@ export function AIContextActions({
       {children}
     </AIAssistGestureSurface>
   );
-}
+});

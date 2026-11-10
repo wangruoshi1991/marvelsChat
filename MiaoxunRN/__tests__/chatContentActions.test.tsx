@@ -19,6 +19,7 @@ import {
 import { ChatComposer } from '../src/features/messages/ChatComposer';
 import { ChatMessageItem } from '../src/features/messages/ChatMessageItem';
 import { ChatMessageMenu } from '../src/features/messages/ChatMessageMenu';
+import { WorkspaceContextCard } from '../src/features/messages/WorkspaceContextCard';
 import { ChatScreen } from '../src/features/messages/MessagesScreen';
 import { WorkspaceContributionCard } from '../src/features/messages/WorkspaceContributionCard';
 import { ChatMessage, ChatThread } from '../src/features/session/sessionTypes';
@@ -27,6 +28,24 @@ import { palettes, productColors } from '../src/shared/theme';
 import { MessageInlineAction } from '../src/shared/ui';
 import { agentWorkspace, workspaceStep } from '../__fixtures__/agentWorkspace';
 import { useWorkspaceContributions } from '../src/features/messages/useWorkspaceContributions';
+import {
+  prepareSpeechRecognition,
+  startSpeechRecognition,
+} from '../src/services/speechToText';
+
+jest.mock('../src/services/speechToText', () => ({
+  prepareSpeechRecognition: jest.fn(),
+  startSpeechRecognition: jest.fn(),
+}));
+jest.mock('../src/features/ai/useAITasks', () => ({
+  useAITasks: () => ({
+    tasks: [],
+    error: '',
+    decisionError: '',
+    pendingTaskId: null,
+    refresh: jest.fn(async () => undefined),
+  }),
+}));
 
 jest.mock('../src/features/messages/useWorkspaceContributions', () => ({
   useWorkspaceContributions: jest.fn(() => ({
@@ -82,6 +101,10 @@ describe('Chat content actions', () => {
       unavailable: 0,
       hasMore: false,
       error: '',
+      loading: false,
+      historyLoaded: false,
+      loadMore: async () => {},
+      retry: async () => {},
     });
     mockAssist.isActive = false;
   });
@@ -659,7 +682,7 @@ describe('Chat content actions', () => {
     );
   });
 
-  it('keeps a real workspace contribution at the end of the Agent chat timeline', async () => {
+  it('merges a real contribution into the ordinary chronological chat timeline', async () => {
     const workspace = agentWorkspace({
       steps: [
         workspaceStep({
@@ -667,6 +690,7 @@ describe('Chat content actions', () => {
           goal: '筛选旅行照片',
           summary: '已筛出 8 张候选照片。',
           status: 'succeeded',
+          createdAt: '2026-09-16T07:00:00.000Z',
         }),
       ],
     });
@@ -675,6 +699,10 @@ describe('Chat content actions', () => {
       unavailable: 0,
       hasMore: false,
       error: '',
+      loading: false,
+      historyLoaded: false,
+      loadMore: async () => {},
+      retry: async () => {},
     });
     const props = {
       palette: palettes.light,
@@ -702,11 +730,316 @@ describe('Chat content actions', () => {
     }>;
     expect(footer).toBeTruthy();
     const children = React.Children.toArray(footer.props.children);
-    const contribution = children.find(
-      child =>
-        React.isValidElement(child) && child.type === WorkspaceContributionCard,
+    expect(
+      children.some(
+        child =>
+          React.isValidElement(child) &&
+          child.type === WorkspaceContributionCard,
+      ),
+    ).toBe(false);
+    expect(list.props.data.map((item: { kind: string }) => item.kind)).toEqual([
+      'contribution',
+      'message',
+    ]);
+    expect(list.props.keyExtractor(list.props.data[0])).toBe(
+      'contribution:node-1',
     );
-    expect(Boolean(contribution)).toBe(true);
+    expect(
+      list.props.renderItem({ item: list.props.data[0], index: 0 }).type,
+    ).toBe(WorkspaceContributionCard);
+  });
+
+  it('follows new messages only near the bottom after history is loaded', async () => {
+    jest.useFakeTimers();
+    jest.mocked(useWorkspaceContributions).mockReturnValue({
+      contributions: [],
+      unavailable: 0,
+      hasMore: false,
+      error: '',
+      loading: false,
+      historyLoaded: true,
+      loadMore: async () => {},
+      retry: async () => {},
+    });
+    const props = {
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread,
+      agents: [],
+      renderUserAvatar: () => <View />,
+      onBack: jest.fn(),
+      onSend: jest.fn(),
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError: jest.fn(),
+      token: 'owner-token',
+    };
+    const spy = jest
+      .spyOn(FlatList.prototype, 'scrollToEnd')
+      .mockImplementation(() => {});
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    await ReactTestRenderer.act(async () => {
+      jest.runAllTimers();
+    });
+    spy.mockClear();
+    const list = renderer.root.findByType(FlatList);
+    const event = (y: number) => ({
+      nativeEvent: {
+        contentOffset: { y },
+        contentSize: { height: 1000 },
+        layoutMeasurement: { height: 400 },
+      },
+    });
+    await ReactTestRenderer.act(async () => {
+      list.props.onScroll(event(100));
+    });
+    jest.mocked(useWorkspaceContributions).mockReturnValue({
+      contributions: [],
+      unavailable: 0,
+      hasMore: false,
+      error: '',
+      loading: false,
+      historyLoaded: false,
+      loadMore: async () => {},
+      retry: async () => {},
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.update(<ChatScreen {...props} />);
+    });
+    await ReactTestRenderer.act(async () => {
+      list.props.onLayout();
+      jest.runAllTimers();
+    });
+    expect(spy).not.toHaveBeenCalled();
+    jest.mocked(useWorkspaceContributions).mockReturnValue({
+      contributions: [],
+      unavailable: 0,
+      hasMore: false,
+      error: '',
+      loading: false,
+      historyLoaded: true,
+      loadMore: async () => {},
+      retry: async () => {},
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <ChatScreen
+          {...props}
+          thread={{ ...thread, messages: [message, { ...message, id: '2' }] }}
+        />,
+      );
+    });
+    await ReactTestRenderer.act(async () => {
+      jest.runAllTimers();
+    });
+    expect(spy).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(async () => {
+      list.props.onScroll(event(600));
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <ChatScreen
+          {...props}
+          thread={{
+            ...thread,
+            messages: [
+              message,
+              { ...message, id: '2' },
+              { ...message, id: '3' },
+            ],
+          }}
+        />,
+      );
+    });
+    await ReactTestRenderer.act(async () => {
+      jest.runAllTimers();
+    });
+    expect(spy).toHaveBeenCalled();
+    spy.mockClear();
+    const contribution = (id: string, createdAt: string) => {
+      const workspace = agentWorkspace({
+        steps: [workspaceStep({ id, createdAt })],
+      });
+      return { workspace, step: workspace.steps[0] };
+    };
+    const recent = contribution('recent', '2026-09-16T09:00:00.000Z');
+    jest.mocked(useWorkspaceContributions).mockReturnValue({
+      contributions: [recent],
+      unavailable: 0,
+      hasMore: true,
+      error: '',
+      loading: false,
+      historyLoaded: false,
+      loadMore: async () => {},
+      retry: async () => {},
+    });
+    const latestThread = {
+      ...thread,
+      messages: [message, { ...message, id: '2' }, { ...message, id: '3' }],
+    };
+    await ReactTestRenderer.act(async () => {
+      renderer.update(<ChatScreen {...props} thread={latestThread} />);
+    });
+    await ReactTestRenderer.act(async () => {
+      jest.runAllTimers();
+    });
+    expect(spy).toHaveBeenCalled();
+    spy.mockClear();
+    const earlier = contribution('earlier', '2026-09-16T07:00:00.000Z');
+    jest.mocked(useWorkspaceContributions).mockReturnValue({
+      contributions: [recent, earlier],
+      unavailable: 0,
+      hasMore: false,
+      error: '',
+      loading: false,
+      historyLoaded: true,
+      loadMore: async () => {},
+      retry: async () => {},
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.update(<ChatScreen {...props} thread={latestThread} />);
+    });
+    await ReactTestRenderer.act(async () => {
+      jest.runAllTimers();
+    });
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockClear();
+    await ReactTestRenderer.act(async () => {
+      list.props.onScroll(event(100));
+      renderer.root.findByType(ChatComposer).props.onChangeDraft('继续');
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByType(ChatComposer).props.onSend();
+    });
+    await ReactTestRenderer.act(async () => {
+      jest.runAllTimers();
+    });
+    expect(props.onSend).toHaveBeenCalled();
+    expect(spy).toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
+  it.each(['ui-agent', 'group'] as const)(
+    'does not poll workspace contributions for a %s conversation',
+    async kind => {
+      const props = {
+        palette: palettes.light,
+        language: 'zh' as const,
+        currentUserId: 'user-1',
+        currentUserName: 'Gary',
+        thread: {
+          ...thread,
+          agentId: kind === 'ui-agent' ? 'ui-agent' : 'comic-diary',
+          kind: kind === 'group' ? ('group' as const) : ('agent' as const),
+        },
+        agents: [],
+        renderUserAvatar: () => <View />,
+        token: 'owner',
+        onBack: jest.fn(),
+        onSend: jest.fn(),
+        onDeleteMessage: jest.fn(),
+        onRecallMessage: jest.fn(),
+        onSetMuted: jest.fn(async () => undefined),
+        onActionError: jest.fn(),
+      };
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+      });
+      expect(
+        jest.mocked(useWorkspaceContributions).mock.calls.at(-1)?.[1],
+      ).toBeUndefined();
+    },
+  );
+
+  it('selects one contribution explicitly, sends its node context, and removes it before an ordinary new request', async () => {
+    const workspace = agentWorkspace({
+      id: '45267cd7-549c-4f8f-8576-49d061cc335a',
+    });
+    const context = {
+      id: workspace.id,
+      revision: 3,
+      currentRound: 1,
+      nodeId: '12a41286-e950-42a7-b482-1d1c56414e89',
+      goal: workspace.goal,
+    };
+    jest.mocked(useWorkspaceContributions).mockReturnValue({
+      contributions: [{ workspace, step: workspace.steps[0] }],
+      unavailable: 0,
+      hasMore: false,
+      error: '',
+      loading: false,
+      historyLoaded: false,
+      loadMore: async () => {},
+      retry: async () => {},
+    });
+    const props = {
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread: { ...thread, agentId: 'comic-diary' },
+      agents: [],
+      renderUserAvatar: () => <View />,
+      token: 'owner',
+      onBack: jest.fn(),
+      onSend: jest.fn<
+        Promise<boolean>,
+        Parameters<React.ComponentProps<typeof ChatScreen>['onSend']>
+      >(async () => true),
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError: jest.fn(),
+      onOpenWorkspace: jest.fn(),
+    };
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    const list = renderer.root.findByType(FlatList);
+    const contribution = list.props.data.find(
+      (item: { kind: string }) => item.kind === 'contribution',
+    );
+    const card = list.props.renderItem({ item: contribution, index: 0 });
+    const composer = () => renderer.root.findByType(ChatComposer);
+    expect(composer().props.workspaceActions).toBeUndefined();
+    await ReactTestRenderer.act(async () => {
+      card.props.onDiscuss(context);
+    });
+    expect(
+      renderer.root.findByType(WorkspaceContextCard).props.context,
+    ).toEqual(context);
+    await ReactTestRenderer.act(async () => {
+      composer().props.onChangeDraft('请解释这一步');
+    });
+    await ReactTestRenderer.act(async () => {
+      composer().props.onSend();
+    });
+    expect(props.onSend.mock.calls[0][6]).toEqual(context);
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByType(WorkspaceContextCard).props.onRemove();
+    });
+    await ReactTestRenderer.act(async () => {
+      composer().props.onChangeDraft('一个新需求');
+    });
+    await ReactTestRenderer.act(async () => {
+      composer().props.onSend();
+    });
+    expect(props.onSend.mock.calls[1][6]).toBeUndefined();
+    expect(props.onSend.mock.calls[1][7]).toBe(true);
+    await ReactTestRenderer.act(async () => {
+      card.props.onDiscuss(context);
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <ChatScreen {...props} token="new-owner" currentUserId="other-user" />,
+      );
+    });
+    expect(renderer.root.findAllByType(WorkspaceContextCard)).toHaveLength(0);
   });
 
   it('does not append the same Butler quick command twice', async () => {
@@ -736,6 +1069,83 @@ describe('Chat content actions', () => {
       composer().props.onQuickCommand('生成今日待办'),
     );
     expect(composer().props.draft).toBe('生成今日待办');
+  });
+
+  it('speech text stays in the editable draft and sends only after an explicit confirmation', async () => {
+    let recognized!: (text: string) => void;
+    const result = new Promise<string>(resolve => {
+      recognized = resolve;
+    });
+    jest
+      .mocked(prepareSpeechRecognition)
+      .mockReturnValue({ result: Promise.resolve(), cancel: jest.fn() });
+    jest
+      .mocked(startSpeechRecognition)
+      .mockReturnValue({ result, cancel: jest.fn(), finish: jest.fn() });
+    const props = {
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread,
+      agents: [],
+      renderUserAvatar: () => <View />,
+      onBack: jest.fn(),
+      onSend: jest.fn(),
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError: jest.fn(),
+    };
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    const composer = () => renderer.root.findByType(ChatComposer);
+    await ReactTestRenderer.act(async () =>
+      composer().props.onRecognizeSpeech(),
+    );
+    await ReactTestRenderer.act(async () => recognized('帮我规划明天的安排'));
+    expect(composer().props.draft).toBe('帮我规划明天的安排');
+    expect(props.onSend).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(async () => composer().props.onSend());
+    expect(props.onSend).toHaveBeenCalledTimes(1);
+    expect(props.onSend.mock.calls[0][0]).toBe('帮我规划明天的安排');
+  });
+
+  it('leaving ChatScreen cancels a pending tap permission request instead of opening a late microphone', async () => {
+    let allow!: () => void;
+    const result = new Promise<void>(resolve => {
+      allow = resolve;
+    });
+    const cancel = jest.fn();
+    jest.mocked(prepareSpeechRecognition).mockReturnValue({ result, cancel });
+    const props = {
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread,
+      agents: [],
+      renderUserAvatar: () => <View />,
+      onBack: jest.fn(),
+      onSend: jest.fn(),
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError: jest.fn(),
+    };
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    await ReactTestRenderer.act(async () =>
+      renderer.root.findByType(ChatComposer).props.onRecognizeSpeech(),
+    );
+    await ReactTestRenderer.act(async () => renderer.unmount());
+    expect(cancel).toHaveBeenCalledTimes(1);
+    await ReactTestRenderer.act(async () => allow());
+    expect(startSpeechRecognition).not.toHaveBeenCalled();
+    expect(props.onSend).not.toHaveBeenCalled();
+    expect(props.onActionError).not.toHaveBeenCalled();
   });
 
   it('opens 妙猜猜 with a local conversation snapshot instead of a thread id reference', async () => {

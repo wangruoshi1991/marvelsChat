@@ -11,7 +11,7 @@ import TestRenderer, { act } from 'react-test-renderer';
 import { WorkspaceContextCard } from '../src/features/messages/WorkspaceContextCard';
 import { WorkspaceButton, WorkspaceState } from '../src/shared/workspaceUi';
 import { palettes } from '../src/shared/theme';
-import { agentWorkspace } from '../__fixtures__/agentWorkspace';
+import { agentWorkspace, workspaceStep } from '../__fixtures__/agentWorkspace';
 import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
 import { messageApi } from '../src/services/api/messageApi';
 import { request } from '../src/services/api/http';
@@ -23,6 +23,7 @@ import {
   isWorkspaceDiscussionContext,
   workspaceContextSelector,
   workspaceDiscussionContext,
+  sameWorkspaceContext,
 } from '../src/models/workspaceContext';
 
 const workspace = agentWorkspace({
@@ -30,6 +31,7 @@ const workspace = agentWorkspace({
   revision: 8,
 });
 const context = workspaceDiscussionContext(workspace);
+const nodeId = '12a41286-e950-42a7-b482-1d1c56414e89';
 const api = jest.mocked(agentWorkspaceApi);
 const http = jest.mocked(request);
 const props = {
@@ -209,9 +211,85 @@ test.each([
   { currentRound: 0 },
   { currentRound: 1.5 },
   { goal: '' },
+  { nodeId: '' },
+  { nodeId: 'not-a-node' },
 ])('invalid task context is not a usable navigation reference: %o', changes => {
   expect(isWorkspaceDiscussionContext({ ...context, ...changes })).toBe(false);
 });
+
+test('a selected contribution retains its node in the selector and identity', async () => {
+  const selected = { ...context, nodeId };
+  const selector = { ...workspaceContextSelector(context), nodeId };
+  expect(workspaceContextSelector(selected)).toEqual(selector);
+  expect(sameWorkspaceContext(selected, context)).toBe(false);
+  await messageApi.sendMessage(
+    'professional',
+    '解释这份贡献',
+    'token',
+    null,
+    null,
+    'c4bc737f-19b9-43a2-a8a9-b7cd47777e07',
+    45000,
+    [],
+    undefined,
+    selected,
+  );
+  expect(http).toHaveBeenLastCalledWith(
+    '/api/threads/professional/messages',
+    expect.objectContaining({
+      body: expect.objectContaining({ workspaceContext: selector }),
+    }),
+  );
+});
+
+test('refreshing a contribution keeps the exact authorized node and Agent', async () => {
+  const selected = { ...context, nodeId };
+  const current = {
+    ...workspace,
+    steps: [
+      workspaceStep({
+        id: nodeId,
+        agentId: 'comic-diary',
+        result: { kind: 'text_result', id: nodeId, title: '真实成果' },
+      }),
+    ],
+  };
+  api.get.mockResolvedValue(current);
+  await mount({ context: selected, agentId: 'comic-diary' });
+  await act(async () => button('刷新任务关联').props.onPress());
+  expect(props.onChangeContext).toHaveBeenCalledWith(selected);
+  expect(
+    tree!.root.findAllByType(WorkspaceButton).map(item => item.props.label),
+  ).not.toContain('继续修改此任务');
+});
+
+test.each(['agent', 'round', 'result'] as const)(
+  'a changed contribution %s never silently becomes whole-task context',
+  async change => {
+    const selected = { ...context, nodeId };
+    api.get.mockResolvedValue({
+      ...workspace,
+      currentRound: change === 'round' ? 2 : 1,
+      steps: [
+        workspaceStep({
+          id: nodeId,
+          agentId: change === 'agent' ? 'other' : 'comic-diary',
+          result:
+            change === 'result'
+              ? null
+              : { kind: 'text_result', id: nodeId, title: '成果' },
+        }),
+      ],
+    });
+    await mount({ context: selected, agentId: 'comic-diary' });
+    await act(async () => button('刷新任务关联').props.onPress());
+    expect(props.onChangeContext).not.toHaveBeenCalled();
+    expect(tree!.root.findAllByType(WorkspaceState).length).toBeGreaterThan(0);
+    expect(
+      tree!.root.findAllByType(WorkspaceButton).map(item => item.props.label),
+    ).not.toContain('使用当前任务版本讨论');
+  },
+);
 
 test('preparing revisions reads the real task and opens an editable original-base draft without executing', async () => {
   const current = { ...workspace, revision: 10, currentRound: 2 };

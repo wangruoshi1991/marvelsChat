@@ -44,7 +44,7 @@ const safePublicErrorFromResponse = ({ status, payload }) => {
 };
 
 const request = async ({ path, token, method = "GET", body, headers = {} }) => {
-  const contractHeaders = path.startsWith("/api/station/media-retrieval/")
+  const contractHeaders = isMediaRetrievalPath(path)
     ? { "X-Miaoxun-Retrieval-Contract": "2" }
     : {};
   let response;
@@ -96,11 +96,15 @@ export const mediaRetrievalApi = {
     headers: { "Idempotency-Key": idempotencyKey },
     body: { consentVersion: "media-retrieval-consent-v1" },
   }),
-  search: async (token, input) => {
+  search: async (token, input, idempotencyKey) => {
+    if (typeof idempotencyKey !== "string" || !/^[A-Za-z0-9._-]{8,160}$/.test(idempotencyKey)) {
+      throw new MediaRetrievalApiError(400, "retrieval_request_invalid");
+    }
     const data = await request({
       path: "/api/station/media-retrieval/search",
       token,
       method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
       body: input,
     });
     try {

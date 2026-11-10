@@ -11,6 +11,81 @@ import {
   sqlLimit,
 } from "./repository-mappers.js";
 
+// A workspace contribution belongs to the existing Agent conversation, but is
+// not a model chat turn. Project only fixed lifecycle text here: goals, result
+// bodies and summaries must keep their workspace read-authorization boundary.
+// Historical rounds keep their own node time; a new round cannot redate an old
+// participant's contribution or manufacture a fresh unread message.
+const workspaceThreadActivityJoin = `LEFT JOIN LATERAL (
+  SELECT latest.node_id, latest.updated_at,
+    CASE
+      WHEN latest.is_current_round AND latest.workspace_status = 'waiting_input' THEN
+        CASE WHEN waiting.decision->>'type' = 'request_access' THEN
+          CASE WHEN EXISTS (
+            SELECT 1 FROM jsonb_array_elements(COALESCE(waiting.decision->'requirements', '[]'::jsonb)) requirement
+            WHERE requirement->>'reason' = 'authorization_required'
+          ) THEN '协作任务等待授权' ELSE '协作任务需要重新发起' END
+        ELSE '协作任务等待补充信息' END
+      WHEN latest.is_current_round AND latest.workspace_status = 'awaiting_confirmation'
+        THEN '协作任务等待确认'
+      WHEN latest.is_current_round AND latest.workspace_status = 'cancelling'
+        THEN '协作任务正在取消'
+      WHEN latest.capability = 'workspace.coordinate' AND latest.is_current_round THEN
+        CASE latest.workspace_status
+          WHEN 'queued' THEN '协作任务等待执行'
+          WHEN 'running' THEN '协作任务正在处理'
+          WHEN 'succeeded' THEN '协作任务已完成'
+          WHEN 'failed' THEN '协作任务失败'
+          WHEN 'interrupted' THEN '协作任务已中断'
+          WHEN 'cancelled' THEN '协作任务已取消'
+        END
+      ELSE CASE latest.node_status
+        WHEN 'queued' THEN '协作贡献等待执行'
+        WHEN 'running' THEN '协作贡献正在处理'
+        WHEN 'succeeded' THEN '协作贡献已完成'
+        WHEN 'failed' THEN '协作贡献失败'
+        WHEN 'interrupted' THEN '协作贡献已中断'
+        WHEN 'cancelled' THEN '协作贡献已取消'
+      END
+    END AS preview
+  FROM (
+    SELECT node.id AS node_id, node.workspace_id, node.user_id,
+      node.capability, node.status AS node_status,
+      workspace.current_round, workspace.status AS workspace_status,
+      node.round_number = workspace.current_round AS is_current_round,
+      CASE WHEN node.round_number = workspace.current_round
+        THEN GREATEST(node.updated_at, workspace.updated_at) ELSE node.updated_at END AS updated_at
+    FROM agent_workspace_nodes node
+    JOIN agent_workspaces workspace ON workspace.id = node.workspace_id AND workspace.user_id = node.user_id
+    WHERE t.kind = 'agent' AND t.peer_user_id IS NULL
+      AND node.user_id = t.user_id AND node.agent_id = t.agent_id
+    ORDER BY updated_at DESC, node.updated_at DESC, node.id DESC LIMIT 1
+  ) latest
+  LEFT JOIN LATERAL (
+    SELECT coordinator.result->'decision' AS decision
+    FROM agent_workspace_nodes coordinator
+    WHERE latest.is_current_round AND latest.workspace_status = 'waiting_input'
+      AND coordinator.workspace_id = latest.workspace_id AND coordinator.user_id = latest.user_id
+      AND coordinator.round_number = latest.current_round
+      AND coordinator.capability = 'workspace.coordinate' AND coordinator.status = 'succeeded'
+    ORDER BY coordinator.created_at DESC, coordinator.id DESC LIMIT 1
+  ) waiting ON TRUE
+) workspace_activity ON TRUE`;
+
+const lastThreadMessageJoin = `LEFT JOIN chat_messages last_message ON last_message.id = (
+  SELECT message.id FROM chat_messages message
+  WHERE message.thread_id = t.id AND message.deleted_at IS NULL
+  ORDER BY message.created_at DESC, message.id DESC LIMIT 1
+)`;
+
+const threadActivityColumns = `GREATEST(t.updated_at, workspace_activity.updated_at) AS updated_at,
+  CASE WHEN workspace_activity.updated_at > last_message.created_at OR last_message.id IS NULL
+    THEN workspace_activity.preview
+    WHEN last_message.metadata->'workspaceContext'->>'nodeId' IS NOT NULL THEN
+      CASE WHEN last_message.sender_type = 'agent' THEN '协作讨论已回复' ELSE '正在讨论协作成果' END
+    ELSE last_message.content END AS last_content,
+  GREATEST(last_message.created_at, workspace_activity.updated_at) AS last_message_at`;
+
 async function getUserProfileSummary(connection, userId) {
   const [rows] = await connection.execute(
     `SELECT
@@ -274,6 +349,31 @@ export async function completeAgentMessageOnce({
   return transactionConnection ? complete(transactionConnection) : withTransaction(complete);
 }
 
+// A received UI suggestion may consume provider resources even if its source
+// was recalled while the request was running. Keep only the known receipt;
+// a withdrawn input must never receive a reply or a confirmable preview.
+export async function recordDiscardedUIAgentMessageReceipt({
+  userId, threadId, inputMessageId, receipt, latencyMs,
+}) {
+  if (!receipt?.provider) return false;
+  return withTransaction(async connection => {
+    const inputs = await connection.query(`SELECT id FROM chat_messages
+      WHERE id = ? AND thread_id = ? AND user_id = ? AND sender_type = 'user'
+        AND (deleted_at IS NOT NULL OR recalled_at IS NOT NULL) FOR UPDATE`,
+    [inputMessageId, threadId, userId]);
+    if (!inputs.length) return false;
+    const rows = await connection.query(`INSERT INTO agent_runs
+      (id,user_id,agent_id,thread_id,input_message_id,status,provider,latency_ms,
+        token_prompt,token_completion,token_total,error_message,lifecycle_status,finished_at)
+      VALUES (?,?,'ui-agent',?,?,'error',?,?,?,?,?,'AI_CONTEXT_CHANGED','failed',CURRENT_TIMESTAMP)
+      ON CONFLICT (input_message_id) WHERE input_message_id IS NOT NULL AND run_type = 'chat'
+      DO NOTHING RETURNING id`,
+    [crypto.randomUUID(), userId, threadId, inputMessageId, receipt.provider, latencyMs,
+      receipt.tokenUsage?.prompt ?? null, receipt.tokenUsage?.completion ?? null, receipt.tokenUsage?.total ?? null]);
+    return rows.length > 0;
+  });
+}
+
 export async function listThreadsForUser(userId, onlineUserIds = []) {
   const onlineIds = normalizeOnlineUserIds(onlineUserIds);
   const rows = await query(
@@ -283,23 +383,17 @@ export async function listThreadsForUser(userId, onlineUserIds = []) {
       peer_user.presence_mode AS peer_presence_mode,
       (peer_user.id = ANY(?::text[])) AS peer_is_connected,
       peer_profile.avatar_config AS peer_avatar_config,
-      last_message.content AS last_content,
-      last_message.created_at AS last_message_at
+      ${threadActivityColumns}
     FROM chat_threads t
     LEFT JOIN users peer_user
       ON peer_user.id = t.peer_user_id
     LEFT JOIN user_profiles peer_profile
       ON peer_profile.user_id = t.peer_user_id
-    LEFT JOIN chat_messages last_message
-      ON last_message.id = (
-        SELECT m.id
-        FROM chat_messages m
-        WHERE m.thread_id = t.id AND m.deleted_at IS NULL
-        ORDER BY m.created_at DESC, m.id DESC
-        LIMIT 1
-      )
+    ${lastThreadMessageJoin}
+    ${workspaceThreadActivityJoin}
     WHERE t.user_id = ?
-    ORDER BY t.pinned DESC, COALESCE(last_message.created_at, t.updated_at) DESC`,
+    ORDER BY t.pinned DESC,
+      COALESCE(GREATEST(last_message.created_at, workspace_activity.updated_at), t.updated_at) DESC, t.id DESC`,
     [onlineIds, userId],
   );
 
@@ -309,20 +403,20 @@ export async function listThreadsForUser(userId, onlineUserIds = []) {
 export async function listThreadIdsUpdatedSince(userId, updatedAfter) {
   if (!updatedAfter) {
     const rows = await query(
-      `SELECT id
-      FROM chat_threads
-      WHERE user_id = ?
-      ORDER BY updated_at ASC, id ASC`,
+      `SELECT t.id FROM chat_threads t
+      ${workspaceThreadActivityJoin}
+      WHERE t.user_id = ?
+      ORDER BY GREATEST(t.updated_at, workspace_activity.updated_at) ASC, t.id ASC`,
       [userId],
     );
     return rows.map((row) => row.id);
   }
 
   const rows = await query(
-    `SELECT id
-    FROM chat_threads
-    WHERE user_id = ? AND updated_at >= ?
-    ORDER BY updated_at ASC, id ASC`,
+    `SELECT t.id FROM chat_threads t
+    ${workspaceThreadActivityJoin}
+    WHERE t.user_id = ? AND GREATEST(t.updated_at, workspace_activity.updated_at) >= ?
+    ORDER BY GREATEST(t.updated_at, workspace_activity.updated_at) ASC, t.id ASC`,
     [userId, updatedAfter],
   );
   return rows.map((row) => row.id);
@@ -369,15 +463,28 @@ export async function listRecentMessagesForThread(userId, threadId, limit = 12) 
 
 // Resolve the input's ordering boundary inside PostgreSQL. Mapping its timestamp
 // to a JS Date loses microseconds, and text equality cannot identify a turn.
+// Selected-contribution discussions have separately authorized model context;
+// neither those turns nor the earlier ordinary chain may bleed across that
+// explicit boundary, even after a linked message is recalled or soft deleted.
 export async function listAgentHistoryBeforeInput(userId, threadId, inputMessageId, limit = 12) {
   const rows = await query(
     `SELECT m.* FROM chat_messages m
      JOIN chat_threads t ON t.id = m.thread_id
      JOIN chat_messages input ON input.id = ? AND input.user_id = m.user_id AND input.thread_id = m.thread_id
+     LEFT JOIN LATERAL (
+       SELECT boundary.created_at, boundary.id FROM chat_messages boundary
+       WHERE boundary.thread_id = input.thread_id AND boundary.user_id = input.user_id
+         AND boundary.metadata->'workspaceContext'->>'nodeId' IS NOT NULL
+         AND (boundary.created_at, boundary.id) < (input.created_at, input.id)
+       ORDER BY boundary.created_at DESC, boundary.id DESC LIMIT 1
+     ) contribution_boundary ON TRUE
      WHERE t.user_id = ? AND m.user_id = ? AND m.thread_id = ?
        AND input.sender_type = 'user' AND input.deleted_at IS NULL AND input.recalled_at IS NULL
+       AND input.metadata->'workspaceContext'->>'nodeId' IS NULL
        AND (m.created_at, m.id) < (input.created_at, input.id)
        AND m.deleted_at IS NULL AND m.recalled_at IS NULL
+       AND m.metadata->'workspaceContext'->>'nodeId' IS NULL
+       AND (contribution_boundary.id IS NULL OR (m.created_at, m.id) > (contribution_boundary.created_at, contribution_boundary.id))
      ORDER BY m.created_at DESC, m.id DESC LIMIT ?`,
     [inputMessageId, userId, userId, threadId, sqlLimit(limit, 12, 30)],
   );
@@ -414,12 +521,15 @@ export async function getThreadForUser(userId, threadId, onlineUserIds = []) {
       peer_user.ai_id AS peer_ai_id,
       peer_user.presence_mode AS peer_presence_mode,
       (peer_user.id = ANY(?::text[])) AS peer_is_connected,
-      peer_profile.avatar_config AS peer_avatar_config
+      peer_profile.avatar_config AS peer_avatar_config,
+      ${threadActivityColumns}
     FROM chat_threads t
     LEFT JOIN users peer_user
       ON peer_user.id = t.peer_user_id
     LEFT JOIN user_profiles peer_profile
       ON peer_profile.user_id = t.peer_user_id
+    ${lastThreadMessageJoin}
+    ${workspaceThreadActivityJoin}
     WHERE t.user_id = ? AND t.id = ?
     LIMIT 1`,
     [onlineIds, userId, threadId],

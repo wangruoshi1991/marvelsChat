@@ -134,6 +134,60 @@ test('short tap does not expose the shortcuts or start speech', () => {
   expect(expanded).not.toHaveBeenCalledWith(true);
 });
 
+test.each([
+  ['切换到键盘', compose],
+  ['打开妙管家', butler],
+] as const)(
+  'the accessible shortcut menu reaches %s without requesting speech',
+  (label, destination) => {
+    const menu = trigger().props.accessibilityActions.find(
+      (item: { label: string }) => item.label === '打开快捷菜单',
+    );
+    expect(menu).toBeDefined();
+    act(() =>
+      trigger().props.onAccessibilityAction({
+        nativeEvent: { actionName: menu.name },
+      }),
+    );
+    expect(expanded).toHaveBeenLastCalledWith(true);
+    expect(action('切换到键盘')).toBeDefined();
+    expect(action('打开妙管家')).toBeDefined();
+    expect(action('切换到瀑布')).toBeDefined();
+    act(() => action(label).props.onPress());
+    expect(destination).toHaveBeenCalledWith(undefined);
+    expect(startSpeech).not.toHaveBeenCalled();
+    expect(prepareSpeech).not.toHaveBeenCalled();
+  },
+);
+
+test('the accessible task layout action toggles only the feed without speech permission', () => {
+  const layout = trigger().props.accessibilityActions.find(
+    (item: { label: string }) => item.label === '切换任务布局',
+  );
+  expect(layout).toBeDefined();
+  act(() =>
+    trigger().props.onAccessibilityAction({
+      nativeEvent: { actionName: layout.name },
+    }),
+  );
+  expect(feed).toHaveBeenCalledTimes(1);
+  expect(compose).not.toHaveBeenCalled();
+  expect(butler).not.toHaveBeenCalled();
+  expect(startSpeech).not.toHaveBeenCalled();
+  expect(prepareSpeech).not.toHaveBeenCalled();
+});
+
+test('accessible longpress retains voice input after adding nonvoice menu actions', () => {
+  act(() =>
+    trigger().props.onAccessibilityAction({
+      nativeEvent: { actionName: 'longpress' },
+    }),
+  );
+  expect(startSpeech).toHaveBeenCalledTimes(1);
+  expect(expanded).toHaveBeenLastCalledWith(true);
+  expect(feed).not.toHaveBeenCalled();
+});
+
 test('a long hold exposes the three shortcuts', () => {
   hold();
   expect(startSpeech).toHaveBeenCalledTimes(1);

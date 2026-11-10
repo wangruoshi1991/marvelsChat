@@ -33,6 +33,7 @@ import { AgentWorkspace } from '../../models/agentWorkspace';
 import { agentReplyPresentation } from './agentReplyPresentation';
 import { messageTextPreview } from './messageTextPresentation';
 import type { UIPreferences } from '../ui/uiPreferenceTypes';
+import { useStablePanResponder } from '../../shared/gestures/useStablePanResponder';
 import {
   componentUIPreference,
   gestureUIPreference,
@@ -450,113 +451,100 @@ export function ThreadListScreen({
     pullOffsetX.setValue(0);
     pullCueDistance.setValue(0);
   }, [pullCueDistance, pullOffset, pullOffsetX]);
-  const pullResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponderCapture: () => {
-          pullStartAtTop.current = scrollOffset.current <= 0;
-          return false;
-        },
-        onMoveShouldSetPanResponderCapture: (_event, gesture) =>
-          Boolean(onOpenSecondFloor) &&
-          supportedEntranceGesture &&
-          !opening.current &&
-          !assist.isActive &&
-          selectedMessageTab === 'chat' &&
-          pullStartAtTop.current &&
+  const pullResponder = useStablePanResponder(
+    {
+      onStartShouldSetPanResponderCapture: () => {
+        pullStartAtTop.current = scrollOffset.current <= 0;
+        return false;
+      },
+      onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+        Boolean(onOpenSecondFloor) &&
+        supportedEntranceGesture &&
+        !opening.current &&
+        !assist.isActive &&
+        selectedMessageTab === 'chat' &&
+        pullStartAtTop.current &&
+        (pullDirectionMatches(
+          pullGesture.direction,
+          gesture.dx,
+          gesture.dy,
+          10,
+        ) ||
+          pullVelocityMatches(
+            pullGesture.direction,
+            gesture.vx,
+            gesture.vy,
+            0.1,
+          )),
+      onPanResponderMove: (_event, gesture) =>
+        (() => {
+          const horizontal =
+            pullGesture.direction === 'left' ||
+            pullGesture.direction === 'right';
+          const movement = horizontal ? gesture.dx : gesture.dy;
+          const offset = Math.max(-150, Math.min(150, movement * 0.72));
+          if (horizontal) {
+            pullOffsetX.setValue(offset);
+            pullOffset.setValue(0);
+          } else {
+            pullOffset.setValue(offset);
+            pullOffsetX.setValue(0);
+          }
+          pullCueDistance.setValue(Math.abs(offset));
+        })(),
+      onPanResponderRelease: (_event, gesture) => {
+        if (
+          pullGesture.enabled &&
           (pullDirectionMatches(
             pullGesture.direction,
             gesture.dx,
             gesture.dy,
-            10,
+            pullGesture.distance,
           ) ||
             pullVelocityMatches(
               pullGesture.direction,
               gesture.vx,
               gesture.vy,
-              0.1,
-            )),
-        onPanResponderMove: (_event, gesture) =>
-          (() => {
-            const horizontal =
-              pullGesture.direction === 'left' ||
-              pullGesture.direction === 'right';
-            const movement = horizontal ? gesture.dx : gesture.dy;
-            const offset = Math.max(-150, Math.min(150, movement * 0.72));
-            if (horizontal) {
-              pullOffsetX.setValue(offset);
-              pullOffset.setValue(0);
-            } else {
-              pullOffset.setValue(offset);
-              pullOffsetX.setValue(0);
-            }
-            pullCueDistance.setValue(Math.abs(offset));
-          })(),
-        onPanResponderRelease: (_event, gesture) => {
-          if (
-            pullGesture.enabled &&
-            (pullDirectionMatches(
-              pullGesture.direction,
-              gesture.dx,
-              gesture.dy,
-              pullGesture.distance,
-            ) ||
-              pullVelocityMatches(
-                pullGesture.direction,
-                gesture.vx,
-                gesture.vy,
-                pullGesture.velocityThreshold,
-              ))
-          ) {
-            opening.current = true;
-            const horizontal =
-              pullGesture.direction === 'left' ||
-              pullGesture.direction === 'right';
-            const target =
-              pullGesture.direction === 'left'
-                ? -width
-                : pullGesture.direction === 'right'
-                ? width
-                : pullGesture.direction === 'up'
-                ? -height
-                : height;
-            Animated.parallel([
-              Animated.timing(pullOffsetX, {
-                toValue: horizontal ? target : 0,
-                duration: pullGesture.animationMs,
-                useNativeDriver: true,
-              }),
-              Animated.timing(pullOffset, {
-                toValue: horizontal ? 0 : target,
-                duration: pullGesture.animationMs,
-                useNativeDriver: true,
-              }),
-              Animated.timing(pullCueDistance, {
-                toValue: Math.max(width, height),
-                duration: pullGesture.animationMs,
-                useNativeDriver: true,
-              }),
-            ]).start(({ finished }) => {
-              opening.current = false;
-              if (finished) onOpenSecondFloor?.();
-            });
-          } else resetPull();
-        },
-        onPanResponderTerminate: resetPull,
-      }),
-    [
-      assist.isActive,
-      height,
-      onOpenSecondFloor,
-      supportedEntranceGesture,
-      pullCueDistance,
-      pullOffset,
-      pullOffsetX,
-      resetPull,
-      selectedMessageTab,
-      pullGesture,
-      width,
-    ],
+              pullGesture.velocityThreshold,
+            ))
+        ) {
+          opening.current = true;
+          const horizontal =
+            pullGesture.direction === 'left' ||
+            pullGesture.direction === 'right';
+          const target =
+            pullGesture.direction === 'left'
+              ? -width
+              : pullGesture.direction === 'right'
+              ? width
+              : pullGesture.direction === 'up'
+              ? -height
+              : height;
+          Animated.parallel([
+            Animated.timing(pullOffsetX, {
+              toValue: horizontal ? target : 0,
+              duration: pullGesture.animationMs,
+              useNativeDriver: true,
+            }),
+            Animated.timing(pullOffset, {
+              toValue: horizontal ? 0 : target,
+              duration: pullGesture.animationMs,
+              useNativeDriver: true,
+            }),
+            Animated.timing(pullCueDistance, {
+              toValue: Math.max(width, height),
+              duration: pullGesture.animationMs,
+              useNativeDriver: true,
+            }),
+          ]).start(({ finished }) => {
+            opening.current = false;
+            if (finished) onOpenSecondFloor?.();
+          });
+        } else resetPull();
+      },
+      onPanResponderTerminate: resetPull,
+    },
+    active,
   );
   React.useEffect(() => {
     scrollOffset.current = 0;

@@ -1,6 +1,6 @@
 # UI-Agent 与协作贡献配套发布草稿
 
-日期：2026-11-05。状态：`DRAFT / BLOCKED`。这是当前工作区的发布方法审查，不是生产执行记录或操作授权。生产只读核对、真实备份隔离恢复与本地发布授权验证记录见 [发布前证据](2026-11-05-release-preflight-evidence.md)；它们不代表已执行生产迁移、发布正式 Agent、调用付费模型或上传 TestFlight。实际状态仍以 [CURRENT](../handoffs/CURRENT.md)、Git、候选制品及运行检查为准。
+日期：2026-11-05。状态：`BACKEND_EXECUTED / UI_AGENT_PUBLISHED / CLIENT_DISTRIBUTION_PENDING`。此文保留发布方法和失败分支，不构成新的操作授权。经用户另行确认，正式后端切换已经完成，实际恢复、迁移、服务和公网证据见 [生产发布记录](2026-11-05-ui-agent-production-deployment.md)。随后又单独获准完成UI-Agent release/product上架，Build59本地归档成功，见 [上架与客户端记录](2026-11-05-ui-agent-published-build59.md)。发布前证据见 [预检记录](2026-11-05-release-preflight-evidence.md)；独立用户授权、真实模型、TestFlight及实体设备验收仍待各自范围。实际状态以 [CURRENT](../handoffs/CURRENT.md)、Git、制品及运行检查为准。
 
 ## 发布对象和合同
 
@@ -70,7 +70,7 @@ MIAOXUN_DOTENV_ENABLED=false NODE_ENV=test DEFAULT_ADMIN_ENABLED=false \
 
 ## 获准后的维护执行顺序
 
-以下是待审批的执行顺序，不代表本轮已经执行。具体 release ID、旧/新摘要、恢复点、停写窗口、迁移超时、负责人和终止条件须先填入执行单。
+以下是受控执行顺序。055/056和后端切换已按独立授权执行，具体release/摘要、停写恢复点、窗口、超时和实测结果见同日生产发布记录。步骤9中正式产品发布与真实模型仍未执行；方法本身不授权未来再次维护或发布。
 
 1. 冻结候选并完成上节门禁。维护前只读核对活动 release、systemd 单元、待迁移账本、队列/未知回执和备份状态。确认没有其他发布或备份/DDL操作争用窗口。
 2. 令 Nginx HTTP/HTTPS 进入维护，外部实际确认 `503 + Retry-After`，包括 API/WebSocket 新连接入口。仅切维护页不足以停在途写入；还须优雅停止 API 和两个 Worker，确认 PID 消失、在途事务/工作排空，无其他写入者。
@@ -109,6 +109,6 @@ MIAOXUN_DOTENV_ENABLED=false NODE_ENV=test DEFAULT_ADMIN_ENABLED=false \
 
 本次代码/文档核对确认了 055/056 的逐文件事务边界、新旧偏好存储隔离、预检聚合输出和未登记对象检测、同制品 API/双 Worker 要求及实际停止宽限差异。后续已补生产只读核对、真实备份隔离预检/升级/锁超时重试，以及 Linux 干净依赖与本地 UI-Agent 实际授权流程，具体边界见同日发布前证据；这些证据没有改变线上数据库或运行制品。
 
-下一步依次为：获准把审查清单中的修改形成可追溯 clean revision 并生成正式制品；获得明确维护/后端发布范围后复核最新数据并创建新的停写恢复点，执行配套发布；完成 UI-Agent 正式产品与独立用户授权；获准真实模型验收；新版 TestFlight 和实体设备验收。真实备份演练已覆盖本次7节点小表，不需再以空库重复代替；正式切换时仍须核对数据变化、锁和实际目标环境。发布结论保持 `BLOCKED`，不把本地演练当成正式切换。
+本地clean revision/正式制品、后端生产维护切换以及获准的正式UI-Agent产品上架均已完成，不能再称为“仅本地演练”。下一步为：独立用户授权；获准真实模型验收；Build59分发和实体设备验收。后端结论为 `BACKEND_DEPLOYED`、产品为 `UI_AGENT_PUBLISHED`，完整用户/客户端闭环仍待这些真实证据，且开放写入后须保留新数据、按前向修复处理故障。
 
 参考入口：[部署方法](../deployment.md)、[数据库](../database.md)、[备份恢复](../database-backup.md)、[恢复负责人手册](../database-recovery-owner-guide.md)、[AI/UI 合同](../ai-interaction-system.md)、[当前交接](../handoffs/CURRENT.md)。

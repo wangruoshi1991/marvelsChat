@@ -6,6 +6,7 @@ import {
   buildProductFields,
   identityFormValues,
   validateAvatarFile,
+  avatarPreviewFrame,
 } from "../src/publishing-model.js";
 
 const release = {
@@ -40,6 +41,26 @@ test("product dependencies bind exact published release scopes without mutating 
   ]);
   dependencies[0].scopes.push("admin:write");
   assert.deepEqual(release.declaredScopes, ["album:read", "album:write"]);
+});
+
+test("avatar previews use the same normalized frame at mobile and large preview sizes", () => {
+  for (const size of [26, 32, 48, 76]) {
+    const frame = avatarPreviewFrame(identity, size);
+    assert.equal(frame.width, size);
+    assert.equal(frame.height, size);
+    assert.equal(frame.borderRadius, size / 2);
+    assert.equal(frame.background, identity.colors.background);
+    assert.equal(frame.border, "3px solid #FFFFFF");
+    assert.equal(frame.overflow, "hidden");
+    assert.equal(
+      avatarPreviewFrame({ ...identity, shape: "rounded" }, size).borderRadius,
+      Math.min(12, size * 0.24)
+    );
+    assert.equal(
+      avatarPreviewFrame({ ...identity, shape: "squircle" }, size).borderRadius,
+      Math.min(16, size * 0.32)
+    );
+  }
 });
 
 test("stale, unpublished, duplicate and same-Agent dependencies cannot be submitted", () => {

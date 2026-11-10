@@ -421,6 +421,73 @@ test('a failed task discussion retries its original selector and key without rep
   await ReactTestRenderer.act(async () => renderer.unmount());
 });
 
+test('a professional Agent discussion sends and retries its exact contribution node, while metadata-only task discussion is rejected', async () => {
+  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  sendMessage.mockReset();
+  sendMessage.mockRejectedValue(new Error('offline'));
+  const context = {
+    ...workspaceDiscussionContext(
+      agentWorkspace({ id: '45267cd7-549c-4f8f-8576-49d061cc335a' }),
+    ),
+    nodeId: '12a41286-e950-42a7-b482-1d1c56414e89',
+  };
+  const onError = jest.fn();
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <Harness agentId="comic-diary" onError={onError} />,
+    );
+  });
+  await ReactTestRenderer.act(async () => {
+    await actions.sendMessage(
+      'thread-1',
+      '解释这份成果',
+      undefined,
+      null,
+      [],
+      undefined,
+      undefined,
+      context,
+    );
+  });
+  expect(sendMessage.mock.calls[0][9]).toEqual(
+    workspaceContextSelector(context),
+  );
+  const failed = currentThreads[0].messages[0];
+  await ReactTestRenderer.act(async () => {
+    await actions.sendMessage(
+      'thread-1',
+      'changed',
+      failed.id,
+      null,
+      [],
+      undefined,
+      undefined,
+      { ...context, nodeId: 'efbb42c0-82cc-4f51-9205-492d55aec6c7' },
+    );
+  });
+  expect(sendMessage.mock.calls[1][9]).toEqual(
+    workspaceContextSelector(context),
+  );
+  await ReactTestRenderer.act(async () => {
+    await actions.sendMessage(
+      'thread-1',
+      '不选贡献',
+      undefined,
+      null,
+      [],
+      undefined,
+      undefined,
+      { ...context, nodeId: undefined },
+    );
+  });
+  expect(sendMessage).toHaveBeenCalledTimes(2);
+  expect(onError).toHaveBeenLastCalledWith(
+    expect.stringContaining('任务讨论关联无效'),
+  );
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
 test('a task discussion cannot be sent with an explicitly supplied reset value', async () => {
   setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
   sendMessage.mockReset();

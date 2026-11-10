@@ -12,7 +12,7 @@ import {
 } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
 import { apiOrigin, readAuth, request } from "./platform.js";
-import { validateAvatarFile } from "./publishing-model.js";
+import { avatarPreviewFrame, validateAvatarFile } from "./publishing-model.js";
 
 const { Text } = Typography;
 const colorRule = [
@@ -67,55 +67,43 @@ export function IdentityPreview({ identity }) {
       if (localUrl) URL.revokeObjectURL(localUrl);
     };
   }, [imageMode, image?.assetId, image?.sha256]);
-  const radius =
-    identity?.shape === "circle"
-      ? "50%"
-      : identity?.shape === "rounded"
-      ? 14
-      : 24;
+  const previewContent = imageMode ? (
+    imageUrl ? (
+      <img
+        src={imageUrl}
+        alt={identity?.displayName || "头像预览"}
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      />
+    ) : (
+      <Text type="secondary" style={{ fontSize: 10 }}>
+        {error ? "失败" : image?.assetId ? "读取中" : "待上传"}
+      </Text>
+    )
+  ) : (
+    String(identity?.mark || "").slice(0, 4)
+  );
   return (
     <Space align="start" style={{ marginBottom: 18 }}>
-      <div
-        aria-label="身份头像预览"
-        style={{
-          width: 76,
-          height: 76,
-          flexShrink: 0,
-          overflow: "hidden",
-          borderRadius: radius,
-          border: `2px solid ${
-            identity?.accent || identity?.colors?.accent || "#1677FF"
-          }`,
-          background: identity?.background || identity?.colors?.background,
-          color: identity?.foreground || identity?.colors?.foreground,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 25,
-          fontWeight: 600,
-        }}
-      >
-        {imageMode ? (
-          imageUrl ? (
-            <img
-              src={imageUrl}
-              alt={identity?.displayName || "头像预览"}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          ) : (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {error ? "预览失败" : image?.assetId ? "读取中" : "待上传"}
-            </Text>
-          )
-        ) : (
-          String(identity?.mark || "").slice(0, 4)
-        )}
+      <div aria-label="身份头像预览" style={avatarPreviewFrame(identity, 76)}>
+        {previewContent}
       </div>
       <Space direction="vertical" size={4}>
         <Text strong>{identity?.displayName || "填写显示名称"}</Text>
         <Text type="secondary">
           {identity?.description || "身份预览会随表单更新"}
         </Text>
+        <Space align="center">
+          {[32, 48].map((size) => (
+            <div
+              key={size}
+              aria-label={`${size} 像素手机头像预览`}
+              style={avatarPreviewFrame(identity, size)}
+            >
+              {previewContent}
+            </div>
+          ))}
+          <Text type="secondary">手机常用尺寸</Text>
+        </Space>
         {error && <Text type="danger">{error}</Text>}
       </Space>
     </Space>
@@ -179,7 +167,7 @@ function AvatarAssetInput({ value, onChange, disabled, onBusyChange, id }) {
       </Space>
       <Text type="secondary">
         PNG / JPEG / WebP，最大 2 MB。服务端生成 512 × 512
-        头像；不支持外部图片地址。
+        头像，非正方形图片按中心裁切。建议主体居中并留出边缘，透明区域使用身份底色；不支持外部图片地址。
       </Text>
       {value?.assetId && (
         <Text type="secondary">

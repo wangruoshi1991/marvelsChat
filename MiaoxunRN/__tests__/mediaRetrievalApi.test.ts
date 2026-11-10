@@ -41,6 +41,7 @@ describe('media retrieval frozen API contract', () => {
         headers: expect.objectContaining({
           Authorization: 'Bearer owner-token',
           'Idempotency-Key': 'search-operation-123',
+          'X-Miaoxun-Retrieval-Contract': '2',
         }),
         body: JSON.stringify({
           query: 'yellow dress',

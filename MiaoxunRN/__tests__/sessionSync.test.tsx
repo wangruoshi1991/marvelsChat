@@ -14,6 +14,7 @@ import { apiClient } from '../src/services/apiClient';
 import { tokenStore } from '../src/services/tokenStore';
 import { useMiaoxunSession } from '../src/features/session/useMiaoxunSession';
 import { albumAssistantConsent } from '../src/features/station/albumAssistantAuthorization';
+import { defaultUIPreferences } from '../src/features/ui/uiPreferences';
 import {
   assertAIContract,
   clearAIContractSession,
@@ -35,6 +36,9 @@ jest.mock('../src/services/apiClient', () => ({
     updateProfile: jest.fn(),
     updateStationConfig: jest.fn(),
     setAgentEnabled: jest.fn(),
+    confirmUIPreferences: jest.fn(),
+    resetUIPreferences: jest.fn(),
+    undoUIPreferences: jest.fn(),
   },
   buildRealtimeUrl: (path: string) => `ws://127.0.0.1:4390${path}`,
   setAuthSessionExpiredHandler: () => () => undefined,
@@ -1201,6 +1205,276 @@ describe('session synchronization', () => {
     expect(currentSession?.user?.displayName).toBe('新名字');
     expect(currentSession?.errorMessage).toBeNull();
     await ReactTestRenderer.act(() => renderer?.unmount());
+  });
+
+  const uiOperations = [
+    'confirmUIPreferences',
+    'resetUIPreferences',
+    'undoUIPreferences',
+  ] as const;
+  const performUIOperation = (operation: (typeof uiOperations)[number]) =>
+    operation === 'confirmUIPreferences'
+      ? currentSession!.confirmUIPreferences('preview-1', 0)
+      : currentSession![operation](0);
+
+  test.each(uiOperations)(
+    '%s survives a bootstrap response requested before the preference save',
+    async operation => {
+      let renderer: ReactTestRenderer.ReactTestRenderer;
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(<SessionHarness />);
+        await flushEffects();
+      });
+      const pendingBootstrap = deferred<BootstrapDTO>();
+      mockedApiClient.bootstrap.mockReturnValueOnce(pendingBootstrap.promise);
+      let refreshing!: Promise<void>;
+      ReactTestRenderer.act(() => {
+        refreshing = currentSession!.refreshBootstrap();
+      });
+      const saved = { ...defaultUIPreferences(), revision: 1, fontScale: 1.2 };
+      (mockedApiClient[operation] as jest.Mock).mockResolvedValueOnce({
+        preferences: saved,
+      });
+      await ReactTestRenderer.act(async () => {
+        await performUIOperation(operation);
+      });
+      expect(currentSession!.uiPreferences).toEqual(saved);
+      await ReactTestRenderer.act(async () => {
+        pendingBootstrap.resolve({ ...bootstrap, unreadNoticeCount: 4 });
+        await refreshing;
+      });
+      expect(currentSession!.uiPreferences).toEqual(saved);
+      expect(currentSession!.profile.stationConfig.uiPreferences).toEqual(
+        saved,
+      );
+      expect(currentSession!.unreadNoticeCount).toBe(4);
+      await ReactTestRenderer.act(() => renderer!.unmount());
+    },
+  );
+
+  test.each(uiOperations)(
+    '%s cannot overwrite a newer preference revision received by bootstrap',
+    async operation => {
+      let renderer: ReactTestRenderer.ReactTestRenderer;
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(<SessionHarness />);
+        await flushEffects();
+      });
+      const pendingOperation = deferred<{
+        preferences: ReturnType<typeof defaultUIPreferences>;
+      }>();
+      (mockedApiClient[operation] as jest.Mock).mockReturnValueOnce(
+        pendingOperation.promise,
+      );
+      let applying!: Promise<unknown>;
+      ReactTestRenderer.act(() => {
+        applying = performUIOperation(operation);
+      });
+      const newer = { ...defaultUIPreferences(), revision: 2, fontScale: 1.15 };
+      mockedApiClient.bootstrap.mockResolvedValueOnce({
+        ...bootstrap,
+        profile: {
+          ...bootstrap.profile,
+          stationConfig: { uiPreferences: newer },
+        },
+      });
+      await ReactTestRenderer.act(async () => {
+        await currentSession!.refreshBootstrap();
+        pendingOperation.resolve({
+          preferences: {
+            ...defaultUIPreferences(),
+            revision: 1,
+            fontScale: 1.2,
+          },
+        });
+        await applying;
+      });
+      expect(currentSession!.uiPreferences).toEqual(newer);
+      expect(currentSession!.profile.stationConfig.uiPreferences).toEqual(
+        newer,
+      );
+      await ReactTestRenderer.act(() => renderer!.unmount());
+    },
+  );
+
+  test.each(['profile', 'appearance'] as const)(
+    'a delayed %s save preserves a newer confirmed interface preference',
+    async operation => {
+      let renderer: ReactTestRenderer.ReactTestRenderer;
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(<SessionHarness />);
+        await flushEffects();
+      });
+      const pendingSave = deferred<ProfileDTO>();
+      let saving: Promise<unknown> | undefined;
+      ReactTestRenderer.act(() => {
+        if (operation === 'profile') {
+          mockedApiClient.updateProfile.mockReturnValueOnce(
+            pendingSave.promise,
+          );
+          saving = currentSession!.updateProfile({
+            ...bootstrap.profile,
+            nickname: '已保存的名字',
+          });
+        } else {
+          mockedApiClient.updateStationConfig.mockReturnValueOnce(
+            pendingSave.promise,
+          );
+          currentSession!.setAppearance('dark');
+        }
+      });
+      const saved = { ...defaultUIPreferences(), revision: 1, fontScale: 1.2 };
+      mockedApiClient.confirmUIPreferences.mockResolvedValueOnce({
+        status: 'confirmed',
+        previewId: 'preview-1',
+        preferences: saved,
+      });
+      await ReactTestRenderer.act(async () => {
+        await currentSession!.confirmUIPreferences('preview-1', 0);
+        pendingSave.resolve({
+          ...bootstrap.profile,
+          nickname: '已保存的名字',
+          stationConfig: {
+            appearance: 'dark',
+            uiPreferences: defaultUIPreferences(),
+          },
+        });
+        await saving;
+        await flushEffects();
+      });
+      expect(currentSession!.uiPreferences).toEqual(saved);
+      expect(currentSession!.profile.stationConfig.uiPreferences).toEqual(
+        saved,
+      );
+      if (operation === 'profile')
+        expect(currentSession!.profile.nickname).toBe('已保存的名字');
+      else
+        expect(currentSession!.profile.stationConfig.appearance).toBe('dark');
+      await ReactTestRenderer.act(() => renderer!.unmount());
+    },
+  );
+
+  test.each(uiOperations)(
+    '%s receipts from a previous login cannot alter the next account',
+    async operation => {
+      let renderer: ReactTestRenderer.ReactTestRenderer;
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(<SessionHarness />);
+        await flushEffects();
+      });
+      const pendingOperation = deferred<{
+        preferences: ReturnType<typeof defaultUIPreferences>;
+      }>();
+      (mockedApiClient[operation] as jest.Mock).mockReturnValueOnce(
+        pendingOperation.promise,
+      );
+      const applying = performUIOperation(operation);
+      // Attach the rejection handler before switching accounts.
+      const rejected = applying.then(
+        () => null,
+        (error: unknown) => error,
+      );
+      await ReactTestRenderer.act(async () => {
+        await currentSession!.signOut();
+      });
+      const nextPreferences = {
+        ...defaultUIPreferences(),
+        revision: 0,
+        fontScale: 1.1,
+      };
+      const nextBootstrap = {
+        ...bootstrap,
+        user: { ...bootstrap.user, id: 'user-2' },
+        profile: {
+          ...bootstrap.profile,
+          userId: 'user-2',
+          stationConfig: { uiPreferences: nextPreferences },
+        },
+      };
+      mockedApiClient.bootstrap.mockResolvedValueOnce(nextBootstrap);
+      await ReactTestRenderer.act(async () => {
+        await currentSession!.signIn('next@example.com', 'test-password');
+      });
+      await ReactTestRenderer.act(async () => {
+        pendingOperation.resolve({
+          preferences: {
+            ...defaultUIPreferences(),
+            revision: 10,
+            fontScale: 1.15,
+          },
+        });
+        expect(await rejected).toEqual(new Error('登录状态已变更，请重新操作'));
+      });
+      expect(currentSession!.user!.id).toBe('user-2');
+      expect(currentSession!.uiPreferences).toEqual(nextPreferences);
+      expect(currentSession!.profile.stationConfig.uiPreferences).toEqual(
+        nextPreferences,
+      );
+      await ReactTestRenderer.act(() => renderer!.unmount());
+    },
+  );
+
+  test('a remounted session restores server-confirmed preferences from bootstrap', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    const saved = { ...defaultUIPreferences(), revision: 1, fontScale: 1.2 };
+    mockedApiClient.confirmUIPreferences.mockResolvedValueOnce({
+      status: 'confirmed',
+      previewId: 'preview-1',
+      preferences: saved,
+    });
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.confirmUIPreferences('preview-1', 0);
+      renderer!.unmount();
+    });
+    mockedApiClient.bootstrap.mockResolvedValueOnce({
+      ...bootstrap,
+      profile: {
+        ...bootstrap.profile,
+        stationConfig: { uiPreferences: saved },
+      },
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    expect(currentSession!.uiPreferences).toEqual(saved);
+    expect(currentSession!.profile.stationConfig.uiPreferences).toEqual(saved);
+    await ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
+  test('a newer bootstrap UI revision still applies when a profile save invalidates its identity snapshot', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    const pendingBootstrap = deferred<BootstrapDTO>();
+    mockedApiClient.bootstrap.mockReturnValueOnce(pendingBootstrap.promise);
+    const refreshing = currentSession!.refreshBootstrap();
+    const savedProfile = { ...bootstrap.profile, nickname: '刚保存的新名字' };
+    mockedApiClient.updateProfile.mockResolvedValueOnce(savedProfile);
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.updateProfile(savedProfile);
+    });
+    const newer = { ...defaultUIPreferences(), revision: 2, fontScale: 1.15 };
+    await ReactTestRenderer.act(async () => {
+      pendingBootstrap.resolve({
+        ...bootstrap,
+        profile: {
+          ...bootstrap.profile,
+          stationConfig: { uiPreferences: newer },
+        },
+      });
+      await refreshing;
+    });
+    expect(currentSession!.profile.nickname).toBe('刚保存的新名字');
+    expect(currentSession!.uiPreferences).toEqual(newer);
+    expect(currentSession!.profile.stationConfig.uiPreferences).toEqual(newer);
+    await ReactTestRenderer.act(() => renderer!.unmount());
   });
 
   test('bootstrap and incremental sync started before a profile save keep its result and still update other data', async () => {

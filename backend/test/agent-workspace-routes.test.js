@@ -51,7 +51,8 @@ test("real HTTP routes reject missing contracts before dispatch, and require doc
       async decideAgentWorkspace(args) { calls.push(args); return { id: workspaceId }; },
       async getWorkspaceMedia(args) { calls.push(args); return { id: args.assetId }; },
       async getWorkspaceText(args) { calls.push(args); return { id: args.nodeId, title: "内容", content: "按需鉴权读取的正文" }; },
-      async listAgentContributions(args) { calls.push(args); return { contributions: [], hasMore: false }; },
+      async listAgentContributions(args) { calls.push(args); return { contributions: [], hasMore: false, ...(args.pagination ? { nextCursor: null } : {}) }; },
+      async getAgentContribution(args) { calls.push(args); return { contribution: null }; },
     },
     repository: { async getAgentWorkspace(args) { calls.push(args); return { id: workspaceId }; }, async listAgentWorkspaces(args) { calls.push(args); return []; } },
   });
@@ -93,10 +94,27 @@ test("real HTTP routes reject missing contracts before dispatch, and require doc
     assert.equal((await request(`/api/agent-workspaces/${workspaceId}/decision`, continuation, supported)).status, 200);
     assert.deepEqual(calls[3], { userId: owner, workspaceId, ...continuation });
     assert.equal((await request('/api/agent-workspaces/contributions/site-builder', null, {})).status, 426);
-    assert.equal((await request('/api/agent-workspaces/contributions/invalid_agent', null, supported)).status, 400);
-    const contributions = await request('/api/agent-workspaces/contributions/site-builder', null, supported);
+    assert.equal((await request('/api/agent-workspaces/contributions/site-builder', null, supported)).status, 426);
+    const contributionHeaders = { ...supported, 'X-Miaoxun-Workspace-Contributions': '2' };
+    assert.equal((await request('/api/agent-workspaces/contributions/site-builder', null, { ...contributionHeaders, 'X-Miaoxun-Workspace-Contributions': '1' })).status, 426);
+    assert.equal((await request('/api/agent-workspaces/contributions/invalid_agent', null, contributionHeaders)).status, 400);
+    const contributions = await request('/api/agent-workspaces/contributions/site-builder', null, contributionHeaders);
     assert.equal(contributions.status, 200);
     assert.deepEqual((await contributions.json()).data, { contributions: [], hasMore: false });
-    assert.deepEqual(calls[4], { userId: owner, agentId: 'site-builder' });
+    assert.deepEqual(calls[4], { userId: owner, agentId: 'site-builder', pagination: false });
+    const cursor = crypto.randomUUID();
+    assert.equal((await request(`/api/agent-workspaces/contributions/site-builder?before=${cursor}`, null, contributionHeaders)).status, 400);
+    const pagingHeaders = { ...contributionHeaders, 'X-Miaoxun-Workspace-Contributions': '3' };
+    assert.equal((await request(`/api/agent-workspaces/contributions/site-builder?before=${cursor}`, null, pagingHeaders)).status, 200);
+    assert.deepEqual(calls[5], { userId: owner, agentId: 'site-builder', before: cursor, pagination: true });
+    for (const query of ['before=invalid', `before=${cursor}&before=${nodeId}`, 'limit=200']) {
+      assert.equal((await request(`/api/agent-workspaces/contributions/site-builder?${query}`, null, pagingHeaders)).status, 400);
+    }
+    for (const headers of [contributionHeaders, pagingHeaders]) {
+      const item = await request(`/api/agent-workspaces/contributions/site-builder/${nodeId}`, null, headers);
+      assert.equal(item.status, 200);
+      assert.deepEqual((await item.json()).data, { contribution: null });
+    }
+    assert.deepEqual(calls.slice(6), Array.from({ length: 2 }, () => ({ userId: owner, agentId: 'site-builder', nodeId })));
   } finally { await new Promise(resolve => server.close(resolve)); }
 });

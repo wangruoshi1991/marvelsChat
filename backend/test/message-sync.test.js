@@ -20,7 +20,7 @@ test("sync cursor precedes reads so a concurrent new thread remains eligible for
   const pool = await getPool();
   let observedCursor;
   t.mock.method(pool, "query", async (sql, params) => {
-    if (/SELECT id\s+FROM chat_threads/.test(sql)) {
+    if (/SELECT (?:t\.)?id\s+FROM chat_threads/.test(sql)) {
       observedCursor = params[1];
       t.mock.timers.setTime(startedAt + 1000);
     }

@@ -55,7 +55,7 @@ const confirm = (workspace, overrides = {}) => service.decideAgentWorkspace({ us
 const profileConfig = async () => (await query("SELECT station_config FROM user_profiles WHERE user_id = ?", [owner]))[0].station_config;
 const request = async (path, body, options = {}) => {
   const headers = { Authorization: `Bearer ${options.token || token}`, "Content-Type": "application/json", "X-Miaoxun-App-Build": "46",
-    "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": "6", "X-Miaoxun-Site-Document": "2", ...options.headers };
+    "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Agent-Workspace": "6", "X-Miaoxun-Workspace-Contributions": "2", "X-Miaoxun-Site-Document": "2", ...options.headers };
   for (const key of Object.keys(headers)) if (headers[key] === null) delete headers[key];
   const response = await fetch(`${origin}${path}`, { method: body === undefined ? "GET" : "POST", headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { status: response.status, ...await response.json() };
@@ -207,6 +207,56 @@ integration("agent contributions are scoped to owner and agent and redact revoke
   const revoked = await request(path);
   assert.equal(revoked.status, 200);
   assert.ok(revoked.data.contributions.every(item => item.unavailable === true && Object.keys(item).length === 2));
+});
+
+integration("contribution history pages use creation order and reject foreign cursors after updates and revocation", async () => {
+  const workspace = await waiting();
+  const [source] = await query("SELECT id FROM agent_workspace_nodes WHERE workspace_id=? AND agent_id='site-builder'", [workspace.id]);
+  assert.ok(source);
+  for (let index = 0; index < 52; index++) {
+    await query(`INSERT INTO agent_workspace_nodes
+      (id,workspace_id,user_id,node_key,agent_id,agent_version,capability,goal,dependencies,context_ref_indexes,status,round_number,created_at,updated_at)
+      SELECT ?,workspace_id,user_id,?,agent_id,agent_version,capability,goal,dependencies,context_ref_indexes,'queued',round_number,
+        '2026-01-01T00:00:00Z','2026-01-01T00:00:00Z' FROM agent_workspace_nodes WHERE id=?`,
+    [crypto.randomUUID(), `pagination-${index}`, source.id]);
+  }
+  await query("UPDATE agent_workspace_nodes SET created_at='2026-01-01T00:00:00Z' WHERE workspace_id=?", [workspace.id]);
+  await query("UPDATE agent_workspace_nodes SET created_at='2025-12-31T23:59:59.999999Z' WHERE id=?", [source.id]);
+  const expected = await query("SELECT id FROM agent_workspace_nodes WHERE user_id=? AND agent_id='site-builder' ORDER BY created_at DESC,id DESC", [owner]);
+  const path = '/api/agent-workspaces/contributions/site-builder';
+  const v3 = { headers: { 'X-Miaoxun-Workspace-Contributions': '3' } };
+  const first = await request(path, undefined, v3);
+  assert.equal(first.status, 200);
+  assert.equal(first.data.contributions.length, 50);
+  assert.equal(first.data.hasMore, true);
+  assert.equal(first.data.nextCursor, expected[49].id);
+  assert.deepEqual(first.data.contributions.map(item => item.step?.id ?? item.id), expected.slice(0, 50).map(item => item.id));
+  await query("UPDATE agent_workspace_nodes SET updated_at=CURRENT_TIMESTAMP WHERE id=?", [expected[52].id]);
+  const legacy = await request(path);
+  assert.equal(legacy.status, 200);
+  assert.equal(legacy.data.contributions[0].step?.id ?? legacy.data.contributions[0].id, expected[52].id);
+  assert.equal('nextCursor' in legacy.data, false);
+  assert.equal((await request(`${path}?before=${first.data.nextCursor}`)).status, 400);
+  const second = await request(`${path}?before=${first.data.nextCursor}`, undefined, v3);
+  assert.equal(second.status, 200);
+  assert.equal(second.data.hasMore, false);
+  assert.equal(second.data.nextCursor, null);
+  assert.deepEqual(second.data.contributions.map(item => item.step?.id ?? item.id), expected.slice(50).map(item => item.id));
+  const empty = await request(`${path}?before=${expected.at(-1).id}`, undefined, v3);
+  assert.equal(empty.status, 200);
+  assert.deepEqual(empty.data, { contributions: [], hasMore: false, nextCursor: null });
+  const foreign = await request(`${path}?before=${first.data.nextCursor}`, undefined, { ...v3, token: outsiderToken });
+  assert.equal(foreign.status, 404);
+  assert.equal(foreign.error.details.code, 'WORKSPACE_CONTRIBUTION_CURSOR_INVALID');
+  assert.equal((await request(`/api/agent-workspaces/contributions/album-manager?before=${first.data.nextCursor}`, undefined, v3)).status, 404);
+  await query("UPDATE user_agents SET enabled=false WHERE user_id=? AND agent_id='site-builder'", [owner]);
+  const revoked = await request(`${path}?before=${first.data.nextCursor}`, undefined, v3);
+  assert.equal(revoked.status, 200);
+  assert.ok(revoked.data.contributions.every(item => item.unavailable === true && Object.keys(item).length === 2));
+  await query("DELETE FROM agent_workspace_nodes WHERE id=?", [first.data.nextCursor]);
+  const deleted = await request(`${path}?before=${first.data.nextCursor}`, undefined, v3);
+  assert.equal(deleted.status, 404);
+  assert.equal(deleted.error.details.code, 'WORKSPACE_CONTRIBUTION_CURSOR_INVALID');
 });
 
 integration("old workspace contract fails before writes, models and idempotent replay", async () => {

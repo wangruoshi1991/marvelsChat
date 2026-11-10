@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import {
+  AppState,
+  Animated,
   FlatList,
   PanResponder,
   Pressable,
@@ -7,6 +9,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  View,
 } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { MiaoTaskFeed } from '../src/features/miao/MiaoTaskFeed';
@@ -19,8 +22,15 @@ import { AITaskDTO } from '../src/models/aiTask';
 import { AgentDTO } from '../src/models/api';
 import { palettes } from '../src/shared/theme';
 import { MiaoTaskCard } from '../src/features/miao/MiaoTaskCard';
+import { AgentGlyphAvatar } from '../src/features/messages/AgentGlyphAvatar';
 import { defaultUIPreferences } from '../src/features/ui/uiPreferences';
+import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
+import { ChatMessageText } from '../src/features/messages/ChatMessageText';
+import { WorkspaceButton } from '../src/shared/workspaceUi';
 
+jest.mock('../src/services/api/agentWorkspaceApi', () => ({
+  agentWorkspaceApi: { text: jest.fn() },
+}));
 jest.mock('../src/features/ai/useAITasks', () => ({ useAITasks: jest.fn() }));
 jest.mock('../src/features/workspaces/useAgentWorkspaces', () => ({
   useAgentWorkspaces: jest.fn(),
@@ -173,6 +183,8 @@ const button = (label: string) =>
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(agentWorkspaceApi.text).mockReset();
+  AppState.currentState = 'active';
   refresh.mockReset();
   refresh.mockResolvedValue(undefined);
   useTasks.mockReturnValue(state());
@@ -198,14 +210,16 @@ test('task cards show only their recorded executor and open the original task wi
     renderer = TestRenderer.create(feed({ onOpenTask: open }));
   });
   expect(text()).toContain(recorded.goal);
-  // V20 collapses Agent names in the task footer; the recorded participant
-  // remains available through the avatar test id and disclosure control.
-  expect(text()).not.toContain('相册管理');
+  // The PDF names each recorded participant in the persistent top header.
+  expect(text()).toContain('相册管理');
   expect(
     renderer!.root.findByProps({ testID: 'miao-participant-album-manager' }),
   ).toBeTruthy();
   expect(text()).toContain('正在执行');
-  // V20 puts the brief first and the compact Agent/status footer after it.
+  // The named Agent header precedes the brief and footer status.
+  expect(text().indexOf('相册管理')).toBeLessThan(
+    text().indexOf(recorded.goal),
+  );
   expect(text().indexOf(recorded.goal)).toBeLessThan(
     text().indexOf('正在执行'),
   );
@@ -243,6 +257,65 @@ test('hiding the task feed stops polling and shows the recovery path without tas
   expect(useWorkspaces).toHaveBeenCalledWith({ token: 'owner', active: false });
 });
 
+test('an inactive retained collaboration feed cannot capture a new horizontal touch', () => {
+  useWorkspaces.mockReturnValue({
+    workspaces: [agentWorkspace()],
+    loaded: true,
+    error: '',
+    refresh: jest.fn().mockResolvedValue(undefined),
+  });
+  const options = { onOpenWorkspace: jest.fn() };
+  act(() => {
+    renderer = TestRenderer.create(feed(options));
+  });
+  const surface = () =>
+    renderer!.root
+      .findByType(MiaoTaskCard)
+      .findAllByType(Animated.View)
+      .find(node => node.props.onResponderMove)!;
+  const first = {
+    nativeEvent: { touches: [{ identifier: 0, pageX: 100, pageY: 100 }] },
+    touchHistory: {
+      numberActiveTouches: 1,
+      indexOfSingleActiveTouch: 0,
+      mostRecentTimeStamp: 1000,
+      touchBank: [
+        {
+          touchActive: true,
+          startTimeStamp: 1000,
+          startPageX: 100,
+          startPageY: 100,
+          previousTimeStamp: 1000,
+          previousPageX: 100,
+          previousPageY: 100,
+          currentTimeStamp: 1000,
+          currentPageX: 100,
+          currentPageY: 100,
+        },
+      ],
+    },
+  };
+  const moved = {
+    ...first,
+    touchHistory: {
+      ...first.touchHistory,
+      mostRecentTimeStamp: 1020,
+      touchBank: [
+        {
+          ...first.touchHistory.touchBank[0],
+          currentTimeStamp: 1020,
+          currentPageX: 140,
+        },
+      ],
+    },
+  };
+  surface().props.onStartShouldSetResponderCapture(first);
+  expect(surface().props.onMoveShouldSetResponderCapture(moved)).toBe(true);
+  act(() => renderer!.update(feed({ ...options, active: false })));
+  surface().props.onStartShouldSetResponderCapture(first);
+  expect(surface().props.onMoveShouldSetResponderCapture(moved)).toBe(false);
+});
+
 test('the feed uses the V6 dark palette and dims its content while the voice menu is open', () => {
   useTasks.mockReturnValue(state({ tasks: [task()] }));
   act(() => {
@@ -264,7 +337,7 @@ test('the feed uses the V6 dark palette and dims its content while the voice men
   });
 });
 
-test('a narrow grid card keeps every recorded Agent reachable and its disclosure does not open the task', () => {
+test('a narrow grid card keeps every recorded Agent reachable through its participant count', () => {
   const participants = [
     ...agents,
     { ...agents[0], key: 'fourth-agent', name: '名称较长的第四位执行 Agent' },
@@ -284,23 +357,64 @@ test('a narrow grid card keeps every recorded Agent reachable and its disclosure
         failed={false}
         openLabel="查看任务"
         onOpen={open}
+        renderState={cardState =>
+          cardState === 'agents'
+            ? participants.map(participant => (
+                <Text key={participant.key}>{participant.name}</Text>
+              ))
+            : null
+        }
       />,
     );
   });
-  expect(text()).not.toContain('相册管理');
-  // Even a short stack can exceed the grid card's available width. It must
-  // remain scrollable instead of hiding the fourth recorded participant.
-  expect(renderer!.root.findByType(ScrollView).props.scrollEnabled).toBe(true);
+  participants.forEach(agent => expect(text()).toContain(agent.name));
+  const header = renderer!.root.findByProps({
+    testID: 'miao-card-agent-header',
+  });
+  const strip = header
+    .findAllByType(View)
+    .find(node => StyleSheet.flatten(node.props.style)?.flexWrap === 'wrap')!;
+  const stripStyle = StyleSheet.flatten(strip.props.style);
+  const avatarWidths = participants.map(participant => {
+    const avatar = header.findByProps({
+      testID: `miao-participant-${participant.key}`,
+    });
+    const style = StyleSheet.flatten(avatar.props.style);
+    expect(style).toMatchObject({ width: 40, minWidth: 40, maxWidth: 40 });
+    expect(avatar.findByType(AgentGlyphAvatar).props.size).toBe(26);
+    const name = avatar
+      .findAllByType(Text)
+      .find(node => node.props.children === participant.name)!;
+    expect(name.props.numberOfLines).toBe(2);
+    expect(StyleSheet.flatten(name.props.style).fontSize).toBe(10);
+    return style.width;
+  });
+  const menu = header.findByProps({ testID: 'miao-card-content-menu' });
+  expect(StyleSheet.flatten(menu.props.style)).toMatchObject({
+    minWidth: 44,
+    minHeight: 44,
+  });
+  // At the 360pt waterfall threshold, two named avatars fit beside the full
+  // 44pt menu without reducing its touch target or dropping a participant.
+  const halfCardWidth = (360 - 26 - 8) / 2;
+  const availableStripWidth = halfCardWidth - 24 - 8 - 44;
+  expect(
+    avatarWidths[0] + avatarWidths[1] + stripStyle.gap,
+  ).toBeLessThanOrEqual(availableStripWidth);
+  // Wrap the fixed header instead of nesting another horizontal swipe surface.
+  expect(renderer!.root.findAllByType(ScrollView)).toHaveLength(0);
   const stopPropagation = jest.fn();
-  act(() => button('展开 Agent').props.onPress({ stopPropagation }));
+  const participantControl = () =>
+    renderer!.root.findByProps({ testID: 'miao-card-participants-action' });
+  act(() => participantControl().props.onPress({ stopPropagation }));
   expect(stopPropagation).toHaveBeenCalledTimes(1);
   expect(open).not.toHaveBeenCalled();
   participants.forEach(agent => expect(text()).toContain(agent.name));
   expect(text()).toContain('等待你确认下一步');
-  expect(button('收起 Agent').props.accessibilityState.expanded).toBe(true);
+  expect(participantControl().props.accessibilityState.expanded).toBe(true);
   expect(renderer!.root.findAllByType(ScrollView)).toHaveLength(0);
-  act(() => button('收起 Agent').props.onPress({ stopPropagation }));
-  expect(text()).not.toContain('相册管理');
+  act(() => participantControl().props.onPress({ stopPropagation }));
+  expect(text()).toContain('相册管理');
   expect(open).not.toHaveBeenCalled();
 });
 
@@ -418,7 +532,7 @@ test('collaboration cards hide the participant control when the confirmed prefer
   ).toHaveLength(0);
 });
 
-test('collaboration cards use shared content actions while tap and View workspace open the original workspace', () => {
+test('collaboration cards open inline participants and details while the content menu preserves the original workspace', () => {
   const recorded = agentWorkspace({
     summary: '先选择照片，再生成页面',
     steps: [
@@ -437,24 +551,36 @@ test('collaboration cards use shared content actions while tap and View workspac
   act(() => {
     renderer = TestRenderer.create(feed({ onOpenWorkspace: open }));
   });
-  const surface = renderer!.root.findByType(AIAssistGestureSurface);
+  const surface = () => renderer!.root.findByType(AIAssistGestureSurface);
   expect(text()).toContain(recorded.summary);
-  expect(text()).not.toContain('相册管理');
-  act(() => button('展开 Agent').props.onPress({ stopPropagation: jest.fn() }));
+  expect(text()).toContain('相册管理');
+  const participants = () =>
+    renderer!.root.findByProps({ testID: 'miao-card-participants-action' });
+  act(() => participants().props.onPress({ stopPropagation: jest.fn() }));
   expect(open).not.toHaveBeenCalled();
+  expect(participants().props.accessibilityState.expanded).toBe(true);
   expect(text()).toContain('相册管理');
   expect(text()).toContain('未参与的妙管家');
   expect(text()).not.toContain('同分类未参与者');
-  expect(surface.props.object.kind).toBe('agent-workspace');
+  expect(surface().props.object.kind).toBe('agent-workspace');
   expect(
-    surface.props.actions.map((action: { label: string }) => action.label),
+    surface().props.actions.map((action: { label: string }) => action.label),
   ).toEqual(['查看协作', '妙管家']);
   expect(open).not.toHaveBeenCalled();
   expect(mockAssist.askButler).not.toHaveBeenCalled();
-  act(() => surface.props.onPress());
-  expect(open).toHaveBeenLastCalledWith(recorded);
-  act(() => surface.props.actions[0].onSelect(surface.props.object));
-  expect(open).toHaveBeenCalledTimes(2);
+  act(() => participants().props.onPress({ stopPropagation: jest.fn() }));
+  expect(participants().props.accessibilityState.expanded).toBe(false);
+  act(() => surface().props.onPress());
+  expect(open).not.toHaveBeenCalled();
+  expect(
+    renderer!.root.findAllByProps({ testID: 'miao-workspace-detail' }).length,
+  ).toBeGreaterThan(0);
+  expect(
+    renderer!.root.findByProps({ testID: 'miao-card-details-action' }).props
+      .accessibilityLabel,
+  ).toBe('收起详情');
+  act(() => surface().props.actions[0].onSelect(surface().props.object));
+  expect(open).toHaveBeenCalledTimes(1);
   expect(open).toHaveBeenLastCalledWith(recorded);
   expect(mockAssist.askButler).not.toHaveBeenCalled();
 });
@@ -773,28 +899,147 @@ test.each(['success', 'failure'] as const)(
   },
 );
 
-test('the same tasks switch layout without generating data and large text keeps one readable column', () => {
+type FeedRow = {
+  entries: { kind: string; task: { id: string } }[];
+  fullWidth: boolean;
+};
+const feedRows = (): FeedRow[] =>
+  renderer!.root.findByType(FlatList).props.data;
+const rowIds = () =>
+  feedRows().map(row =>
+    row.entries.map(entry => `${entry.kind}:${entry.task.id}`),
+  );
+const workspaceCard = (id: string) =>
+  renderer!.root
+    .findAllByType(MiaoTaskCard)
+    .find(
+      card =>
+        card.props.object.kind === 'agent-workspace' &&
+        card.props.object.id === id,
+    )!;
+const cardAction = (id: string, action: 'participants' | 'details') =>
+  workspaceCard(id).findByProps({ testID: `miao-card-${action}-action` });
+
+test('the same tasks switch row layout without generating data and large text keeps one readable column', () => {
   const tasks = [task(), task({ id: 'task-2' })];
   useTasks.mockReturnValue(state({ tasks }));
   act(() => {
     renderer = TestRenderer.create(feed({ waterfall: true }));
   });
-  expect(renderer!.root.findByType(FlatList).props.numColumns).toBe(2);
+  expect(renderer!.root.findByType(FlatList).props.numColumns).toBe(1);
+  expect(rowIds()).toEqual([['task:task-1', 'task:task-2']]);
+  expect(feedRows()[0].fullWidth).toBe(false);
   expect(
-    renderer!.root
-      .findByType(FlatList)
-      .props.data.map((entry: { task: AITaskDTO }) => entry.task),
-  ).toEqual(tasks);
+    renderer!.root.findAllByType(MiaoTaskCard).every(card => card.props.grid),
+  ).toBe(true);
   mockDimensions = { width: 430, height: 900, scale: 3, fontScale: 1.8 };
   act(() => renderer!.update(feed({ waterfall: true })));
-  expect(renderer!.root.findByType(FlatList).props.numColumns).toBe(1);
+  expect(rowIds()).toEqual([['task:task-1'], ['task:task-2']]);
   expect(
-    renderer!.root
-      .findByType(FlatList)
-      .props.data.map((entry: { task: AITaskDTO }) => entry.task),
-  ).toEqual(tasks);
+    renderer!.root.findAllByType(MiaoTaskCard).every(card => !card.props.grid),
+  ).toBe(true);
   act(() => renderer!.update(feed({ active: false })));
   expect(useTasks).toHaveBeenLastCalledWith({ token: 'owner', active: false });
+});
+
+test('expanded waterfall cards occupy their own row, retain state across polling, and collapse into ordered pairs', () => {
+  const first = agentWorkspace({
+    id: 'same-id',
+    createdAt: '2026-10-14T00:00:00Z',
+  });
+  const second = agentWorkspace({
+    id: 'second',
+    createdAt: '2026-10-12T00:00:00Z',
+  });
+  const tasks = [
+    task({ id: 'same-id', createdAt: '2026-10-13T00:00:00Z' }),
+    task({ id: 'last', createdAt: '2026-10-11T00:00:00Z' }),
+  ];
+  useTasks.mockReturnValue(state({ tasks }));
+  useWorkspaces.mockReturnValue({
+    workspaces: [first, second],
+    loaded: true,
+    error: '',
+    refresh: jest.fn(),
+  });
+  const options = { waterfall: true, onOpenWorkspace: jest.fn() };
+  act(() => {
+    renderer = TestRenderer.create(feed(options));
+  });
+  expect(rowIds()).toEqual([
+    ['workspace:same-id', 'task:same-id'],
+    ['workspace:second', 'task:last'],
+  ]);
+  act(() =>
+    cardAction('same-id', 'participants').props.onPress({
+      stopPropagation: jest.fn(),
+    }),
+  );
+  expect(rowIds()).toEqual([
+    ['workspace:same-id'],
+    ['task:same-id', 'workspace:second'],
+    ['task:last'],
+  ]);
+  expect(feedRows()[0].fullWidth).toBe(true);
+  expect(workspaceCard('same-id').props.grid).toBe(false);
+  expect(
+    workspaceCard('same-id').findByProps({
+      testID: 'miao-workspace-participants',
+    }),
+  ).toBeTruthy();
+  useWorkspaces.mockReturnValue({
+    workspaces: [{ ...first, revision: 4 }, second],
+    loaded: true,
+    error: '',
+    refresh: jest.fn(),
+  });
+  act(() => renderer!.update(feed(options)));
+  expect(
+    workspaceCard('same-id').findByProps({
+      testID: 'miao-workspace-participants',
+    }),
+  ).toBeTruthy();
+  act(() =>
+    cardAction('same-id', 'details').props.onPress({
+      stopPropagation: jest.fn(),
+    }),
+  );
+  expect(rowIds()).toEqual([
+    ['workspace:same-id', 'task:same-id'],
+    ['workspace:second', 'task:last'],
+  ]);
+  act(() =>
+    cardAction('second', 'details').props.onPress({
+      stopPropagation: jest.fn(),
+    }),
+  );
+  expect(rowIds()).toEqual([
+    ['workspace:same-id', 'task:same-id'],
+    ['workspace:second'],
+    ['task:last'],
+  ]);
+  expect(
+    workspaceCard('second').findByProps({ testID: 'miao-workspace-detail' }),
+  ).toBeTruthy();
+  expect(
+    workspaceCard('same-id').findAllByProps({
+      testID: 'miao-workspace-detail',
+    }),
+  ).toHaveLength(0);
+  mockDimensions = { width: 320, height: 900, scale: 3, fontScale: 1 };
+  act(() => renderer!.update(feed(options)));
+  expect(feedRows()).toHaveLength(4);
+  expect(
+    workspaceCard('second').findByProps({ testID: 'miao-workspace-detail' }),
+  ).toBeTruthy();
+  act(() => renderer!.update(feed({ ...options, token: 'another-owner' })));
+  expect(
+    workspaceCard('second').findAllByProps({ testID: 'miao-workspace-detail' }),
+  ).toHaveLength(0);
+  act(() => renderer!.update(feed(options)));
+  expect(
+    workspaceCard('second').findAllByProps({ testID: 'miao-workspace-detail' }),
+  ).toHaveLength(0);
 });
 
 function ComposerHarness({
@@ -885,4 +1130,199 @@ test('failed navigation leaves an explicit inline error and retains the editable
   proceed.mockReturnValueOnce(true);
   await act(async () => button('交给妙管家').props.onPress());
   expect(proceed).toHaveBeenLastCalledWith('修改后再次尝试');
+});
+
+const interruptedTextWorkspace = () =>
+  agentWorkspace({
+    status: 'interrupted',
+    error: {
+      code: 'WORKSPACE_MODEL_RESULT_UNKNOWN',
+      message: '部分调用结果未知，不会自动重新执行。',
+    },
+    summary: '协作已中断',
+    steps: [
+      workspaceStep({
+        id: 'saved-text',
+        key: 'storyboard',
+        agentId: 'comic-diary',
+        capability: 'comic.storyboard',
+        summary: '文字成果已完成',
+        result: {
+          kind: 'text_result',
+          id: 'saved-text',
+          title: '已保存的分镜',
+        },
+        updatedAt: '2026-10-12T00:01:00Z',
+      }),
+      // A later failed step by the same participant must not hide its delivery.
+      workspaceStep({
+        id: 'unknown-step',
+        key: 'another-step',
+        agentId: 'comic-diary',
+        capability: 'comic.storyboard',
+        status: 'interrupted',
+        summary: '',
+        error: { code: 'WORKSPACE_MODEL_RESULT_UNKNOWN', message: '结果未知' },
+        updatedAt: '2026-10-12T00:02:00Z',
+      }),
+    ],
+  });
+const showInterruptedTextWorkspace = () => {
+  const recorded = interruptedTextWorkspace();
+  useWorkspaces.mockReturnValue({
+    workspaces: [recorded],
+    loaded: true,
+    error: '',
+    refresh: jest.fn(),
+  });
+  const preferences = defaultUIPreferences();
+  preferences.components.miao = {
+    'miao.taskCard.details': { label: '查看当前成果' },
+  };
+  return { recorded, preferences };
+};
+const openCardResult = () =>
+  renderer!.root
+    .findByProps({ testID: 'miao-card-details-action' })
+    .props.onPress({ stopPropagation: jest.fn() });
+const resultBodies = () =>
+  renderer!.root
+    .findAllByType(ChatMessageText)
+    .map(node => node.props.children);
+
+test('an interrupted collaboration reads its saved text in S2 without opening another page', async () => {
+  const { recorded, preferences } = showInterruptedTextWorkspace();
+  let resolve!: (value: { id: string; title: string; content: string }) => void;
+  jest.mocked(agentWorkspaceApi.text).mockReturnValueOnce(
+    new Promise(done => {
+      resolve = done;
+    }),
+  );
+  const onOpenWorkspace = jest.fn();
+  await act(async () => {
+    renderer = TestRenderer.create(
+      feed({ onOpenWorkspace, uiPreferences: preferences }),
+    );
+  });
+  expect(agentWorkspaceApi.text).not.toHaveBeenCalled();
+  expect(text()).toContain('执行中断');
+  expect(text()).toContain('最新成果：已保存的分镜');
+  await act(async () => openCardResult());
+  expect(text()).toContain('正在读取文字成果');
+  expect(agentWorkspaceApi.text).toHaveBeenCalledWith(
+    'owner',
+    recorded.id,
+    'saved-text',
+  );
+  await act(async () =>
+    resolve({
+      id: 'saved-text',
+      title: '已保存的分镜',
+      content: '这是已持久化的分镜正文。',
+    }),
+  );
+  expect(resultBodies()).toEqual(['这是已持久化的分镜正文。']);
+  expect(onOpenWorkspace).not.toHaveBeenCalled();
+  expect(
+    renderer!.root.findByProps({ testID: 'miao-workspace-detail' }),
+  ).toBeTruthy();
+});
+
+test('leaving the feed or backgrounding clears S2 text and rereads authorization on return', async () => {
+  const { preferences } = showInterruptedTextWorkspace();
+  let notifyAppState!: (state: 'active' | 'background') => void;
+  jest
+    .spyOn(AppState, 'addEventListener')
+    .mockImplementation((event, listener) => {
+      if (event === 'change') notifyAppState = listener;
+      return { remove: jest.fn() };
+    });
+  jest.mocked(agentWorkspaceApi.text).mockResolvedValue({
+    id: 'saved-text',
+    title: '已保存的分镜',
+    content: '当前获准读取的正文',
+  });
+  const options = { onOpenWorkspace: jest.fn(), uiPreferences: preferences };
+  await act(async () => {
+    renderer = TestRenderer.create(feed(options));
+  });
+  await act(async () => openCardResult());
+  expect(resultBodies()).toEqual(['当前获准读取的正文']);
+  await act(async () => renderer!.update(feed({ ...options, active: false })));
+  expect(resultBodies()).toEqual([]);
+  await act(async () => renderer!.update(feed(options)));
+  expect(agentWorkspaceApi.text).toHaveBeenCalledTimes(2);
+  await act(async () => notifyAppState('background'));
+  expect(resultBodies()).toEqual([]);
+  await act(async () => notifyAppState('active'));
+  expect(agentWorkspaceApi.text).toHaveBeenCalledTimes(3);
+  expect(resultBodies()).toEqual(['当前获准读取的正文']);
+  await act(async () =>
+    renderer!.update(feed({ ...options, token: 'other-account' })),
+  );
+  // A new account starts at S0 and never inherits the old account's open body.
+  expect(resultBodies()).toEqual([]);
+  expect(agentWorkspaceApi.text).toHaveBeenCalledTimes(3);
+  await act(async () => openCardResult());
+  expect(agentWorkspaceApi.text).toHaveBeenLastCalledWith(
+    'other-account',
+    'workspace-1',
+    'saved-text',
+  );
+});
+
+test('S2 shows a real access failure and only retries after the user requests it', async () => {
+  const { preferences } = showInterruptedTextWorkspace();
+  jest
+    .mocked(agentWorkspaceApi.text)
+    .mockRejectedValueOnce(new Error('此成果授权已撤回。'));
+  await act(async () => {
+    renderer = TestRenderer.create(
+      feed({ onOpenWorkspace: jest.fn(), uiPreferences: preferences }),
+    );
+  });
+  await act(async () => openCardResult());
+  expect(resultBodies()).toEqual([]);
+  expect(text()).toContain('此成果授权已撤回。');
+  expect(agentWorkspaceApi.text).toHaveBeenCalledTimes(1);
+  jest.mocked(agentWorkspaceApi.text).mockResolvedValueOnce({
+    id: 'saved-text',
+    title: '已保存的分镜',
+    content: '重新确认授权后的正文',
+  });
+  await act(async () =>
+    renderer!.root.findByType(WorkspaceButton).props.onPress(),
+  );
+  expect(resultBodies()).toEqual(['重新确认授权后的正文']);
+  expect(agentWorkspaceApi.text).toHaveBeenCalledTimes(2);
+});
+
+test('S2 expands the same card for a long result while the outer feed owns vertical reading', async () => {
+  const { preferences } = showInterruptedTextWorkspace();
+  const prose = '一段需要滚动阅读的真实成果。'.repeat(100);
+  jest.mocked(agentWorkspaceApi.text).mockResolvedValueOnce({
+    id: 'saved-text',
+    title: '已保存的分镜',
+    content: prose,
+  });
+  const pan = jest.spyOn(PanResponder, 'create');
+  await act(async () => {
+    renderer = TestRenderer.create(
+      feed({ onOpenWorkspace: jest.fn(), uiPreferences: preferences }),
+    );
+  });
+  await act(async () => openCardResult());
+  const reader = renderer!.root.findByProps({
+    testID: 'miao-workspace-text-reader',
+  });
+  expect(reader.findAllByType(ChatMessageText)[0].props.children).toBe(prose);
+  expect(reader.findAllByType(ScrollView)).toHaveLength(0);
+  expect(StyleSheet.flatten(reader.props.style).maxHeight).toBeUndefined();
+  const responder = pan.mock.calls.at(-1)![0];
+  expect(
+    responder.onMoveShouldSetPanResponderCapture!(
+      {} as never,
+      { dx: 5, dy: -120 } as never,
+    ),
+  ).toBe(false);
 });

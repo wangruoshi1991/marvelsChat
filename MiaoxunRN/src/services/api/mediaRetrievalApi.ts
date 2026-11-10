@@ -63,7 +63,7 @@ export const mediaRetrievalApi = {
     const data = await request<unknown>(`${base}/search`, {
       method: 'POST',
       token,
-      headers: keyHeaders(key),
+      headers: { ...retrievalContractHeaders, ...keyHeaders(key) },
       body: { ...input, query, limit: 20 },
       timeoutMs: longRequestTimeoutMs,
     });

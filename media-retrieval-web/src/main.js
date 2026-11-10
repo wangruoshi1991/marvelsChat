@@ -286,7 +286,7 @@ async function search(event) {
       query: byId("search-query").value.trim(),
       kind: byId("search-kind").value || null,
       limit: 10,
-    });
+    }, idempotencyKey("media-search"));
     retainPreviewUrls(result.results || []);
     state.results = result.results || [];
     trackRun(result.agentRunId);

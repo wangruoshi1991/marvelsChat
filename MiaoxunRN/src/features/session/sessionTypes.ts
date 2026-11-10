@@ -20,6 +20,7 @@ export type ChatMessage = {
       source: { currentPage: string };
     };
     agentContextReset?: boolean;
+    contributionDiscussion?: { state: 'available' | 'failed' };
     workspaceContext?: import('../../models/workspaceContext').WorkspaceDiscussionContext;
     butlerClarification?: {
       contextRefs: AIContextReference[];

@@ -56,14 +56,55 @@ async function continueWorkspace(
   return accepted;
 }
 export const agentWorkspaceApi = {
-  async contributions(token: string, agentId: string) {
+  async contribution(token: string, agentId: string, nodeId: string) {
     assertAgentWorkspaceContract(token);
-    if (!/^[a-z0-9-]{1,80}$/.test(agentId)) throw new Error('Agent 标识无效。');
+    if (
+      !/^[a-z0-9-]{1,80}$/.test(agentId) ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        nodeId,
+      )
+    )
+      throw new Error('协作贡献标识无效。');
     const result = await request<unknown>(
-      `${path}/contributions/${encodeURIComponent(agentId)}`,
+      `${path}/contributions/${encodeURIComponent(
+        agentId,
+      )}/${encodeURIComponent(nodeId)}`,
       {
         token,
-        headers: agentWorkspaceHeaders,
+        headers: {
+          ...agentWorkspaceHeaders,
+          'X-Miaoxun-Workspace-Contributions': '3',
+        },
+      },
+    );
+    if (!result || typeof result !== 'object' || !('contribution' in result))
+      throw new Error('协作贡献数据格式不受支持。');
+    if (result.contribution === null) return null;
+    assertWorkspaceContribution(result.contribution, agentId);
+    if (
+      result.contribution.step.id !== nodeId ||
+      result.contribution.step.capability === 'workspace.coordinate'
+    )
+      throw new Error('协作贡献身份不匹配，请返回原任务重新选择。');
+    return result.contribution;
+  },
+  async contributions(token: string, agentId: string, before?: string) {
+    assertAgentWorkspaceContract(token);
+    if (!/^[a-z0-9-]{1,80}$/.test(agentId)) throw new Error('Agent 标识无效。');
+    const uuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (before !== undefined && !uuid.test(before))
+      throw new Error('协作贡献分页标识无效。');
+    const result = await request<unknown>(
+      `${path}/contributions/${encodeURIComponent(agentId)}${
+        before ? `?before=${encodeURIComponent(before)}` : ''
+      }`,
+      {
+        token,
+        headers: {
+          ...agentWorkspaceHeaders,
+          'X-Miaoxun-Workspace-Contributions': '3',
+        },
       },
     );
     if (
@@ -73,11 +114,16 @@ export const agentWorkspaceApi = {
       !Array.isArray(result.contributions) ||
       result.contributions.length > 50 ||
       !('hasMore' in result) ||
-      typeof result.hasMore !== 'boolean'
+      typeof result.hasMore !== 'boolean' ||
+      !('nextCursor' in result) ||
+      (result.hasMore
+        ? typeof result.nextCursor !== 'string' || !uuid.test(result.nextCursor)
+        : result.nextCursor !== null)
     )
       throw new Error('协作贡献列表格式不受支持。');
     const contributions: WorkspaceContribution[] = [];
     let unavailable = 0;
+    const ids: string[] = [];
     for (const item of result.contributions) {
       if (
         item &&
@@ -87,18 +133,29 @@ export const agentWorkspaceApi = {
         'id' in item &&
         typeof item.id === 'string'
       ) {
+        ids.push(item.id);
         unavailable += 1;
         continue;
       }
       assertWorkspaceContribution(item, agentId);
+      ids.push(item.step.id);
       contributions.push(item);
     }
-    if (
-      new Set(contributions.map(item => item.step.id)).size !==
-      contributions.length
-    )
+    if (new Set(ids).size !== ids.length)
       throw new Error('协作贡献列表包含重复项目。');
-    return { contributions, unavailable, hasMore: result.hasMore };
+    if (
+      result.hasMore &&
+      (ids[ids.length - 1] !== result.nextCursor ||
+        result.nextCursor === before)
+    )
+      throw new Error('协作贡献分页游标不一致。');
+    return {
+      contributions,
+      unavailable,
+      hasMore: result.hasMore,
+      nextCursor: result.nextCursor as string | null,
+      scannedIds: ids,
+    };
   },
   async list(token: string) {
     assertAgentWorkspaceContract(token);

@@ -5,8 +5,10 @@ import {
 } from '../src/features/miao/miaoCardState';
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
-import { PanResponder, StyleSheet, Text } from 'react-native';
+import { PanResponder, StyleSheet, Text, View } from 'react-native';
 import { AIAssistProvider } from '../src/features/assist/AIAssistProvider';
+import { AIAssistGestureSurface } from '../src/features/assist/AIAssistGestureSurface';
+import { AIContextActions } from '../src/features/assist/AIContextActions';
 import { MiaoTaskCard } from '../src/features/miao/MiaoTaskCard';
 import { palettes } from '../src/shared/theme';
 import { agentWorkspace, workspaceStep } from '../__fixtures__/agentWorkspace';
@@ -40,7 +42,11 @@ describe('Miao card view state', () => {
     renderState: (state: MiaoCardViewState) => React.ReactNode = state => (
       <Text testID="miao-card-state">{state}</Text>
     ),
-    options: { participantIds?: string[]; onOpen?: () => void } = {},
+    options: {
+      participantIds?: string[];
+      onOpen?: () => void;
+      inlineStates?: boolean;
+    } = {},
   ) {
     return ReactTestRenderer.create(
       <AIAssistProvider routeKey="miao-test" onAskButler={jest.fn()}>
@@ -57,7 +63,7 @@ describe('Miao card view state', () => {
           openLabel="查看协作"
           onOpen={options.onOpen ?? jest.fn()}
           uiPreferences={uiPreferences}
-          renderState={renderState}
+          renderState={options.inlineStates === false ? undefined : renderState}
         >
           <Text testID="miao-card-summary-marker">摘要</Text>
         </MiaoTaskCard>
@@ -69,6 +75,10 @@ describe('Miao card view state', () => {
     const config = pan.mock.calls.at(-1)?.[0];
     if (!config) throw new Error('Miao card did not create a pan responder');
     return config as {
+      onMoveShouldSetPanResponder?: (
+        event: unknown,
+        gesture: { dx: number; dy: number },
+      ) => boolean;
       onPanResponderGrant?: () => void;
       onPanResponderRelease?: (
         event: unknown,
@@ -83,6 +93,238 @@ describe('Miao card view state', () => {
     });
     return expanded.length > 0 ? expanded[0].props.children : 'summary';
   }
+
+  function nativeSurface(renderer: ReactTestRenderer.ReactTestRenderer) {
+    return renderer.root.findAll(
+      node =>
+        typeof node.type === 'string' &&
+        node.props.testID === 'ai-assist-surface',
+    )[0];
+  }
+
+  test('the PDF keeps named non-overlapping avatars above the body in every state and gives S1 a collapse control', () => {
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    try {
+      ReactTestRenderer.act(() => {
+        renderer = renderCard();
+      });
+      const header = () =>
+        renderer.root.findByProps({ testID: 'miao-card-agent-header' });
+      const avatar = () =>
+        header().findByProps({ testID: 'miao-participant-miaoxun-butler' });
+      expect(
+        avatar()
+          .findAllByType(Text)
+          .map(node => node.props.children),
+      ).toContain('妙管家');
+      expect(
+        StyleSheet.flatten(avatar().props.style).marginLeft,
+      ).toBeUndefined();
+      expect(
+        renderer.root
+          .findByProps({ testID: 'miao-card-footer-actions' })
+          .findAllByProps({ testID: 'miao-participant-miaoxun-butler' }),
+      ).toHaveLength(0);
+      ReactTestRenderer.act(() =>
+        renderer.root
+          .findByProps({ testID: 'miao-card-participants-action' })
+          .props.onPress({ stopPropagation: jest.fn() }),
+      );
+      expect(avatar()).toBeTruthy();
+      expect(
+        renderer.root.findAllByProps({ testID: 'miao-card-title-action' }),
+      ).toHaveLength(0);
+      expect(renderedState(renderer)).toBe('agents');
+      const collapse = renderer.root.findByProps({
+        testID: 'miao-card-details-action',
+      });
+      expect(collapse.props.accessibilityLabel).toBe('收起 Agent');
+      ReactTestRenderer.act(() =>
+        collapse.props.onPress({ stopPropagation: jest.fn() }),
+      );
+      expect(renderedState(renderer)).toBe('summary');
+      ReactTestRenderer.act(() =>
+        renderer.root
+          .findByProps({ testID: 'miao-card-details-action' })
+          .props.onPress({ stopPropagation: jest.fn() }),
+      );
+      expect(renderedState(renderer)).toBe('detail');
+      expect(avatar()).toBeTruthy();
+    } finally {
+      ReactTestRenderer.act(() => renderer?.unmount());
+    }
+  });
+
+  test('content-action wrappers preserve accessible grouping by default', () => {
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    try {
+      ReactTestRenderer.act(() => {
+        renderer = ReactTestRenderer.create(
+          <AIAssistProvider routeKey="default-assist" onAskButler={jest.fn()}>
+            <AIContextActions
+              object={{ kind: 'ai-task', id: 'legacy', title: '原任务' }}
+              palette={palettes.light}
+              language="zh"
+              onOpen={jest.fn()}
+              openLabel="查看任务"
+            >
+              <Text>原任务</Text>
+            </AIContextActions>
+          </AIAssistProvider>,
+        );
+      });
+      expect(nativeSurface(renderer).props.accessible).toBe(true);
+    } finally {
+      ReactTestRenderer.act(() => renderer?.unmount());
+    }
+  });
+
+  test('stateful cards expose separately named title, participants and detail controls to accessibility', () => {
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    try {
+      ReactTestRenderer.act(() => {
+        renderer = renderCard();
+      });
+      expect(renderer.root.findByType(AIContextActions).props.accessible).toBe(
+        false,
+      );
+      expect(
+        renderer.root.findByType(AIAssistGestureSurface).props.accessible,
+      ).toBe(false);
+      expect(nativeSurface(renderer).props.accessible).toBe(false);
+      const title = renderer.root.findByProps({
+        testID: 'miao-card-title-action',
+      });
+      expect(title.props.accessible).toBe(true);
+      expect(title.props.accessibilityLabel).toBe('整理协作结果');
+      expect(title.props.accessibilityRole).toBe('button');
+      for (const testID of [
+        'miao-card-participants-action',
+        'miao-card-details-action',
+        'miao-card-content-menu',
+      ]) {
+        const action = renderer.root.findByProps({ testID });
+        expect(action.props.accessible).toBe(true);
+        expect(action.props.accessibilityLabel).toEqual(expect.any(String));
+      }
+      const participantControl = () =>
+        renderer.root.findByProps({
+          testID: 'miao-card-participants-action',
+        });
+      ReactTestRenderer.act(() =>
+        participantControl().props.onPress({ stopPropagation: jest.fn() }),
+      );
+      expect(renderedState(renderer)).toBe('agents');
+      expect(nativeSurface(renderer).props.accessible).toBe(false);
+      expect(participantControl().props.accessible).toBe(true);
+      expect(participantControl().props.accessibilityState.expanded).toBe(true);
+      ReactTestRenderer.act(() =>
+        participantControl().props.onPress({ stopPropagation: jest.fn() }),
+      );
+      expect(renderedState(renderer)).toBe('summary');
+      ReactTestRenderer.act(() =>
+        renderer.root
+          .findByProps({ testID: 'miao-card-title-action' })
+          .props.onPress({ stopPropagation: jest.fn() }),
+      );
+      expect(renderedState(renderer)).toBe('detail');
+      expect(
+        renderer.root.findByProps({ testID: 'miao-card-details-action' }).props
+          .accessibilityLabel,
+      ).toBe('收起详情');
+    } finally {
+      ReactTestRenderer.act(() => renderer?.unmount());
+    }
+  });
+
+  test('the visible content-menu control opens the real provider menu and retains full workspace navigation', () => {
+    const onOpen = jest.fn();
+    const measure = jest
+      .spyOn(View.prototype, 'measureInWindow')
+      .mockImplementation(callback => callback(0, 0, 390, 844));
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    try {
+      ReactTestRenderer.act(() => {
+        renderer = renderCard(undefined, undefined, { onOpen });
+      });
+      const menu = renderer.root.findByProps({
+        testID: 'miao-card-content-menu',
+      });
+      expect(menu.props.accessible).toBe(true);
+      expect(menu.props.accessibilityLabel).toBe('更多任务操作');
+      const stopPropagation = jest.fn();
+      ReactTestRenderer.act(() => menu.props.onPress({ stopPropagation }));
+      expect(stopPropagation).toHaveBeenCalledTimes(1);
+      expect(onOpen).not.toHaveBeenCalled();
+      expect(
+        renderer.root.findAllByProps({ testID: 'content-actions-overlay' })
+          .length,
+      ).toBeGreaterThan(0);
+      const openWorkspace = renderer.root.findByProps({
+        testID: 'content-action-up',
+      });
+      expect(openWorkspace.props.accessibilityLabel).toBe('查看协作');
+      ReactTestRenderer.act(() => openWorkspace.props.onPress());
+      expect(onOpen).toHaveBeenCalledTimes(1);
+      expect(renderedState(renderer)).toBe('summary');
+    } finally {
+      ReactTestRenderer.act(() => renderer?.unmount());
+      measure.mockRestore();
+    }
+  });
+
+  test.each(['immediate', 'deferred'] as const)(
+    'a menu tap survives the enclosing touch release and cancellation with %s native measurements',
+    timing => {
+      const onOpen = jest.fn();
+      const measurements: Array<() => void> = [];
+      const measure = jest
+        .spyOn(View.prototype, 'measureInWindow')
+        .mockImplementation(callback => {
+          const finish = () => callback(0, 0, 390, 844);
+          if (timing === 'deferred') measurements.push(finish);
+          else finish();
+        });
+      let renderer!: ReactTestRenderer.ReactTestRenderer;
+      try {
+        ReactTestRenderer.act(() => {
+          renderer = renderCard(undefined, undefined, { onOpen });
+        });
+        const surface = nativeSurface(renderer);
+        const menu = renderer.root.findByProps({
+          testID: 'miao-card-content-menu',
+        });
+        ReactTestRenderer.act(() => {
+          menu.props.onPress({ stopPropagation: jest.fn() });
+          // Native touch-end bubbles independently of a nested onPress.
+          surface.props.onTouchEnd({
+            nativeEvent: { pageX: 340, pageY: 180 },
+          });
+          surface.props.onTouchCancel();
+        });
+        ReactTestRenderer.act(() => {
+          while (measurements.length) measurements.shift()!();
+        });
+        // The provider measures its actual host before placing the menu.
+        // It does not depend on measuring a nested Pressable gesture ref.
+        expect(measure).toHaveBeenCalledTimes(1);
+        expect(
+          renderer.root.findAllByProps({ testID: 'content-actions-overlay' })
+            .length,
+        ).toBeGreaterThan(0);
+        expect(onOpen).not.toHaveBeenCalled();
+        ReactTestRenderer.act(() =>
+          renderer.root
+            .findByProps({ testID: 'content-action-up' })
+            .props.onPress(),
+        );
+        expect(onOpen).toHaveBeenCalledTimes(1);
+      } finally {
+        ReactTestRenderer.act(() => renderer?.unmount());
+        measure.mockRestore();
+      }
+    },
+  );
 
   test('keeps the horizontal card responder when the list asks to terminate it', () => {
     const pan = jest.spyOn(PanResponder, 'create');
@@ -314,23 +556,37 @@ describe('Miao card view state', () => {
     }
   });
 
-  test('does not render a hidden details control while retaining the Agent name toggle', () => {
+  test('a hidden details component blocks the card tap while keeping participants reachable', () => {
     const preferences = defaultUIPreferences();
     preferences.components.miao = {
       'miao.taskCard.details': { visible: false, label: '隐藏详情' },
     };
+    const onOpen = jest.fn();
     let renderer!: ReactTestRenderer.ReactTestRenderer;
     try {
       ReactTestRenderer.act(() => {
-        renderer = renderCard(preferences);
+        renderer = renderCard(preferences, undefined, { onOpen });
       });
       expect(
         renderer.root.findAllByProps({ testID: 'miao-card-details-action' }),
       ).toHaveLength(0);
-      expect(
-        renderer.root.findAllByProps({ accessibilityLabel: '展开 Agent' })
-          .length,
-      ).toBeGreaterThan(0);
+      ReactTestRenderer.act(() =>
+        renderer.root.findByType(AIAssistGestureSurface).props.onPress(),
+      );
+      expect(renderedState(renderer)).toBe('summary');
+      expect(onOpen).not.toHaveBeenCalled();
+      ReactTestRenderer.act(() =>
+        renderer.root
+          .findByProps({ testID: 'miao-card-participants-action' })
+          .props.onPress({ stopPropagation: jest.fn() }),
+      );
+      expect(renderedState(renderer)).toBe('agents');
+      ReactTestRenderer.act(() =>
+        renderer.root
+          .findByProps({ testID: 'miao-card-participants-action' })
+          .props.onPress({ stopPropagation: jest.fn() }),
+      );
+      expect(renderedState(renderer)).toBe('summary');
     } finally {
       ReactTestRenderer.act(() => renderer?.unmount());
     }
@@ -359,25 +615,158 @@ describe('Miao card view state', () => {
     }
   });
 
-  test('keeps the default PDF summary controls without adding a new details button', () => {
+  test('the default footer expands the current result and collapses it back into the summary', () => {
+    const onOpen = jest.fn();
     let renderer!: ReactTestRenderer.ReactTestRenderer;
     try {
       ReactTestRenderer.act(() => {
-        renderer = renderCard();
+        renderer = renderCard(undefined, undefined, { onOpen });
       });
+      const details = renderer.root.findByProps({
+        testID: 'miao-card-details-action',
+      });
+      expect(details.props.accessibilityLabel).toBe('展开详情');
       expect(
-        renderer.root.findAllByProps({ testID: 'miao-card-details-action' }),
-      ).toHaveLength(0);
+        details.findAllByType(Text).map(node => node.props.children),
+      ).toContain('展开详情');
       expect(
         renderer.root.findByProps({ testID: 'miao-card-participants-action' })
           .props.accessibilityLabel,
       ).toBe('查看 1 个 Agent');
       expect(
-        renderer.root.findAllByProps({ accessibilityLabel: '展开 Agent' })
-          .length,
-      ).toBeGreaterThan(0);
+        renderer.root.findAllByProps({ accessibilityLabel: '展开 Agent' }),
+      ).toHaveLength(0);
+      ReactTestRenderer.act(() =>
+        details.props.onPress({ stopPropagation: jest.fn() }),
+      );
+      expect(renderedState(renderer)).toBe('detail');
+      const collapse = renderer.root.findByProps({
+        testID: 'miao-card-details-action',
+      });
+      expect(collapse.props.accessibilityLabel).toBe('收起详情');
+      expect(collapse.props.accessibilityState.expanded).toBe(true);
+      ReactTestRenderer.act(() =>
+        collapse.props.onPress({ stopPropagation: jest.fn() }),
+      );
+      expect(renderedState(renderer)).toBe('summary');
+      expect(onOpen).not.toHaveBeenCalled();
     } finally {
       ReactTestRenderer.act(() => renderer?.unmount());
+    }
+  });
+
+  test('a default summary tap opens S2 inline while the content menu still opens the full workspace', () => {
+    const onOpen = jest.fn();
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    try {
+      ReactTestRenderer.act(() => {
+        renderer = renderCard(undefined, undefined, { onOpen });
+      });
+      ReactTestRenderer.act(() =>
+        renderer.root.findByType(AIAssistGestureSurface).props.onPress(),
+      );
+      expect(renderedState(renderer)).toBe('detail');
+      expect(onOpen).not.toHaveBeenCalled();
+      // Reading an expanded card cannot replace it with a workspace screen.
+      ReactTestRenderer.act(() =>
+        renderer.root.findByType(AIAssistGestureSurface).props.onPress(),
+      );
+      expect(renderedState(renderer)).toBe('detail');
+      const surface = renderer.root.findByType(AIAssistGestureSurface);
+      const openWorkspace = surface.props.actions.find(
+        (action: { direction: string }) => action.direction === 'up',
+      );
+      expect(openWorkspace.label).toBe('查看协作');
+      ReactTestRenderer.act(() => openWorkspace.onSelect(surface.props.object));
+      expect(onOpen).toHaveBeenCalledTimes(1);
+    } finally {
+      ReactTestRenderer.act(() => renderer?.unmount());
+    }
+  });
+
+  test('a legacy card without an inline renderer opens its task and never exposes an empty S1 or S2', () => {
+    const onOpen = jest.fn();
+    const pan = jest.spyOn(PanResponder, 'create');
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    try {
+      ReactTestRenderer.act(() => {
+        renderer = renderCard(undefined, undefined, {
+          onOpen,
+          inlineStates: false,
+        });
+      });
+      expect(
+        renderer.root.findAllByProps({ testID: 'miao-card-details-action' }),
+      ).toHaveLength(0);
+      expect(
+        renderer.root.findAllByProps({
+          testID: 'miao-card-participants-action',
+        }),
+      ).toHaveLength(0);
+      for (const dx of [-160, 160]) {
+        expect(
+          cardPanConfig(pan).onMoveShouldSetPanResponder?.({}, { dx, dy: 0 }),
+        ).toBe(false);
+        ReactTestRenderer.act(() =>
+          cardPanConfig(pan).onPanResponderRelease?.(
+            {},
+            { dx, dy: 0, vx: 0, vy: 0 },
+          ),
+        );
+      }
+      expect(
+        renderer.root.findByProps({ testID: 'miao-card-summary-marker' }).props
+          .children,
+      ).toBe('摘要');
+      ReactTestRenderer.act(() =>
+        renderer.root.findByType(AIAssistGestureSurface).props.onPress(),
+      );
+      expect(onOpen).toHaveBeenCalledTimes(1);
+      expect(
+        renderer.root.findByProps({ testID: 'miao-card-summary-marker' }).props
+          .children,
+      ).toBe('摘要');
+    } finally {
+      ReactTestRenderer.act(() => renderer?.unmount());
+      pan.mockRestore();
+    }
+  });
+
+  test('a press delivered immediately after a reverse swipe cannot reopen the details', () => {
+    const pan = jest.spyOn(PanResponder, 'create');
+    let now = 1000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const onOpen = jest.fn();
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    try {
+      ReactTestRenderer.act(() => {
+        renderer = renderCard(undefined, undefined, { onOpen });
+      });
+      const swipe = (dx: number) =>
+        ReactTestRenderer.act(() =>
+          cardPanConfig(pan).onPanResponderRelease?.(
+            {},
+            { dx, dy: 0, vx: 0, vy: 0 },
+          ),
+        );
+      swipe(-160);
+      expect(renderedState(renderer)).toBe('detail');
+      swipe(160);
+      expect(renderedState(renderer)).toBe('summary');
+      ReactTestRenderer.act(() =>
+        renderer.root.findByType(AIAssistGestureSurface).props.onPress(),
+      );
+      expect(renderedState(renderer)).toBe('summary');
+      now += 261;
+      ReactTestRenderer.act(() =>
+        renderer.root.findByType(AIAssistGestureSurface).props.onPress(),
+      );
+      expect(renderedState(renderer)).toBe('detail');
+      expect(onOpen).not.toHaveBeenCalled();
+    } finally {
+      ReactTestRenderer.act(() => renderer?.unmount());
+      clock.mockRestore();
+      pan.mockRestore();
     }
   });
 

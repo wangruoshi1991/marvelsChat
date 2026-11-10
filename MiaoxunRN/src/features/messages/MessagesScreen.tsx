@@ -34,13 +34,7 @@ import {
   WorkspaceDiscussionContext,
 } from '../../models/workspaceContext';
 import { WorkspaceContextCard } from './WorkspaceContextCard';
-import {
-  prepareSpeechRecognition,
-  recognizeSpeechOnce,
-  startSpeechRecognition,
-  SpeechPermissionPreparation,
-  SpeechRecognitionSession,
-} from '../../services/speechToText';
+import { useChatSpeech } from './useChatSpeech';
 import { displayText, publicPresenceText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { isLightPalette, Palette } from '../../shared/theme';
@@ -74,6 +68,9 @@ import { usesAgentDispatch } from '../../models/agentDispatch';
 import { WorkspaceContributionCard } from './WorkspaceContributionCard';
 import { useWorkspaceContributions } from './useWorkspaceContributions';
 import type { WorkspaceContribution } from './WorkspaceContributionCard';
+import { buildChatTimeline, ChatTimelineItem } from './chatTimeline';
+import { useContributionFocus } from './useContributionFocus';
+import { useChatFollow } from './useChatFollow';
 
 export type { MessageTab, UserAvatarRenderer };
 
@@ -94,6 +91,7 @@ export type ChatDraftSnapshot = {
 
 const recallWindowMs = 60 * 1000;
 const chatSwipeCloseThreshold = -84;
+const chatVisiblePosition = { minIndexForVisible: 1 };
 
 export function MessagesScreen(
   props: React.ComponentProps<typeof ThreadListScreen>,
@@ -190,11 +188,24 @@ export function ChatScreen({
 }) {
   const assist = useAIAssist();
   const professional = usesAgentDispatch(thread.agentId);
+  const contributionAgentId =
+    thread.kind !== 'group' &&
+    (professional || thread.agentId === 'miaoxun-butler')
+      ? thread.agentId || undefined
+      : undefined;
   const contributions = useWorkspaceContributions(
     token,
-    thread.agentId && thread.agentId !== 'miaoxun-butler'
-      ? thread.agentId
+    contributionAgentId,
+    contributionAgentId && workspaceContribution
+      ? {
+          id: workspaceContribution.workspace.id,
+          nodeId: workspaceContribution.step.id,
+        }
       : undefined,
+  );
+  const timeline = useMemo(
+    () => buildChatTimeline(thread.messages, contributions.contributions),
+    [thread.messages, contributions.contributions],
   );
   const initialContextReset = professional
     ? initialAgentContextReset
@@ -239,11 +250,29 @@ export function ChatScreen({
     onTaskReady: onRefreshThread,
   });
   const [isSending, setIsSending] = useState(false);
-  const [isRecognizingSpeech, setIsRecognizingSpeech] = useState(false);
-  const speechSessionRef = useRef<SpeechRecognitionSession | null>(null);
-  const speechPermissionRef = useRef<SpeechPermissionPreparation | null>(null);
-  const speechFinishRequestedRef = useRef(false);
-  const speechPrefixRef = useRef('');
+  const {
+    isRecognizing: isRecognizingSpeech,
+    start: startChatSpeech,
+    finish: finishLongSpeech,
+    cancel: cancelChatSpeech,
+  } = useChatSpeech({
+    threadId: thread.id,
+    token,
+    language,
+    onText: (text, prefix, mode) => {
+      draftEdited.current = true;
+      setDraft(current => {
+        const before = mode === 'tap' ? current.trimEnd() : prefix;
+        return before ? `${before} ${text}` : text;
+      });
+    },
+    onError: error =>
+      onActionError(
+        error instanceof Error
+          ? error.message
+          : textFor(language, '语音识别失败', 'Speech recognition failed'),
+      ),
+  });
   // The composer grows when Butler shortcuts, context references, or a reply
   // preview are visible. Reserve that measured height in the message list so
   // the final bubble can still scroll above the composer instead of being
@@ -289,11 +318,13 @@ export function ChatScreen({
     ],
   );
   const closeChat = useCallback(() => {
+    cancelChatSpeech();
     if (workspaceContext || contextReset.current) preserveDraftForAccess();
     onBack();
-  }, [onBack, preserveDraftForAccess, workspaceContext]);
+  }, [onBack, preserveDraftForAccess, cancelChatSpeech, workspaceContext]);
   const openAgentAccess = onOpenAgentAccess
     ? () => {
+        cancelChatSpeech();
         preserveDraftForAccess();
         onOpenAgentAccess();
       }
@@ -302,7 +333,32 @@ export function ChatScreen({
   const isChatInteractionBlocked = assist.isActive || Boolean(selectedMessage);
   const interactionBlockedRef = useRef(isChatInteractionBlocked);
   interactionBlockedRef.current = isChatInteractionBlocked;
-  const listRef = useRef<FlatList<ChatMessage>>(null);
+  const listRef = useRef<FlatList<ChatTimelineItem>>(null);
+  const {
+    onScroll: onChatScroll,
+    shouldFollow,
+    follow,
+  } = useChatFollow(
+    `${token}:${currentUserId}:${thread.id}:${
+      workspaceContribution?.step.id || ''
+    }`,
+    Boolean(workspaceContribution),
+  );
+  const { focus: focusContribution, onScrollToIndexFailed } =
+    useContributionFocus({
+      scope: `${token}:${currentUserId}:${thread.id}:${
+        workspaceContribution?.workspace.id || ''
+      }:${workspaceContribution?.step.id || ''}`,
+      index: workspaceContribution
+        ? timeline.findIndex(
+            item =>
+              item.kind === 'contribution' &&
+              item.contribution.step.id === workspaceContribution.step.id,
+          )
+        : -1,
+      listRef,
+      blocked: isChatInteractionBlocked,
+    });
   const messageAreaRef = useRef<View>(null);
   const chatTranslateX = useRef(new Animated.Value(0)).current;
   const windowSize = useWindowDimensions();
@@ -425,106 +481,124 @@ export function ChatScreen({
     const createdAt = Date.parse(selectedMessage.createdAt);
     return !Number.isNaN(createdAt) && Date.now() - createdAt <= recallWindowMs;
   })();
+  const restoreWorkspaceContext = (context: WorkspaceDiscussionContext) => {
+    if (contextRefs.length || replyTarget) {
+      onActionError(
+        textFor(
+          language,
+          '请先移除其他素材或取消回复，再讨论原任务。',
+          'Remove other references or the reply before discussing this task.',
+        ),
+      );
+      return;
+    }
+    draftEdited.current = true;
+    continuingClarification.current = false;
+    contextReset.current = false;
+    contextGeneration.current += 1;
+    setContextResetNotice(false);
+    setWorkspaceContext(context);
+  };
   const renderMessage = ({
     item,
     index,
   }: {
-    item: ChatMessage;
+    item: ChatTimelineItem;
     index: number;
-  }) => (
-    <ChatMessageItem
-      token={token}
-      item={item}
-      previousMessage={index > 0 ? thread.messages[index - 1] : null}
-      palette={messagePalette}
-      language={language}
-      currentUserId={currentUserId}
-      currentUserName={currentUserName}
-      currentUserAvatarConfig={currentUserAvatarConfig}
-      thread={thread}
-      agents={agents}
-      isDarkPalette={isDarkPalette}
-      renderUserAvatar={renderUserAvatar}
-      onOpenMessageMenu={openMessageMenu}
-      onActionMessage={onActionError}
-      onConfirmUIPreferences={onConfirmUIPreferences}
-      onOpenAgentAccess={openAgentAccess}
-      onOpenWorkspace={onOpenWorkspace}
-      onRestoreWorkspaceContext={context => {
-        if (contextRefs.length || replyTarget) {
-          onActionError(
-            textFor(
-              language,
-              '请先移除其他素材或取消回复，再讨论原任务。',
-              'Remove other references or the reply before discussing this task.',
+  }) => {
+    if (item.kind === 'contribution')
+      return (
+        <WorkspaceContributionCard
+          contribution={item.contribution}
+          agents={agents}
+          token={token}
+          palette={messagePalette}
+          language={language}
+          agentId={thread.agentId || undefined}
+          onDiscuss={restoreWorkspaceContext}
+          onOpenWorkspace={onOpenWorkspace}
+        />
+      );
+    const timelineMessage = item.message;
+    const previous = index > 0 ? timeline[index - 1] : undefined;
+    return (
+      <ChatMessageItem
+        token={token}
+        item={timelineMessage}
+        previousMessage={previous?.kind === 'message' ? previous.message : null}
+        palette={messagePalette}
+        language={language}
+        currentUserId={currentUserId}
+        currentUserName={currentUserName}
+        currentUserAvatarConfig={currentUserAvatarConfig}
+        thread={thread}
+        agents={agents}
+        isDarkPalette={isDarkPalette}
+        renderUserAvatar={renderUserAvatar}
+        onOpenMessageMenu={openMessageMenu}
+        onActionMessage={onActionError}
+        onConfirmUIPreferences={onConfirmUIPreferences}
+        onOpenAgentAccess={openAgentAccess}
+        onOpenWorkspace={onOpenWorkspace}
+        onRestoreWorkspaceContext={restoreWorkspaceContext}
+        onEditWorkspaceDiscussion={message => {
+          const context = message.metadata?.workspaceContext;
+          if (!context || draft.trim() || contextRefs.length || replyTarget) {
+            onActionError(
+              textFor(
+                language,
+                '请先处理当前输入，再重新编辑这条讨论。',
+                'Finish the current draft before editing this discussion.',
+              ),
+            );
+            return;
+          }
+          draftEdited.current = true;
+          continuingClarification.current = false;
+          contextReset.current = false;
+          contextGeneration.current += 1;
+          setContextResetNotice(false);
+          setWorkspaceContext(context);
+          setDraft(message.content);
+        }}
+        onRetrySend={message => {
+          if (message.localStatus !== 'failed') {
+            return;
+          }
+          const warning = contextWarning(message.metadata?.contextRefs || []);
+          if (warning) {
+            onActionError(warning);
+            openAgentAccess?.();
+            return;
+          }
+          const replyToMessageId = message.metadata?.replyTo;
+          const replyId =
+            replyToMessageId &&
+            typeof replyToMessageId === 'object' &&
+            'messageId' in replyToMessageId &&
+            typeof replyToMessageId.messageId === 'string'
+              ? replyToMessageId.messageId
+              : null;
+          Promise.resolve(
+            onSend(
+              message.content,
+              message.id,
+              replyId,
+              message.metadata?.contextRefs || [],
+              message.metadata?.assistSource,
+              ...((message.metadata?.agentContextReset === true
+                ? [undefined, undefined, true]
+                : message.metadata?.workspaceContext
+                ? [undefined, message.metadata.workspaceContext]
+                : message.metadata?.butlerContextReset === true
+                ? [true]
+                : []) as [boolean?, WorkspaceDiscussionContext?, boolean?]),
             ),
-          );
-          return;
-        }
-        draftEdited.current = true;
-        continuingClarification.current = false;
-        contextReset.current = false;
-        contextGeneration.current += 1;
-        setContextResetNotice(false);
-        setWorkspaceContext(context);
-      }}
-      onEditWorkspaceDiscussion={message => {
-        const context = message.metadata?.workspaceContext;
-        if (!context || draft.trim() || contextRefs.length || replyTarget) {
-          onActionError(
-            textFor(
-              language,
-              '请先处理当前输入，再重新编辑这条讨论。',
-              'Finish the current draft before editing this discussion.',
-            ),
-          );
-          return;
-        }
-        draftEdited.current = true;
-        continuingClarification.current = false;
-        contextReset.current = false;
-        contextGeneration.current += 1;
-        setContextResetNotice(false);
-        setWorkspaceContext(context);
-        setDraft(message.content);
-      }}
-      onRetrySend={message => {
-        if (message.localStatus !== 'failed') {
-          return;
-        }
-        const warning = contextWarning(message.metadata?.contextRefs || []);
-        if (warning) {
-          onActionError(warning);
-          openAgentAccess?.();
-          return;
-        }
-        const replyToMessageId = message.metadata?.replyTo;
-        const replyId =
-          replyToMessageId &&
-          typeof replyToMessageId === 'object' &&
-          'messageId' in replyToMessageId &&
-          typeof replyToMessageId.messageId === 'string'
-            ? replyToMessageId.messageId
-            : null;
-        Promise.resolve(
-          onSend(
-            message.content,
-            message.id,
-            replyId,
-            message.metadata?.contextRefs || [],
-            message.metadata?.assistSource,
-            ...((message.metadata?.agentContextReset === true
-              ? [undefined, undefined, true]
-              : message.metadata?.workspaceContext
-              ? [undefined, message.metadata.workspaceContext]
-              : message.metadata?.butlerContextReset === true
-              ? [true]
-              : []) as [boolean?, WorkspaceDiscussionContext?, boolean?]),
-          ),
-        ).catch(() => undefined);
-      }}
-    />
-  );
+          ).catch(() => undefined);
+        }}
+      />
+    );
+  };
 
   useEffect(() => {
     if (assist.isActive) {
@@ -534,10 +608,56 @@ export function ChatScreen({
   }, [assist.isActive, closeMessageMenu, resetChatSwipe]);
 
   useEffect(() => {
+    focusContribution();
+  }, [focusContribution]);
+
+  const previousScroll = useRef({ scope: '', messages: 0, lastKey: '' });
+  useEffect(() => {
+    const scope = `${token}:${currentUserId}:${thread.id}`;
+    const initial = previousScroll.current.scope !== scope;
+    const newMessages =
+      !initial && thread.messages.length > previousScroll.current.messages;
+    const lastKey = timeline[timeline.length - 1]?.key || '';
+    const newTail =
+      !initial &&
+      lastKey !== previousScroll.current.lastKey &&
+      Boolean(lastKey) &&
+      (!previousScroll.current.lastKey ||
+        timeline.some(item => item.key === previousScroll.current.lastKey));
+    previousScroll.current = {
+      scope,
+      messages: thread.messages.length,
+      lastKey,
+    };
+    if (workspaceContribution && initial) return;
+    if (!initial && ((!newMessages && !newTail) || !shouldFollow())) return;
     scrollToBottom(false);
-    const afterPaint = setTimeout(() => scrollToBottom(false), 80);
+    const afterPaint = setTimeout(() => {
+      if (shouldFollow()) scrollToBottom(false);
+    }, 80);
     return () => clearTimeout(afterPaint);
-  }, [scrollToBottom, thread.id, thread.messages.length]);
+  }, [
+    scrollToBottom,
+    token,
+    currentUserId,
+    thread.id,
+    thread.messages.length,
+    timeline,
+    workspaceContribution,
+    contributions.historyLoaded,
+    shouldFollow,
+  ]);
+
+  useEffect(() => {
+    setDraft('');
+    setContextRefs([]);
+    setAssistSource(undefined);
+    setWorkspaceContext(undefined);
+    setReplyTarget(null);
+    contextReset.current = false;
+    contextGeneration.current += 1;
+    setContextResetNotice(false);
+  }, [token, currentUserId, thread.id]);
 
   useEffect(() => {
     if (
@@ -649,8 +769,12 @@ export function ChatScreen({
           ),
         );
       }
-      scrollToBottom(true);
-      setTimeout(() => scrollToBottom(true), 80);
+      if (shouldFollow()) {
+        scrollToBottom(true);
+        setTimeout(() => {
+          if (shouldFollow()) scrollToBottom(true);
+        }, 80);
+      }
     });
     const frameSubscription = Keyboard.addListener(
       'keyboardDidChangeFrame',
@@ -664,7 +788,7 @@ export function ChatScreen({
             ),
           );
         }
-        scrollToBottom(true);
+        if (shouldFollow()) scrollToBottom(true);
       },
     );
     const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
@@ -676,7 +800,7 @@ export function ChatScreen({
       frameSubscription.remove();
       hideSubscription.remove();
     };
-  }, [safeAreaInsets.bottom, scrollToBottom, windowSize.height]);
+  }, [safeAreaInsets.bottom, scrollToBottom, shouldFollow, windowSize.height]);
 
   const send = () => {
     const content = draft.trim();
@@ -684,6 +808,8 @@ export function ChatScreen({
       return;
     }
     submitting.current = true;
+    follow();
+    scrollToBottom(true);
     setDraft('');
     const selectedReferences = contextRefs;
     const selectedSource = assistSource;
@@ -733,121 +859,17 @@ export function ChatScreen({
       });
   };
 
-  const appendRecognizedSpeech = useCallback(
-    (text: string) => {
-      draftEdited.current = true;
-      setDraft(current => {
-        const trimmed = current.trimEnd();
-        return trimmed ? `${trimmed} ${text}` : text;
-      });
-      setTimeout(() => scrollToBottom(true), 80);
-    },
-    [scrollToBottom],
-  );
-
   const recognizeSpeech = () => {
-    if (isRecognizingSpeech) {
-      return;
-    }
-
     Keyboard.dismiss();
     closeMessageMenu();
-    setIsRecognizingSpeech(true);
-    Promise.resolve(recognizeSpeechOnce(language))
-      .then(appendRecognizedSpeech)
-      .catch(error => {
-        onActionError(
-          error instanceof Error
-            ? error.message
-            : textFor(language, '语音识别失败', 'Speech recognition failed'),
-        );
-      })
-      .finally(() => setIsRecognizingSpeech(false));
+    startChatSpeech('tap', draft);
   };
 
   const startLongSpeech = useCallback(() => {
-    if (isRecognizingSpeech || speechSessionRef.current) return;
     Keyboard.dismiss();
     closeMessageMenu();
-    speechFinishRequestedRef.current = false;
-    speechPrefixRef.current = draft.trimEnd();
-    setIsRecognizingSpeech(true);
-    let permission: SpeechPermissionPreparation;
-    try {
-      permission = prepareSpeechRecognition();
-      speechPermissionRef.current = permission;
-    } catch (error) {
-      setIsRecognizingSpeech(false);
-      onActionError(
-        error instanceof Error
-          ? error.message
-          : textFor(language, '语音识别失败', 'Speech recognition failed'),
-      );
-      return;
-    }
-    permission.result
-      .then(() => {
-        if (speechFinishRequestedRef.current) return;
-        const session = startSpeechRecognition(language, update => {
-          const text = update.text.trim();
-          if (!text) return;
-          draftEdited.current = true;
-          const prefix = speechPrefixRef.current;
-          setDraft(prefix ? `${prefix} ${text}` : text);
-          setTimeout(() => scrollToBottom(true), 40);
-        });
-        speechSessionRef.current = session;
-        if (speechFinishRequestedRef.current) session.finish();
-        return session.result;
-      })
-      .then(text => {
-        if (typeof text === 'string' && text.trim()) {
-          const prefix = speechPrefixRef.current;
-          draftEdited.current = true;
-          setDraft(prefix ? `${prefix} ${text.trim()}` : text.trim());
-        }
-      })
-      .catch(error => {
-        if (!speechFinishRequestedRef.current) {
-          onActionError(
-            error instanceof Error
-              ? error.message
-              : textFor(language, '语音识别失败', 'Speech recognition failed'),
-          );
-        }
-      })
-      .finally(() => {
-        speechPermissionRef.current = null;
-        speechSessionRef.current = null;
-        speechFinishRequestedRef.current = false;
-        setIsRecognizingSpeech(false);
-      });
-  }, [
-    closeMessageMenu,
-    draft,
-    isRecognizingSpeech,
-    language,
-    onActionError,
-    scrollToBottom,
-  ]);
-
-  const finishLongSpeech = useCallback(() => {
-    speechFinishRequestedRef.current = true;
-    if (speechSessionRef.current) {
-      speechSessionRef.current.finish();
-    } else {
-      speechPermissionRef.current?.cancel();
-    }
-  }, []);
-
-  useEffect(
-    () => () => {
-      speechFinishRequestedRef.current = true;
-      speechSessionRef.current?.cancel();
-      speechPermissionRef.current?.cancel();
-    },
-    [],
-  );
+    startChatSpeech('hold', draft);
+  }, [closeMessageMenu, draft, startChatSpeech]);
 
   const openConversationAssistant = useCallback(() => {
     // This is a local snapshot of the current conversation entry point. A
@@ -982,32 +1004,59 @@ export function ChatScreen({
             <FlatList
               ref={listRef}
               style={styles.chatMessageList}
-              data={thread.messages}
-              keyExtractor={item => item.id}
+              data={timeline}
+              keyExtractor={item => item.key}
               contentContainerStyle={styles.messages}
-              initialNumToRender={Math.max(thread.messages.length, 12)}
+              initialNumToRender={12}
+              maintainVisibleContentPosition={chatVisiblePosition}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
               scrollEnabled={!isChatInteractionBlocked}
+              onScroll={onChatScroll}
+              scrollEventThrottle={16}
+              ListHeaderComponent={
+                contributions.hasMore || contributions.error ? (
+                  <View>
+                    {contributions.error ? (
+                      <Text
+                        accessibilityRole="alert"
+                        style={{ color: palette.rose }}
+                      >
+                        {contributions.error}
+                      </Text>
+                    ) : null}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: contributions.loading }}
+                      disabled={contributions.loading}
+                      onPress={() => {
+                        contributions.error
+                          ? contributions.retry()
+                          : contributions.loadMore();
+                      }}
+                      style={taskStyles.refresh}
+                    >
+                      <Text style={{ color: palette.text }}>
+                        {contributions.loading
+                          ? textFor(language, '正在加载', 'Loading')
+                          : contributions.error
+                          ? textFor(
+                              language,
+                              '重试协作贡献',
+                              'Retry contributions',
+                            )
+                          : textFor(
+                              language,
+                              '加载更早的协作贡献',
+                              'Load older contributions',
+                            )}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null
+              }
               ListFooterComponent={
                 <View>
-                  {contributions.contributions
-                    .slice()
-                    .sort(
-                      (a, b) =>
-                        Number(b.step.id === workspaceContribution?.step.id) -
-                        Number(a.step.id === workspaceContribution?.step.id),
-                    )
-                    .map(contribution => (
-                      <WorkspaceContributionCard
-                        key={contribution.step.id}
-                        contribution={contribution}
-                        agents={agents}
-                        token={token}
-                        palette={messagePalette}
-                        language={language}
-                      />
-                    ))}
                   {contributions.unavailable ? (
                     <Text
                       accessibilityRole="alert"
@@ -1018,23 +1067,6 @@ export function ChatScreen({
                         '部分协作贡献因授权或来源变化无法读取。',
                         'Some contributions are unavailable because access or sources changed.',
                       )}
-                    </Text>
-                  ) : null}
-                  {contributions.hasMore ? (
-                    <Text style={{ color: palette.secondaryText }}>
-                      {textFor(
-                        language,
-                        '仅显示最近 50 条协作贡献。',
-                        'Showing the 50 most recent contributions.',
-                      )}
-                    </Text>
-                  ) : null}
-                  {contributions.error ? (
-                    <Text
-                      accessibilityRole="alert"
-                      style={{ color: palette.rose }}
-                    >
-                      {contributions.error}
                     </Text>
                   ) : null}
                   {tasks.error || tasks.decisionError ? (
@@ -1074,8 +1106,10 @@ export function ChatScreen({
                           palette={messagePalette}
                           language={language}
                           onPreview={() => {
-                            const index = thread.messages.findIndex(
-                              message => message.id === artifact.id,
+                            const index = timeline.findIndex(
+                              item =>
+                                item.kind === 'message' &&
+                                item.message.id === artifact.id,
                             );
                             if (index >= 0)
                               listRef.current?.scrollToIndex({
@@ -1107,13 +1141,15 @@ export function ChatScreen({
                   />
                 </View>
               }
-              onScrollToIndexFailed={info =>
-                listRef.current?.scrollToOffset({
-                  offset: info.averageItemLength * info.index,
-                  animated: true,
-                })
+              onScrollToIndexFailed={onScrollToIndexFailed}
+              onLayout={() =>
+                workspaceContribution
+                  ? focusContribution()
+                  : contributions.historyLoaded || !shouldFollow()
+                  ? undefined
+                  : scrollToBottom(false)
               }
-              onLayout={() => scrollToBottom(false)}
+              onContentSizeChange={focusContribution}
               renderItem={renderMessage}
             />
             {selectedMessage && messageMenuPosition ? (
@@ -1163,9 +1199,14 @@ export function ChatScreen({
           workspaceActions={
             workspaceContext && token && onOpenWorkspace ? (
               <WorkspaceContextCard
-                key={`${token}:${currentUserId}:${thread.id}:${workspaceContext.id}:${workspaceContext.revision}:${workspaceContext.currentRound}`}
+                key={`${token}:${currentUserId}:${thread.id}:${
+                  workspaceContext.id
+                }:${workspaceContext.revision}:${
+                  workspaceContext.currentRound
+                }:${workspaceContext.nodeId || ''}`}
                 token={token}
                 context={workspaceContext}
+                agentId={thread.agentId}
                 palette={messagePalette}
                 language={language}
                 draft={draft}
@@ -1278,8 +1319,12 @@ export function ChatScreen({
           onFocusInput={() => {
             assist.dismiss();
             closeMessageMenu();
-            scrollToBottom(true);
-            setTimeout(() => scrollToBottom(true), 80);
+            if (shouldFollow()) {
+              scrollToBottom(true);
+              setTimeout(() => {
+                if (shouldFollow()) scrollToBottom(true);
+              }, 80);
+            }
           }}
           onOpenAssistant={openConversationAssistant}
           onStartLongSpeech={startLongSpeech}
