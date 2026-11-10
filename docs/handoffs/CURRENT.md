@@ -7,9 +7,9 @@
 - 用户已明确要求完成部署并更新 TestFlight，最新指定先完成这两项，生产漫画 Agent 的后台登录和 release/product 上架稍后处理；不绕过后台认证、不替用户扩权。
 - 新增 `backend/scripts/comic-render-live-e2e.js` 和 9 项安全测试。在独立 loopback PostgreSQL 的全空数据库上迁移 001–058，经正常 Admin 登录、release/product 发布、测试用户授权、文字分镜、真实 Worker 队列、真实图片 Provider、私有 OSS、带认证读取完整跑通，两幅 1024×1024 WebP 均成功；跨用户读取 404、未登录 401，测试用户、授权与对象清理完成。目视角色及前后种花情节一致。首次 harness 的 identity/删除确认参数错误在模型调用前失败，已修复并独立重跑。
 - 最终整仓检查退出 0：Backend 1124 通过、374 环境门控跳过另列；RN 99 套 1261 项、Agents 57、Admin 49、Avatar Web 29、媒体检索 Web 4 和构建检查通过。真实端到端不使用模型 fixture，未写生产业务数据。
-- 生产只读备份及隔离 PG18 恢复预检已通过；正式维护仍需重新停写备份、恢复副本先演练 057/058、原业务数据/权限校验后再切换 API 与双 Worker。此处记录准备完成，不代表已部署。
-- Build60 归档完成，实际版本 `1.0 (60)`，正式 Bundle/API 正确，484 个源码输入哈希前后一致，App 与三个框架 dSYM UUID 匹配；工程磁盘 Build Number 未改。CLI export-only 因 `No Accounts`/缺分发身份失败，正在用已恢复的 Xcode Organizer 既有账号继续云签名；尚未上传。
-- 证据及后续实际部署/上传结果见[漫画配套发布记录](../reviews/2026-11-10-comic-production-release.md)。真实 App/实体设备、后台上架及用户新增媒体权限授权分别验收，不以隔离成功代替线上开通。
+- 提交 `510df0de6946fc63d196be95a31ec64b4655f514` 已推送至当前功能分支。生产已从56迁移切换到58，runtime 为 `comic-image-20261110-510df0d`；维护备份、独立PG18恢复和恢复副本057/058迁移演练均通过。既有74张业务表数据摘要与既有权限/索引/函数/角色/序列核对一致；三个服务均从同一新 runtime 启动，AI Worker 心跳含 `comic_render`，公网健康/ready/Admin返回200，备份timer已恢复。停写备份及执行证据位于服务器受限目录 `backups/comic-release-20261110-510df0d-retry1/` 和其 `-execution` 目录；共享 `/suanming` 与 Hello Rose首页保持可访问。
+- Build60 已由 Xcode Organizer 显示上传成功，实际版本 `1.0 (60)`；归档代码输入哈希、App/框架符号与正式 Bundle/API 均已核验。用户本轮表示 TestFlight 后续由其处理；本交接不推断 App Store Connect 的处理/合规/测试组状态。
+- 漫画生产队列/私有 OSS 的两格真实隔离端到端通过，但生产 `comic-diary` 新 release/product 尚未上架；后台登录按用户指示留后。用户发布该版本后还需在 App 内明确同意独立 `media:image:generate` 权限。Build60上传本身不会绕过产品发布或用户授权。生产部署、Apple上传及待核验边界见[漫画配套发布记录](../reviews/2026-11-10-comic-production-release.md)。
 
 #### 2026-11-10 漫画真实图片 Provider 接入
 

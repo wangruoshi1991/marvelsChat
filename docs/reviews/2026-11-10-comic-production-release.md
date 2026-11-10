@@ -18,18 +18,22 @@
 
 ## 生产预检与维护计划
 
-当前生产基线 `cebc1e6`、迁移56，待应用057索引和058漫画队列/输出/心跳/清理表。线上读备份完整恢复到独立 PG18，owner/ACL、逻辑列、索引、约束、函数、角色和序列比较通过；SQL deparse 的类型转换差异已通过事务重解析证明等价。此预检不能替代维护期间的新停写备份。
+生产基线为 `cebc1e6`/56迁移。本轮已部署提交 `510df0de6946fc63d196be95a31ec64b4655f514` 的 runtime `comic-image-20261110-510df0d`，完成057/058后为58迁移。停写备份 `/opt/projects/marvels-chat/backups/comic-release-20261110-510df0d-retry1/` 的恢复验证状态为 passed，隔离PG18已停止；停写 dump 为945632字节，隔离恢复后redump为947376字节。恢复副本先成功演练057/058，再迁移生产。
 
-维护工具只针对妙讯12个Nginx location，保留共享 `/suanming` 和 Hello Rose 站点；默认只读计划，显式 execute 才改变状态。维护前与排空后检查无非终态任务；停止 API、AI Worker、检索 Worker 和备份 timer，完成新备份、隔离恢复和候选迁移演练，再应用生产057/058，逐表核对原业务列数据摘要，切换三个服务到同一 immutable runtime。先保持503，核验 ready 与漫画 Worker 能力后才恢复流量。失败保留维护及证据，不自动用旧56代码连接58数据库。
+维护工具只针对妙讯12个Nginx location，保留共享 `/suanming` 和 Hello Rose 站点；默认只读计划，显式 execute 才改变状态。第一次执行在暂停服务前因Nginx reload瞬时状态检查失败；当时API/Worker仍active、迁移仍56，原Nginx配置和权限按哈希恢复，公网恢复200。将HTTP检查改为容忍7秒短暂传播并增加回归后第二次执行通过。该短暂维护及恢复记录留在首个 `-execution` 目录。
 
-正式部署尚未执行，执行结果后补。
+正式切换期间，维护前/排空后均检查无非终态任务；停止 API、AI Worker、检索 Worker 和备份 timer，完成停写备份、隔离恢复和候选迁移演练，再应用生产057/058，逐表核对74张原业务表数据摘要及原数据库权限/对象元数据。三个服务切换到同一 runtime 并 ready 后，核实 Worker 心跳 `agent_message`、`site_draft`、`comic_render`，再恢复公网与备份 timer。现有后端、AI Worker、媒体检索 Worker、数据库备份 timer 均active；公网 API health/ready 与 Admin 为200；Hello Rose首页200、共享 `/suanming/` 仍保留其原认证响应。迁移后不自动回退到旧56代码。
+
+部署执行状态为完成。生产业务数据只做摘要核对，未创建生产漫画任务、未调用生产图片模型，也未写入生产漫画产物。
 
 ## Build60
 
 归档实际 `1.0 (60)`、`com.wangruoshi.miaoxun`、正式 HTTPS API；Xcode26.6。归档前后484个源码输入哈希一致；磁盘工程版本未改。App及React/Dependencies/Hermes四个dSYM匹配，JS bundle SHA256 `b0a1234942a1c2c02f0927c9a8095a2787ea04020aa687a5cd31dccf12814672`。原归档保留，符号副本仅补充三个框架dSYM。
 
-CLI export-only（含 allowProvisioningUpdates）退出70，显示 No Accounts 和缺 iOS Distribution。原始归档仍是开发签名，不据此声称可分发。CUA现已能读取Xcode既有Apple账号和团队，正在Organizer继续云签名；实际上传、Apple处理和原yunzhi测试组状态后补。
+CLI export-only（含 allowProvisioningUpdates）退出70，显示 No Accounts 和缺 iOS Distribution。随后用Xcode Organizer现有Apple账号选择 App Store Connect，界面明确显示 `MiaoxunRN 1.0 (60) uploaded`，因此上传成功。Build60没有修改源码输入或磁盘工程 Build Number，原始归档和匹配dSYM保留。
+
+用户于本轮表示 TestFlight 后续由其处理。当前无法读取App Store Connect页面确认Apple处理、出口合规问项及Build60是否已关联原 `yunzhi` 测试组；不把Xcode上传完成等同于“正在测试”。
 
 ## 待完成边界
 
-生产漫画0.1.4 release/product 未上架，不替用户增加 `media:image:generate`。后台登录按用户指示稍后处理。新客户端不等于该能力已自动给所有账号开放。实体设备上的漫画确认、生成进度、私有图片读取，以及妙页/二楼手势与语音仍须实际验收。
+生产漫画0.1.4 release/product 未上架，不替用户增加 `media:image:generate`。用户指出 TestFlight 由其处理，后台登录/发布稍后进行。待正常后台登录后创建/审核/发布对应 Agent release/product，再由用户在 App 内明确同意独立媒体权限；新客户端和后端部署都不会自动给用户开通。实体设备上的漫画确认、生成进度、私有图片读取，以及妙页/二楼手势与语音仍须实际验收。
