@@ -136,7 +136,7 @@ export function AgentWorkspaceCard({
               <View style={s.agentList} testID="miao-workspace-participants">
                 {participantItems.length ? (
                   participantItems.map(({ step, agent }) => {
-                    const summary = step.summary.trim() || step.goal.trim();
+                    const summary = step.summary.trim();
                     return (
                       <View
                         key={step.id}
@@ -159,7 +159,7 @@ export function AgentWorkspaceCard({
                             {taskAgentDisplayName(agent || undefined, language)}
                           </Text>
                           <Text
-                            numberOfLines={2}
+                            numberOfLines={1}
                             style={[s.agentRole, { color: palette.text }]}
                           >
                             {step.goal}
@@ -169,11 +169,17 @@ export function AgentWorkspaceCard({
                             style={[s.detail, { color: palette.secondaryText }]}
                           >
                             {summary ||
-                              textFor(
-                                language,
-                                '正在等待本 Agent 的结果',
-                                'Waiting for this Agent',
-                              )}
+                              (step.status === 'succeeded'
+                                ? textFor(
+                                    language,
+                                    '已完成，暂无单独结果摘要',
+                                    'Completed with no separate summary',
+                                  )
+                                : textFor(
+                                    language,
+                                    '正在等待本 Agent 的结果',
+                                    'Waiting for this Agent',
+                                  ))}
                           </Text>
                           <Text
                             style={[
@@ -271,6 +277,7 @@ export function AgentWorkspaceCard({
                     // polling. Keep the visible result mounted until the
                     // current round or artifact itself changes.
                     refreshKey={workspace.currentRound}
+                    collapsedByDefault
                     palette={palette}
                     language={language}
                   />

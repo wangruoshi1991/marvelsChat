@@ -26,7 +26,6 @@ import { AgentGlyphAvatar } from '../src/features/messages/AgentGlyphAvatar';
 import { defaultUIPreferences } from '../src/features/ui/uiPreferences';
 import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
 import { ChatMessageText } from '../src/features/messages/ChatMessageText';
-import { WorkspaceButton } from '../src/shared/workspaceUi';
 
 jest.mock('../src/services/api/agentWorkspaceApi', () => ({
   agentWorkspaceApi: { text: jest.fn() },
@@ -559,6 +558,15 @@ test('collaboration cards open inline participants and details while the content
   act(() => participants().props.onPress({ stopPropagation: jest.fn() }));
   expect(open).not.toHaveBeenCalled();
   expect(participants().props.accessibilityState.expanded).toBe(true);
+  const visibleTexts = renderer!.root.findAllByType(Text);
+  const goalRows = visibleTexts.filter(
+    node => node.props.children === recorded.steps[0].goal,
+  );
+  const resultRows = visibleTexts.filter(
+    node => node.props.children === recorded.steps[0].summary,
+  );
+  expect(goalRows.some(node => node.props.numberOfLines === 1)).toBe(true);
+  expect(resultRows.some(node => node.props.numberOfLines === 2)).toBe(true);
   expect(text()).toContain('相册管理');
   expect(text()).toContain('未参与的妙管家');
   expect(text()).not.toContain('同分类未参与者');
@@ -1208,6 +1216,12 @@ test('an interrupted collaboration reads its saved text in S2 without opening an
   expect(text()).toContain('执行中断');
   expect(text()).toContain('最新成果：已保存的分镜');
   await act(async () => openCardResult());
+  expect(text()).toContain('阅读完整成果');
+  await act(async () =>
+    renderer!.root
+      .findByProps({ testID: 'workspace-text-toggle-saved-text' })
+      .props.onPress(),
+  );
   expect(text()).toContain('正在读取文字成果');
   expect(agentWorkspaceApi.text).toHaveBeenCalledWith(
     'owner',
@@ -1247,14 +1261,31 @@ test('leaving the feed or backgrounding clears S2 text and rereads authorization
     renderer = TestRenderer.create(feed(options));
   });
   await act(async () => openCardResult());
+  await act(async () =>
+    renderer!.root
+      .findByProps({ testID: 'workspace-text-toggle-saved-text' })
+      .props.onPress(),
+  );
   expect(resultBodies()).toEqual(['当前获准读取的正文']);
   await act(async () => renderer!.update(feed({ ...options, active: false })));
   expect(resultBodies()).toEqual([]);
   await act(async () => renderer!.update(feed(options)));
+  await act(async () =>
+    renderer!.root
+      .findByProps({ testID: 'workspace-text-toggle-saved-text' })
+      .props.onPress(),
+  );
   expect(agentWorkspaceApi.text).toHaveBeenCalledTimes(2);
   await act(async () => notifyAppState('background'));
   expect(resultBodies()).toEqual([]);
   await act(async () => notifyAppState('active'));
+  expect(agentWorkspaceApi.text).toHaveBeenCalledTimes(2);
+  expect(resultBodies()).toEqual([]);
+  await act(async () =>
+    renderer!.root
+      .findByProps({ testID: 'workspace-text-toggle-saved-text' })
+      .props.onPress(),
+  );
   expect(agentWorkspaceApi.text).toHaveBeenCalledTimes(3);
   expect(resultBodies()).toEqual(['当前获准读取的正文']);
   await act(async () =>
@@ -1264,6 +1295,11 @@ test('leaving the feed or backgrounding clears S2 text and rereads authorization
   expect(resultBodies()).toEqual([]);
   expect(agentWorkspaceApi.text).toHaveBeenCalledTimes(3);
   await act(async () => openCardResult());
+  await act(async () =>
+    renderer!.root
+      .findByProps({ testID: 'workspace-text-toggle-saved-text' })
+      .props.onPress(),
+  );
   expect(agentWorkspaceApi.text).toHaveBeenLastCalledWith(
     'other-account',
     'workspace-1',
@@ -1282,6 +1318,11 @@ test('S2 shows a real access failure and only retries after the user requests it
     );
   });
   await act(async () => openCardResult());
+  await act(async () =>
+    renderer!.root
+      .findByProps({ testID: 'workspace-text-toggle-saved-text' })
+      .props.onPress(),
+  );
   expect(resultBodies()).toEqual([]);
   expect(text()).toContain('此成果授权已撤回。');
   expect(agentWorkspaceApi.text).toHaveBeenCalledTimes(1);
@@ -1291,7 +1332,9 @@ test('S2 shows a real access failure and only retries after the user requests it
     content: '重新确认授权后的正文',
   });
   await act(async () =>
-    renderer!.root.findByType(WorkspaceButton).props.onPress(),
+    renderer!.root
+      .findByProps({ testID: 'workspace-text-retry-saved-text' })
+      .props.onPress(),
   );
   expect(resultBodies()).toEqual(['重新确认授权后的正文']);
   expect(agentWorkspaceApi.text).toHaveBeenCalledTimes(2);
@@ -1312,6 +1355,11 @@ test('S2 expands the same card for a long result while the outer feed owns verti
     );
   });
   await act(async () => openCardResult());
+  await act(async () =>
+    renderer!.root
+      .findByProps({ testID: 'workspace-text-toggle-saved-text' })
+      .props.onPress(),
+  );
   const reader = renderer!.root.findByProps({
     testID: 'miao-workspace-text-reader',
   });

@@ -7,8 +7,17 @@
 - 根因确认：妙页 S2 的文字成果 `refreshKey` 使用 workspace `revision`；3 秒轮询期间任何节点状态推进都会改变 React key，卸载正文并重新鉴权读取，造成内容短暂消失及卡片高度收缩/恢复。改为使用 `currentRound`，真实账号、workspace、成果身份变化及前后台切换仍按原逻辑清正文并重新读取。
 - 回归先失败后通过：`workspaceTextResult.test.tsx` 覆盖保持详情打开时 workspace revision 增长不重新请求/不清正文；正文/账号隔离原用例继续通过。妙页、卡片手势与文字成果定向测试 3 套 52/52，RN TypeScript、ESLint、Prettier 通过；`MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0，RN 97 套/1220 项通过，Backend PostgreSQL 门控按默认环境跳过的项目不计为本轮集成通过；`git diff --check` 通过。
 - 新独立 Bundle `com.wangruoshi.miaoxun.collaborationQA20261110` 已编译、安装并登录本机 loopback API `127.0.0.1:4395`；当前隔离数据库为 `/tmp/miaoxun-simulator-qa-20261110/data` / `miaoxun_simulator_migration_test`，与生产及标准开发库分离。新 QA 用户为测试专用，未记录其登录凭据。妙页显示真实空状态。既有无 QA 标记 `waiting_input` workspace 未复用或修改。
-- `GET /api/agents` 当前仅发布管家和站点 Agent，因此不能用该环境证明 3 个以上专业 Agent 并行，也不通过直接写 `user_agents` 或模拟结果绕过产品/用户授权。站点 Agent 授权确认已在 App 显示并等待用户明确选择；尚未授权、未提交协作、未调用模型、未写协作数据。授权后才能继续看真实 S0/S1/S2、原 Agent 聊天贡献和滚动行为；瀑布展开时的锚点位移也仍待有真实条目后观察。
+- `GET /api/agents` 当前仅发布管家和站点 Agent，因此不能用该环境证明 3 个以上专业 Agent 并行。QA1010 的隔离库已有已发布 1.1.0 站点产品 entitlement，API目录也返回对应站点 Agent；本轮没有直接写 `user_agents` 或制造成果。尚无该账号的真实 workspace，未调用模型或写协作数据；须先有获准的真实执行器/任务，才能继续检查妙页卡片、原 Agent 聊天贡献和滚动行为。
 - 未触及正式 App、线上 API/数据库、生产发布或 TestFlight。隔离 App/账号/API/PG 当前保留供本轮继续验收；结束后需退出 QA 账号并精确清除本轮用户/授权/数据，再停止本轮 loopback 服务。
+
+#### 2026-11-10 妙页 S1/S2 内容密度收敛
+
+- 按用户批准方案，S1 Agent 目标压成一行、真实摘要最多两行，完成但无单独摘要时明确显示暂无摘要；S2 默认仅显示当前真实成果摘要，点击后在同一卡片内读取并展开全文，支持收起。非妙页通用成果读取行为不变。
+- 相关 RN 定向测试 5 suites / 84 tests、TypeScript、目标文件 ESLint/Prettier、`git diff --check` 全通过。整仓 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0：RN 97 suites / 1221 tests，Agents 55、Admin 49、Avatar Web 29、媒体检索 Web 4 全通过；多个 Web 构建通过。后端环境门控 PostgreSQL 跳过项不计作真实集成验收。
+- 最新源码已构建并安装到隔离 iPhone17 Simulator Bundle `com.wangruoshi.miaoxun.collaborationQA20261110`。首次无完整模拟器签名安装出现 Keychain entitlement 错误，重新以正常 Xcode 身份构建并原位安装后恢复 QA1010 的本地登录态；正式 Bundle、登录态和后端未改。
+- 实际打开妙页只看到服务器真实空状态，当前隔离 DB/API 没有可展示 workspace；因此没有卡片视觉/S1/S2/连续滑动/动画的本轮设备证据。隔离 Agent 目录仍只有管家和站点 Agent，无法证明多专业并行。未伪造任务、摘要或贡献，也未调用模型。
+- 头像隔离资源仍因磁盘文件缺失而返回 `AGENT_AVATAR_STORAGE_MISSING`；合成图需经隔离 Admin 正常上传/发布流程。本轮没有把资源写入未核实隔离性的共享头像目录或拷贝生产头像。具体改动、验证与后续条件见[妙页内容密度记录](../reviews/2026-11-10-miao-card-summary-and-result-collapse.md)。
+- 本轮未部署、未上传 TestFlight、未产生付费调用。代码待提交/推送；之后需补隔离 Admin 头像上传和真实 workspace 画面验收，最后在实体设备验收手势/动画。
 
 #### 2026-11-10 推送后后端与 Agent 隔离验收
 

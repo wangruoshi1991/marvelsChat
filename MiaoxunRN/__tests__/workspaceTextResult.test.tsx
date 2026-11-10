@@ -15,7 +15,7 @@ import { WorkspaceButton } from '../src/shared/workspaceUi';
 import { palettes } from '../src/shared/theme';
 
 const api = jest.mocked(agentWorkspaceApi);
-const props = {
+const props: React.ComponentProps<typeof WorkspaceTextResult> = {
   artifact: { kind: 'text_result' as const, id: 'node-1', title: '故事' },
   token: 'owner-token',
   workspaceId: 'workspace-1',
@@ -65,6 +65,31 @@ test('visible text is read under its workspace and node, with the existing prose
   expect(api.text).toHaveBeenCalledTimes(1);
 });
 
+test('the Miao result summary opens the exact full text only on explicit request', async () => {
+  const fullText = `${'当前成果第一部分。\n\n'.repeat(30)}当前成果结尾。`;
+  api.text.mockResolvedValue(document(fullText));
+  await mount({ ...props, collapsedByDefault: true });
+
+  expect(bodies()).toEqual([]);
+  const toggle = tree.root.findByProps({
+    testID: 'workspace-text-toggle-node-1',
+  });
+  expect(toggle.props.label).toBe('阅读完整成果');
+  expect(renderedText()).toContain('阅读完整成果');
+
+  await act(async () => toggle.props.onPress());
+  expect(bodies()).toEqual([fullText]);
+  expect(renderedText()).toContain('收起完整成果');
+  expect(api.text).toHaveBeenCalledTimes(1);
+
+  await act(async () =>
+    tree.root
+      .findByProps({ testID: 'workspace-text-toggle-node-1' })
+      .props.onPress(),
+  );
+  expect(bodies()).toEqual([]);
+});
+
 test('workspace polling revisions do not reload the open Miao result body', async () => {
   const artifact = {
     kind: 'text_result' as const,
@@ -108,6 +133,11 @@ test('workspace polling revisions do not reload the open Miao result body', asyn
   await act(async () => {
     tree = TestRenderer.create(card(workspace.revision));
   });
+  await act(async () =>
+    tree.root
+      .findByProps({ testID: 'workspace-text-toggle-node-result' })
+      .props.onPress(),
+  );
   expect(bodies()).toEqual(['保持展开的正文']);
   await act(async () => tree.update(card(workspace.revision + 1)));
   expect(api.text).toHaveBeenCalledTimes(1);

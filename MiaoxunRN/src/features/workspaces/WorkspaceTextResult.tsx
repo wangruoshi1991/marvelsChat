@@ -18,6 +18,7 @@ type Props = {
   foreground: boolean;
   disabled: boolean;
   refreshKey: number;
+  collapsedByDefault?: boolean;
   palette: Palette;
   language: Language;
 };
@@ -26,11 +27,38 @@ type Props = {
 // snapshots contain its reference; backgrounding or changing identity drops it.
 export function WorkspaceTextResult(props: Props) {
   if (!props.foreground) return null;
+  const key = `${props.token}:${props.workspaceId}:${props.artifact.id}:${props.artifact.title}:${props.refreshKey}`;
+  if (props.collapsedByDefault)
+    return <CollapsedTextResult key={key} {...props} />;
+  return <TextResult key={key} {...props} />;
+}
+
+function CollapsedTextResult(props: Props) {
+  const [expanded, setExpanded] = useState(false);
+  const t = (zh: string, en: string) => textFor(props.language, zh, en);
   return (
-    <TextResult
-      key={`${props.token}:${props.workspaceId}:${props.artifact.id}:${props.artifact.title}:${props.refreshKey}`}
-      {...props}
-    />
+    <View style={s.collapsedResult}>
+      {expanded ? (
+        <>
+          <WorkspaceButton
+            testID={`workspace-text-toggle-${props.artifact.id}`}
+            palette={props.palette}
+            variant="ghost"
+            label={t('收起完整成果', 'Collapse full result')}
+            onPress={() => setExpanded(false)}
+          />
+          <TextResult {...props} />
+        </>
+      ) : (
+        <WorkspaceButton
+          testID={`workspace-text-toggle-${props.artifact.id}`}
+          palette={props.palette}
+          variant="ghost"
+          label={t('阅读完整成果', 'Read full result')}
+          onPress={() => setExpanded(true)}
+        />
+      )}
+    </View>
   );
 }
 
@@ -111,4 +139,7 @@ function TextResult({
   );
 }
 
-const s = StyleSheet.create({ error: { gap: 8 } });
+const s = StyleSheet.create({
+  collapsedResult: { gap: 8 },
+  error: { gap: 8 },
+});
