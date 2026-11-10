@@ -2,7 +2,7 @@
 
 后台创建草稿、名称/头像配置、身份修订、产品版本与用户 consent 的完整操作见 [代码 Agent 接入与上架](agent-onboarding.md)。代码 key 不是供应商 API Key；运行能力仍由开发与部署提供。
 
-更新：2026-11-05。本页描述当前工作区代码能力，运行共用同一API、两个Worker和数据库，不为Agent建立单独服务。正式部署、安装包与验收证据见[当前交接](handoffs/CURRENT.md)；代码已实现不等于产品链路已通过真机验收。最新逐项能力和检索入口核验见[Agent能力闭环记录](reviews/2026-11-05-agent-capability-closure.md)。
+更新：2026-11-10。本页描述当前工作区代码能力，运行共用同一API、两个Worker和数据库，不为Agent建立单独服务。正式部署、安装包与验收证据见[当前交接](handoffs/CURRENT.md)；代码已实现不等于产品链路已通过真机验收。最新逐项能力和检索入口核验见[Agent能力闭环记录](reviews/2026-11-05-agent-capability-closure.md)。
 
 Agent 独立放在 `agents/` 目录。文件名使用：
 
@@ -46,13 +46,30 @@ export default {
 - `virtual-character`：形象顾问，基于当前形象配置提供建议，不直接修改资料。
 - `site-builder`：生成经过严格校验的私有结构页面草稿；完整预览并确认后保存，参与协作时只消费本次所选/交付素材。
 - `model-3d`：提供照片准备、形象设定和模型理解建议，不发起 3D 任务或扣费。
-- `album-manager`：通过受控工具检索真实图片/视频，在协作中交付绑定内容版本的精确素材选择；云端同意、owner与授权按调用重验。原按固定关键词/文件名推标签、分组并生成置信度的建议服务已删除；上传与编辑仅使用用户明确标签。原生视觉索引直接处理获准的原图/视频帧，不依赖这些旧规则。
+- `album-manager`：普通会话实际工具只有`list_albums`和`search_media`；协作执行器`album-manager/media.select`内部使用同一受控检索工具，成功后交付带内容版本的素材选择。云端同意、owner与授权按调用重验。Agent 可以给出整理/标签建议，但没有修改标签、移动或删除素材的工具，不能声称已替用户整理。原按固定关键词/文件名推标签、分组并生成置信度的建议服务已删除；上传与编辑仅使用用户明确标签。原生视觉索引直接处理获准的原图/视频帧，不依赖这些旧规则。
 - `file-preprocessor`：普通会话提供文件处理建议，`text.summarize`处理明确选中消息，新增`file.summary`消费成功上传并完整保存的UTF-8文本及消息，交付持久摘要。文件引用使用`files:read`、owner和完整内容版本校验；预览至多1000字符且标记截断，执行不截断正文。支持格式、上传核对和删除边界见[文件处理](file-processing.md)。
 - `comic-diary`：普通对话使用自然文字；协作能力`comic.storyboard`交付可读文字分镜；日记详情另有保存结构化分镜草稿的明确流程。尚无最终生图。草稿接口要求完整声明授权，只发送本次明确选定的日记/媒体窄字段；无选择不读取全库，不接未声明的文件来源；调用及保存前重验授权、原声明和来源，成功审计与保存同事务，公共结果不返回模型审计元数据。
 - `video-production`：普通对话及协作能力`video.script`提供文字脚本和镜头计划，配置文本模型后即可执行，不依赖OSS。视频供应商与渲染队列尚未接入，不生成成片；旧的不可用生成接口和面板已移除，已有草稿只保留读取。
 - `ui-agent`：理解受限界面调整，生成服务端校验的偏好预览；必须由用户确认才应用。当前工作区补通其专属会话入口，复用管家转交和设置页的预览服务，返回受保护预览卡，不把模型JSON直接发到聊天或自动应用。直接会话只接受本条文字，不接附件、任务/素材引用或专业续作上下文。变更仍需后端发布才能在线生效。
 
 注册器共10项，其中内部 `media-retrieval` 未声明普通聊天运行模式，RN不将其展示为可添加的AI伙伴。2026-11-05只读公共接口核验返回9个已发布项：妙讯管家、7个专业Agent及UI-Agent；发布状态不代表当前用户已授权或供应商可用。检索没有丢失：二楼相册负责上传，用户添加相册管理Agent并确认云端索引后，在相册Agent会话请求查找；`album-manager/media.select`会调用内部检索服务并交付受保护媒体引用。内部检索不独立出现在普通会话列表，也不另建一个可绕过相册授权的聊天入口。
+
+`agent.capabilities` 是产品目录中的能力标签，不代表每个标签都有可执行动作。当前实际执行能力以版本化 `workspaceCapabilities` 与后端 `executorContracts`、具体运行工具三者匹配为准；例如相册Agent只有列相册与一次受限媒体搜索工具，没有整理/标记/移动/删除执行器。媒体检索只能查找用户已经上传且获准索引的图片及视频代表帧，不搜索互联网、设备本机相册或视频音频；视频命中是候选时间点，不等同于完整视频理解。设置/发布状态、用户授权、Provider 与 Worker readiness 任一缺失时，相关能力会明确不可用，不能由 Agent 注册项推断其在线可运行。
+
+### 媒体检索 Agent 的入口与离线验证
+
+`media-retrieval` 是注册器中的内部索引/检索执行角色，不声明`chat`、`dispatch`或`workspaceCapabilities`，RN也从普通会话与可添加 Agent 列表中过滤它。用户应从二楼相册上传图片/视频，在“我 → 我的 Agent”启用相册管理并确认`media-retrieval-consent-v1`云端索引授权；Worker将获准素材建成索引后，打开相册管理 Agent 会话用自然语言查找。明确选择相册时，搜索只能在已由服务端确认的相册内进行。管家也可为已选相册派发`album-manager/media.select`协作节点。`media-retrieval-web`是开发验证工具，不是正式 App 的独立检索入口。
+
+相册会话检索在实际运行前还要求产品 entitlement、当前 Agent scopes、有效云端同意、有效索引、后端 Provider/向量配置和索引 Worker readiness。状态包括未授权、无素材、索引中、部分不可用、无匹配和服务错误；无匹配只表示本次已索引范围未命中，不代表整个相册没有素材。当前检索仅覆盖已上传图片和视频代表帧，不读取设备本机相册、互联网或视频音轨，也不生成媒体。
+
+离线验证证据（显式 fixture/mock，不调用真实 Provider）：Agent registry、检索声明、合成评测和 mock smoke 定向测试27/27；Backend能力执行器、授权、相册工具、就绪状态、公开合同、loopback HTTP fixture和检索边界定向测试86/86。它们证明合同/权限/代码路径，不代表视觉检索质量、生产配置已启用或手机端真实素材已完成“上传→索引→搜索”验收。核心命令：
+
+```sh
+cd agents
+MIAOXUN_DOTENV_ENABLED=false NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/registry.test.js test/media-retrieval-agent.test.js test/media-retrieval-evaluation.test.js test/media-retrieval-smoke.test.js test/media-retrieval-sop.test.js test/specialist-dispatch.test.js
+cd ../backend
+MIAOXUN_DOTENV_ENABLED=false NODE_ENV=test DEFAULT_ADMIN_ENABLED=false node --test test/album-assistant-tools.test.js test/album-assistant-access-service.test.js test/album-assistant-result-access.test.js test/agent-workspace-capabilities.test.js test/agent-readiness.test.js test/media-retrieval-config.test.js test/media-retrieval-public-contract.test.js test/media-retrieval-client-http.test.js test/media-retrieval-search-boundary.test.js test/media-retrieval-lifecycle-closure.test.js
+```
 
 ## 注册、发布与 App 展示
 

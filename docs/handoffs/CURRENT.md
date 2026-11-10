@@ -2,6 +2,14 @@
 
 更新：2026-11-10。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
 
+#### 2026-11-10 妙页 PDF、头像与 Agent 入口续核
+
+- 视觉复核《妙板块-状态效果与交互说明-20261102.pdf》第2–4页：S0摘要和快捷操作、S1在同一条卡片内替换为参与 Agent 清单、S2在原卡片纵向展开；纵向滑动继续浏览列表。当前 `MiaoTaskCard`/`AgentWorkspaceCard` 维持这一容器关系，S1/S2密度按用户确认方案收敛。
+- 通过 iPhone 17 / iOS 26.5 隔离 Simulator 实际切到妙页；页面返回服务端真实空状态“还没有任务动态”，因此本轮没有真实卡片可作像素、三态视觉或连续滑动验收。讯页当前隔离站点 Agent 显示红色感叹号；`/api/health`、`/api/ready` 为200且PG迁移已就绪，已知头像资源读取为 `AGENT_AVATAR_STORAGE_MISSING`/503，属于隔离文件缺失的显式错误，不证明RN头像容器结构失败。
+- 前次真实隔离上传/裁切测试覆盖合成方图、横图、竖图和透明PNG，实际上传均生成512×512 WebP；历史Simulator也观察过结构化显示。当前4395没有运行Admin Vite和已验证的隔离管理员会话，本轮没有绕过认证、扩大QA1010权限或修改/复制头像文件。若要修复当前隔离画面，需按正常 Admin 上传→release/product 发布→由QA用户在App内同意的链路执行。
+- 更新 `docs/agents.md`：明确目录 `capabilities` 只是能力标签，不等同于可执行动作；说明内部 `media-retrieval` 不是普通聊天Agent，用户通过二楼上传并同意索引后，在相册管理会话检索，列出Provider/Worker/entitlement限制以及离线测试边界。Agent定向27/27、Backend检索与执行合同86/86，RN妙页/卡片/手势定向58/58；整仓 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 最终显示 `All repository checks passed`，RN97套/1221项通过。默认环境门控的PostgreSQL跳过项不算隔离数据库验收。
+- 本轮未创建workspace或模型成果、未调用Provider、未上传或发布头像、未改数据库/生产、不部署、不上传TestFlight。最新S1/S2及协作聊天代码仍需在真实隔离workspace上做三态联动视觉验收；实体设备手势仍需真机验证。
+
 #### 2026-11-10 妙页 S2 轮询抖动修复与隔离 QA 续验
 
 - 根因确认：妙页 S2 的文字成果 `refreshKey` 使用 workspace `revision`；3 秒轮询期间任何节点状态推进都会改变 React key，卸载正文并重新鉴权读取，造成内容短暂消失及卡片高度收缩/恢复。改为使用 `currentRound`，真实账号、workspace、成果身份变化及前后台切换仍按原逻辑清正文并重新读取。
