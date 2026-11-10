@@ -1,6 +1,14 @@
 # 妙讯当前交接入口
 
-更新：2026-11-09。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
+更新：2026-11-10。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
+
+#### 2026-11-10 妙页 S2 轮询抖动修复与隔离 QA 续验
+
+- 根因确认：妙页 S2 的文字成果 `refreshKey` 使用 workspace `revision`；3 秒轮询期间任何节点状态推进都会改变 React key，卸载正文并重新鉴权读取，造成内容短暂消失及卡片高度收缩/恢复。改为使用 `currentRound`，真实账号、workspace、成果身份变化及前后台切换仍按原逻辑清正文并重新读取。
+- 回归先失败后通过：`workspaceTextResult.test.tsx` 覆盖保持详情打开时 workspace revision 增长不重新请求/不清正文；正文/账号隔离原用例继续通过。妙页、卡片手势与文字成果定向测试 3 套 52/52，RN TypeScript、ESLint、Prettier 通过；`MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0，RN 97 套/1220 项通过，Backend PostgreSQL 门控按默认环境跳过的项目不计为本轮集成通过；`git diff --check` 通过。
+- 新独立 Bundle `com.wangruoshi.miaoxun.collaborationQA20261110` 已编译、安装并登录本机 loopback API `127.0.0.1:4395`；当前隔离数据库为 `/tmp/miaoxun-simulator-qa-20261110/data` / `miaoxun_simulator_migration_test`，与生产及标准开发库分离。新 QA 用户为测试专用，未记录其登录凭据。妙页显示真实空状态。既有无 QA 标记 `waiting_input` workspace 未复用或修改。
+- `GET /api/agents` 当前仅发布管家和站点 Agent，因此不能用该环境证明 3 个以上专业 Agent 并行，也不通过直接写 `user_agents` 或模拟结果绕过产品/用户授权。站点 Agent 授权确认已在 App 显示并等待用户明确选择；尚未授权、未提交协作、未调用模型、未写协作数据。授权后才能继续看真实 S0/S1/S2、原 Agent 聊天贡献和滚动行为；瀑布展开时的锚点位移也仍待有真实条目后观察。
+- 未触及正式 App、线上 API/数据库、生产发布或 TestFlight。隔离 App/账号/API/PG 当前保留供本轮继续验收；结束后需退出 QA 账号并精确清除本轮用户/授权/数据，再停止本轮 loopback 服务。
 
 #### 2026-11-10 推送后后端与 Agent 隔离验收
 

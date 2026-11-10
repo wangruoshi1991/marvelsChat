@@ -5,6 +5,9 @@ import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { Text } from 'react-native';
 import { WorkspaceTextResult } from '../src/features/workspaces/WorkspaceTextResult';
+import { AgentWorkspaceCard } from '../src/features/workspaces/AgentWorkspaceCard';
+import { agentWorkspace, workspaceStep } from '../__fixtures__/agentWorkspace';
+import { AIAssistProvider } from '../src/features/assist/AIAssistProvider';
 import { ChatMessageText } from '../src/features/messages/ChatMessageText';
 import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
 import { MiaoxunApiError } from '../src/services/api/http';
@@ -60,6 +63,55 @@ test('visible text is read under its workspace and node, with the existing prose
   expect(tree.root.findByType(ChatMessageText).props.formatted).toBe(true);
   await update({ ...props, palette: palettes.dark });
   expect(api.text).toHaveBeenCalledTimes(1);
+});
+
+test('workspace polling revisions do not reload the open Miao result body', async () => {
+  const artifact = {
+    kind: 'text_result' as const,
+    id: 'node-result',
+    title: '故事',
+  };
+  const workspace = agentWorkspace({
+    status: 'succeeded',
+    revision: 3,
+    currentRound: 1,
+    result: artifact,
+    summary: '本轮协作已完成。',
+    steps: [
+      workspaceStep({
+        id: artifact.id,
+        key: 'text-result',
+        agentId: 'comic-diary',
+        capability: 'comic.script',
+        status: 'succeeded',
+        summary: '完成故事结构。',
+        result: artifact,
+      }),
+    ],
+  });
+  const card = (revision: number) => (
+    <AIAssistProvider routeKey="miao-polling-test" onAskButler={jest.fn()}>
+      <AgentWorkspaceCard
+        workspace={{ ...workspace, revision }}
+        token="owner-token"
+        active
+        agents={[]}
+        palette={palettes.light}
+        language="zh"
+        onOpen={jest.fn()}
+        grid={false}
+        viewState="detail"
+      />
+    </AIAssistProvider>
+  );
+  api.text.mockResolvedValue(document('保持展开的正文', artifact.id));
+  await act(async () => {
+    tree = TestRenderer.create(card(workspace.revision));
+  });
+  expect(bodies()).toEqual(['保持展开的正文']);
+  await act(async () => tree.update(card(workspace.revision + 1)));
+  expect(api.text).toHaveBeenCalledTimes(1);
+  expect(bodies()).toEqual(['保持展开的正文']);
 });
 
 test.each([

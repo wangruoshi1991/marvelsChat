@@ -267,7 +267,10 @@ export function AgentWorkspaceCard({
                     workspaceId={workspace.id}
                     foreground={active && foreground && Boolean(token)}
                     disabled={!active || !foreground}
-                    refreshKey={workspace.revision}
+                    // A workspace revision advances during normal worker
+                    // polling. Keep the visible result mounted until the
+                    // current round or artifact itself changes.
+                    refreshKey={workspace.currentRound}
                     palette={palette}
                     language={language}
                   />
