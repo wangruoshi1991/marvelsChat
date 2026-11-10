@@ -31,6 +31,10 @@
 - [数据库与迁移](database.md)、[备份恢复](database-backup.md)、[恢复负责人手册](database-recovery-owner-guide.md)。
 - [管理后台](admin.md)、[移动端上线清单](mobile-launch-checklist.md)。
 
+- [11月10日漫画图片生成本地实现](reviews/2026-11-10-comic-image-generation.md)：独立媒体Provider、058队列/逐格私有产物、RN任务体验和43项隔离PG验收。
+- [11月10日漫画真实生图接入](reviews/2026-11-10-cicadas-comic-live.md)：Cicadas固定型号、文字/参考图真实成图、正式Provider验证与App联合验收边界。
+- [11月10日漫画配套发布](reviews/2026-11-10-comic-production-release.md)：真实队列/私有OSS隔离验收、生产备份迁移与Build60发布进度，后台上架按用户指示后续处理。
+
 ## 历史证据
 
 - [文件与专业任务发布准备记录](reviews/2026-10-21-contract6-release-preparation.md)、[模型真人复核材料](reviews/2026-10-21-contract6-human-review.md)：评估、恢复演练、构建证据及人工复核材料。

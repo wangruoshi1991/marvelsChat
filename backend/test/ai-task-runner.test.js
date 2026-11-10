@@ -121,3 +121,12 @@ test("shutdown waits for the current execution and does not claim another task",
   assert.equal(runner.getState().state, "stopped");
   assert.equal(runner.getState().activeTask, false);
 });
+
+test('queue claims only the registered executable kinds', async()=>{
+  let filter;
+  const runner=createAITaskRunner({executors:{agent_message:async()=>{}},repository:{
+    recoverInterruptedAITasks:async()=>{},claimAITask:async options=>{filter=options;return null;},
+  }});
+  await runner.runOnce();
+  assert.deepEqual(filter,{kinds:['agent_message']});
+});

@@ -85,6 +85,19 @@ test("entitlement schema and state machine expose explicit unavailable and recon
   assert.equal(isValidEntitlementTransition("unavailable", "enabled"), false);
 });
 
+test("release, product and consent contracts accept exact hierarchical scopes and reject malformed segments", () => {
+  const scope = "media:image:generate";
+  const dependency = { agentKey: "comic-diary", agentReleaseId: "00000000-0000-4000-8000-000000000001", version: "0.1.4", scopes: [scope] };
+  assert.deepEqual(agentReleaseSchema.parse({ ...release, declaredScopes: [scope] }).declaredScopes, [scope]);
+  assert.deepEqual(productDependencySchema.parse(dependency).scopes, [scope]);
+  assert.deepEqual(entitlementSchema.parse({ status: "enabled", grantedScopes: [scope] }).grantedScopes, [scope]);
+  for (const malformed of ["media::generate", ":image:generate", "media:image:", "media:Image:generate", "media:image:generate:*", "media:image:generate/other"]) {
+    assert.throws(() => agentReleaseSchema.parse({ ...release, declaredScopes: [malformed] }));
+    assert.throws(() => productDependencySchema.parse({ ...dependency, scopes: [malformed] }));
+    assert.throws(() => entitlementSchema.parse({ status: "enabled", grantedScopes: [malformed] }));
+  }
+});
+
 test("migration discovery includes 046-048 in numeric order", async () => {
   const migrations = await loadMigrationFiles();
   const names = migrations.map(({ filename }) => filename);

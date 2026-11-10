@@ -2,13 +2,33 @@
 
 更新：2026-11-10。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
 
-#### 2026-11-10 漫画图片生成架构设计（待审阅）
+#### 2026-11-10 漫画配套发布推进
 
-- 用户批准的方向是使用独立服务端图片 Provider 与异步任务状态，先为漫画日记 Agent 接入逐格成图；视频 Agent 等视频 API 合同核实后再评估。本轮限定为代码与隔离验收，不部署、不发布。
-- 设计稿：[漫画图片生成架构](../superpowers/specs/2026-11-10-comic-image-generation-design.md)。选用现有 `ai_tasks` 生命周期，扩展漫画任务合同并新增逐帧输出表；成图存入用户私有 `station_media_assets`，Worker 仅处理显式选择的来源，供应商结果未知时不自动重试。聊天/建站任务 DTO 保持独立。
-- 设计稿已按当前代码核对：AI Task Worker 没有媒体执行器，AI task kind/artifact/status 约束不含漫画渲染；漫画 readiness 目前只看文本模型；现有 OSS/媒体资产可复用，但数据库与 RN 任务合同仍须扩展。
-- 当前没有已核验图片 endpoint、model ID、认证、响应、异步轮询或取消合同，因此未修改代码、配置和数据库，未调用供应商。此前粘贴到聊天的 API Key 按已暴露处理，应先撤销/轮换，再通过受限后端/Worker secret 环境配置；不能写入 Agent 定义、客户端或 Admin 表单。
-- 等待用户审阅设计稿。获批后再写实现计划；具体中转站文档及轮换凭据是隔离真实图片验收前置条件。生产部署、Agent release/product 发布、用户授权和 TestFlight 均未获本阶段授权。
+- 用户已明确要求完成部署并更新 TestFlight，最新指定先完成这两项，生产漫画 Agent 的后台登录和 release/product 上架稍后处理；不绕过后台认证、不替用户扩权。
+- 新增 `backend/scripts/comic-render-live-e2e.js` 和 9 项安全测试。在独立 loopback PostgreSQL 的全空数据库上迁移 001–058，经正常 Admin 登录、release/product 发布、测试用户授权、文字分镜、真实 Worker 队列、真实图片 Provider、私有 OSS、带认证读取完整跑通，两幅 1024×1024 WebP 均成功；跨用户读取 404、未登录 401，测试用户、授权与对象清理完成。目视角色及前后种花情节一致。首次 harness 的 identity/删除确认参数错误在模型调用前失败，已修复并独立重跑。
+- 最终整仓检查退出 0：Backend 1124 通过、374 环境门控跳过另列；RN 99 套 1261 项、Agents 57、Admin 49、Avatar Web 29、媒体检索 Web 4 和构建检查通过。真实端到端不使用模型 fixture，未写生产业务数据。
+- 生产只读备份及隔离 PG18 恢复预检已通过；正式维护仍需重新停写备份、恢复副本先演练 057/058、原业务数据/权限校验后再切换 API 与双 Worker。此处记录准备完成，不代表已部署。
+- Build60 归档完成，实际版本 `1.0 (60)`，正式 Bundle/API 正确，484 个源码输入哈希前后一致，App 与三个框架 dSYM UUID 匹配；工程磁盘 Build Number 未改。CLI export-only 因 `No Accounts`/缺分发身份失败，正在用已恢复的 Xcode Organizer 既有账号继续云签名；尚未上传。
+- 证据及后续实际部署/上传结果见[漫画配套发布记录](../reviews/2026-11-10-comic-production-release.md)。真实 App/实体设备、后台上架及用户新增媒体权限授权分别验收，不以隔离成功代替线上开通。
+
+#### 2026-11-10 漫画真实图片 Provider 接入
+
+- 用户明确要求接入指定媒体密钥并实际试生成。密钥仅保存仓库外受限配置，未进入源码、日志或客户端；不复用文字/检索/3D凭据。本轮未部署生产、发布产品、提交推送或上传TestFlight。
+- `cicadas-openai-images`正式适配器已注册，固定`https://api.cicadas.top/v1`、实测`gpt-image-2`和1024平方；文字生成使用JSON `/images/generations`，显式参考图使用multipart `/images/edits`。只接收单张base64图片，不跟随重定向、不下载结果URL；超时/5xx/未知响应不重试。
+- 模型目录HTTP200返回9个图片型号。累计3次真实生成/编辑成功：四格归还雨伞故事、以上图为参考的后续场景、正式Provider+归一化的四格种花故事。最终WebP1024×1024/307872字节，真实usage135/196/331；目视主要角色和故事顺序符合本轮提示词。未报告价格，费用不推算。图与0600回执在`output/comic-image-live-20261110-cicadas/`，更多证据见[真实生图验收](../reviews/2026-11-10-cicadas-comic-live.md)。
+- Provider/适配器/smoke/executor/storage定向38/38通过（0跳过）；真实大图base64解析问题已补回归修复。独立smoke只读指定0600文件，派发前持久记录，真实解码成功才输出图片。`MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh`退出0，RN99套1261项、Backend1115通过/374门控跳过、Agents57、Admin49与各构建检查通过；门控跳过不计PG验收。`git diff --check`通过。
+- 当前证明实际供应商可生成漫画与参考图延续，不证明线上App已接通。尚需独立release/product与用户授权、058迁移/API/Worker部署、私有OSS/队列/RN联合验收；本轮没有连接应用数据库或OSS。下节“无真实适配器/未使用凭据”是本次接入前状态。
+
+#### 2026-11-10 漫画图片生成实现（本地验收完成）
+
+- 用户已通过[架构设计](../superpowers/specs/2026-11-10-comic-image-generation-design.md)，执行[实现计划](../superpowers/plans/2026-11-10-comic-image-generation.md)。本轮只改本地代码并做隔离验证，不部署、发布、上传 TestFlight、提交或推送。
+- 新增 058 迁移、内部 `comic_render` v2 队列、独立公开 `comicRenders:1` 合同、owner-scoped 逐格输出、Worker 能力心跳和无账号级联的存储清理 journal。旧 `/api/tasks` 的列表、详情、事件和决策继续只读写 v1 聊天/建站任务。
+- 新增漫画任务提交/读取/事件/queued CAS取消 API；每次派发和保存都复核当前 Agent 产品授权、独立 `media:image:generate`、分镜与显式选择素材的内容版本。`comic-diary` 源码版本更新为 0.1.4；尚未创建或发布相应 release/product，没有给任何用户追加权限。
+- Worker 顺序生成每格，确定性失败保留其他成功画面，结果未知停止后续派发、不重试。私有 PNG/JPEG/WebP 解码限制 16MiB/16MP，去元数据并转成最长边2048的 WebP；上传核验、asset可读与frame绑定原子提交。不自动索引生成图。清理 journal 在账号删除后仍保留，Worker 维护任务可删除孤儿对象。
+- RN 漫画面板新增确认格数后显式生成、逐格状态及带认证私有图片、部分成功/未知提示、排队取消、前后台恢复和授权错误清空。bootstrap 未声明新合同或后台未就绪时显示明确状态；保存文字分镜不会自动调用图片模型。
+- 独立 `MEDIA_GENERATION_*` 默认关闭，供应商适配器目录为空。即使填入配置也不能绕过已核验合同门槛。当前没有已核实图片 endpoint/model/auth/响应/轮询/下载/幂等合同，因此没有真实图片 Provider 调用；此前聊天内暴露的凭据未使用，真实联调前需轮换并通过服务端 secret 配置。
+- 已执行证据：新全空本机 PostgreSQL 全58项迁移与漫画集成14/14、旧AI任务PG12/12、文字分镜权限PG17/17均通过（均0跳过）。Provider/权限/Agent/readiness定向77/77通过；审查修复了撤权后的success+skipped、恢复事件计数、提交结果未知的存储保护、Worker心跳与参考图顺序。最终整仓检查通过（RN99套1261项；其余PG门控默认跳过不计通过），iPhone17/iOS26.5候选build-only编译通过；原App未替换/启动。完整文件和命令见[本轮验收](../reviews/2026-11-10-comic-image-generation.md)。
+- 待完成：真实Provider图片端到端、正式Agent版本/用户重新同意、生产迁移/API/Worker部署、新客户端发布与实体设备验收。本轮不将隔离测试图片称为真实供应商成图或线上可用。
 
 #### 2026-11-10 妙页 PDF、头像与 Agent 入口续核
 

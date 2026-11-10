@@ -143,3 +143,14 @@ Agent独立模块通过 `workspaceCapabilities` 声明输入引用类型、依�
 ## 文件输入（本地合同6，迁移043）
 
 已接入UTF-8 TXT/Markdown/JSON/CSV/TSV设备上传、完整正文和`station-file`版本引用。文件Agent的`file.summary`消费获准文件/消息并保留全部来源，`text.summarize`仍处理消息；分派只见文件元信息，正文仅交给专业持久任务。管家没有新增`files:read`，本阶段由二楼文件进入原专业会话的`direct`任务，不自动扩权或转交私聊。删除/变更来源或撤权后，历史保留但正文与续作不可用。格式、大小、上传幂等、正文核对、删除、迁移和保留边界详见[文件处理](file-processing.md)。PDF/DOCX、OCR、生图、成片和协作3D仍未接入；本地源码不代表生产或真机验收。
+
+
+## 漫画图片任务（2026-11-10 本地实现）
+
+漫画文字分镜与图片生成是两个明确动作。`POST /api/station/comic-diaries` 仍只生成并保存文字；客户端确认格数后调用 `POST /api/station/comic-diaries/:comicDiaryId/render-tasks`，body 为 `{idempotencyKey}`，请求头 `X-Miaoxun-Comic-Renders: 1`。同一集合 GET 读取历史任务；任务详情/事件/排队取消分别位于 `/api/station/comic-render-tasks/:taskId`、`/events`、`/cancel`（取消body `{revision}`）。公开合同 `comicRenders:1` 与内部 `ai_tasks.contract_version=2` 含义不同，不扩展旧 `aiTasks:1` DTO。
+
+`comic-diary` 0.1.4 声明 `comic.render` 和独立 `media:image:generate`；这不代表产品已发布或用户已同意。新增权限需要同版 release/product 与正常用户授权，不能沿用旧快照静默扩权。Agent 分镜会话、workspace 的 `comic.storyboard` 仍输出文字，不会隐式触发生成图片。
+
+图片任务按格顺序执行；每次读取/派发/保存核对当前授权与选择来源。已知单格失败可继续其余格，部分成功保留真实图片。供应商或保存结果未知时任务中断，后续格标为未生成，不自动重试；运行中的上游请求无已核验取消协议，因此只允许排队时 CAS 取消。图片作为私有 `station_media_assets` 读取，无外部Provider URL，不自动公开或进入检索索引。删除分镜不删除仍属于用户的图片；删除图片/账号后的对象由持久清理 journal 处理。
+
+已注册并真实验证 `cicadas-openai-images` 的 `gpt-image-2` 1024平方图片生成及参考图编辑，见[真实成图记录](reviews/2026-11-10-cicadas-comic-live.md)。`MEDIA_GENERATION_ENABLED`仍默认关闭；text/image/private OSS/近期具有`comic_render`的活Worker四项同时就绪才报告App图片生成可用。此次本地成图没有验证队列/OSS/RN联合链路，也没有正式发布新产品或给用户追加权限。视频仍为脚本/镜头规划；隔离fixture仍只证明代码合同。配置入口见 [Agent模型配置](agent-model-configuration.md)。

@@ -41,7 +41,7 @@ export function createAITaskRunner({ executors, repository = taskRepository, pol
     if (stopping) return false;
     await repository.recoverInterruptedAITasks();
     if (stopping) return false;
-    const record = await repository.claimAITask();
+    const record = await repository.claimAITask({ kinds: Object.keys(executors) });
     lastSuccessfulPollAt = new Date(now()).toISOString();
     if (!record) return false;
     // Shutdown may arrive while the claim transaction is committing. Do not

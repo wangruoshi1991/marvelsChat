@@ -58,7 +58,7 @@ export function validateAgentPermissions(agent) {
     permissions.some(
       (scope) =>
         typeof scope !== "string" ||
-        !/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/.test(scope),
+        !/^[a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)+$/.test(scope),
     ) ||
     new Set(permissions).size !== permissions.length
   ) {

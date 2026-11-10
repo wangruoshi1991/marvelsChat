@@ -5,7 +5,7 @@ import { agentChatHistory } from "./chat-history.js";
 export default {
   key: "comic-diary",
   name: "漫画日记 Agent",
-  version: "0.1.3",
+  version: "0.1.4",
   category: "content-generation",
   identity: {
     avatarKind: "agent-mark",
@@ -23,6 +23,7 @@ export default {
     "diary-to-comic",
     "media-storytelling",
     "frame-planning",
+    "comic.render",
   ],
   permissions: [
     "messages:read",
@@ -31,6 +32,7 @@ export default {
     "album:read",
     "station:read",
     "station:write",
+    "media:image:generate",
   ],
 
   workspaceCapabilities: [{

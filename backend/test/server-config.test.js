@@ -5,7 +5,27 @@ import {
   parseCorsOrigin,
   parseTrustProxyHops,
   validateAdminBootstrapConfig,
+  createMediaGenerationConfig,
 } from "../src/config.js";
+
+test("image generation defaults closed and never inherits another model's credentials", () => {
+  assert.deepEqual(createMediaGenerationConfig({ NEW_API_KEY: "text-secret", NEW_API_MODEL: "text-model", DASHSCOPE_API_KEY: "avatar-secret", MEDIA_RETRIEVAL_DASHSCOPE_API_KEY: "retrieval-secret" }), {
+    enabled: false, provider: "", apiBaseUrl: "", apiKey: "", imageModel: "", timeoutMs: 90000,
+  });
+});
+
+test("image generation accepts only an explicit HTTPS base without embedded secrets", () => {
+  assert.equal(createMediaGenerationConfig({ MEDIA_GENERATION_API_BASE_URL: "https://images.example.test/v1/" }).apiBaseUrl, "https://images.example.test/v1");
+  for (const value of ["http://images.example.test/v1", "https://user:private@images.example.test/v1", "https://images.example.test/v1?api_key=private", "https://images.example.test/v1#private", "https://images.example.test/v1?", "https://images.example.test/v1#", "not-a-url"]) {
+    assert.throws(() => createMediaGenerationConfig({ MEDIA_GENERATION_API_BASE_URL: value }), error => {
+      assert.equal(error.message.includes("private"), false);
+      return error.message.includes("MEDIA_GENERATION_API_BASE_URL");
+    });
+  }
+  assert.throws(() => createMediaGenerationConfig({ MEDIA_GENERATION_ENABLED: "maybe" }), /MEDIA_GENERATION_ENABLED/);
+  assert.throws(() => createMediaGenerationConfig({ MEDIA_GENERATION_TIMEOUT_MS: "1.5" }), /MEDIA_GENERATION_TIMEOUT_MS/);
+  assert.throws(() => createMediaGenerationConfig({ MEDIA_GENERATION_TIMEOUT_MS: "0" }), /MEDIA_GENERATION_TIMEOUT_MS/);
+});
 
 test("trust proxy configuration accepts only a bounded hop count", () => {
   assert.equal(parseTrustProxyHops(undefined), 0);

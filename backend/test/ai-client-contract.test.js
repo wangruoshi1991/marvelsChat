@@ -17,7 +17,7 @@ test("an AI client must explicitly declare the supported contract, regardless of
   let called = false;
   requireAIClientContract({ get: () => "1" }, null, () => { called = true; });
   assert.equal(called, true);
-  assert.deepEqual(aiClientContracts, { aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6, workspaceContributions: 3, uiPreferences: 1 });
+  assert.deepEqual(aiClientContracts, { aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6, workspaceContributions: 3, uiPreferences: 1, comicRenders: 1 });
 });
 
 test("strict contribution timeline DTO requires its own version before reading protected records", () => {

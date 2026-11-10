@@ -1,6 +1,8 @@
 import { getModelRuntimeStatus } from "./agent-runtime.js";
 import { getOssRuntimeStatus } from "./asset-storage-service.js";
 import { buildMediaRetrievalRuntimeStatus } from "./media-retrieval-runtime-status.js";
+import { getComicImageProviderStatus } from "./comic-image-provider.js";
+import { getAITaskWorkerStatus } from "./ai-task-worker-status-repository.js";
 
 const unique = (items = []) =>
   Array.from(new Set(items.map((item) => String(item || "").trim()).filter(Boolean)));
@@ -35,11 +37,24 @@ export async function buildAgentReadiness({
   modelStatus = getModelRuntimeStatus(),
   ossStatus = getOssRuntimeStatus(),
   mediaRetrievalStatus,
+  mediaImageStatus = getComicImageProviderStatus(),
+  aiTaskWorkerStatus,
 } = {}) {
   const model = providerStatus(modelStatus, "new-api");
   const oss = providerStatus(ossStatus, "oss");
   const modelRequired = ["NEW_API_BASE_URL", "NEW_API_KEY", "NEW_API_MODEL"];
   const ossRequired = ["OSS_BUCKET", "OSS_ENDPOINT", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET"];
+  const imageRequired = ["MEDIA_GENERATION_ENABLED", "MEDIA_GENERATION_PROVIDER", "MEDIA_GENERATION_API_BASE_URL", "MEDIA_GENERATION_API_KEY", "MEDIA_GENERATION_IMAGE_MODEL"];
+  const image = { ...providerStatus(mediaImageStatus, "unconfigured"), contractVerified: mediaImageStatus?.contractVerified === true };
+  image.configured = image.configured && image.contractVerified;
+  const workerStatus = aiTaskWorkerStatus || await getAITaskWorkerStatus();
+  const worker = {
+    provider: "ai-task-worker",
+    configured: workerStatus?.state === "ready" && workerStatus?.capabilities?.includes("comic_render") === true,
+    state: workerStatus?.state === "ready" ? "ready" : "unavailable",
+    capabilities: unique(workerStatus?.capabilities),
+    missing: [],
+  };
   const retrieval =
     mediaRetrievalStatus || await buildMediaRetrievalRuntimeStatus();
 
@@ -95,11 +110,11 @@ export async function buildAgentReadiness({
       providers: { model, oss },
     }),
     "comic-diary": readiness({
-      configured: model.configured,
-      requiredEnv: modelRequired,
-      missingEnv: model.missing,
+      configured: model.configured && image.configured && worker.configured && oss.configured,
+      requiredEnv: [...modelRequired, ...imageRequired, ...ossRequired],
+      missingEnv: [...model.missing, ...image.missing, ...oss.missing],
       capabilityNeeds: ["image_generation", "comic_rendering"],
-      providers: { model },
+      providers: { model, image, worker, oss },
     }),
     "video-production": readiness({
       configured: model.configured,

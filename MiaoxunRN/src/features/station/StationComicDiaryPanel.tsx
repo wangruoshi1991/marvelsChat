@@ -12,6 +12,7 @@ import { Palette } from '../../shared/theme';
 import { SegmentedControl } from '../../shared/ui';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { StationContentEditorSection } from './StationContentEditorUi';
+import { StationComicRenderPanel } from './StationComicRenderPanel';
 
 type ComicStyle = 'slice-of-life' | 'cute' | 'manga' | 'storyboard';
 type FrameCountValue = '2' | '4' | '6' | '8';
@@ -199,6 +200,9 @@ export function StationComicDiaryPanel({
               language={language}
               deleting={deletingDraftId === draft.id}
               onDelete={() => deleteDraft(draft.id)}
+              token={session.token}
+              onActionMessage={onActionMessage}
+              onActionError={onActionError}
             />
           ))
         ) : (
@@ -223,12 +227,18 @@ function ComicDraftCard({
   language,
   deleting,
   onDelete,
+  token,
+  onActionMessage,
+  onActionError,
 }: {
   draft: StationComicDiaryDTO;
   palette: Palette;
   language: Language;
   deleting: boolean;
   onDelete: () => void;
+  token: string;
+  onActionMessage: (message: string) => void;
+  onActionError: (error: unknown) => void;
 }) {
   return (
     <View
@@ -318,6 +328,15 @@ function ComicDraftCard({
           </View>
         ))}
       </View>
+      <StationComicRenderPanel
+        key={`${token}:${draft.id}`}
+        draft={draft}
+        token={token}
+        palette={palette}
+        language={language}
+        onActionMessage={onActionMessage}
+        onActionError={onActionError}
+      />
     </View>
   );
 }

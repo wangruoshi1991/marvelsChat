@@ -1,5 +1,6 @@
 import { registerStationAlbumRoutes } from "./station-album-routes.js";
 import { registerStationComicRoutes } from "./station-comic-routes.js";
+import { registerComicRenderRoutes } from "./comic-render-routes.js";
 import { registerStationContentRoutes } from "./station-content-routes.js";
 import { registerStationDiaryRoutes } from "./station-diary-routes.js";
 import { registerStationFileRoutes } from "./station-file-routes.js";
@@ -18,6 +19,7 @@ export function registerStationRoutes(app, { authenticate, asyncHandler }) {
   registerStationSiteRoutes(app, { authenticate, asyncHandler });
   registerStationFileRoutes(app, { authenticate, asyncHandler });
   registerStationComicRoutes(app, { authenticate, asyncHandler });
+  registerComicRenderRoutes(app, { authenticate, asyncHandler });
   registerStationVideoRoutes(app, { authenticate, asyncHandler });
   registerStationDiaryRoutes(app, { authenticate, asyncHandler });
   registerStationAlbumRoutes(app, { authenticate, asyncHandler });

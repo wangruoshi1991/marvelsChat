@@ -722,6 +722,7 @@ export type BootstrapDTO = {
     siteDocuments?: number;
     agentWorkspaces?: number;
     uiPreferences?: number;
+    comicRenders?: number;
   };
   products: ProductCatalogProductDTO[];
   entitlements: ProductEntitlementDTO[];

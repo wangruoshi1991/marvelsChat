@@ -1,6 +1,6 @@
 import { HttpError } from "./http-error.js";
 
-export const aiClientContracts = Object.freeze({ aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6, workspaceContributions: 3, uiPreferences: 1 });
+export const aiClientContracts = Object.freeze({ aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6, workspaceContributions: 3, uiPreferences: 1, comicRenders: 1 });
 export const aiContractHeader = "X-Miaoxun-AI-Contract";
 export const siteDocumentContractHeader = "X-Miaoxun-Site-Document";
 export const agentWorkspaceContractHeader = "X-Miaoxun-Agent-Workspace";
@@ -59,4 +59,14 @@ export function rejectRetiredSiteApply() {
     code: "AI_CLIENT_UPDATE_REQUIRED",
     requiredContract: aiClientContracts.aiTasks,
   });
+}
+
+export const comicRenderContractHeader = "X-Miaoxun-Comic-Renders";
+export function requireComicRenderContract(req, _res, next) {
+  if (req.get(comicRenderContractHeader) !== String(aiClientContracts.comicRenders)) {
+    throw new HttpError(426, "当前客户端不支持漫画生成任务，请更新应用。", {
+      code: "COMIC_RENDER_CLIENT_UPDATE_REQUIRED", requiredContract: aiClientContracts.comicRenders,
+    });
+  }
+  next?.();
 }

@@ -1,4 +1,5 @@
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createAITaskRunner } from "./ai-task-runner.js";
 import { executeMessageTask } from "./ai-message-task-service.js";
@@ -9,12 +10,18 @@ import { checkDatabase, closeDatabase, query } from "./db.js";
 import { aiClientContracts } from "./ai-client-contract.js";
 import { config } from "./config.js";
 import { createChatAttachmentMaintenance } from "./chat-attachment-lifecycle.js";
+import { comicImageProvider } from "./comic-image-provider.js";
+import { createComicRenderExecutor } from "./comic-render-executor.js";
+import { createComicRenderStorage } from "./comic-render-storage.js";
+import { recordAITaskWorkerStatus } from "./ai-task-worker-status-repository.js";
+import { getOssRuntimeStatus } from "./asset-storage-service.js";
 
 // This is a process/database liveness diagnostic, not proof that the queue or a
 // model call is progressing. Check lastSuccessfulPollAt and queue age as well.
 export function createAITaskWorkerHeartbeat({
   runner, checkConnection = () => query("SELECT 1 AS ok"), logger = console,
   intervalMs = 30000, timeoutMs = 5000, now = () => Date.now(),
+  recordStatus = null, instanceId = crypto.randomUUID(), capabilities = [],
 } = {}) {
   let timer;
   let stopped = false;
@@ -22,7 +29,13 @@ export function createAITaskWorkerHeartbeat({
   let lastDatabaseSuccessAt = null;
   const runOnce = async () => {
     if (stopped || pending) return false;
-    const check = Promise.resolve().then(checkConnection);
+    const check = Promise.resolve().then(checkConnection).then(async () => {
+      if (stopped) return;
+      const state = runner.getState();
+      const lastPoll = Date.parse(state.lastSuccessfulPollAt);
+      const live = state.state === "running" || (state.state === "idle" && Number.isFinite(lastPoll) && now() - lastPoll < 90000);
+      await recordStatus?.({ instanceId, state: live ? "ready" : "starting", capabilities });
+    });
     pending = check;
     const settled = () => { if (pending === check) pending = null; };
     void check.then(settled, settled);
@@ -54,8 +67,26 @@ export function createAITaskWorkerHeartbeat({
       timer = setInterval(() => { void runOnce(); }, intervalMs);
       timer.unref?.();
     },
-    stop() { stopped = true; clearInterval(timer); },
+    async stop() {
+      stopped = true; clearInterval(timer);
+      if (pending) await pending.catch(() => {});
+      await recordStatus?.({ instanceId, state: "stopped", capabilities: [] });
+    },
   };
+}
+
+export function createComicRenderMaintenance({ storage, configured, logger = console, intervalMs = 60000 } = {}) {
+  let timer, pending = null, stopped = false;
+  const runOnce = () => {
+    if (stopped || pending || !configured) return Promise.resolve(false);
+    pending = Promise.resolve().then(() => storage.collectCleanup()).then(() => true).catch(() => {
+      logger.error(JSON.stringify({ type: "comic_storage_cleanup_failed", code: "COMIC_STORAGE_CLEANUP_FAILED" }));
+      return false;
+    }).finally(() => { pending = null; });
+    return pending;
+  };
+  return { runOnce, start() { if (timer || stopped || !configured) return; void runOnce(); timer = setInterval(runOnce, intervalMs); timer.unref?.(); },
+    async stop() { stopped = true; clearInterval(timer); if (pending) await pending; } };
 }
 
 export async function startAITaskWorker({
@@ -65,6 +96,10 @@ export async function startAITaskWorker({
   createAttachmentMaintenance = createChatAttachmentMaintenance,
   createHeartbeat = createAITaskWorkerHeartbeat, runtime = process, logger = console,
   workspaceMaxConcurrent = config.agentWorkspace.maxConcurrent,
+  imageProvider = comicImageProvider, comicStorage = createComicRenderStorage(),
+  storageStatus = getOssRuntimeStatus(), comicRepository,
+  createComicMaintenance = createComicRenderMaintenance,
+  recordWorkerStatus = recordAITaskWorkerStatus,
 } = {}) {
   const database = await check();
   if (!database.connected || !database.migrationsCurrent) {
@@ -73,27 +108,36 @@ export async function startAITaskWorker({
     runtime.exitCode = 1;
     return null;
   }
-  const runner = createRunner({ executors: { agent_message: executeMessageTask, site_draft: executeSiteTask }, logger });
+  const executors = { agent_message: executeMessageTask, site_draft: executeSiteTask };
+  if (imageProvider.readiness().configured && storageStatus.configured) {
+    executors.comic_render = async record => {
+      const repository = comicRepository || (await import("./comic-render-repository.js")).defaultComicRenderRepository;
+      return createComicRenderExecutor({ provider: imageProvider, repository, storage: comicStorage })(record);
+    };
+  }
+  const runner = createRunner({ executors, logger });
   const workspaceRunner = createWorkspaceRunner({ execute: executeWorkspace, logger, maxConcurrent: workspaceMaxConcurrent });
   const monitor = { getState: () => {
     const task = runner.getState();
     const workspace = workspaceRunner.getState();
-    return { ...task, state: workspace.state === "running" && task.state === "idle" ? "running" : task.state,
+    return { ...task,
       activeNodes: workspace.activeNodes, workspaceState: workspace.state,
       workspaceLastSuccessfulPollAt: workspace.lastSuccessfulPollAt };
   } };
-  const heartbeat = createHeartbeat({ runner: monitor, logger });
+  const heartbeat = createHeartbeat({ runner: monitor, logger, recordStatus: recordWorkerStatus,
+    capabilities: Object.keys(executors) });
   const attachmentMaintenance = createAttachmentMaintenance({ logger });
+  const comicMaintenance = createComicMaintenance({ storage: comicStorage, configured: storageStatus.configured, logger });
   runner.start();
   workspaceRunner.start();
   heartbeat.start();
   attachmentMaintenance.start();
+  comicMaintenance.start();
   logger.log(JSON.stringify({ type: "ai_task_worker_started", contractVersion: aiClientContracts.aiTasks, workspaceContractVersion: aiClientContracts.agentWorkspaces }));
   let stopping = null;
   const stop = () => {
     if (stopping) return stopping;
-    heartbeat.stop();
-    const stopped = Promise.all([runner.stop(), workspaceRunner.stop(), attachmentMaintenance.stop()]);
+    const stopped = Promise.all([heartbeat.stop(), runner.stop(), workspaceRunner.stop(), attachmentMaintenance.stop(), comicMaintenance.stop()]);
     logger.log(JSON.stringify({ type: "ai_task_worker_stopping", ...monitor.getState() }));
     const deadline = setTimeout(() => runtime.exit(1), 75000);
     stopping = stopped.then(close).then(() => {

@@ -4,7 +4,9 @@ import { query, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
 
 const idSchema = z.string().uuid();
-const phaseSchema = z.enum(["queued", "validating", "generating", "searching", "awaiting_confirmation", "completed", "failed", "cancelled", "interrupted"]);
+const legacyKindSchema = z.enum(["agent_message", "site_draft"]);
+const legacyPredicate = "contract_version = 1 AND kind IN ('agent_message', 'site_draft')";
+const phaseSchema = z.enum(["queued", "validating", "generating", "searching", "rendering", "awaiting_confirmation", "completed", "failed", "cancelled", "interrupted"]);
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const artifactSchema = z.object({
   kind: z.enum(["message", "site_draft"]),
@@ -92,14 +94,27 @@ function toDTO(row) {
 }
 
 const toRecord = row => ({
-  ...toDTO(row), userId: row.user_id, input: row.input,
+  ...(row.kind === "comic_render" ? {
+    id: row.id, kind: row.kind, contractVersion: row.contract_version,
+    agentId: row.agent_id, agentVersion: row.agent_version, comicDiaryId: row.comic_diary_id,
+    status: row.status, phase: row.phase, revision: row.revision, error: row.error,
+  } : toDTO(row)), userId: row.user_id, input: row.input,
   claimToken: row.claim_token, leaseUntil: iso(row.lease_until),
 });
+const executionProjection = row => row.kind === "comic_render" ? toRecord(row) : toDTO(row);
 
 async function appendEvent(connection, row) {
+  let counters = {};
+  if (row.kind === "comic_render") {
+    const [counts] = await connection.query(`SELECT COUNT(*)::integer AS total,
+      COUNT(*) FILTER (WHERE status='succeeded')::integer AS succeeded,
+      COUNT(*) FILTER (WHERE status='failed')::integer AS failed,
+      COUNT(*) FILTER (WHERE status='unknown')::integer AS unknown FROM comic_task_outputs WHERE task_id=?`, [row.id]);
+    counters = counts;
+  }
   await connection.query(`INSERT INTO ai_task_events (task_id, user_id, sequence, payload)
     VALUES (?, ?, ?, ?::jsonb)`, [row.id, row.user_id, row.revision, json({
-    status: row.status, phase: row.phase,
+    status: row.status, phase: row.phase, ...counters,
     ...(row.error ? { errorCode: row.error.code } : {}),
   })]);
 }
@@ -140,29 +155,34 @@ export async function createAITaskInTransaction(connection, args) {
 
 export function createAITaskRepository({ query: runQuery = query, withTransaction: transaction = withTransaction } = {}) {
   const getAITask = async ({ userId, taskId }) => {
-    const rows = await runQuery(`SELECT ${readFields} FROM ai_tasks WHERE id = ? AND user_id = ?`, [taskId, userId]);
+    const rows = await runQuery(`SELECT ${readFields} FROM ai_tasks WHERE id = ? AND user_id = ? AND ${legacyPredicate}`, [taskId, userId]);
     return rows[0] ? toDTO(rows[0]) : null;
   };
   const getAITaskByKey = async ({ userId, idempotencyKey, kind, agentId }) => {
-    const rows = await runQuery(`SELECT ${readFields} FROM ai_tasks WHERE user_id = ? AND kind = ? AND agent_id = ? AND idempotency_key = ?`,
+    legacyKindSchema.parse(kind);
+    const rows = await runQuery(`SELECT ${readFields} FROM ai_tasks WHERE user_id = ? AND kind = ? AND agent_id = ? AND idempotency_key = ? AND ${legacyPredicate}`,
       [userId, kind, agentId, idempotencyKey]);
     return rows[0] ? toDTO(rows[0]) : null;
   };
   const listAITasks = async ({ userId, threadId, kind, limit = 30 }) => {
     const safeLimit = z.number().int().min(1).max(100).parse(limit);
-    const predicates = ["user_id = ?"];
+    const predicates = ["user_id = ?", legacyPredicate];
     const params = [userId];
     if (threadId !== undefined) { predicates.push("thread_id = ?"); params.push(threadId); }
-    if (kind !== undefined) { predicates.push("kind = ?"); params.push(kind); }
+    if (kind !== undefined) { legacyKindSchema.parse(kind); predicates.push("kind = ?"); params.push(kind); }
     params.push(safeLimit);
     const rows = await runQuery(`SELECT ${readFields} FROM ai_tasks WHERE ${predicates.join(" AND ")}
       ORDER BY CASE WHEN status IN ('queued', 'running', 'awaiting_confirmation') THEN 0 ELSE 1 END,
         updated_at DESC, id DESC LIMIT ?`, params);
     return rows.map(toDTO);
   };
-  const claimAITask = async () => transaction(async connection => {
+  const claimAITask = async ({ kinds } = {}) => {
+    if (kinds !== undefined) z.array(z.enum(["agent_message", "site_draft", "comic_render"])).max(3).parse(kinds);
+    if (kinds?.length === 0) return null;
+    return transaction(async connection => {
     const rows = await connection.query(`SELECT id FROM ai_tasks WHERE status = 'queued'
-      ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`);
+      ${kinds ? "AND kind = ANY(?::text[])" : ""}
+      ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, kinds ? [kinds] : []);
     if (!rows[0]) return null;
     const claimed = await connection.query(`UPDATE ai_tasks SET status = 'running', phase = 'validating',
       revision = revision + 1, claim_token = ?, lease_until = clock_timestamp() + INTERVAL '5 minutes', updated_at = clock_timestamp()
@@ -170,15 +190,16 @@ export function createAITaskRepository({ query: runQuery = query, withTransactio
     if (!claimed[0]) throw conflict("AI_TASK_STATE_CHANGED", "AI task state changed");
     await appendEvent(connection, claimed[0]);
     return toRecord(claimed[0]);
-  });
+    });
+  };
   const heartbeatAITask = async ({ taskId, claimToken }) => {
     const rows = await runQuery(`UPDATE ai_tasks SET lease_until = clock_timestamp() + INTERVAL '5 minutes'
       WHERE id = ? AND claim_token = ? AND status = 'running' AND lease_until > clock_timestamp() RETURNING id`, [taskId, claimToken]);
     return Boolean(rows[0]);
   };
   const advanceAITask = async ({ taskId, claimToken, phase, expectedPhase }) => {
-    z.enum(["generating", "searching"]).parse(phase);
-    if (expectedPhase !== undefined) z.enum(["validating", "generating", "searching"]).parse(expectedPhase);
+    z.enum(["generating", "searching", "rendering"]).parse(phase);
+    if (expectedPhase !== undefined) z.enum(["validating", "generating", "searching", "rendering"]).parse(expectedPhase);
     return transaction(async connection => {
       const current = (await connection.query(`SELECT ${readFields} FROM ai_tasks WHERE id = ? FOR UPDATE`, [taskId]))[0];
       if (!current || current.status !== "running" || current.claim_token !== claimToken ||
@@ -188,17 +209,17 @@ export function createAITaskRepository({ query: runQuery = query, withTransactio
       if (expectedPhase !== undefined && current.phase !== expectedPhase) {
         throw conflict("AI_TASK_PHASE_CHANGED", "AI task execution phase has changed");
       }
-      if (current.phase === phase) return toDTO(current);
+      if (current.phase === phase) return executionProjection(current);
       const rows = await connection.query(`UPDATE ai_tasks SET phase = ?, revision = revision + 1, updated_at = clock_timestamp()
         WHERE id = ? AND claim_token = ? AND status = 'running' AND lease_until > clock_timestamp() RETURNING ${readFields}`,
       [phase, taskId, claimToken]);
       if (!rows[0]) throw conflict("AI_TASK_LEASE_LOST", "AI task lease is no longer valid");
       await appendEvent(connection, rows[0]);
-      return toDTO(rows[0]);
+      return executionProjection(rows[0]);
     });
   };
   const finishAITask = async ({ taskId, claimToken, status, phase, artifacts, approval, error, complete }) => {
-    z.enum(["awaiting_confirmation", "succeeded", "failed", "interrupted"]).parse(status);
+    z.enum(["awaiting_confirmation", "succeeded", "partially_succeeded", "failed", "interrupted"]).parse(status);
     phaseSchema.parse(phase);
     return transaction(async connection => {
       const rows = await connection.query(`SELECT ${readFields} FROM ai_tasks WHERE id = ? FOR UPDATE`, [taskId]);
@@ -208,8 +229,24 @@ export function createAITaskRepository({ query: runQuery = query, withTransactio
         throw conflict("AI_TASK_LEASE_LOST", "AI task lease is no longer valid");
       }
       const result = complete ? await complete(connection, toRecord(row)) : null;
-      const nextArtifacts = artifactsSchema.parse(result?.artifacts ?? artifacts ?? row.artifacts);
-      const nextApproval = approvalSchema.nullable().parse(result?.approval === undefined ? approval ?? null : result.approval);
+      if (row.kind === "comic_render") {
+        await connection.query(`UPDATE comic_task_outputs SET
+          status = CASE WHEN status='running' THEN 'unknown' ELSE 'skipped' END,
+          safe_error_code = CASE WHEN status='running' THEN 'COMIC_RENDER_OUTCOME_UNKNOWN' ELSE NULL END,
+          updated_at=clock_timestamp() WHERE task_id=? AND status IN ('running','queued')`, [taskId]);
+        const [counts] = await connection.query(`SELECT COUNT(*)::integer AS total,
+          COUNT(*) FILTER(WHERE status='succeeded')::integer AS succeeded,
+          COUNT(*) FILTER(WHERE status='unknown')::integer AS unknown FROM comic_task_outputs WHERE task_id=?`, [taskId]);
+        if (counts.unknown) {
+          status="interrupted"; phase="interrupted";
+          error={code:"COMIC_RENDER_OUTCOME_UNKNOWN",message:"画面生成已中断，部分请求结果尚未确认，后续画面已停止且不会自动重试。"};
+        }
+        else if (counts.succeeded===counts.total) {status="succeeded";phase="completed";}
+        else if (counts.succeeded) {status="partially_succeeded";phase="completed";}
+        else {status="failed";phase="failed";}
+      }
+      const nextArtifacts = artifactsSchema.parse(row.kind === "comic_render" ? [] : result?.artifacts ?? artifacts ?? row.artifacts);
+      const nextApproval = approvalSchema.nullable().parse(row.kind === "comic_render" ? null : result?.approval === undefined ? approval ?? null : result.approval);
       const nextError = errorSchema.nullable().parse(error ?? null);
       if (status === "awaiting_confirmation" && !nextApproval) throw new TypeError("Confirmation requires an approval");
       const updated = await connection.query(`UPDATE ai_tasks SET status = ?, phase = ?, artifacts = ?::jsonb,
@@ -218,7 +255,7 @@ export function createAITaskRepository({ query: runQuery = query, withTransactio
       [status, phase, json(nextArtifacts), nullableJson(nextApproval), nullableJson(nextError), taskId, claimToken]);
       if (!updated[0]) throw conflict("AI_TASK_LEASE_LOST", "AI task lease expired before completion");
       await appendEvent(connection, updated[0]);
-      return toDTO(updated[0]);
+      return executionProjection(updated[0]);
     });
   };
   const mutateAITask = async ({ userId, taskId, revision, operation, approvalId, mutate }) => {
@@ -227,7 +264,7 @@ export function createAITaskRepository({ query: runQuery = query, withTransactio
     if (operation === "confirm") idSchema.parse(approvalId);
     if (operation === "confirm" && typeof mutate !== "function") throw new TypeError("Confirmation requires an apply handler");
     return transaction(async connection => {
-      const rows = await connection.query(`SELECT ${readFields} FROM ai_tasks WHERE id = ? AND user_id = ? FOR UPDATE`, [taskId, userId]);
+      const rows = await connection.query(`SELECT ${readFields} FROM ai_tasks WHERE id = ? AND user_id = ? AND ${legacyPredicate} FOR UPDATE`, [taskId, userId]);
       const row = rows[0];
       if (!row) throw missing();
       if (row.last_operation === operation && row.last_operation_revision === revision &&
@@ -265,14 +302,20 @@ export function createAITaskRepository({ query: runQuery = query, withTransactio
       error = ?::jsonb, claim_token = NULL, lease_until = NULL, revision = revision + 1, updated_at = clock_timestamp()
       WHERE id = ANY(?::text[]) AND status = 'running' AND lease_until <= clock_timestamp() RETURNING ${readFields}`,
     [json({ code: "AI_TASK_INTERRUPTED", message: "任务执行中断，可能已发生模型调用，请检查结果后再决定下一步。" }), rows.map(row => row.id)]);
-    for (const row of interrupted) await appendEvent(connection, row);
+    for (const row of interrupted) {
+      if (row.kind === "comic_render") await connection.query(`UPDATE comic_task_outputs
+        SET status = CASE WHEN status = 'running' THEN 'unknown' ELSE 'skipped' END,
+          safe_error_code = CASE WHEN status = 'running' THEN 'COMIC_RENDER_OUTCOME_UNKNOWN' ELSE NULL END,
+          updated_at = clock_timestamp() WHERE task_id = ? AND status IN ('queued','running')`, [row.id]);
+      await appendEvent(connection, row);
+    }
     return interrupted.length;
   });
   const listAITaskEvents = async ({ userId, taskId, afterSequence = 0, limit = 100 }) => {
     z.number().int().min(0).parse(afterSequence);
     z.number().int().min(1).max(100).parse(limit);
     return transaction(async connection => {
-      const tasks = await connection.query(`SELECT ${readFields} FROM ai_tasks WHERE id = ? AND user_id = ? FOR SHARE`, [taskId, userId]);
+      const tasks = await connection.query(`SELECT ${readFields} FROM ai_tasks WHERE id = ? AND user_id = ? AND ${legacyPredicate} FOR SHARE`, [taskId, userId]);
       if (!tasks[0]) throw missing();
       const rows = await connection.query(`SELECT sequence, payload, created_at FROM ai_task_events
         WHERE task_id = ? AND user_id = ? AND sequence > ? ORDER BY sequence LIMIT ?`, [taskId, userId, afterSequence, limit + 1]);

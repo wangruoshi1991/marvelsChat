@@ -8,8 +8,14 @@ import { longRequestTimeoutMs, request } from './http';
 import { assertSiteDocumentContract, siteDocumentHeaders } from '../aiContract';
 import { assertSiteDocumentView } from '../../models/siteDocument';
 import { assertStationSiteDraftList } from '../../models/siteDraftMetadata';
+import { comicRenderApi } from './comicRenderApi';
 
 export const stationAgentApi = {
+  createComicRenderTask: comicRenderApi.create,
+  comicRenderTasks: comicRenderApi.list,
+  comicRenderTask: comicRenderApi.get,
+  comicRenderEvents: comicRenderApi.events,
+  cancelComicRenderTask: comicRenderApi.cancel,
   async siteDocument(token: string, draftId: string) {
     assertSiteDocumentContract(token);
     const view = await request<unknown>(

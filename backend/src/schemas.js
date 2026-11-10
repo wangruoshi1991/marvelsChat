@@ -705,7 +705,7 @@ export const modelTestSchema = z.object({
 // callers cannot smuggle legacy identity fields or duplicate authorization scopes.
 const agentKeySchema = z.string().trim().regex(/^[a-z][a-z0-9-]{0,79}$/);
 const versionSchema = z.string().trim().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/);
-const scopeSchema = z.string().trim().regex(/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/);
+const scopeSchema = z.string().trim().regex(/^[a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)+$/);
 const uniqueScopesSchema = z.array(scopeSchema).max(64).refine((scopes) => new Set(scopes).size === scopes.length, "Scopes must be unique");
 
 export const agentIdentitySchema = z.object({

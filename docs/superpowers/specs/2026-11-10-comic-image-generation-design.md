@@ -1,6 +1,6 @@
 # 妙讯漫画成图架构设计
 
-状态：待用户审阅。本文是设计，不代表代码已实现、图片 Provider 已配置或服务已发布。
+状态：用户已回复“通过”。本地实现与隔离测试进度见 `docs/handoffs/CURRENT.md`；本文描述设计依据，不代表真实图片 Provider 已配置或服务已发布。
 
 ## 目标与边界
 
@@ -10,7 +10,7 @@
 
 本轮获准范围是代码和隔离验收，不包括生产部署、生产供应商调用、Agent 产品发布或 TestFlight。真实 Provider 隔离验收要等 API 合同核实并安全轮换凭据后执行；本设计阶段尚未调用供应商。
 
-## 当前实现依据
+## 设计前的实现依据
 
 - `agents/comic-diary.agent.js` 的唯一执行能力是 `comic.storyboard`，结果是文字分镜。
 - `backend/src/routes/station-comic-routes.js` 同步校验 Agent 授权与用户选定素材，再保存 `station_comic_diaries` 草稿。
@@ -34,7 +34,7 @@
 4. AI Task Worker 新增 `comic_render` executor。它按帧读取任务快照，只使用已授权且明确选中的照片；不读取整本相册。每次调用前重验任务租约、Agent 版本/授权和来源版本。第一版按格顺序生成，避免在供应商并发语义未经核验前并发派发。
 5. 独立图片 Provider 把内部标准请求映射到已核验的供应商合同。Provider 只接收服务端配置和已验证输入，返回规范化图片字节、MIME、尺寸、供应商请求 ID、模型标识和可选的真实用量。供应商 URL 不作为产物地址保存；如供应商只返回 URL，适配器必须通过严格的 HTTPS 主机校验、不跟随不受信任重定向并立即取回图片。
 6. Worker 校验图片文件签名、MIME、尺寸和响应大小，再用现有私有存储写入流程创建用户所属 `station_media_assets`。每格成功的 asset ID 与漫画稿/任务帧通过数据库外键关联。成功资产不触发媒体检索索引，不向客户端暴露 OSS key、签名 URL以外的存储细节或供应商原始响应。
-7. 所有格完成后任务进入 `succeeded`；至少一格保存成功且其他格发生确定性失败时进入 `partially_succeeded`；所有格均确定性失败时进入 `failed`。供应商请求已发出但结果不能确认时进入 `interrupted`，保留已安全保存的图片和逐格未知状态，不自动重放任何不确定调用。
+7. 所有格完成后任务进入 `succeeded`；至少一格保存成功且其他格确定性失败或因来源/授权变化未派发时进入 `partially_succeeded`；所有格均确定性失败时进入 `failed`。供应商请求已发出但结果不能确认时进入 `interrupted`，保留已安全保存的图片和逐格未知状态，不自动重放任何不确定调用。
 
 ## 数据与任务合同
 
@@ -45,6 +45,7 @@
 - 数据库内部漫画任务使用任务合同版本 2，并新增独立 `comicRenders: 1` API 合同。现有聊天/建站任务仍为合同 1；通用 AI Task 列表默认不混入漫画图片任务，避免旧的聊天任务 DTO 误解析。RN 漫画面板通过专用漫画任务 API 读取这些状态。
 - 新增逐帧结果表 `comic_task_outputs`，按 `(task_id, frame_index)` 唯一，使用 `task_id + user_id` 和 `media_asset_id + user_id` 复合外键。记录安全状态、输出资产 ID、供应商请求 ID、错误代码和时间；不记录密钥、base64、外部图片 URL、原始供应商 body 或不必要的完整私人 prompt。
 - 更新 `ai_task_events` 的受限进度合同，只新增总帧数、已保存帧数和失败帧数等整数计数；事件接口不返回私有任务输入或对象存储路径。
+- AI Task Worker 写入能力心跳，包含实例状态、已注册执行器和最后存活时间；Readiness 只有在近期心跳确认 `comic_render` executor 存在时才报告 Worker 就绪，避免仅凭 API 进程内的静态代码把未运行的 Worker 显示为可用。
 - 任务 `request_hash` 覆盖漫画稿版本、帧文本快照、显式素材引用、Agent 版本和用户选择的输出选项。同一幂等键与同一 hash 返回原任务；键相同但请求不同返回 409。
 
 逐帧记录保留部分成果：已保存的图片继续可读，即使后续帧失败或结果未知。用户明确重新生成时创建新任务；不会静默覆盖旧图，也不会重发状态未知的请求。
@@ -56,8 +57,8 @@
 - 后端配置独立使用 `MEDIA_GENERATION_ENABLED`、`MEDIA_GENERATION_PROVIDER`、`MEDIA_GENERATION_API_BASE_URL`、`MEDIA_GENERATION_API_KEY`、`MEDIA_GENERATION_IMAGE_MODEL` 和 `MEDIA_GENERATION_TIMEOUT_MS`。功能默认关闭；配置缺失或 Provider 合同未知时 fail closed。
 - API 和 AI Worker 通过受限的服务端 secret 环境读取同一配置。密钥不写入 Agent manifest、数据库、客户端、Admin 表单、日志或文档；Admin 只显示配置变量名和脱敏 readiness。
 - 不复用 `NEW_API_*` 文本模型配置、`DASHSCOPE_*` 的 3D Wan/Tripo 配置、`MEDIA_RETRIEVAL_DASHSCOPE_*` 检索配置，也不把 `OSS_*` 当作模型 Provider 配置。
-- 不增加 token 或费用上限。任务只显示供应商实际返回的模型、请求 ID和可验证用量；未知费用保持未知，不伪造价格或 token 数。帧数继续由现有 2–8 格分镜选择约束。
-- 漫画 readiness 分开报告文字模型、图片 Provider、Worker executor 和私有存储状态。只有每项运行依赖真实就绪时才报告图片生成可用。视频 readiness 继续明确缺少已核验的视频 Provider 和执行器。
+- 不增加 token 或费用上限。服务端仅记录供应商实际返回的模型、请求 ID和可验证用量；未知费用保持未知，不伪造价格或 token 数。帧数继续由现有 2–8 格分镜选择约束。
+- 漫画 readiness 分开报告文字模型、图片 Provider、近期 Worker executor 心跳和私有存储状态。只有每项运行依赖真实就绪时才报告图片生成可用。视频 readiness 继续明确缺少已核验的视频 Provider 和执行器。
 
 ## 失败、取消和数据清理
 
@@ -86,7 +87,7 @@
 
 ## 实施顺序
 
-1. 用户审阅本设计；补齐中转站图片 API 合同资料和安全替换凭据的配置方式。
+1. 本设计已获用户通过；真实适配器接入仍需补齐中转站图片 API 合同资料和安全替换凭据的配置方式。
 2. 写实现计划，再实现 task/migration、Provider interface/readiness、worker/storage、Agent scope/product、RN 逐格任务体验。
 3. 在全新隔离 PostgreSQL 与本地受控 Provider 合同测试中验证代码；若用户提供了已轮换密钥及服务端地址，再单独做隔离真实图片验收。
 4. 交接完成的文件、迁移、测试与剩余生产部署/发布/设备验收事项。本轮明确不部署、不发布、不上传 TestFlight。

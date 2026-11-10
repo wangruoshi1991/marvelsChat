@@ -118,3 +118,52 @@ test("the explicit worker entry refuses startup before database migrations are c
   assert.equal(runtime.exitCode, 1);
   assert.equal(closed, true);
 });
+
+test('heartbeat persists only live registered executor capability, never a stalled poll', async () => {
+  const writes=[];
+  let lastSuccessfulPollAt=new Date().toISOString();
+  const heartbeat=createAITaskWorkerHeartbeat({
+    runner:{getState:()=>({state:'idle',lastSuccessfulPollAt})},checkConnection:async()=>{},logger:{log(){},error(){}},
+    recordStatus:async value=>writes.push(value),instanceId:'test-worker',capabilities:['comic_render'],
+  });
+  await heartbeat.runOnce();
+  assert.equal(writes[0]?.state,'ready');
+  assert.deepEqual(writes[0]?.capabilities,['comic_render']);
+  lastSuccessfulPollAt='2000-01-01T00:00:00.000Z';
+  await heartbeat.runOnce();
+  assert.equal(writes[1]?.state,'starting');
+  await heartbeat.stop();
+  assert.equal(writes.at(-1)?.state,'stopped');
+});
+
+test('comic executor is advertised only with a configured verified provider and private storage',async()=>{
+  for(const enabled of [false,true]) {
+    let registered,advertised;
+    const runtime=new EventEmitter();runtime.exit=()=>{};
+    const worker=await startAITaskWorker({runtime,logger:{log(){},error(){}},check:async()=>({connected:true,migrationsCurrent:true}),close:async()=>{},
+      imageProvider:{readiness:()=>({configured:enabled})},storageStatus:{configured:true},comicStorage:{},
+      createRunner:({executors})=>{registered=Object.keys(executors);return {start(){},stop:async()=>{},getState:()=>state};},
+      createWorkspaceRunner:()=>({start(){},stop:async()=>{},getState:()=>({state:'idle'})}),
+      createHeartbeat:({capabilities})=>{advertised=capabilities;return {start(){},stop:async()=>{}};},
+      createAttachmentMaintenance:()=>({start(){},stop:async()=>{}}),createComicMaintenance:()=>({start(){},stop:async()=>{}}),
+    });
+    assert.equal(registered.includes('comic_render'),enabled);
+    assert.equal(advertised.includes('comic_render'),enabled);
+    await worker.stop();
+  }
+});
+
+test('workspace activity does not disguise an idle stalled task queue in capability heartbeat',async()=>{
+  const runtime=new EventEmitter();runtime.exit=()=>{};
+  const worker=await startAITaskWorker({runtime,logger:{log(){},error(){}},check:async()=>({connected:true,migrationsCurrent:true}),close:async()=>{},
+    createRunner:()=>({start(){},stop:async()=>{},getState:()=>({state:'idle',activeTask:false,lastSuccessfulPollAt:'2000-01-01T00:00:00.000Z'})}),
+    createWorkspaceRunner:()=>({start(){},stop:async()=>{},getState:()=>({state:'running',activeNodes:2})}),
+    createHeartbeat:({runner})=>{
+      assert.equal(runner.getState().state,'idle');
+      assert.equal(runner.getState().workspaceState,'running');
+      return {start(){},stop:async()=>{}};
+    },
+    createAttachmentMaintenance:()=>({start(){},stop:async()=>{}}),createComicMaintenance:()=>({start(){},stop:async()=>{}}),
+  });
+  await worker.stop();
+});

@@ -6,6 +6,7 @@ export const siteDocumentHeaders = {
 export const uiPreferencesHeaders = {
   'X-Miaoxun-UI-Preferences': '1',
 };
+export const comicRenderHeaders = { 'X-Miaoxun-Comic-Renders': '1' };
 
 let session: {
   token: string;
@@ -13,6 +14,7 @@ let session: {
   siteDocuments: boolean;
   agentWorkspaces: boolean;
   uiPreferences: boolean;
+  comicRenders: boolean;
 } | null = null;
 
 // Only the active session's accepted bootstrap may establish this contract.
@@ -41,12 +43,27 @@ export function setAIContractSession(token: string, contracts?: unknown) {
           typeof contracts === 'object' &&
           'uiPreferences' in contracts &&
           contracts.uiPreferences === 1,
+        comicRenders:
+          contracts !== null &&
+          typeof contracts === 'object' &&
+          'comicRenders' in contracts &&
+          contracts.comicRenders === 1,
       }
     : null;
 }
 
 export function clearAIContractSession() {
   session = null;
+}
+
+export function supportsComicRenders(token: string) {
+  return Boolean(token && session?.token === token && session.comicRenders);
+}
+
+export function assertComicRenderContract(token: string) {
+  if (!supportsComicRenders(token)) {
+    throw new Error('当前服务器尚未支持漫画画面任务，请在服务更新后重试。');
+  }
 }
 
 export function assertAIContract(token: string) {

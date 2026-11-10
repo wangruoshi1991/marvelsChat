@@ -75,6 +75,24 @@ test("Agent permissions must be unique valid scopes", () => {
   );
 });
 
+test("hierarchical image scopes require nonempty lower-case segments", () => {
+  assert.deepEqual(validateAgentPermissions({ key: "comic", permissions: ["media:image:generate"] }), ["media:image:generate"]);
+  for (const scope of ["media::generate", ":image:generate", "media:image:", "media:Image:generate", "media:image:generate:*", "media:image:generate/other"]) {
+    assert.throws(() => validateAgentPermissions({ key: "comic", permissions: [scope] }), /unique valid permissions/);
+  }
+});
+
+test("comic rendering is separately declared while conversations and video remain text-only", async () => {
+  const comic = await getAgent("comic-diary");
+  assert.equal(comic.version, "0.1.4");
+  assert.ok(comic.capabilities.includes("comic.render"));
+  assert.equal(comic.permissions.filter(scope => scope === "media:image:generate").length, 1);
+  assert.deepEqual(comic.workspaceCapabilities.map(entry => entry.capability), ["comic.storyboard"]);
+  const video = await getAgent("video-production");
+  assert.equal(video.permissions.includes("media:image:generate"), false);
+  assert.equal(video.capabilities.includes("comic.render"), false);
+});
+
 test("site-builder agent is registered with station drafting capabilities", async () => {
   const agents = await listAgents();
   const siteBuilder = agents.find((agent) => agent.key === "site-builder");

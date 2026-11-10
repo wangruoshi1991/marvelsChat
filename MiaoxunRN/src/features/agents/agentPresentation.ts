@@ -14,6 +14,7 @@ const scopeLabels: Record<string, [string, string]> = {
   'diary:write': ['更新日记', 'Update diaries'],
   'files:read': ['读取文件素材', 'Read file materials'],
   'files:write': ['整理文件素材', 'Manage file materials'],
+  'media:image:generate': ['生成图片', 'Generate images'],
 };
 
 export function agentScopeLabel(scope: string, language: Language) {

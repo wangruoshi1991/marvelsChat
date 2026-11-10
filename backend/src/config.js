@@ -258,6 +258,32 @@ export const createMediaRetrievalConfig = (env = process.env) => ({
   }),
 });
 
+export const createMediaGenerationConfig = (env = process.env) => {
+  const apiBaseUrl = String(env.MEDIA_GENERATION_API_BASE_URL || "").trim().replace(/\/+$/, "");
+  if (apiBaseUrl) {
+    try {
+      const url = new URL(apiBaseUrl);
+      if (url.protocol !== "https:" || !url.hostname || url.username || url.password || apiBaseUrl.includes("?") || apiBaseUrl.includes("#")) {
+        throw new Error("invalid");
+      }
+    } catch {
+      throw new Error("MEDIA_GENERATION_API_BASE_URL must be an HTTPS URL without credentials, query or fragment.");
+    }
+  }
+  const provider = String(env.MEDIA_GENERATION_PROVIDER || "").trim();
+  if (provider && !/^[a-z][a-z0-9-]{0,79}$/.test(provider)) {
+    throw new Error("MEDIA_GENERATION_PROVIDER must be a valid provider identifier.");
+  }
+  return {
+    enabled: parseStrictBoolean({ env, name: "MEDIA_GENERATION_ENABLED", fallback: false }),
+    provider,
+    apiBaseUrl,
+    apiKey: String(env.MEDIA_GENERATION_API_KEY || "").trim(),
+    imageModel: String(env.MEDIA_GENERATION_IMAGE_MODEL || "").trim(),
+    timeoutMs: parseBoundedInteger({ env, name: "MEDIA_GENERATION_TIMEOUT_MS", fallback: 90000, minimum: 1, maximum: 300000 }),
+  };
+};
+
 export const getMediaRetrievalConfigStatus = (runtimeConfig) => {
   const retrieval = runtimeConfig?.mediaRetrieval || runtimeConfig;
   const queryRoute = resolveAgentModelRoute(runtimeConfig?.newApi, AGENT_MODEL_ROLE_POLICY.mediaQueryParsing);
@@ -378,6 +404,7 @@ export const config = {
     sessionTtlDays: parseNumber(process.env.SESSION_TTL_DAYS, 30),
   },
   newApi: createAgentModelConfig(process.env),
+  mediaGeneration: createMediaGenerationConfig(process.env),
   dashscope: {
     baseUrl: (process.env.DASHSCOPE_API_BASE_URL || "https://dashscope.aliyuncs.com")
       .trim()
