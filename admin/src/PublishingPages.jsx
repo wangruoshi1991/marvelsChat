@@ -31,6 +31,7 @@ import {
   buildIdentity,
   buildProductFields,
   identityFormValues,
+  catalogDiagnosticsPresentation,
 } from "./publishing-model.js";
 
 const { Text, Title } = Typography;
@@ -680,6 +681,27 @@ function IdentityEditor({ release, onSaved }) {
   );
 }
 
+function CatalogDiagnostics({ value }) {
+  const presentation = catalogDiagnosticsPresentation(value);
+  return (
+    <Alert
+      style={{ marginTop: 16 }}
+      type={presentation.type}
+      showIcon
+      message={presentation.title}
+      description={
+        <Space direction="vertical" size={4}>
+          <span>{presentation.description}</span>
+          {presentation.reasons.map((reason, index) => (
+            <span key={index}>{reason}</span>
+          ))}
+          {value?.checkedAt && <Text type="secondary">核对时间：{value.checkedAt}</Text>}
+        </Space>
+      }
+    />
+  );
+}
+
 export function AgentReleasesPage({ user: providedUser }) {
   const { message } = AntApp.useApp();
   const canRead = hasAdminPermission(
@@ -748,7 +770,7 @@ export function AgentReleasesPage({ user: providedUser }) {
       message.success(
         {
           review: "已提交审核",
-          publish: "Agent release 已发布",
+          publish: "Agent release 已发布；还需核对产品发布与 App 目录",
           withdraw: "已退回草稿",
         }[kind]
       );
@@ -1036,6 +1058,9 @@ export function AgentReleasesPage({ user: providedUser }) {
                 },
               ]}
             />
+            {detail.productsVisible !== false && (
+              <CatalogDiagnostics value={detail.catalogDiagnostics} />
+            )}
             <Space wrap style={{ marginTop: 16 }}>
               {release.catalogStatus === "draft" && (
                 <ConfirmAction
@@ -1113,6 +1138,19 @@ export function AgentReleasesPage({ user: providedUser }) {
                     title: "状态",
                     dataIndex: "status",
                     render: (value) => <StatusTag value={value} />,
+                  },
+                  {
+                    title: "目录诊断",
+                    key: "catalogDiagnostics",
+                    render: (_, row) => {
+                      const diagnosis = detail.catalogDiagnostics?.products?.find(
+                        item => item.productVersionId === row.productVersionId
+                      );
+                      if (!Array.isArray(diagnosis?.reasons) || diagnosis.reasons.some(reason => typeof reason?.message !== "string")) return "诊断不可用";
+                      return diagnosis.reasons.length
+                        ? diagnosis.reasons.map(reason => `${reason.agentKey ? `${reason.agentKey}：` : ""}${reason.message}`).join("；")
+                        : "已进入当前目录候选";
+                    },
                   },
                 ]}
                 locale={{ emptyText: "尚未绑定产品" }}

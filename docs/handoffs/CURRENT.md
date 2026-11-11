@@ -1,6 +1,48 @@
 # 妙讯当前交接入口
 
-更新：2026-11-10。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
+更新：2026-11-11。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
+
+#### 2026-11-11 配套发布前预检（待精确本地提交与正常页面恢复）
+
+- 用户在上一阶段明确列出的部署修复、漫画产品上架、新客户端分发之后要求继续下一步，本轮推进正式发布准备；未将其扩大为付费模型、代用户同意或任意生产数据修改。用户最初要求未经要求不提交，本轮尚未创建提交/推送；保留全部dirty内容。
+- 正常SSH只读核实生产仍为`comic-image-20261110-510df0d/runtime`、manifest sourceHead510df0d/298文件，API/AI/检索三服务active且NRestarts0、真实cwd同源，备份timer active/waiting；只读事务实际核实58项迁移，末项058且checksum全匹配。11:06公开health/ready200，Agent仍8项有UI-Agent无漫画。未读env、凭据或私人业务内容，未停服务/写生产。
+- 独立审查原48文件均属本次修复，业务源码/测试不再改；本轮仅新增[发布前预检](../reviews/2026-11-11-agent-lifecycle-release-preflight.md)并更新索引/交接，共49个待提交文件。无新迁移、依赖/lock、Agent/scope、配置或原生变动。正式打包工具硬要求clean committed HEAD；不能绕过dirty门禁，因此需对固定逐文件SHA范围明确允许本地提交，不含推送。
+- 本轮再次整仓检查退出0，RN99套1289项、Backend1136通过/376门控跳过、Agents57、Admin52、Avatar Web29、检索Web4及类型/lint/格式/构建通过；日志与最终49文件逐项清单保存在`/Users/gary/Library/Application Support/MiaoxunReleasePreparations/agent-lifecycle-20261111/`。没有将门控跳过算作PG验收；前阶段隔离PG与Simulator证据见下节，本轮文档增量未重跑或扩大其结论。
+- 新客户端实读Release磁盘仍58；不能按磁盘号推算下一个TestFlight号。Build60归档484项输入实际精确匹配510df0d，旧sourceHead205218e标签有误，历史原回执保留不改；新归档须从本次明确提交冻结。Pods一致，但bundle check缺8个锁定gems、当前CLI无Distribution身份；不擅自装依赖，不把Development构建当上传就绪。
+- Chrome原生首次可读库存，随后两次绑定30秒超时；再次绑定现有TestFlight标签仍报`Cannot read properties of undefined (reading 'timeoutMs')`。本轮未取得后台最新产品/Apple最高build，未绕登录或伪造受保护请求。尚未生成新正式runtime、切换服务、发布产品、归档/上传客户端或做真机/模型验收。各门槛、具体发布合同和回滚边界见预检记录。
+
+#### 2026-11-11 真机反馈续作：线上发布断点、原位授权与手势
+
+- 沿指定工作树继续，保留上一阶段全部未提交修改；未提交、推送、部署、生产发布、上传TestFlight、付费调用、代用户同意或修改生产业务数据。下节“Chrome无法读到认证详情/生产具体门禁待核”是本日较早状态，已被本节新证据更新。
+- **漫画不可见根因已通过正常后台只读确证。** `comic-diary 0.1.4` Release为已发布/已就绪，包含`media:image:generate`，但关联产品明确为“尚未绑定产品”；当前漫画产品仍为已发布`0.1.3`，精确绑定旧Release和六项旧权限。需在另行明确的生产发布范围内，为现有漫画产品发布绑定0.1.4的新产品版本，不能只发布Release或直接扩旧授权。10:41北京时间公开目录仍8项、有UI-Agent但无漫画，health/ready均200；本轮未从生产账本读取迁移数。截图和限制见[目录复核](../reviews/2026-11-11-agent-catalog-diagnostics.md)。
+- UI-Agent后台产品与Release均为已发布`0.1.0`，声明`profile:read/messages:read/ui-preferences:write`，依赖就绪；添加问题与漫画缺产品是两件事。客户端展示、确认弹窗和session提交的产品选择规则已统一，多个产品且无法明确唯一目标时拒绝；已有Agent范围变更或同权限运行版本升级导致旧授权失效时提供原位“重新同意”入口，保留原会话且不自动授权。仍有效的旧授权不会因身份修订而被强迫再同意。其真机添加失败的实际错误响应尚未取得，不能把本地修复称为用户问题全部解决。
+- 客户端精确撤销另有专用共享解析：优先唯一有效授权，否则取唯一未撤销历史授权，展示/提交其真实版本与权限；公开产品已是v2但用户只同意v1时撤销v1，不能误发未同意的v2。歧义或无法映射的账本明确拒绝，空ledger沿原有唯一映射路径。RN授权/目录/session/小站四套114项通过，历史版本撤销和同权限升级均已先RED后GREEN；见[客户端复核](../reviews/2026-11-11-current-state-audit.md)。
+- 后端隔离PG复现并修复：历史stored-enabled但实际已失效的旧产品混入`user_agents`投影，明确同意新产品时误报`IDENTITY_CONFLICT`。现在只聚合当前可执行且合同/完整scope精确匹配的授权，历史账本原样保留；精确撤销的`productVersionId`贯穿service与repository，歧义仍拒绝。新两空库各迁移001–058，新原位同意/撤销4项和既有发布生命周期10项全通过、零跳过，PG已停止；不把10项重跑计为新增能力。见[授权生命周期与各Agent边界](../reviews/2026-11-11-agent-product-reconsent.md)。
+- 二楼/妙页四类已复现修复：回弹中重新抓取保留当前原生位移且丢弃旧异步回执；入口、同卡展开/回弹与参与者Modal尊重“减少动态效果”；隐藏新建按钮时仍保留现有可点二楼入口。没有改变阈值、方向、同卡S0/S1/S2或引入依赖。交互10套145项、类型、目标lint/format通过，见[交互链路审查](../reviews/2026-11-11-gesture-flow-audit.md)。
+- 本轮只查看了既有隔离QA Simulator的讯页→二楼→返回→妙页真实空态；旧QA不是本次候选，CUA未稳定产生连续拖动，没有据此认定下拉失败或流畅。妙页无真实workspace，未造任务填屏。常规入口/返回按钮应保留，手势作为快捷方式；短页上滑退出、整页移出后才挂载二楼的衔接、JS忙时跟手、多卡及VoiceOver仍待实体手指验收。
+- 客户端源码完成、后台上架、用户授权、TestFlight分发和真机验收分别记录。本次修复尚未部署或进入已上传Build60；本轮未能确认Apple测试组分发，配对设备的Build60清单证据沿用下节。所有Agent仅完成当前声明/合同/权限的无付费检查，不声称全部在线模型都已实用通过。
+- 最终整仓`MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh`退出0：Backend1136通过/376环境门控跳过、Agents57、Admin52、Avatar Web29、检索Web4、RN99套1289项全过，类型/lint/format及Web构建通过；PG跳过不算数据库验收。最终日志`/tmp/miaoxun-interaction-20261111-523yM6/repository-check-final.log`。仍有测试renderer的`act`提示及既有Web大chunk提示，未放宽门禁。此前1283项检查后发现同权限升级漏项，已补六项回归后重跑本次最终门禁，不将较早结果当最终证据。
+- 冻结源码后`node scripts/miaoxun-development.mjs ios --build-only`最终退出0，前后源码SHA一致、`installed=false/launched=false/officialUnchanged=true`，没有替换正式或隔离App。最终证据`/Users/gary/Library/Application Support/MiaoxunDevelopment/1139656e744d/builds/2026-11-11T02-54-49-619Z/build.json`；这只证明编译/签名/身份校验，不代表候选动画或真机生成通过。独立审查及Backend二审无未解决P1/P2/P3，新增授权两套另跑61项通过。后续仅补交接证据文档，不改变已构建的业务源码；文档链接和`git diff --check`同步复查。
+
+#### 2026-11-11 当前状态续核与本地修复
+
+- 本轮按指定工作树 `admin-lifecycle-release/marvelsChat` 继续，起始分支 `codex/ui-agent-candidate-20261105`、HEAD `b086044`，Git干净。未提交、推送、部署、后台发布、上传TestFlight、调用付费供应商、代用户授权或修改生产业务数据。
+- 09:58（北京时间）公开只读检查：`https://8.153.167.11/api/health`、`/api/ready` 均200，ready报告数据库连接及迁移current；`/api/agents`有8项，包含`ui-agent 0.1.0`，仍无`comic-diary`。响应及摘要在`/tmp/miaoxun-continue-20261111.Y2ev0y/public-readonly-summary.json`。这证明目录缺失，不证明具体release或product状态；本轮未从生产账本独立读取迁移数58。
+- Chrome库存可识别现有后台`/admin/releases`和App Store Connect标签，但读取后台标签（tabId、URL及完整providerTabId）均报`Cannot read properties of undefined (reading 'timeoutMs')`；原生Chrome读取也在30秒超时。因此未读到认证后台详情或Apple分发状态，没有提取登录token、调用受保护接口伪造后台操作或据此推断发布成功。
+- 代码核对：漫画源码为`0.1.4`且含独立`media:image:generate`。公开目录要求已发布且合同有效的product精确绑定release，并与运行源码版本一致；单独release发布或旧0.1.3产品都不足。生产具体门禁仍待正常后台只读核验；本轮补齐受权限保护的目录诊断，细节见[后台目录诊断](../reviews/2026-11-11-agent-catalog-diagnostics.md)，不能将本地诊断实现称为线上漫画已上架。
+- 已修复UI-Agent专属会话缺少预览确认入口：后端原已返回`metadata.uiPreferencePreview`，RN却只允许管家显示卡片；现在精确允许UI-Agent和管家，复用原预览/显式确认/API版本校验，不自动应用。新增7项回归先RED后GREEN，消息与卡片两套37/37，RN类型、目标lint和格式通过；普通Agent、用户、撤回、删除和本地发送消息均不读取预览。见[修复记录](../reviews/2026-11-11-ui-agent-preview-entry.md)。尚未分发到Build60。
+- 本轮归档实读`1.0(60)`、正式Bundle/API及JS哈希匹配历史记录；配对iPhone14 Pro的只读App清单实见构建号60（`Developer App=true`）。未启动或覆盖设备，不推断安装来源为TestFlight，也不推断全组分发或漫画真机验收通过。RN漫画与授权4套89项通过；独立PG18.4、四套不同全空库各迁移001–058，漫画任务14、访问17、发布生命周期10、新目录诊断5，共46项零跳过；诊断前后14表快照不变，测试Provider/存储为显式fixture，无真实成图。新PG已停止，完整脱敏证据见[客户端、设备与PG复核](../reviews/2026-11-11-current-state-audit.md)。
+
+| 范围 | 当前代码/运行证据 | 未完成边界与下一步 |
+| --- | --- | --- |
+| 漫画 | 源码0.1.4、独立权限、分镜确认→队列→私图链已有；生产目录缺失 | 先核对当前release/product/source/identity；正常上架后由用户本人明确同意，再在单独允许的调用范围内做App真实生成。 |
+| 妙页/二楼 | 同卡S0/S1/S2、连续手势、正文展开、二楼滚动退出及受保护入口已有 | 真实workspace多卡、实体手指连续滑动、动画与弱网仍待设备验收，不重复重做界面。 |
+| 聊天语音/素材 | 系统语音转写到草稿、相册/拍摄/文件上传后AI素材引用、位置草稿已有 | 不是录音消息；后端普通聊天附件上传/私读/消息合同已有，RN尚无`attachmentIds`发送与附件渲染。 |
+| 群聊 | 052迁移、建群/成员/退出及群消息后端已存在并注册 | RN创建入口仍明确未接入，创建/成员管理客户端未贯通；沿既有合同接入，不另建后端。 |
+| 权限/UI-Agent | Agent产品consent链已有；UI-Agent线上目录可见，本轮补专属预览入口 | 微信/邮箱/日历、支付、关系评分仍显式未开放；UI-Agent真实模型、真机确认→持久化→撤销/重置仍待验。 |
+
+- 设计清单和社交说明已纠正过期“群聊后端不存在/菜单只有扫码”的描述，明确普通聊天附件与AI素材引用的区别。实体设备验收、TestFlight分发、后台发布、用户授权和付费调用分别记录，不互相替代。
+- 最终`MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh`退出0：Backend1135通过/375环境门控跳过（不计PG验收），Agents57、Admin52、Avatar Web29、检索Web4、RN99套1268项通过，类型/lint/格式和构建均通过。日志`/tmp/miaoxun-continue-20261111.Y2ev0y/repository-check.log`；`git diff --check`通过，独立审查无可行动P1/P2/P3。冻结源码后`ios --build-only`退出0、前后源码哈希一致、`officialUnchanged=true`；证据`MiaoxunDevelopment/1139656e744d/builds/2026-11-11T02-08-01-359Z/build.json`。初次并行开发中的编译被源码冻结门禁拒绝，不计通过；本轮没有安装或启动App，不作为真机/模拟器交互验收。修改文件与完整证据见[本轮交付记录](../reviews/2026-11-11-agent-catalog-diagnostics.md)。
 
 #### 2026-11-10 漫画配套发布推进
 

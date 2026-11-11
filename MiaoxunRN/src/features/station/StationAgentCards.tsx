@@ -221,7 +221,8 @@ export function AgentList({
                       .join('  ·  ')}
                   </Text>
                 ) : null}
-                {readdAgentIds?.has(agent.id) ? (
+                {readdAgentIds?.has(agent.id) &&
+                !reconsentAgentIds?.has(agent.id) ? (
                   <Text
                     style={[
                       styles.stationAgentAccessNotice,
@@ -233,8 +234,8 @@ export function AgentList({
                   >
                     {textFor(
                       language,
-                      '授权范围不同，请移除后重新添加。',
-                      'Access scopes differ. Remove and add this agent again.',
+                      '授权范围已变化，当前产品不可授权，请刷新目录或联系管理员。',
+                      'Access scopes changed and this product cannot be authorized. Refresh the catalog or contact an administrator.',
                     )}
                   </Text>
                 ) : null}
@@ -259,6 +260,7 @@ export function AgentList({
                     {onReauthorizeAgent ? (
                       <Pressable
                         accessibilityRole="button"
+                        disabled={updatingAgentId === agent.id}
                         accessibilityLabel={textFor(
                           language,
                           `重新同意${agent.name}授权`,

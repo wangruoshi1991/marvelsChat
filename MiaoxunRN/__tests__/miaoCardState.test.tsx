@@ -5,7 +5,15 @@ import {
 } from '../src/features/miao/miaoCardState';
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
-import { PanResponder, StyleSheet, Text, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  Animated,
+  LayoutAnimation,
+  PanResponder,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { AIAssistProvider } from '../src/features/assist/AIAssistProvider';
 import { AIAssistGestureSurface } from '../src/features/assist/AIAssistGestureSurface';
 import { AIContextActions } from '../src/features/assist/AIContextActions';
@@ -37,6 +45,12 @@ const agent = (key: string, name: string): AgentDTO => ({
 });
 
 describe('Miao card view state', () => {
+  beforeEach(() => {
+    jest
+      .mocked(AccessibilityInfo.isReduceMotionEnabled)
+      .mockResolvedValue(true);
+  });
+
   function renderCard(
     uiPreferences = defaultUIPreferences(),
     renderState: (state: MiaoCardViewState) => React.ReactNode = state => (
@@ -101,6 +115,39 @@ describe('Miao card view state', () => {
         node.props.testID === 'ai-assist-surface',
     )[0];
   }
+
+  test.each(['participants', 'details'] as const)(
+    'Reduce Motion changes the %s state without layout or return motion',
+    async action => {
+      const setting = jest
+        .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
+        .mockResolvedValue(true);
+      let renderer!: ReactTestRenderer.ReactTestRenderer;
+      try {
+        await ReactTestRenderer.act(async () => {
+          renderer = renderCard();
+        });
+        const layout = jest.spyOn(LayoutAnimation, 'configureNext');
+        const spring = jest.spyOn(Animated, 'spring');
+        const timing = jest.spyOn(Animated, 'timing');
+        ReactTestRenderer.act(() =>
+          renderer.root
+            .findByProps({ testID: `miao-card-${action}-action` })
+            .props.onPress({ stopPropagation: jest.fn() }),
+        );
+        expect(renderedState(renderer)).toBe(
+          action === 'participants' ? 'agents' : 'detail',
+        );
+        expect(layout).not.toHaveBeenCalled();
+        expect(spring).not.toHaveBeenCalled();
+        expect(timing).not.toHaveBeenCalled();
+      } finally {
+        await ReactTestRenderer.act(async () => renderer?.unmount());
+        setting.mockRestore();
+        jest.restoreAllMocks();
+      }
+    },
+  );
 
   test('the PDF keeps named non-overlapping avatars above the body in every state and gives S1 a collapse control', () => {
     let renderer!: ReactTestRenderer.ReactTestRenderer;

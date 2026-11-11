@@ -11,6 +11,7 @@ import {
 import { ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react-native';
 import { AgentDTO } from '../../models/api';
 import { Palette } from '../../shared/theme';
+import { useReduceMotion } from '../../shared/useReduceMotion';
 import { textFor } from '../../shared/i18n';
 import { Language } from '../session/sessionTypes';
 import {
@@ -74,6 +75,7 @@ export function MiaoTaskCard({
 }) {
   const { onOpen, openLabel, ...assistActions } = actions;
   const { width } = useWindowDimensions();
+  const reduceMotion = useReduceMotion();
   const detailsPreference = componentUIPreference(
     uiPreferences,
     'miao',
@@ -184,6 +186,11 @@ export function MiaoTaskCard({
     </Text>
   );
   const resetTranslation = useCallback(() => {
+    if (reduceMotion) {
+      translateX.stopAnimation();
+      translateX.setValue(0);
+      return;
+    }
     Animated.spring(translateX, {
       toValue: 0,
       useNativeDriver: true,
@@ -191,9 +198,14 @@ export function MiaoTaskCard({
       stiffness: 220,
       mass: 0.7,
     }).start();
-  }, [translateX]);
+  }, [reduceMotion, translateX]);
   const animateState = useCallback(
     (next: MiaoCardViewState, animationMs: number) => {
+      if (reduceMotion) {
+        setViewState(next);
+        resetTranslation();
+        return;
+      }
       // The PDF keeps the current card in the feed: S1 replaces its body with
       // the participant list and S2 grows it vertically for the current
       // result. Only the gesture itself follows the finger; the card never
@@ -220,7 +232,7 @@ export function MiaoTaskCard({
         useNativeDriver: true,
       }).start();
     },
-    [setViewState, translateX],
+    [reduceMotion, resetTranslation, setViewState, translateX],
   );
   const oppositeDirection = (direction: 'left' | 'right' | 'up' | 'down') =>
     direction === 'left'
@@ -341,7 +353,10 @@ export function MiaoTaskCard({
         hitSlop={8}
         onPress={event => {
           event.stopPropagation();
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          if (!reduceMotion)
+            LayoutAnimation.configureNext(
+              LayoutAnimation.Presets.easeInEaseOut,
+            );
           setViewState(viewState === 'agents' ? 'summary' : 'agents');
           resetTranslation();
         }}

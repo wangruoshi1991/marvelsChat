@@ -186,7 +186,7 @@ export function createAgentPublishingService({
     const products = await productRepository.listPublishedProductsForAgent(agentKey, {
       userId,
       publishedOnly: enabled,
-      productVersionId: enabled ? productVersionId : null,
+      productVersionId,
     });
     if (!products.length) {
       throw new HttpError(409, "该 Agent 尚未绑定已发布产品，无法授权。", { code: "AGENT_PRODUCT_UNAVAILABLE" });
@@ -213,6 +213,7 @@ export function createAgentPublishingService({
     return productRepository.disableEntitlement({
       userId,
       productId: product.id,
+      productVersionId,
       idempotencyKey,
       afterProjection: runAlbumProductProjectionHook,
     });

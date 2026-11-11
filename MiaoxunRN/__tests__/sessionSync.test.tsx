@@ -707,6 +707,219 @@ describe('session synchronization', () => {
     await ReactTestRenderer.act(() => renderer?.unmount());
   });
 
+  test('confirmed exact enabled product can be added beside another Agent product publication', async () => {
+    const initial = authorizationBootstrap();
+    const selected = initial.products[1];
+    const other = {
+      ...selected,
+      id: 'other-site-product',
+      productVersionId: 'other-site-version',
+    };
+    const grant = accessGrant(initial.agents.registered[1]);
+    initial.products = [other, ...initial.products];
+    initial.entitlements = [
+      {
+        id: 'selected-site-entitlement',
+        productId: selected.id,
+        productVersionId: selected.productVersionId!,
+        productKey: selected.productKey,
+        version: selected.version!,
+        status: 'enabled',
+        grantedScopes: grant.grantedScopes,
+        contractHash: selected.contractHash,
+        consentVersion: 'explicit-test-consent',
+        unavailableReason: null,
+      },
+    ];
+    mockedApiClient.bootstrap.mockResolvedValue(initial);
+    mockedApiClient.setAgentEnabled.mockResolvedValueOnce(grant);
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    try {
+      await ReactTestRenderer.act(async () => {
+        await expect(
+          currentSession!.setAgentEnabled(
+            'site-builder',
+            true,
+            ['station:read'],
+            undefined,
+            selected.productVersionId!,
+          ),
+        ).resolves.toEqual(grant);
+      });
+      expect(mockedApiClient.setAgentEnabled).toHaveBeenCalledWith(
+        'saved-token',
+        'site-builder',
+        true,
+        undefined,
+        expect.any(String),
+        ['station:read'],
+        selected.productVersionId,
+      );
+    } finally {
+      await ReactTestRenderer.act(() => renderer?.unmount());
+    }
+  });
+
+  test('removal carries only the explicitly confirmed product version to the API', async () => {
+    const initial = authorizationBootstrap();
+    const selected = initial.products[1];
+    const grant = {
+      ...accessGrant(initial.agents.registered[1]),
+      enabled: false,
+      grantedScopes: [],
+    };
+    initial.products = [
+      {
+        ...selected,
+        id: 'other-site-product',
+        productVersionId: 'other-site-version',
+      },
+      ...initial.products,
+    ];
+    initial.entitlements = [
+      {
+        id: 'selected-site-entitlement',
+        productId: selected.id,
+        productVersionId: selected.productVersionId!,
+        productKey: selected.productKey,
+        version: selected.version!,
+        status: 'enabled',
+        grantedScopes: ['station:read'],
+        contractHash: selected.contractHash,
+        consentVersion: 'explicit-test-consent',
+        unavailableReason: null,
+      },
+    ];
+    mockedApiClient.bootstrap.mockResolvedValue(initial);
+    mockedApiClient.setAgentEnabled.mockResolvedValueOnce(grant);
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    try {
+      await ReactTestRenderer.act(async () => {
+        await expect(
+          currentSession!.setAgentEnabled(
+            'site-builder',
+            false,
+            [],
+            undefined,
+            selected.productVersionId!,
+          ),
+        ).resolves.toEqual(grant);
+      });
+      expect(mockedApiClient.setAgentEnabled).toHaveBeenCalledWith(
+        'saved-token',
+        'site-builder',
+        false,
+        undefined,
+        expect.any(String),
+        [],
+        selected.productVersionId,
+      );
+    } finally {
+      await ReactTestRenderer.act(() => renderer?.unmount());
+    }
+  });
+
+  test('removal rejects a version different from the current explicit selection', async () => {
+    mockedApiClient.bootstrap.mockResolvedValue(authorizationBootstrap());
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    try {
+      await expect(
+        currentSession!.setAgentEnabled(
+          'site-builder',
+          false,
+          [],
+          undefined,
+          'another-product-version',
+        ),
+      ).rejects.toThrow('产品版本');
+      expect(mockedApiClient.setAgentEnabled).not.toHaveBeenCalled();
+    } finally {
+      await ReactTestRenderer.act(() => renderer?.unmount());
+    }
+  });
+
+  test('removal accepts the existing old product version and rejects its unconsented successor', async () => {
+    const initial = authorizationBootstrap();
+    const previous = initial.products[1];
+    initial.products[1] = {
+      ...previous,
+      version: '2.0.0',
+      productVersionId: 'new-unconsented-version',
+    };
+    initial.entitlements = [
+      {
+        id: 'previous-grant',
+        productId: previous.id,
+        productKey: previous.productKey,
+        productVersionId: previous.productVersionId!,
+        version: previous.version!,
+        status: 'reconsent_required',
+        grantedScopes: ['station:read'],
+        contractHash: previous.contractHash,
+        consentVersion: 'previous-explicit-consent',
+        unavailableReason: null,
+      },
+    ];
+    const removed = {
+      ...accessGrant(initial.agents.registered[1]),
+      enabled: false,
+      grantedScopes: [],
+    };
+    mockedApiClient.bootstrap.mockResolvedValue(initial);
+    mockedApiClient.setAgentEnabled.mockResolvedValueOnce(removed);
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    try {
+      await expect(
+        currentSession!.setAgentEnabled(
+          'site-builder',
+          false,
+          [],
+          undefined,
+          'new-unconsented-version',
+        ),
+      ).rejects.toThrow('产品版本');
+      expect(mockedApiClient.setAgentEnabled).not.toHaveBeenCalled();
+      await ReactTestRenderer.act(async () => {
+        await expect(
+          currentSession!.setAgentEnabled(
+            'site-builder',
+            false,
+            [],
+            undefined,
+            previous.productVersionId!,
+          ),
+        ).resolves.toEqual(removed);
+      });
+      expect(mockedApiClient.setAgentEnabled).toHaveBeenCalledWith(
+        'saved-token',
+        'site-builder',
+        false,
+        undefined,
+        expect.any(String),
+        [],
+        previous.productVersionId,
+      );
+    } finally {
+      await ReactTestRenderer.act(() => renderer?.unmount());
+    }
+  });
+
   test('confirmed scopes are copied before cloud consent and never expanded by a caller mutation', async () => {
     const initial = authorizationBootstrap();
     const grant = accessGrant(initial.agents.registered[0]);

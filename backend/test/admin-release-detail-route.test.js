@@ -9,7 +9,7 @@ const release = { id: releaseId, agentKey: "sample-agent", version: "1.0.0", cat
 function detailHandler(dependencies) {
   const routes = new Map();
   const app = Object.fromEntries(["get", "post", "patch"].map((method) => [method, (path, ...handlers) => routes.set(`${method} ${path}`, handlers.at(-1))]));
-  registerAdminReleaseRoutes(app, { authenticate: () => {}, requireAdmin: () => () => {}, asyncHandler: (handler) => handler, ...dependencies });
+  registerAdminReleaseRoutes(app, { authenticate: () => {}, requireAdmin: () => () => {}, asyncHandler: (handler) => handler, readCatalogDiagnostics: async () => ({ visible: false, reasons: [] }), ...dependencies });
   return routes.get("get /api/admin/agent-releases/:id");
 }
 
@@ -20,14 +20,14 @@ test("release detail returns camelCase associated products and persistent histor
     runQuery: async (sql, params) => {
       calls.push({ sql, params });
       if (sql.includes("agent_release_status_history")) return [{ id: "history-1", from_status: "review", to_status: "published", reason: null, request_id: "request-1", actor_email: "operator@example.invalid", created_at: "2026-11-02T00:00:00.000Z" }];
-      if (sql.includes("product_agent_dependencies")) return [{ id: "product-1", product_key: "daily-plan", display_name: "每日计划", version: "1.0.0", status: "published" }];
+      if (sql.includes("product_agent_dependencies")) return [{ id: "product-1", product_version_id: "product-version-1", product_key: "daily-plan", display_name: "每日计划", version: "1.0.0", status: "published" }];
       throw new Error(`Unexpected query: ${sql}`);
     },
   });
   let response;
   await handler({ params: { id: releaseId }, user: { role: "admin", adminPermissions: ["*"] } }, { json: (value) => { response = value; } });
   assert.deepEqual(response.data.release, release);
-  assert.deepEqual(response.data.products, [{ id: "product-1", productKey: "daily-plan", displayName: "每日计划", version: "1.0.0", status: "published" }]);
+  assert.deepEqual(response.data.products, [{ id: "product-1", productVersionId: "product-version-1", productKey: "daily-plan", displayName: "每日计划", version: "1.0.0", status: "published" }]);
   assert.deepEqual(response.data.history[0], { id: "history-1", fromStatus: "review", toStatus: "published", reason: null, requestId: "request-1", actorEmail: "operator@example.invalid", createdAt: "2026-11-02T00:00:00.000Z" });
   assert.ok(calls.every((call) => call.params.length === 1 && call.params[0] === releaseId));
 });
@@ -46,7 +46,7 @@ test("release detail reports missing releases as HTTP 404 without loading associ
 
 test("release managers without products:read cannot load or infer associated product records", async () => {
   let productReads = 0;
-  const handler = detailHandler({ readRelease: async () => release, runQuery: async (sql) => {
+  const handler = detailHandler({ readRelease: async () => release, readCatalogDiagnostics: async () => assert.fail("product diagnostics require products:read"), runQuery: async (sql) => {
     if (sql.includes("product_agent_dependencies")) { productReads += 1; return [{ product_key: "restricted-product" }]; }
     return [];
   } });
@@ -54,5 +54,25 @@ test("release managers without products:read cannot load or infer associated pro
   await handler({ params: { id: releaseId }, user: { role: "admin", adminPermissions: ["agents:manage"] } }, { json: (value) => { response = value; } });
   assert.deepEqual(response.data.products, []);
   assert.equal(response.data.productsVisible, false);
+  assert.equal(response.data.catalogDiagnostics, null);
   assert.equal(productReads, 0);
+});
+
+test("a published release detail reports that App visibility is blocked without a published product", async () => {
+  const diagnosis = { visible: false, sourceVersion: "1.0.0", selectedReleaseVisible: false, reasons: [{ code: "AGENT_PRODUCT_UNAVAILABLE", message: "尚无当前可用的已发布产品绑定此 release。" }], products: [] };
+  let diagnosed = false;
+  const handler = detailHandler({
+    readRelease: async () => release,
+    runQuery: async () => [],
+    readCatalogDiagnostics: async ({ release: selected, products }) => {
+      assert.equal(selected, release);
+      assert.deepEqual(products, []);
+      diagnosed = true;
+      return diagnosis;
+    },
+  });
+  let response;
+  await handler({ params: { id: releaseId }, user: { role: "admin", adminPermissions: ["*"] } }, { json: value => { response = value; } });
+  assert.equal(diagnosed, true, "published status alone must not imply visibility");
+  assert.deepEqual(response.data.catalogDiagnostics, diagnosis);
 });

@@ -272,4 +272,58 @@ describe('published product dependency contract gates Agent access', () => {
       ),
     ).toBe('catalog_unavailable');
   });
+
+  test.each(['unavailable', 'reconsent_required'] as const)(
+    'a historical %s consent requires explicit consent to the current version even when scopes match',
+    status => {
+      const previous = product();
+      const current = {
+        ...previous,
+        version: '2.0.0',
+        productVersionId: 'product-version-2',
+      };
+      expect(
+        resolveAgentProductAccess(agent, {
+          ...options([current]),
+          entitlements: [grant(previous, status)],
+        }),
+      ).toBe('reconsent_required');
+    },
+  );
+
+  test('a still-enabled historical consent remains usable through an identity-only product revision', () => {
+    const previous = product();
+    const current = {
+      ...previous,
+      version: '2.0.0',
+      productVersionId: 'product-version-2',
+    };
+    expect(
+      resolveAgentProductAccess(agent, {
+        ...options([current]),
+        entitlements: [
+          grant(previous),
+          grant(
+            { ...previous, productVersionId: 'even-earlier-version' },
+            'unavailable',
+          ),
+        ],
+      }),
+    ).toBe('available');
+  });
+
+  test('disabled historical consent never becomes a new re-consent requirement', () => {
+    const previous = product();
+    const current = {
+      ...previous,
+      version: '2.0.0',
+      productVersionId: 'product-version-2',
+    };
+    expect(
+      resolveAgentProductAccess(agent, {
+        ...options([current]),
+        entitlements: [grant(previous, 'disabled')],
+      }),
+    ).toBe('available');
+  });
 });

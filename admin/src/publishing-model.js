@@ -115,3 +115,26 @@ export function buildProductFields(values, releases) {
     dependencies: bindPublishedDependencies(values.releaseIds, releases),
   };
 }
+
+export function catalogDiagnosticsPresentation(value) {
+  const validReasons = reasons => Array.isArray(reasons) && reasons.every(reason =>
+    typeof reason?.code === "string" && typeof reason?.message === "string" && reason.message.length > 0
+  );
+  if (
+    typeof value?.visible !== "boolean" ||
+    typeof value?.selectedReleaseVisible !== "boolean" ||
+    !validReasons(value?.reasons) ||
+    !Array.isArray(value?.products) ||
+    !value.products.every(product => typeof product?.productVersionId === "string" && validReasons(product.reasons))
+  ) return { type: "error", title: "目录诊断不可用", description: "服务端未提供完整目录诊断，请刷新或检查配套 API 版本。", reasons: [] };
+  return {
+    type: value.selectedReleaseVisible ? "success" : "warning",
+    title: value.selectedReleaseVisible
+      ? "所选 release 已进入 App 目录"
+      : value.visible
+        ? "Agent 已在目录中，所选 release 未被采用"
+        : "当前 App 目录不可见",
+    description: `当前服务源码版本：${value.sourceVersion || "未注册"}。目录可见性、用户明确授权、TestFlight 分发与真机验收需要分别核实。`,
+    reasons: value.reasons.map(reason => reason.message),
+  };
+}

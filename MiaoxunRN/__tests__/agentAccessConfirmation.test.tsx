@@ -81,7 +81,7 @@ const props = () => ({
       ],
     },
   ],
-  entitlements: [],
+  entitlements: [] as ProductEntitlementDTO[],
   catalogRevision: 'test-catalog',
   agentReadiness: {},
   onOpenAgentThread: jest.fn(),
@@ -303,6 +303,59 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
     );
   });
 
+  test('same-scope runtime upgrade offers explicit consent to the new product after the old consent becomes unavailable', async () => {
+    const current = {
+      ...productFor(),
+      version: '2.0.0',
+      productVersionId: 'product-version-2',
+    };
+    const values = {
+      ...props(),
+      products: [current],
+      ownedAgents: [{ ...owned, grantedScopes: [...agent.permissions] }],
+      entitlements: [entitlementFor('unavailable')],
+    };
+    act(() => {
+      renderer = TestRenderer.create(renderSurface(values as never));
+    });
+    expect(accessButton('重新同意建站授权')?.props.disabled).toBe(false);
+    expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
+    press('重新同意建站授权');
+    expect(alert.mock.calls[0][1]).toContain('建站 Agent · v2.0.0');
+    expect(alert.mock.calls[0][1]).toContain(
+      '授权范围：读取小站内容、读取相册',
+    );
+    expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
+    await act(async () => alert.mock.calls[0][2][1].onPress());
+    expect(values.onSetAgentEnabled).toHaveBeenCalledWith(
+      agent.key,
+      true,
+      agent.permissions,
+      undefined,
+      current.productVersionId,
+    );
+  });
+
+  test('identity-only publication does not require another consent while the old grant remains enabled', () => {
+    const current = {
+      ...productFor(),
+      version: '2.0.0',
+      productVersionId: 'product-version-2',
+    };
+    const values = {
+      ...props(),
+      products: [current],
+      ownedAgents: [{ ...owned, grantedScopes: [...agent.permissions] }],
+      entitlements: [entitlementFor('enabled')],
+    };
+    act(() => {
+      renderer = TestRenderer.create(renderSurface(values as never));
+    });
+    expect(accessButton('重新同意建站授权')).toBeUndefined();
+    expect(alert).not.toHaveBeenCalled();
+    expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
+  });
+
   test('published product with enabled entitlement keeps the confirmation and idempotent add path', async () => {
     const values = { ...props(), ownedAgents: [] };
     act(() => {
@@ -326,6 +379,46 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
       agent.permissions,
       undefined,
       'product-version-site-builder',
+    );
+  });
+
+  test('UI Agent adding uses its unique enabled product beside another publication', async () => {
+    const uiAgent = { ...agent, key: 'ui-agent', name: 'UI Agent' };
+    const selected = {
+      ...productFor(),
+      dependencies: productFor().dependencies.map(dependency => ({
+        ...dependency,
+        agentKey: uiAgent.key,
+      })),
+    };
+    const values = {
+      ...props(),
+      agents: [uiAgent],
+      ownedAgents: [],
+      products: [
+        {
+          ...selected,
+          id: 'other-ui-product',
+          productVersionId: 'other-ui-version',
+        },
+        selected,
+      ],
+      entitlements: [entitlementFor('enabled')],
+    };
+    act(() => {
+      renderer = TestRenderer.create(renderSurface(values as never));
+    });
+    expect(accessButton('添加UI Agent')?.props.disabled).toBe(false);
+    press('添加UI Agent');
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
+    await act(async () => alert.mock.calls[0][2][1].onPress());
+    expect(values.onSetAgentEnabled).toHaveBeenCalledWith(
+      uiAgent.key,
+      true,
+      uiAgent.permissions,
+      undefined,
+      selected.productVersionId,
     );
   });
 
@@ -451,7 +544,7 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
       '无法读取授权状态',
     );
   });
-  test('different existing scopes require removal and re-adding without an update action', () => {
+  test('changed scopes can be explicitly re-consented without first removing the Agent', async () => {
     const values = props();
     act(() => {
       renderer = TestRenderer.create(renderSurface(values));
@@ -463,13 +556,38 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
         .map(item => item.props.children)
         .flat()
         .join(' '),
-    ).toContain('移除后重新添加');
-    expect(
-      renderer.root.findAll(
-        item => item.props.accessibilityLabel === '更新建站授权',
-      ),
-    ).toHaveLength(0);
+    ).not.toContain('移除后重新添加');
+    expect(accessButton('重新同意建站授权')?.props.disabled).toBe(false);
     expect(alert).not.toHaveBeenCalled();
+    press('重新同意建站授权');
+    expect(alert.mock.calls[0][1]).toContain(
+      '授权范围：读取小站内容、读取相册',
+    );
+    expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
+    await act(async () => alert.mock.calls[0][2][1].onPress());
+    expect(values.onSetAgentEnabled).toHaveBeenCalledWith(
+      agent.key,
+      true,
+      agent.permissions,
+      undefined,
+      'product-version-site-builder',
+    );
+  });
+
+  test('a changed-scope Agent with an unavailable product remains blocked without requesting removal', () => {
+    const values = { ...props(), products: [productFor('paused')] };
+    act(() => {
+      renderer = TestRenderer.create(renderSurface(values as never));
+    });
+    const text = renderer.root
+      .findAllByType(Text)
+      .map(item => item.props.children)
+      .flat()
+      .join(' ');
+    expect(text).not.toContain('移除后重新添加');
+    expect(text).toContain('当前产品不可授权');
+    expect(accessButton('重新同意建站授权')).toBeUndefined();
+    expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
   });
   test('cancel and dismiss invalidate confirmation and make no authorization call', async () => {
     const values = props();
@@ -521,7 +639,12 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
     expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
   });
   test('removal is explicitly confirmed and sends an empty grant', async () => {
-    const values = props();
+    const values = {
+      ...props(),
+      entitlements: [
+        { ...entitlementFor('enabled'), grantedScopes: owned.grantedScopes },
+      ],
+    };
     act(() => {
       renderer = TestRenderer.create(renderSurface(values));
     });
@@ -537,7 +660,102 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
       'site-builder',
       false,
       [],
+      undefined,
+      'product-version-site-builder',
     );
+  });
+  test('removal confirms the unique enabled product beside a second publication', async () => {
+    const selected = productFor();
+    const values = {
+      ...props(),
+      products: [
+        { ...selected, id: 'other-product', productVersionId: 'other-version' },
+        selected,
+      ],
+      entitlements: [entitlementFor('enabled')],
+    };
+    act(() => {
+      renderer = TestRenderer.create(renderSurface(values as never));
+    });
+    press('移除 建站');
+    expect(alert.mock.calls[0][1]).toContain(
+      `${selected.displayName} · v${selected.version}`,
+    );
+    expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
+    await act(async () => alert.mock.calls[0][2][1].onPress());
+    expect(values.onSetAgentEnabled).toHaveBeenCalledWith(
+      agent.key,
+      false,
+      [],
+      undefined,
+      selected.productVersionId,
+    );
+  });
+  test('removal confirms the old consented version when the product has a newer publication', async () => {
+    const previous = entitlementFor('reconsent_required');
+    const currentProduct = {
+      ...productFor(),
+      version: '2.0.0',
+      productVersionId: 'next-product-version',
+    };
+    const values = {
+      ...props(),
+      products: [currentProduct],
+      entitlements: [previous],
+    };
+    act(() => {
+      renderer = TestRenderer.create(renderSurface(values as never));
+    });
+    press('移除 建站');
+    expect(alert.mock.calls[0][1]).toContain('建站 Agent · v1.0.0');
+    expect(alert.mock.calls[0][1]).not.toContain('v2.0.0');
+    await act(async () => alert.mock.calls[0][2][1].onPress());
+    expect(values.onSetAgentEnabled).toHaveBeenCalledWith(
+      agent.key,
+      false,
+      [],
+      undefined,
+      previous.productVersionId,
+    );
+  });
+  test('removal prefers the unique enabled grant over an unavailable historical version', async () => {
+    const enabled = entitlementFor('enabled');
+    const historical = {
+      ...enabled,
+      id: 'old-grant',
+      productVersionId: 'old-version',
+      status: 'unavailable' as const,
+    };
+    const values = { ...props(), entitlements: [historical, enabled] };
+    act(() => {
+      renderer = TestRenderer.create(renderSurface(values as never));
+    });
+    press('移除 建站');
+    await act(async () => alert.mock.calls[0][2][1].onPress());
+    expect(values.onSetAgentEnabled).toHaveBeenCalledWith(
+      agent.key,
+      false,
+      [],
+      undefined,
+      enabled.productVersionId,
+    );
+  });
+  test('removal refuses ambiguous existing grants and never asks the server to revoke all versions', () => {
+    const first = entitlementFor('reconsent_required');
+    const values = {
+      ...props(),
+      entitlements: [
+        first,
+        { ...first, id: 'another-grant', productVersionId: 'another-version' },
+      ],
+    };
+    act(() => {
+      renderer = TestRenderer.create(renderSurface(values as never));
+    });
+    press('移除 建站');
+    expect(alert).not.toHaveBeenCalled();
+    expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
+    expect(values.onActionError).toHaveBeenCalledTimes(1);
   });
   test('adding also requires the common scope confirmation', async () => {
     const values = { ...props(), ownedAgents: [] };
@@ -653,6 +871,14 @@ test('the Butler can be removed and added again through the same explicit confir
         ],
       },
     ],
+    entitlements: [
+      {
+        ...entitlementFor('enabled'),
+        productId: 'product-miaoxun-butler',
+        productVersionId: 'product-version-miaoxun-butler',
+        productKey: 'miaoxun-butler',
+      },
+    ],
   };
   act(() => {
     renderer = TestRenderer.create(renderSurface(values));
@@ -665,6 +891,8 @@ test('the Butler can be removed and added again through the same explicit confir
     butler.key,
     false,
     [],
+    undefined,
+    'product-version-miaoxun-butler',
   );
   act(() => renderer.update(renderSurface({ ...values, ownedAgents: [] })));
   press('添加妙讯管家');
@@ -859,6 +1087,14 @@ test('removing an album Agent discloses revocation and renders the returned acce
   };
   const removed = { ...attached, enabled: false, grantedScopes: [] };
   values.ownedAgents = [attached];
+  values.entitlements = [
+    {
+      ...entitlementFor('enabled'),
+      productId: 'product-album-manager',
+      productVersionId: 'product-version-album-manager',
+      productKey: 'album-manager',
+    },
+  ];
   values.onSetAgentEnabled.mockResolvedValue(removed);
   act(() => {
     renderer = TestRenderer.create(renderSurface(values));
@@ -871,6 +1107,8 @@ test('removing an album Agent discloses revocation and renders the returned acce
     'album-manager',
     false,
     [],
+    undefined,
+    'product-version-album-manager',
   );
   act(() =>
     renderer.update(renderSurface({ ...values, ownedAgents: [removed] })),

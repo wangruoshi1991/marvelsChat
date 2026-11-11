@@ -252,6 +252,11 @@ export function SecondFloorScreen({
   );
   const closing = useRef(false);
   const exitProgress = useRef(new Animated.Value(0)).current;
+  const exitDrag = useRef<{ base: number | null; movement: number } | null>(
+    null,
+  );
+  const exitActive = useRef(active);
+  exitActive.current = active;
   // Prototype `.xun-floor-panel` runs `xun-floor-panel-in .24s
   // cubic-bezier(.2,.8,.2,1)` — `opacity 0 → 1` with `translateY(12px) → 0`.
   const panelEntrance = useRef(new Animated.Value(1)).current;
@@ -403,6 +408,7 @@ export function SecondFloorScreen({
     clearPageScrollState();
     Keyboard.dismiss();
     closing.current = true;
+    exitDrag.current = null;
     // React Native's test renderer does not advance native Animated callbacks;
     // keep the historic synchronous close contract in tests while devices use
     // the real exit transition below.
@@ -437,10 +443,18 @@ export function SecondFloorScreen({
   ]);
   useEffect(() => {
     if (active) return;
+    exitDrag.current = null;
     closing.current = false;
     exitProgress.stopAnimation();
     exitProgress.setValue(0);
   }, [active, exitProgress]);
+  useEffect(
+    () => () => {
+      exitDrag.current = null;
+      exitProgress.stopAnimation();
+    },
+    [exitProgress],
+  );
   const pageScrollProps = useMemo(() => {
     if (!xun) return undefined;
     const sources: (SecondFloorTool | null)[] = [
@@ -626,6 +640,24 @@ export function SecondFloorScreen({
     });
     return () => listener.remove();
   }, [active, closeFloor]);
+  const moveExit = (touch: NonNullable<typeof exitDrag.current>) => {
+    if (
+      touch.base === null ||
+      reduceMotion ||
+      closing.current ||
+      pending.current
+    )
+      return;
+    const horizontal =
+      exitGesture.direction === 'left' || exitGesture.direction === 'right';
+    const directed = ['up', 'left'].includes(exitGesture.direction)
+      ? -touch.movement
+      : touch.movement;
+    const extent = horizontal ? width : height;
+    exitProgress.setValue(
+      Math.max(0, Math.min(0.25, touch.base + (directed * 0.72) / extent)),
+    );
+  };
   const responder = useStablePanResponder(
     {
       onMoveShouldSetPanResponderCapture: (_event, gesture) =>
@@ -663,23 +695,25 @@ export function SecondFloorScreen({
             0.1,
           )),
       onPanResponderGrant: () => {
-        exitProgress.stopAnimation();
+        const touch = { base: null as number | null, movement: 0 };
+        exitDrag.current = touch;
+        exitProgress.stopAnimation(value => {
+          if (!exitActive.current || exitDrag.current !== touch) return;
+          touch.base = value;
+          moveExit(touch);
+        });
       },
       onPanResponderMove: (_event, gesture) => {
-        if (reduceMotion || closing.current || pending.current) return;
+        const touch = exitDrag.current;
+        if (!touch) return;
         const horizontal =
           exitGesture.direction === 'left' || exitGesture.direction === 'right';
-        const movement = horizontal ? gesture.dx : gesture.dy;
-        const directed = ['up', 'left'].includes(exitGesture.direction)
-          ? -movement
-          : movement;
-        const extent = horizontal ? width : height;
-        exitProgress.setValue(
-          Math.max(0, Math.min(0.25, (directed * 0.72) / extent)),
-        );
+        touch.movement = horizontal ? gesture.dx : gesture.dy;
+        moveExit(touch);
       },
       onPanResponderTerminationRequest: () => false,
       onPanResponderTerminate: () => {
+        exitDrag.current = null;
         Animated.spring(exitProgress, {
           toValue: 0,
           useNativeDriver: true,
@@ -688,6 +722,7 @@ export function SecondFloorScreen({
         }).start();
       },
       onPanResponderRelease: (_event, gesture) => {
+        exitDrag.current = null;
         if (
           exitGesture.enabled &&
           (swipeDirectionMatches(

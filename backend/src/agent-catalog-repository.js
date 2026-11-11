@@ -229,8 +229,8 @@ export async function listPublishedRegisteredAgents(registeredAgents) {
  * metadata. Unpublished entries stay available to owned-agent/thread rendering
  * so an operator cannot accidentally make an existing authorization disappear.
  */
-export async function listRegisteredAgentsWithCatalogue(registeredAgents) {
-  await syncAgentCatalogue(registeredAgents);
+export async function listRegisteredAgentsWithCatalogue(registeredAgents, { sync = true } = {}) {
+  if (sync) await syncAgentCatalogue(registeredAgents);
   const rows = await listAgentCatalogue({ includeUnregistered: true });
   const byKey = new Map(rows.map((row) => [row.agentId, row]));
   return registeredAgents.map((agent) =>

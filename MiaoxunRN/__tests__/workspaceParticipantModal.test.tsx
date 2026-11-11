@@ -1,5 +1,11 @@
 import React from 'react';
-import { Modal, ScrollView, StyleSheet, Text } from 'react-native';
+import {
+  AccessibilityInfo,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+} from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { agentWorkspace, workspaceStep } from '../__fixtures__/agentWorkspace';
 import { AIAssistProvider } from '../src/features/assist/AIAssistProvider';
@@ -13,6 +19,7 @@ const step = workspaceStep({
 let renderer: Renderer.ReactTestRenderer;
 afterEach(() => {
   if (renderer) act(() => renderer.unmount());
+  jest.restoreAllMocks();
 });
 
 const modal = () => renderer.root.findByType(Modal);
@@ -55,6 +62,15 @@ async function renderCard(onOpenParticipant?: jest.Mock) {
   openParticipant();
   return onOpen;
 }
+
+test('Reduce Motion opens participant details without a sliding modal', async () => {
+  jest
+    .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
+    .mockResolvedValue(true);
+  await renderCard();
+  expect(modal().props.visible).toBe(true);
+  expect(modal().props.animationType).toBe('none');
+});
 
 test('participant actions and text are not grouped inside a dismiss button', async () => {
   await renderCard(jest.fn());

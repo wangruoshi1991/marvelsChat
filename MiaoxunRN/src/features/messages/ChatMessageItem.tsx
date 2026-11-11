@@ -120,7 +120,7 @@ export function ChatMessageItem({
     Boolean(discussionContext?.nodeId) &&
     item.metadata?.contributionDiscussion?.state === 'available';
   const uiPreviewId =
-    thread.agentId === 'miaoxun-butler' &&
+    (thread.agentId === 'miaoxun-butler' || thread.agentId === 'ui-agent') &&
     item.senderType === 'agent' &&
     !item.deletedAt &&
     !item.recalledAt &&

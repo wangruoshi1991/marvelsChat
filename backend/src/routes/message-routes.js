@@ -174,7 +174,7 @@ export async function getAuthorizedMediaResults({
   ) {
     throw new HttpError(
       403,
-      "相册 Agent 授权已撤回或范围已变化，请在“我”移除后重新添加。",
+      "相册 Agent 授权已撤回或范围已变化，请在“我”重新确认 Agent 权限。",
       { code: "AI_ACCESS_REVOKED" },
     );
   }

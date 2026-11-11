@@ -40,12 +40,12 @@ afterEach(() => {
 
 test.each(['chat', 'tasks'] as const)(
   'hiding %s content does not replace it with notifications',
-  tab => {
+  async tab => {
     const prefs = defaultUIPreferences();
     prefs.hiddenModules.messages = [
       tab === 'chat' ? 'threadList' : 'taskInbox',
     ];
-    act(() => {
+    await act(async () => {
       tree = Renderer.create(
         <ThreadListScreen
           {...props}
@@ -63,13 +63,13 @@ test.each(['chat', 'tasks'] as const)(
   },
 );
 
-test('the second-floor accessibility entry uses the confirmed label', () => {
+test('the second-floor accessibility entry uses the confirmed label', async () => {
   const prefs = defaultUIPreferences();
   prefs.components.messages = {
     'xun.threadList.openSecondFloor': { label: '进入个人空间' },
     'xun.threadList.newThread': { label: '新增入口' },
   };
-  act(() => {
+  await act(async () => {
     tree = Renderer.create(
       <ThreadListScreen
         {...props}
@@ -86,7 +86,7 @@ test('the second-floor accessibility entry uses the confirmed label', () => {
   expect(button.props.accessibilityActions[0].label).toBe('进入个人空间');
 });
 
-test('shrinking the new-thread control preserves a 44 point touch target and scales the icon', () => {
+test('shrinking the new-thread control preserves a 44 point touch target and scales the icon', async () => {
   const prefs = defaultUIPreferences();
   prefs.surfaces.messages.buttonScale = 0.8;
   prefs.components.messages = {
@@ -96,7 +96,7 @@ test('shrinking the new-thread control preserves a 44 point touch target and sca
       label: '新增入口',
     },
   };
-  act(() => {
+  await act(async () => {
     tree = Renderer.create(
       <ThreadListScreen {...props} uiPreferences={prefs} />,
     );
@@ -116,10 +116,10 @@ test('shrinking the new-thread control preserves a 44 point touch target and sca
   expect(StyleSheet.flatten(icon.props.style).fontSize).toBeLessThan(17);
 });
 
-test('required tabs remain accessible even in historical hidden state', () => {
+test('required tabs remain accessible even in historical hidden state', async () => {
   const prefs = defaultUIPreferences();
   prefs.hiddenModules.messages = ['tabs'];
-  act(() => {
+  await act(async () => {
     tree = Renderer.create(
       <ThreadListScreen {...props} uiPreferences={prefs} />,
     );
@@ -129,29 +129,32 @@ test('required tabs remain accessible even in historical hidden state', () => {
   ).toBeGreaterThanOrEqual(2);
 });
 
-test('disabling the entrance gesture keeps an ordinary clickable second-floor control even with new-thread hidden', () => {
-  const prefs = defaultUIPreferences();
-  prefs.gestures['messages.pullToSecondFloor']!.enabled = false;
-  prefs.components.messages = {
-    'xun.threadList.newThread': { visible: false },
-    'xun.threadList.openSecondFloor': { label: '个人空间' },
-  };
-  const open = jest.fn();
-  act(() => {
-    tree = Renderer.create(
-      <ThreadListScreen
-        {...props}
-        uiPreferences={prefs}
-        onOpenSecondFloor={open}
-      />,
-    );
-  });
-  const button = tree.root.findAll(
-    item =>
-      item.props.accessibilityRole === 'button' &&
-      item.props.accessibilityLabel === '个人空间',
-  )[0];
-  expect(button).toBeDefined();
-  act(() => button.props.onPress());
-  expect(open).toHaveBeenCalledTimes(1);
-});
+test.each([false, true])(
+  'a hidden new-thread action keeps second-floor navigation reachable (gesture enabled %s)',
+  async gestureEnabled => {
+    const prefs = defaultUIPreferences();
+    prefs.gestures['messages.pullToSecondFloor']!.enabled = gestureEnabled;
+    prefs.components.messages = {
+      'xun.threadList.newThread': { visible: false },
+      'xun.threadList.openSecondFloor': { label: '个人空间' },
+    };
+    const open = jest.fn();
+    await act(async () => {
+      tree = Renderer.create(
+        <ThreadListScreen
+          {...props}
+          uiPreferences={prefs}
+          onOpenSecondFloor={open}
+        />,
+      );
+    });
+    const button = tree.root.findAll(
+      item =>
+        item.props.accessibilityRole === 'button' &&
+        item.props.accessibilityLabel === '个人空间',
+    )[0];
+    expect(button).toBeDefined();
+    act(() => button.props.onPress());
+    expect(open).toHaveBeenCalledTimes(1);
+  },
+);

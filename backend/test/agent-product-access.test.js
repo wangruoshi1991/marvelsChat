@@ -74,6 +74,21 @@ test("Agent access rejects missing or ambiguous product publication", async () =
   );
 });
 
+test("explicit Agent revocation keeps the selected product version through mapping and persistence", async () => {
+  let selected;
+  const service = createAgentPublishingService({ productRepository: {
+    listPublishedProductsForAgent: async (_key, options) => {
+      assert.equal(options.publishedOnly, false);
+      assert.equal(options.productVersionId, "consented-version");
+      return [product];
+    },
+    disableEntitlement: async args => { selected = args; return { status: "disabled" }; },
+  } });
+  await service.setAgentAccessThroughProduct({ userId: "user-1", agentKey: "site-builder", enabled: false,
+    productVersionId: "consented-version", idempotencyKey: "disable-selected-version" });
+  assert.equal(selected.productVersionId, "consented-version");
+});
+
 test("Album product entitlement invokes the media lifecycle hook in the same repository transaction", async () => {
   const calls = [];
   const albumProduct = {

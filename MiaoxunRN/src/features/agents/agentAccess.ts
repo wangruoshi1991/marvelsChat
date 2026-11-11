@@ -20,6 +20,65 @@ type CurrentAgentContract = Pick<
   'key' | 'version' | 'permissions' | 'identity' | 'identityError'
 > & { contractHash?: string | null };
 
+type AgentProductOptions = {
+  products: ProductCatalogProductDTO[];
+  entitlements: ProductEntitlementDTO[];
+  catalogRevision: string | null;
+};
+
+// Display, confirmation and submission must select the same exact product.
+// Ambiguous publications never choose or enlarge a user's consent.
+export function selectAgentProduct(
+  agentKey: string,
+  options: AgentProductOptions,
+): ProductCatalogProductDTO | null {
+  if (!options.products || !options.entitlements || !options.catalogRevision)
+    return null;
+  const candidates = options.products.filter(item =>
+    item.dependencies.some(dependency => dependency.agentKey === agentKey),
+  );
+  if (candidates.length === 1) return candidates[0];
+  const enabled = candidates.filter(item =>
+    options.entitlements.some(
+      entitlement =>
+        entitlement.status === 'enabled' &&
+        entitlement.productId === item.id &&
+        entitlement.productVersionId === item.productVersionId,
+    ),
+  );
+  return enabled.length === 1 ? enabled[0] : null;
+}
+
+type AgentRemovalProduct =
+  | {
+      state: 'selected';
+      product: ProductCatalogProductDTO;
+      entitlement: ProductEntitlementDTO;
+    }
+  | { state: 'ambiguous' | 'unavailable' | 'legacy' };
+
+export function resolveAgentRemovalProduct(
+  agentKey: string,
+  options: AgentProductOptions,
+): AgentRemovalProduct {
+  const products = options.products.filter(product =>
+    product.dependencies.some(dependency => dependency.agentKey === agentKey),
+  );
+  const grants = options.entitlements
+    .filter(entitlement => entitlement.status !== 'disabled')
+    .flatMap(entitlement => {
+      const product = products.find(item => item.id === entitlement.productId);
+      return product ? [{ product, entitlement }] : [];
+    });
+  const enabled = grants.filter(item => item.entitlement.status === 'enabled');
+  const candidates = enabled.length ? enabled : grants;
+  if (candidates.length === 1) return { state: 'selected', ...candidates[0] };
+  if (candidates.length > 1) return { state: 'ambiguous' };
+  return {
+    state: options.entitlements.length === 0 ? 'legacy' : 'unavailable',
+  };
+}
+
 function sameScopes(left: string[], right: string[]) {
   const a = [...new Set(left)].sort();
   const b = [...new Set(right)].sort();
@@ -60,11 +119,7 @@ function sameIdentity(left: unknown, right: AgentDTO['identity'], key: string) {
 
 export function resolveAgentProductAccess(
   agent: CurrentAgentContract,
-  options: {
-    products: ProductCatalogProductDTO[];
-    entitlements: ProductEntitlementDTO[];
-    catalogRevision: string | null;
-  },
+  options: AgentProductOptions,
 ): AgentProductAccessState {
   // 妙讯管家 is initialized by the server as a system capability. Keep its
   // existing conversation and bootstrap path independent from ordinary Agent
@@ -74,23 +129,13 @@ export function resolveAgentProductAccess(
     return 'catalog_unavailable';
   if (!options.products || !options.entitlements || !options.catalogRevision)
     return 'catalog_unavailable';
-  let candidates = options.products.filter(item =>
-    item.dependencies.some(dependency => dependency.agentKey === agent.key),
-  );
-  if (!candidates.length) return 'product_not_published';
-  if (candidates.length > 1) {
-    const enabled = candidates.filter(item =>
-      options.entitlements.some(
-        entitlement =>
-          entitlement.status === 'enabled' &&
-          entitlement.productId === item.id &&
-          entitlement.productVersionId === item.productVersionId,
-      ),
-    );
-    if (enabled.length !== 1) return 'catalog_unavailable';
-    candidates = enabled;
-  }
-  const product = candidates[0];
+  const product = selectAgentProduct(agent.key, options);
+  if (!product)
+    return options.products.some(item =>
+      item.dependencies.some(dependency => dependency.agentKey === agent.key),
+    )
+      ? 'catalog_unavailable'
+      : 'product_not_published';
   if (product.status === 'paused') return 'product_paused';
   if (product.status !== 'published') return 'product_unavailable';
   if (!product.productVersionId || !product.version)
@@ -121,6 +166,20 @@ export function resolveAgentProductAccess(
   );
   if (entitlement?.status === 'unavailable') return 'entitlement_unavailable';
   if (entitlement?.status === 'reconsent_required') return 'reconsent_required';
+  // Runtime upgrades can invalidate a historical consent without changing its
+  // scopes. An old version that remains enabled still permits existing access.
+  const productGrants = options.entitlements.filter(
+    item => item.productId === product.id,
+  );
+  if (
+    !productGrants.some(item => item.status === 'enabled') &&
+    productGrants.some(
+      item =>
+        item.productVersionId !== product.productVersionId &&
+        (item.status === 'unavailable' || item.status === 'reconsent_required'),
+    )
+  )
+    return 'reconsent_required';
   return 'available';
 }
 
@@ -143,6 +202,7 @@ export function agentAccessSnapshot(
   ownedAgents: OwnedAgentDTO[],
   catalog?: {
     products: ProductCatalogProductDTO[];
+    entitlements?: ProductEntitlementDTO[];
     catalogRevision: string | null;
   },
 ) {

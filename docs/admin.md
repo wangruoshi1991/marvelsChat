@@ -94,7 +94,7 @@ POST /api/admin/users/:userId/reset-password
 GET /api/admin/events?page=1&pageSize=50&query=&sortBy=createdAt&sortOrder=desc
 GET /api/admin/agent-runs?page=1&pageSize=50&query=&agentId=&userId=&status=&sortBy=createdAt&sortOrder=desc
 GET /api/admin/agent-releases?page=1&pageSize=50&query=&status=&sortBy=updatedAt&sortOrder=desc
-GET /api/admin/agent-releases/:id（release identity、readiness、状态历史、关联产品）
+GET /api/admin/agent-releases/:id（release identity、readiness、状态历史、精确版本关联产品、App 目录诊断）
 PATCH /api/admin/agent-releases/:id/identity
 POST /api/admin/agent-releases/:id/review
 POST /api/admin/agent-releases/:id/publish
@@ -136,7 +136,13 @@ Authorization: Bearer <token>
 
 release 详情中的关联产品还需要 `products:read`，无权时 `productsVisible=false`，前端显示权限提示。三个新详情接口对非法 UUID 返回 400、未知记录返回 404；读取失败不回退列表快照或显示假空态。工作台及二级导航按独立资源权限裁剪，模块错误边界保留侧栏供切换和重试。
 
+release 详情的 `catalogDiagnostics` 同样要求 `products:read`（接口本身仍要求 `agents:manage`），无权时为 `null`，不会额外读取或推断产品。`products[]` 包含精确 `productVersionId`；诊断返回 `checkedAt`、`sourceVersion`、`visible`（该 Agent 当前是否进入公开目录）、`selectedReleaseVisible`（所选 release 是否被目录采用）、`reasons[]` 和逐产品版本 `products[].reasons[]`。原因使用稳定 `code` 和可读 `message`，分别标明源码缺失/版本或权限过期、release 未发布、identity 不完整、产品未发布/合同失效、依赖 release/readiness/registry 门禁、目录采用其他产品版本以及身份冲突。目录判断复用 `/api/agents` 的产品合同与展示投影；读取目录 metadata 时显式关闭同步，不创建 registry/catalog、产品、授权或审计记录，也不调用供应商。内置管家继续按原目录身份发布规则诊断，不被改成必须依赖产品。
+
+后台不能把“Agent release 已发布”当作 App 上架成功：详情显示当前目录诊断及每个关联产品的阻断原因。缺少或不完整的诊断合同显示“目录诊断不可用”；数据库读取失败保留详情错误和重试入口，不伪装为未发布。该诊断为多个只读查询组成的检查时刻快照，发布中的并发变化可通过刷新复核，不构成发布承诺。公开目录可见性、用户在 App 明确同意 `media:image:generate` 等权限、TestFlight 分发与实体设备验收分别核对。
+
 当前源码的 release 列表与实际 registry GET 均只读；创建草稿为独立 POST。显式系统初始化的同步不扩展成普通 Agent 自动发布。产品改用结构化表单，支持草稿编辑、新增版本和精确版本详情；submit/publish/pause 必须提交 productVersionId，旧用户授权不会随发布自动升级。
+
+用户授权生命周期：相同运行版本和权限声明下发布新的展示身份/产品版本，不会自动替换已有用户明确同意且仍可执行的精确版本；新源码版本、权限变化、release 撤回或产品暂停会使旧授权不可执行。用户可在 App 重新查看并明确同意当前产品的完整权限，由既有 `PATCH /api/me/agents/:agentId` 携带 `enabled:true`、精确 `productVersionId`、`grantedScopes` 和幂等键原位确认，不要求先移除 Agent。投影只聚合当前发布、依赖有效、合同和全部 scope 均与 consent 精确匹配的 entitlement；历史仍为 stored-enabled 但已失效的产品不贡献旧身份/权限，账本不会被静默升级。对同一产品明确同意新版本时，旧 enabled 版本在同一事务中停用；新版本不变更原会话 ID，后台也不能代用户确认。撤销可携带该用户已有的精确 `productVersionId`，仅撤销所选产品版本；没有明确版本且存在多个历史产品映射时仍返回歧义错误，不自动扩大撤权范围。
 
 2026-11-02 发布前依赖审计修复：后端锁定 Express 4.22.3、body-parser 1.20.9、qs 6.17.1 和 Zod 4.6.7。Zod 升级保持原有 API 默认与 PATCH 语义：avatar 初始化仍补齐内部版本，日记/相册 PATCH 不注入创建默认值，空 PATCH 仍拒绝；校验失败继续返回脱敏的 HTTP 400。压缩 JSON 验证覆盖正常输入、非法尾随数据、解压后超过 1MB 和失败后的继续服务。
 

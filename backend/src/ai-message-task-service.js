@@ -22,7 +22,7 @@ export async function submitAlbumMessageTask({ user, thread, body, requestFinger
       if (!users.length) throw new HttpError(403, "账号当前不可执行任务。");
       const access = await connection.query("SELECT enabled, granted_scopes FROM user_agents WHERE user_id = ? AND agent_id = ? FOR SHARE", [user.id, thread.agentId]);
       if (!access[0]?.enabled || !agentScopesMatchDeclaration(agentAccess.agent, access[0].granted_scopes)) {
-        throw new HttpError(403, "相册 Agent 授权已撤回或范围已变化，请在“我”移除后重新添加。", { code: "AI_ACCESS_REVOKED" });
+        throw new HttpError(403, "相册 Agent 授权已撤回或范围已变化，请在“我”重新确认 Agent 权限。", { code: "AI_ACCESS_REVOKED" });
       }
       await assertAgentProductEntitlement({ userId: user.id, agent: agentAccess.agent, queryFn: connection.query.bind(connection) });
       const consent = await connection.query("SELECT index_state, consent_version FROM media_retrieval_profiles WHERE user_id = ? FOR SHARE", [user.id]);
@@ -88,7 +88,7 @@ export function createMessageTaskExecutor({ runAgentRuntime = runAgent, retrieva
       const rows = await queryFn(`SELECT a.enabled, a.granted_scopes FROM user_agents a JOIN users u ON u.id = a.user_id
         WHERE a.user_id = ? AND a.agent_id = ? AND u.status = 'active'`, [record.userId, record.agentId]);
       if (!rows[0]?.enabled || !agentScopesMatchDeclaration(access.agent, rows[0].granted_scopes)) {
-        throw new HttpError(403, "相册 Agent 授权已撤回或范围已变化，请在“我”移除后重新添加。", { code: "AI_ACCESS_REVOKED" });
+        throw new HttpError(403, "相册 Agent 授权已撤回或范围已变化，请在“我”重新确认 Agent 权限。", { code: "AI_ACCESS_REVOKED" });
       }
       await assertAgentProductEntitlement({ userId: record.userId, agent: access.agent, queryFn });
       const consent = await queryFn("SELECT index_state, consent_version FROM media_retrieval_profiles WHERE user_id = ?", [record.userId]);

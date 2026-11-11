@@ -55,7 +55,11 @@ import {
   albumAssistantConsent,
 } from '../station/albumAssistantAuthorization';
 import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
-import { agentAccessSnapshot } from '../agents/agentAccess';
+import {
+  agentAccessSnapshot,
+  resolveAgentRemovalProduct,
+  selectAgentProduct,
+} from '../agents/agentAccess';
 import { assertAgentDirectoryIdentity } from '../messages/agentIdentity';
 import { defaultUIPreferences } from '../ui/uiPreferences';
 import type { UIPreferences } from '../ui/uiPreferenceTypes';
@@ -128,16 +132,19 @@ export function useMiaoxunSession() {
     agents,
     ownedAgents,
     products,
+    entitlements,
     catalogRevision,
   });
   agentAccessStateRef.current = {
     agents,
     ownedAgents,
     products,
+    entitlements,
     catalogRevision,
   };
   const accessStateSnapshot = agentAccessSnapshot(agents, ownedAgents, {
     products,
+    entitlements,
     catalogRevision,
   });
   const accessStateRevisionRef = useRef({
@@ -764,13 +771,11 @@ export function useMiaoxunSession() {
       if (enabled && !Array.isArray(grantedScopes))
         throw new Error('请先查看并确认 Agent 的授权范围。');
       const scopes = enabled ? [...grantedScopes!] : [];
-      const matchingProducts = products.filter(product =>
-        product.dependencies.some(
-          dependency => dependency.agentKey === agentId,
-        ),
-      );
-      const product =
-        matchingProducts.length === 1 ? matchingProducts[0] : null;
+      const product = selectAgentProduct(agentId, {
+        products,
+        entitlements,
+        catalogRevision,
+      });
       if (
         enabled &&
         (!confirmedProductVersionId ||
@@ -779,8 +784,27 @@ export function useMiaoxunSession() {
           product.productVersionId !== confirmedProductVersionId)
       )
         throw new Error('请先查看并确认当前产品版本。');
+      if (!enabled) {
+        const removal = resolveAgentRemovalProduct(agentId, {
+          products,
+          entitlements,
+          catalogRevision,
+        });
+        if (
+          removal.state === 'ambiguous' ||
+          removal.state === 'unavailable' ||
+          (removal.state === 'selected' &&
+            removal.entitlement.productVersionId !==
+              confirmedProductVersionId) ||
+          (removal.state === 'legacy' && confirmedProductVersionId)
+        )
+          throw new Error(
+            '产品版本已变化或无法确定，请刷新目录后重新确认移除。',
+          );
+      }
       const confirmedState = agentAccessSnapshot(agents, ownedAgents, {
         products,
+        entitlements,
         catalogRevision,
       });
       const confirmedRevision = accessStateRevisionRef.current.value;
@@ -792,6 +816,7 @@ export function useMiaoxunSession() {
             agentAccessStateRef.current.ownedAgents,
             {
               products: agentAccessStateRef.current.products,
+              entitlements: agentAccessStateRef.current.entitlements,
               catalogRevision: agentAccessStateRef.current.catalogRevision,
             },
           );
@@ -832,7 +857,7 @@ export function useMiaoxunSession() {
           consentVersion,
           createIdempotencyKey(),
           scopes,
-          enabled ? confirmedProductVersionId : undefined,
+          confirmedProductVersionId,
         );
         assertCurrent();
         setSessionOwnedAgents(current => {
@@ -850,6 +875,7 @@ export function useMiaoxunSession() {
       agents,
       ownedAgents,
       products,
+      entitlements,
       catalogRevision,
       language,
       refreshBootstrap,

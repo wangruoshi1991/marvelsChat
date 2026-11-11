@@ -620,7 +620,7 @@ export function resolveAgentGrantedScopes(agent, requestedScopes) {
   if (!agentScopesMatchDeclaration(agent, scopes)) {
     throw new HttpError(
       400,
-      "添加 Agent 需要确认全部声明权限，请在“我”移除后重新添加。",
+      "添加 Agent 需要确认全部声明权限，请在“我”重新确认 Agent 权限。",
       { code: "AGENT_FULL_ACCESS_REQUIRED" },
     );
   }

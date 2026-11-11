@@ -4,6 +4,9 @@
 
 ## 产品与实现
 
+- [11月11日客户端、设备与PG复核](reviews/2026-11-11-current-state-audit.md)、[后台目录诊断](reviews/2026-11-11-agent-catalog-diagnostics.md)、[UI-Agent预览入口修复](reviews/2026-11-11-ui-agent-preview-entry.md)：漫画可见性门禁、Build60已安装证据、本地修复与仍待线上/真机验收边界，最新汇总见CURRENT。
+- [11月11日原位重新授权](reviews/2026-11-11-agent-product-reconsent.md)、[二楼与妙页交互审查](reviews/2026-11-11-gesture-flow-audit.md)：漫画新版未绑定产品的线上确证、精确用户同意/撤销、回弹连续性和减少动态效果修复；不代表修复已部署或通过真机验收。
+- [11月11日配套发布前预检](reviews/2026-11-11-agent-lifecycle-release-preflight.md)：精确本地提交范围、生产058只读基线、无迁移切换顺序、漫画产品与客户端发行门槛；尚未执行正式发布。
 - **[项目地图](project-map.md)**：工程职责、页面模块与源码入口。
 - **[设计状态清单](design-state-checklist.md)**：原型 33 个状态的逐条对照（状态名 / 现有实现文件 / 一致·不一致·缺失），后续按设计逐项验收的依据。
 - [11月6日协作与原Agent会话贯通](reviews/2026-11-06-workspace-conversation-integration.md)：讯页协作预览/sync、聊天贡献时间线、精确成果续聊、派生正文保护和隔离验收。

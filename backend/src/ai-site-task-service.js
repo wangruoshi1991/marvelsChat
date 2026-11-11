@@ -25,7 +25,7 @@ async function authorize(connection, userId, agent, { write = false, lockProfile
   if (!users[0] || users[0].status !== "active") fail(403, "SITE_TASK_ACCESS_REVOKED", "账号当前不可执行建站任务。");
   const grants = await connection.query("SELECT enabled, granted_scopes FROM user_agents WHERE user_id = ? AND agent_id = 'site-builder' FOR SHARE", [userId]);
   if (!grants[0]?.enabled || !agentScopesMatchDeclaration(agent, grants[0].granted_scopes)) {
-    fail(403, "SITE_TASK_ACCESS_REVOKED", "建站 Agent 授权已撤回或范围已变化，请在“我”移除后重新添加。");
+    fail(403, "SITE_TASK_ACCESS_REVOKED", "建站 Agent 授权已撤回或范围已变化，请在“我”重新确认 Agent 权限。");
   }
   await assertAgentProductEntitlement({ userId, agent, queryFn: connection.query.bind(connection) });
   const profiles = await connection.query(`SELECT p.*, u.ai_id FROM user_profiles p

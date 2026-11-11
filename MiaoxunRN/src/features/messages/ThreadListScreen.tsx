@@ -34,6 +34,7 @@ import { agentReplyPresentation } from './agentReplyPresentation';
 import { messageTextPreview } from './messageTextPresentation';
 import type { UIPreferences } from '../ui/uiPreferenceTypes';
 import { useStablePanResponder } from '../../shared/gestures/useStablePanResponder';
+import { useReduceMotion } from '../../shared/useReduceMotion';
 import {
   componentUIPreference,
   gestureUIPreference,
@@ -381,6 +382,7 @@ export function ThreadListScreen({
     [colors.border, colors.surface, xunTheme],
   );
   const { height, width } = useWindowDimensions();
+  const reduceMotion = useReduceMotion();
   const newActionPreference = componentUIPreference(
     uiPreferences,
     'messages',
@@ -416,7 +418,22 @@ export function ThreadListScreen({
   const pullOffset = useRef(new Animated.Value(0)).current;
   const pullOffsetX = useRef(new Animated.Value(0)).current;
   const pullCueDistance = useRef(new Animated.Value(0)).current;
+  const pullDrag = useRef<{ base: number | null; movement: number } | null>(
+    null,
+  );
+  const entranceActive = useRef(active);
+  entranceActive.current = active;
   const resetPull = useCallback(() => {
+    pullDrag.current = null;
+    if (reduceMotion) {
+      pullOffset.stopAnimation();
+      pullOffsetX.stopAnimation();
+      pullCueDistance.stopAnimation();
+      pullOffset.setValue(0);
+      pullOffsetX.setValue(0);
+      pullCueDistance.setValue(0);
+      return;
+    }
     Animated.parallel([
       Animated.spring(pullOffset, {
         toValue: 0,
@@ -437,12 +454,13 @@ export function ThreadListScreen({
         bounciness: 3,
       }),
     ]).start();
-  }, [pullCueDistance, pullOffset, pullOffsetX]);
+  }, [pullCueDistance, pullOffset, pullOffsetX, reduceMotion]);
   const resetPullState = useCallback(() => {
     // The conversation list is retained while the root tab or a modal route
     // changes. Stop an interrupted entrance animation so a later return to
     // 讯 never exposes a translated list or a stale opening lock.
     opening.current = false;
+    pullDrag.current = null;
     pullStartAtTop.current = false;
     pullOffset.stopAnimation();
     pullOffsetX.stopAnimation();
@@ -451,9 +469,21 @@ export function ThreadListScreen({
     pullOffsetX.setValue(0);
     pullCueDistance.setValue(0);
   }, [pullCueDistance, pullOffset, pullOffsetX]);
+  const movePull = (touch: NonNullable<typeof pullDrag.current>) => {
+    if (touch.base === null) return;
+    const horizontal = pullGesture.direction === 'right';
+    const offset = Math.max(
+      -150,
+      Math.min(150, touch.base + touch.movement * 0.72),
+    );
+    (horizontal ? pullOffsetX : pullOffset).setValue(offset);
+    (horizontal ? pullOffset : pullOffsetX).setValue(0);
+    pullCueDistance.setValue(Math.abs(offset));
+  };
   const pullResponder = useStablePanResponder(
     {
       onStartShouldSetPanResponderCapture: () => {
+        pullDrag.current = null;
         pullStartAtTop.current = scrollOffset.current <= 0;
         return false;
       },
@@ -476,23 +506,27 @@ export function ThreadListScreen({
             gesture.vy,
             0.1,
           )),
-      onPanResponderMove: (_event, gesture) =>
-        (() => {
-          const horizontal =
-            pullGesture.direction === 'left' ||
-            pullGesture.direction === 'right';
-          const movement = horizontal ? gesture.dx : gesture.dy;
-          const offset = Math.max(-150, Math.min(150, movement * 0.72));
-          if (horizontal) {
-            pullOffsetX.setValue(offset);
-            pullOffset.setValue(0);
-          } else {
-            pullOffset.setValue(offset);
-            pullOffsetX.setValue(0);
-          }
-          pullCueDistance.setValue(Math.abs(offset));
-        })(),
+      onPanResponderGrant: () => {
+        const touch = { base: null as number | null, movement: 0 };
+        pullDrag.current = touch;
+        const horizontal = pullGesture.direction === 'right';
+        pullCueDistance.stopAnimation();
+        (horizontal ? pullOffset : pullOffsetX).stopAnimation();
+        (horizontal ? pullOffsetX : pullOffset).stopAnimation(value => {
+          if (!entranceActive.current || pullDrag.current !== touch) return;
+          touch.base = value;
+          movePull(touch);
+        });
+      },
+      onPanResponderMove: (_event, gesture) => {
+        const touch = pullDrag.current;
+        if (!touch) return;
+        touch.movement =
+          pullGesture.direction === 'right' ? gesture.dx : gesture.dy;
+        movePull(touch);
+      },
       onPanResponderRelease: (_event, gesture) => {
+        pullDrag.current = null;
         if (
           pullGesture.enabled &&
           (pullDirectionMatches(
@@ -508,6 +542,11 @@ export function ThreadListScreen({
               pullGesture.velocityThreshold,
             ))
         ) {
+          if (reduceMotion) {
+            resetPull();
+            onOpenSecondFloor?.();
+            return;
+          }
           opening.current = true;
           const horizontal =
             pullGesture.direction === 'left' ||
@@ -549,6 +588,7 @@ export function ThreadListScreen({
   React.useEffect(() => {
     scrollOffset.current = 0;
     resetPullState();
+    return resetPullState;
   }, [active, resetPullState, selectedMessageTab]);
   const visibleThreads = threads.filter(
     thread => thread.agentId !== 'media-retrieval',
@@ -613,7 +653,8 @@ export function ThreadListScreen({
           ]}
         >
           {!noticeMode &&
-          !supportedEntranceGesture &&
+          (!supportedEntranceGesture ||
+            newActionPreference.visible === false) &&
           onOpenSecondFloor &&
           openSecondFloorPreference.visible !== false ? (
             <Pressable

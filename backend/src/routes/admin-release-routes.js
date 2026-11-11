@@ -7,10 +7,11 @@ import { listAdminPage } from "../admin-list-repository.js";
 import { query } from "../db.js";
 import { hasAdminPermission } from "../auth.js";
 import { z } from "zod";
+import { readAgentCatalogDiagnostics } from "../agent-catalog-diagnostics.js";
 
 const releaseIdSchema = z.string().uuid();
 
-export function registerAdminReleaseRoutes(app, { authenticate, asyncHandler, requireAdmin, service = agentPublishingService, listPage = listAdminPage, readRelease = getAgentRelease, runQuery = query } = {}) {
+export function registerAdminReleaseRoutes(app, { authenticate, asyncHandler, requireAdmin, service = agentPublishingService, listPage = listAdminPage, readRelease = getAgentRelease, runQuery = query, readCatalogDiagnostics = readAgentCatalogDiagnostics } = {}) {
   app.get("/api/admin/agent-registry", authenticate, requireAdmin("agents:manage"), asyncHandler(async (_req, res) => {
     res.json({ data: await service.listRegistry() });
   }));
@@ -35,12 +36,14 @@ export function registerAdminReleaseRoutes(app, { authenticate, asyncHandler, re
       runQuery(`SELECT h.id, h.from_status, h.to_status, h.reason, h.request_id, h.created_at, u.email AS actor_email
         FROM agent_release_status_history h LEFT JOIN users u ON u.id = h.actor_user_id
         WHERE h.release_id = ? ORDER BY h.created_at ASC, h.id ASC`, [release.id]),
-      productsVisible ? runQuery(`SELECT DISTINCT p.id, p.product_key, p.display_name, pv.version, pv.status
+      productsVisible ? runQuery(`SELECT DISTINCT p.id, p.product_key, p.display_name, pv.id AS product_version_id, pv.version, pv.status
         FROM product_agent_dependencies d JOIN product_versions pv ON pv.id = d.product_version_id
         JOIN products p ON p.id = pv.product_id WHERE d.agent_release_id = ? ORDER BY p.product_key, pv.version`, [release.id]) : [],
     ]);
+    const associatedProducts = products.map((row) => ({ id: row.id, productVersionId: row.product_version_id, productKey: row.product_key, displayName: row.display_name, version: row.version, status: row.status }));
+    const catalogDiagnostics = productsVisible ? await readCatalogDiagnostics({ release, products: associatedProducts }) : null;
     res.json({ data: { release, history: history.map((row) => ({ id: row.id, fromStatus: row.from_status, toStatus: row.to_status, reason: row.reason || null, requestId: row.request_id || null, actorEmail: row.actor_email || null, createdAt: row.created_at })),
-      productsVisible, products: products.map((row) => ({ id: row.id, productKey: row.product_key, displayName: row.display_name, version: row.version, status: row.status })) } });
+      productsVisible, products: associatedProducts, catalogDiagnostics } });
   }));
 
   app.post("/api/admin/agent-releases/:id/review", authenticate, requireAdmin("agents:manage"), asyncHandler(async (req, res) => {

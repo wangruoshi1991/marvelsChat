@@ -86,7 +86,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
     const expected = workspace.authority.coordinator;
     const grant = current.grants.find(item => item.agentId === coordinatorId);
     if (!expected || !grant?.enabled || !agentScopesMatchDeclaration(agent, grant.grantedScopes) || !expected.scopes.includes("agents:invoke") ||
-      !expected.scopes.every(scope => grant.grantedScopes.includes(scope) && agent.permissions.includes(scope))) fail(403, "WORKSPACE_ACCESS_REVOKED", "妙讯管家授权已撤回或范围已变化，请在“我”移除后重新添加。");
+      !expected.scopes.every(scope => grant.grantedScopes.includes(scope) && agent.permissions.includes(scope))) fail(403, "WORKSPACE_ACCESS_REVOKED", "妙讯管家授权已撤回或范围已变化，请在“我”重新确认 Agent 权限。");
     const selected = await resolveAIContextReferences({ userId: workspace.userId, refs: workspace.contextRefs,
       grantedScopes: expected.scopes, queryFn: connection.query.bind(connection), lock });
     return { ...current, selected };
@@ -319,7 +319,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
         const current = await access(connection, user.id, false);
         const scopes = [...new Set(["agents:invoke", ...body.contextRefs.map(ref => scopeFor[ref.kind])])];
         const grant = current.grants.find(item => item.agentId === coordinatorId);
-        if (!grant?.enabled || !agentScopesMatchDeclaration(agent, grant.grantedScopes) || !scopes.every(scope => grant.grantedScopes.includes(scope) && agent.permissions.includes(scope))) fail(403, "WORKSPACE_ACCESS_REQUIRED", "请在“我”添加妙讯管家并确认全部权限；已有授权范围不同请移除后重新添加。");
+        if (!grant?.enabled || !agentScopesMatchDeclaration(agent, grant.grantedScopes) || !scopes.every(scope => grant.grantedScopes.includes(scope) && agent.permissions.includes(scope))) fail(403, "WORKSPACE_ACCESS_REQUIRED", "请在“我”添加妙讯管家并确认全部权限；已有授权范围不同请重新确认 Agent 权限。");
         const entries = listExecutableWorkspaceCapabilities({ registeredAgents, grants: current.grants }).filter(entry =>
           !authorityCeiling || authorityCeiling.some(snapshot => hashSiteDocumentValue(snapshot) === hashSiteDocumentValue(entry)));
         const selected = await resolveAIContextReferences({ userId: user.id, refs: body.contextRefs, grantedScopes: scopes,
@@ -533,7 +533,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
     const current = await access(connection, userId);
     const grant = current.grants.find(item => item.agentId === "album-manager");
     const agent = await loadAgent("album-manager");
-    if (!grant?.enabled || !agentScopesMatchDeclaration(agent, grant.grantedScopes)) fail(403, "WORKSPACE_ACCESS_REVOKED", "相册 Agent 授权已撤回或范围已变化，请在“我”移除后重新添加。");
+    if (!grant?.enabled || !agentScopesMatchDeclaration(agent, grant.grantedScopes)) fail(403, "WORKSPACE_ACCESS_REVOKED", "相册 Agent 授权已撤回或范围已变化，请在“我”重新确认 Agent 权限。");
     const nodes = await connection.query("SELECT result FROM agent_workspace_nodes WHERE workspace_id = ? AND user_id = ? AND status = 'succeeded'", [workspaceId, userId]);
     const delivered = nodes.map(item => item.result?.artifact).find(item => item?.kind === "media_selection" && item.assets.some(asset => asset.id === assetId));
     if (!delivered) fail(404, "WORKSPACE_MEDIA_NOT_FOUND", "此素材不属于已完成的协作成果。");

@@ -9,7 +9,13 @@ import {
 import { appErrorText, textFor } from '../../shared/i18n';
 import { Language } from '../session/sessionTypes';
 import { agentScopeListLabel, hasUnknownAgentScope } from './agentPresentation';
-import { agentAccessSnapshot, resolveAgentProductAccess } from './agentAccess';
+import {
+  agentAccessMatchesDeclaration,
+  agentAccessSnapshot,
+  resolveAgentRemovalProduct,
+  resolveAgentProductAccess,
+  selectAgentProduct,
+} from './agentAccess';
 import {
   AlbumAIConsentVersion,
   albumAssistantConsentRequirement,
@@ -109,17 +115,21 @@ export function useAgentAccessConfirmation(options: Options) {
       return;
     const agent = agents.find(item => item.key === id);
     const owned = ownedAgents.find(item => item.id === id && item.enabled);
+    const productAccess = agent
+      ? resolveAgentProductAccess(agent, current.current)
+      : null;
     if (
       !current.current.accessToken ||
       !agent ||
       (action === 'remove' && !owned) ||
       (action === 'add' && !!owned) ||
       (action === 'reauthorize' &&
-        resolveAgentProductAccess(agent, {
-          products: current.current.products,
-          entitlements: current.current.entitlements,
-          catalogRevision: current.current.catalogRevision,
-        }) !== 'reconsent_required')
+        productAccess !== 'reconsent_required' &&
+        !(
+          productAccess === 'available' &&
+          owned &&
+          !agentAccessMatchesDeclaration(agent, owned)
+        ))
     ) {
       reportError(
         id,
@@ -135,10 +145,21 @@ export function useAgentAccessConfirmation(options: Options) {
     }
     const enabled = action !== 'remove';
     const scopes = enabled ? [...agent.permissions] : [];
-    const products = current.current.products.filter(product =>
-      product.dependencies.some(dependency => dependency.agentKey === id),
-    );
-    const product = products.length === 1 ? products[0] : null;
+    const removal = enabled
+      ? null
+      : resolveAgentRemovalProduct(id, current.current);
+    if (removal?.state === 'ambiguous' || removal?.state === 'unavailable') {
+      reportError(
+        id,
+        new Error('无法确定待撤回的产品授权版本，请刷新目录或联系管理员。'),
+      );
+      return;
+    }
+    const product = enabled
+      ? selectAgentProduct(id, current.current)
+      : removal?.state === 'selected'
+      ? removal.product
+      : null;
     if (
       enabled &&
       (!current.current.catalogRevision ||
@@ -148,7 +169,15 @@ export function useAgentAccessConfirmation(options: Options) {
       reportError(id, new Error('产品版本不可用，请刷新目录后重新确认。'));
       return;
     }
-    const productVersionId = enabled ? product?.productVersionId : undefined;
+    const productVersionId = enabled
+      ? product?.productVersionId || undefined
+      : removal?.state === 'selected'
+      ? removal.entitlement.productVersionId
+      : undefined;
+    const productVersion =
+      removal?.state === 'selected'
+        ? removal.entitlement.version
+        : product?.version;
     if (enabled && hasUnknownAgentScope(scopes)) {
       reportError(
         id,
@@ -209,11 +238,15 @@ export function useAgentAccessConfirmation(options: Options) {
         : 'Add',
     );
     const description = [
-      enabled && product ? `${product.displayName} · v${product.version}` : '',
+      product ? `${product.displayName} · v${productVersion}` : '',
       action === 'add' || action === 'reauthorize'
         ? textFor(language, '授权范围：', 'Access scopes: ') + scopeText(scopes)
         : textFor(language, '移除后撤回：', 'Revoke on removal: ') +
-          scopeText(owned?.grantedScopes || []),
+          scopeText(
+            removal?.state === 'selected'
+              ? removal.entitlement.grantedScopes
+              : owned?.grantedScopes || [],
+          ),
       action === 'remove'
         ? textFor(
             language,
@@ -284,7 +317,7 @@ export function useAgentAccessConfirmation(options: Options) {
             setErrors(value => ({ ...value, [id]: '' }));
             try {
               const setAccess = current.current.onSetAgentEnabled;
-              await (enabled
+              await (enabled || productVersionId
                 ? setAccess(
                     id,
                     enabled,

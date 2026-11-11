@@ -12,6 +12,7 @@ import {
 import { AgentDTO } from '../../models/api';
 import { AgentWorkspace } from '../../models/agentWorkspace';
 import { Palette } from '../../shared/theme';
+import { useReduceMotion } from '../../shared/useReduceMotion';
 import { Language } from '../session/sessionTypes';
 import { MiaoTaskCard } from '../miao/MiaoTaskCard';
 import type { UIPreferences } from '../ui/uiPreferenceTypes';
@@ -56,6 +57,7 @@ export function AgentWorkspaceCard({
   viewState?: MiaoCardViewState;
   onViewStateChange?: (state: MiaoCardViewState) => void;
 }) {
+  const reduceMotion = useReduceMotion();
   const [foreground, setForeground] = useState(
     AppState.currentState !== 'background' &&
       AppState.currentState !== 'inactive',
@@ -326,7 +328,7 @@ export function AgentWorkspaceCard({
       <Modal
         visible={Boolean(selectedParticipant)}
         transparent
-        animationType="slide"
+        animationType={reduceMotion ? 'none' : 'slide'}
         onRequestClose={() => setSelectedParticipant(null)}
       >
         <View

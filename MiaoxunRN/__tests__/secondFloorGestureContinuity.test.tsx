@@ -69,61 +69,103 @@ afterEach(async () => {
   jest.restoreAllMocks();
 });
 
-test('conversation snapshot refresh cannot jump a held second-floor pull back to its last delta', async () => {
-  const open = jest.fn();
-  const screen = () =>
-    provider(
-      <ThreadListScreen
-        palette={palettes.light}
-        language="zh"
-        threads={[]}
-        agents={[]}
-        notices={[]}
-        unreadNoticeCount={0}
-        selectedMessageTab="chat"
-        renderUserAvatar={() => <View />}
-        onOpenThread={jest.fn()}
-        onOpenMessageActions={jest.fn()}
-        onOpenSearch={jest.fn()}
-        onSelectMessageTab={jest.fn()}
-        onMarkNotificationRead={jest.fn()}
-        onAcceptFriendRequest={jest.fn()}
-        onRejectFriendRequest={jest.fn()}
-        onOpenSecondFloor={open}
-        uiPreferences={preferences()}
-      />,
-    );
-  await act(async () => {
-    tree = Renderer.create(screen());
-  });
-  const surface = () =>
-    tree!.root.findByProps({ testID: 'messages-pull-surface' });
-  const dy = () => {
-    const node = surface()
-      .findAllByType(Animated.View)
-      .find(item =>
-        StyleSheet.flatten(item.props.style)?.transform?.some(
-          (transform: { translateY?: unknown }) => 'translateY' in transform,
-        ),
-      )!;
-    const transform = StyleSheet.flatten(node.props.style).transform!.find(
-      (item: { translateY?: unknown }) => 'translateY' in item,
-    ) as { translateY: { __getValue: () => number } };
-    return transform.translateY.__getValue();
-  };
-  surface().props.onStartShouldSetResponderCapture(event(300, 300, 1000));
-  expect(
-    surface().props.onMoveShouldSetResponderCapture(event(300, 320, 1100)),
-  ).toBe(true);
-  act(() => {
-    surface().props.onResponderGrant(event(300, 320, 1100));
-    surface().props.onResponderMove(event(320, 450, 1700));
-  });
-  expect(dy()).toBeCloseTo(93.6);
-  await act(async () => tree!.update(screen()));
-  act(() => surface().props.onResponderMove(event(450, 455, 1800)));
-  expect(dy()).toBeCloseTo(97.2);
-});
+test.each([false, true])(
+  'conversation snapshot refresh cannot jump a held second-floor pull back to its last delta (Reduce Motion %s)',
+  async reduceMotion => {
+    jest
+      .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
+      .mockResolvedValue(reduceMotion);
+    const open = jest.fn();
+    const screen = () =>
+      provider(
+        <ThreadListScreen
+          palette={palettes.light}
+          language="zh"
+          threads={[]}
+          agents={[]}
+          notices={[]}
+          unreadNoticeCount={0}
+          selectedMessageTab="chat"
+          renderUserAvatar={() => <View />}
+          onOpenThread={jest.fn()}
+          onOpenMessageActions={jest.fn()}
+          onOpenSearch={jest.fn()}
+          onSelectMessageTab={jest.fn()}
+          onMarkNotificationRead={jest.fn()}
+          onAcceptFriendRequest={jest.fn()}
+          onRejectFriendRequest={jest.fn()}
+          onOpenSecondFloor={open}
+          uiPreferences={preferences()}
+        />,
+      );
+    await act(async () => {
+      tree = Renderer.create(screen());
+    });
+    const surface = () =>
+      tree!.root.findByProps({ testID: 'messages-pull-surface' });
+    const translation = () => {
+      const node = surface()
+        .findAllByType(Animated.View)
+        .find(item =>
+          StyleSheet.flatten(item.props.style)?.transform?.some(
+            (transform: { translateY?: unknown }) => 'translateY' in transform,
+          ),
+        )!;
+      const transform = StyleSheet.flatten(node.props.style).transform!.find(
+        (item: { translateY?: unknown }) => 'translateY' in item,
+      ) as { translateY: { __getValue: () => number } };
+      return transform.translateY;
+    };
+    const dy = () => translation().__getValue();
+    surface().props.onStartShouldSetResponderCapture(event(300, 300, 1000));
+    expect(
+      surface().props.onMoveShouldSetResponderCapture(event(300, 320, 1100)),
+    ).toBe(true);
+    act(() => {
+      surface().props.onResponderGrant(event(300, 320, 1100));
+      surface().props.onResponderMove(event(320, 450, 1700));
+    });
+    expect(dy()).toBeCloseTo(93.6);
+    await act(async () => tree!.update(screen()));
+    act(() => surface().props.onResponderMove(event(450, 455, 1800)));
+    expect(dy()).toBeCloseTo(97.2);
+    if (reduceMotion) {
+      const timing = jest.spyOn(Animated, 'timing');
+      act(() =>
+        surface().props.onResponderRelease(event(455, 455, 1900, false)),
+      );
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(timing).not.toHaveBeenCalled();
+      expect(dy()).toBe(0);
+    } else {
+      // A native spring can still be returning when the next finger lands.
+      // Its current frame must become the new drag base, not jump to zero.
+      const value = translation() as unknown as Animated.Value;
+      act(() => value.setValue(36));
+      const stopped: Array<(offset: number) => void> = [];
+      jest.spyOn(value, 'stopAnimation').mockImplementation(callback => {
+        if (callback) stopped.push(callback);
+      });
+      surface().props.onStartShouldSetResponderCapture(event(300, 300, 2000));
+      act(() => {
+        surface().props.onResponderGrant(event(300, 320, 2100));
+        surface().props.onResponderMove(event(320, 340, 2200));
+      });
+      expect(dy()).toBe(36);
+      expect(stopped).toHaveLength(1);
+      act(() => stopped[0](36));
+      expect(dy()).toBeCloseTo(50.4);
+      const resetFrame = dy();
+      act(() => {
+        surface().props.onResponderRelease(event(340, 340, 2300, false));
+        value.setValue(0);
+        stopped[0](36);
+      });
+      expect(dy()).toBe(0);
+      expect(resetFrame).toBeCloseTo(50.4);
+    }
+  },
+);
 
 test('second-floor return keeps the original distance when a preference refresh arrives during the swipe', async () => {
   const close = jest.fn();
@@ -240,4 +282,30 @@ test('fixed second-floor return area follows the finger while content scrollers 
   };
   expect(translated.translateY.__getValue()).toBeCloseTo(-57.6);
   expect(close).not.toHaveBeenCalled();
+  const value = (
+    StyleSheet.flatten(root.props.style).opacity as {
+      _parent: Animated.Value;
+    }
+  )._parent;
+  act(() => value.setValue(0.05));
+  const frozenFrame = translated.translateY.__getValue();
+  const stopped: Array<(offset: number) => void> = [];
+  jest.spyOn(value, 'stopAnimation').mockImplementation(callback => {
+    if (callback) stopped.push(callback);
+  });
+  surface().props.onStartShouldSetResponderCapture(event(300, 300, 2000));
+  act(() => {
+    surface().props.onResponderGrant(event(300, 280, 2100));
+    surface().props.onResponderMove(event(280, 260, 2200));
+  });
+  expect(translated.translateY.__getValue()).toBeCloseTo(frozenFrame);
+  expect(stopped).toHaveLength(1);
+  act(() => stopped[0](0.05));
+  expect(translated.translateY.__getValue()).toBeCloseTo(frozenFrame - 14.4);
+  act(() => {
+    surface().props.onResponderRelease(event(260, 260, 2300, false));
+    value.setValue(0);
+    stopped[0](0.05);
+  });
+  expect(translated.translateY.__getValue()).toBe(0);
 });

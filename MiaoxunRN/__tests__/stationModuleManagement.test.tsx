@@ -293,7 +293,7 @@ describe('station module management', () => {
       .join(' ');
     expect(text).toContain('添加于 2026.10.28');
     expect(text).toContain(agent.description);
-    expect(text).toContain('授权范围不同，请移除后重新添加。');
+    expect(text).toContain('授权范围已变化，当前产品不可授权');
     expect(text).not.toMatch(/NaN|Lv\.|偏好匹配|协作 \d|原创|★|☆/);
     expect(text.match(/添加于 /g)).toHaveLength(1);
 

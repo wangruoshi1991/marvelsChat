@@ -7,6 +7,7 @@ import {
   identityFormValues,
   validateAvatarFile,
   avatarPreviewFrame,
+  catalogDiagnosticsPresentation,
 } from "../src/publishing-model.js";
 
 const release = {
@@ -178,4 +179,29 @@ test("avatar upload accepts only supported images within the actual 2 MB boundar
     () => validateAvatarFile({ type: "image/png", size: 0 }),
     /1 字节/
   );
+});
+
+test("published release without an available product explains App invisibility independently of publication", () => {
+  const result = catalogDiagnosticsPresentation({ visible: false, selectedReleaseVisible: false, sourceVersion: "0.1.4", reasons: [{ code: "AGENT_PRODUCT_UNAVAILABLE", message: "单独发布 release 不会进入 App 目录。" }], products: [] });
+  assert.equal(result.type, "warning");
+  assert.equal(result.title, "当前 App 目录不可见");
+  assert.match(result.description, /0\.1\.4/);
+  assert.deepEqual(result.reasons, ["单独发布 release 不会进入 App 目录。"]);
+});
+
+test("catalog visibility never claims user authorization or device acceptance", () => {
+  const value = { visible: true, selectedReleaseVisible: true, sourceVersion: "0.1.4", reasons: [], products: [] };
+  assert.equal(catalogDiagnosticsPresentation(value).type, "success");
+  assert.match(catalogDiagnosticsPresentation(value).description, /用户.*授权.*真机验收/);
+  const other = catalogDiagnosticsPresentation({ ...value, selectedReleaseVisible: false });
+  assert.equal(other.type, "warning");
+  assert.match(other.title, /所选 release 未被采用/);
+});
+
+test("missing catalog diagnosis is an explicit unavailable state", () => {
+  for (const value of [null, {}, { visible: true }, { visible: false, selectedReleaseVisible: false, reasons: [{}], products: [] }, { visible: false, selectedReleaseVisible: false, reasons: [], products: [{ productVersionId: "one" }] }]) {
+    const result = catalogDiagnosticsPresentation(value);
+    assert.equal(result.type, "error");
+    assert.match(result.title, /诊断不可用/);
+  }
 });

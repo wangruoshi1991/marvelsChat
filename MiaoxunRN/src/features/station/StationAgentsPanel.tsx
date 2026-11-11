@@ -127,7 +127,13 @@ export function StationAgentsPanel({
         ownedCards
           .filter(owned => {
             const agent = registeredByKey.get(owned.id);
-            return agent && productAccess(agent) === 'reconsent_required';
+            if (!agent) return false;
+            const access = productAccess(agent);
+            return (
+              access === 'reconsent_required' ||
+              (access === 'available' &&
+                !agentAccessMatchesDeclaration(agent, owned))
+            );
           })
           .map(agent => agent.id),
       ),

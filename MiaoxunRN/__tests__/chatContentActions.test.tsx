@@ -28,6 +28,8 @@ import { palettes, productColors } from '../src/shared/theme';
 import { MessageInlineAction } from '../src/shared/ui';
 import { agentWorkspace, workspaceStep } from '../__fixtures__/agentWorkspace';
 import { useWorkspaceContributions } from '../src/features/messages/useWorkspaceContributions';
+import { defaultUIPreferences } from '../src/features/ui/uiPreferences';
+import { uiPreferencesApi } from '../src/services/api/uiPreferencesApi';
 import {
   prepareSpeechRecognition,
   startSpeechRecognition,
@@ -36,6 +38,9 @@ import {
 jest.mock('../src/services/speechToText', () => ({
   prepareSpeechRecognition: jest.fn(),
   startSpeechRecognition: jest.fn(),
+}));
+jest.mock('../src/services/api/uiPreferencesApi', () => ({
+  uiPreferencesApi: { getUIPreferencePreview: jest.fn() },
 }));
 jest.mock('../src/features/ai/useAITasks', () => ({
   useAITasks: () => ({
@@ -133,11 +138,87 @@ describe('Chat content actions', () => {
       onActionMessage: jest.fn(),
       ...overrides,
     };
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(<ChatMessageItem {...props} />);
     });
     return props;
   };
+
+  it.each(['ui-agent', 'miaoxun-butler'])(
+    'offers the protected preview in %s chat and applies it only on explicit confirmation',
+    async agentId => {
+      const previewId = '224348d9-e2a3-4b52-97e9-03d2c3016542';
+      const beforePreferences = defaultUIPreferences();
+      jest.mocked(uiPreferencesApi.getUIPreferencePreview).mockResolvedValue({
+        id: previewId,
+        status: 'pending',
+        baseRevision: 3,
+        expiresAt: '2099-01-01T00:00:00.000Z',
+        patch: { fontScale: 1.2 },
+        beforePreferences,
+        preferences: { ...beforePreferences, fontScale: 1.2 },
+        intent: '放大文字',
+        rationale: '提高可读性',
+        affectedSurfaces: ['miao'],
+      });
+      const confirm = jest.fn(async () => undefined);
+      await renderMessage({
+        token: 'owner',
+        thread: { ...thread, kind: 'agent', peerUserId: null, agentId },
+        item: {
+          ...message,
+          senderType: 'agent',
+          content: '请先查看界面调整预览，确认后才会应用。',
+          metadata: { uiPreferencePreview: { id: previewId } },
+        },
+        onConfirmUIPreferences: confirm,
+      });
+      expect(uiPreferencesApi.getUIPreferencePreview).toHaveBeenCalledWith(
+        'owner',
+        previewId,
+      );
+      const apply = renderer.root.findByProps({
+        accessibilityLabel: '应用界面调整',
+      });
+      expect(confirm).not.toHaveBeenCalled();
+      await ReactTestRenderer.act(async () => apply.props.onPress());
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(confirm).toHaveBeenCalledWith(previewId, 3);
+    },
+  );
+
+  it.each([
+    ['ordinary Agent', 'comic-diary', {}],
+    ['user message', 'ui-agent', { senderType: 'user' }],
+    ['recalled message', 'ui-agent', { recalledAt: '2026-11-11T00:00:00Z' }],
+    ['deleted message', 'ui-agent', { deletedAt: '2026-11-11T00:00:00Z' }],
+    ['unconfirmed local message', 'ui-agent', { localStatus: 'sending' }],
+  ] as const)(
+    'does not load or confirm a UI preview from %s',
+    async (_label, agentId, overrides) => {
+      const confirm = jest.fn(async () => undefined);
+      await renderMessage({
+        token: 'owner',
+        thread: { ...thread, kind: 'agent', peerUserId: null, agentId },
+        item: {
+          ...message,
+          senderType: 'agent',
+          metadata: {
+            uiPreferencePreview: {
+              id: '224348d9-e2a3-4b52-97e9-03d2c3016542',
+            },
+          },
+          ...overrides,
+        },
+        onConfirmUIPreferences: confirm,
+      });
+      expect(uiPreferencesApi.getUIPreferencePreview).not.toHaveBeenCalled();
+      expect(
+        renderer.root.findAllByProps({ accessibilityLabel: '应用界面调整' }),
+      ).toHaveLength(0);
+      expect(confirm).not.toHaveBeenCalled();
+    },
+  );
 
   it('shares/copies the real message and passes its context to Butler', async () => {
     const share = jest.spyOn(Share, 'share').mockResolvedValue({

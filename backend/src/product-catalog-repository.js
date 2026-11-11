@@ -49,15 +49,20 @@ function sameScopes(left = [], right = []) {
   return a.length === b.length && a.every((scope, index) => scope === b[index]);
 }
 
+export function productDependencyBlockers(dependency) {
+  const blockers = [];
+  if (dependency?.releaseStatus !== "published") blockers.push({ code: "RELEASE_NOT_PUBLISHED", message: "依赖的 Agent release 尚未发布。" });
+  if (dependency?.readiness?.ready !== true) blockers.push({ code: "AGENT_NOT_READY", message: "依赖的 Agent release 就绪检查未通过。" });
+  if (dependency?.registryStatus !== "registered") blockers.push({ code: "AGENT_NOT_REGISTERED", message: "依赖的 Agent 未注册。" });
+  if (dependency?.registryVersion !== dependency?.version) blockers.push({ code: "REGISTRY_VERSION_STALE", message: "依赖的 release 与数据库 registry 版本不一致。" });
+  if (!sameScopes(dependency?.declaredScopes, dependency?.registryDeclaredScopes)) blockers.push({ code: "REGISTRY_SCOPES_STALE", message: "依赖的 release 与 registry 权限声明不一致。" });
+  if (dependency?.identity?.key !== dependency?.agentKey || !isCompleteAgentIdentity(dependency?.identity)) blockers.push({ code: "IDENTITY_INCOMPLETE", message: "依赖的 Agent 发布身份不完整或 key 不匹配。" });
+  if (!dependency?.contractHash) blockers.push({ code: "RELEASE_CONTRACT_INCOMPLETE", message: "依赖的 Agent release 合同缺失。" });
+  return blockers;
+}
+
 export function isCurrentProductDependency(dependency) {
-  return dependency?.releaseStatus === "published" &&
-    dependency?.readiness?.ready === true &&
-    dependency?.registryStatus === "registered" &&
-    dependency?.registryVersion === dependency?.version &&
-    sameScopes(dependency.declaredScopes, dependency.registryDeclaredScopes) &&
-    dependency?.identity?.key === dependency?.agentKey &&
-    Boolean(dependency?.contractHash) &&
-    isCompleteAgentIdentity(dependency.identity);
+  return productDependencyBlockers(dependency).length === 0;
 }
 
 function productContractPayload(product) {
@@ -119,21 +124,34 @@ export function createProductCatalogRepository({
       [randomUUID(), threadId, userId, alias, `${alias} 已添加，可以开始对话。`, JSON.stringify({ source, agentId: agentKey })]);
   }
 
-  // A user can enable several products that depend on the same Agent. The
-  // user_agents row is a projection of all enabled product entitlements, so a
-  // later product consent can never narrow or overwrite an earlier grant.
+  // A user can enable several products that depend on the same Agent. Only
+  // currently executable, exactly consented versions contribute to its display
+  // projection. Historical stored-enabled grants stay in the ledger without
+  // blocking a new explicit consent or resurrecting stale scopes/identities.
   async function reconcileUserAgentProjection(q, { userId, agentKeys = null, source = "product_enable" }) {
     const keyList = agentKeys ? [...new Set(agentKeys)] : [];
     const filter = keyList.length ? " AND d.agent_key = ANY(?::text[])" : "";
     const params = keyList.length ? [userId, keyList] : [userId];
-    const rows = await q(`SELECT d.agent_key, d.required_scopes, r.identity_snapshot, r.declared_scopes
+    const rows = await q(`SELECT d.agent_key, d.required_scopes, r.identity_snapshot, r.declared_scopes,
+        e.product_id, e.product_version_id, e.contract_hash AS entitlement_contract_hash,
+        e.granted_scopes AS entitlement_granted_scopes
       FROM user_entitlements e
       JOIN product_agent_dependencies d ON d.product_version_id = e.product_version_id
       JOIN agent_releases r ON r.id = d.agent_release_id
       WHERE e.user_id = ? AND e.status = 'enabled'${filter}
       ORDER BY d.agent_key`, params);
     const grants = new Map();
+    const currentProducts = new Map();
     for (const row of rows) {
+      const versionId = String(row.product_version_id).trim();
+      if (!currentProducts.has(versionId)) {
+        const product = await getProduct(String(row.product_id).trim(), { connection: { query: q }, productVersionId: versionId });
+        const granted = parseJson(row.entitlement_granted_scopes, []);
+        const required = [...new Set((product?.dependencies || []).flatMap(dependency => dependency.scopes))];
+        currentProducts.set(versionId, Boolean(product?.status === "published" && productIsExecutable(product) &&
+          product.contractHash === row.entitlement_contract_hash && Array.isArray(granted) && sameScopes(required, granted)));
+      }
+      if (!currentProducts.get(versionId)) continue;
       const identity = parseJson(row.identity_snapshot, null);
       if (!isCompleteAgentIdentity(identity)) {
         throw new HttpError(409, `Agent dependency ${row.agent_key} identity is incomplete`, { code: "IDENTITY_INCOMPLETE" });

@@ -39,7 +39,7 @@ export async function assertCurrentAgentAccess({ userId, agent, grantedScopes, c
     WHERE a.user_id = ? AND a.agent_id = ? AND u.status = 'active'${lock ? " FOR SHARE OF a" : ""}`, [userId, agent.key]);
   const currentScopes = rows[0]?.granted_scopes || [];
   if (!rows[0]?.enabled || !agentScopesMatchDeclaration(agent, currentScopes) || !grantedScopes.every(scope => currentScopes.includes(scope))) {
-    throw new HttpError(403, "Agent 授权已撤回或范围已变化，请在“我”移除后重新添加。", { code: "AI_ACCESS_REVOKED" });
+    throw new HttpError(403, "Agent 授权已撤回或范围已变化，请在“我”重新确认 Agent 权限。", { code: "AI_ACCESS_REVOKED" });
   }
   await assertAgentProductEntitlement({ userId, agent, queryFn });
   return resolveAIContextReferences({ userId, refs: contextRefs,
@@ -63,7 +63,7 @@ export function assertAgentAvailable(agentContext, agentId) {
   const access = agentContext.ownedAgents.find((item) => item.id === agentId && item.enabled);
   if (!access) throw new HttpError(403, "Agent is not enabled for this account");
   if (!agentScopesMatchDeclaration(agent, access.grantedScopes)) {
-    throw new HttpError(403, "Agent 授权范围已变化，请在“我”移除后重新添加。", { code: "AI_ACCESS_REVOKED" });
+    throw new HttpError(403, "Agent 授权范围已变化，请在“我”重新确认 Agent 权限。", { code: "AI_ACCESS_REVOKED" });
   }
   return { agent, access, grantedScopes: [...access.grantedScopes] };
 }
