@@ -309,3 +309,119 @@ test('fixed second-floor return area follows the finger while content scrollers 
   });
   expect(translated.translateY.__getValue()).toBe(0);
 });
+
+describe('second-floor exit completion', () => {
+  const session = {
+    token: 'isolated-fixture',
+    appearance: 'light',
+    language: 'zh',
+    profile: emptyProfile,
+    stationContent: emptyStationContent,
+    agents: [],
+    ownedAgents: [],
+    agentReadiness: {},
+    relationships: emptyRelationships,
+    notices: [],
+    unreadNoticeCount: 0,
+    uiPreferences: preferences(),
+  } as unknown as ReturnType<typeof useMiaoxunSession>;
+  const floor = (onClose: () => void, active = true) =>
+    provider(
+      <SecondFloorScreen
+        active={active}
+        palette={palettes.light}
+        language="zh"
+        session={session}
+        onClose={onClose}
+        onOpenFriendThread={jest.fn()}
+        onOpenProfile={jest.fn()}
+        onOpenSettings={jest.fn()}
+        onOpenDeleteAccount={jest.fn()}
+        onOpenNotices={jest.fn()}
+        onOpenPostComposer={jest.fn()}
+      />,
+    );
+  const requestClose = () =>
+    tree!.root
+      .findByProps({ testID: 'floor-return-gesture' })
+      .props.onAccessibilityAction({
+        nativeEvent: { actionName: 'activate' },
+      });
+  const progress = () =>
+    (
+      StyleSheet.flatten(
+        tree!.root.findByProps({ testID: 'second-floor' }).props.style,
+      ).opacity as {
+        _parent: Animated.Value & { __getValue: () => number };
+      }
+    )._parent;
+  const prepare = async () => {
+    jest
+      .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
+      .mockResolvedValue(false);
+    const close = jest.fn();
+    await act(async () => {
+      tree = Renderer.create(floor(close));
+    });
+    const value = progress();
+    const callbacks: Array<(result: { finished: boolean }) => void> = [];
+    const timing = jest
+      .spyOn(Animated, 'timing')
+      .mockImplementation((animatedValue, config) => ({
+        start: callback => {
+          (animatedValue as Animated.Value).setValue(config.toValue as number);
+          if (callback) callbacks.push(callback);
+        },
+        stop: jest.fn(),
+        reset: jest.fn(),
+      }));
+    return { close, value, callbacks, timing };
+  };
+
+  test('successful close stays at the exit endpoint until removal and ignores duplicate completion', async () => {
+    const { close, value, callbacks, timing } = await prepare();
+    act(requestClose);
+    expect(close).not.toHaveBeenCalled();
+    expect(value.__getValue()).toBe(1);
+    act(requestClose);
+    expect(timing).toHaveBeenCalledTimes(1);
+    act(() => callbacks[0]({ finished: true }));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(value.__getValue()).toBe(1);
+    act(() => callbacks[0]({ finished: true }));
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(['inactive', 'unmounted'] as const)(
+    'late native completion after the floor is %s cannot close a later route',
+    async state => {
+      const { close, value, callbacks } = await prepare();
+      act(requestClose);
+      if (state === 'inactive') {
+        await act(async () => tree!.update(floor(close, false)));
+      } else {
+        await act(async () => tree!.unmount());
+        tree = undefined;
+      }
+      const stoppedFrame = value.__getValue();
+      act(() => callbacks[0]({ finished: true }));
+      expect(close).not.toHaveBeenCalled();
+      expect(value.__getValue()).toBe(stoppedFrame);
+    },
+  );
+
+  test('cancelled completion restores the floor and permits another close', async () => {
+    const { close, value, callbacks, timing } = await prepare();
+    act(requestClose);
+    act(() => callbacks[0]({ finished: false }));
+    expect(close).not.toHaveBeenCalled();
+    expect(value.__getValue()).toBe(0);
+    act(requestClose);
+    expect(timing).toHaveBeenCalledTimes(2);
+    act(() => callbacks[0]({ finished: true }));
+    expect(close).not.toHaveBeenCalled();
+    expect(value.__getValue()).toBe(1);
+    act(() => callbacks[1]({ finished: true }));
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+});

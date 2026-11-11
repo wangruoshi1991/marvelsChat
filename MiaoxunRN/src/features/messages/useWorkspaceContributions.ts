@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { WorkspaceContribution } from '../../models/agentWorkspace';
+import {
+  WorkspaceContribution,
+  WorkspaceContributionUnavailableCounts,
+  emptyWorkspaceContributionUnavailableCounts,
+  workspaceContributionUnavailableReasons,
+} from '../../models/agentWorkspace';
 import { agentWorkspaceApi } from '../../services/api/agentWorkspaceApi';
 
 type State = {
@@ -9,6 +14,7 @@ type State = {
   selectionKey: string;
   contributions: WorkspaceContribution[];
   unavailable: number;
+  unavailableReasons: WorkspaceContributionUnavailableCounts;
   hasMore: boolean;
   error: string;
   loading: boolean;
@@ -35,9 +41,11 @@ export function useWorkspaceContributions(
   const [activation, setActivation] = useState(0);
   const foregroundRef = useRef(foreground);
   const generation = useRef(0);
-  const action = useRef<(more: boolean) => Promise<void>>(async () => {});
+  const action = useRef<(more: boolean, manual?: boolean) => Promise<void>>(
+    async () => {},
+  );
   const loadMore = useCallback(() => action.current(true), []);
-  const retry = useCallback(() => action.current(false), []);
+  const retry = useCallback(() => action.current(false, true), []);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', value => {
       const wasForeground = foregroundRef.current;
@@ -80,17 +88,18 @@ export function useWorkspaceContributions(
         selectionKey,
         contributions: [],
         unavailable: 0,
+        unavailableReasons: emptyWorkspaceContributionUnavailableCounts(),
         hasMore: false,
         error: '协作贡献校验超时，请重试。',
         loading: false,
         historyLoaded: pageCount > 1,
       });
     };
-    const refresh = async (more: boolean) => {
+    const refresh = async (more: boolean, manual = false) => {
       if (!valid()) return;
       if (busy) {
-        if (more) {
-          pendingMore = true;
+        if (more) pendingMore = true;
+        if (more || manual) {
           setState(previous =>
             previous ? { ...previous, loading: true } : previous,
           );
@@ -103,7 +112,7 @@ export function useWorkspaceContributions(
       clearTimeout(timer);
       clearTimeout(deadline);
       deadline = setTimeout(expire, 15000);
-      if (more)
+      if (more || manual)
         setState(previous =>
           previous ? { ...previous, loading: true, error: '' } : previous,
         );
@@ -112,6 +121,8 @@ export function useWorkspaceContributions(
       try {
         const items = new Map<string, WorkspaceContribution>();
         let unavailable = 0;
+        const unavailableReasons =
+          emptyWorkspaceContributionUnavailableCounts();
         let before: string | undefined;
         let hasMore = false;
         let fetched = 0;
@@ -138,6 +149,8 @@ export function useWorkspaceContributions(
           lastId = page.scannedIds[page.scannedIds.length - 1] || lastId;
           page.contributions.forEach(item => items.set(item.step.id, item));
           unavailable += page.unavailable;
+          for (const reason of workspaceContributionUnavailableReasons)
+            unavailableReasons[reason] += page.unavailableReasons[reason];
           hasMore = page.hasMore;
           const foundHere = Boolean(
             boundary && page.scannedIds.includes(boundary),
@@ -198,6 +211,7 @@ export function useWorkspaceContributions(
             selectionKey,
             contributions: visibleContributions,
             unavailable,
+            unavailableReasons,
             hasMore,
             error: selectionError,
             loading: pendingMore,
@@ -223,6 +237,7 @@ export function useWorkspaceContributions(
             selectionKey,
             contributions: [],
             unavailable: 0,
+            unavailableReasons: emptyWorkspaceContributionUnavailableCounts(),
             hasMore: false,
             error:
               error instanceof Error ? error.message : '无法读取协作贡献。',
@@ -272,6 +287,7 @@ export function useWorkspaceContributions(
       : {
           contributions: [],
           unavailable: 0,
+          unavailableReasons: emptyWorkspaceContributionUnavailableCounts(),
           hasMore: false,
           error: '',
           loading: false,

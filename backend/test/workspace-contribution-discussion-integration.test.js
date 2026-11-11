@@ -355,10 +355,10 @@ async function readContribution(nodeId, agentId = "comic-diary", owner = fixture
   return { status: response.status, ...await response.json() };
 }
 
-integration("strict contribution reads support contracts 2 and 3 and reject other versions", async () => {
+integration("strict contribution reads support contracts 2, 3 and 4 and reject other versions", async () => {
   for (const nodeId of [fixture.workspace.nodeId, undefined]) {
-    for (const version of [null, "1", "4"]) assert.equal((await readContribution(nodeId, "comic-diary", fixture, version)).status, 426);
-    for (const version of ["2", "3"]) assert.equal((await readContribution(nodeId, "comic-diary", fixture, version)).status, 200);
+    for (const version of [null, "1", "5"]) assert.equal((await readContribution(nodeId, "comic-diary", fixture, version)).status, 426);
+    for (const version of ["2", "3", "4"]) assert.equal((await readContribution(nodeId, "comic-diary", fixture, version)).status, 200);
   }
   const paged = await readContribution(undefined, "comic-diary", fixture, "3");
   assert.equal(paged.data.hasMore, false);

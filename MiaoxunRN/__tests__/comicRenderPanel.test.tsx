@@ -1,8 +1,16 @@
 import React from 'react';
-import { Alert, AppState, AppStateStatus, Image, Text } from 'react-native';
+import {
+  Alert,
+  AppState,
+  AppStateStatus,
+  Image,
+  Text,
+  TextInput,
+} from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { comicRenderTask } from '../__fixtures__/comicRender';
 import { StationComicDiaryPanel } from '../src/features/station/StationComicDiaryPanel';
+import { ComicCreationScreen } from '../src/features/station/ComicCreationScreen';
 import { useMiaoxunSession } from '../src/features/session/useMiaoxunSession';
 import { StationComicDiaryDTO, StationDiaryEntryDTO } from '../src/models/api';
 import { ComicRenderTaskDTO } from '../src/models/comicRender';
@@ -175,6 +183,170 @@ test('storyboard saving never renders images; generation confirms the saved fram
     expect.stringMatching(/^[0-9a-f-]{36}$/),
   );
   await act(async () => resolve(queued));
+  expect(text()).toContain('排队中');
+});
+
+test('a prompt-only comic saves without reading a diary and restores only standalone drafts', async () => {
+  const input = {
+    ...props(),
+    diary: undefined,
+    initialPrompt: '画一个人在月球种花的四格漫画',
+    comicDiaries: [
+      draft,
+      { ...draft, id: 'standalone', sourceDiaryEntryId: null },
+    ],
+  };
+  await act(async () => {
+    renderer = Renderer.create(<StationComicDiaryPanel {...input} />);
+  });
+  expect(renderer!.root.findByType(TextInput).props.value).toBe(
+    input.initialPrompt,
+  );
+  expect(comicRenderApi.list).toHaveBeenCalledTimes(1);
+  expect(comicRenderApi.list).toHaveBeenCalledWith('owner', 'standalone');
+  await act(async () => button('生成并保存分镜').props.onPress());
+  expect(input.session.createStationComicDiary).toHaveBeenCalledWith({
+    prompt: input.initialPrompt,
+    style: 'slice-of-life',
+    frameCount: 4,
+  });
+  expect(comicRenderApi.create).not.toHaveBeenCalled();
+  act(() => button('生成漫画画面').props.onPress());
+  expect(comicRenderApi.create).not.toHaveBeenCalled();
+  await act(async () => confirm()());
+  expect(comicRenderApi.create).toHaveBeenCalledWith(
+    'owner',
+    'standalone',
+    expect.any(String),
+  );
+});
+
+test('duplicate storyboard submissions run once and preserve an explicit failure for retry', async () => {
+  const input = props();
+  let reject!: (error: Error) => void;
+  jest.mocked(input.session.createStationComicDiary).mockImplementation(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      }),
+  );
+  await mount(input);
+  const create = button('重新生成').props.onPress;
+  act(() => {
+    create();
+    create();
+  });
+  expect(input.session.createStationComicDiary).toHaveBeenCalledTimes(1);
+  const failure = new MiaoxunApiError('请重新确认漫画授权。', { status: 403 });
+  await act(async () => reject(failure));
+  expect(text()).toContain('请重新确认漫画授权。');
+  expect(input.onActionError).toHaveBeenCalledWith(failure);
+  expect(button('重新生成').props.disabled).toBe(false);
+});
+
+test('a late storyboard response does not report success or reset another login', async () => {
+  const input = props();
+  let resolve!: (value: StationComicDiaryDTO) => void;
+  jest.mocked(input.session.createStationComicDiary).mockImplementation(
+    () =>
+      new Promise(done => {
+        resolve = done;
+      }),
+  );
+  await mount(input);
+  act(() => {
+    button('重新生成').props.onPress();
+  });
+  await act(async () =>
+    renderer!.update(
+      <StationComicDiaryPanel
+        {...input}
+        session={{ ...input.session, token: 'other' }}
+      />,
+    ),
+  );
+  await act(async () => resolve(draft));
+  expect(input.onActionMessage).not.toHaveBeenCalled();
+  expect(input.onActionError).not.toHaveBeenCalled();
+});
+
+test('an overlong explicit prompt is preserved for editing and cannot submit silently truncated input', async () => {
+  const input = {
+    ...props(),
+    diary: undefined,
+    initialPrompt: '画'.repeat(1201),
+    comicDiaries: [],
+  };
+  await act(async () => {
+    renderer = Renderer.create(<StationComicDiaryPanel {...input} />);
+  });
+  expect(renderer!.root.findByType(TextInput).props.value).toBe(
+    input.initialPrompt,
+  );
+  expect(button('生成并保存分镜').props.disabled).toBe(true);
+  expect(text()).toContain('1200');
+  expect(input.session.createStationComicDiary).not.toHaveBeenCalled();
+});
+
+test('the comic creation screen reviews a saved prompt-only draft before separately confirming real image tasks', async () => {
+  const saved = {
+    ...draft,
+    sourceDiaryEntryId: null,
+    frames: draft.frames.map(frame => ({
+      ...frame,
+      scene: '宇航员在月球花园里浇水',
+      dialogue: '第一朵花开了',
+      mood: '期待',
+      camera: '近景',
+    })),
+  };
+  const input = {
+    ...props(),
+    initialPrompt: '月球上种花',
+    onBack: jest.fn(),
+    session: {
+      ...props().session,
+      stationContent: { comicDiaries: [] },
+    } as unknown as ReturnType<typeof useMiaoxunSession>,
+  };
+  await act(async () => {
+    renderer = Renderer.create(<ComicCreationScreen {...input} />);
+  });
+  await act(async () => button('生成并保存分镜').props.onPress());
+  expect(input.session.createStationComicDiary).toHaveBeenCalledWith({
+    prompt: input.initialPrompt,
+    style: 'slice-of-life',
+    frameCount: 4,
+  });
+  expect(comicRenderApi.create).not.toHaveBeenCalled();
+  await act(async () =>
+    renderer!.update(
+      <ComicCreationScreen
+        {...input}
+        session={{
+          ...input.session,
+          stationContent: {
+            ...input.session.stationContent,
+            comicDiaries: [saved],
+          },
+        }}
+      />,
+    ),
+  );
+  expect(text()).toContain(saved.title);
+  expect(text()).toContain('宇航员在月球花园里浇水');
+  expect(text()).toContain('第一朵花开了');
+  expect(text()).toContain('期待');
+  expect(text()).toContain('近景');
+  act(() => button('生成漫画画面').props.onPress());
+  expect(alert.mock.calls[0][1]).toContain('2');
+  expect(comicRenderApi.create).not.toHaveBeenCalled();
+  await act(async () => confirm()());
+  expect(comicRenderApi.create).toHaveBeenCalledWith(
+    'owner',
+    saved.id,
+    expect.any(String),
+  );
   expect(text()).toContain('排队中');
 });
 

@@ -18,7 +18,26 @@ import { executeWorkspaceCapability, listExecutableWorkspaceCapabilities, listUn
 import { createStationSiteDraft, applyStationSiteDraft } from "./station-agent-repository.js";
 import { hashSiteDocumentValue, readSiteDocumentResources, validateStoredSiteDocument } from "./site-document-repository.js";
 
-const fail = (status, code, message) => { throw new HttpError(status, message, { code }); };
+// Read diagnostics never enter the original HTTP error details or alter access
+// decisions. In particular, WORKSPACE_ACCESS_REVOKED also covers immutable
+// capability mismatches, so its status/code alone cannot imply reauthorization.
+const contributionReadReasons = new WeakMap();
+const fail = (status, code, message, readReason) => {
+  const error = new HttpError(status, message, { code });
+  if (readReason) contributionReadReasons.set(error, readReason);
+  throw error;
+};
+const sourceReadFailures = new Set([
+  "AI_CONTEXT_NOT_FOUND", "AI_CONTEXT_CHANGED", "WORKSPACE_ORIGIN_CHANGED", "WORKSPACE_SOURCES_CHANGED",
+  "WORKSPACE_MEDIA_CHANGED", "WORKSPACE_PROFILE_MISSING", "SITE_TASK_PROFILE_CHANGED", "SITE_TASK_RESOURCES_CHANGED",
+  "WORKSPACE_SITE_BINDING_INVALID", "SITE_TASK_DRAFT_CHANGED", "SITE_DOCUMENT_UNAVAILABLE",
+]);
+function contributionReadReason(error) {
+  if (contributionReadReasons.has(error)) return contributionReadReasons.get(error);
+  if (error.details?.code === "WORKSPACE_AGENT_CHANGED") return "version";
+  if (error.details?.code === "AI_ACCESS_REVOKED") return "authorization";
+  return sourceReadFailures.has(error.details?.code) ? "source" : "unavailable";
+}
 const coordinatorId = "miaoxun-butler";
 const scopeFor = { "station-file": "files:read", "station-album": "album:read", "station-photo": "album:read", "station-diary": "station:read", "chat-message": "messages:read" };
 const sourceIdentities = references => references.map(({ kind, id, version }) => `${kind}:${id}:${version}`).sort();
@@ -62,6 +81,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
     if (!user || user.status !== "active") fail(403, "WORKSPACE_ACCESS_REVOKED", "账号当前不可执行协作任务。");
     const rows = await connection.query(`SELECT agent_id, enabled, granted_scopes FROM user_agents WHERE user_id = ? ORDER BY agent_id${lock ? " FOR SHARE" : ""}`, [userId]);
     const grants = [];
+    const unavailableProductAgents = new Set();
     for (const row of rows) {
       let enabled = row.enabled;
       if (enabled && row.agent_id !== coordinatorId) {
@@ -69,12 +89,15 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
         try { await assertAgentProductEntitlement({ userId, agent, queryFn: connection.query.bind(connection) }); }
         catch (error) {
           if (error.details?.code !== "AGENT_PRODUCT_ENTITLEMENT_REQUIRED") throw error;
+          // Product validation also covers unavailable publication/contracts;
+          // its failure alone cannot promise that new user consent will help.
+          unavailableProductAgents.add(row.agent_id);
           enabled = false;
         }
       }
       grants.push({ agentId: row.agent_id, enabled, grantedScopes: enabled ? row.granted_scopes : [] });
     }
-    return { user: publicUser(user), grants };
+    return { user: publicUser(user), grants, unavailableProductAgents };
   }
   async function coordinator(connection, workspace, lock = true) {
     const current = await access(connection, workspace.userId, lock);
@@ -86,7 +109,8 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
     const expected = workspace.authority.coordinator;
     const grant = current.grants.find(item => item.agentId === coordinatorId);
     if (!expected || !grant?.enabled || !agentScopesMatchDeclaration(agent, grant.grantedScopes) || !expected.scopes.includes("agents:invoke") ||
-      !expected.scopes.every(scope => grant.grantedScopes.includes(scope) && agent.permissions.includes(scope))) fail(403, "WORKSPACE_ACCESS_REVOKED", "妙讯管家授权已撤回或范围已变化，请在“我”重新确认 Agent 权限。");
+      !expected.scopes.every(scope => grant.grantedScopes.includes(scope) && agent.permissions.includes(scope))) fail(403, "WORKSPACE_ACCESS_REVOKED", "妙讯管家授权已撤回或范围已变化，请在“我”重新确认 Agent 权限。",
+        expected?.scopes.includes("agents:invoke") && expected.scopes.every(scope => agent.permissions.includes(scope)) ? "authorization" : undefined);
     const selected = await resolveAIContextReferences({ userId: workspace.userId, refs: workspace.contextRefs,
       grantedScopes: expected.scopes, queryFn: connection.query.bind(connection), lock });
     return { ...current, selected };
@@ -113,7 +137,8 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
     const agent = await loadAgent(origin.agentId);
     if (!agent || agent.version !== origin.agentVersion) fail(409, "WORKSPACE_AGENT_CHANGED", "专业 Agent 已更新，请重新提出需求。");
     const grant = current.grants.find(item => item.agentId === origin.agentId);
-    if (!grant?.enabled || !agentScopesMatchDeclaration(agent, grant.grantedScopes)) fail(403, "WORKSPACE_ACCESS_REVOKED", "专业 Agent 授权已撤回或范围已变化。");
+    if (!grant?.enabled || !agentScopesMatchDeclaration(agent, grant.grantedScopes)) fail(403, "WORKSPACE_ACCESS_REVOKED", "专业 Agent 授权已撤回或范围已变化。",
+      current.unavailableProductAgents.has(origin.agentId) ? "unavailable" : "authorization");
     const entries = listExecutableWorkspaceCapabilities({ registeredAgents: [agent], grants: current.grants });
     const entry = entries.find(item => item.capability === origin.capability);
     if (workspace.authority?.capabilities?.length !== 1 || !entry ||
@@ -132,9 +157,17 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
     const registeredAgents = await loadAgents();
     const entries = listExecutableWorkspaceCapabilities({ registeredAgents, grants: current.grants });
     // A later grant does not expand a running task's original authority.
-    return { ...current, unavailableCapabilities: listUnavailableWorkspaceCapabilities({ registeredAgents, grants: current.grants,
+    return { ...current, registeredAgents, unavailableCapabilities: listUnavailableWorkspaceCapabilities({ registeredAgents, grants: current.grants,
       authority: workspace.authority }), entries: entries.filter(entry => workspace.authority.capabilities.some(snapshot =>
       hashSiteDocumentValue(snapshot) === hashSiteDocumentValue(entry))) };
+  }
+  function unavailableNodeReason(current, node, registeredAgents = current.registeredAgents) {
+    const agent = registeredAgents?.find(item => item.key === node.agentId);
+    const grant = current.grants.find(item => item.agentId === node.agentId);
+    if (!agent || agent.version !== node.agentVersion) return "version";
+    if (current.unavailableProductAgents.has(node.agentId)) return "unavailable";
+    if (!grant?.enabled || !agentScopesMatchDeclaration(agent, grant.grantedScopes)) return "authorization";
+    return "unavailable";
   }
   async function authorizeNode(connection, workspace, node) {
     const current = await catalogue(connection, workspace);
@@ -156,7 +189,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
       return current;
     }
     const declared = current.entries.find(item => item.agentId === node.agentId && item.agentVersion === node.agentVersion && item.capability === node.capability);
-    if (!declared) fail(403, "WORKSPACE_ACCESS_REVOKED", "专业 Agent 的授权或版本已变化，任务已停止。");
+    if (!declared) fail(403, "WORKSPACE_ACCESS_REVOKED", "专业 Agent 的授权或版本已变化，任务已停止。", unavailableNodeReason(current, node));
     await resolveAIContextReferences({ userId: workspace.userId, refs: node.contextRefIndexes.map(index => workspace.contextRefs[index]),
       grantedScopes: declared.requiredScopes, queryFn: connection.query.bind(connection), lock: true });
     return { ...current, declaration: declared };
@@ -170,7 +203,8 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
     await coordinatorGrant(connection, workspace, current, agent);
     const snapshot = workspace.authority.capabilities.find(entry => entry.agentId === node.agentId &&
       entry.agentVersion === node.agentVersion && entry.capability === node.capability);
-    const entries = listExecutableWorkspaceCapabilities({ registeredAgents: await loadAgents(), grants: current.grants });
+    const registeredAgents = await loadAgents();
+    const entries = listExecutableWorkspaceCapabilities({ registeredAgents, grants: current.grants });
     const declared = snapshot && entries.find(entry => {
       if (entry.agentId !== snapshot.agentId || entry.capability !== snapshot.capability) return false;
       const currentContract = { ...entry }, previousContract = { ...snapshot };
@@ -180,7 +214,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
       }
       return hashSiteDocumentValue(currentContract) === hashSiteDocumentValue(previousContract);
     });
-    if (!declared) fail(403, "WORKSPACE_ACCESS_REVOKED", "专业 Agent 的授权或能力声明已变化，成果目前不可读取。");
+    if (!declared) fail(403, "WORKSPACE_ACCESS_REVOKED", "专业 Agent 的授权或能力声明已变化，成果目前不可读取。", unavailableNodeReason(current, node, registeredAgents));
     await resolveAIContextReferences({ userId: workspace.userId, refs: node.contextRefIndexes.map(index => workspace.contextRefs[index]),
       grantedScopes: snapshot.requiredScopes, queryFn: connection.query.bind(connection), lock: true });
     return { ...current, declaration: snapshot };
@@ -566,10 +600,11 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
     const { title, content } = parseWorkspaceTextArtifact(node.result.artifact);
     return { goal: workspace.goal, contribution: { title, content } };
   };
-  const listAgentContributions = async ({ userId, agentId, before, pagination = true }) => {
+  const listAgentContributions = async ({ userId, agentId, before, pagination = true, includeUnavailableReasons = false }) => {
     z.string().uuid().parse(userId);
     z.string().regex(/^[a-z0-9-]{1,80}$/).parse(agentId);
     if (before !== undefined) z.string().uuid().parse(before);
+    const unavailable = (id, reason = "unavailable") => ({ unavailable: true, id, ...(includeUnavailableReasons && { reason }) });
     let rows;
     if (before === undefined) {
       rows = await runQuery(`SELECT id,workspace_id FROM agent_workspace_nodes
@@ -605,7 +640,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
         try { workspace = await repo.readOwnedWorkspaceRecord(connection, { userId, workspaceId }); }
         catch (error) {
           if (error instanceof HttpError && error.status === 404) {
-            if (pagination) for (const id of nodeIds) results.set(id, { unavailable: true, id });
+            if (pagination) for (const id of nodeIds) results.set(id, unavailable(id, "source"));
             return;
           }
           throw error;
@@ -614,7 +649,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
         for (const nodeId of nodeIds) {
           const node = workspace.nodes.find(item => item.id === nodeId && item.agentId === agentId);
           if (!node) {
-            if (pagination) results.set(nodeId, { unavailable: true, id: nodeId });
+            if (pagination) results.set(nodeId, unavailable(nodeId));
             continue;
           }
           try {
@@ -628,7 +663,7 @@ export function createAgentWorkspaceService({ transaction = withTransaction, que
               step: workspace.steps.find(item => item.id === node.id) });
           } catch (error) {
             if (!(error instanceof HttpError) || ![403, 404, 409].includes(error.status)) throw error;
-            results.set(node.id, { unavailable: true, id: node.id });
+            results.set(node.id, unavailable(node.id, contributionReadReason(error)));
           }
         }
       });

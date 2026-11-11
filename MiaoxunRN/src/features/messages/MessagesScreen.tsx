@@ -71,6 +71,7 @@ import type { WorkspaceContribution } from './WorkspaceContributionCard';
 import { buildChatTimeline, ChatTimelineItem } from './chatTimeline';
 import { useContributionFocus } from './useContributionFocus';
 import { useChatFollow } from './useChatFollow';
+import { WorkspaceContributionNotice } from './WorkspaceContributionNotice';
 
 export type { MessageTab, UserAvatarRenderer };
 
@@ -126,6 +127,7 @@ export function ChatScreen({
   initialWorkspaceContext,
   agentGrantedScopes,
   onOpenAgentAccess,
+  onOpenComicCreation,
   onOpenWorkspace,
   onPreserveDraftForAccess,
   onRefreshThread,
@@ -169,6 +171,7 @@ export function ChatScreen({
   initialWorkspaceContext?: WorkspaceDiscussionContext;
   agentGrantedScopes?: string[];
   onOpenAgentAccess?: () => void;
+  onOpenComicCreation?: (prompt: string) => void;
   onOpenWorkspace?: (
     workspace: AgentWorkspace,
     draft?: WorkspaceContinuationDraft,
@@ -995,6 +998,67 @@ export function ChatScreen({
               onError={onActionError}
             />
           ) : null}
+          {thread.agentId === 'comic-diary' &&
+          thread.kind !== 'group' &&
+          onOpenComicCreation ? (
+            <View style={taskStyles.comicEntry}>
+              <Text
+                style={[
+                  taskStyles.comicHint,
+                  { color: messagePalette.secondaryText },
+                ]}
+              >
+                {textFor(
+                  language,
+                  '先整理分镜，再确认生成画面；图片生成需要单独授权。',
+                  'Prepare a storyboard, then confirm image generation with separate image access.',
+                )}
+              </Text>
+              <View>
+                {agentGrantedScopes &&
+                !agentGrantedScopes.includes('media:image:generate') &&
+                openAgentAccess ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={textFor(
+                      language,
+                      '查看图片授权',
+                      'Review image access',
+                    )}
+                    onPress={openAgentAccess}
+                    style={taskStyles.refresh}
+                  >
+                    <Text style={{ color: messagePalette.text }}>
+                      {textFor(language, '查看图片授权', 'Review image access')}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={textFor(
+                    language,
+                    '制作漫画',
+                    'Create comic',
+                  )}
+                  onPress={() => {
+                    cancelChatSpeech();
+                    Keyboard.dismiss();
+                    onOpenComicCreation(draft);
+                  }}
+                  style={taskStyles.refresh}
+                >
+                  <Text
+                    style={[
+                      taskStyles.comicAction,
+                      { color: messagePalette.text },
+                    ]}
+                  >
+                    {textFor(language, '制作漫画', 'Create comic')}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
           <View
             ref={messageAreaRef}
             collapsable={false}
@@ -1057,18 +1121,14 @@ export function ChatScreen({
               }
               ListFooterComponent={
                 <View>
-                  {contributions.unavailable ? (
-                    <Text
-                      accessibilityRole="alert"
-                      style={{ color: palette.rose }}
-                    >
-                      {textFor(
-                        language,
-                        '部分协作贡献因授权或来源变化无法读取。',
-                        'Some contributions are unavailable because access or sources changed.',
-                      )}
-                    </Text>
-                  ) : null}
+                  <WorkspaceContributionNotice
+                    reasons={contributions.unavailableReasons}
+                    palette={messagePalette}
+                    language={language}
+                    loading={contributions.loading}
+                    onRetry={contributions.retry}
+                    onOpenAgentAccess={openAgentAccess}
+                  />
                   {tasks.error || tasks.decisionError ? (
                     <View>
                       <Text
@@ -1349,5 +1409,14 @@ export function ChatScreen({
 
 const taskStyles = StyleSheet.create({
   refresh: { minHeight: 44, padding: 12 },
+  comicHint: { flex: 1 },
+  comicAction: { fontWeight: '600' },
+  comicEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 16,
+    paddingRight: 4,
+    gap: 8,
+  },
   contextResetNotice: { paddingHorizontal: 16, paddingVertical: 8 },
 });

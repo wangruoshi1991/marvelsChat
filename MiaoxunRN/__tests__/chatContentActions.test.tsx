@@ -56,6 +56,12 @@ jest.mock('../src/features/messages/useWorkspaceContributions', () => ({
   useWorkspaceContributions: jest.fn(() => ({
     contributions: [],
     unavailable: 0,
+    unavailableReasons: {
+      authorization: 0,
+      source: 0,
+      version: 0,
+      unavailable: 0,
+    },
     hasMore: false,
     error: '',
   })),
@@ -104,6 +110,12 @@ describe('Chat content actions', () => {
     jest.mocked(useWorkspaceContributions).mockReturnValue({
       contributions: [],
       unavailable: 0,
+      unavailableReasons: {
+        authorization: 0,
+        source: 0,
+        version: 0,
+        unavailable: 0,
+      },
       hasMore: false,
       error: '',
       loading: false,
@@ -690,6 +702,58 @@ describe('Chat content actions', () => {
     expect(onDeleteMessage).toHaveBeenCalledWith(message.id);
   });
 
+  it('opens comic creation with only the current editable draft and preserves chat on return', async () => {
+    const onOpenComicCreation = jest.fn();
+    const onSend = jest.fn();
+    const props = {
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread: { ...thread, kind: 'agent' as const, agentId: 'comic-diary' },
+      agents: [],
+      renderUserAvatar: () => <View />,
+      onBack: jest.fn(),
+      onSend,
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError: jest.fn(),
+      onOpenComicCreation,
+      agentGrantedScopes: [],
+    };
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    expect(onOpenComicCreation).not.toHaveBeenCalled();
+    const prompt = '海边的一天，想做成四格漫画';
+    await ReactTestRenderer.act(() =>
+      renderer.root.findByType(ChatComposer).props.onChangeDraft(prompt),
+    );
+    await ReactTestRenderer.act(() =>
+      renderer.root
+        .findByProps({ accessibilityLabel: '制作漫画' })
+        .props.onPress(),
+    );
+    expect(onOpenComicCreation).toHaveBeenCalledWith(prompt);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(renderer.root.findByType(ChatComposer).props.draft).toBe(prompt);
+    await ReactTestRenderer.act(() =>
+      renderer.update(<ChatScreen {...props} thread={thread} />),
+    );
+    expect(
+      renderer.root.findAllByProps({ accessibilityLabel: '制作漫画' }),
+    ).toHaveLength(0);
+    await ReactTestRenderer.act(() =>
+      renderer.update(
+        <ChatScreen {...props} thread={{ ...props.thread, kind: 'group' }} />,
+      ),
+    );
+    expect(
+      renderer.root.findAllByProps({ accessibilityLabel: '制作漫画' }),
+    ).toHaveLength(0);
+  });
+
   it('disables list scrolling while global content actions are open', async () => {
     const props = {
       palette: palettes.light,
@@ -778,6 +842,12 @@ describe('Chat content actions', () => {
     jest.mocked(useWorkspaceContributions).mockReturnValue({
       contributions: [{ workspace, step: workspace.steps[0] }],
       unavailable: 0,
+      unavailableReasons: {
+        authorization: 0,
+        source: 0,
+        version: 0,
+        unavailable: 0,
+      },
       hasMore: false,
       error: '',
       loading: false,
@@ -835,6 +905,12 @@ describe('Chat content actions', () => {
     jest.mocked(useWorkspaceContributions).mockReturnValue({
       contributions: [],
       unavailable: 0,
+      unavailableReasons: {
+        authorization: 0,
+        source: 0,
+        version: 0,
+        unavailable: 0,
+      },
       hasMore: false,
       error: '',
       loading: false,
@@ -882,6 +958,12 @@ describe('Chat content actions', () => {
     jest.mocked(useWorkspaceContributions).mockReturnValue({
       contributions: [],
       unavailable: 0,
+      unavailableReasons: {
+        authorization: 0,
+        source: 0,
+        version: 0,
+        unavailable: 0,
+      },
       hasMore: false,
       error: '',
       loading: false,
@@ -900,6 +982,12 @@ describe('Chat content actions', () => {
     jest.mocked(useWorkspaceContributions).mockReturnValue({
       contributions: [],
       unavailable: 0,
+      unavailableReasons: {
+        authorization: 0,
+        source: 0,
+        version: 0,
+        unavailable: 0,
+      },
       hasMore: false,
       error: '',
       loading: false,
@@ -952,6 +1040,12 @@ describe('Chat content actions', () => {
     jest.mocked(useWorkspaceContributions).mockReturnValue({
       contributions: [recent],
       unavailable: 0,
+      unavailableReasons: {
+        authorization: 0,
+        source: 0,
+        version: 0,
+        unavailable: 0,
+      },
       hasMore: true,
       error: '',
       loading: false,
@@ -975,6 +1069,12 @@ describe('Chat content actions', () => {
     jest.mocked(useWorkspaceContributions).mockReturnValue({
       contributions: [recent, earlier],
       unavailable: 0,
+      unavailableReasons: {
+        authorization: 0,
+        source: 0,
+        version: 0,
+        unavailable: 0,
+      },
       hasMore: false,
       error: '',
       loading: false,
@@ -1051,6 +1151,12 @@ describe('Chat content actions', () => {
     jest.mocked(useWorkspaceContributions).mockReturnValue({
       contributions: [{ workspace, step: workspace.steps[0] }],
       unavailable: 0,
+      unavailableReasons: {
+        authorization: 0,
+        source: 0,
+        version: 0,
+        unavailable: 0,
+      },
       hasMore: false,
       error: '',
       loading: false,

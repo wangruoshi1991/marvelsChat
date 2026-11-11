@@ -5,6 +5,7 @@ import React from 'react';
 import {
   ActivityIndicator,
   GestureResponderEvent,
+  Keyboard,
   LayoutChangeEvent,
   Pressable,
   StyleSheet,
@@ -40,6 +41,20 @@ const maxInputHeight = 132;
 const inputLineHeight = 21;
 const inputVerticalPadding = 22;
 const quickCommandLongPressMs = 450;
+const emojiChoices = [
+  ['😊', '微笑', 'Smile'],
+  ['😂', '笑哭', 'Tears of joy'],
+  ['👍', '赞', 'Thumbs up'],
+  ['❤️', '爱心', 'Heart'],
+  ['🎉', '庆祝', 'Celebration'],
+  ['🙏', '感谢', 'Thank you'],
+  ['🙂', '友好', 'Friendly face'],
+  ['🤔', '思考', 'Thinking'],
+  ['👏', '鼓掌', 'Applause'],
+  ['💪', '加油', 'Flexed biceps'],
+  ['✨', '闪亮', 'Sparkles'],
+  ['👋', '挥手', 'Wave'],
+] as const;
 
 export type ComposerTool =
   | '相册'
@@ -137,9 +152,21 @@ export function ChatComposer({
   const [inputHeight, setInputHeight] = React.useState(() =>
     estimateInputHeight(draft),
   );
-  const [composerToolsOpen, setComposerToolsOpen] = React.useState(false);
+  const [composerPanel, setComposerPanel] = React.useState<
+    'tools' | 'emoji' | null
+  >(null);
+  const composerToolsOpen = composerPanel === 'tools';
+  const emojiPickerOpen = composerPanel === 'emoji';
   const longSpeechActive = React.useRef(false);
   const inputRef = React.useRef<TextInput>(null);
+  const inputSelection = React.useRef<{ start: number; end: number } | null>(
+    null,
+  );
+  const latestDraft = React.useRef(draft);
+  if (latestDraft.current !== draft) {
+    latestDraft.current = draft;
+    inputSelection.current = null;
+  }
   const [quickCommandOffset, setQuickCommandOffset] = React.useState(0);
   const [quickCommandViewportWidth, setQuickCommandViewportWidth] =
     React.useState(0);
@@ -194,6 +221,29 @@ export function ChatComposer({
     '妙猜猜',
     '文件库',
   ];
+  const insertEmoji = (emoji: string) => {
+    if (isSending) return;
+    const selection = inputSelection.current;
+    const start = Math.max(
+      0,
+      Math.min(selection?.start ?? draft.length, draft.length),
+    );
+    const end = Math.max(
+      start,
+      Math.min(selection?.end ?? start, draft.length),
+    );
+    const nextDraft = `${draft.slice(0, start)}${emoji}${draft.slice(end)}`;
+    const cursor = start + emoji.length;
+    latestDraft.current = nextDraft;
+    inputSelection.current = { start: cursor, end: cursor };
+    onChangeDraft(nextDraft);
+    setComposerPanel(null);
+    requestAnimationFrame(() => {
+      if (latestDraft.current !== nextDraft) return;
+      inputRef.current?.focus();
+      inputRef.current?.setSelection(cursor, cursor);
+    });
+  };
 
   return (
     <View
@@ -405,6 +455,60 @@ export function ChatComposer({
           </Pressable>
         </View>
       ) : null}
+      <View style={[accessStyles.editor, xunTheme && accessStyles.xunEditor]}>
+        <TextInput
+          ref={inputRef}
+          accessibilityLabel={textFor(language, '消息输入框', 'Message input')}
+          value={draft}
+          placeholder={textFor(
+            language,
+            `发给${threadTitle}`,
+            `Message ${displayText(language, threadTitle)}`,
+          )}
+          placeholderTextColor={palette.secondaryText}
+          multiline
+          // Native scrolling must keep the caret visible while an automatic
+          // wrap or paste is still waiting for its content-size event in JS.
+          scrollEnabled
+          onChangeText={value => {
+            latestDraft.current = value;
+            inputSelection.current = null;
+            onChangeDraft(value);
+            const estimatedHeight = estimateInputHeight(value);
+            setInputHeight(current =>
+              estimatedHeight > current ? estimatedHeight : current,
+            );
+          }}
+          onSelectionChange={event => {
+            inputSelection.current = event.nativeEvent.selection;
+          }}
+          onContentSizeChange={event => {
+            const contentHeight = Math.ceil(
+              event.nativeEvent.contentSize.height,
+            );
+            const nextHeight = Math.max(
+              minInputHeight,
+              Math.min(maxInputHeight, contentHeight),
+            );
+            setInputHeight(current =>
+              current === nextHeight ? current : nextHeight,
+            );
+          }}
+          onFocus={() => {
+            setComposerPanel(null);
+            onFocusInput();
+          }}
+          style={[
+            chatLayoutStyles.input,
+            { height: inputHeight },
+            {
+              backgroundColor: palette.input,
+              color: palette.text,
+              borderColor: inputBorder,
+            },
+          ]}
+        />
+      </View>
       <View
         style={[
           chatLayoutStyles.composerRow,
@@ -456,74 +560,34 @@ export function ChatComposer({
             <Mic color={palette.text} size={19} strokeWidth={2.5} />
           )}
         </Pressable>
-        <TextInput
-          ref={inputRef}
-          accessibilityLabel={textFor(language, '消息输入框', 'Message input')}
-          value={draft}
-          placeholder={textFor(
-            language,
-            `发给${threadTitle}`,
-            `Message ${displayText(language, threadTitle)}`,
-          )}
-          placeholderTextColor={palette.secondaryText}
-          multiline
-          scrollEnabled={inputHeight >= maxInputHeight}
-          onChangeText={value => {
-            onChangeDraft(value);
-            const estimatedHeight = estimateInputHeight(value);
-            setInputHeight(current =>
-              estimatedHeight > current ? estimatedHeight : current,
-            );
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={textFor(language, '添加表情', 'Add emoji')}
+          accessibilityState={{
+            expanded: emojiPickerOpen,
+            disabled: isSending,
           }}
-          onContentSizeChange={event => {
-            const contentHeight = Math.ceil(
-              event.nativeEvent.contentSize.height,
-            );
-            const nextHeight = Math.max(
-              minInputHeight,
-              Math.min(maxInputHeight, contentHeight),
-            );
-            setInputHeight(current =>
-              current === nextHeight ? current : nextHeight,
-            );
-          }}
-          onFocus={() => {
-            setComposerToolsOpen(false);
-            onFocusInput();
+          disabled={isSending}
+          onPress={() => {
+            setComposerPanel(emojiPickerOpen ? null : 'emoji');
+            if (!emojiPickerOpen) Keyboard.dismiss();
           }}
           style={[
-            chatLayoutStyles.input,
-            { height: inputHeight },
-            {
-              backgroundColor: palette.input,
-              color: palette.text,
-              borderColor: inputBorder,
-            },
+            chatLayoutStyles.composerButton,
+            xunTheme && accessStyles.xunCircleButton,
+            accessStyles.transparentButton,
           ]}
-        />
-        {!draft.trim() ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={textFor(language, '添加表情', 'Add emoji')}
-            disabled={isSending}
-            onPress={() => {
-              onChangeDraft(`${draft}😊`);
-              requestAnimationFrame(() => inputRef.current?.focus());
-            }}
-            style={[
-              chatLayoutStyles.composerButton,
-              xunTheme && accessStyles.xunCircleButton,
-              accessStyles.transparentButton,
-            ]}
-          >
-            <Smile color={palette.text} size={25} strokeWidth={1.7} />
-          </Pressable>
-        ) : null}
+        >
+          <Smile color={palette.text} size={25} strokeWidth={1.7} />
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={textFor(language, '更多功能', 'More features')}
           accessibilityState={{ expanded: composerToolsOpen }}
-          onPress={() => setComposerToolsOpen(value => !value)}
+          onPress={() => {
+            setComposerPanel(composerToolsOpen ? null : 'tools');
+            if (!composerToolsOpen) Keyboard.dismiss();
+          }}
           style={[
             chatLayoutStyles.composerButton,
             xunTheme && accessStyles.xunCircleButton,
@@ -536,6 +600,7 @@ export function ChatComposer({
             <Plus color={palette.text} size={27} strokeWidth={1.7} />
           )}
         </Pressable>
+        <View style={accessStyles.sendSpacer} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={textFor(language, '发送消息', 'Send message')}
@@ -565,6 +630,55 @@ export function ChatComposer({
           </Text>
         </Pressable>
       </View>
+      {emojiPickerOpen ? (
+        <View
+          accessibilityLabel={textFor(language, '表情选择', 'Emoji picker')}
+          onAccessibilityEscape={() => setComposerPanel(null)}
+          style={[
+            accessStyles.emojiPanel,
+            { backgroundColor: palette.soft, borderTopColor: palette.border },
+          ]}
+        >
+          <View style={accessStyles.emojiHeader}>
+            <Text style={[accessStyles.emojiTitle, { color: palette.text }]}>
+              {textFor(language, '表情', 'Emoji')}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={textFor(
+                language,
+                '关闭表情选择',
+                'Close emoji picker',
+              )}
+              onPress={() => setComposerPanel(null)}
+              style={chatLayoutStyles.composerButton}
+            >
+              <X color={palette.secondaryText} size={21} />
+            </Pressable>
+          </View>
+          <View style={accessStyles.emojiGrid}>
+            {emojiChoices.map(([emoji, zh, en]) => (
+              <Pressable
+                key={emoji}
+                accessibilityRole="button"
+                accessibilityLabel={textFor(
+                  language,
+                  `插入表情：${zh}`,
+                  `Insert emoji: ${en}`,
+                )}
+                disabled={isSending}
+                onPress={() => insertEmoji(emoji)}
+                style={({ pressed }) => [
+                  chatLayoutStyles.composerButton,
+                  pressed && { backgroundColor: palette.surface },
+                ]}
+              >
+                <Text style={accessStyles.emoji}>{emoji}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ) : null}
       {composerToolsOpen ? (
         <View
           accessibilityLabel={textFor(language, '聊天扩展功能', 'Chat tools')}
@@ -580,7 +694,7 @@ export function ChatComposer({
                 `Add ${command}`,
               )}
               onPress={() => {
-                setComposerToolsOpen(false);
+                setComposerPanel(null);
                 onComposerTool?.(command);
               }}
               style={accessStyles.toolItem}
@@ -605,6 +719,8 @@ export function ChatComposer({
 }
 
 const accessStyles = StyleSheet.create({
+  editor: { alignSelf: 'stretch' },
+  xunEditor: { paddingHorizontal: 15, paddingTop: 10 },
   xunComposer: {
     borderTopWidth: 0,
     gap: 0,
@@ -614,23 +730,37 @@ const accessStyles = StyleSheet.create({
   },
   xunComposerRow: {
     paddingHorizontal: 15,
-    paddingTop: 10,
+    paddingTop: 6,
     paddingBottom: 16,
   },
   transparentButton: { backgroundColor: 'transparent' },
   xunCircleButton: {
     backgroundColor: 'transparent',
-    width: 38,
-    minHeight: 38,
-    borderRadius: 19,
+    width: 44,
+    minHeight: 44,
+    borderRadius: 22,
   },
   xunSend: {
     minWidth: 56,
-    minHeight: 38,
-    borderRadius: 19,
+    minHeight: 44,
+    borderRadius: 22,
     paddingHorizontal: 8,
   },
   hiddenSend: { display: 'none' },
+  sendSpacer: { flex: 1 },
+  emojiPanel: {
+    borderTopWidth: 1,
+    paddingHorizontal: 15,
+    paddingBottom: 8,
+  },
+  emojiHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  emojiTitle: { fontSize: 14, fontWeight: '600' },
+  emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  emoji: { fontSize: 25 },
   toolPanel: {
     backgroundColor: '#F3F4F6',
     borderTopWidth: 1,

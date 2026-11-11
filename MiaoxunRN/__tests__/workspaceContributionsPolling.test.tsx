@@ -42,6 +42,12 @@ test('navigation to an older contribution uses its dedicated authorization gate 
     nextCursor: 'cursor',
     scannedIds: ['cursor'],
     unavailable: 0,
+    unavailableReasons: {
+      authorization: 0,
+      source: 0,
+      version: 0,
+      unavailable: 0,
+    },
   });
   api.contribution.mockResolvedValue({ workspace, step: old.step });
   await act(async () => {
@@ -74,6 +80,12 @@ test('a navigation request cannot reintroduce an internal coordinator node as Ag
     nextCursor: null,
     scannedIds: [],
     unavailable: 0,
+    unavailableReasons: {
+      authorization: 0,
+      source: 0,
+      version: 0,
+      unavailable: 0,
+    },
   });
   api.contribution.mockResolvedValue(null);
   await act(async () => {
@@ -98,6 +110,12 @@ test('polling updates multiple contributions and clears them on access failure',
       contribution('two', 'succeeded'),
     ],
     unavailable: 0,
+    unavailableReasons: {
+      authorization: 0,
+      source: 0,
+      version: 0,
+      unavailable: 0,
+    },
     hasMore: false,
     nextCursor: null,
     scannedIds: ['one', 'two'],
@@ -109,6 +127,12 @@ test('polling updates multiple contributions and clears them on access failure',
   api.contributions.mockResolvedValueOnce({
     contributions: [contribution('one', 'succeeded')],
     unavailable: 1,
+    unavailableReasons: {
+      authorization: 1,
+      source: 0,
+      version: 0,
+      unavailable: 0,
+    },
     hasMore: false,
     nextCursor: null,
     scannedIds: ['one', 'two'],
@@ -135,6 +159,12 @@ test('account change ignores an in-flight response for the previous account', as
   api.contributions.mockResolvedValueOnce({
     contributions: [contribution('new', 'running')],
     unavailable: 0,
+    unavailableReasons: {
+      authorization: 0,
+      source: 0,
+      version: 0,
+      unavailable: 0,
+    },
     hasMore: false,
     nextCursor: null,
     scannedIds: ['new'],
@@ -149,6 +179,12 @@ test('account change ignores an in-flight response for the previous account', as
     resolve({
       contributions: [contribution('old', 'running')],
       unavailable: 0,
+      unavailableReasons: {
+        authorization: 0,
+        source: 0,
+        version: 0,
+        unavailable: 0,
+      },
       hasMore: false,
       nextCursor: null,
       scannedIds: ['old'],
@@ -181,6 +217,12 @@ test('background clears cached content and ignores the in-flight response', asyn
     resolve({
       contributions: [contribution('old', 'running')],
       unavailable: 0,
+      unavailableReasons: {
+        authorization: 0,
+        source: 0,
+        version: 0,
+        unavailable: 0,
+      },
       hasMore: false,
       nextCursor: null,
       scannedIds: ['old'],
@@ -190,6 +232,12 @@ test('background clears cached content and ignores the in-flight response', asyn
   api.contributions.mockResolvedValueOnce({
     contributions: [contribution('fresh', 'succeeded')],
     unavailable: 0,
+    unavailableReasons: {
+      authorization: 0,
+      source: 0,
+      version: 0,
+      unavailable: 0,
+    },
     hasMore: false,
     nextCursor: null,
     scannedIds: ['fresh'],
@@ -221,6 +269,12 @@ test('inactive and active in one batch reload contributions and ignore old reque
   api.contributions.mockResolvedValueOnce({
     contributions: [contribution('fresh', 'succeeded')],
     unavailable: 0,
+    unavailableReasons: {
+      authorization: 0,
+      source: 0,
+      version: 0,
+      unavailable: 0,
+    },
     hasMore: false,
     nextCursor: null,
     scannedIds: ['fresh'],
@@ -233,6 +287,12 @@ test('inactive and active in one batch reload contributions and ignore old reque
     resolve({
       contributions: [contribution('old', 'succeeded')],
       unavailable: 0,
+      unavailableReasons: {
+        authorization: 0,
+        source: 0,
+        version: 0,
+        unavailable: 0,
+      },
       hasMore: false,
       nextCursor: null,
       scannedIds: ['old'],

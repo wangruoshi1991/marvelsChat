@@ -30,6 +30,10 @@ import { AgentWorkspaceScreen } from '../src/features/workspaces/AgentWorkspaceS
 import { WorkspaceSubmissionRecovery } from '../src/features/workspaces/WorkspaceSubmission';
 import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
 import { agentWorkspace } from '../__fixtures__/agentWorkspace';
+import { ChatScreen } from '../src/features/messages/MessagesScreen';
+import { ChatComposer } from '../src/features/messages/ChatComposer';
+import { ComicCreationScreen } from '../src/features/station/ComicCreationScreen';
+import type { ChatThread } from '../src/features/session/sessionTypes';
 
 jest.mock('react-native-safe-area-context', () => {
   const NativeView = require('react-native').View;
@@ -83,6 +87,7 @@ let mockSession = {
   notices: [],
   unreadNoticeCount: 0,
   setActiveThreadId: jest.fn(),
+  markThreadRead: jest.fn(),
   refreshStationContent: jest.fn(async () => emptyStationContent),
   refreshBootstrap: jest.fn(async () => undefined),
 };
@@ -91,6 +96,65 @@ afterEach(async () => {
   await act(async () => renderer?.unmount());
   jest.restoreAllMocks();
   jest.useRealTimers();
+});
+
+test('comic creation covers the existing chat, keeps its draft, and rejects stale account callbacks', async () => {
+  jest.useFakeTimers();
+  const previousSession = mockSession;
+  const comicThread = {
+    id: 'comic-chat',
+    agentId: 'comic-diary',
+    title: '漫画日记 Agent',
+    kind: 'agent',
+    avatarText: '漫',
+    pinned: false,
+    lastContent: '',
+    unreadCount: 0,
+    messages: [],
+  } satisfies ChatThread;
+  mockSession = {
+    ...mockSession,
+    user: { id: 'comic-owner' },
+    token: 'comic-token',
+  };
+  await act(async () => {
+    renderer = TestRenderer.create(<App />);
+  });
+  await act(async () =>
+    renderer.root.findByType(ThreadListScreen).props.onOpenThread(comicThread),
+  );
+  const chat = renderer.root.findByType(ChatScreen);
+  const open = chat.props.onOpenComicCreation;
+  act(() =>
+    renderer.root.findByType(ChatComposer).props.onChangeDraft('海边的一天'),
+  );
+  act(() => open('海边的一天'));
+  const screen = renderer.root.findByType(ComicCreationScreen);
+  expect(screen.props.initialPrompt).toBe('海边的一天');
+  expect(renderer.root.findByType(ChatScreen)).toBe(chat);
+  expect(renderer.root.findByType(ChatComposer).props.draft).toBe('海边的一天');
+  act(() => screen.props.onBack());
+  expect(renderer.root.findAllByType(ComicCreationScreen)).toHaveLength(0);
+  expect(renderer.root.findByType(ChatScreen)).toBe(chat);
+  act(() => open('新故事'));
+  expect(renderer.root.findByType(ComicCreationScreen)).not.toBe(screen);
+  act(() =>
+    renderer.root
+      .findByProps({ testID: 'comic-creation-modal' })
+      .props.onRequestClose(),
+  );
+  expect(renderer.root.findAllByType(ComicCreationScreen)).toHaveLength(0);
+  act(() => open('即将退出的账号草稿'));
+  mockSession = {
+    ...mockSession,
+    user: { id: 'comic-new-owner' },
+    token: 'new-token',
+  };
+  await act(async () => renderer.update(<App />));
+  expect(renderer.root.findAllByType(ComicCreationScreen)).toHaveLength(0);
+  act(() => open('旧账号迟回'));
+  expect(renderer.root.findAllByType(ComicCreationScreen)).toHaveLength(0);
+  mockSession = previousSession;
 });
 
 test('three root tabs retain the station, keep navigation under voice menus, and reset across accounts', async () => {
@@ -205,11 +269,39 @@ test('three root tabs retain the station, keep navigation under voice menus, and
     renderer.root.findByProps({ testID: 'retained-station-screen' }).props
       .active,
   ).toBe(false);
+  const retainedThreadList = renderer.root.findByType(ThreadListScreen);
+  const retainedConversationList =
+    retainedThreadList.findByType(FlatList).instance;
+  const retainedMessagePalette = retainedThreadList.props.palette;
+  const retainedBottomBar = renderer.root.findByType(BottomBar);
   act(() =>
     renderer.root.findByType(ThreadListScreen).props.onOpenSecondFloor(),
   );
   expect(renderer.root.findByType(SecondFloorScreen)).toBeTruthy();
-  expect(renderer.root.findAllByType(BottomBar)).toHaveLength(0);
+  // The exit animation must reveal the existing conversation list and tab bar,
+  // rather than an empty shell followed by newly mounted rows.
+  expect(renderer.root.findByType(ThreadListScreen)).toBe(retainedThreadList);
+  expect(
+    renderer.root.findByType(ThreadListScreen).findByType(FlatList).instance,
+  ).toBe(retainedConversationList);
+  expect(renderer.root.findByType(ThreadListScreen).props.active).toBe(false);
+  expect(renderer.root.findByType(BottomBar)).toBe(retainedBottomBar);
+  expect(
+    renderer.root.findByProps({ testID: 'messages-underlay' }).props,
+  ).toMatchObject({
+    pointerEvents: 'none',
+    accessibilityElementsHidden: true,
+    importantForAccessibility: 'no-hide-descendants',
+  });
+  expect(
+    renderer.root.findByProps({ testID: 'root-navigation' }).props,
+  ).toMatchObject({ pointerEvents: 'none', accessibilityElementsHidden: true });
+  expect(
+    renderer.root.findByProps({ testID: 'app-bottom-safe-area' }).props.edges,
+  ).toEqual([]);
+  expect(renderer.root.findByType(ThreadListScreen).props.palette).toBe(
+    retainedMessagePalette,
+  );
   for (const testID of ['app-top-safe-area', 'app-bottom-safe-area']) {
     expect(
       StyleSheet.flatten(renderer.root.findByProps({ testID }).props.style)
@@ -217,6 +309,14 @@ test('three root tabs retain the station, keep navigation under voice menus, and
     ).toBe('#f3f6f9');
   }
   act(() => renderer.root.findByType(SecondFloorScreen).props.onClose());
+  expect(
+    renderer.root.findByType(ThreadListScreen).findByType(FlatList).instance,
+  ).toBe(retainedConversationList);
+  expect(renderer.root.findByType(ThreadListScreen).props.active).toBe(true);
+  expect(
+    renderer.root.findByProps({ testID: 'messages-underlay' }).props
+      .pointerEvents,
+  ).toBe('auto');
   expect(
     StyleSheet.flatten(
       renderer.root.findByProps({ testID: 'app-top-safe-area' }).props.style,

@@ -15,6 +15,7 @@ const scopeLabels: Record<string, [string, string]> = {
   'files:read': ['读取文件素材', 'Read file materials'],
   'files:write': ['整理文件素材', 'Manage file materials'],
   'media:image:generate': ['生成图片', 'Generate images'],
+  'ui-preferences:write': ['修改界面偏好', 'Change interface preferences'],
 };
 
 export function agentScopeLabel(scope: string, language: Language) {

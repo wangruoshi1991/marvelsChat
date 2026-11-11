@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Animated,
   FlatList,
-  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -73,6 +72,7 @@ function pullVelocityMatches(
 }
 
 function ThreadSwipeRow({
+  active,
   thread,
   palette,
   language,
@@ -81,6 +81,7 @@ function ThreadSwipeRow({
   onOpenThread,
   uiPreferences,
 }: {
+  active: boolean;
   thread: ChatThread;
   palette: Palette;
   language: Language;
@@ -110,50 +111,74 @@ function ThreadSwipeRow({
       : presentedContent;
   const translateX = useRef(new Animated.Value(0)).current;
   const opened = useRef(false);
+  const pendingOpen = useRef<object | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const { width } = useWindowDimensions();
+  const clearSwipe = useCallback(() => {
+    pendingOpen.current = null;
+    opened.current = false;
+    translateX.stopAnimation();
+    translateX.setValue(0);
+  }, [translateX]);
   const reset = useCallback(() => {
+    pendingOpen.current = null;
+    opened.current = false;
+    if (!activeRef.current) {
+      clearSwipe();
+      return;
+    }
     Animated.spring(translateX, {
       toValue: 0,
       useNativeDriver: true,
       speed: 22,
       bounciness: 6,
     }).start();
-  }, [translateX]);
+  }, [clearSwipe, translateX]);
   useEffect(() => {
-    // A bootstrap refresh can update a retained row while it is off-screen.
-    // Do not carry its previous action-sheet swipe into the new snapshot.
-    opened.current = false;
-    translateX.stopAnimation();
-    translateX.setValue(0);
-  }, [thread.id, thread.muted, thread.pinned, thread.unreadCount, translateX]);
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_event, gesture) =>
-          gesture.dx < -8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
-        onPanResponderMove: (_event, gesture) =>
-          translateX.setValue(Math.max(Math.min(gesture.dx, 0), -width * 0.46)),
-        onPanResponderRelease: (_event, gesture) => {
-          if (
-            (gesture.dx <= -72 || gesture.vx <= -0.55) &&
-            Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25
-          ) {
-            if (opened.current) return;
-            opened.current = true;
-            Animated.timing(translateX, {
-              toValue: -width,
-              duration: 180,
-              useNativeDriver: true,
-            }).start(({ finished }) => {
-              if (finished) onOpenThread(thread);
-              translateX.setValue(0);
-              opened.current = false;
-            });
-          } else reset();
-        },
-        onPanResponderTerminate: reset,
-      }),
-    [onOpenThread, reset, thread, translateX, width],
+    // Keep the list and its scroll position, while each hidden or refreshed
+    // row drops its gesture and any pending native animation completion.
+    clearSwipe();
+    return clearSwipe;
+  }, [
+    active,
+    clearSwipe,
+    thread.id,
+    thread.muted,
+    thread.pinned,
+    thread.unreadCount,
+  ]);
+  const panResponder = useStablePanResponder(
+    {
+      onMoveShouldSetPanResponder: (_event, gesture) =>
+        gesture.dx < -8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
+      onPanResponderMove: (_event, gesture) =>
+        translateX.setValue(Math.max(Math.min(gesture.dx, 0), -width * 0.46)),
+      onPanResponderRelease: (_event, gesture) => {
+        if (
+          (gesture.dx <= -72 || gesture.vx <= -0.55) &&
+          Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25
+        ) {
+          if (opened.current) return;
+          opened.current = true;
+          const attempt = {};
+          pendingOpen.current = attempt;
+          Animated.timing(translateX, {
+            toValue: -width,
+            duration: 180,
+            useNativeDriver: true,
+          }).start(({ finished }) => {
+            if (pendingOpen.current !== attempt) return;
+            pendingOpen.current = null;
+            if (finished && activeRef.current) onOpenThread(thread);
+            translateX.setValue(0);
+            opened.current = false;
+          });
+        } else reset();
+      },
+      onPanResponderTerminate: reset,
+    },
+    active,
   );
   const time = (
     <Text
@@ -203,7 +228,10 @@ function ThreadSwipeRow({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={displayText(language, thread.title)}
-        onPress={() => onOpenThread(thread)}
+        disabled={!active}
+        onPress={() => {
+          if (activeRef.current) onOpenThread(thread);
+        }}
         style={({ pressed }) => [
           s.thread,
           v6Theme && s.v6Thread,
@@ -415,6 +443,7 @@ export function ThreadListScreen({
   const scrollOffset = useRef(0);
   const pullStartAtTop = useRef(false);
   const opening = useRef(false);
+  const entranceTransition = useRef<object | null>(null);
   const pullOffset = useRef(new Animated.Value(0)).current;
   const pullOffsetX = useRef(new Animated.Value(0)).current;
   const pullCueDistance = useRef(new Animated.Value(0)).current;
@@ -460,6 +489,7 @@ export function ThreadListScreen({
     // changes. Stop an interrupted entrance animation so a later return to
     // 讯 never exposes a translated list or a stale opening lock.
     opening.current = false;
+    entranceTransition.current = null;
     pullDrag.current = null;
     pullStartAtTop.current = false;
     pullOffset.stopAnimation();
@@ -548,6 +578,8 @@ export function ThreadListScreen({
             return;
           }
           opening.current = true;
+          const transition = {};
+          entranceTransition.current = transition;
           const horizontal =
             pullGesture.direction === 'left' ||
             pullGesture.direction === 'right';
@@ -576,6 +608,12 @@ export function ThreadListScreen({
               useNativeDriver: true,
             }),
           ]).start(({ finished }) => {
+            if (
+              entranceTransition.current !== transition ||
+              !entranceActive.current
+            )
+              return;
+            entranceTransition.current = null;
             opening.current = false;
             if (finished) onOpenSecondFloor?.();
           });
@@ -586,10 +624,12 @@ export function ThreadListScreen({
     active,
   );
   React.useEffect(() => {
-    scrollOffset.current = 0;
     resetPullState();
     return resetPullState;
   }, [active, resetPullState, selectedMessageTab]);
+  React.useEffect(() => {
+    scrollOffset.current = 0;
+  }, [selectedMessageTab]);
   const visibleThreads = threads.filter(
     thread => thread.agentId !== 'media-retrieval',
   );
@@ -949,12 +989,9 @@ export function ThreadListScreen({
         {selectedMessageTab === 'chat' &&
         isUIModuleVisible(uiPreferences, 'messages', 'threadList') ? (
           <FlatList
-            // Recreate swipe rows when the retained 讯 surface is revisited
-            // or its tab changes. Each row owns an animated swipe offset and
-            // must not carry an open action state into a different surface.
-            key={`chat-list:${selectedMessageTab}:${
-              active ? 'active' : 'inactive'
-            }`}
+            // Visibility changes retain the native list and its scroll offset;
+            // rows cancel their own gestures while this surface is inactive.
+            key={`chat-list:${selectedMessageTab}`}
             onScroll={event => {
               scrollOffset.current = event.nativeEvent.contentOffset.y;
             }}
@@ -984,6 +1021,7 @@ export function ThreadListScreen({
             }
             renderItem={({ item }) => (
               <ThreadSwipeRow
+                active={active}
                 thread={item}
                 palette={colors}
                 language={language}

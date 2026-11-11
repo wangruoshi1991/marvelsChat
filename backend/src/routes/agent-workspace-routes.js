@@ -35,9 +35,11 @@ export function registerAgentWorkspaceRoutes(app, { authenticate, asyncHandler,
   }));
   app.get("/api/agent-workspaces/contributions/:agentId", ...guard, requireWorkspaceContributionsContract, asyncHandler(async (req, res) => {
     const { agentId } = z.object({ agentId: z.string().regex(/^[a-z0-9-]{1,80}$/) }).strict().parse(req.params);
-    const pagination = req.get(workspaceContributionsContractHeader) === "3";
+    const contract = req.get(workspaceContributionsContractHeader);
+    const pagination = contract !== "2";
     const page = (pagination ? contributionPage : z.object({}).strict()).parse(req.query);
-    res.set("Cache-Control", "no-store").json({ data: await service.listAgentContributions({ userId: req.user.id, agentId, ...page, pagination }) });
+    res.set("Cache-Control", "no-store").json({ data: await service.listAgentContributions({ userId: req.user.id, agentId, ...page, pagination,
+      includeUnavailableReasons: contract === "4" }) });
   }));
   app.get("/api/agent-workspaces/contributions/:agentId/:nodeId", ...guard, requireWorkspaceContributionsContract, asyncHandler(async (req, res) => {
     const ids = z.object({ agentId: z.string().regex(/^[a-z0-9-]{1,80}$/), nodeId: z.string().uuid() }).strict().parse(req.params);

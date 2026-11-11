@@ -64,6 +64,25 @@ export type WorkspaceContribution = {
   >;
   step: WorkspaceStep;
 };
+export const workspaceContributionUnavailableReasons = [
+  'authorization',
+  'source',
+  'version',
+  'unavailable',
+] as const;
+export type WorkspaceContributionUnavailableReason =
+  (typeof workspaceContributionUnavailableReasons)[number];
+export type WorkspaceContributionUnavailableCounts = Record<
+  WorkspaceContributionUnavailableReason,
+  number
+>;
+export const emptyWorkspaceContributionUnavailableCounts =
+  (): WorkspaceContributionUnavailableCounts => ({
+    authorization: 0,
+    source: 0,
+    version: 0,
+    unavailable: 0,
+  });
 export type WorkspaceRequest = {
   goal: string;
   contextRefs: AIContextReference[];

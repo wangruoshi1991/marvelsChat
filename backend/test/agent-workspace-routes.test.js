@@ -101,20 +101,28 @@ test("real HTTP routes reject missing contracts before dispatch, and require doc
     const contributions = await request('/api/agent-workspaces/contributions/site-builder', null, contributionHeaders);
     assert.equal(contributions.status, 200);
     assert.deepEqual((await contributions.json()).data, { contributions: [], hasMore: false });
-    assert.deepEqual(calls[4], { userId: owner, agentId: 'site-builder', pagination: false });
+    assert.deepEqual(calls[4], { userId: owner, agentId: 'site-builder', pagination: false, includeUnavailableReasons: false });
     const cursor = crypto.randomUUID();
     assert.equal((await request(`/api/agent-workspaces/contributions/site-builder?before=${cursor}`, null, contributionHeaders)).status, 400);
     const pagingHeaders = { ...contributionHeaders, 'X-Miaoxun-Workspace-Contributions': '3' };
     assert.equal((await request(`/api/agent-workspaces/contributions/site-builder?before=${cursor}`, null, pagingHeaders)).status, 200);
-    assert.deepEqual(calls[5], { userId: owner, agentId: 'site-builder', before: cursor, pagination: true });
+    assert.deepEqual(calls[5], { userId: owner, agentId: 'site-builder', before: cursor, pagination: true, includeUnavailableReasons: false });
     for (const query of ['before=invalid', `before=${cursor}&before=${nodeId}`, 'limit=200']) {
       assert.equal((await request(`/api/agent-workspaces/contributions/site-builder?${query}`, null, pagingHeaders)).status, 400);
     }
-    for (const headers of [contributionHeaders, pagingHeaders]) {
+    const reasonHeaders = { ...contributionHeaders, 'X-Miaoxun-Workspace-Contributions': '4' };
+    const reasonPage = await request(`/api/agent-workspaces/contributions/site-builder?before=${cursor}`, null, reasonHeaders);
+    assert.equal(reasonPage.status, 200);
+    assert.equal(reasonPage.headers.get('Cache-Control'), 'no-store');
+    assert.deepEqual((await reasonPage.json()).data, { contributions: [], hasMore: false, nextCursor: null });
+    assert.deepEqual(calls[6], { userId: owner, agentId: 'site-builder', before: cursor, pagination: true, includeUnavailableReasons: true });
+    assert.equal((await request('/api/agent-workspaces/contributions/site-builder', null,
+      { ...contributionHeaders, 'X-Miaoxun-Workspace-Contributions': '5' })).status, 426);
+    for (const headers of [contributionHeaders, pagingHeaders, reasonHeaders]) {
       const item = await request(`/api/agent-workspaces/contributions/site-builder/${nodeId}`, null, headers);
       assert.equal(item.status, 200);
       assert.deepEqual((await item.json()).data, { contribution: null });
     }
-    assert.deepEqual(calls.slice(6), Array.from({ length: 2 }, () => ({ userId: owner, agentId: 'site-builder', nodeId })));
+    assert.deepEqual(calls.slice(7), Array.from({ length: 3 }, () => ({ userId: owner, agentId: 'site-builder', nodeId })));
   } finally { await new Promise(resolve => server.close(resolve)); }
 });

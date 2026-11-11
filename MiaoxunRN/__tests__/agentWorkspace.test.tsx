@@ -1,3 +1,8 @@
+// These interaction-contract tests use the system's immediate motion mode.
+jest.mock('../src/shared/useReduceMotion', () => ({
+  ...jest.requireActual('../src/shared/useReduceMotion'),
+  useReduceMotion: () => true,
+}));
 import React from 'react';
 import { AppState, Text, TextInput } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';

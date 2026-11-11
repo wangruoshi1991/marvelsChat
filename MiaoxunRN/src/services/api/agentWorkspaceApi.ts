@@ -9,6 +9,9 @@ import {
   isWorkspaceRequest,
   WorkspaceContribution,
   assertWorkspaceContribution,
+  WorkspaceContributionUnavailableReason,
+  workspaceContributionUnavailableReasons,
+  emptyWorkspaceContributionUnavailableCounts,
 } from '../../models/agentWorkspace';
 import { StationMediaAssetDTO } from '../../models/api';
 import {
@@ -73,7 +76,7 @@ export const agentWorkspaceApi = {
         token,
         headers: {
           ...agentWorkspaceHeaders,
-          'X-Miaoxun-Workspace-Contributions': '3',
+          'X-Miaoxun-Workspace-Contributions': '4',
         },
       },
     );
@@ -103,7 +106,7 @@ export const agentWorkspaceApi = {
         token,
         headers: {
           ...agentWorkspaceHeaders,
-          'X-Miaoxun-Workspace-Contributions': '3',
+          'X-Miaoxun-Workspace-Contributions': '4',
         },
       },
     );
@@ -123,18 +126,31 @@ export const agentWorkspaceApi = {
       throw new Error('协作贡献列表格式不受支持。');
     const contributions: WorkspaceContribution[] = [];
     let unavailable = 0;
+    const unavailableReasons = emptyWorkspaceContributionUnavailableCounts();
     const ids: string[] = [];
     for (const item of result.contributions) {
       if (
         item &&
         typeof item === 'object' &&
         'unavailable' in item &&
-        item.unavailable === true &&
-        'id' in item &&
-        typeof item.id === 'string'
+        item.unavailable === true
       ) {
+        if (
+          Object.keys(item).sort().join(',') !== 'id,reason,unavailable' ||
+          !('id' in item) ||
+          typeof item.id !== 'string' ||
+          !item.id.trim() ||
+          !('reason' in item) ||
+          !workspaceContributionUnavailableReasons.includes(
+            item.reason as WorkspaceContributionUnavailableReason,
+          )
+        )
+          throw new Error('协作贡献不可读状态格式不受支持。');
         ids.push(item.id);
         unavailable += 1;
+        unavailableReasons[
+          item.reason as WorkspaceContributionUnavailableReason
+        ] += 1;
         continue;
       }
       assertWorkspaceContribution(item, agentId);
@@ -152,6 +168,7 @@ export const agentWorkspaceApi = {
     return {
       contributions,
       unavailable,
+      unavailableReasons,
       hasMore: result.hasMore,
       nextCursor: result.nextCursor as string | null,
       scannedIds: ids,

@@ -16,6 +16,12 @@ const item = (id: string) => ({
 const page = (ids: string[], nextCursor: string | null) => ({
   contributions: ids.map(item),
   unavailable: 0,
+  unavailableReasons: {
+    authorization: 0,
+    source: 0,
+    version: 0,
+    unavailable: 0,
+  },
   hasMore: nextCursor !== null,
   nextCursor,
   scannedIds: ids,
@@ -66,6 +72,114 @@ test('loads older contributions and revalidates all pages before showing refresh
   });
   expect(current.contributions).toEqual([]);
   expect(current.error).toContain('授权已撤回');
+});
+
+test('revalidates unavailable reasons across history pages and retry clears recovered reasons', async () => {
+  const latest = {
+    ...page(['visible', 'hidden-source'], 'hidden-source'),
+    contributions: [item('visible')],
+    unavailable: 1,
+    unavailableReasons: {
+      authorization: 0,
+      source: 1,
+      version: 0,
+      unavailable: 0,
+    },
+  };
+  api.contributions.mockResolvedValueOnce(latest);
+  await act(async () => {
+    tree = TestRenderer.create(<Harness token="owner" />);
+  });
+  expect(current.unavailableReasons.source).toBe(1);
+  api.contributions.mockResolvedValueOnce(latest);
+  api.contributions.mockResolvedValueOnce({
+    ...page(['hidden-auth', 'hidden-version'], null),
+    contributions: [],
+    unavailable: 2,
+    unavailableReasons: {
+      authorization: 1,
+      source: 0,
+      version: 1,
+      unavailable: 0,
+    },
+  });
+  await act(async () => {
+    await current.loadMore();
+  });
+  expect(current.unavailable).toBe(3);
+  expect(current.unavailableReasons).toEqual({
+    authorization: 1,
+    source: 1,
+    version: 1,
+    unavailable: 0,
+  });
+  api.contributions.mockResolvedValueOnce(
+    page(['visible', 'hidden-source', 'hidden-auth', 'hidden-version'], null),
+  );
+  await act(async () => {
+    await current.retry();
+  });
+  expect(current.unavailable).toBe(0);
+  expect(current.unavailableReasons).toEqual({
+    authorization: 0,
+    source: 0,
+    version: 0,
+    unavailable: 0,
+  });
+  api.contributions.mockRejectedValueOnce(new Error('网络不可用'));
+  await act(async () => {
+    jest.advanceTimersByTime(10000);
+  });
+  expect(current.error).toBe('网络不可用');
+  expect(current.unavailableReasons).toEqual({
+    authorization: 0,
+    source: 0,
+    version: 0,
+    unavailable: 0,
+  });
+});
+
+test('manual retry reports a pending check while scheduled polling remains quiet', async () => {
+  api.contributions.mockResolvedValueOnce(page(['visible'], null));
+  await act(async () => {
+    tree = TestRenderer.create(<Harness token="owner" />);
+  });
+  let resolveRetry!: (result: ReturnType<typeof page>) => void;
+  api.contributions.mockReturnValueOnce(
+    new Promise(done => {
+      resolveRetry = done;
+    }),
+  );
+  let retry!: Promise<void>;
+  act(() => {
+    retry = current.retry();
+  });
+  expect(current.loading).toBe(true);
+  expect(current.contributions.map(c => c.step.id)).toEqual(['visible']);
+  await act(async () => {
+    resolveRetry(page(['visible'], null));
+    await retry;
+  });
+  expect(current.loading).toBe(false);
+  let resolvePoll!: (result: ReturnType<typeof page>) => void;
+  api.contributions.mockReturnValueOnce(
+    new Promise(done => {
+      resolvePoll = done;
+    }),
+  );
+  await act(async () => {
+    jest.advanceTimersByTime(10000);
+  });
+  expect(current.loading).toBe(false);
+  act(() => {
+    current.retry();
+  });
+  expect(current.loading).toBe(true);
+  expect(api.contributions).toHaveBeenCalledTimes(3);
+  await act(async () => {
+    resolvePoll(page(['visible'], null));
+  });
+  expect(current.loading).toBe(false);
 });
 
 test('refresh retains the loaded history boundary when newer contributions arrive', async () => {

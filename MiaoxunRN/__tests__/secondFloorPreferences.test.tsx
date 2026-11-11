@@ -1,3 +1,8 @@
+// These interaction-contract tests use the system's immediate motion mode.
+jest.mock('../src/shared/useReduceMotion', () => ({
+  ...jest.requireActual('../src/shared/useReduceMotion'),
+  useReduceMotion: () => true,
+}));
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 62, bottom: 34, left: 0, right: 0 }),
 }));

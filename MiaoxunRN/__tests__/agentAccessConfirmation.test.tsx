@@ -1,4 +1,8 @@
+/// <reference types="node" />
+
 import React from 'react';
+import { execFileSync } from 'node:child_process';
+import { resolve as resolvePath } from 'node:path';
 import { Alert, Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { StationAgentsPanel } from '../src/features/station/StationAgentsPanel';
@@ -93,6 +97,78 @@ const props = () => ({
   onActionError: jest.fn(),
 });
 type AccessProps = ReturnType<typeof props>;
+const registeredAgents: AgentDTO[] = JSON.parse(
+  execFileSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      "import { listAgents } from './agents/registry.js'; console.log(JSON.stringify(await listAgents()));",
+    ],
+    { cwd: resolvePath(__dirname, '../..'), encoding: 'utf8' },
+  ),
+);
+const uiAgentDefinition = registeredAgents.find(
+  item => item.key === 'ui-agent',
+);
+if (!uiAgentDefinition)
+  throw new Error('UI Agent registry declaration missing');
+const uiAgent: AgentDTO = {
+  ...uiAgentDefinition,
+  published: true,
+  permissions: [...uiAgentDefinition.permissions],
+};
+const uiAgentProps = (action: 'add' | 'reauthorize'): AccessProps => {
+  const values = props();
+  const product = {
+    ...values.products[0],
+    id: 'product-ui-agent',
+    productKey: uiAgent.key,
+    displayName: uiAgent.name,
+    productVersionId: 'product-version-ui-agent',
+    contractHash: 'contract-ui-agent',
+    dependencies: [
+      {
+        agentKey: uiAgent.key,
+        agentReleaseId: 'release-ui-agent',
+        version: uiAgent.version,
+        scopes: [...uiAgent.permissions],
+        contractHash: 'contract-ui-agent',
+      },
+    ],
+  };
+  const uiOwned = {
+    ...owned,
+    id: uiAgent.key,
+    name: uiAgent.name,
+    identity: uiAgent.identity,
+    grantedScopes: [...uiAgent.permissions],
+  };
+  values.onSetAgentEnabled.mockResolvedValue(uiOwned);
+  return {
+    ...values,
+    agents: [uiAgent],
+    ownedAgents: action === 'reauthorize' ? [uiOwned] : [],
+    products: [product],
+    entitlements:
+      action === 'reauthorize'
+        ? [
+            {
+              id: 'entitlement-ui-agent',
+              productId: product.id,
+              productVersionId: product.productVersionId,
+              productKey: product.productKey,
+              version: product.version,
+              status: 'reconsent_required',
+              grantedScopes: [...uiAgent.permissions],
+              contractHash: product.contractHash,
+              consentVersion: 'consent-ui-agent',
+              unavailableReason: null,
+            },
+          ]
+        : [],
+  };
+};
 const albumProps = (): AccessProps => ({
   ...props(),
   agents: [
@@ -383,18 +459,10 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
   });
 
   test('UI Agent adding uses its unique enabled product beside another publication', async () => {
-    const uiAgent = { ...agent, key: 'ui-agent', name: 'UI Agent' };
-    const selected = {
-      ...productFor(),
-      dependencies: productFor().dependencies.map(dependency => ({
-        ...dependency,
-        agentKey: uiAgent.key,
-      })),
-    };
+    const initial = uiAgentProps('add');
+    const selected = initial.products[0];
     const values = {
-      ...props(),
-      agents: [uiAgent],
-      ownedAgents: [],
+      ...initial,
       products: [
         {
           ...selected,
@@ -403,7 +471,16 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
         },
         selected,
       ],
-      entitlements: [entitlementFor('enabled')],
+      entitlements: [
+        {
+          ...entitlementFor('enabled'),
+          productId: selected.id,
+          productVersionId: selected.productVersionId,
+          productKey: selected.productKey,
+          grantedScopes: [...uiAgent.permissions],
+          contractHash: selected.contractHash,
+        },
+      ],
     };
     act(() => {
       renderer = TestRenderer.create(renderSurface(values as never));
@@ -421,6 +498,64 @@ describe('My Agents confirms the complete declaration when adding an agent', () 
       selected.productVersionId,
     );
   });
+
+  test.each([
+    [
+      'add',
+      'zh',
+      '添加UI Agent',
+      '授权范围：读取个人资料、读取获准的对话、修改界面偏好',
+    ],
+    [
+      'add',
+      'en',
+      'Add UI Agent',
+      'Access scopes: Read profile, Read permitted messages, Change interface preferences',
+    ],
+    [
+      'reauthorize',
+      'zh',
+      '重新同意UI Agent授权',
+      '授权范围：读取个人资料、读取获准的对话、修改界面偏好',
+    ],
+    [
+      'reauthorize',
+      'en',
+      'Re-consent to UI Agent',
+      'Access scopes: Read profile, Read permitted messages, Change interface preferences',
+    ],
+  ] as const)(
+    'UI Agent registry scopes reach explicit %s consent in %s',
+    async (action, language, buttonLabel, scopeDisclosure) => {
+      const values = uiAgentProps(action);
+      act(() => {
+        renderer = TestRenderer.create(
+          renderSurface({ ...values, language } as never),
+        );
+      });
+      expect(accessButton(buttonLabel)?.props.disabled).toBe(false);
+      press(buttonLabel);
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(alert.mock.calls[0][1]).toContain('UI Agent · v1.0.0');
+      expect(alert.mock.calls[0][1]).toContain(scopeDisclosure);
+      expect(alert.mock.calls[0][1]).not.toContain('ui-preferences:write');
+      expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
+      act(() => alert.mock.calls[0][2][0].onPress());
+      expect(values.onSetAgentEnabled).not.toHaveBeenCalled();
+
+      press(buttonLabel);
+      await act(async () => alert.mock.calls[1][2][1].onPress());
+      expect(values.onActionError).not.toHaveBeenCalled();
+      expect(values.onSetAgentEnabled).toHaveBeenCalledTimes(1);
+      expect(values.onSetAgentEnabled).toHaveBeenCalledWith(
+        'ui-agent',
+        true,
+        ['profile:read', 'messages:read', 'ui-preferences:write'],
+        undefined,
+        'product-version-ui-agent',
+      );
+    },
+  );
 
   test('first album access uses one combined confirmation and explicitly sends cloud consent', async () => {
     jest

@@ -188,6 +188,29 @@ test("runs the registered comic plan with the access check before returning a st
   assert.equal(result.model.servedModel, "served-planning-model");
 });
 
+test("prompt-only comics keep an empty source context and nullable diary binding", async () => {
+  const prompt = "画一个人在月球种花的四格漫画";
+  const body = stationComicDiaryRequestSchema.parse({ prompt });
+  assert.equal(body.diaryEntryId, undefined);
+  assert.deepEqual(body.mediaAssetIds, []);
+  const calls = [];
+  const result = await generate(JSON.stringify(modelDraft(4)), {
+    prompt: body.prompt,
+    diaryEntry: null,
+    frameCount: body.frameCount,
+    runAgent: async input => {
+      calls.push(input);
+      return { provider: "isolated-test", model: "isolated-test-model", reply: JSON.stringify(modelDraft(4)) };
+    },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].mode, "plan");
+  assert.equal(calls[0].input.split("\n").slice(1).join("\n"), prompt);
+  assert.deepEqual(calls[0].appContext.stationContent, { diaryEntries: [], mediaAssets: [] });
+  assert.deepEqual(result.draft.sourceRefs, { diaryEntryId: null, mediaAssetIds: [] });
+  assert.equal(result.draft.frames.length, 4);
+});
+
 test("persistence rejects an invalid comic title before SQL instead of assigning a generic title", async () => {
   let queries = 0;
   const query = async () => { queries += 1; return []; };

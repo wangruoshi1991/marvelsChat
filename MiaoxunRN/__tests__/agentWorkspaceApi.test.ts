@@ -69,7 +69,10 @@ test('contribution responses require the requested agent and valid artifact iden
     step,
   };
   http.mockResolvedValueOnce({
-    contributions: [item, { unavailable: true, id: 'hidden' }],
+    contributions: [
+      item,
+      { unavailable: true, id: 'hidden', reason: 'source' },
+    ],
     hasMore: false,
     nextCursor: null,
   });
@@ -78,6 +81,12 @@ test('contribution responses require the requested agent and valid artifact iden
   ).resolves.toEqual({
     contributions: [item],
     unavailable: 1,
+    unavailableReasons: {
+      authorization: 0,
+      source: 1,
+      version: 0,
+      unavailable: 0,
+    },
     hasMore: false,
     nextCursor: null,
     scannedIds: ['step-1', 'hidden'],
@@ -86,7 +95,7 @@ test('contribution responses require the requested agent and valid artifact iden
     '/api/agent-workspaces/contributions/album-manager',
     expect.objectContaining({
       headers: expect.objectContaining({
-        'X-Miaoxun-Workspace-Contributions': '3',
+        'X-Miaoxun-Workspace-Contributions': '4',
       }),
     }),
   );
@@ -145,7 +154,7 @@ test('an exact contribution read validates the Agent, node identity and contribu
     `/api/agent-workspaces/contributions/comic-diary/${nodeId}`,
     expect.objectContaining({
       headers: expect.objectContaining({
-        'X-Miaoxun-Workspace-Contributions': '3',
+        'X-Miaoxun-Workspace-Contributions': '4',
       }),
     }),
   );
@@ -162,6 +171,36 @@ test('an exact contribution read validates the Agent, node identity and contribu
   await expect(
     agentWorkspaceApi.contribution('token', 'comic-diary', nodeId),
   ).rejects.toThrow('贡献');
+});
+
+test('contribution contract 4 requires an exact safe reason and never downgrades a failed response', async () => {
+  session();
+  for (const placeholder of [
+    { unavailable: true, id: 'hidden' },
+    { unavailable: true, id: 'hidden', reason: 'private-server-code' },
+    {
+      unavailable: true,
+      id: 'hidden',
+      reason: 'source',
+      content: 'must not be accepted',
+    },
+    { unavailable: true, id: '', reason: 'source' },
+  ]) {
+    http.mockResolvedValueOnce({
+      contributions: [placeholder],
+      hasMore: false,
+      nextCursor: null,
+    });
+    await expect(
+      agentWorkspaceApi.contributions('token', 'comic-diary'),
+    ).rejects.toThrow('格式');
+  }
+  http.mockRejectedValueOnce(new Error('当前客户端合同不受支持'));
+  const before = http.mock.calls.length;
+  await expect(
+    agentWorkspaceApi.contributions('token', 'comic-diary'),
+  ).rejects.toThrow('合同');
+  expect(http).toHaveBeenCalledTimes(before + 1);
 });
 
 test('contract 5 requires execution mode and an exact direct origin whose executor cannot change', () => {

@@ -42,6 +42,7 @@ import { workspaceAssistContext } from './features/assist/workspaceAssistContext
 import { useProfileFlows } from './features/profile/useProfileFlows';
 import { StationPostComposerScreen } from './features/station/StationPostComposerScreen';
 import { StationScreen } from './features/station/StationScreen';
+import { ComicCreationScreen } from './features/station/ComicCreationScreen';
 import { StationTab } from './features/station/stationTypes';
 import { AvatarConfigDTO } from './models/api';
 import { appErrorText, textFor } from './shared/i18n';
@@ -96,12 +97,16 @@ function App(): React.JSX.Element {
   const [selectedTab, setSelectedTab] = useState<RootTab>('messages');
   const [secondFloorOpen, setSecondFloorOpen] = useState(false);
   const basePalette = palettes[session.appearance];
+  const conversationPalette = useMemo(
+    () => xunV3Palette(basePalette),
+    [basePalette],
+  );
   const palette = session.token
     ? selectedTab === 'agents' || selectedTab === 'station'
       ? v6Palette(basePalette)
       : secondFloorOpen
       ? xunPalette(basePalette)
-      : xunV3Palette(basePalette)
+      : conversationPalette
     : basePalette;
   const messagePalette = resolveMessagePalette(palette);
   // The app opens on 讯 (messages): the conversations are what the user comes
@@ -150,6 +155,13 @@ function App(): React.JSX.Element {
   const workspaceOwner = `${session.user?.id || ''}:${session.token || ''}`;
   const workspaceOwnerRef = useRef(workspaceOwner);
   workspaceOwnerRef.current = workspaceOwner;
+  const [comicCreation, setComicCreation] = useState<{
+    owner: string;
+    threadId: string;
+    id: number;
+    prompt: string;
+  } | null>(null);
+  const comicCreationSequence = useRef(0);
   const [accessDrafts, setAccessDrafts] = useState<{
     owner: string;
     threads: Record<string, ChatDraftSnapshot>;
@@ -234,6 +246,7 @@ function App(): React.JSX.Element {
     setButlerDraftOwner('');
     setSelectedMiaoTask(null);
     setSelectedWorkspace(null);
+    setComicCreation(null);
     setWorkspaceContribution(null);
     setRequestDraftState({ owner: '', text: '' });
     setMiaoVoiceExpanded(false);
@@ -341,6 +354,21 @@ function App(): React.JSX.Element {
   }:${agentWorkspace?.id || ''}:${requestComposerOpen}`;
   const workspaceChatScopeRef = useRef(workspaceChatScope);
   workspaceChatScopeRef.current = workspaceChatScope;
+  const activeComicCreation =
+    comicCreation?.owner === workspaceOwner &&
+    comicCreation.threadId === openedThread?.id &&
+    openedThread.agentId === 'comic-diary' &&
+    openedThread.kind !== 'group' &&
+    modalRoute === 'chat' &&
+    !agentWorkspace &&
+    !requestComposerOpen
+      ? comicCreation
+      : null;
+  const activeComicCreationRef = useRef(activeComicCreation);
+  activeComicCreationRef.current = activeComicCreation;
+  useEffect(() => {
+    setComicCreation(null);
+  }, [workspaceChatScope]);
   const accessDraft =
     accessDrafts.owner === workspaceOwner && openedThread
       ? accessDrafts.threads[openedThread.id]
@@ -868,11 +896,7 @@ function App(): React.JSX.Element {
           style={[styles.safeArea, { backgroundColor: topSafeAreaColor }]}
         >
           <SafeAreaView
-            edges={
-              isRootTabRoute && !(selectedTab === 'messages' && secondFloorOpen)
-                ? []
-                : ['bottom']
-            }
+            edges={isRootTabRoute ? [] : ['bottom']}
             testID="app-bottom-safe-area"
             style={[styles.safeArea, { backgroundColor: bottomSafeAreaColor }]}
           >
@@ -959,6 +983,25 @@ function App(): React.JSX.Element {
                       }}
                       onAuthorizeAlbumAI={async () => openAgentManagement()}
                       onOpenAgentAccess={openAgentManagement}
+                      onOpenComicCreation={
+                        openedThread.agentId === 'comic-diary' &&
+                        openedThread.kind !== 'group'
+                          ? prompt => {
+                              if (
+                                workspaceOwnerRef.current !== workspaceOwner ||
+                                workspaceChatScopeRef.current !==
+                                  workspaceChatScope
+                              )
+                                return;
+                              setComicCreation({
+                                owner: workspaceOwner,
+                                threadId: openedThread.id,
+                                id: ++comicCreationSequence.current,
+                                prompt,
+                              });
+                            }
+                          : undefined
+                      }
                       onPrepareComposerTool={prepareComposerTool}
                       agentGrantedScopes={
                         session.ownedAgents.find(
@@ -1163,58 +1206,22 @@ function App(): React.JSX.Element {
                         uiPreferences={session.uiPreferences}
                       />
                     ) : null}
-                    {selectedTab === 'messages' && secondFloorOpen ? (
-                      <SecondFloorScreen
-                        active={
-                          !isChatRoute &&
-                          !modalRoute &&
-                          !isPostComposerOpen &&
-                          !requestComposerOpen
-                        }
-                        onToolChange={setSecondFloorTool}
+                    {selectedTab === 'messages' ? (
+                      <View
                         key={workspaceOwner}
-                        palette={palette}
-                        language={session.language}
-                        session={session}
-                        onClose={closeSecondFloor}
-                        onOpenFriendThread={openFriendThread}
-                        onOpenProfile={profileFlows.openPublicProfileByAiId}
-                        onOpenSettings={() => setModalRoute('settings')}
-                        onOpenDeleteAccount={() =>
-                          setModalRoute('delete-account')
+                        testID="messages-underlay"
+                        style={appStyles.retained}
+                        pointerEvents={secondFloorOpen ? 'none' : 'auto'}
+                        accessibilityElementsHidden={secondFloorOpen}
+                        importantForAccessibility={
+                          secondFloorOpen ? 'no-hide-descendants' : 'auto'
                         }
-                        onOpenPostComposer={() => setIsPostComposerOpen(true)}
-                        onOpenNotices={() => {
-                          closeSecondFloor();
-                          setSelectedMessageTab('notice');
-                        }}
-                        onOpenFileAgent={reference => {
-                          const thread = session.threads.find(
-                            item => item.agentId === 'file-preprocessor',
-                          );
-                          if (!thread) {
-                            openAgentThread('file-preprocessor');
-                            return;
-                          }
-                          setAccessDrafts({
-                            owner: workspaceOwner,
-                            threads: {
-                              [thread.id]: {
-                                text: '',
-                                references: [reference],
-                                agentContextReset: true,
-                              },
-                            },
-                          });
-                          openThread(thread);
-                        }}
-                      />
-                    ) : null}
-                    {selectedTab === 'messages' && !secondFloorOpen ? (
-                      <View style={appStyles.retained}>
+                      >
                         <MessagesScreen
                           token={session.token}
                           active={
+                            !secondFloorOpen &&
+                            !isChatRoute &&
                             !modalRoute &&
                             !isPostComposerOpen &&
                             !requestComposerOpen &&
@@ -1237,7 +1244,7 @@ function App(): React.JSX.Element {
                             modalRoute === 'message-actions' ||
                             miaoVoiceExpanded
                           }
-                          palette={palette}
+                          palette={conversationPalette}
                           language={session.language}
                           threads={session.threads}
                           agents={session.agents}
@@ -1366,19 +1373,37 @@ function App(): React.JSX.Element {
                       </View>
                     ) : null}
 
-                    {!(selectedTab === 'messages' && secondFloorOpen) ? (
-                      <View testID="root-navigation">
-                        <BottomBar
-                          palette={palette}
-                          language={session.language}
-                          selectedTab={selectedTab}
-                          onSelectTab={tab => {
-                            closeSecondFloor();
-                            setSelectedTab(tab);
-                          }}
-                        />
-                      </View>
-                    ) : null}
+                    <View
+                      testID="root-navigation"
+                      pointerEvents={
+                        selectedTab === 'messages' && secondFloorOpen
+                          ? 'none'
+                          : undefined
+                      }
+                      accessibilityElementsHidden={
+                        (selectedTab === 'messages' && secondFloorOpen) ||
+                        undefined
+                      }
+                      importantForAccessibility={
+                        selectedTab === 'messages' && secondFloorOpen
+                          ? 'no-hide-descendants'
+                          : 'auto'
+                      }
+                    >
+                      <BottomBar
+                        palette={
+                          selectedTab === 'messages'
+                            ? conversationPalette
+                            : palette
+                        }
+                        language={session.language}
+                        selectedTab={selectedTab}
+                        onSelectTab={tab => {
+                          closeSecondFloor();
+                          setSelectedTab(tab);
+                        }}
+                      />
+                    </View>
                     {selectedTab === 'messages' && !secondFloorOpen ? (
                       <VoiceShortcutDock
                         key={`assistant:${workspaceOwner}`}
@@ -1469,6 +1494,58 @@ function App(): React.JSX.Element {
                         }}
                       />
                     ) : null}
+                    {selectedTab === 'messages' && secondFloorOpen ? (
+                      <View
+                        testID="second-floor-layer"
+                        style={appStyles.floorLayer}
+                      >
+                        <SecondFloorScreen
+                          active={
+                            !isChatRoute &&
+                            !modalRoute &&
+                            !isPostComposerOpen &&
+                            !requestComposerOpen
+                          }
+                          onToolChange={setSecondFloorTool}
+                          key={workspaceOwner}
+                          palette={palette}
+                          language={session.language}
+                          session={session}
+                          onClose={closeSecondFloor}
+                          onOpenFriendThread={openFriendThread}
+                          onOpenProfile={profileFlows.openPublicProfileByAiId}
+                          onOpenSettings={() => setModalRoute('settings')}
+                          onOpenDeleteAccount={() =>
+                            setModalRoute('delete-account')
+                          }
+                          onOpenPostComposer={() => setIsPostComposerOpen(true)}
+                          onOpenNotices={() => {
+                            closeSecondFloor();
+                            setSelectedMessageTab('notice');
+                          }}
+                          onOpenFileAgent={reference => {
+                            const thread = session.threads.find(
+                              item => item.agentId === 'file-preprocessor',
+                            );
+                            if (!thread) {
+                              openAgentThread('file-preprocessor');
+                              return;
+                            }
+                            setAccessDrafts({
+                              owner: workspaceOwner,
+                              threads: {
+                                [thread.id]: {
+                                  text: '',
+                                  references: [reference],
+                                  agentContextReset: true,
+                                },
+                              },
+                            });
+                            openThread(thread);
+                          }}
+                        />
+                      </View>
+                    ) : null}
                   </View>
                 </>
               ) : (
@@ -1491,6 +1568,63 @@ function App(): React.JSX.Element {
                 />
               )}
 
+              {session.token && activeComicCreation ? (
+                <Modal
+                  testID="comic-creation-modal"
+                  visible
+                  animationType="slide"
+                  presentationStyle="fullScreen"
+                  onRequestClose={() => {
+                    if (activeComicCreationRef.current === activeComicCreation)
+                      setComicCreation(null);
+                  }}
+                >
+                  <SafeAreaProvider>
+                    <SafeAreaView
+                      style={[
+                        appStyles.retained,
+                        { backgroundColor: chatPalette.background },
+                      ]}
+                    >
+                      <ComicCreationScreen
+                        key={`${activeComicCreation.owner}:${activeComicCreation.threadId}:${activeComicCreation.id}`}
+                        palette={chatPalette}
+                        language={session.language}
+                        session={session}
+                        initialPrompt={activeComicCreation.prompt}
+                        onBack={() => {
+                          if (
+                            activeComicCreationRef.current ===
+                            activeComicCreation
+                          )
+                            setComicCreation(null);
+                        }}
+                        onActionMessage={message => {
+                          if (
+                            activeComicCreationRef.current ===
+                            activeComicCreation
+                          )
+                            showToast(message);
+                        }}
+                        onActionError={error => {
+                          if (
+                            activeComicCreationRef.current ===
+                            activeComicCreation
+                          )
+                            showToast(
+                              appErrorText(
+                                session.language,
+                                error,
+                                '漫画制作失败，请重试。',
+                                'Comic creation failed. Try again.',
+                              ),
+                            );
+                        }}
+                      />
+                    </SafeAreaView>
+                  </SafeAreaProvider>
+                </Modal>
+              ) : null}
               {session.token &&
               (requestComposerOpen || miaoTask || agentWorkspace) ? (
                 <Modal
@@ -1840,4 +1974,12 @@ export default App;
 const appStyles = StyleSheet.create({
   hidden: { display: 'none' },
   retained: { flex: 1 },
+  floorLayer: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 1,
+  },
 });

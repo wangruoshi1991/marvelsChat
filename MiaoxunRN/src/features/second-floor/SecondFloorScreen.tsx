@@ -251,6 +251,7 @@ export function SecondFloorScreen({
     xun ? null : 'albums',
   );
   const closing = useRef(false);
+  const exitTransition = useRef<object | null>(null);
   const exitProgress = useRef(new Animated.Value(0)).current;
   const exitDrag = useRef<{ base: number | null; movement: number } | null>(
     null,
@@ -269,9 +270,6 @@ export function SecondFloorScreen({
       return;
     }
     panelEntrance.stopAnimation();
-    // React Native's test renderer does not advance native Animated callbacks;
-    // keep the historic synchronous close contract in tests while devices use
-    // the real exit transition below.
     if (reduceMotion) {
       panelEntrance.setValue(1);
       return;
@@ -409,29 +407,29 @@ export function SecondFloorScreen({
     Keyboard.dismiss();
     closing.current = true;
     exitDrag.current = null;
-    // React Native's test renderer does not advance native Animated callbacks;
-    // keep the historic synchronous close contract in tests while devices use
-    // the real exit transition below.
-    const runtimeEnv = (
-      globalThis as typeof globalThis & {
-        process?: { env?: { NODE_ENV?: string } };
-      }
-    ).process?.env?.NODE_ENV;
-    if (reduceMotion || runtimeEnv === 'test') {
+    if (reduceMotion) {
       closing.current = false;
       onClose();
       return;
     }
     exitProgress.stopAnimation();
+    const transition = {};
+    exitTransition.current = transition;
     Animated.timing(exitProgress, {
       toValue: 1,
       duration: exitGesture.animationMs,
       easing: Easing.bezier(...entranceCurve),
       useNativeDriver: true,
     }).start(({ finished }) => {
-      exitProgress.setValue(0);
-      closing.current = false;
-      if (finished) onClose();
+      if (exitTransition.current !== transition || !exitActive.current) return;
+      exitTransition.current = null;
+      if (finished) {
+        // Keep the departed floor offscreen until its parent removes it.
+        onClose();
+      } else {
+        closing.current = false;
+        exitProgress.setValue(0);
+      }
     });
   }, [
     active,
@@ -445,12 +443,14 @@ export function SecondFloorScreen({
     if (active) return;
     exitDrag.current = null;
     closing.current = false;
+    exitTransition.current = null;
     exitProgress.stopAnimation();
     exitProgress.setValue(0);
   }, [active, exitProgress]);
   useEffect(
     () => () => {
       exitDrag.current = null;
+      exitTransition.current = null;
       exitProgress.stopAnimation();
     },
     [exitProgress],
@@ -810,7 +810,7 @@ export function SecondFloorScreen({
       keyboardVerticalOffset={insets.top}
       style={[
         s.screen,
-        { backgroundColor: colors.background },
+        { backgroundColor: colors.background, paddingBottom: insets.bottom },
         {
           opacity: exitProgress.interpolate({
             inputRange: [0, 1],
