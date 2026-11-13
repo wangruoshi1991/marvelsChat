@@ -62,3 +62,18 @@ test("public specialist metadata exposes only workflow markers and explicitly se
     assert.equal(publicMessage({ metadata: { agentDispatch } }).metadata.agentDispatch, undefined);
   }
 });
+
+test("public specialist update markers identify a fresh request without exposing old authority", () => {
+  const metadata = publicMessage({ metadata: {
+    agentDispatch: { version: 1, kind: "clarify", contextResetReason: "agent_updated", private: "old-authority" },
+    agentClarification: { contextRefs: [], source: { currentPage: "messages.agent" }, agentVersion: "forged-version" },
+    specialistMessage: { agentVersion: "0.1.6", authorityCeiling: ["old-authority"] },
+  } }).metadata;
+  assert.deepEqual(metadata, {
+    agentDispatch: { version: 1, kind: "clarify", contextResetReason: "agent_updated" },
+    agentClarification: { contextRefs: [], source: { currentPage: "messages.agent" }, agentVersion: "0.1.6" },
+  });
+  assert.doesNotMatch(JSON.stringify(metadata), /old-authority|forged-version|specialistMessage/);
+  const unsupported = publicMessage({ metadata: { agentDispatch: { version: 1, kind: "reply", contextResetReason: "unknown" } } }).metadata;
+  assert.deepEqual(unsupported.agentDispatch, { version: 1, kind: "reply" });
+});

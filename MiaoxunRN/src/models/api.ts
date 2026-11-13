@@ -166,8 +166,10 @@ export type MessageDTO = {
     agentDispatch?: {
       version: 1;
       kind: 'reply' | 'clarify' | 'workspace' | 'content_preview';
+      contextResetReason?: 'agent_updated';
     };
     agentClarification?: {
+      agentVersion?: string;
       contextRefs: AIContextReference[];
       source: { currentPage: string };
     };

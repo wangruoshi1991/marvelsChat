@@ -41,7 +41,7 @@
 
 042的`origin`严格记录`kind=agent_conversation`、`threadId`、`inputMessageId`、`agentId`、`agentVersion`、`capability`，来自服务端读取的本人会话和原用户消息。`input`保留有序需求消息ID及原文哈希；目标由真实用户原文组成，不使用模型生成的共享目标。模型派发、交付、任务私有成果读取及续作会重验当前账号、完整专业授权、固定声明版本、原消息链和引用内容版本。删除、撤回或修改来源会停止后续访问与执行，但不抹去已成功的执行历史或调用回执；已明确确认保存并解除任务绑定的页面仍是用户独立内容。
 
-公开消息只提供`agentDispatch:{version:1,kind:reply|clarify|workspace}`、`agentClarification:{contextRefs,source:{currentPage}}`及任务入口。需求消息链、授权上限、请求指纹和分派内部状态不进入公开metadata。用户主动清除专业待续需求使用`agentContextReset:true`；它只重置待续需求，不改变资源权限，也不与管家重置或任务讨论混用。专业澄清按最新有效澄清消息续接，普通回复或任务回复结束该待续边界，不能从删除/撤回的末条消息跳回更早私有需求。
+公开消息只提供`agentDispatch:{version:1,kind:reply|clarify|workspace|content_preview,contextResetReason?:agent_updated}`、`agentClarification:{contextRefs,source:{currentPage},agentVersion?}`及任务入口。澄清版本由服务端原消息运行快照派生，不接受客户端填写。需求消息链、授权上限、请求指纹和分派内部状态不进入公开metadata。用户主动清除专业待续需求使用`agentContextReset:true`；它只重置待续需求，不改变资源权限，也不与管家重置或任务讨论混用。专业澄清按最新有效澄清消息续接，普通回复或任务回复结束该待续边界，不能从删除/撤回的末条消息跳回更早私有需求。已精确同意当前产品的用户发新消息时，若上一澄清保存的 Agent 声明或漫画产品授权快照已过期，则以 `contextResetReason:agent_updated` 明示新需求边界，不继承旧需求链、旧素材引用或旧发起来源；当前输入与明确所选素材仍按当前权限重新校验。自动新边界与显式 `agentContextReset:true` 当次均不向模型提供旧聊天历史，后续短历史仅在当前 `messages:read` 允许时从最新重置输入开始读取；重置输入删除或撤回也不恢复边界前历史。原 `clientMessageId` 重试始终复核原快照，不借新授权重跑旧模型请求。未同意当前产品仍拒绝执行。
 
 既有相册`ai_tasks`已接受键仍返回原任务，由原Worker完成，不能在重试时改建新工作空间。新相册执行使用`direct`工作空间和真实`media.select`成果，仍需云端同意、检索记录及素材版本验证。该能力尚不能接收`media_selection`依赖，所以直接相册成果不提供续作；协调任务仍可将素材交给真实支持接收的文字或建站节点。旧同步消息也仅按已保存回执重放，不重新分派。
 

@@ -32,7 +32,9 @@ test('retains standalone comics as a read-only history without creation controls
     );
   });
   await act(async () => {
-    tree!.root.findByProps({ accessibilityLabel: '查看作品' }).props.onPress();
+    tree!.root
+      .findByProps({ accessibilityLabel: '查看作品：旧独立漫画' })
+      .props.onPress();
   });
   expect(open).toHaveBeenCalledWith('old');
   expect(

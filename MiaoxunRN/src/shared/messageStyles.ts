@@ -103,7 +103,7 @@ export const messageStyles = {
     paddingHorizontal: 16,
     paddingTop: 12,
   },
-  messageFooterSpacer: { height: 48 },
+  messageFooterSpacer: { height: 12 },
   messageBlock: { gap: 7 },
   messageTimeSeparator: {
     alignItems: 'center',

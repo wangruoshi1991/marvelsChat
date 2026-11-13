@@ -8,15 +8,22 @@ export function pendingButlerClarification(thread: ChatThread) {
   return pendingClarification(thread, false);
 }
 
-export function pendingConversationClarification(thread: ChatThread) {
+export function pendingConversationClarification(
+  thread: ChatThread,
+  currentAgentVersion?: string,
+) {
   if (thread.agentId === 'miaoxun-butler')
     return pendingButlerClarification(thread);
   return usesAgentDispatch(thread.agentId)
-    ? pendingClarification(thread, true)
+    ? pendingClarification(thread, true, currentAgentVersion)
     : null;
 }
 
-function pendingClarification(thread: ChatThread, professional: boolean) {
+function pendingClarification(
+  thread: ChatThread,
+  professional: boolean,
+  currentAgentVersion?: string,
+) {
   // Professional dispatch treats the latest message as the request boundary;
   // deletion or recall must never revive a previous private request.
   const last = professional
@@ -52,6 +59,10 @@ function pendingClarification(thread: ChatThread, professional: boolean) {
         last.metadata?.agentDispatch?.kind !== 'clarify')) ||
     !clarification ||
     typeof clarification !== 'object' ||
+    (professional &&
+      (!currentAgentVersion ||
+        !('agentVersion' in clarification) ||
+        clarification.agentVersion !== currentAgentVersion)) ||
     !('contextRefs' in clarification) ||
     !Array.isArray(clarification.contextRefs) ||
     (!professional && !clarification.contextRefs.length) ||

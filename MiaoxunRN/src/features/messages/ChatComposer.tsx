@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   GestureResponderEvent,
   Keyboard,
-  LayoutChangeEvent,
   Pressable,
   StyleSheet,
   Text,
@@ -79,7 +78,7 @@ function estimateInputHeight(value: string) {
 
 function composerToolIcon(command: string) {
   const Icon =
-    command === '相册'
+    command === '相册' || command === '小站素材'
       ? Images
       : command === '拍摄'
       ? Camera
@@ -116,12 +115,12 @@ export function ChatComposer({
   onFocusInput,
   onOpenAssistant,
   onComposerTool,
+  onSelectStationSources,
   onStartLongSpeech,
   onFinishLongSpeech,
   onRecognizeSpeech,
   onSend,
   onQuickCommand,
-  onLayout,
 }: {
   palette: Palette;
   language: Language;
@@ -142,12 +141,12 @@ export function ChatComposer({
   onFocusInput: () => void;
   onOpenAssistant?: () => void;
   onComposerTool?: (tool: ComposerTool) => void;
+  onSelectStationSources?: () => void;
   onStartLongSpeech?: () => void;
   onFinishLongSpeech?: () => void;
   onRecognizeSpeech: () => void;
   onSend: () => void;
   onQuickCommand?: (command: string) => void;
-  onLayout?: (event: LayoutChangeEvent) => void;
 }) {
   const [inputHeight, setInputHeight] = React.useState(() =>
     estimateInputHeight(draft),
@@ -191,6 +190,7 @@ export function ChatComposer({
   React.useEffect(() => {
     if (!draft.trim()) {
       setInputHeight(minInputHeight);
+      setComposerPanel(null);
     }
   }, [draft]);
   const canSend = Boolean(draft.trim()) && !isSending && !contextAccessWarning;
@@ -211,7 +211,7 @@ export function ChatComposer({
     : isLight
     ? productColors.chipBorder
     : palette.border;
-  const toolCommands: ComposerTool[] = [
+  const toolCommands: Array<ComposerTool | '小站素材'> = [
     '相册',
     '拍摄',
     '文件',
@@ -220,6 +220,7 @@ export function ChatComposer({
     '任务',
     '妙猜猜',
     '文件库',
+    ...(onSelectStationSources ? ['小站素材' as const] : []),
   ];
   const insertEmoji = (emoji: string) => {
     if (isSending) return;
@@ -247,7 +248,6 @@ export function ChatComposer({
 
   return (
     <View
-      onLayout={onLayout}
       style={[
         chatLayoutStyles.composer,
         xunTheme && accessStyles.xunComposer,
@@ -483,6 +483,12 @@ export function ChatComposer({
             inputSelection.current = event.nativeEvent.selection;
           }}
           onContentSizeChange={event => {
+            // A delayed native measurement of the submitted text must not
+            // expand the now-empty editor after the send animation.
+            if (!latestDraft.current) {
+              setInputHeight(minInputHeight);
+              return;
+            }
             const contentHeight = Math.ceil(
               event.nativeEvent.contentSize.height,
             );
@@ -695,7 +701,8 @@ export function ChatComposer({
               )}
               onPress={() => {
                 setComposerPanel(null);
-                onComposerTool?.(command);
+                if (command === '小站素材') onSelectStationSources?.();
+                else onComposerTool?.(command);
               }}
               style={accessStyles.toolItem}
             >
@@ -726,12 +733,12 @@ const accessStyles = StyleSheet.create({
     gap: 0,
     paddingHorizontal: 0,
     paddingTop: 0,
-    paddingBottom: 23,
+    paddingBottom: 8,
   },
   xunComposerRow: {
     paddingHorizontal: 15,
     paddingTop: 6,
-    paddingBottom: 16,
+    paddingBottom: 0,
   },
   transparentButton: { backgroundColor: 'transparent' },
   xunCircleButton: {

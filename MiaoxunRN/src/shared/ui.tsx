@@ -282,6 +282,7 @@ export function Header({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={backAccessibilityLabel}
+        hitSlop={4}
         onPress={onBack}
         style={[
           styles.backButton,

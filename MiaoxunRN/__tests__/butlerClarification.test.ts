@@ -1,8 +1,11 @@
 import {
   pendingButlerClarification,
-  pendingConversationClarification,
+  pendingConversationClarification as readConversationClarification,
 } from '../src/features/messages/butlerClarification';
 import { ChatMessage, ChatThread } from '../src/features/session/sessionTypes';
+
+const pendingConversationClarification = (value: ChatThread) =>
+  readConversationClarification(value, '1.0.0');
 
 const references = [
   {
@@ -13,6 +16,7 @@ const references = [
   },
 ];
 const snapshot = {
+  agentVersion: '1.0.0',
   contextRefs: references,
   source: { currentPage: 'second-floor.albums' },
 };
@@ -181,3 +185,36 @@ test.each([
     ).toBeNull();
   },
 );
+
+test('an updated or unavailable Agent never restores an old clarification or its sources', () => {
+  const value = {
+    ...thread(question),
+    agentId: 'site-builder',
+    messages: [professionalQuestion],
+  };
+  expect(readConversationClarification(value, '1.0.0')?.references).toEqual(
+    references,
+  );
+  expect(readConversationClarification(value, '1.0.1')).toBeNull();
+  expect(readConversationClarification(value)).toBeNull();
+  expect(
+    readConversationClarification(
+      {
+        ...value,
+        messages: [
+          {
+            ...professionalQuestion,
+            metadata: {
+              agentDispatch: { version: 1, kind: 'clarify' },
+              agentClarification: {
+                contextRefs: references,
+                source: snapshot.source,
+              },
+            },
+          },
+        ],
+      },
+      '1.0.0',
+    ),
+  ).toBeNull();
+});

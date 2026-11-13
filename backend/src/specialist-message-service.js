@@ -21,6 +21,10 @@ const fail = (status, code, message) => new HttpError(status, message, { code })
 const mode = "dispatch";
 const receiptVersion = 1;
 const snapshot = row => ({ id: row.id, hash: hashSiteDocumentValue([row.sender_type, row.content]) });
+const matchesDeclaration = (expected, agent, capabilities) => expected.agentId === agent.key &&
+  expected.agentVersion === agent.version && hashSiteDocumentValue(expected.authorityCeiling) === hashSiteDocumentValue(capabilities);
+const matchesContentAuthority = (expected, entitlement) => !expected.contentAuthority ||
+  hashSiteDocumentValue(expected.contentAuthority) === hashSiteDocumentValue(entitlement);
 const pendingFailure = () => fail(409, "SPECIALIST_MESSAGE_PENDING", "当前会话有消息仍在处理中，请稍后核对原消息再发送。");
 const interruptedFailure = () => fail(409, "SPECIALIST_MESSAGE_INTERRUPTED", "原消息的模型调用状态未知，未创建任务；原请求已保留，不会自动再次调用模型。请核对会话后另发一条消息。");
 const knownFailures = new Set(["AGENT_PRODUCT_ENTITLEMENT_REQUIRED", "AI_ACCESS_REVOKED", "AI_AGENT_VERSION_CHANGED", "AI_CONTEXT_CHANGED", "AI_CONTEXT_NOT_FOUND",
@@ -69,15 +73,14 @@ export function createSpecialistMessageService({ transaction = withTransaction, 
       throw fail(403, "AI_ACCESS_REVOKED", "Agent 授权已撤回或范围已变化，请在“我”核对授权。");
     }
     const entitlement=await assertAgentProductEntitlement({ userId, agent, queryFn: connection.query.bind(connection) });
-    if(expected?.contentAuthority && hashSiteDocumentValue(expected.contentAuthority)!==hashSiteDocumentValue(entitlement))
+    if(expected && !matchesContentAuthority(expected, entitlement))
       throw fail(409,"CHAT_CONTENT_AUTHORITY_CHANGED","产品授权版本已变化，请重新整理创作。");
     const capabilities = listExecutableWorkspaceCapabilities({ registeredAgents: [agent], grants: [{
       agentId: agent.key, enabled: grant.enabled, grantedScopes: grant.granted_scopes,
     }] });
     if (!capabilities.length) throw fail(422, "AI_AGENT_MODE_UNSUPPORTED", "此 Agent 当前不支持专业任务会话。");
-    if (expected && (expected.agentId !== agent.key || expected.agentVersion !== agent.version ||
-      hashSiteDocumentValue(expected.authorityCeiling) !== hashSiteDocumentValue(capabilities))) {
-      throw fail(409, "AI_AGENT_VERSION_CHANGED", "Agent 的声明已更新，请重新发起消息。");
+    if (expected && !matchesDeclaration(expected, agent, capabilities)) {
+      throw fail(409, "AI_AGENT_VERSION_CHANGED", "原消息使用的 Agent 声明已更新，不能重试；请整理为新消息发送。");
     }
     return { agent, user: { id: user.id, displayName: user.display_name }, thread,
       grantedScopes: grant.granted_scopes, capabilities, entitlement };
@@ -158,7 +161,7 @@ export function createSpecialistMessageService({ transaction = withTransaction, 
     }
     return { ...receipt, failure: safeFailure(pendingFailure()) };
   }
-  async function previousClarification(connection, userId, threadId, agent) {
+  async function previousClarification(connection, userId, threadId, current) {
     // Include deleted/recalled rows in the boundary: skipping them would revive
     // an earlier private request that the user no longer sees as current.
     const [last] = await connection.query("SELECT * FROM chat_messages WHERE user_id = ? AND thread_id = ? ORDER BY created_at DESC,id DESC LIMIT 1 FOR SHARE", [userId, threadId]);
@@ -166,11 +169,18 @@ export function createSpecialistMessageService({ transaction = withTransaction, 
       last.metadata?.agentDispatch?.kind !== "clarify") return null;
     const [run] = await connection.query(`SELECT input.metadata FROM agent_runs run JOIN chat_messages input ON input.id = run.input_message_id
       WHERE run.output_message_id = ? AND run.user_id = ? AND run.thread_id = ? AND run.agent_id = ? AND run.status = 'success'
-      AND input.deleted_at IS NULL AND input.recalled_at IS NULL`, [last.id, userId, threadId, agent.key]);
-    if (run?.metadata?.specialistMessage?.state !== "completed") return null;
-    await access(connection, userId, threadId, run.metadata.specialistMessage);
-    return last.metadata.agentClarification ? { ...last.metadata.agentClarification,
-      requestSnapshots: run.metadata.specialistMessage.requestSnapshots } : null;
+      AND input.deleted_at IS NULL AND input.recalled_at IS NULL`, [last.id, userId, threadId, current.agent.key]);
+    const saved = run?.metadata?.specialistMessage;
+    if (saved?.state !== "completed") return null;
+    // A new message has already passed today's exact consent checks. An old
+    // clarification cannot veto every new request after an Agent upgrade, nor
+    // can its old goal, selected sources or authority be promoted to the new
+    // version. Old same-key receipts remain strict in replay().
+    if (!matchesDeclaration(saved, current.agent, current.capabilities) || !matchesContentAuthority(saved, current.entitlement)) {
+      return { contextResetReason: "agent_updated" };
+    }
+    return last.metadata.agentClarification ? { clarification: { ...last.metadata.agentClarification,
+      requestSnapshots: saved.requestSnapshots } } : null;
   }
 
   return async function submitSpecialistMessage({ userId, threadId, body: inputBody }) {
@@ -208,7 +218,9 @@ export function createSpecialistMessageService({ transaction = withTransaction, 
           throw fail(422,"CHAT_CONTENT_SOURCE_UNSUPPORTED","漫画创作仅支持图片参考，请移除视频。");
         if(current.agent.key === "comic-diary" && selected.context.some(item=>item.kind==='chat-message' && item.threadId!==threadId))
           throw fail(422,"CHAT_CONTENT_SOURCE_UNSUPPORTED","本次创作仅支持当前会话中的消息来源。");
-        const previous = body.agentContextReset || continuation ? null : await previousClarification(connection, userId, threadId, current.agent);
+        const prior = body.agentContextReset || continuation ? null : await previousClarification(connection, userId, threadId, current);
+        const previous = prior?.clarification;
+        const contextResetReason = prior?.contextResetReason;
         if (previous) await validateSnapshots(connection, userId, threadId, previous.requestSnapshots);
         const chain = previous ? await requestMessages(connection, userId, threadId, previous.requestMessageIds) : [];
         if (chain.length >= 20) throw fail(422, "SPECIALIST_CONTEXT_LIMIT", "补充消息过多，请清除待续需求后整理为一条完整需求。");
@@ -217,10 +229,24 @@ export function createSpecialistMessageService({ transaction = withTransaction, 
           queryFn: connection.query.bind(connection), lock: true });
         const pendingContextMissing = pendingContextRefs.some(prior => !selected.references.some(ref =>
           ref.kind === prior.kind && ref.id === prior.id && ref.version === prior.version));
-        const history = current.grantedScopes.includes("messages:read") ? (await connection.query(`SELECT id,sender_type,content FROM chat_messages
-          WHERE user_id = ? AND thread_id = ? AND deleted_at IS NULL AND recalled_at IS NULL
-          AND NOT(id=ANY(?::text[]))
-          ORDER BY created_at DESC,id DESC LIMIT 10 FOR SHARE`, [userId, threadId,continuation?.removedMessageIds||[]])).reverse() : [];
+        const contextReset = body.agentContextReset === true || contextResetReason === "agent_updated";
+        let history = [];
+        if (!contextReset && current.grantedScopes.includes("messages:read")) {
+          // A reset is a persisted history boundary, not just a prompt hint.
+          // Keep the boundary even when its message is deleted or recalled so
+          // the next turn cannot revive pre-reset stories or selected sources.
+          // Preserve PostgreSQL microseconds; pg Date decoding truncates them.
+          const [boundary] = await connection.query(`SELECT id,created_at::text AS boundary_created_at FROM chat_messages
+            WHERE user_id = ? AND thread_id = ? AND sender_type = 'user'
+            AND (metadata->>'agentContextReset' = 'true' OR metadata->'specialistMessage'->>'contextResetReason' = 'agent_updated')
+            ORDER BY created_at DESC,id DESC LIMIT 1 FOR SHARE`, [userId, threadId]);
+          history = (await connection.query(`SELECT id,sender_type,content FROM chat_messages
+            WHERE user_id = ? AND thread_id = ? AND deleted_at IS NULL AND recalled_at IS NULL
+            AND NOT(id=ANY(?::text[]))
+            ${boundary ? "AND (created_at,id) >= (?::timestamptz,?::text)" : ""}
+            ORDER BY created_at DESC,id DESC LIMIT 10 FOR SHARE`,
+          [userId, threadId, continuation?.removedMessageIds || [], ...(boundary ? [boundary.boundary_created_at, boundary.id] : [])])).reverse();
+        }
         let replyTo = null;
         if (body.replyToMessageId) {
           const [row] = await connection.query("SELECT id,sender_name,content,recalled_at FROM chat_messages WHERE id = ? AND user_id = ? AND thread_id = ? AND deleted_at IS NULL FOR SHARE", [body.replyToMessageId, userId, threadId]);
@@ -234,6 +260,7 @@ export function createSpecialistMessageService({ transaction = withTransaction, 
           ...(current.agent.key==="comic-diary"?{contentAuthority:current.entitlement}:{}),
           requestMessageIds: requestRows.map(row => row.id), requestSnapshots: requestRows.map(snapshot),
           history: history.map(snapshot), pendingContextRefs, pendingContextMissing, source: previous?.source || source,
+          ...(contextResetReason ? { contextResetReason } : {}),
           ...(continuation ? {contentPreviewContext:{id:continuation.id,revision:continuation.revision,snapshotHash:continuation.snapshotHash}} : {}) };
         const metadata = { source: "app", requestFingerprint: fingerprint, contextRefs: selected.references, specialistMessage: saved,
           ...(replyTo ? { replyTo } : {}), ...(body.agentContextReset ? { agentContextReset: true } : {}) };
@@ -257,7 +284,7 @@ export function createSpecialistMessageService({ transaction = withTransaction, 
           ...(admission.continuation ? {contentPreviewContext:{kind:admission.continuation.kind,snapshot:admission.continuation.snapshot}}:{}),
           specialistDispatch: { agent: { id: saved.agentId, name: admission.current.agent.name }, capabilities: saved.authorityCeiling,
             requestMessages: admission.requestRows.map(({ content }) => ({ content })), pendingContextMissing: saved.pendingContextMissing,
-            contextReset: body.agentContextReset === true } },
+            contextReset: body.agentContextReset === true || saved.contextResetReason === "agent_updated" } },
         beforeModelCall: async () => transaction(async connection => {
           await lockThread(connection, userId, threadId);
           const current = await access(connection, userId, threadId, saved);
@@ -283,7 +310,8 @@ export function createSpecialistMessageService({ transaction = withTransaction, 
         const prior = await readReceipt(connection, row);
         if (prior.output || prior.failure) return prior;
         if (row.metadata.specialistMessage.state !== "dispatched") throw interruptedFailure();
-        const agentDispatch = { version: receiptVersion, kind: decision.type };
+        const agentDispatch = { version: receiptVersion, kind: decision.type,
+          ...(saved.contextResetReason === "agent_updated" ? { contextResetReason: saved.contextResetReason } : {}) };
         const clarification = decision.type === "clarify" ? { requestMessageIds: saved.requestMessageIds,
           contextRefs: saved.pendingContextMissing ? saved.pendingContextRefs : row.metadata.contextRefs, source: saved.source } : null;
         const completed = await completeMessage({ connection, userId, threadId, inputMessageId: row.id, agentId: saved.agentId,

@@ -2,6 +2,10 @@ import React from 'react';
 import {
   Alert,
   FlatList,
+  Dimensions,
+  Keyboard,
+  KeyboardEvent,
+  Platform,
   Share,
   StyleSheet,
   Text,
@@ -767,6 +771,261 @@ describe('Chat content actions', () => {
     ).toHaveLength(0);
   });
 
+  it('keeps comic references optional inside the album tool, and dismisses the keyboard before sending', async () => {
+    const dismiss = jest.spyOn(Keyboard, 'dismiss');
+    const prepare = jest.fn(async () => null);
+    const onSend = jest.fn<
+      Promise<boolean>,
+      Parameters<React.ComponentProps<typeof ChatScreen>['onSend']>
+    >(() => new Promise<boolean>(() => {}));
+    const props = {
+      token: 'owner',
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread: { ...thread, kind: 'agent' as const, agentId: 'comic-diary' },
+      agents: [],
+      renderUserAvatar: () => <View />,
+      onBack: jest.fn(),
+      onSend,
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError: jest.fn(),
+      onPrepareComposerTool: prepare,
+    };
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    expect(
+      renderer.root.findAllByProps({ accessibilityLabel: '选参考图' }),
+    ).toHaveLength(0);
+    const composer = () => renderer.root.findByType(ChatComposer);
+    await ReactTestRenderer.act(() =>
+      composer().props.onChangeDraft('小猫和小狗放纸船，画成四格漫画'),
+    );
+    await ReactTestRenderer.act(() => composer().props.onComposerTool('相册'));
+    expect(prepare).toHaveBeenCalledWith('相册');
+    await ReactTestRenderer.act(() =>
+      composer().props.onSelectStationSources(),
+    );
+    const picker = renderer.root.findByType(
+      require('../src/features/messages/ComicSourcePickerSheet')
+        .ComicSourcePickerSheet,
+    );
+    await ReactTestRenderer.act(() => picker.props.onClose());
+    expect(composer().props.draft).toContain('纸船');
+    dismiss.mockClear();
+    await ReactTestRenderer.act(() => composer().props.onSend());
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend.mock.calls[0][3]).toEqual([]);
+    expect(composer().props.draft).toBe('');
+    expect(composer().props.isSending).toBe(true);
+  });
+
+  it('moves the chat with the announced iOS keyboard animation and retains browsing position', async () => {
+    const originalOS = Platform.OS;
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'ios' });
+    const callbacks = new Map<string, (event: KeyboardEvent) => void>();
+    const frames: Array<Parameters<typeof requestAnimationFrame>[0]> = [];
+    jest.spyOn(global, 'requestAnimationFrame').mockImplementation(callback => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const remove = jest.fn();
+    const add = jest
+      .spyOn(Keyboard, 'addListener')
+      .mockImplementation((name, callback) => {
+        callbacks.set(name, callback);
+        return { remove } as unknown as ReturnType<typeof Keyboard.addListener>;
+      });
+    const animate = jest.spyOn(Keyboard, 'scheduleLayoutAnimation');
+    try {
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(
+          <ChatScreen
+            palette={palettes.light}
+            language="zh"
+            currentUserId="user-1"
+            currentUserName="Gary"
+            thread={thread}
+            agents={[]}
+            renderUserAvatar={() => <View />}
+            onBack={jest.fn()}
+            onSend={jest.fn()}
+            onDeleteMessage={jest.fn()}
+            onRecallMessage={jest.fn()}
+            onSetMuted={jest.fn(async () => undefined)}
+            onActionError={jest.fn()}
+          />,
+        );
+      });
+      const event = {
+        duration: 250,
+        easing: 'keyboard',
+        endCoordinates: {
+          screenY: Dimensions.get('window').height - 300,
+          height: 300,
+        },
+      };
+      await ReactTestRenderer.act(() =>
+        callbacks.get('keyboardWillChangeFrame')!(event as KeyboardEvent),
+      );
+      expect(animate).toHaveBeenCalledWith(event);
+      const keyboardMargin = () =>
+        StyleSheet.flatten(
+          renderer.root.findByProps({ testID: 'chat-keyboard-surface' }).props
+            .style,
+        ).marginBottom;
+      expect(keyboardMargin()).toBe(300);
+      expect(
+        add.mock.calls.some(([name]) => name === 'keyboardDidChangeFrame'),
+      ).toBe(false);
+      const list = renderer.root.findByType(FlatList);
+      const toEnd = jest
+        .spyOn(list.instance, 'scrollToEnd')
+        .mockImplementation(() => {});
+      frames.splice(0);
+      await ReactTestRenderer.act(() => list.props.onLayout());
+      await ReactTestRenderer.act(() =>
+        frames.splice(0).forEach(frame => frame(0)),
+      );
+      expect(toEnd).toHaveBeenCalled();
+      toEnd.mockClear();
+      await ReactTestRenderer.act(() =>
+        list.props.onScroll({
+          nativeEvent: {
+            contentOffset: { y: 0 },
+            contentSize: { height: 1000 },
+            layoutMeasurement: { height: 400 },
+          },
+        }),
+      );
+      await ReactTestRenderer.act(() => list.props.onLayout());
+      expect(toEnd).not.toHaveBeenCalled();
+      await ReactTestRenderer.act(() =>
+        callbacks.get('keyboardDidHide')!({} as KeyboardEvent),
+      );
+      expect(keyboardMargin()).toBe(0);
+      await ReactTestRenderer.act(() => renderer.unmount());
+      expect(remove).toHaveBeenCalledTimes(2);
+    } finally {
+      Object.defineProperty(Platform, 'OS', {
+        configurable: true,
+        value: originalOS,
+      });
+    }
+  });
+
+  it.each(['AI_AGENT_VERSION_CHANGED', 'CHAT_CONTENT_AUTHORITY_CHANGED'])(
+    'a %s failure offers deliberate editing without retrying or inheriting selected sources',
+    async code => {
+      const edit = jest.fn();
+      const failed = {
+        ...message,
+        localStatus: 'failed' as const,
+        localFailure: {
+          code,
+          message: '旧请求不能重试',
+        },
+      };
+      const props = await renderMessage({
+        item: failed,
+        onEditAgentMessage: edit,
+      });
+      const surface = renderer.root.findByType(AIAssistGestureSurface);
+      expect(surface.props.onPress).toBeUndefined();
+      expect(
+        renderer.root
+          .findAllByType(Text)
+          .map(node => node.props.children)
+          .flat(),
+      ).not.toContain('确认后点击消息重试');
+      await ReactTestRenderer.act(() =>
+        renderer.root
+          .findByProps({ accessibilityLabel: '编辑为新消息' })
+          .props.onPress(),
+      );
+      expect(edit).toHaveBeenCalledWith(failed);
+      expect(props.onRetrySend).not.toHaveBeenCalled();
+    },
+  );
+
+  it('editing an obsolete request preserves an existing draft and sends only the explicitly edited text as a new request', async () => {
+    const onSend = jest.fn<
+      Promise<boolean>,
+      Parameters<React.ComponentProps<typeof ChatScreen>['onSend']>
+    >(async () => true);
+    const onActionError = jest.fn();
+    const failed: ChatMessage = {
+      ...message,
+      localStatus: 'failed',
+      localFailure: { code: 'AI_AGENT_VERSION_CHANGED', message: '旧请求' },
+      metadata: {
+        replyTo: { messageId: 'old-reply' },
+        contentPreviewContext: {
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          revision: 1,
+        },
+        contextRefs: [
+          { kind: 'station-photo', id: 'old-photo', title: '旧素材' },
+        ],
+      },
+    };
+    const comicThread = {
+      ...thread,
+      agentId: 'comic-diary',
+      messages: [failed],
+    };
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <ChatScreen
+          palette={palettes.light}
+          language="zh"
+          currentUserId="user-1"
+          currentUserName="Gary"
+          thread={comicThread}
+          agents={[]}
+          renderUserAvatar={() => <View />}
+          onBack={jest.fn()}
+          onSend={onSend}
+          onDeleteMessage={jest.fn()}
+          onRecallMessage={jest.fn()}
+          onSetMuted={jest.fn(async () => undefined)}
+          onActionError={onActionError}
+        />,
+      );
+    });
+    const composer = () => renderer.root.findByType(ChatComposer);
+    const editOriginal = () => {
+      const list = renderer.root.findByType(FlatList);
+      list.props
+        .renderItem({ item: list.props.data[0], index: 0 })
+        .props.onEditAgentMessage(failed);
+    };
+    await ReactTestRenderer.act(() =>
+      composer().props.onChangeDraft('保留当前输入'),
+    );
+    await ReactTestRenderer.act(editOriginal);
+    expect(composer().props.draft).toBe('保留当前输入');
+    expect(onActionError).toHaveBeenCalled();
+    await ReactTestRenderer.act(() => composer().props.onChangeDraft(''));
+    await ReactTestRenderer.act(editOriginal);
+    expect(composer().props.draft).toBe(failed.content);
+    expect(composer().props.contextRefs).toEqual([]);
+    expect(onSend).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(() => composer().props.onSend());
+    expect(onSend.mock.calls[0][1]).toBeUndefined();
+    expect(onSend.mock.calls[0][2]).toBeNull();
+    expect(onSend.mock.calls[0][3]).toEqual([]);
+    expect(onSend.mock.calls[0][4]).toBeUndefined();
+    expect(onSend.mock.calls[0][8]).toBeUndefined();
+    expect(onSend.mock.calls[0][7]).toBe(true);
+    expect(comicThread.messages).toEqual([failed]);
+  });
+
   it('disables list scrolling while global content actions are open', async () => {
     const props = {
       palette: palettes.light,
@@ -799,7 +1058,7 @@ describe('Chat content actions', () => {
     expect(renderer.root.findByType(FlatList).props.scrollEnabled).toBe(true);
   });
 
-  it('reserves the measured composer height so the last message is not covered', async () => {
+  it('keeps a small footer because the composer participates in normal layout', async () => {
     const props = {
       palette: palettes.light,
       language: 'zh' as const,
@@ -818,7 +1077,6 @@ describe('Chat content actions', () => {
     await ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
     });
-    const composer = renderer.root.findByType(ChatComposer);
     const list = renderer.root.findByType(FlatList);
     const footer = () => {
       const element = list.props.ListFooterComponent as React.ReactElement<{
@@ -829,15 +1087,9 @@ describe('Chat content actions', () => {
         style?: unknown;
       }>;
     };
-    expect(footer().props.style).toEqual(
-      expect.arrayContaining([expect.objectContaining({ height: 48 })]),
-    );
-    await ReactTestRenderer.act(() =>
-      composer.props.onLayout({ nativeEvent: { layout: { height: 124 } } }),
-    );
-    expect(footer().props.style).toEqual(
-      expect.arrayContaining([expect.objectContaining({ height: 136 })]),
-    );
+    expect(StyleSheet.flatten(footer().props.style)).toMatchObject({
+      height: 12,
+    });
   });
 
   it('merges a real contribution into the ordinary chronological chat timeline', async () => {

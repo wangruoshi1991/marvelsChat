@@ -55,7 +55,8 @@ function publicMetadata(value, suppressAttachments = false, isAgent = false) {
   if (value.agentContextReset === true) metadata.agentContextReset = true;
   if (record(value.agentDispatch) && value.agentDispatch.version === 1 &&
       ["reply", "clarify", "workspace", "content_preview"].includes(value.agentDispatch.kind)) {
-    metadata.agentDispatch = { version: 1, kind: value.agentDispatch.kind };
+    metadata.agentDispatch = { version: 1, kind: value.agentDispatch.kind,
+      ...(value.agentDispatch.contextResetReason === "agent_updated" ? { contextResetReason: "agent_updated" } : {}) };
   }
   if (record(value.assistSource) && text(value.assistSource.currentPage)) {
     metadata.assistSource = { currentPage: value.assistSource.currentPage };
@@ -96,7 +97,8 @@ function publicMetadata(value, suppressAttachments = false, isAgent = false) {
     const clarificationReferences = contextReferences(value.agentClarification.contextRefs);
     const source = value.agentClarification.source;
     if (clarificationReferences && record(source) && text(source.currentPage)) {
-      metadata.agentClarification = { contextRefs: clarificationReferences, source: { currentPage: source.currentPage } };
+      metadata.agentClarification = { contextRefs: clarificationReferences, source: { currentPage: source.currentPage },
+        ...(text(value.specialistMessage?.agentVersion) ? { agentVersion: value.specialistMessage.agentVersion } : {}) };
     }
   }
   if (

@@ -68,7 +68,7 @@ beforeEach(async () => {
 });
 async function send(input, owner = fixture, threadId = owner.threadId, contract = "6") {
   const response = await fetch(`${origin}/api/threads/${threadId}/messages`, { method: "POST", headers: {
-    Authorization: `Bearer ${owner.token}`, "Content-Type": "application/json", "X-Miaoxun-AI-Contract": "1",
+    Authorization: `Bearer ${owner.token}`, "Content-Type": "application/json", "X-Miaoxun-AI-Contract": "1", "X-Miaoxun-Chat-Content": "1",
     ...(contract === null ? {} : { "X-Miaoxun-Agent-Workspace": contract }),
   }, body: JSON.stringify(input) });
   return { status: response.status, ...await response.json() };
@@ -122,7 +122,7 @@ integration("only successful explicit clarification user turns enter a task; pri
   const first = body("请整理这次明确提供的文字");
   runtime = async options => { await options.beforeModelCall(); modelCalls++; return modelResult({ type: "clarify", question: "private-assistant-invented-request 请补充原文。" }); };
   const clarification = await send(first); assert.equal(clarification.status, 201);
-  assert.deepEqual(clarification.data.messages.at(-1).metadata.agentClarification, { contextRefs: [], source: { currentPage: "messages.agent" } });
+  assert.deepEqual(clarification.data.messages.at(-1).metadata.agentClarification, { contextRefs: [], source: { currentPage: "messages.agent" }, agentVersion: fixture.agent.version });
   const second = body("这次原文：会议决定完成报告。");
   runtime = async options => {
     assert.match(JSON.stringify(options.messages), /private-earlier-conversation/);
@@ -146,10 +146,49 @@ integration("ordinary reply and an explicit reset each end a pending clarificati
     runtime = async options => {
       assert.deepEqual(options.appContext.specialistDispatch.requestMessages, [{ content: next.content }]);
       assert.equal(options.appContext.specialistDispatch.contextReset, reset);
+      if (reset) assert.deepEqual(options.messages, []);
       await options.beforeModelCall(); return modelResult({ type: "reply", reply: "新需求已讨论" });
     };
     assert.equal((await send(next)).status, 201);
   }
+});
+
+for (const remove of ["deleted_at=clock_timestamp()", "recalled_at=clock_timestamp(),content=''"]) integration(`an explicit reset excludes old history even when its input has ${remove.split("=")[0]}`, async () => {
+  runtime = async options => { await options.beforeModelCall(); return modelResult({ type: "clarify", question: "Old clarification question" }); };
+  assert.equal((await send(body("Old private story"))).status, 201);
+  runtime = async options => { assert.deepEqual(options.messages, []); await options.beforeModelCall();
+    return modelResult({ type: "reply", reply: "New request reply" }); };
+  const reset = await send({ ...body("New independent request"), agentContextReset: true });
+  assert.equal(reset.status, 201);
+  await query(`UPDATE chat_messages SET ${remove} WHERE id=?`, [reset.data.messages[0].id]);
+  runtime = async options => {
+    assert.deepEqual(options.messages, [{ senderType: "agent", content: "New request reply" }]);
+    assert.doesNotMatch(JSON.stringify(options), /Old private story|Old clarification question/);
+    await options.beforeModelCall(); return modelResult({ type: "reply", reply: "Continuing new request" });
+  };
+  assert.equal((await send(body("Continue new request"))).status, 201);
+});
+
+integration("a reset history boundary keeps PostgreSQL microseconds when earlier messages share its millisecond", async () => {
+  runtime = async options => { await options.beforeModelCall(); return modelResult({ type: "clarify", question: "Old submillisecond question" }); };
+  const old = await send(body("Old submillisecond story")); assert.equal(old.status, 201);
+  runtime = async options => { assert.deepEqual(options.messages, []); await options.beforeModelCall();
+    return modelResult({ type: "reply", reply: "New submillisecond reply" }); };
+  const reset = await send({ ...body("New submillisecond request"), agentContextReset: true });
+  assert.equal(reset.status, 201);
+  for (const [message, timestamp] of [
+    [old.data.messages[0], "2026-11-13T01:00:00.123100Z"], [old.data.messages[1], "2026-11-13T01:00:00.123200Z"],
+    [reset.data.messages[0], "2026-11-13T01:00:00.123900Z"], [reset.data.messages[1], "2026-11-13T01:00:00.124000Z"],
+  ]) await query("UPDATE chat_messages SET created_at=?::timestamptz WHERE id=?", [timestamp, message.id]);
+  let providerHistory;
+  runtime = async options => {
+    providerHistory = options.messages;
+    await options.beforeModelCall(); return modelResult({ type: "reply", reply: "Continue after precise boundary" });
+  };
+  const continued = await send(body("Continue new request"));
+  assert.deepEqual(providerHistory, [{ senderType: "user", content: "New submillisecond request" }, { senderType: "agent", content: "New submillisecond reply" }]);
+  assert.doesNotMatch(JSON.stringify(providerHistory), /Old submillisecond story|Old submillisecond question/);
+  assert.equal(continued.status, 201);
 });
 
 integration("concurrent same-key retries dispatch once and a different pending message cannot join its clarification chain", async () => {
@@ -252,6 +291,52 @@ integration("Agent version changes cannot replay old receipts or silently retain
     await options.beforeModelCall(); return modelResult({ type: "reply", reply: "重新讨论" }); };
   assert.equal(code(await send({ ...body("新的完整需求"), agentContextReset: true })), "AGENT_PRODUCT_ENTITLEMENT_REQUIRED");
   assert.equal(invocations, 1, "Resetting conversation context cannot grant consent to a new runtime version");
+});
+
+for (const changed of ["version", "capabilities", "product-consent"]) integration(`current exact consent starts a new request after ${changed} changed since the old clarification`, async () => {
+  fixture = await makeOwner("comic-diary");
+  const sourceId = crypto.randomUUID();
+  await query("INSERT INTO station_diary_entries(id,user_id,title,body) VALUES (?,?,'Old selected diary','Old selected source')", [sourceId, fixture.userId]);
+  runtime = async options => { await options.beforeModelCall(); modelCalls++; return modelResult({ type: "clarify", question: "请补充故事结局" }); };
+  const firstInput = { ...body("Old pending comic request"), contextRefs: [{ kind: "station-diary", id: sourceId }], clientContext: { currentPage: "old.selected.source" } };
+  const first = await send(firstInput); assert.equal(first.status, 201, JSON.stringify(first));
+  const [oldInput] = await query("SELECT metadata FROM chat_messages WHERE id=?", [first.data.messages[0].id]);
+  const metadata = oldInput.metadata;
+  if (changed === "version") metadata.specialistMessage.agentVersion = "0.1.5";
+  if (changed === "capabilities") metadata.specialistMessage.authorityCeiling[0].description = "Previous declaration";
+  if (changed === "product-consent") metadata.specialistMessage.contentAuthority.contractHash = "0".repeat(64);
+  await query("UPDATE chat_messages SET metadata=?::jsonb WHERE id=?", [JSON.stringify(metadata), first.data.messages[0].id]);
+  await query("UPDATE station_diary_entries SET deleted_at=clock_timestamp() WHERE id=?", [sourceId]);
+  const next = body("New complete comic request");
+  runtime = async options => {
+    assert.deepEqual(options.appContext.specialistDispatch.requestMessages, [{ content: next.content }]);
+    assert.deepEqual(options.appContext.resolvedReferences, []);
+    assert.equal(options.appContext.specialistDispatch.pendingContextMissing, false);
+    assert.equal(options.appContext.specialistDispatch.contextReset, true);
+    assert.deepEqual(options.messages, []);
+    const plan = await fixture.agent.dispatch(options);
+    assert.deepEqual(plan.history, []);
+    assert.doesNotMatch(JSON.stringify(plan), /Old pending comic request|请补充故事结局|Old selected source/);
+    await options.beforeModelCall(); modelCalls++; return modelResult({ type: "reply", reply: "按本次新需求讨论" });
+  };
+  const result = await send(next); assert.equal(result.status, 201, JSON.stringify(result));
+  assert.deepEqual(result.data.messages.at(-1).metadata.agentDispatch, { version: 1, kind: "reply", contextResetReason: "agent_updated" });
+  const [saved] = await query("SELECT metadata FROM chat_messages WHERE id=?", [result.data.messages[0].id]);
+  assert.deepEqual(saved.metadata.specialistMessage.requestMessageIds, [result.data.messages[0].id]);
+  assert.deepEqual(saved.metadata.specialistMessage.pendingContextRefs, []);
+  assert.deepEqual(saved.metadata.specialistMessage.history, []);
+  assert.deepEqual(saved.metadata.specialistMessage.source, { currentPage: "messages.agent" });
+  const retried = await send(firstInput);
+  assert.equal(retried.status, 409, JSON.stringify(retried));
+  assert.equal(code(retried), changed === "product-consent" ? "CHAT_CONTENT_AUTHORITY_CHANGED" : "AI_AGENT_VERSION_CHANGED");
+  assert.equal(modelCalls, 2); assert.equal(invocations, 2); assert.equal((await workspaces()).length, 0);
+  runtime = async options => {
+    assert.deepEqual(options.messages, [{ senderType: "user", content: next.content }, { senderType: "agent", content: "按本次新需求讨论" }]);
+    assert.doesNotMatch(JSON.stringify(options), /Old pending comic request|请补充故事结局|Old selected source/);
+    await options.beforeModelCall(); modelCalls++; return modelResult({ type: "reply", reply: "继续新需求" });
+  };
+  assert.equal((await send(body("Continue current request"))).status, 201);
+  assert.equal(modelCalls, 3); assert.equal(invocations, 3);
 });
 
 integration("missing selected albums force clarification; an explicit reset removes the old selection and user chain", async () => {

@@ -64,6 +64,7 @@ export function ChatMessageItem({
   onOpenWorkspace,
   onRestoreWorkspaceContext,
   onEditWorkspaceDiscussion,
+  onEditAgentMessage,
   onActionMessage,
   onConfirmUIPreferences,
   contentPreviewCard,
@@ -94,6 +95,7 @@ export function ChatMessageItem({
   ) => void;
   onRestoreWorkspaceContext?: (context: WorkspaceDiscussionContext) => void;
   onEditWorkspaceDiscussion?: (message: ChatMessage) => void;
+  onEditAgentMessage?: (message: ChatMessage) => void;
   onActionMessage: (message: string) => void;
   onConfirmUIPreferences?: (
     id: string,
@@ -102,6 +104,10 @@ export function ChatMessageItem({
   contentPreviewCard?: React.ReactNode;
 }) {
   const assist = useAIAssist();
+  const agentVersionChanged = [
+    'AI_AGENT_VERSION_CHANGED',
+    'CHAT_CONTENT_AUTHORITY_CHANGED',
+  ].includes(item.localFailure?.code || '');
   const workspaceId = messageWorkspaceId(item, thread.agentId, thread.id);
   const discussionContext =
     (thread.agentId === 'miaoxun-butler' ||
@@ -310,7 +316,9 @@ export function ChatMessageItem({
           ]}
           testID={`chat-message-assist-${item.id}`}
           onPress={
-            item.localStatus === 'failed' ? () => onRetrySend(item) : undefined
+            item.localStatus === 'failed' && !agentVersionChanged
+              ? () => onRetrySend(item)
+              : undefined
           }
         >
           {replyTo ? (
@@ -446,6 +454,16 @@ export function ChatMessageItem({
           />
         </Artifact>
       ) : null}
+      {item.senderType === 'agent' &&
+      item.metadata?.agentDispatch?.contextResetReason === 'agent_updated' ? (
+        <Text style={{ color: palette.secondaryText }}>
+          {textFor(
+            language,
+            'Agent 已更新，本条按新需求处理。',
+            'The Agent was updated. This message starts a new request.',
+          )}
+        </Text>
+      ) : null}
       {item.localStatus ? (
         <View
           style={[styles.messageMetaRow, isMine && styles.messageMetaRowMine]}
@@ -488,10 +506,40 @@ export function ChatMessageItem({
                   </Text>
                 </Pressable>
               ) : null}
-              {onOpenAgentAccess &&
-              ['AI_CONTEXT_SCOPE_REQUIRED', 'AI_ACCESS_REVOKED'].includes(
-                item.localFailure?.code || '',
-              ) ? (
+              {agentVersionChanged ? (
+                <View style={failureStyles.content}>
+                  <Text style={{ color: palette.secondaryText }}>
+                    {textFor(
+                      language,
+                      '原请求保留，不能在新版本下重试。可编辑文字，重新选择素材后另行发送。',
+                      'The original request is retained and cannot be retried with the updated Agent. Edit the text, reselect sources, then send a new message.',
+                    )}
+                  </Text>
+                  {onEditAgentMessage ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={textFor(
+                        language,
+                        '编辑为新消息',
+                        'Edit as a new message',
+                      )}
+                      onPress={() => onEditAgentMessage(item)}
+                      style={failureStyles.action}
+                    >
+                      <Text style={{ color: palette.text }}>
+                        {textFor(
+                          language,
+                          '编辑为新消息',
+                          'Edit as a new message',
+                        )}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : onOpenAgentAccess &&
+                ['AI_CONTEXT_SCOPE_REQUIRED', 'AI_ACCESS_REVOKED'].includes(
+                  item.localFailure?.code || '',
+                ) ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={textFor(
@@ -598,7 +646,10 @@ export function ChatMessageItem({
   );
 }
 
-const failureStyles = StyleSheet.create({ content: { flexShrink: 1, gap: 4 } });
+const failureStyles = StyleSheet.create({
+  content: { flexShrink: 1, gap: 4 },
+  action: { minHeight: 44, justifyContent: 'center' },
+});
 
 const xunStyles = StyleSheet.create({
   contentMine: { alignItems: 'flex-end' },

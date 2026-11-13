@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import type { WorkspaceContributionUnavailableCounts } from '../../models/agentWorkspace';
 import { textFor } from '../../shared/i18n';
 import type { Palette } from '../../shared/theme';
@@ -20,6 +21,7 @@ export function WorkspaceContributionNotice({
   onRetry: () => Promise<void>;
   onOpenAgentAccess?: () => void;
 }) {
+  const [expanded, setExpanded] = React.useState(false);
   const t = (zh: string, en: string) => textFor(language, zh, en);
   const total = Object.values(reasons).reduce((sum, count) => sum + count, 0);
   if (!total) return null;
@@ -51,54 +53,94 @@ export function WorkspaceContributionNotice({
   ]
     .filter(Boolean)
     .join(t('；', '; '));
+  const Chevron = expanded ? ChevronUp : ChevronDown;
   return (
     <View style={[noticeStyles.notice, { backgroundColor: palette.soft }]}>
-      <Text accessibilityRole="alert" style={{ color: palette.text }}>
-        {t(
-          `有 ${total} 份历史协作成果暂不可读：${labels}。`,
-          `${total} historical contributions cannot be read: ${labels}.`,
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t(
+          '查看不可读协作成果的原因',
+          'Review unavailable contribution reasons',
         )}
-      </Text>
-      <Text style={{ color: palette.secondaryText }}>
-        {t(
-          '可继续编辑消息；发送结果和当前授权状态会单独提示。',
-          'You can continue editing. Message results and current access are reported separately.',
-        )}
-      </Text>
-      <View style={noticeStyles.actions}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('重试历史成果', 'Retry contributions')}
-          disabled={loading}
-          accessibilityState={{ disabled: loading }}
-          onPress={onRetry}
-          style={noticeStyles.action}
-        >
-          <Text style={{ color: palette.text }}>
-            {loading
-              ? t('正在核验', 'Checking')
-              : t('重试历史成果', 'Retry contributions')}
+        accessibilityState={{ expanded }}
+        accessibilityHint={labels}
+        onPress={() => setExpanded(value => !value)}
+        style={noticeStyles.summary}
+      >
+        <Text style={[noticeStyles.title, { color: palette.secondaryText }]}>
+          {t(
+            `历史协作成果 · ${total} 份不可读`,
+            `Historical contributions · ${total} unavailable`,
+          )}
+        </Text>
+        <Chevron size={16} color={palette.secondaryText} />
+      </Pressable>
+      {expanded ? (
+        <View style={noticeStyles.details}>
+          <Text style={{ color: palette.text }}>{labels}。</Text>
+          <Text style={{ color: palette.secondaryText }}>
+            {t(
+              '这里仅说明历史协作记录；当前消息的授权与发送结果会单独显示。',
+              'These are historical collaboration records. Access and results for current messages are shown separately.',
+            )}
           </Text>
-        </Pressable>
-        {reasons.authorization > 0 && onOpenAgentAccess ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('查看 Agent 授权', 'Review Agent access')}
-            onPress={onOpenAgentAccess}
-            style={noticeStyles.action}
-          >
-            <Text style={{ color: palette.text }}>
-              {t('查看 Agent 授权', 'Review Agent access')}
+          {reasons.source > 0 || reasons.version > 0 ? (
+            <Text style={{ color: palette.secondaryText }}>
+              {t(
+                '来源或 Agent 版本已变化的旧成果无法通过重试恢复，可基于当前素材另发需求。',
+                'Retrying cannot restore results whose sources or Agent versions changed. Send a new request using current sources.',
+              )}
             </Text>
-          </Pressable>
-        ) : null}
-      </View>
+          ) : null}
+          <View style={noticeStyles.actions}>
+            {reasons.unavailable > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t(
+                  '重新核验历史协作成果',
+                  'Recheck historical contributions',
+                )}
+                disabled={loading}
+                accessibilityState={{ disabled: loading }}
+                onPress={onRetry}
+                style={noticeStyles.action}
+              >
+                <Text style={{ color: palette.text }}>
+                  {loading
+                    ? t('正在核验', 'Checking')
+                    : t('重新核验', 'Recheck')}
+                </Text>
+              </Pressable>
+            ) : null}
+            {reasons.authorization > 0 && onOpenAgentAccess ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('查看 Agent 授权', 'Review Agent access')}
+                onPress={onOpenAgentAccess}
+                style={noticeStyles.action}
+              >
+                <Text style={{ color: palette.text }}>
+                  {t('查看 Agent 授权', 'Review Agent access')}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
 
 const noticeStyles = StyleSheet.create({
-  notice: { padding: 12, borderRadius: 12, gap: 8 },
+  notice: { paddingHorizontal: 12, borderRadius: 12 },
+  summary: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  title: { flex: 1, fontSize: 12, lineHeight: 18 },
+  details: { paddingBottom: 12, gap: 8 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   action: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 },
 });

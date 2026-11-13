@@ -157,6 +157,18 @@ test('detail publishes only successful assets in frame order and never offers ca
   ).toHaveLength(0);
   expect(text()).toContain('将带入2张已完成画面');
   expect(text()).toContain('结果未知');
+  expect(text()).not.toContain('旁白');
+  await act(async () => {
+    button('查看分镜文字').props.onPress();
+  });
+  expect(text()).toContain('旁白');
+  expect(button('收起分镜文字').props.accessibilityState.expanded).toBe(true);
+  await act(async () => {
+    button('收起分镜文字').props.onPress();
+    button('放大画面').props.onPress();
+  });
+  expect(text()).not.toContain('旁白');
+  expect(button('收起画面')).toBeDefined();
   await act(async () => {
     button('发布动态（2张）').props.onPress();
   });

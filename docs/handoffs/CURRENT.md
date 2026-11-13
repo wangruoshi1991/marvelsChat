@@ -2,9 +2,43 @@
 
 更新：2026-11-13。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
 
-#### 2026-11-13 对话漫画发布准备：生产只读与已有数据升级核验，尚未部署或分发
+#### 2026-11-13 最新真机反馈续修：本地候选，尚未部署或分发
 
-- 本轮保留原99个dirty文件，HEAD仍`f1a6c8f`，未重复实现11日对话漫画。冻结逐文件候选清单；对实际生产manifest为18个已有runtime文件修改及7个新增文件，无新依赖/原生/部署配置改动。正式打包器要求干净已提交工作树，本轮未绕过或生成伪制品。
+- 用户报告最新真机包漫画发送仍报“Agent 声明已更新”，且已同意0.1.6、我的Agent无待更新提示。本轮确认根因为服务端新消息被旧版澄清快照阻断，不要求解绑重绑。当前精确授权通过后结束过期链，新消息不继承旧需求/引用/来源/历史；重置边界持久保留，撤回/删除不复活旧上下文。原ID重试仍严格拒绝旧快照，不重跑模型。RN按服务端澄清版本恢复素材，失效原请求可明确编辑文字为新消息。
+- 去除顶部常驻选参考图/说明；本机相册与拍摄沿现真实上传路径，小站素材改为更多功能内按需入口。历史失效协作成果移到列表头折叠显示，仅暂不可用可重新核验。我的漫画/详情复用妙讯导航、卡片和token，紧凑画格可放大、分镜按需展开，保留真实失败和本人发布流程。
+- 键盘改跟随iOS提前帧事件与系统动画，发送即收键盘；移除重复composer留白/定时滚动，浏览历史时不强制追到底部，防止旧内容测量撑高空输入。以上是源码与自动化验证结果，尚无新包真机流畅度结论。
+- 真实隔离PG60迁移及32+20项通过、0跳过（含微秒边界），专库已停止；最终整仓退出0，RN111套1381项、Backend1149通过/408环境门控跳过、Agents59、Admin52、Avatar29、检索Web4。环境跳过不算PG通过，git diff --check通过。公开只读health/ready均200，目录9项且漫画0.1.6仍已发布。完整改动、验证和限制见[反馈续修记录](../reviews/2026-11-13-comic-chat-acceptance-fixes.md)。固定Simulator关机，正式build-only保护检查拒绝，未安装或声称视觉通过。
+- 本轮未提交、推送、部署、后台发布、上传新包或产生付费调用。现有Build63/发布文档修改保留；无迁移、Agent声明/权限/版本、依赖或配置变化。待配套runtime和新客户端后，再真机复验发送/可选素材/输入键盘/作品与历史成果。
+
+#### 2026-11-13 对话漫画服务器部署完成，后台/客户端仍待配套
+
+#### 2026-11-13 漫画日记 Agent 0.1.6 Release/Product 已发布
+
+- 用户继续授权后，通过已登录妙讯后台的正常 UI 完成漫画日记 `comic-diary` 0.1.6 Release 流程：创建草稿、提交审核、发布。后台详情显示“已发布”“运行就绪”“代码声明权限”仍为 `messages:read`、`diary:read`、`diary:write`、`album:read`、`station:read`、`station:write`、`media:image:generate`，合同 hash 为 `4f23297709b2205cd822ebffcd58b02531143a91a8e8413aa91d34e4917c9f39`。
+- 随后在产品目录创建漫画 `0.1.6` 产品版本，精确绑定已发布的 `comic-diary 0.1.6` Release；提交审核并发布成功。后台产品表显示 `0.1.6 / 已发布 / android、ios / 1 个 Agent`，产品合同 hash 为 `376f5cc9d159eeddc6046126d7b27983e2da5fa80d410ed127837ef5811638e1`。未修改或暂停旧的 0.1.5，也未迁移用户授权。
+- 公开只读复核：`GET https://8.153.167.11/api/agents` 返回 9 项，`comic-diary` 为 `releaseVersion: 0.1.6`、`published: true`、`catalogStatus: published`、`identity.published: true`；其余公开 Agent 也均为 `published: true/catalogStatus: published`。`/api/health` 与 `/api/ready` 均 200，ready 报告数据库 connected 且 migrationsCurrent=true。
+- 公开目录与能力成熟度已分开核对：`miaoxun-butler` 可做规划/调度但不直接生成外部成果；`album-manager` 有真实相册检索链路但要求用户授权、索引素材、OSS/视觉服务；`file-preprocessor` 有文件登记/UTF-8摘要链路，实际设备上传解析/OCR仍有边界；`site-builder` 生成私有结构化草稿，保存需用户确认；`comic-diary 0.1.6` 有聊天 dispatch、内容预览、059/060确认和图片队列合同，但图片渲染仍需已验证图片供应商、worker、存储和本人七项 scope；`video-production` 当前明确只交付文字脚本/镜头表；`model-3d` 与 `virtual-character` 只提供文字建议，不直接生成或保存资产；`ui-agent` 只做白名单偏好预览/reset，并要求服务端验证和用户确认；`media-retrieval` 仍是后台草稿/审核中，未进入公开9项。目录“已发布”不等于这些具体能力均已真机或真实供应商验收。
+- 这已解除“registry 0.1.6 与后台仍为 0.1.5 导致目录没有漫画 Agent”的线上阻塞，也证明问题不是每次解绑/重绑本身。新 0.1.6 产品仍需要用户本人在 Build62 或后续包中明确重新同意七项权限；既有 0.1.5 授权记录不自动迁移。Build62 不含 `chatContent:1`，不能作为本地对话漫画首版验收包。
+- 下一步：用户在手机刷新“我的 Agent”目录，确认漫画日记显示 0.1.6 后本人重新同意；随后使用包含 `chatContent:1` 的新客户端进行聊天内一次确认、紧凑四格/详情、独立日记和动态发布验收。iOS 构建 63 归档/上传、Apple 出口合规和 TestFlight 分发仍未由本轮执行；不把后台发布或 `/api/agents` 可见当成真机功能通过。
+
+#### 2026-11-13 Build63 已归档并上传 Apple，等待 TestFlight 处理
+
+- 用户明确允许生成并上传 Build63。本地仅把 `MiaoxunRN/ios/MiaoxunRN.xcodeproj/project.pbxproj` 的 iOS `CURRENT_PROJECT_VERSION` 从 58 更新为 63，保留现有文档修改；Release archive 使用正式 `MIAOXUN_API_BASE_URL=https://8.153.167.11`，Bundle `com.wangruoshi.miaoxun`、版本 `1.0 (63)`、arm64、Team `R8K5DUTWB6` 均已核对。
+- `xcodebuild -allowProvisioningUpdates ... -configuration Release -destination 'generic/platform=iOS' ... archive` 退出 0，显示 `** ARCHIVE SUCCEEDED **`。归档保存在仓库外 `~/Library/Application Support/MiaoxunReleasePreparations/conversational-comic-20261113/build63/MiaoxunRN-1.0.63.xcarchive`；CLI 归档签名仍是 Apple Development，但 Xcode Organizer 正常选择 App Store Connect 完成上传。
+- Xcode Organizer 最终显示 `Upload completed with warnings`，归档列表显示 `1.0 (63)`、状态 `Uploaded to Apple`，Submission Status 为 `Uploaded`、Build Number `63`。警告为 React.framework、ReactNativeDependencies.framework、hermesvm.framework 缺少匹配 dSYM，仅影响这三个依赖的崩溃符号化，不把警告误写成上传失败。
+- 本轮未填写 Apple 出口合规、未提交外部 TestFlight 审核、未修改测试组或通知。Apple 处理完成、可测试状态和手机安装仍待用户在 App Store Connect/TestFlight 中自行确认；Build63 包含 `chatContent:1` 客户端合同，待可安装后再做聊天内一次确认、紧凑四格/详情、独立日记和动态发布真机验收。
+
+- 用户明确批准冻结100文件清单的“仅本地提交并正式打包，不推送”。提交前重新核验HEAD、原空暂存区、全部路径/字节和测试日志；精确提交`79e91dd590a8e267991091c044e5a307394aaa0b`，tree`84a3d3574139c273fff8aacee1dd53f7bfccdda4`，父提交`f1a6c8f`。100文件提交blob逐字节与批准清单一致，提交和打包时工作树均干净，未推送。
+- 现有正式打包器退出0，从clean committed HEAD生成`conversational-comic-20261113-79e91dd`，含306项runtime文件和60项迁移、漫画0.1.6原七scope。归档SHA256`0bb5a823631bad03bedb986fd7153ff4a2c957377fbdc83115e7d89f29856212`，manifest SHA256`ed7442b1f0bc0fab75934abd5c86c54e66bdea7ff7173103f8ef9ffd8410e5a3`。独立27项审查通过：完整集合/逐项hash、tar安全与字节一致，对生产18改/7新/281不变，后台与查看器构建产物不变，无真实env或私钥块。
+- 制品及证据保存在仓库外`~/Library/Application Support/MiaoxunReleasePreparations/conversational-comic-20261113/`，详见[本轮记录](../reviews/2026-11-13-conversational-comic-release-preflight.md#获授权后的本地提交与制品)。本节和记录/索引为打包后文档更新，未包含在上述冻结提交或制品中，保留未提交；业务源码没有后续变化。
+- 整仓、37项迁移恢复和36项PG回归证据仍对应同一业务字节。当前候选iOS已完成generic iPhoneOS/arm64 Release原生编译（退出0，0 error），但尚未归档、上传或安装；固定Simulator关机仍没有模拟器视觉证据。手机实读为1.0（62）。
+- 用户已明确允许服务器部署更新；服务器已在维护窗口内完成058→060，切换到`/opt/projects/marvels-chat/releases/conversational-comic-20261113-79e91dd/runtime`并开放流量。执行状态为`traffic_opened`，迁移账本60/60、059/060 checksum匹配、`/api/health`与`/api/ready`均200、备份timer active；远端回执已复制到`P/production-execution/`，关键文件hash见本轮预检。
+- 服务器部署不等于后台Agent发布、TestFlight分发或真机验收。部署后通过已登录后台正常UI只读核对到：代码 registry 已是漫画日记 Agent 0.1.6，但现有 Release/Product 仍是0.1.5且已发布；公开`GET /api/agents`当前仅返回8项、没有comic-diary。版本不一致解释了真机目录看不见漫画 Agent：运行时要求已发布产品与当前registry/release合同一致，不能靠解绑重绑修复。Build62为1.0（62），旧包缺`chatContent:1`，不能作为本轮聊天漫画验收包。
+- 上述后台发布已完成；这一步不会自动扩大用户授权，已有0.1.5用户也不应被静默迁移。之后再确认iOS构建63归档/上传授权，由用户本人在手机确认产品scope并验收聊天内一次确认、紧凑四格/详情、独立日记和发布动态。11日58→58旧部署器不能直接使用，已完成部署的60账本也不能只切旧runtime回退。
+
+#### 2026-11-13 对话漫画发布准备：部署前历史快照（已被上方生产部署记录取代）
+
+- 本轮保留原99个dirty文件，HEAD仍`f1a6c8f`，未重复实现11日对话漫画。冻结逐文件候选清单；对实际生产manifest为18个已有runtime文件修改及7个新增文件，无新依赖/原生/部署配置改动。以下生产读数和未部署结论仅属于部署前快照，不能覆盖上方已完成的058→060部署记录。
 - 生产正常SSH/公开HTTP只读30项全部通过：runtime仍11日299文件/058账本，API及双Worker同源active/0重启，备份与共享路由保持；公开9项、漫画0.1.5、UI-Agent0.1.0，精确Release/Product/hash/scope相符。09:24全部active/passive队列0，6条历史媒体费用unknown摘要不变；09:26双Worker近期心跳正常。该证据不代表059/060已上线，执行前须重验。
 - 独立loopback专库从有数据058升级到060，37项迁移/约束/备份恢复检查通过，升级及恢复时72张旧表数据摘要保持；升级后仓库PG回归36/36、0跳过，测试审计写入另列。实际锁竞争确认逐文件事务：059失败仍58；060失败时可能是59，须保持维护并读取真实账本。旧058runtime会拒绝59/60账本，不能只切软链回退；未开放新写入前才可评估完整058数据库恢复，开放后不得用旧备份覆盖新内容/回执。专用cluster已安全停止，详细证据见[本轮预检](../reviews/2026-11-13-conversational-comic-release-preflight.md)。
 - 本轮整仓实际退出0：RN111套1374项、Backend1148通过/402门控skip、Agents59、Admin52、Avatar29、检索Web4及类型/lint/格式/构建通过。skip不当作PG通过。固定iPhone17仍Shutdown，build-only在编译前只读保护退出1，未绕过；锁定gem仍缺8个。配对iPhone14 Pro实读正式Bundle为1.0（62），未启动App或核验安装来源，不能视为当前候选设备通过。

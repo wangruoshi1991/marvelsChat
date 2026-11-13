@@ -4,8 +4,11 @@
 
 ## 产品与实现
 
-- [11月13日对话漫画发布预检](reviews/2026-11-13-conversational-comic-release-preflight.md)：当前生产299文件/058/漫画0.1.5只读复核、候选清单、已有058数据升级/备份恢复及逐文件事务边界。整仓重跑通过；当前候选iOS编译、正式制品与配套部署/0.1.6上架/新包仍未完成，不延续11日授权。
-- [漫画与日记对话创作合同](conversational-comic.md)、[API合同](api/chat-content-previews.md)、[本地实施记录](reviews/2026-11-11-conversational-comic-implementation.md)、[批准设计](superpowers/specs/2026-11-11-conversational-comic-diary-design.md)：用户真机否定Build62表单交互后批准首版本地实现。聊天中讨论/选素材、消息内单次确认、紧凑画格/详情、独立日记和本人编辑发布；059/060、0.1.6与新客户端须配套，当前生产和Build62尚未包含。最终验证与限制见CURRENT。
+- [11月13日最新真机反馈续修](reviews/2026-11-13-comic-chat-acceptance-fixes.md)：旧版本澄清阻断新消息的后端修复、严格原请求重试与历史边界、按需素材/历史成果分类、漫画列表详情和输入键盘续修；本地候选尚未部署/分发，设备体验仍待验收。
+
+- [11月13日对话漫画发布预检及配套部署](reviews/2026-11-13-conversational-comic-release-preflight.md)：用户批准100文件本地提交`79e91dd`，306文件正式runtime及独立27项审查完成；服务器已按授权从058升级到060并开放`conversational-comic-20261113-79e91dd`，生产只读终验通过。随后通过正常后台 UI 发布漫画 `comic-diary` 0.1.6 Release/Product，公开 `/api/agents` 已读到 9 项且漫画为 0.1.6；Build63 已由 Organizer 上传 Apple，Apple 处理、TestFlight 分发和真机验收仍分别核对。
+- 当前 Agent 能力成熟度以本轮公开目录与源码审计为准：目录 9 项均已发布，但 `media-retrieval` 仍未公开；文字规划/受控工作区链路与图片、视频、3D、真实媒体检索分别有不同权限、供应商、worker、存储和设备验收门槛，不能用目录状态替代能力验收。具体分层记录见 CURRENT。
+- [漫画与日记对话创作合同](conversational-comic.md)、[API合同](api/chat-content-previews.md)、[本地实施记录](reviews/2026-11-11-conversational-comic-implementation.md)、[批准设计](superpowers/specs/2026-11-11-conversational-comic-diary-design.md)：用户真机否定Build62表单交互后批准首版本地实现。聊天中讨论/选素材、消息内单次确认、紧凑画格/详情、独立日记和本人编辑发布；059/060已部署到生产，漫画0.1.6 Release/Product已发布并公开可见。Build62仍不含新客户端合同；最终验证与限制见CURRENT。
 - [11月11日聊天与漫画配套发布](reviews/2026-11-11-chat-comic-release.md)：f1a6c8f/299文件runtime已开放、058保持；原PID校验失败与独立恢复证据并列，漫画Release/Product0.1.5正常发布、公开目录9项，Build62正常Organizer上传成功。Apple处理/合规/分发及真机待验，不把上传当可安装。
 - [11月11日Build61聊天与漫画续修](reviews/2026-11-11-build61-chat-comic-followup.md)：新增漫画聊天真实制作入口、完整分镜确认、全宽长文与表情选择、历史贡献安全原因合同4；058隔离PG14项零跳过，配套发布/新包及真机复验仍待续，不代表Build61已修。
 - [11月11日Build61真机验收](reviews/2026-11-11-build61-device-acceptance.md)：用户确认已安装、漫画可见且显示绑定；二楼退出体验未通过。UI-Agent权限展示、二楼铺底/滚动保留/动画收尾已本地修复，整仓通过；未进入Build61，Simulator补构建因固定设备关闭受阻，后续新制品/真机复验、scope及真实模型仍待完成。

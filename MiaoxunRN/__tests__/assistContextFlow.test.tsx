@@ -23,6 +23,7 @@ import {
 } from '../src/features/session/sessionDefaults';
 import { ChatThread } from '../src/features/session/sessionTypes';
 import { AgentWorkspace } from '../src/models/agentWorkspace';
+import { AgentDTO } from '../src/models/api';
 import { agentWorkspace, workspaceStep } from '../__fixtures__/agentWorkspace';
 import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
 
@@ -99,7 +100,7 @@ const makeSession = () => ({
     ],
   },
   relationships: emptyRelationships,
-  agents: [],
+  agents: [] as AgentDTO[],
   agentReadiness: {},
   ownedAgents: [
     {
@@ -1269,6 +1270,19 @@ const professionalThread: ChatThread = {
   title: '建站 Agent',
 };
 function enableProfessionalThread(clarification = true) {
+  mockSession.agents = [
+    {
+      key: 'site-builder',
+      name: '建站 Agent',
+      version: '1.0.0',
+      category: 'specialist',
+      description: '',
+      capabilities: [],
+      permissions: [],
+      identity: null,
+      status: 'ready',
+    },
+  ];
   mockSession.ownedAgents.push({
     ...mockSession.ownedAgents[0],
     id: 'site-builder',
@@ -1287,6 +1301,7 @@ function enableProfessionalThread(clarification = true) {
               metadata: {
                 agentDispatch: { version: 1, kind: 'clarify' },
                 agentClarification: {
+                  agentVersion: '1.0.0',
                   contextRefs: clarificationRefs,
                   source: { currentPage: 'messages.agent' },
                 },

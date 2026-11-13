@@ -17,7 +17,10 @@ test("iOS Release uses the approved IP HTTPS origin without HTTP ATS exceptions"
   ]);
 
   assert.match(project, /MIAOXUN_API_BASE_URL = "https:\/\/8\.153\.167\.11";/);
-  assert.equal((project.match(/CURRENT_PROJECT_VERSION = 58;/g) || []).length, 2);
+  const builds = [...project.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map(match => match[1]);
+  assert.equal(builds.length, 2, "Debug and Release must declare a build number");
+  assert.ok(builds.every(value => /^[1-9][0-9]*$/.test(value) && Number(value) >= 58), "Builds must retain the established release floor");
+  assert.equal(new Set(builds).size, 1, "Debug and Release must use the same build number");
   assert.doesNotMatch(project, /MIAOXUN_TEMP_IP_TESTFLIGHT|http:\/\/8\.153\.167\.11/);
   assert.doesNotMatch(infoPlist, /NSExceptionDomains|NSExceptionAllowsInsecureHTTPLoads/);
   assert.match(infoPlist, /<key>NSAllowsArbitraryLoads<\/key>\s*<false\/>/);

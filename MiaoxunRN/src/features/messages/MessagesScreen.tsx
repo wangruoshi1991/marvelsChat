@@ -16,7 +16,6 @@ import {
   Animated,
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   PanResponder,
   Platform,
@@ -292,8 +291,12 @@ export function ChatScreen({
   const submitting = useRef(false);
   const sendAttempt = useRef(0);
   const clarification = useMemo(
-    () => pendingConversationClarification(thread),
-    [thread],
+    () =>
+      pendingConversationClarification(
+        thread,
+        agents.find(agent => agent.key === thread.agentId)?.version,
+      ),
+    [thread, agents],
   );
   const handledClarification = useRef<string | null>(null);
   const draftEdited = useRef(false);
@@ -347,11 +350,6 @@ export function ChatScreen({
           : textFor(language, '语音识别失败', 'Speech recognition failed'),
       ),
   });
-  // The composer grows when Butler shortcuts, context references, or a reply
-  // preview are visible. Reserve that measured height in the message list so
-  // the final bubble can still scroll above the composer instead of being
-  // covered by it.
-  const [composerHeight, setComposerHeight] = useState(0);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const safeAreaInsets = useSafeAreaInsets();
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(
@@ -704,6 +702,31 @@ export function ChatScreen({
           setWorkspaceContext(context);
           setDraft(message.content);
         }}
+        onEditAgentMessage={message => {
+          if (
+            draft.trim() ||
+            contextRefs.length ||
+            replyTarget ||
+            workspaceContext ||
+            contentContext
+          ) {
+            onActionError(
+              textFor(
+                language,
+                '请先处理当前输入，再编辑这条消息。',
+                'Finish the current draft before editing this message.',
+              ),
+            );
+            return;
+          }
+          draftEdited.current = true;
+          continuingClarification.current = false;
+          contextReset.current = true;
+          contextGeneration.current += 1;
+          setContextResetNotice(true);
+          setAssistSource(undefined);
+          setDraft(message.content);
+        }}
         onRetrySend={message => {
           if (message.localStatus !== 'failed') {
             return;
@@ -913,48 +936,30 @@ export function ChatScreen({
   ]);
 
   useEffect(() => {
-    const showSubscription = Keyboard.addListener('keyboardDidShow', event => {
-      if (Platform.OS === 'ios') {
-        setKeyboardInset(
-          keyboardBottomInset(
-            event.endCoordinates,
-            windowSize.height,
-            safeAreaInsets.bottom,
-          ),
-        );
-      }
-      if (shouldFollow()) {
-        scrollToBottom(true);
-        setTimeout(() => {
-          if (shouldFollow()) scrollToBottom(true);
-        }, 80);
-      }
-    });
-    const frameSubscription = Keyboard.addListener(
-      'keyboardDidChangeFrame',
-      event => {
-        if (Platform.OS === 'ios') {
-          setKeyboardInset(
-            keyboardBottomInset(
-              event.endCoordinates,
-              windowSize.height,
-              safeAreaInsets.bottom,
-            ),
-          );
-        }
-        if (shouldFollow()) scrollToBottom(true);
-      },
-    );
+    const moveWithKeyboard = (event: import('react-native').KeyboardEvent) => {
+      Keyboard.scheduleLayoutAnimation(event);
+      setKeyboardInset(
+        keyboardBottomInset(
+          event.endCoordinates,
+          windowSize.height,
+          safeAreaInsets.bottom,
+        ),
+      );
+    };
+    // iOS announces its final frame before animating. Applying it after the
+    // animation (didShow/didChangeFrame) makes the composer jump into place.
+    const frameSubscription =
+      Platform.OS === 'ios'
+        ? Keyboard.addListener('keyboardWillChangeFrame', moveWithKeyboard)
+        : undefined;
     const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
       setKeyboardInset(0);
     });
-
     return () => {
-      showSubscription.remove();
-      frameSubscription.remove();
+      frameSubscription?.remove();
       hideSubscription.remove();
     };
-  }, [safeAreaInsets.bottom, scrollToBottom, shouldFollow, windowSize.height]);
+  }, [safeAreaInsets.bottom, windowSize.height]);
 
   const send = () => {
     const content = draft.trim();
@@ -962,6 +967,7 @@ export function ChatScreen({
       return;
     }
     submitting.current = true;
+    Keyboard.dismiss();
     const attempt = ++sendAttempt.current;
     follow();
     scrollToBottom(true);
@@ -1148,14 +1154,14 @@ export function ChatScreen({
   );
 
   return (
-    <KeyboardAvoidingView
+    <View
       style={[
         styles.chatScreen,
         { backgroundColor: messagePalette.background },
       ]}
-      enabled={false}
     >
       <Animated.View
+        testID="chat-keyboard-surface"
         style={[
           styles.chatSwipeSurface,
           {
@@ -1201,26 +1207,6 @@ export function ChatScreen({
           ) : null}
           {isComic ? (
             <View style={taskStyles.comicEntry}>
-              <Text
-                style={[
-                  taskStyles.comicHint,
-                  { color: messagePalette.secondaryText },
-                ]}
-              >
-                {textFor(
-                  language,
-                  '直接聊天创作；参考图片需附故事说明，不会自动识别原图。',
-                  'Create in chat. Add a story description for reference images; pixels are not inspected.',
-                )}
-              </Text>
-              <Action
-                label={textFor(language, '选参考图', 'Choose references')}
-                palette={messagePalette}
-                onPress={() => {
-                  Keyboard.dismiss();
-                  setSourcesOpen(true);
-                }}
-              />
               <Action
                 label={textFor(language, '我的漫画', 'My comics')}
                 palette={messagePalette}
@@ -1294,16 +1280,16 @@ export function ChatScreen({
               onScroll={onChatScroll}
               scrollEventThrottle={16}
               ListHeaderComponent={
-                contributions.hasMore || contributions.error ? (
-                  <View>
-                    {contributions.error ? (
-                      <Text
-                        accessibilityRole="alert"
-                        style={{ color: palette.rose }}
-                      >
-                        {contributions.error}
-                      </Text>
-                    ) : null}
+                <View>
+                  {contributions.error ? (
+                    <Text
+                      accessibilityRole="alert"
+                      style={{ color: palette.rose }}
+                    >
+                      {contributions.error}
+                    </Text>
+                  ) : null}
+                  {contributions.hasMore || contributions.error ? (
                     <Pressable
                       accessibilityRole="button"
                       accessibilityState={{ disabled: contributions.loading }}
@@ -1331,11 +1317,7 @@ export function ChatScreen({
                             )}
                       </Text>
                     </Pressable>
-                  </View>
-                ) : null
-              }
-              ListFooterComponent={
-                <View>
+                  ) : null}
                   <WorkspaceContributionNotice
                     reasons={contributions.unavailableReasons}
                     palette={messagePalette}
@@ -1344,6 +1326,10 @@ export function ChatScreen({
                     onRetry={contributions.retry}
                     onOpenAgentAccess={openAgentAccess}
                   />
+                </View>
+              }
+              ListFooterComponent={
+                <View>
                   {tasks.error || tasks.decisionError ? (
                     <View>
                       <Text
@@ -1408,21 +1394,16 @@ export function ChatScreen({
                       )}
                     />
                   ))}
-                  <View
-                    style={[
-                      styles.messageFooterSpacer,
-                      { height: Math.max(48, composerHeight + 12) },
-                    ]}
-                  />
+                  <View style={styles.messageFooterSpacer} />
                 </View>
               }
               onScrollToIndexFailed={onScrollToIndexFailed}
               onLayout={() =>
                 workspaceContribution
                   ? focusContribution()
-                  : contributions.historyLoaded || !shouldFollow()
-                  ? undefined
-                  : scrollToBottom(false)
+                  : shouldFollow()
+                  ? scrollToBottom(false)
+                  : undefined
               }
               onContentSizeChange={focusContribution}
               renderItem={renderMessage}
@@ -1583,23 +1564,19 @@ export function ChatScreen({
               return current.trim() ? `${current}\n${normalized}` : normalized;
             });
           }}
+          onSelectStationSources={
+            isComic && token
+              ? () => {
+                  Keyboard.dismiss();
+                  setSourcesOpen(true);
+                }
+              : undefined
+          }
           onComposerTool={handleComposerTool}
-          onLayout={event => {
-            const nextHeight = event.nativeEvent.layout.height;
-            setComposerHeight(current =>
-              Math.abs(current - nextHeight) > 1 ? nextHeight : current,
-            );
-          }}
           onClearReplyTarget={() => setReplyTarget(null)}
           onFocusInput={() => {
             assist.dismiss();
             closeMessageMenu();
-            if (shouldFollow()) {
-              scrollToBottom(true);
-              setTimeout(() => {
-                if (shouldFollow()) scrollToBottom(true);
-              }, 80);
-            }
           }}
           onOpenAssistant={openConversationAssistant}
           onStartLongSpeech={startLongSpeech}
@@ -1682,13 +1659,12 @@ export function ChatScreen({
         onOpenProfile={thread.peerAiId ? onOpenPeerProfile : undefined}
         onActionError={onActionError}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const taskStyles = StyleSheet.create({
   refresh: { minHeight: 44, padding: 12 },
-  comicHint: { flex: 1, minWidth: 100 },
   comicSources: {
     flexDirection: 'row',
     gap: 6,
@@ -1696,10 +1672,9 @@ const taskStyles = StyleSheet.create({
     paddingVertical: 6,
   },
   comicThumbnail: { width: 44, height: 44, borderRadius: 6 },
-  comicAction: { fontWeight: '600' },
   comicEntry: {
-    flexWrap: 'wrap',
     flexDirection: 'row',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     paddingLeft: 16,
     paddingRight: 4,

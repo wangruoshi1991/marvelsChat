@@ -83,6 +83,12 @@ test('a long wrapped paste can scroll to its caret before native size measuremen
   expect(StyleSheet.flatten(input().props.style).height).toBe(64);
   act(() => input().props.onChangeText(''));
   expect(StyleSheet.flatten(input().props.style).height).toBe(44);
+  act(() =>
+    input().props.onContentSizeChange({
+      nativeEvent: { contentSize: { height: 480 } },
+    }),
+  );
+  expect(StyleSheet.flatten(input().props.style).height).toBe(44);
   expect(send).not.toHaveBeenCalled();
 });
 
