@@ -1,7 +1,7 @@
 import type { AIContextReference } from '../../models/aiTask';
+import type { ContentPreviewContext } from '../../models/chatContentPreview';
 import { usesAgentDispatch } from '../../models/agentDispatch';
 import {
-  WorkspaceContextSelector,
   WorkspaceDiscussionContext,
   isWorkspaceDiscussionContext,
   workspaceContextSelector,
@@ -13,6 +13,7 @@ import { MiaoxunApiError } from '../../services/api/http';
 import {
   assertAgentWorkspaceContract,
   assertAIContract,
+  assertChatContentContract,
 } from '../../services/aiContract';
 import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
 import {
@@ -58,6 +59,7 @@ export function useMessageActions({
       butlerContextReset?: boolean,
       workspaceContext?: WorkspaceDiscussionContext,
       agentContextReset?: boolean,
+      contentPreviewContext?: ContentPreviewContext,
     ) => {
       const thread = threads.find(item => item.id === threadId);
       const isButler = thread?.agentId === 'miaoxun-butler';
@@ -100,8 +102,20 @@ export function useMessageActions({
       const submittedWorkspace = retryMessage
         ? retryMessage.metadata?.workspaceContext
         : workspaceContext;
+      const submittedPreview = retryMessage
+        ? retryMessage.metadata?.contentPreviewContext
+        : contentPreviewContext;
       let submittedSource: AssistMessageSource | undefined;
       try {
+        if (
+          submittedPreview &&
+          (thread?.agentId !== 'comic-diary' ||
+            submittedWorkspace ||
+            submittedReset ||
+            submittedAgentReset ||
+            submittedReplyToMessageId)
+        )
+          throw new Error('创作修改关联不能混用其他回复或任务上下文。');
         if (
           submittedAgentResetValue !== undefined &&
           (!isProfessional ||
@@ -144,6 +158,9 @@ export function useMessageActions({
         content: submittedContent,
         clientMessageId,
         metadata: {
+          ...(submittedPreview
+            ? { contentPreviewContext: { ...submittedPreview } }
+            : {}),
           contextRefs: submittedReferences,
           ...(submittedReset ? { butlerContextReset: true } : {}),
           ...(submittedAgentReset ? { agentContextReset: true } : {}),
@@ -212,6 +229,7 @@ export function useMessageActions({
       }
 
       try {
+        if (thread?.agentId === 'comic-diary') assertChatContentContract(token);
         if (isButler || isProfessional) assertAgentWorkspaceContract(token);
         else if (thread?.agentId || submittedReferences.length)
           assertAIContract(token);
@@ -228,13 +246,12 @@ export function useMessageActions({
           clientMessageId,
           45000,
           submittedReferences,
-          ...((submittedAgentReset
-            ? [undefined, undefined, true]
-            : submittedWorkspace
-            ? [undefined, workspaceContextSelector(submittedWorkspace)]
-            : submittedReset
-            ? [true]
-            : []) as [boolean?, WorkspaceContextSelector?, boolean?]),
+          submittedReset || undefined,
+          submittedWorkspace
+            ? workspaceContextSelector(submittedWorkspace)
+            : undefined,
+          submittedAgentReset || undefined,
+          submittedPreview,
         );
         const incoming = response.messages.map(mapMessage);
         setThreads(current =>

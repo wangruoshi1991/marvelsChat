@@ -56,7 +56,8 @@ export function StationPostComposerContent({
     attachments,
     body,
     enabledAgents,
-    isPublishing,
+    isEditingLocked,
+    attachmentSource,
     locationLabel,
     openLocationMenu,
     openVisibilityMenu,
@@ -98,7 +99,7 @@ export function StationPostComposerContent({
     >
       <View style={[styles.postComposerEditorCard, { backgroundColor }]}>
         <TextInput
-          editable={!isPublishing}
+          editable={!isEditingLocked}
           maxLength={5000}
           multiline
           onChangeText={setBody}
@@ -134,11 +135,11 @@ export function StationPostComposerContent({
               >
                 <Image
                   resizeMode="cover"
-                  source={{ uri: item.uri }}
+                  source={attachmentSource(item)}
                   style={styles.postComposerMediaImage}
                 />
                 <MediaRemoveButton
-                  disabled={isPublishing}
+                  disabled={isEditingLocked}
                   language={language}
                   onPress={() => removeAttachment(item.uri)}
                 />
@@ -152,7 +153,7 @@ export function StationPostComposerContent({
                   '继续添加图片',
                   'Add more images',
                 )}
-                disabled={isPublishing}
+                disabled={isEditingLocked}
                 onPress={addImages}
                 style={[
                   styles.postComposerMediaAdd,
@@ -187,7 +188,7 @@ export function StationPostComposerContent({
               {attachments[0]?.originalFilename}
             </Text>
             <MediaRemoveButton
-              disabled={isPublishing}
+              disabled={isEditingLocked}
               language={language}
               onPress={() => removeAttachment(attachments[0].uri)}
             />
@@ -202,7 +203,7 @@ export function StationPostComposerContent({
         >
           <ComposerMediaAction
             active={postKind === 'image'}
-            disabled={isPublishing}
+            disabled={isEditingLocked}
             label={textFor(language, '图片', 'Photo')}
             onPress={addImages}
             source={
@@ -215,7 +216,7 @@ export function StationPostComposerContent({
           />
           <ComposerMediaAction
             active={postKind === 'video'}
-            disabled={isPublishing}
+            disabled={isEditingLocked}
             label={textFor(language, '视频', 'Video')}
             onPress={addVideo}
             source={
@@ -302,7 +303,7 @@ export function StationPostComposerContent({
                   key={agent.id}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: selected }}
-                  disabled={isPublishing}
+                  disabled={isEditingLocked}
                   onPress={() => toggleAgent(agent.id)}
                   style={[
                     styles.postComposerAgentChip,
@@ -346,7 +347,7 @@ export function StationPostComposerContent({
       <View style={[styles.postComposerSettingsCard, { backgroundColor }]}>
         <Pressable
           accessibilityRole="button"
-          disabled={isPublishing}
+          disabled={isEditingLocked}
           onPress={openLocationMenu}
           style={styles.postComposerSettingRow}
         >
@@ -375,7 +376,7 @@ export function StationPostComposerContent({
         />
         <Pressable
           accessibilityRole="button"
-          disabled={isPublishing}
+          disabled={isEditingLocked}
           onPress={openVisibilityMenu}
           style={styles.postComposerSettingRow}
         >
@@ -459,6 +460,7 @@ function MediaRemoveButton({
       accessibilityRole="button"
       accessibilityLabel={textFor(language, '移除附件', 'Remove attachment')}
       disabled={disabled}
+      hitSlop={11}
       onPress={onPress}
       style={styles.postComposerMediaRemove}
     >

@@ -1,7 +1,6 @@
 import { HttpError } from "../http-error.js";
 import { createUsageEvent, hashRequestIp } from "../repositories.js";
 import {
-  createStationPost,
   deleteStationPost,
 } from "../station-repository.js";
 import {
@@ -10,6 +9,8 @@ import {
   stationPostInteractionSchema,
 } from "../schemas.js";
 import { setStationPostInteraction } from "../station-interaction-repository.js";
+import { submitStationPost, getStationPostSubmission, resolveStationPostSubmission } from "../station-post-submission-repository.js";
+import { stationPostSubmissionParamsSchema } from "../schemas.js";
 
 export function registerStationPostRoutes(app, { authenticate, asyncHandler }) {
   app.post(
@@ -17,24 +18,35 @@ export function registerStationPostRoutes(app, { authenticate, asyncHandler }) {
     authenticate,
     asyncHandler(async (req, res) => {
       const body = stationPostSchema.parse(req.body);
-      const post = await createStationPost({
+      const post = await submitStationPost({
         userId: req.user.id,
         ...body,
-      });
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "station.post.create",
-        targetType: "station_post",
-        targetId: post.id,
-        payload: {
-          visibility: post.visibility,
-          mediaCount: post.media.length,
-          agentCapabilityCount: post.agentCapabilities.length,
+        audit: {
+          ipHash: hashRequestIp(req.ip),
+          userAgent: req.get("user-agent") || "",
         },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
       });
       res.status(201).json({ data: post });
+    }),
+  );
+
+  app.get(
+    "/api/station/post-submissions/:clientRequestId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const params = stationPostSubmissionParamsSchema.parse(req.params);
+      const receipt = await getStationPostSubmission({ userId: req.user.id, ...params });
+      res.json({ data: receipt });
+    }),
+  );
+
+  app.post(
+    "/api/station/post-submissions/:clientRequestId/resolve",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const params = stationPostSubmissionParamsSchema.parse(req.params);
+      const receipt = await resolveStationPostSubmission({ userId: req.user.id, ...params });
+      res.json({ data: receipt });
     }),
   );
 

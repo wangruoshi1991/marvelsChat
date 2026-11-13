@@ -124,6 +124,8 @@ test("station post schema requires content and bounds attachments", () => {
     agentCapabilities: [],
     mediaAssetIds: [],
   });
+  assert.equal(stationPostSchema.parse({ body: "hello", clientRequestId: uuid }).clientRequestId, uuid);
+  assert.throws(() => stationPostSchema.parse({ body: "hello", clientRequestId: "not-a-uuid" }));
   assert.equal(
     stationPostSchema.parse({ mediaAssetIds: [uuid] }).mediaAssetIds[0],
     uuid,

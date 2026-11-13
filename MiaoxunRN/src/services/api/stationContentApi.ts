@@ -9,8 +9,51 @@ import {
   StationPostDTO,
   StationVisibility,
 } from '../../models/api';
-import { request } from './http';
+import { MiaoxunApiError, request } from './http';
 import { assertStationContentContract } from './stationContentContract';
+
+type StationPostSubmission =
+  | { status: 'submitted'; post: StationPostDTO }
+  | { status: 'not_submitted' };
+const postIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function parsePostSubmission(value: unknown): StationPostSubmission {
+  const record = value as StationPostSubmission | null;
+  if (record && typeof record === 'object') {
+    if (record.status === 'not_submitted' && Object.keys(record).length === 1)
+      return record;
+    if (record.status === 'submitted') {
+      const post = record.post;
+      if (
+        post &&
+        postIdPattern.test(post.id) &&
+        postIdPattern.test(post.userId) &&
+        typeof post.body === 'string' &&
+        typeof post.locationLabel === 'string' &&
+        ['private', 'friends', 'public'].includes(post.visibility) &&
+        Array.isArray(post.agentCapabilities) &&
+        post.agentCapabilities.every(id => typeof id === 'string') &&
+        Array.isArray(post.media) &&
+        post.media.every(
+          media =>
+            postIdPattern.test(media?.id) &&
+            media.status === 'uploaded' &&
+            ['image', 'video'].includes(media.kind),
+        ) &&
+        typeof post.likedByMe === 'boolean' &&
+        typeof post.favoritedByMe === 'boolean' &&
+        [post.likeCount, post.commentCount, post.favoriteCount].every(
+          count => Number.isSafeInteger(count) && count >= 0,
+        )
+      )
+        return record;
+    }
+  }
+  throw new MiaoxunApiError(
+    '发布回执与当前 App 不匹配，请保留原记录并重试核验。',
+    { code: 'STATION_POST_SUBMISSION_CONTRACT_MISMATCH' },
+  );
+}
 
 export const stationContentApi = {
   stationMediaAsset(token: string, mediaAssetId: string) {
@@ -30,6 +73,7 @@ export const stationContentApi = {
   createStationPost(
     token: string,
     payload: {
+      clientRequestId?: string;
       body?: string;
       locationLabel?: string;
       visibility?: StationVisibility;
@@ -42,6 +86,32 @@ export const stationContentApi = {
       token,
       body: payload,
     });
+  },
+
+  async getStationPostSubmission(token: string, clientRequestId: string) {
+    return parsePostSubmission(
+      await request<unknown>(
+        `/api/station/post-submissions/${encodeURIComponent(clientRequestId)}`,
+        {
+          token,
+        },
+      ),
+    );
+  },
+
+  async resolveStationPostSubmission(token: string, clientRequestId: string) {
+    return parsePostSubmission(
+      await request<unknown>(
+        `/api/station/post-submissions/${encodeURIComponent(
+          clientRequestId,
+        )}/resolve`,
+        {
+          token,
+          method: 'POST',
+          body: {},
+        },
+      ),
+    );
   },
 
   deleteStationPost(token: string, postId: string) {

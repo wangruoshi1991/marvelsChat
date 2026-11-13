@@ -7,6 +7,7 @@ export const uiPreferencesHeaders = {
   'X-Miaoxun-UI-Preferences': '1',
 };
 export const comicRenderHeaders = { 'X-Miaoxun-Comic-Renders': '1' };
+export const chatContentHeaders = { 'X-Miaoxun-Chat-Content': '1' };
 
 let session: {
   token: string;
@@ -15,6 +16,7 @@ let session: {
   agentWorkspaces: boolean;
   uiPreferences: boolean;
   comicRenders: boolean;
+  chatContent: boolean;
 } | null = null;
 
 // Only the active session's accepted bootstrap may establish this contract.
@@ -48,6 +50,11 @@ export function setAIContractSession(token: string, contracts?: unknown) {
           typeof contracts === 'object' &&
           'comicRenders' in contracts &&
           contracts.comicRenders === 1,
+        chatContent:
+          contracts !== null &&
+          typeof contracts === 'object' &&
+          'chatContent' in contracts &&
+          contracts.chatContent === 1,
       }
     : null;
 }
@@ -58,6 +65,14 @@ export function clearAIContractSession() {
 
 export function supportsComicRenders(token: string) {
   return Boolean(token && session?.token === token && session.comicRenders);
+}
+
+export function supportsChatContent(token: string) {
+  return Boolean(token && session?.token === token && session.chatContent);
+}
+export function assertChatContentContract(token: string) {
+  if (!supportsChatContent(token))
+    throw new Error('当前服务器尚未支持对话创作，请在服务升级后刷新。');
 }
 
 export function assertComicRenderContract(token: string) {

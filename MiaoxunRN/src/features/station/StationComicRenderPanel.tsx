@@ -1,18 +1,17 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { Alert, Image, StyleSheet, Text, View } from 'react-native';
+import React, { useRef } from 'react';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import { StationComicDiaryDTO } from '../../models/api';
 import {
-  ComicRenderFrame,
   ComicRenderTaskDTO,
   isActiveComicRender,
 } from '../../models/comicRender';
-import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
 import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
 import { textFor } from '../../shared/i18n';
 import { SettingsActionButton } from '../../shared/settingsUi';
 import { Palette } from '../../shared/theme';
 import { Language } from '../session/sessionTypes';
 import { useComicRenderTasks } from './useComicRenderTasks';
+import { ComicFrameGrid } from '../messages/ComicFrameGrid';
 
 export function StationComicRenderPanel({
   draft,
@@ -215,144 +214,15 @@ function ComicRenderTask({
           onPress={onCancel}
         />
       ) : null}
-      {task.frames.map(frame => (
-        <ComicRenderFrameView
-          key={frame.frameIndex}
-          frame={frame}
-          taskId={task.id}
-          token={token}
-          palette={palette}
-          language={language}
-        />
-      ))}
+      <ComicFrameGrid
+        task={task}
+        token={token}
+        count={task.progress.total}
+        palette={palette}
+        language={language}
+        large
+      />
     </View>
-  );
-}
-
-function ComicRenderFrameView({
-  frame,
-  taskId,
-  token,
-  palette,
-  language,
-}: {
-  frame: ComicRenderFrame;
-  taskId: string;
-  token: string;
-  palette: Palette;
-  language: Language;
-}) {
-  const t = (zh: string, en: string) => textFor(language, zh, en);
-  const states: Record<ComicRenderFrame['status'], string> = {
-    queued: t('排队中', 'Queued'),
-    running: t('生成中', 'Generating'),
-    succeeded: t('已完成', 'Completed'),
-    failed: t('生成失败', 'Failed'),
-    unknown: t('结果未知', 'Result unknown'),
-    skipped: t('未生成', 'Not generated'),
-  };
-  return (
-    <View style={s.stack}>
-      <Text style={{ color: palette.text }}>
-        {t(`第 ${frame.frameIndex} 格`, `Frame ${frame.frameIndex}`)} ·{' '}
-        {states[frame.status]}
-      </Text>
-      {frame.status === 'succeeded' && frame.mediaAssetId ? (
-        <ComicFrameImage
-          key={`${token}:${taskId}:${frame.frameIndex}:${frame.mediaAssetId}`}
-          token={token}
-          mediaAssetId={frame.mediaAssetId}
-          frameIndex={frame.frameIndex}
-          palette={palette}
-          language={language}
-        />
-      ) : frame.status === 'succeeded' ? (
-        <Text style={{ color: palette.secondaryText }}>
-          {t(
-            '画面已删除或不可读取。',
-            'This image was deleted or is no longer available.',
-          )}
-        </Text>
-      ) : null}
-      {frame.errorCode ? (
-        <Text style={{ color: palette.secondaryText }}>
-          {frameIssueMessage(frame, language)}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
-function frameIssueMessage(frame: ComicRenderFrame, language: Language) {
-  const t = (zh: string, en: string) => textFor(language, zh, en);
-  if (frame.status === 'unknown')
-    return t(
-      '请求已发出，结果无法确认，不会自动重试。',
-      'The request was sent but its result could not be confirmed. It will not be retried automatically.',
-    );
-  if (/ACCESS|CONSENT|ENTITLEMENT/.test(frame.errorCode || ''))
-    return t(
-      '生成权限已变化，请重新确认漫画 Agent 授权。',
-      'Generation access has changed. Review the Comic Diary Agent authorization.',
-    );
-  if (/SOURCE|REVISION/.test(frame.errorCode || ''))
-    return t(
-      '分镜或来源已变化，请核对后重新生成。',
-      'The storyboard or its sources changed. Review them before generating again.',
-    );
-  if (frame.status === 'skipped')
-    return t(
-      '这一格未发起生成请求。',
-      'No generation request was sent for this frame.',
-    );
-  return t(
-    '这一格未能生成，已完成的画面会保留。',
-    'This frame could not be generated. Completed images are retained.',
-  );
-}
-
-function ComicFrameImage({
-  token,
-  mediaAssetId,
-  frameIndex,
-  palette,
-  language,
-}: {
-  token: string;
-  mediaAssetId: string;
-  frameIndex: number;
-  palette: Palette;
-  language: Language;
-}) {
-  const [failed, setFailed] = useState(false);
-  const source = useMemo(
-    () => ({
-      uri: buildStationMediaFileUrl(mediaAssetId),
-      headers: { Authorization: `Bearer ${token}` },
-    }),
-    [token, mediaAssetId],
-  );
-  return failed ? (
-    <Text style={{ color: palette.rose }}>
-      {textFor(
-        language,
-        '画面读取失败，请刷新画面任务。',
-        'Unable to load this image. Refresh render tasks.',
-      )}
-    </Text>
-  ) : (
-    <Image
-      accessibilityLabel={textFor(
-        language,
-        `第 ${frameIndex} 格漫画画面`,
-        `Comic image for frame ${frameIndex}`,
-      )}
-      accessibilityIgnoresInvertColors
-      source={source}
-      resizeMode="contain"
-      style={s.image}
-      onError={() => setFailed(true)}
-    />
   );
 }
 
@@ -360,5 +230,4 @@ const s = StyleSheet.create({
   stack: { gap: 10 },
   task: { gap: 12, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12 },
   title: { fontSize: 15, fontWeight: '600' },
-  image: { width: '100%', aspectRatio: 1, borderRadius: 12 },
 });

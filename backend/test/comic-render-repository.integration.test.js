@@ -57,7 +57,7 @@ integration("comic task idempotency hashes current selections and remains invisi
   await assert.rejects(repository.createComicRenderTask(f),e=>e.details.code==="COMIC_RENDER_IDEMPOTENCY_CONFLICT");
   await repository.cancelQueuedComicRenderTask({userId:f.userId,taskId:first.task.id,revision:first.task.revision});
 });
-integration("comic reads enforce owner and current consent; cancellation is queued revision CAS", async () => {
+integration("comic reads preserve owner results after consent revocation; cancellation is queued revision CAS", async () => {
   const f = await fixture(), other = await fixture();
   const { task } = await repository.createComicRenderTask(f);
   assert.equal(await repository.getComicRenderTask({userId:other.userId,taskId:task.id}),null);
@@ -67,7 +67,7 @@ integration("comic reads enforce owner and current consent; cancellation is queu
   assert.ok(cancelled.frames.every(frame=>frame.status==="skipped"));
   await assert.rejects(repository.cancelQueuedComicRenderTask({userId:f.userId,taskId:task.id,revision:cancelled.revision}),e=>e.status===409);
   await query("UPDATE user_agents SET enabled=false WHERE user_id=? AND agent_id='comic-diary'",[f.userId]);
-  await assert.rejects(repository.getComicRenderTask({userId:f.userId,taskId:task.id}),e=>e.status===403);
+  assert.equal((await repository.getComicRenderTask({userId:f.userId,taskId:task.id})).id,task.id);
 });
 integration("worker revalidation stops changed sources and lost leases before another dispatch", async () => {
   const f = await fixture();

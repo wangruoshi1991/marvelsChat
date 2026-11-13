@@ -82,9 +82,9 @@ test("hierarchical image scopes require nonempty lower-case segments", () => {
   }
 });
 
-test("comic rendering is separately declared while conversations and video remain text-only", async () => {
+test("comic preview confirmation is declared independently while video remains text-only", async () => {
   const comic = await getAgent("comic-diary");
-  assert.equal(comic.version, "0.1.5");
+  assert.equal(comic.version, "0.1.6");
   assert.ok(comic.capabilities.includes("comic.render"));
   assert.equal(comic.permissions.filter(scope => scope === "media:image:generate").length, 1);
   assert.deepEqual(comic.workspaceCapabilities.map(entry => entry.capability), ["comic.storyboard"]);

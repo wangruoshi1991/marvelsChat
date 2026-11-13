@@ -159,9 +159,14 @@ export type MessageDTO = {
   senderName: string;
   content: string;
   metadata?: Record<string, unknown> & {
+    contentPreview?: import('./chatContentPreview').ContentPreviewRef;
+    contentPreviewContext?: import('./chatContentPreview').ContentPreviewContext;
     contextRefs?: AIContextReference[];
     agentWorkspace?: { id: string };
-    agentDispatch?: { version: 1; kind: 'reply' | 'clarify' | 'workspace' };
+    agentDispatch?: {
+      version: 1;
+      kind: 'reply' | 'clarify' | 'workspace' | 'content_preview';
+    };
     agentClarification?: {
       contextRefs: AIContextReference[];
       source: { currentPage: string };
@@ -723,6 +728,7 @@ export type BootstrapDTO = {
     agentWorkspaces?: number;
     uiPreferences?: number;
     comicRenders?: number;
+    chatContent?: number;
   };
   products: ProductCatalogProductDTO[];
   entitlements: ProductEntitlementDTO[];

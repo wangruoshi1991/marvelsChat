@@ -16,6 +16,10 @@ import {
   AIAssistAction,
   AIAssistObjectReference,
 } from '../src/features/assist/aiAssistTypes';
+import { parseContentPreview } from '../src/models/chatContentPreview';
+import { chatContentApi } from '../src/services/api/chatContentApi';
+import { setAIContractSession } from '../src/services/aiContract';
+import { MyComicsScreen } from '../src/features/messages/MyComicsScreen';
 import { ChatComposer } from '../src/features/messages/ChatComposer';
 import { ChatMessageItem } from '../src/features/messages/ChatMessageItem';
 import { ChatMessageMenu } from '../src/features/messages/ChatMessageMenu';
@@ -38,6 +42,9 @@ import {
 jest.mock('../src/services/speechToText', () => ({
   prepareSpeechRecognition: jest.fn(),
   startSpeechRecognition: jest.fn(),
+}));
+jest.mock('../src/services/api/chatContentApi', () => ({
+  chatContentApi: { comics: jest.fn(async () => []), get: jest.fn() },
 }));
 jest.mock('../src/services/api/uiPreferencesApi', () => ({
   uiPreferencesApi: { getUIPreferencePreview: jest.fn() },
@@ -80,9 +87,14 @@ const mockAssist = {
 jest.mock('../src/features/assist/AIAssistProvider', () => ({
   useAIAssist: () => mockAssist,
 }));
-jest.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
-}));
+jest.mock('react-native-safe-area-context', () => {
+  const NativeView = require('react-native').View;
+  return {
+    SafeAreaProvider: NativeView,
+    SafeAreaView: NativeView,
+    useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+  };
+});
 
 const message: ChatMessage = {
   id: 'message-1',
@@ -702,10 +714,10 @@ describe('Chat content actions', () => {
     expect(onDeleteMessage).toHaveBeenCalledWith(message.id);
   });
 
-  it('opens comic creation with only the current editable draft and preserves chat on return', async () => {
-    const onOpenComicCreation = jest.fn();
+  it('opens read-only comic history and preserves the current editable draft on return', async () => {
     const onSend = jest.fn();
     const props = {
+      token: 'owner',
       palette: palettes.light,
       language: 'zh' as const,
       currentUserId: 'user-1',
@@ -719,38 +731,39 @@ describe('Chat content actions', () => {
       onRecallMessage: jest.fn(),
       onSetMuted: jest.fn(async () => undefined),
       onActionError: jest.fn(),
-      onOpenComicCreation,
       agentGrantedScopes: [],
     };
-    await ReactTestRenderer.act(() => {
+    await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
     });
-    expect(onOpenComicCreation).not.toHaveBeenCalled();
     const prompt = '海边的一天，想做成四格漫画';
-    await ReactTestRenderer.act(() =>
+    await ReactTestRenderer.act(async () =>
       renderer.root.findByType(ChatComposer).props.onChangeDraft(prompt),
     );
-    await ReactTestRenderer.act(() =>
+    await ReactTestRenderer.act(async () =>
       renderer.root
-        .findByProps({ accessibilityLabel: '制作漫画' })
+        .findByProps({ accessibilityLabel: '我的漫画' })
         .props.onPress(),
     );
-    expect(onOpenComicCreation).toHaveBeenCalledWith(prompt);
+    expect(renderer.root.findByType(MyComicsScreen)).toBeDefined();
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByType(MyComicsScreen).props.onBack();
+    });
     expect(onSend).not.toHaveBeenCalled();
     expect(renderer.root.findByType(ChatComposer).props.draft).toBe(prompt);
-    await ReactTestRenderer.act(() =>
+    await ReactTestRenderer.act(async () =>
       renderer.update(<ChatScreen {...props} thread={thread} />),
     );
     expect(
-      renderer.root.findAllByProps({ accessibilityLabel: '制作漫画' }),
+      renderer.root.findAllByProps({ accessibilityLabel: '我的漫画' }),
     ).toHaveLength(0);
-    await ReactTestRenderer.act(() =>
+    await ReactTestRenderer.act(async () =>
       renderer.update(
         <ChatScreen {...props} thread={{ ...props.thread, kind: 'group' }} />,
       ),
     );
     expect(
-      renderer.root.findAllByProps({ accessibilityLabel: '制作漫画' }),
+      renderer.root.findAllByProps({ accessibilityLabel: '我的漫画' }),
     ).toHaveLength(0);
   });
 
@@ -1403,4 +1416,277 @@ describe('Chat content actions', () => {
     expect(onActionError).toHaveBeenCalledWith(expect.stringContaining('相册'));
     expect(renderer.root.findByType(ChatComposer).props.draft).toBe('');
   });
+  it('ignores native attachment results after a token, account or thread change and requires story text before sending images', async () => {
+    let finish!: (result: {
+      kind: 'station-photo';
+      id: string;
+      title: string;
+    }) => void;
+    const prepare = jest.fn(
+      () =>
+        new Promise<{ kind: 'station-photo'; id: string; title: string }>(
+          resolve => {
+            finish = resolve;
+          },
+        ),
+    );
+    const props = {
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread: { ...thread, agentId: 'comic-diary' },
+      agents: [],
+      renderUserAvatar: () => <View />,
+      token: 'owner',
+      onBack: jest.fn(),
+      onSend: jest.fn<
+        Promise<boolean>,
+        Parameters<React.ComponentProps<typeof ChatScreen>['onSend']>
+      >(async () => true),
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError: jest.fn(),
+      onPrepareComposerTool: prepare,
+    };
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    const composer = () => renderer.root.findByType(ChatComposer);
+    ReactTestRenderer.act(() => composer().props.onComposerTool('相册'));
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <ChatScreen
+          {...props}
+          token="other"
+          currentUserId="user-2"
+          thread={{ ...props.thread, id: 'other-thread' }}
+        />,
+      );
+    });
+    await ReactTestRenderer.act(async () =>
+      finish({ kind: 'station-photo', id: 'late', title: '迟回照片' }),
+    );
+    expect(
+      renderer.root
+        .findAllByType(Text)
+        .map(node => node.props.children)
+        .flat(Infinity),
+    ).not.toContain('迟回照片');
+    expect(props.onActionError).not.toHaveBeenCalled();
+    ReactTestRenderer.act(() => composer().props.onComposerTool('相册'));
+    await ReactTestRenderer.act(async () =>
+      finish({ kind: 'station-photo', id: 'selected', title: '明确所选' }),
+    );
+    await ReactTestRenderer.act(async () => composer().props.onSend());
+    expect(props.onSend).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(async () =>
+      composer().props.onChangeDraft('把这张照片作为桥边散步的画面参考'),
+    );
+    await ReactTestRenderer.act(async () => composer().props.onSend());
+    expect(props.onSend.mock.calls[0][0]).toContain('桥边散步');
+    expect(props.onSend.mock.calls[0][3]).toEqual([
+      { kind: 'station-photo', id: 'selected', title: '明确所选' },
+    ]);
+  });
+  it('revise preloads all supported sources and removing a photo sends the complete remaining source selection', async () => {
+    const previewId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const photoId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const diaryId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const outputId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const threadId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const preview = parseContentPreview({
+      id: previewId,
+      version: 1,
+      revision: 3,
+      snapshotHash: 'a'.repeat(64),
+      kind: 'diary',
+      status: 'pending',
+      threadId,
+      inputMessageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      outputMessageId: outputId,
+      snapshot: { title: '散步', body: '经过桥边', mood: '' },
+      sources: [
+        {
+          type: 'station-photo',
+          id: photoId,
+          mediaAssetId: photoId,
+          title: '旧参考图',
+        },
+        { type: 'station-diary', id: diaryId, title: '旧日记' },
+      ],
+      allowedActions: ['confirm', 'reject'],
+      expiresAt: '2099-01-01T00:00:00Z',
+      result: null,
+    });
+    jest.mocked(chatContentApi.get).mockResolvedValue(preview);
+    setAIContractSession('owner', { chatContent: 1 });
+    const onSend = jest.fn<
+      Promise<boolean>,
+      Parameters<React.ComponentProps<typeof ChatScreen>['onSend']>
+    >(async () => true);
+    const comicThread = {
+      ...thread,
+      id: threadId,
+      kind: 'agent',
+      agentId: 'comic-diary',
+      messages: [
+        {
+          id: outputId,
+          threadId,
+          senderType: 'agent',
+          senderName: '漫画',
+          content: '草稿已整理',
+          metadata: { contentPreview: { version: 1 as const, id: previewId } },
+        },
+      ],
+    };
+    const props = {
+      token: 'owner',
+      palette: palettes.light,
+      language: 'zh' as const,
+      currentUserId: 'user-1',
+      currentUserName: 'Gary',
+      thread: comicThread,
+      agents: [],
+      renderUserAvatar: () => <View />,
+      onBack: jest.fn(),
+      onSend,
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError: jest.fn(),
+    };
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    const list = renderer.root.findByType(FlatList);
+    const rendered = list.props.renderItem({
+      item: list.props.data[0],
+      index: 0,
+    });
+    await ReactTestRenderer.act(async () => {
+      rendered.props.contentPreviewCard.props.onModify();
+    });
+    const composer = () => renderer.root.findByType(ChatComposer);
+    expect(composer().props.contextRefs).toEqual([
+      { kind: 'station-photo', id: photoId, title: '旧参考图' },
+      { kind: 'station-diary', id: diaryId, title: '旧日记' },
+    ]);
+    await ReactTestRenderer.act(async () => {
+      composer().props.onRemoveContextReference(0);
+    });
+    await ReactTestRenderer.act(async () => {
+      composer().props.onChangeDraft('不要这张照片，只根据日记重新整理');
+    });
+    await ReactTestRenderer.act(async () => {
+      composer().props.onSend();
+    });
+    expect(onSend.mock.calls[0][3]).toEqual([
+      { kind: 'station-diary', id: diaryId, title: '旧日记' },
+    ]);
+    expect(onSend.mock.calls[0][8]).toEqual({ id: previewId, revision: 3 });
+    expect(composer().props.workspaceActions).toBeUndefined();
+  });
+  it.each([true, false])(
+    'a plain comic reply refreshes the old proposal only after an accepted send: %p',
+    async accepted => {
+      const previewId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      const threadId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+      const outputId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+      const proposal = parseContentPreview({
+        id: previewId,
+        version: 1,
+        revision: 1,
+        snapshotHash: 'a'.repeat(64),
+        kind: 'diary',
+        status: 'pending',
+        threadId,
+        inputMessageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        outputMessageId: outputId,
+        snapshot: { title: '旧提案', body: '桥边', mood: '' },
+        sources: [],
+        allowedActions: ['confirm', 'reject'],
+        expiresAt: '2099-01-01T00:00:00Z',
+        result: null,
+      });
+      jest
+        .mocked(chatContentApi.get)
+        .mockReset()
+        .mockResolvedValueOnce(proposal)
+        .mockResolvedValue({
+          ...proposal,
+          status: 'superseded',
+          revision: 2,
+          allowedActions: [],
+        });
+      setAIContractSession('owner', { chatContent: 1 });
+      let finish!: (value: boolean) => void;
+      const onSend = jest.fn(
+        () =>
+          new Promise<boolean>(resolve => {
+            finish = resolve;
+          }),
+      );
+      const props = {
+        token: 'owner',
+        palette: palettes.light,
+        language: 'zh' as const,
+        currentUserId: 'user-1',
+        currentUserName: 'Gary',
+        thread: {
+          ...thread,
+          id: threadId,
+          agentId: 'comic-diary',
+          messages: [
+            {
+              id: outputId,
+              threadId,
+              senderType: 'agent',
+              senderName: '漫画',
+              content: '请确认',
+              metadata: {
+                contentPreview: { version: 1 as const, id: previewId },
+              },
+            },
+          ],
+        },
+        agents: [],
+        renderUserAvatar: () => <View />,
+        onBack: jest.fn(),
+        onSend,
+        onDeleteMessage: jest.fn(),
+        onRecallMessage: jest.fn(),
+        onSetMuted: jest.fn(async () => undefined),
+        onActionError: jest.fn(),
+      };
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+      });
+      const card = () => {
+        const list = renderer.root.findByType(FlatList);
+        return list.props.renderItem({ item: list.props.data[0], index: 0 })
+          .props.contentPreviewCard;
+      };
+      expect(card().props.preview.status).toBe('pending');
+      await ReactTestRenderer.act(async () => {
+        renderer.root
+          .findByType(ChatComposer)
+          .props.onChangeDraft('改成夜晚，请先讨论');
+      });
+      ReactTestRenderer.act(() => {
+        renderer.root.findByType(ChatComposer).props.onSend();
+      });
+      expect(card().props.busy).toBe(true);
+      await ReactTestRenderer.act(async () => {
+        finish(accepted);
+      });
+      expect(card().props.busy).toBe(false);
+      expect(card().props.preview.status).toBe(
+        accepted ? 'superseded' : 'pending',
+      );
+      expect(chatContentApi.get).toHaveBeenCalledTimes(accepted ? 2 : 1);
+    },
+  );
 });

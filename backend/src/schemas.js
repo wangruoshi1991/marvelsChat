@@ -61,6 +61,7 @@ export const messageSchema = z.object({
   butlerContextReset: z.boolean().optional(),
   agentContextReset: z.boolean().optional(),
   workspaceContext: workspaceContextSchema.optional(),
+  contentPreviewContext: z.object({ id: z.string().uuid(), revision: z.number().int().min(1) }).strict().optional(),
   clientMessageId: z.string().uuid().optional(),
   replyToMessageId: z.string().uuid().optional(),
   clientContext: z.object({
@@ -80,6 +81,9 @@ export const messageSchema = z.object({
   if (value.agentContextReset !== undefined && value.butlerContextReset !== undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["agentContextReset"],
       message: "Specialist and butler context resets cannot be combined" });
+  }
+  if (value.contentPreviewContext && (!value.clientMessageId || value.workspaceContext || value.agentContextReset !== undefined || value.butlerContextReset !== undefined || value.attachmentIds.length || value.replyToMessageId)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["contentPreviewContext"], message: "Content continuation requires a stable message and cannot combine other workflow contexts" });
   }
   if (!value.workspaceContext) return;
   if (!value.clientMessageId) context.addIssue({ code: z.ZodIssueCode.custom,
@@ -173,6 +177,7 @@ const stationVisibilitySchema = z.enum(["private", "friends", "public"]);
 
 export const stationPostSchema = z
   .object({
+    clientRequestId: z.string().uuid().optional(),
     body: z.string().trim().max(5000).optional().default(""),
     locationLabel: z.string().trim().max(120).optional().default(""),
     visibility: stationVisibilitySchema.optional().default("public"),
@@ -210,6 +215,10 @@ export const stationPostSchema = z
 
 export const stationPostParamsSchema = z.object({
   postId: z.string().uuid(),
+});
+
+export const stationPostSubmissionParamsSchema = z.object({
+  clientRequestId: z.string().uuid(),
 });
 
 export const stationPostInteractionSchema = z.object({

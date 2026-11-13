@@ -38,7 +38,7 @@ const definitions = {
     scope: "album:read",
     sql: `SELECT id, kind, caption, original_filename, content_revision_at FROM station_media_assets
       WHERE id = ? AND user_id = ? AND deleted_at IS NULL AND status = 'uploaded'`,
-    project: row => ({ title: row.original_filename || "相册素材", kind: row.kind, caption: String(row.caption || "").slice(0, 4000), contentRevision: row.content_revision_at }),
+    project: row => ({ title: row.original_filename || "相册素材", mediaKind: row.kind, caption: String(row.caption || "").slice(0, 4000), contentRevision: row.content_revision_at }),
   },
 };
 

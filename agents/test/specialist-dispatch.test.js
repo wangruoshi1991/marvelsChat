@@ -59,24 +59,23 @@ test("specialist request mode separates consultation history from the exact user
   assert.match(plan.system, /普通消息不会自动选择或续作上一个任务/);
 });
 
-test("comic dispatch points to explicit app image creation without claiming images are unsupported", async () => {
+test("comic dispatch emits one confirmed content preview without sending users to a form", async () => {
   const agent = await getAgent("comic-diary");
   const input = "请画一个人在月球种花的四格漫画";
   const plan = await agent.dispatch({ input, appContext: { specialistDispatch: { ...contextFor(agent), requestMessages: [{ content: input }] } } });
-  assert.match(plan.system, /制作漫画/);
-  assert.match(plan.system, /生成并保存分镜/);
-  assert.match(plan.system, /确认生成/);
-  assert.match(plan.system, /不能把消息分派不支持生图说成整个App不能生成图片/);
-  assert.match(plan.system, /返回reply引导用户使用制作漫画入口/);
+  assert.match(plan.system, /content_preview/);
+  assert.match(plan.system, /一次/);
+  assert.match(plan.system, /日记与漫画独立/);
+  assert.doesNotMatch(plan.system, /引导用户使用制作漫画入口/);
   const payload = JSON.parse(plan.user);
   assert.equal(payload.input, input);
   assert.deepEqual(payload.specialistDispatch.requestMessages, [{ content: input }]);
   assert.deepEqual(payload.specialistDispatch.capabilities.map(capability => capability.capability), ["comic.storyboard"]);
   assert.equal(Object.hasOwn(plan, "tools"), false);
-  assert.equal(agent.version, "0.1.5");
+  assert.equal(agent.version, "0.1.6");
   const chat = await agent.chat({ input });
-  assert.match(chat.system, /制作漫画/);
-  assert.match(chat.system, /明确确认/);
+  assert.match(chat.system, /生成漫画/);
+  assert.match(chat.system, /用户确认/);
 });
 
 test("all versioned synthetic cases preserve exact input and declare a real specialist executor", async () => {

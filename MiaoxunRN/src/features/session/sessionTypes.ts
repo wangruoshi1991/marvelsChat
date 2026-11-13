@@ -11,10 +11,15 @@ export type ChatMessage = {
   senderName: string;
   content: string;
   metadata?: Record<string, unknown> & {
+    contentPreview?: import('../../models/chatContentPreview').ContentPreviewRef;
+    contentPreviewContext?: import('../../models/chatContentPreview').ContentPreviewContext;
     contextRefs?: AIContextReference[];
     assistSource?: AssistMessageSource;
     agentWorkspace?: { id: string };
-    agentDispatch?: { version: 1; kind: 'reply' | 'clarify' | 'workspace' };
+    agentDispatch?: {
+      version: 1;
+      kind: 'reply' | 'clarify' | 'workspace' | 'content_preview';
+    };
     agentClarification?: {
       contextRefs: AIContextReference[];
       source: { currentPage: string };

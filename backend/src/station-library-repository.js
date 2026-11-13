@@ -10,9 +10,9 @@ import {
   sqlLimit,
 } from "./repository-mappers.js";
 
-export async function createStationDiaryEntry({ userId, title, body, mood = "", visibility = "private", source = "manual" }) {
+export async function createStationDiaryEntry({ userId, title, body, mood = "", visibility = "private", source = "manual" }, queryFn = query) {
   const id = crypto.randomUUID();
-  const rows = await query(
+  const rows = await queryFn(
     `INSERT INTO station_diary_entries
       (id, user_id, title, body, mood, visibility, source)
     VALUES (?, ?, ?, ?, ?, ?, ?)

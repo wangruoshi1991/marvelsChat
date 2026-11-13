@@ -1,84 +1,242 @@
-import { useMemo, useState } from 'react';
-import { Alert } from 'react-native';
-
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, ImageSourcePropType } from 'react-native';
 import { StationVisibility } from '../../models/api';
 import {
   PickedStationMedia,
   pickStationImagesFromLibrary,
   pickStationVideoFromLibrary,
 } from '../../services/stationMediaPicker';
+import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
+import {
+  hashStationPostPayload,
+  StationPostAttempt,
+  stationPostAttemptStore,
+} from '../../services/stationPostAttemptStore';
+import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
 import { appErrorText, textFor } from '../../shared/i18n';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 
+export type StationPostInitialDraft = { body: string; mediaAssetIds: string[] };
+export type StationPostAttachment =
+  | {
+      source: 'existingAsset';
+      assetId: string;
+      kind: 'image';
+      uri: string;
+      originalFilename?: string;
+    }
+  | (PickedStationMedia & { source: 'pickedLocalFile'; assetId?: string });
 export const maxStationPostImageCount = 9;
-
 const maxImageBytes = 25 * 1024 * 1024;
 const maxVideoBytes = 250 * 1024 * 1024;
+const borrowed = (assetId: string): StationPostAttachment => ({
+  source: 'existingAsset',
+  assetId,
+  kind: 'image',
+  uri: buildStationMediaFileUrl(assetId),
+});
 
 export function useStationPostComposer({
   language,
   session,
+  initialDraft,
   onClose,
   onPublished,
   onActionError,
 }: {
   language: Language;
   session: ReturnType<typeof useMiaoxunSession>;
+  initialDraft?: StationPostInitialDraft;
   onClose: () => void;
   onPublished: () => void;
   onActionError: (error: unknown) => void;
 }) {
-  const [body, setBody] = useState('');
-  const [attachments, setAttachments] = useState<PickedStationMedia[]>([]);
-  const [visibility, setVisibility] = useState<StationVisibility>('public');
+  const userId = session.user?.id || session.profile.userId;
+  const [body, updateBody] = useState(initialDraft?.body || '');
+  const [attachments, setAttachments] = useState<StationPostAttachment[]>(() =>
+    (initialDraft?.mediaAssetIds || []).map(borrowed),
+  );
+  const [visibility, setVisibility] = useState<StationVisibility>(
+    initialDraft ? 'private' : 'public',
+  );
   const [locationLabel, setLocationLabel] = useState('');
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(true);
+  const [pendingAttempt, setPendingAttempt] =
+    useState<StationPostAttempt | null>(null);
   const [uploadedCount, setUploadedCount] = useState(0);
-  const [preparedAssetIds, setPreparedAssetIds] = useState<string[]>([]);
   const [publishError, setPublishError] = useState('');
+  const busy = useRef(false);
+  const picking = useRef(false);
+  const pending = useRef<StationPostAttempt | null>(null);
+  const temporaryIds = useRef(new Set<string>());
+  const identity = `${userId}:${session.token}`;
+  const context = useRef({ identity, epoch: 0, mounted: true });
+  if (context.current.identity !== identity) {
+    context.current = {
+      identity,
+      epoch: context.current.epoch + 1,
+      mounted: true,
+    };
+    pending.current = null;
+    temporaryIds.current = new Set();
+    busy.current = false;
+    picking.current = false;
+  }
+  const capture = () => ({ ...context.current });
+  const current = (scope: ReturnType<typeof capture>) =>
+    context.current.mounted &&
+    scope.identity === context.current.identity &&
+    scope.epoch === context.current.epoch;
+  const locked = () => busy.current || !!pending.current || isRestoring;
+  const isEditingLocked = isPublishing || isRestoring || !!pendingAttempt;
+  const report = (error: unknown) => {
+    setPublishError(
+      appErrorText(
+        language,
+        error,
+        '操作失败，请重试',
+        'Action failed. Try again.',
+      ),
+    );
+    onActionError(error);
+  };
+  const restore = (attempt: StationPostAttempt) => {
+    pending.current = attempt;
+    setPendingAttempt(attempt);
+    updateBody(attempt.payload.body);
+    setLocationLabel(attempt.payload.locationLabel);
+    setVisibility(attempt.payload.visibility);
+    setSelectedAgentIds(attempt.payload.agentCapabilities);
+    temporaryIds.current = new Set(
+      attempt.attachments
+        .filter(item => item.source === 'pickedLocalFile')
+        .map(item => item.assetId),
+    );
+    setAttachments(
+      attempt.attachments.map(item =>
+        item.source === 'existingAsset'
+          ? borrowed(item.assetId)
+          : {
+              source: 'pickedLocalFile',
+              assetId: item.assetId,
+              kind: item.kind,
+              uri: buildStationMediaFileUrl(item.assetId),
+              originalFilename: '',
+              mimeType: '',
+              byteSize: null,
+              width: null,
+              height: null,
+            },
+      ),
+    );
+  };
+  const verify = async (
+    attempt: StationPostAttempt,
+    scope: ReturnType<typeof capture>,
+  ) => {
+    const result = await session.resolveStationPostSubmission(
+      attempt.clientRequestId,
+    );
+    if (!current(scope)) return;
+    if (result.status !== 'submitted' && result.status !== 'not_submitted')
+      throw new Error('发布回执格式不受支持，请保留原记录并重试核验。');
+    await stationPostAttemptStore.clear(userId, attempt.clientRequestId);
+    if (!current(scope)) return;
+    pending.current = null;
+    setPendingAttempt(null);
+    if (result.status === 'submitted') {
+      temporaryIds.current.clear();
+      onPublished();
+    } else {
+      setPublishError(
+        textFor(
+          language,
+          '已核实原请求未发布，可继续编辑；再次发布需由你点击。',
+          'The original request was not submitted. You can edit and explicitly post again.',
+        ),
+      );
+    }
+  };
+  useEffect(() => {
+    const scope = capture();
+    context.current.mounted = true;
+    setIsRestoring(true);
+    setIsPublishing(false);
+    setPendingAttempt(null);
+    (async () => {
+      try {
+        const attempt = await stationPostAttemptStore.read(userId);
+        if (!current(scope)) return;
+        if (attempt) {
+          restore(attempt);
+          await verify(attempt, scope);
+        } else if (scope.epoch > 0) {
+          updateBody('');
+          setAttachments([]);
+          setVisibility('private');
+          setLocationLabel('');
+          setSelectedAgentIds([]);
+        }
+        if (current(scope)) setIsRestoring(false);
+      } catch (error) {
+        if (current(scope)) {
+          setIsRestoring(true);
+          report(error);
+        }
+      }
+    })();
+    return () => {
+      context.current.mounted = false;
+      context.current.epoch += 1;
+    };
+    // Session actions are token-scoped; changing their identity must invalidate late work.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity]);
 
   const enabledAgents = useMemo(
-    () =>
-      session.ownedAgents
-        .filter(agent => agent.enabled)
-        .map(agent => ({
-          ...agent,
-          identity: agent.identity,
-        }))
-        .slice(0, 6),
+    () => session.ownedAgents.filter(agent => agent.enabled).slice(0, 6),
     [session.ownedAgents],
   );
-  const hasDraft =
-    Boolean(body.trim()) ||
-    attachments.length > 0 ||
-    Boolean(locationLabel) ||
-    selectedAgentIds.length > 0;
-  const canPublish = Boolean(body.trim()) || attachments.length > 0;
+  const canPublish = !!body.trim() || !!attachments.length;
+  const hasDraft = canPublish || !!locationLabel || !!selectedAgentIds.length;
   const postKind = attachments[0]?.kind || 'text';
-
-  const discardPreparedAssets = () => {
-    const assetIds = preparedAssetIds;
-    setPreparedAssetIds([]);
-    if (!assetIds.length) {
-      return;
+  const deleteTemporary = async (ids: string[], scope = capture()) => {
+    const outcomes = await Promise.allSettled(
+      ids.map(id => session.deleteStationMediaAsset(id)),
+    );
+    if (!current(scope)) return false;
+    outcomes.forEach((outcome, index) => {
+      if (outcome.status === 'fulfilled')
+        temporaryIds.current.delete(ids[index]);
+    });
+    const failure = outcomes.find(
+      (outcome): outcome is PromiseRejectedResult =>
+        outcome.status === 'rejected',
+    );
+    if (failure) {
+      report(failure.reason);
+      return false;
     }
-    Promise.allSettled(
-      assetIds.map(assetId => session.deleteStationMediaAsset(assetId)),
-    ).catch(() => undefined);
+    return true;
   };
-
-  const closeComposer = () => {
-    discardPreparedAssets();
+  const close = async (scope: ReturnType<typeof capture>) => {
+    if (!current(scope) || busy.current) return;
+    context.current.epoch += 1;
+    if (
+      !pending.current &&
+      !isRestoring &&
+      !(await deleteTemporary([...temporaryIds.current]))
+    )
+      return;
     onClose();
   };
-
   const requestClose = () => {
-    if (isPublishing) {
-      return;
-    }
-    if (!hasDraft) {
-      closeComposer();
+    if (busy.current) return;
+    const scope = capture();
+    if (pending.current || isRestoring || !hasDraft) {
+      close(scope).catch(onActionError);
       return;
     }
     Alert.alert(
@@ -96,67 +254,83 @@ export function useStationPostComposer({
         {
           text: textFor(language, '放弃', 'Discard'),
           style: 'destructive',
-          onPress: closeComposer,
+          onPress: () => {
+            close(scope).catch(onActionError);
+          },
         },
       ],
     );
   };
-
   const addImages = async () => {
-    const hasVideo = attachments.some(item => item.kind === 'video');
-    const remaining = hasVideo
+    if (locked() || picking.current) return;
+    const scope = capture();
+    const remaining = attachments.some(item => item.kind === 'video')
       ? maxStationPostImageCount
       : maxStationPostImageCount - attachments.length;
     if (remaining <= 0) {
       Alert.alert(textFor(language, '已达到 9 张图片', 'Nine Images Added'));
       return;
     }
+    picking.current = true;
     try {
       const picked = await pickStationImagesFromLibrary(remaining);
+      if (!current(scope) || locked()) return;
+      if (picked.length > remaining)
+        throw new Error(
+          textFor(
+            language,
+            '选择的图片超过剩余数量，请重新选择。',
+            'Too many images selected. Select within the remaining limit.',
+          ),
+        );
       const valid = picked.filter(
         item => item.byteSize === null || item.byteSize <= maxImageBytes,
       );
-      if (valid.length !== picked.length) {
+      if (valid.length !== picked.length)
         Alert.alert(
-          textFor(language, '图片过大', 'Image Too Large'),
           textFor(
             language,
-            '单张图片不能超过 25 MB。',
+            '图片过大，单张不能超过 25 MB。',
             'Each image must be 25 MB or smaller.',
           ),
         );
-      }
-      if (!valid.length) {
-        return;
-      }
-      discardPreparedAssets();
-      setAttachments(current => {
-        if (current.some(item => item.kind === 'video')) {
-          return valid.slice(0, maxStationPostImageCount);
-        }
-        const knownUris = new Set(current.map(item => item.uri));
-        return [
-          ...current,
-          ...valid.filter(item => !knownUris.has(item.uri)),
-        ].slice(0, maxStationPostImageCount);
-      });
+      if (!valid.length) return;
+      if (attachments.some(item => item.kind === 'video')) {
+        if (
+          !(await deleteTemporary([...temporaryIds.current], scope)) ||
+          !current(scope)
+        )
+          return;
+        setAttachments(
+          valid.map(item => ({ ...item, source: 'pickedLocalFile' })),
+        );
+      } else
+        setAttachments(items => [
+          ...items,
+          ...valid
+            .filter(item => !items.some(existing => existing.uri === item.uri))
+            .map(item => ({ ...item, source: 'pickedLocalFile' as const })),
+        ]);
     } catch (error) {
-      onActionError(error);
+      if (current(scope)) report(error);
+    } finally {
+      if (current(scope)) picking.current = false;
     }
   };
-
   const addVideo = async () => {
-    if (attachments.some(item => item.kind === 'video')) {
+    if (
+      locked() ||
+      picking.current ||
+      attachments.some(item => item.kind === 'video')
+    )
       return;
-    }
+    const scope = capture();
+    picking.current = true;
     try {
       const picked = await pickStationVideoFromLibrary();
-      if (!picked) {
-        return;
-      }
+      if (!current(scope) || locked() || !picked) return;
       if (picked.byteSize !== null && picked.byteSize > maxVideoBytes) {
         Alert.alert(
-          textFor(language, '视频过大', 'Video Too Large'),
           textFor(
             language,
             '视频不能超过 250 MB。',
@@ -165,65 +339,69 @@ export function useStationPostComposer({
         );
         return;
       }
-      discardPreparedAssets();
-      setAttachments([picked]);
+      if (
+        !(await deleteTemporary([...temporaryIds.current], scope)) ||
+        !current(scope)
+      )
+        return;
+      setAttachments([{ ...picked, source: 'pickedLocalFile' }]);
     } catch (error) {
-      onActionError(error);
+      if (current(scope)) report(error);
+    } finally {
+      if (current(scope)) picking.current = false;
     }
   };
-
-  const removeAttachment = (uri: string) => {
-    discardPreparedAssets();
-    setAttachments(current => current.filter(item => item.uri !== uri));
+  const removeAttachment = async (uri: string) => {
+    if (locked()) return;
+    const item = attachments.find(entry => entry.uri === uri),
+      scope = capture();
+    if (
+      item?.source === 'pickedLocalFile' &&
+      item.assetId &&
+      !(await deleteTemporary([item.assetId], scope))
+    )
+      return;
+    if (current(scope))
+      setAttachments(items => items.filter(entry => entry.uri !== uri));
   };
-
+  const setBody = (value: string) => {
+    if (!locked()) updateBody(value);
+  };
   const toggleAgent = (agentId: string) => {
-    setSelectedAgentIds(current =>
-      current.includes(agentId)
-        ? current.filter(id => id !== agentId)
-        : [...current, agentId],
-    );
+    if (!locked())
+      setSelectedAgentIds(ids =>
+        ids.includes(agentId)
+          ? ids.filter(id => id !== agentId)
+          : [...ids, agentId],
+      );
   };
-
   const openVisibilityMenu = () => {
+    if (locked()) return;
+    const scope = capture();
     Alert.alert(textFor(language, '谁可以看', 'Post Visibility'), undefined, [
-      {
-        text: textFor(language, '公开', 'Public'),
-        onPress: () => setVisibility('public'),
-      },
-      {
-        text: textFor(language, '好友可见', 'Friends'),
-        onPress: () => setVisibility('friends'),
-      },
-      {
-        text: textFor(language, '仅自己可见', 'Only Me'),
-        onPress: () => setVisibility('private'),
-      },
+      ...(['public', 'friends', 'private'] as const).map((value, index) => ({
+        text: [
+          textFor(language, '公开', 'Public'),
+          textFor(language, '好友可见', 'Friends'),
+          textFor(language, '仅自己可见', 'Only Me'),
+        ][index],
+        onPress: () => {
+          if (current(scope) && !locked()) setVisibility(value);
+        },
+      })),
       { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
     ]);
   };
-
   const openLocationMenu = () => {
-    if (locationLabel) {
-      Alert.alert(
-        textFor(language, '动态位置', 'Post Location'),
-        locationLabel,
-        [
-          {
-            text: textFor(language, '移除位置', 'Remove Location'),
-            style: 'destructive',
-            onPress: () => setLocationLabel(''),
-          },
-          { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
-        ],
-      );
-      return;
-    }
-    const profileLocation = String(
+    if (locked()) return;
+    const scope = capture();
+    const value = String(
       session.profile.activityArea || session.profile.community || '',
-    ).trim();
-    if (!profileLocation) {
-      onActionError(
+    )
+      .trim()
+      .slice(0, 120);
+    if (!locationLabel && !value) {
+      report(
         new Error(
           textFor(
             language,
@@ -235,25 +413,49 @@ export function useStationPostComposer({
       return;
     }
     Alert.alert(
-      textFor(language, '添加位置', 'Add Location'),
-      profileLocation,
+      textFor(language, '动态位置', 'Post Location'),
+      locationLabel || value,
       [
         {
-          text: textFor(language, '添加', 'Add'),
-          onPress: () => setLocationLabel(profileLocation.slice(0, 120)),
+          text: locationLabel
+            ? textFor(language, '移除位置', 'Remove Location')
+            : textFor(language, '添加', 'Add'),
+          onPress: () => {
+            if (current(scope) && !locked())
+              setLocationLabel(locationLabel ? '' : value);
+          },
         },
         { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
       ],
     );
   };
-
-  const publish = async () => {
-    if (isPublishing) {
-      return;
+  const verifyPublication = async () => {
+    if (busy.current) return;
+    const scope = capture();
+    busy.current = true;
+    setIsPublishing(true);
+    try {
+      const attempt =
+        (await stationPostAttemptStore.read(userId)) || pending.current;
+      if (!current(scope)) return;
+      if (attempt) {
+        restore(attempt);
+        await verify(attempt, scope);
+      }
+      if (current(scope)) setIsRestoring(false);
+    } catch (error) {
+      if (current(scope)) report(error);
+    } finally {
+      if (current(scope)) {
+        busy.current = false;
+        setIsPublishing(false);
+      }
     }
+  };
+  const publish = async () => {
+    if (locked()) return;
     if (!canPublish) {
       Alert.alert(
-        textFor(language, '暂时没有可发布的内容', 'Nothing to post yet'),
         textFor(
           language,
           '请输入文字，或添加图片、视频。',
@@ -262,91 +464,125 @@ export function useStationPostComposer({
       );
       return;
     }
-    setPublishError('');
+    const scope = capture();
+    busy.current = true;
     setIsPublishing(true);
-    setUploadedCount(preparedAssetIds.length);
-    let mediaAssetIds = preparedAssetIds;
-
-    if (mediaAssetIds.length !== attachments.length) {
-      const uploadResults = await Promise.allSettled(
-        attachments.map(async media => {
-          const asset = await session.createStationMediaAsset({
-            kind: media.kind,
-            originalFilename: media.originalFilename,
-            mimeType: media.mimeType,
-            byteSize: media.byteSize,
-            width: media.width,
-            height: media.height,
-            localMedia: media,
-          });
-          setUploadedCount(current => current + 1);
-          return asset.id;
-        }),
-      );
-      const uploadedIds = uploadResults
-        .filter(
-          (result): result is PromiseFulfilledResult<string> =>
-            result.status === 'fulfilled',
-        )
-        .map(result => result.value);
-      const failedUpload = uploadResults.find(
-        (result): result is PromiseRejectedResult =>
-          result.status === 'rejected',
-      );
-      if (failedUpload) {
-        await Promise.allSettled(
-          uploadedIds.map(assetId => session.deleteStationMediaAsset(assetId)),
-        );
-        setPreparedAssetIds([]);
-        setUploadedCount(0);
-        setIsPublishing(false);
-        setPublishError(
-          appErrorText(
-            language,
-            failedUpload.reason,
-            '附件上传失败，请重试',
-            'Attachment upload failed. Try again.',
+    setPublishError('');
+    setUploadedCount(0);
+    let sent = false;
+    try {
+      const prepared: StationPostAttachment[] = [];
+      for (const media of attachments) {
+        if (!current(scope)) return;
+        if (media.assetId) {
+          prepared.push(media);
+          setUploadedCount(prepared.length);
+          continue;
+        }
+        if (media.source !== 'pickedLocalFile')
+          throw new Error('附件缺少已有图片身份。');
+        const asset = await session.createStationMediaAsset({
+          kind: media.kind,
+          originalFilename: media.originalFilename,
+          mimeType: media.mimeType,
+          byteSize: media.byteSize,
+          width: media.width,
+          height: media.height,
+          localMedia: media,
+        });
+        if (!current(scope)) {
+          await session.deleteStationMediaAsset(asset.id);
+          return;
+        }
+        temporaryIds.current.add(asset.id);
+        prepared.push({ ...media, assetId: asset.id });
+        setUploadedCount(prepared.length);
+        setAttachments(items =>
+          items.map(item =>
+            item.uri === media.uri ? { ...item, assetId: asset.id } : item,
           ),
         );
-        onActionError(failedUpload.reason);
-        return;
       }
-      mediaAssetIds = uploadedIds;
-      setPreparedAssetIds(mediaAssetIds);
-    }
-
-    try {
-      await session.createStationPost({
+      const payload = {
         body: body.trim(),
-        locationLabel,
+        locationLabel: locationLabel.trim(),
         visibility,
-        agentCapabilities: selectedAgentIds,
-        mediaAssetIds,
+        agentCapabilities: [...selectedAgentIds],
+        mediaAssetIds: prepared.map(item => item.assetId!),
+      };
+      const attempt: StationPostAttempt = {
+        version: 1,
+        clientRequestId: createIdempotencyKey(),
+        requestHash: hashStationPostPayload(payload),
+        payload,
+        attachments: prepared.map(item => ({
+          assetId: item.assetId!,
+          kind: item.kind,
+          source: item.source,
+        })),
+      };
+      pending.current = attempt;
+      setPendingAttempt(attempt);
+      await stationPostAttemptStore.save(userId, attempt);
+      if (!current(scope)) return;
+      sent = true;
+      await session.createStationPost({
+        ...payload,
+        clientRequestId: attempt.clientRequestId,
       });
-      setPreparedAssetIds([]);
-      setIsPublishing(false);
+      if (!current(scope)) return;
+      await stationPostAttemptStore.clear(userId, attempt.clientRequestId);
+      if (!current(scope)) return;
+      pending.current = null;
+      setPendingAttempt(null);
+      temporaryIds.current.clear();
       onPublished();
     } catch (error) {
-      setIsPublishing(false);
-      setPublishError(
-        appErrorText(
-          language,
-          error,
-          '发布失败，请稍后重试',
-          'Could not publish. Try again.',
-        ),
-      );
-      onActionError(error);
+      if (!current(scope)) return;
+      if (!sent && pending.current) {
+        try {
+          const saved = await stationPostAttemptStore.read(userId);
+          if (!current(scope)) return;
+          if (saved) restore(saved);
+        } catch (storageError) {
+          if (current(scope)) report(storageError);
+        }
+      }
+      if (pending.current)
+        setPublishError(
+          textFor(
+            language,
+            sent
+              ? '发布结果尚未确认。内容已冻结，请核验原发布；不会自动再次发布或删除图片。'
+              : '本机发布记录尚未确认，尚未发送。请先核验原记录；内容和图片会保留。',
+            sent
+              ? 'Publication is unconfirmed. Verify the original request before editing; images are retained.'
+              : 'The local publication record is unconfirmed; nothing was sent. Verify the record before editing; images are retained.',
+          ),
+        );
+      else report(error);
+    } finally {
+      if (current(scope)) {
+        busy.current = false;
+        setIsPublishing(false);
+      }
     }
   };
-
+  const attachmentSource = (item: StationPostAttachment): ImageSourcePropType =>
+    item.assetId && item.uri === buildStationMediaFileUrl(item.assetId)
+      ? { uri: item.uri, headers: { Authorization: `Bearer ${session.token}` } }
+      : { uri: item.uri };
   return {
     addImages,
     addVideo,
     attachments,
+    attachmentSource,
     body,
     enabledAgents,
     isPublishing,
+    isEditingLocked,
+    isRestoring,
+    pendingAttempt,
     locationLabel,
     openLocationMenu,
     openVisibilityMenu,
@@ -361,5 +597,6 @@ export function useStationPostComposer({
     toggleAgent,
     uploadedCount,
     visibility,
+    verifyPublication,
   };
 }

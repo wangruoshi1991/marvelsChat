@@ -5,6 +5,21 @@ import path from 'node:path';
 import test from 'node:test';
 import { loadComicLiveEnvironment, createComicLiveRequester, parseComicLiveArguments, comicLiveProductBody } from '../scripts/comic-render-live-e2e.js';
 
+test('live verification requires the current migration ledger and checksums instead of a historical count', async () => {
+  const module = await import('../scripts/comic-render-live-e2e.js');
+  assert.equal(typeof module.assertComicLiveMigrations, 'function');
+  const migrations = [{ filename: '058_comic_image_generation.sql', sql: 'first' },
+    { filename: '059_chat_content_previews.sql', sql: 'second' }];
+  const { migrationChecksum } = await import('../src/migration-ledger.js');
+  let applied = migrations.map(migration => ({ filename: migration.filename, checksum: migrationChecksum(migration.sql) }));
+  const database = { query: async sql => ({ rows: sql.includes('to_regclass') ? [{ table_name: 'schema_migrations' }] : applied }) };
+  await module.assertComicLiveMigrations(database, migrations);
+  applied = applied.slice(0, 1);
+  await assert.rejects(module.assertComicLiveMigrations(database, migrations), { code: 'COMIC_E2E_MIGRATIONS_REQUIRED' });
+  applied = migrations.map(migration => ({ filename: migration.filename, checksum: 'x'.repeat(64) }));
+  await assert.rejects(module.assertComicLiveMigrations(database, migrations), { code: 'COMIC_E2E_MIGRATIONS_REQUIRED' });
+});
+
 const settings = {
   DATABASE_URL: 'postgresql://test:private@127.0.0.1:5432/comic_live_migration_test',
   NEW_API_BASE_URL: 'https://text.example.test/v1', NEW_API_KEY: 'private-text', NEW_API_MODEL: 'test-text-model',

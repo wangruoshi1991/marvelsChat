@@ -15,7 +15,7 @@ export function agentScopesMatchDeclaration(agent, grantedScopes) {
 // do not acquire product locks after callers already locked users/tasks.
 export async function assertAgentProductEntitlement({ userId, agent, queryFn = query }) {
   if (agent?.key === "miaoxun-butler") return { systemInitialization: true };
-  const candidates = await queryFn(`SELECT e.product_id, e.product_version_id, e.contract_hash, e.granted_scopes
+  const candidates = await queryFn(`SELECT e.id AS entitlement_id, e.product_id, e.product_version_id, e.contract_hash, e.granted_scopes
     FROM user_entitlements e JOIN product_agent_dependencies d ON d.product_version_id = e.product_version_id
     WHERE e.user_id = ? AND e.status = 'enabled' AND d.agent_key = ? ORDER BY e.id`, [userId, agent?.key]);
   const repository = createProductCatalogRepository({ query: queryFn });
@@ -28,7 +28,7 @@ export async function assertAgentProductEntitlement({ userId, agent, queryFn = q
     const required = [...new Set(product.dependencies.flatMap(item => item.scopes))];
     const granted = typeof candidate.granted_scopes === "string" ? JSON.parse(candidate.granted_scopes) : candidate.granted_scopes;
     if (!Array.isArray(granted) || required.length !== granted.length || required.some(scope => !granted.includes(scope))) continue;
-    return { productId: product.id, productVersionId: product.productVersionId, agentReleaseId: dependency.agentReleaseId, contractHash: product.contractHash };
+    return { entitlementId: String(candidate.entitlement_id).trim(), productId: product.id, productVersionId: product.productVersionId, agentReleaseId: dependency.agentReleaseId, contractHash: product.contractHash };
   }
   throw new HttpError(403, "当前 Agent 没有匹配运行版本的有效产品授权，请重新确认产品权限。", { code: "AGENT_PRODUCT_ENTITLEMENT_REQUIRED" });
 }

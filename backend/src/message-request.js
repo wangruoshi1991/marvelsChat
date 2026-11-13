@@ -19,5 +19,6 @@ export function messageRequestFingerprint(body) {
     semanticInput.push({ workspaceContext: { id, revision, currentRound,
       ...(nodeId ? { nodeId } : {}) } });
   }
+  if (body.contentPreviewContext) semanticInput.push({ contentPreviewContext: body.contentPreviewContext });
   return crypto.createHash("sha256").update(JSON.stringify(semanticInput)).digest("hex");
 }

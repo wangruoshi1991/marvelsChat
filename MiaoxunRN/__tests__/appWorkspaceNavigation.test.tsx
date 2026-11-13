@@ -31,9 +31,7 @@ import { WorkspaceSubmissionRecovery } from '../src/features/workspaces/Workspac
 import { agentWorkspaceApi } from '../src/services/api/agentWorkspaceApi';
 import { agentWorkspace } from '../__fixtures__/agentWorkspace';
 import { ChatScreen } from '../src/features/messages/MessagesScreen';
-import { ChatComposer } from '../src/features/messages/ChatComposer';
-import { ComicCreationScreen } from '../src/features/station/ComicCreationScreen';
-import type { ChatThread } from '../src/features/session/sessionTypes';
+import { MyComicsScreen } from '../src/features/messages/MyComicsScreen';
 
 jest.mock('react-native-safe-area-context', () => {
   const NativeView = require('react-native').View;
@@ -54,6 +52,9 @@ jest.mock('../src/features/ai/useAITasks', () => ({
     error: '',
     refresh: jest.fn(),
   }),
+}));
+jest.mock('../src/services/api/chatContentApi', () => ({
+  chatContentApi: { comics: jest.fn(async () => []) },
 }));
 jest.mock('../src/app/AppModals', () => ({ AppModals: () => null }));
 jest.mock('../src/app/LaunchAnimation', () => ({
@@ -98,63 +99,42 @@ afterEach(async () => {
   jest.useRealTimers();
 });
 
-test('comic creation covers the existing chat, keeps its draft, and rejects stale account callbacks', async () => {
-  jest.useFakeTimers();
-  const previousSession = mockSession;
-  const comicThread = {
-    id: 'comic-chat',
-    agentId: 'comic-diary',
-    title: '漫画日记 Agent',
-    kind: 'agent',
-    avatarText: '漫',
-    pinned: false,
-    lastContent: '',
-    unreadCount: 0,
-    messages: [],
-  } satisfies ChatThread;
+test('comic chat exposes read-only history instead of a separate creation form', async () => {
   mockSession = {
     ...mockSession,
-    user: { id: 'comic-owner' },
-    token: 'comic-token',
-  };
+    threads: [
+      {
+        id: 'comic-thread',
+        title: '漫画',
+        agentId: 'comic-diary',
+        kind: 'agent',
+        pinned: false,
+        lastContent: '',
+        unreadCount: 0,
+        messages: [],
+      },
+    ],
+  } as typeof mockSession;
   await act(async () => {
     renderer = TestRenderer.create(<App />);
   });
-  await act(async () =>
-    renderer.root.findByType(ThreadListScreen).props.onOpenThread(comicThread),
-  );
+  const list = renderer.root.findByType(ThreadListScreen);
+  await act(async () => {
+    list.props.onOpenThread(mockSession.threads[0]);
+  });
   const chat = renderer.root.findByType(ChatScreen);
-  const open = chat.props.onOpenComicCreation;
-  act(() =>
-    renderer.root.findByType(ChatComposer).props.onChangeDraft('海边的一天'),
-  );
-  act(() => open('海边的一天'));
-  const screen = renderer.root.findByType(ComicCreationScreen);
-  expect(screen.props.initialPrompt).toBe('海边的一天');
-  expect(renderer.root.findByType(ChatScreen)).toBe(chat);
-  expect(renderer.root.findByType(ChatComposer).props.draft).toBe('海边的一天');
-  act(() => screen.props.onBack());
-  expect(renderer.root.findAllByType(ComicCreationScreen)).toHaveLength(0);
-  expect(renderer.root.findByType(ChatScreen)).toBe(chat);
-  act(() => open('新故事'));
-  expect(renderer.root.findByType(ComicCreationScreen)).not.toBe(screen);
-  act(() =>
-    renderer.root
-      .findByProps({ testID: 'comic-creation-modal' })
-      .props.onRequestClose(),
-  );
-  expect(renderer.root.findAllByType(ComicCreationScreen)).toHaveLength(0);
-  act(() => open('即将退出的账号草稿'));
-  mockSession = {
-    ...mockSession,
-    user: { id: 'comic-new-owner' },
-    token: 'new-token',
-  };
-  await act(async () => renderer.update(<App />));
-  expect(renderer.root.findAllByType(ComicCreationScreen)).toHaveLength(0);
-  act(() => open('旧账号迟回'));
-  expect(renderer.root.findAllByType(ComicCreationScreen)).toHaveLength(0);
-  mockSession = previousSession;
+  expect(chat.props.onOpenComicCreation).toBeUndefined();
+  expect(
+    renderer.root.findAllByProps({ testID: 'comic-creation-modal' }),
+  ).toHaveLength(0);
+  const history = renderer.root.findAllByProps({
+    accessibilityLabel: '我的漫画',
+  })[0];
+  await act(async () => {
+    history.props.onPress();
+  });
+  expect(renderer.root.findByType(MyComicsScreen)).toBeDefined();
+  await act(async () => renderer.unmount());
 });
 
 test('three root tabs retain the station, keep navigation under voice menus, and reset across accounts', async () => {

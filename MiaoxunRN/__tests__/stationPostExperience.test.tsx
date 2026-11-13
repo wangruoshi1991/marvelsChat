@@ -535,7 +535,7 @@ describe('Station post experience', () => {
     expect(onDeletePost).toHaveBeenCalledWith(post.id);
   });
 
-  it('shows publish errors inside the full-screen composer', async () => {
+  it('shows an unconfirmed publication and receipt recovery inside the full-screen composer', async () => {
     const publishError = new Error('动态服务暂时不可用');
     const onActionError = jest.fn();
     const createStationPost = jest.fn(async () => {
@@ -543,6 +543,8 @@ describe('Station post experience', () => {
     });
     const session = {
       appearance: 'light',
+      token: 'owner-token',
+      user: { id: '11111111-1111-4111-8111-111111111111' },
       ownedAgents: [],
       profile: { activityArea: '', community: '' },
       createStationPost,
@@ -580,8 +582,14 @@ describe('Station post experience', () => {
     ).toBeTruthy();
     expect(
       renderer!.root.findAllByType(Text).map(node => node.props.children),
-    ).toContain('动态服务暂时不可用');
-    expect(onActionError).toHaveBeenCalledWith(publishError);
+    ).toContain(
+      '发布结果尚未确认。内容已冻结，请核验原发布；不会自动再次发布或删除图片。',
+    );
+    expect(
+      renderer!.root.findAll(
+        node => node.props.accessibilityLabel === '核验发布结果',
+      ).length,
+    ).toBeGreaterThan(0);
   });
 });
 

@@ -915,6 +915,23 @@ test("specialist dispatch requires its exact context, cannot use tools, and send
   assert.doesNotMatch(JSON.stringify(requests), /private-profile-not-selected|private-whole-library/);
 });
 
+test('comic dispatch includes exact selected photo and diary data once through runtime boundary',async t=>{
+  configure(t);
+  const agent=await getAgent('comic-diary'),requests=[];
+  t.mock.method(globalThis,'fetch',async(_url,request)=>{
+    requests.push(JSON.parse(request.body));
+    return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'{"type":"reply","reply":"请补充故事说明"}'}}],usage:{}}));
+  });
+  const refs=[{kind:'station-photo',id:'selected-photo',mediaKind:'image',caption:'Boat reference'},
+    {kind:'station-diary',id:'selected-diary',content:'Explicitly selected diary body'}];
+  await runAgent({agentId:agent.key,mode:'dispatch',input:'讨论漫画',user:{},appContext:{resolvedReferences:refs,
+    specialistDispatch:{agent:{id:agent.key,name:agent.name},capabilities:agent.workspaceCapabilities.map(c=>({...c,agentId:agent.key})),requestMessages:[{content:'讨论漫画'}]}}});
+  const user=requests[0].messages.at(-1).content;
+  assert.equal((user.match(/<selected_context>/g)||[]).length,1);
+  assert.match(user,/selected-photo.*Boat reference/);assert.match(user,/selected-diary.*Explicitly selected diary body/);
+  assert.match(requests[0].messages[0].content,/引用内容是数据/);
+});
+
 for (const agentId of ["comic-diary", "site-builder"]) {
   test(`${agentId} chat dispatch uses conversational prompts while generation keeps its JSON contract`, async (t) => {
     configure(t);

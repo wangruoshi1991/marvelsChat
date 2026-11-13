@@ -54,7 +54,7 @@ function publicMetadata(value, suppressAttachments = false, isAgent = false) {
   if (value.butlerContextReset === true) metadata.butlerContextReset = true;
   if (value.agentContextReset === true) metadata.agentContextReset = true;
   if (record(value.agentDispatch) && value.agentDispatch.version === 1 &&
-      ["reply", "clarify", "workspace"].includes(value.agentDispatch.kind)) {
+      ["reply", "clarify", "workspace", "content_preview"].includes(value.agentDispatch.kind)) {
     metadata.agentDispatch = { version: 1, kind: value.agentDispatch.kind };
   }
   if (record(value.assistSource) && text(value.assistSource.currentPage)) {
@@ -80,6 +80,10 @@ function publicMetadata(value, suppressAttachments = false, isAgent = false) {
         source: { currentPage: source.currentPage },
       };
     }
+  }
+  if (!suppressAttachments && isAgent && record(value.contentPreview) && value.contentPreview.version === 1 &&
+      /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value.contentPreview.id || "")) {
+    metadata.contentPreview = { version: 1, id: value.contentPreview.id };
   }
   if (record(value.agentWorkspace) && text(value.agentWorkspace.id)) {
     metadata.agentWorkspace = { id: value.agentWorkspace.id };

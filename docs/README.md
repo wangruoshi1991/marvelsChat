@@ -4,7 +4,9 @@
 
 ## 产品与实现
 
-- [11月11日聊天与漫画配套发布](reviews/2026-11-11-chat-comic-release.md)：获继续范围后的精确源清单、生产只读基线、合同4与漫画0.1.5发布顺序、Build62候选及回滚边界；实际动作逐阶段记证，不把准备当已发布。
+- [11月13日对话漫画发布预检](reviews/2026-11-13-conversational-comic-release-preflight.md)：当前生产299文件/058/漫画0.1.5只读复核、候选清单、已有058数据升级/备份恢复及逐文件事务边界。整仓重跑通过；当前候选iOS编译、正式制品与配套部署/0.1.6上架/新包仍未完成，不延续11日授权。
+- [漫画与日记对话创作合同](conversational-comic.md)、[API合同](api/chat-content-previews.md)、[本地实施记录](reviews/2026-11-11-conversational-comic-implementation.md)、[批准设计](superpowers/specs/2026-11-11-conversational-comic-diary-design.md)：用户真机否定Build62表单交互后批准首版本地实现。聊天中讨论/选素材、消息内单次确认、紧凑画格/详情、独立日记和本人编辑发布；059/060、0.1.6与新客户端须配套，当前生产和Build62尚未包含。最终验证与限制见CURRENT。
+- [11月11日聊天与漫画配套发布](reviews/2026-11-11-chat-comic-release.md)：f1a6c8f/299文件runtime已开放、058保持；原PID校验失败与独立恢复证据并列，漫画Release/Product0.1.5正常发布、公开目录9项，Build62正常Organizer上传成功。Apple处理/合规/分发及真机待验，不把上传当可安装。
 - [11月11日Build61聊天与漫画续修](reviews/2026-11-11-build61-chat-comic-followup.md)：新增漫画聊天真实制作入口、完整分镜确认、全宽长文与表情选择、历史贡献安全原因合同4；058隔离PG14项零跳过，配套发布/新包及真机复验仍待续，不代表Build61已修。
 - [11月11日Build61真机验收](reviews/2026-11-11-build61-device-acceptance.md)：用户确认已安装、漫画可见且显示绑定；二楼退出体验未通过。UI-Agent权限展示、二楼铺底/滚动保留/动画收尾已本地修复，整仓通过；未进入Build61，Simulator补构建因固定设备关闭受阻，后续新制品/真机复验、scope及真实模型仍待完成。
 - [11月11日Agent生命周期生产发布](reviews/2026-11-11-agent-lifecycle-production-release.md)：171a01d/299文件runtime已开放、58账本无迁移、漫画产品0.1.4已上架；用户确认手机已安装1.0（61）、TestFlight下载问题已解决。安装来源为用户确认，代理未独立读取设备或验功能；下一步为漫画目录/精确scope、UI-Agent添加与原位授权保留会话、二楼/妙页真机手势。

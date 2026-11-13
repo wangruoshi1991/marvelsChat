@@ -28,6 +28,8 @@ test("registers the station content routes used by the mobile client", () => {
   const expected = [
     "GET /api/me/miao-points",
     "POST /api/station/posts",
+    "GET /api/station/post-submissions/:clientRequestId",
+    "POST /api/station/post-submissions/:clientRequestId/resolve",
     "DELETE /api/station/posts/:postId",
     "POST /api/station/posts/:postId/interactions",
     "PATCH /api/station/diary/:entryId",

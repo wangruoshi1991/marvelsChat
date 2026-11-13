@@ -1,10 +1,12 @@
 import { z } from "zod";
 import { HttpError } from "./http-error.js";
+import { contentPreviewDecisionSchema } from "./chat-content-contract.js";
 
 const decisionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("reply"), reply: z.string().trim().min(1).max(4000) }).strict(),
   z.object({ type: z.literal("clarify"), question: z.string().trim().min(1).max(2000) }).strict(),
   z.object({ type: z.literal("workspace"), capability: z.string().min(1).max(120) }).strict(),
+  contentPreviewDecisionSchema,
 ]);
 
 // A classifier selects one executor of this conversation's authenticated Agent.
@@ -13,6 +15,7 @@ export function validateSpecialistDispatch(reply, { agentId, capabilities }) {
   let decision;
   try { decision = decisionSchema.parse(typeof reply === "string" ? JSON.parse(reply) : reply); }
   catch { throw new HttpError(502, "Agent 未返回有效答复，本次未创建任务。", { code: "SPECIALIST_DISPATCH_INVALID" }); }
+  if (decision.type === "content_preview" && agentId !== "comic-diary") throw new HttpError(502, "Agent 未返回有效答复，本次未创建任务。", { code: "SPECIALIST_DISPATCH_INVALID" });
   if (decision.type === "workspace" && !capabilities.some(entry => entry.agentId === agentId && entry.capability === decision.capability)) {
     throw new HttpError(502, "Agent 选择了当前会话不可执行的能力，本次未创建任务。", { code: "SPECIALIST_DISPATCH_INVALID" });
   }

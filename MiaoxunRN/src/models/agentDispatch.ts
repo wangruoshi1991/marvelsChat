@@ -20,6 +20,8 @@ export function isAgentDispatch(value: unknown): boolean {
       'version' in value &&
       value.version === 1 &&
       'kind' in value &&
-      ['reply', 'clarify', 'workspace'].includes(String(value.kind)),
+      ['reply', 'clarify', 'workspace', 'content_preview'].includes(
+        String(value.kind),
+      ),
   );
 }

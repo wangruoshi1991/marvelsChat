@@ -100,6 +100,7 @@ export function registerStationMediaRoutes(
     authenticate,
     asyncHandler,
     mediaRetrievalService = createMediaRetrievalService(),
+    fetchMediaObject = fetchOssObject,
   },
 ) {
   app.post(
@@ -431,7 +432,7 @@ export function registerStationMediaRoutes(
               contentType: asset.mimeType,
               range,
             })
-          : await fetchOssObject({ objectKey: asset.storageKey, range });
+          : await fetchMediaObject({ objectKey: asset.storageKey, range });
       if (!response.body) {
         throw new HttpError(502, "Media storage returned an empty response");
       }

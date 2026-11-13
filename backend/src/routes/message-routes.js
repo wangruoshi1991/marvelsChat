@@ -5,6 +5,7 @@ import { assertAgentExecutionMode, runAgent } from "../agent-runtime.js";
 import { config } from "../config.js";
 import { HttpError } from "../http-error.js";
 import {
+  requireChatContentContract,
   requireAIClientContract,
   requireAgentWorkspaceContract,
   requireUIPreferencesContract,
@@ -358,6 +359,7 @@ export function registerMessageRoutes(
         getOnlineUserIds(),
       );
       if (!thread) throw new HttpError(404, "Thread not found");
+      if (body.contentPreviewContext && thread.agentId !== "comic-diary") throw new HttpError(400,"此会话不支持创作预览续作。",{code:"SPECIALIST_CONTEXT_INVALID"});
       if (thread.agentId === "album-manager" || body.contextRefs.length)
         requireAIClientContract(req);
       const isUIAgent = thread.agentId === "ui-agent";
@@ -569,6 +571,7 @@ export function registerMessageRoutes(
           .json({ data: { messages: messages.map(publicMessage) } });
       };
       const specialist = async () => {
+        if (thread.agentId === "comic-diary") requireChatContentContract(req);
         requireAIClientContract(req);
         requireAgentWorkspaceContract(req);
         enforceAgentMessageCreateLimit(req, res);

@@ -34,6 +34,7 @@ import { registerProductRoutes } from "./routes/product-routes.js";
 import { registerAgentAvatarRoutes } from "./routes/agent-avatar-routes.js";
 import { registerGroupChatRoutes } from "./routes/group-chat-routes.js";
 import { registerUIPreferenceRoutes } from "./routes/ui-preference-routes.js";
+import { registerChatContentPreviewRoutes } from "./routes/chat-content-preview-routes.js";
 
 const app = express();
 const host = config.host;
@@ -130,6 +131,7 @@ registerAgentRunRoutes(app, { authenticate, asyncHandler });
 registerAITaskRoutes(app, { authenticate, asyncHandler });
 registerAgentWorkspaceRoutes(app, { authenticate, asyncHandler });
 registerUIPreferenceRoutes(app, { authenticate, asyncHandler });
+registerChatContentPreviewRoutes(app, { authenticate, asyncHandler });
 
 registerEventRoutes(app, { authenticate, asyncHandler });
 

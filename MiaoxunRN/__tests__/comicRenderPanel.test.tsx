@@ -10,7 +10,6 @@ import {
 import Renderer, { act } from 'react-test-renderer';
 import { comicRenderTask } from '../__fixtures__/comicRender';
 import { StationComicDiaryPanel } from '../src/features/station/StationComicDiaryPanel';
-import { ComicCreationScreen } from '../src/features/station/ComicCreationScreen';
 import { useMiaoxunSession } from '../src/features/session/useMiaoxunSession';
 import { StationComicDiaryDTO, StationDiaryEntryDTO } from '../src/models/api';
 import { ComicRenderTaskDTO } from '../src/models/comicRender';
@@ -286,68 +285,6 @@ test('an overlong explicit prompt is preserved for editing and cannot submit sil
   expect(button('生成并保存分镜').props.disabled).toBe(true);
   expect(text()).toContain('1200');
   expect(input.session.createStationComicDiary).not.toHaveBeenCalled();
-});
-
-test('the comic creation screen reviews a saved prompt-only draft before separately confirming real image tasks', async () => {
-  const saved = {
-    ...draft,
-    sourceDiaryEntryId: null,
-    frames: draft.frames.map(frame => ({
-      ...frame,
-      scene: '宇航员在月球花园里浇水',
-      dialogue: '第一朵花开了',
-      mood: '期待',
-      camera: '近景',
-    })),
-  };
-  const input = {
-    ...props(),
-    initialPrompt: '月球上种花',
-    onBack: jest.fn(),
-    session: {
-      ...props().session,
-      stationContent: { comicDiaries: [] },
-    } as unknown as ReturnType<typeof useMiaoxunSession>,
-  };
-  await act(async () => {
-    renderer = Renderer.create(<ComicCreationScreen {...input} />);
-  });
-  await act(async () => button('生成并保存分镜').props.onPress());
-  expect(input.session.createStationComicDiary).toHaveBeenCalledWith({
-    prompt: input.initialPrompt,
-    style: 'slice-of-life',
-    frameCount: 4,
-  });
-  expect(comicRenderApi.create).not.toHaveBeenCalled();
-  await act(async () =>
-    renderer!.update(
-      <ComicCreationScreen
-        {...input}
-        session={{
-          ...input.session,
-          stationContent: {
-            ...input.session.stationContent,
-            comicDiaries: [saved],
-          },
-        }}
-      />,
-    ),
-  );
-  expect(text()).toContain(saved.title);
-  expect(text()).toContain('宇航员在月球花园里浇水');
-  expect(text()).toContain('第一朵花开了');
-  expect(text()).toContain('期待');
-  expect(text()).toContain('近景');
-  act(() => button('生成漫画画面').props.onPress());
-  expect(alert.mock.calls[0][1]).toContain('2');
-  expect(comicRenderApi.create).not.toHaveBeenCalled();
-  await act(async () => confirm()());
-  expect(comicRenderApi.create).toHaveBeenCalledWith(
-    'owner',
-    saved.id,
-    expect.any(String),
-  );
-  expect(text()).toContain('排队中');
 });
 
 test('running tasks show private frame images, keep the same image mounted through revisions, and stop polling when terminal', async () => {

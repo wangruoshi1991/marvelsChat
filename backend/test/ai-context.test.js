@@ -33,3 +33,8 @@ test("file resolver uses the same canonical Unicode title as upload metadata", a
   assert.equal(aiContextReferencesSchema.safeParse(result.references).success, true);
   assert.equal(Buffer.from(JSON.stringify(result.references)).toString(), JSON.stringify(result.references));
 });
+test('photo context preserves reference kind separately from its media kind',async()=>{
+  const result=await resolveAIContextReferences({userId:'owner',refs:[{kind:'station-photo',id}],grantedScopes:['album:read'],
+    queryFn:async()=>[{id,kind:'image',caption:'Boat',original_filename:'boat.jpg',content_revision_at:'2026-11-11'}]});
+  assert.equal(result.context[0].kind,'station-photo');assert.equal(result.context[0].mediaKind,'image');
+});

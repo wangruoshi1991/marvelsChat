@@ -1,6 +1,6 @@
 import { HttpError } from "./http-error.js";
 
-export const aiClientContracts = Object.freeze({ aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6, workspaceContributions: 4, uiPreferences: 1, comicRenders: 1 });
+export const aiClientContracts = Object.freeze({ aiTasks: 1, siteDocuments: 2, agentWorkspaces: 6, workspaceContributions: 4, uiPreferences: 1, comicRenders: 1, chatContent: 1 });
 export const aiContractHeader = "X-Miaoxun-AI-Contract";
 export const siteDocumentContractHeader = "X-Miaoxun-Site-Document";
 export const agentWorkspaceContractHeader = "X-Miaoxun-Agent-Workspace";
@@ -68,5 +68,11 @@ export function requireComicRenderContract(req, _res, next) {
       code: "COMIC_RENDER_CLIENT_UPDATE_REQUIRED", requiredContract: aiClientContracts.comicRenders,
     });
   }
+  next?.();
+}
+
+export const chatContentContractHeader = "X-Miaoxun-Chat-Content";
+export function requireChatContentContract(req, _res, next) {
+  if (req.get(chatContentContractHeader) !== "1") throw new HttpError(426, "当前客户端不支持对话创作预览，请更新应用。", { code: "CHAT_CONTENT_CLIENT_UPDATE_REQUIRED", requiredContract: 1 });
   next?.();
 }

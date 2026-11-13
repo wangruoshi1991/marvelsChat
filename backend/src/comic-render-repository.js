@@ -4,6 +4,7 @@ import { getAgent } from "../../agents/registry.js";
 import { assertCurrentAgentAccess } from "./ai-agent-access.js";
 import { withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
+import { validateComicChatProvenance } from "./chat-content-provenance.js";
 
 const uuid = z.string().uuid();
 const code = z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{0,99}$/);
@@ -44,6 +45,7 @@ export function createComicRenderRepository({ withTransaction: transaction = wit
     const [comic] = await connection.query(`SELECT *, updated_at::text AS source_revision FROM station_comic_diaries
       WHERE id = ? AND user_id = ? AND deleted_at IS NULL AND status <> 'deleted' FOR SHARE`,[comicDiaryId,userId]);
     if (!comic) throw notFound();
+    await validateComicChatProvenance(connection,{comic,userId,agent});
     const frames = framesSchema.parse(comic.frames);
     const selectedIds = [...new Set(z.array(uuid).max(20).parse(comic.source_media_asset_ids))].sort();
     if (comic.source_file_asset_ids?.length || frames.some(frame => frame.mediaAssetIds.some(id => !selectedIds.includes(id)))) {
@@ -77,7 +79,8 @@ export function createComicRenderRepository({ withTransaction: transaction = wit
     if (!row) { if(allowMissing)return null; throw notFound(); }
     const [comic]=await connection.query("SELECT id FROM station_comic_diaries WHERE id=? AND user_id=? AND deleted_at IS NULL AND status <> 'deleted' FOR SHARE",[row.comic_diary_id,userId]);
     if(!comic){if(allowMissing)return null;throw notFound();}
-    await authorize(connection,userId);
+    const [owner]=await connection.query("SELECT id FROM users WHERE id=? AND status='active'",[userId]);
+    if(!owner)throw notFound();
     return row;
   }
   async function appendEvent(connection,row) {
@@ -114,12 +117,13 @@ export function createComicRenderRepository({ withTransaction: transaction = wit
     await appendEvent(connection,updated);
     return updated;
   }
-  async function createComicRenderTask({userId,comicDiaryId,idempotencyKey,assertReady}) {
+  async function createComicRenderTaskInTransaction(connection,{userId,comicDiaryId,idempotencyKey,assertReady}) {
     uuid.parse(userId);uuid.parse(comicDiaryId);z.string().min(8).max(160).parse(idempotencyKey);
     if(typeof assertReady!=="function")throw error(503,"漫画图片生成服务尚未就绪。","COMIC_RENDER_NOT_READY");
     await assertReady();
-    return transaction(async connection=>{
       const snapshot=await readSnapshot(connection,userId,comicDiaryId);
+      const [chatOrigin]=await connection.query("SELECT comic_render_task_id FROM chat_content_previews WHERE comic_diary_id=? AND user_id=? AND status='confirmed'",[comicDiaryId,userId]);
+      if(chatOrigin)throw conflict("此聊天漫画已确认生成，请查看原任务；修改需重新预览确认。","COMIC_RENDER_CONFIRMATION_REQUIRED");
       const [created]=await connection.query(`INSERT INTO ai_tasks(id,user_id,kind,contract_version,agent_id,agent_version,comic_diary_id,input,idempotency_key,request_hash)
         VALUES (?,?,'comic_render',2,'comic-diary',?,?,?::jsonb,?,?) ON CONFLICT(user_id,kind,agent_id,idempotency_key) DO NOTHING RETURNING ${taskFields}`,
         [crypto.randomUUID(),userId,snapshot.agentVersion,comicDiaryId,json(snapshot),idempotencyKey,snapshot.snapshotHash]);
@@ -131,8 +135,8 @@ export function createComicRenderRepository({ withTransaction: transaction = wit
       for(const frame of snapshot.frames)await connection.query("INSERT INTO comic_task_outputs(task_id,user_id,frame_index,status) VALUES (?,?,?,'queued')",[created.id,userId,frame.index]);
       await appendEvent(connection,created);
       return {task:dto(created,await outputs(connection,created.id,true)),reused:false};
-    });
   }
+  const createComicRenderTask=args=>transaction(connection=>createComicRenderTaskInTransaction(connection,args));
   const getComicRenderTask=({userId,taskId})=>transaction(async connection=>{
     uuid.parse(userId);uuid.parse(taskId);
     const row=await readPublic(connection,userId,taskId,{allowMissing:true});
@@ -141,7 +145,7 @@ export function createComicRenderRepository({ withTransaction: transaction = wit
   const listComicRenderTasks=({userId,comicDiaryId,limit=30})=>transaction(async connection=>{
     uuid.parse(userId);uuid.parse(comicDiaryId);z.number().int().min(1).max(50).parse(limit);
     const [comic]=await connection.query("SELECT id FROM station_comic_diaries WHERE id=? AND user_id=? AND deleted_at IS NULL AND status <> 'deleted' FOR SHARE",[comicDiaryId,userId]);
-    if(!comic)throw notFound();await authorize(connection,userId);
+    if(!comic)throw notFound();
     const rows=await connection.query(`SELECT ${taskFields} FROM ai_tasks WHERE user_id=? AND comic_diary_id=? AND ${predicate} ORDER BY created_at DESC,id DESC LIMIT ?`,[userId,comicDiaryId,limit]);
     const result=[];for(const row of rows)result.push(dto(row,await outputs(connection,row.id,true)));return result;
   });
@@ -206,7 +210,7 @@ export function createComicRenderRepository({ withTransaction: transaction = wit
     if(!updated)throw conflict("漫画生成任务租约已失效。","AI_TASK_LEASE_LOST");
     await appendEvent(connection,updated);return dto(updated,await outputs(connection,row.id,true));
   });
-  return {createComicRenderTask,getComicRenderTask,listComicRenderTasks,listComicRenderEvents,cancelQueuedComicRenderTask,
+  return {createComicRenderTask,createComicRenderTaskInTransaction,getComicRenderTask,listComicRenderTasks,listComicRenderEvents,cancelQueuedComicRenderTask,
     getComicRenderTaskRecord,revalidateComicRenderTask,markComicFrameRunning,markComicFrameResult,bindComicFrameAssetInTransaction,finishComicRenderTask};
 }
 export const defaultComicRenderRepository=createComicRenderRepository();

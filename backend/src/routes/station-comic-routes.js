@@ -20,6 +20,8 @@ import {
   stationComicDiaryParamsSchema,
   stationComicDiaryRequestSchema,
 } from "../schemas.js";
+import { getStationComicDiaryForUser } from "../station-agent-repository.js";
+import { createComicRenderRepository } from "../comic-render-repository.js";
 
 const hour = 60 * 60 * 1000;
 const comicDiaryCreateLimit = createRateLimitMiddleware({
@@ -126,6 +128,16 @@ export function registerStationComicRoutes(
       });
     }),
   );
+
+  app.get("/api/station/comic-diaries/:comicDiaryId", authenticate, asyncHandler(async (req,res)=>{
+    const {comicDiaryId}=stationComicDiaryParamsSchema.parse(req.params);
+    const comicDiary=await getStationComicDiaryForUser({userId:req.user.id,comicDiaryId});
+    if(!comicDiary)throw new HttpError(404,"漫画作品不存在或不可访问。",{code:"COMIC_NOT_FOUND"});
+    const tasks=await createComicRenderRepository().listComicRenderTasks({userId:req.user.id,comicDiaryId});
+    // A work is owned independently of its former private source conversation.
+    // Source prompt/labels are not required to view its authored frames.
+    res.json({data:{comicDiary:{...comicDiary,prompt:"",metadata:{},sourceDiaryEntryId:null,sourceMediaAssetIds:[],sourceFileAssetIds:[]},tasks}});
+  }));
 
   app.post(
     "/api/station/comic-diaries",

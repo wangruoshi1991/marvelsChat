@@ -42,7 +42,7 @@ import { workspaceAssistContext } from './features/assist/workspaceAssistContext
 import { useProfileFlows } from './features/profile/useProfileFlows';
 import { StationPostComposerScreen } from './features/station/StationPostComposerScreen';
 import { StationScreen } from './features/station/StationScreen';
-import { ComicCreationScreen } from './features/station/ComicCreationScreen';
+import type { ComicPublishDraft } from './models/chatContentPreview';
 import { StationTab } from './features/station/stationTypes';
 import { AvatarConfigDTO } from './models/api';
 import { appErrorText, textFor } from './shared/i18n';
@@ -155,13 +155,10 @@ function App(): React.JSX.Element {
   const workspaceOwner = `${session.user?.id || ''}:${session.token || ''}`;
   const workspaceOwnerRef = useRef(workspaceOwner);
   workspaceOwnerRef.current = workspaceOwner;
-  const [comicCreation, setComicCreation] = useState<{
+  const [comicPostDraft, setComicPostDraft] = useState<{
     owner: string;
-    threadId: string;
-    id: number;
-    prompt: string;
+    draft: ComicPublishDraft;
   } | null>(null);
-  const comicCreationSequence = useRef(0);
   const [accessDrafts, setAccessDrafts] = useState<{
     owner: string;
     threads: Record<string, ChatDraftSnapshot>;
@@ -246,7 +243,7 @@ function App(): React.JSX.Element {
     setButlerDraftOwner('');
     setSelectedMiaoTask(null);
     setSelectedWorkspace(null);
-    setComicCreation(null);
+    setComicPostDraft(null);
     setWorkspaceContribution(null);
     setRequestDraftState({ owner: '', text: '' });
     setMiaoVoiceExpanded(false);
@@ -354,21 +351,13 @@ function App(): React.JSX.Element {
   }:${agentWorkspace?.id || ''}:${requestComposerOpen}`;
   const workspaceChatScopeRef = useRef(workspaceChatScope);
   workspaceChatScopeRef.current = workspaceChatScope;
-  const activeComicCreation =
-    comicCreation?.owner === workspaceOwner &&
-    comicCreation.threadId === openedThread?.id &&
-    openedThread.agentId === 'comic-diary' &&
-    openedThread.kind !== 'group' &&
-    modalRoute === 'chat' &&
-    !agentWorkspace &&
-    !requestComposerOpen
-      ? comicCreation
-      : null;
-  const activeComicCreationRef = useRef(activeComicCreation);
-  activeComicCreationRef.current = activeComicCreation;
-  useEffect(() => {
-    setComicCreation(null);
-  }, [workspaceChatScope]);
+  const composerPickerEpoch = useRef(0);
+  useEffect(
+    () => () => {
+      composerPickerEpoch.current += 1;
+    },
+    [workspaceChatScope],
+  );
   const accessDraft =
     accessDrafts.owner === workspaceOwner && openedThread
       ? accessDrafts.threads[openedThread.id]
@@ -592,12 +581,19 @@ function App(): React.JSX.Element {
   // server-backed AI context item.
   const prepareComposerTool = useCallback(
     async (tool: ComposerTool): Promise<ComposerPreparationResult> => {
+      const owner = workspaceOwnerRef.current;
+      const scope = workspaceChatScopeRef.current;
+      const epoch = ++composerPickerEpoch.current;
+      const current = () =>
+        workspaceOwnerRef.current === owner &&
+        workspaceChatScopeRef.current === scope &&
+        composerPickerEpoch.current === epoch;
       if (tool === '相册' || tool === '拍摄') {
         const media =
           tool === '拍摄'
             ? await takeStationPhoto()
             : await pickStationPhotoFromLibrary();
-        if (!media) return null;
+        if (!media || !current()) return null;
         const asset = await session.createStationMediaAsset({
           kind: media.kind,
           originalFilename: media.originalFilename,
@@ -607,6 +603,7 @@ function App(): React.JSX.Element {
           height: media.height,
           localMedia: media,
         });
+        if (!current()) return null;
         return {
           kind: 'station-photo',
           id: asset.id,
@@ -618,7 +615,9 @@ function App(): React.JSX.Element {
         const file = await pickStationFile();
         if (!file) return null;
         try {
+          if (!current()) return null;
           const asset = await session.uploadStationFileAsset(file);
+          if (!current()) return null;
           if (!asset.reference) {
             throw new Error('文件解析结果缺少引用，请稍后重试。');
           }
@@ -630,7 +629,9 @@ function App(): React.JSX.Element {
 
       if (tool === '位置') {
         const coordinates = await getCurrentLocation();
+        if (!current()) return null;
         const location = await session.resolveLocation(coordinates);
+        if (!current()) return null;
         const detail = [location.displayName, location.activityArea]
           .filter(Boolean)
           .join(' · ');
@@ -983,25 +984,17 @@ function App(): React.JSX.Element {
                       }}
                       onAuthorizeAlbumAI={async () => openAgentManagement()}
                       onOpenAgentAccess={openAgentManagement}
-                      onOpenComicCreation={
-                        openedThread.agentId === 'comic-diary' &&
-                        openedThread.kind !== 'group'
-                          ? prompt => {
-                              if (
-                                workspaceOwnerRef.current !== workspaceOwner ||
-                                workspaceChatScopeRef.current !==
-                                  workspaceChatScope
-                              )
-                                return;
-                              setComicCreation({
-                                owner: workspaceOwner,
-                                threadId: openedThread.id,
-                                id: ++comicCreationSequence.current,
-                                prompt,
-                              });
-                            }
-                          : undefined
-                      }
+                      onPublishComic={draft => {
+                        if (
+                          workspaceOwnerRef.current !== workspaceOwner ||
+                          workspaceChatScopeRef.current !== workspaceChatScope
+                        )
+                          return;
+                        setComicPostDraft({ owner: workspaceOwner, draft });
+                        setIsPostComposerOpen(true);
+                      }}
+                      albums={session.stationContent.albums}
+                      mediaAssets={session.stationContent.mediaAssets}
                       onPrepareComposerTool={prepareComposerTool}
                       agentGrantedScopes={
                         session.ownedAgents.find(
@@ -1060,6 +1053,9 @@ function App(): React.JSX.Element {
                           : accessDraft?.replyToMessageId
                       }
                       initialAgentContextReset={accessDraft?.agentContextReset}
+                      initialContentPreviewContext={
+                        accessDraft?.contentPreviewContext
+                      }
                       initialButlerContextReset={
                         hasButlerDraft
                           ? !butlerWorkspaceContext &&
@@ -1100,35 +1096,8 @@ function App(): React.JSX.Element {
                       agents={session.agents}
                       renderUserAvatar={renderUserAvatar}
                       onBack={closeThread}
-                      onSend={(
-                        content,
-                        retryMessageId,
-                        replyToMessageId,
-                        contextRefs,
-                        assistSource,
-                        butlerContextReset,
-                        taskContext,
-                        agentContextReset,
-                      ) =>
-                        session.sendMessage(
-                          openedThread.id,
-                          content,
-                          retryMessageId,
-                          replyToMessageId,
-                          contextRefs,
-                          assistSource,
-                          ...((agentContextReset
-                            ? [undefined, undefined, true]
-                            : taskContext
-                            ? [undefined, taskContext]
-                            : butlerContextReset
-                            ? [true]
-                            : []) as [
-                            boolean?,
-                            WorkspaceDiscussionContext?,
-                            boolean?,
-                          ]),
-                        )
+                      onSend={(...args) =>
+                        session.sendMessage(openedThread.id, ...args)
                       }
                       onDeleteMessage={messageId =>
                         session.deleteMessage(openedThread.id, messageId)
@@ -1518,7 +1487,10 @@ function App(): React.JSX.Element {
                           onOpenDeleteAccount={() =>
                             setModalRoute('delete-account')
                           }
-                          onOpenPostComposer={() => setIsPostComposerOpen(true)}
+                          onOpenPostComposer={() => {
+                            setComicPostDraft(null);
+                            setIsPostComposerOpen(true);
+                          }}
                           onOpenNotices={() => {
                             closeSecondFloor();
                             setSelectedMessageTab('notice');
@@ -1568,63 +1540,6 @@ function App(): React.JSX.Element {
                 />
               )}
 
-              {session.token && activeComicCreation ? (
-                <Modal
-                  testID="comic-creation-modal"
-                  visible
-                  animationType="slide"
-                  presentationStyle="fullScreen"
-                  onRequestClose={() => {
-                    if (activeComicCreationRef.current === activeComicCreation)
-                      setComicCreation(null);
-                  }}
-                >
-                  <SafeAreaProvider>
-                    <SafeAreaView
-                      style={[
-                        appStyles.retained,
-                        { backgroundColor: chatPalette.background },
-                      ]}
-                    >
-                      <ComicCreationScreen
-                        key={`${activeComicCreation.owner}:${activeComicCreation.threadId}:${activeComicCreation.id}`}
-                        palette={chatPalette}
-                        language={session.language}
-                        session={session}
-                        initialPrompt={activeComicCreation.prompt}
-                        onBack={() => {
-                          if (
-                            activeComicCreationRef.current ===
-                            activeComicCreation
-                          )
-                            setComicCreation(null);
-                        }}
-                        onActionMessage={message => {
-                          if (
-                            activeComicCreationRef.current ===
-                            activeComicCreation
-                          )
-                            showToast(message);
-                        }}
-                        onActionError={error => {
-                          if (
-                            activeComicCreationRef.current ===
-                            activeComicCreation
-                          )
-                            showToast(
-                              appErrorText(
-                                session.language,
-                                error,
-                                '漫画制作失败，请重试。',
-                                'Comic creation failed. Try again.',
-                              ),
-                            );
-                        }}
-                      />
-                    </SafeAreaView>
-                  </SafeAreaProvider>
-                </Modal>
-              ) : null}
               {session.token &&
               (requestComposerOpen || miaoTask || agentWorkspace) ? (
                 <Modal
@@ -1921,8 +1836,17 @@ function App(): React.JSX.Element {
                   palette={palette}
                   language={session.language}
                   session={session}
-                  onClose={() => setIsPostComposerOpen(false)}
+                  initialDraft={
+                    comicPostDraft?.owner === workspaceOwner
+                      ? comicPostDraft.draft
+                      : undefined
+                  }
+                  onClose={() => {
+                    setComicPostDraft(null);
+                    setIsPostComposerOpen(false);
+                  }}
                   onPublished={() => {
+                    setComicPostDraft(null);
                     setIsPostComposerOpen(false);
                     setSelectedTab('station');
                     setSelectedStationTab('posts');

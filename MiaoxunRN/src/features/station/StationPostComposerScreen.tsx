@@ -18,12 +18,16 @@ import { styles } from '../../shared/styles';
 import { isLightPalette, Palette } from '../../shared/theme';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { StationPostComposerContent } from './StationPostComposerContent';
-import { useStationPostComposer } from './useStationPostComposer';
+import {
+  StationPostInitialDraft,
+  useStationPostComposer,
+} from './useStationPostComposer';
 
 export function StationPostComposerScreen({
   palette,
   language,
   session,
+  initialDraft,
   onClose,
   onPublished,
   onActionError,
@@ -31,6 +35,7 @@ export function StationPostComposerScreen({
   palette: Palette;
   language: Language;
   session: ReturnType<typeof useMiaoxunSession>;
+  initialDraft?: StationPostInitialDraft;
   onClose: () => void;
   onPublished: () => void;
   onActionError: (error: unknown) => void;
@@ -38,6 +43,7 @@ export function StationPostComposerScreen({
   const composer = useStationPostComposer({
     language,
     session,
+    initialDraft,
     onClose,
     onPublished,
     onActionError,
@@ -45,6 +51,10 @@ export function StationPostComposerScreen({
   const {
     attachments,
     isPublishing,
+    isEditingLocked,
+    isRestoring,
+    pendingAttempt,
+    verifyPublication,
     publish,
     publishError,
     requestClose,
@@ -62,6 +72,7 @@ export function StationPostComposerScreen({
     ? palette.secondaryText
     : 'rgba(0,0,0,0.60)';
   const accentColor = isDark ? palette.mint : '#0B8271';
+  const verificationTextStyle = { color: accentColor };
 
   return (
     <Modal
@@ -126,15 +137,15 @@ export function StationPostComposerScreen({
                         : textFor(language, '发布', 'Post')
                     }
                     accessibilityState={{
-                      disabled: isPublishing,
+                      disabled: isEditingLocked,
                     }}
-                    disabled={isPublishing}
+                    disabled={isEditingLocked}
                     onPress={publish}
                     testID="post-composer-publish"
                     style={[
                       styles.postComposerPublish,
                       { backgroundColor: accentColor },
-                      isPublishing && styles.disabledButton,
+                      isEditingLocked && styles.disabledButton,
                     ]}
                   >
                     {isPublishing ? (
@@ -180,6 +191,33 @@ export function StationPostComposerScreen({
                     style={styles.postComposerErrorDismiss}
                   >
                     <X color="#D9364F" size={17} strokeWidth={2} />
+                  </Pressable>
+                </View>
+              ) : null}
+
+              {pendingAttempt || isRestoring ? (
+                <View style={styles.postComposerError}>
+                  <Text style={styles.postComposerErrorText}>
+                    {textFor(
+                      language,
+                      '请先核验原发布结果，内容与图片会保留。',
+                      'Verify the original publication. Your content and images are retained.',
+                    )}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={textFor(
+                      language,
+                      '核验发布结果',
+                      'Verify publication',
+                    )}
+                    disabled={isPublishing}
+                    onPress={verifyPublication}
+                    style={styles.postComposerBack}
+                  >
+                    <Text style={verificationTextStyle}>
+                      {textFor(language, '核验结果', 'Verify')}
+                    </Text>
                   </Pressable>
                 </View>
               ) : null}

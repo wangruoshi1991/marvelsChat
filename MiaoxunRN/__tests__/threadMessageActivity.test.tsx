@@ -67,7 +67,11 @@ function Harness({ initial }: { initial: ChatThread[] }) {
 beforeEach(() => {
   api.sendMessage.mockReset();
   api.messages.mockReset();
-  setAIContractSession('owner', { aiTasks: 1, agentWorkspaces: 6 });
+  setAIContractSession('owner', {
+    aiTasks: 1,
+    agentWorkspaces: 6,
+    chatContent: 1,
+  });
 });
 afterEach(async () => {
   await act(async () => tree?.unmount());

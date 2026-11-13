@@ -6,7 +6,9 @@
 backend/database/*.sql
 ```
 
-当前阅读边界（2026-10-30）：本机共享开发库实读到迁移 `026_agent_granted_scopes.sql`；本轮 046–048 release/product/entitlement 链路只允许在全新的 loopback `_migration_test` 数据库验证，不能把隔离库或历史生产记录当作本机或线上已部署。迁移 040–045 的下文保留当时的升级与审计证据，实际部署状态以[当前交接](handoffs/CURRENT.md)和当前数据库账本为准。
+当前源码新增059聊天内容预览及060动态发布回执；只在本轮新建loopback `_migration_test`数据库验证，不代表生产已迁移。059保存不可变来源/权限快照及原子确认结果，058队列保持；060保存本人稳定发布意图和已关闭的未知请求，避免迟到POST重复发布，详见[对话创作合同](conversational-comic.md)。
+
+较早阅读边界（2026-10-30）：本机共享开发库当时实读到迁移 `026_agent_granted_scopes.sql`。迁移040–048的下文保留当时升级与审计证据，实际部署状态以[当前交接](handoffs/CURRENT.md)和当前数据库账本为准。
 
 ## 本地数据库
 

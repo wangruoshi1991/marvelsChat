@@ -38,6 +38,8 @@ export function useStationActions({
   setStationContent: Dispatch<SetStateAction<StationContentDTO>>;
 }) {
   const contentRefresh = useRef(0);
+  const activeToken = useRef(token);
+  activeToken.current = token;
   const refreshStationContent = useCallback(
     async (signal?: AbortSignal) => {
       if (signal?.aborted) return emptyStationContent;
@@ -55,11 +57,12 @@ export function useStationActions({
 
   const applyStationMutation = useCallback(
     (value: SetStateAction<StationContentDTO>) => {
+      if (activeToken.current !== token) return;
       // A read started before this confirmed mutation must not restore its older snapshot.
       contentRefresh.current += 1;
       setStationContent(value);
     },
-    [setStationContent],
+    [setStationContent, token],
   );
 
   const listMiaoPointLedger = useCallback(async () => {
@@ -71,6 +74,7 @@ export function useStationActions({
 
   const createStationPost = useCallback(
     async (payload: {
+      clientRequestId?: string;
       body?: string;
       locationLabel?: string;
       visibility?: StationVisibility;
@@ -81,11 +85,52 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       const post = await apiClient.createStationPost(token, payload);
+      if (activeToken.current !== token) return post;
       applyStationMutation(current => ({
         ...current,
-        posts: [post, ...current.posts],
+        posts: [post, ...current.posts.filter(item => item.id !== post.id)],
       }));
       return post;
+    },
+    [applyStationMutation, token],
+  );
+
+  const getStationPostSubmission = useCallback(
+    async (clientRequestId: string) => {
+      if (!token) throw new Error('请先登录。');
+      const receipt = await apiClient.getStationPostSubmission(
+        token,
+        clientRequestId,
+      );
+      if (receipt.status === 'submitted' && activeToken.current === token)
+        applyStationMutation(current => ({
+          ...current,
+          posts: [
+            receipt.post,
+            ...current.posts.filter(post => post.id !== receipt.post.id),
+          ],
+        }));
+      return receipt;
+    },
+    [applyStationMutation, token],
+  );
+
+  const resolveStationPostSubmission = useCallback(
+    async (clientRequestId: string) => {
+      if (!token) throw new Error('请先登录。');
+      const receipt = await apiClient.resolveStationPostSubmission(
+        token,
+        clientRequestId,
+      );
+      if (receipt.status === 'submitted' && activeToken.current === token)
+        applyStationMutation(current => ({
+          ...current,
+          posts: [
+            receipt.post,
+            ...current.posts.filter(post => post.id !== receipt.post.id),
+          ],
+        }));
+      return receipt;
     },
     [applyStationMutation, token],
   );
@@ -516,6 +561,8 @@ export function useStationActions({
     refreshStationContent,
     listMiaoPointLedger,
     createStationPost,
+    getStationPostSubmission,
+    resolveStationPostSubmission,
     deleteStationPost,
     setStationPostInteraction,
     createStationDiary,

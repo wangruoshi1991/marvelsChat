@@ -1,4 +1,5 @@
 import type { AIContextReference } from '../../models/aiTask';
+import type { ContentPreviewContext } from '../../models/chatContentPreview';
 import {
   WorkspaceContextSelector,
   workspaceContextSelector,
@@ -15,6 +16,8 @@ import {
   assertAIContract,
   supportsUIPreferences,
   uiPreferencesHeaders,
+  chatContentHeaders,
+  supportsChatContent,
 } from '../aiContract';
 
 export const messageApi = {
@@ -52,6 +55,7 @@ export const messageApi = {
     butlerContextReset?: boolean,
     workspaceContext?: WorkspaceContextSelector,
     agentContextReset?: boolean,
+    contentPreviewContext?: ContentPreviewContext,
   ) {
     if (
       agentContextReset !== undefined &&
@@ -92,10 +96,13 @@ export const messageApi = {
       replyToMessageId?: string;
       clientMessageId?: string;
       workspaceContext?: WorkspaceContextSelector;
+      contentPreviewContext?: ContentPreviewContext;
     } = { content, contextRefs };
 
     if (butlerContextReset === true) body.butlerContextReset = true;
     if (agentContextReset === true) body.agentContextReset = true;
+    if (contentPreviewContext)
+      body.contentPreviewContext = { ...contentPreviewContext };
 
     if (clientContext) {
       body.clientContext = clientContext;
@@ -118,6 +125,7 @@ export const messageApi = {
       headers: {
         ...agentWorkspaceHeaders,
         ...(supportsUIPreferences(token) ? uiPreferencesHeaders : {}),
+        ...(supportsChatContent(token) ? chatContentHeaders : {}),
       },
     });
   },

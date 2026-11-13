@@ -278,7 +278,7 @@ export async function collectWorkspaceTextSources(connection, userId, { sourceRe
       const delivered = await validateWorkspaceMediaSources(connection, userId, dependency.result);
       add(delivered.references);
       dependencies.push({ kind: "media_selection", title: dependency.result.title,
-        assets: delivered.context.map(({ title, kind, caption }) => ({ title, kind, caption })) });
+        assets: delivered.context.map(({ title, mediaKind, caption }) => ({ title, kind: mediaKind, caption })) });
     } else if (allowSiteDrafts && dependency.result?.kind === "site_draft") {
       if (!dependency.document || !requiredScopes.includes("profile:read") || !requiredScopes.includes("station:read")) {
         fail(422, "WORKSPACE_DEPENDENCY_INVALID", "页面交接缺少经服务端校验的原版内容。");

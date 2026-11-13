@@ -66,6 +66,7 @@ export function ChatMessageItem({
   onEditWorkspaceDiscussion,
   onActionMessage,
   onConfirmUIPreferences,
+  contentPreviewCard,
 }: {
   token?: string;
   item: ChatMessage;
@@ -98,6 +99,7 @@ export function ChatMessageItem({
     id: string,
     baseRevision: number,
   ) => Promise<unknown>;
+  contentPreviewCard?: React.ReactNode;
 }) {
   const assist = useAIAssist();
   const workspaceId = messageWorkspaceId(item, thread.agentId, thread.id);
@@ -386,6 +388,7 @@ export function ChatMessageItem({
           onConfirm={onConfirmUIPreferences}
         />
       ) : null}
+      {contentPreviewCard}
       {token &&
       discussionContext &&
       onOpenWorkspace &&

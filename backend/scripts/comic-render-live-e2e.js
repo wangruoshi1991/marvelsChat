@@ -11,6 +11,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'dotenv';
 import pg from 'pg';
 import sharp from 'sharp';
+import { loadMigrationFiles } from '../src/migration-files.js';
+import { checkMigrationStatus } from '../src/migration-ledger.js';
 
 process.env.MIAOXUN_DOTENV_ENABLED = 'false';
 const failure = code => Object.assign(new Error('Comic live verification stopped; inspect its safe code.'), { code });
@@ -21,6 +23,10 @@ const required = ['DATABASE_URL', 'NEW_API_BASE_URL', 'NEW_API_KEY', 'NEW_API_MO
 const optional = ['NEW_API_PLANNING_MODEL', 'NEW_API_TIMEOUT_MS', 'NEW_API_WORKSPACE_TIMEOUT_MS', 'MEDIA_GENERATION_TIMEOUT_MS', 'OSS_REGION', 'OSS_INTERNAL_ENDPOINT', 'OSS_TIMEOUT_MS'];
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+export async function assertComicLiveMigrations(database, migrations) {
+  const status = await checkMigrationStatus({ client: database, migrations: migrations ?? await loadMigrationFiles() });
+  if (!status.current) throw failure('COMIC_E2E_MIGRATIONS_REQUIRED');
+}
 const apiCodes = new Set(['PRODUCT_IDENTITY_MISMATCH', 'PRODUCT_IDENTITY_INCOMPLETE', 'IDENTITY_INCOMPLETE', 'IDENTITY_KEY_MISMATCH',
   'PRODUCT_CONTRACT_STALE', 'PRODUCT_DEPENDENCIES_REQUIRED', 'PRODUCT_NOT_FOUND', 'PRODUCT_CONSENT_REQUIRED', 'SCOPES_MISMATCH',
   'AGENT_NOT_READY', 'AGENT_DEPENDENCY_NOT_READY', 'AGENT_DEPENDENCY_REGISTRY_STALE', 'AGENT_DEPENDENCY_UNAVAILABLE', 'REGISTRY_VERSION_STALE',
@@ -162,8 +168,7 @@ export async function runComicRenderLiveE2E({ configFile, outputDir }) {
   try {
     const state = (await database.query('SELECT current_database() AS name, (SELECT count(*)::int FROM users) AS users')).rows[0];
     if (!state.name.endsWith('_migration_test') || state.users !== 0) throw failure('COMIC_E2E_DATABASE_NOT_EMPTY');
-    const migration = (await database.query('SELECT count(*)::int AS count FROM schema_migrations')).rows[0];
-    if (migration.count !== 58) throw failure('COMIC_E2E_MIGRATIONS_REQUIRED');
+    await assertComicLiveMigrations(database);
     directory = path.resolve(outputDir); await fs.mkdir(directory, { mode: 0o700 });
     receipt = await fs.open(path.join(directory, 'receipt.jsonl'), 'wx', 0o600);
     await record({ type: 'run_start', version: 1, syntheticOnly: true, realProvider: true, plannedFrames: 2, retries: 0 });

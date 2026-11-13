@@ -17,6 +17,7 @@ import {
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   PanResponder,
   Platform,
   Pressable,
@@ -25,9 +26,30 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 
-import { AgentDTO, AvatarConfigDTO } from '../../models/api';
+import {
+  AgentDTO,
+  AvatarConfigDTO,
+  StationAlbumDTO,
+  StationMediaAssetDTO,
+} from '../../models/api';
+import {
+  ContentPreview,
+  ContentPreviewContext,
+  ComicPublishDraft,
+  contentPreviewReference,
+} from '../../models/chatContentPreview';
+import { useChatContentPreviews } from './useChatContentPreviews';
+import { ContentPreviewMessageCard, Action } from './ContentPreviewMessageCard';
+import { ComicDetailScreen } from './ComicDetailScreen';
+import { MyComicsScreen } from './MyComicsScreen';
+import { ComicSourcePickerSheet } from './ComicSourcePickerSheet';
+import { PrivateReferenceImage } from './PrivateReferenceImage';
 import { AgentWorkspace } from '../../models/agentWorkspace';
 import {
   WorkspaceContinuationDraft,
@@ -88,6 +110,7 @@ export type ChatDraftSnapshot = {
   butlerContextReset?: boolean;
   agentContextReset?: boolean;
   workspaceContext?: WorkspaceDiscussionContext;
+  contentPreviewContext?: ContentPreviewContext;
 };
 
 const recallWindowMs = 60 * 1000;
@@ -127,7 +150,10 @@ export function ChatScreen({
   initialWorkspaceContext,
   agentGrantedScopes,
   onOpenAgentAccess,
-  onOpenComicCreation,
+  onPublishComic,
+  albums = [],
+  mediaAssets = [],
+  initialContentPreviewContext,
   onOpenWorkspace,
   onPreserveDraftForAccess,
   onRefreshThread,
@@ -156,6 +182,7 @@ export function ChatScreen({
     butlerContextReset?: boolean,
     workspaceContext?: WorkspaceDiscussionContext,
     agentContextReset?: boolean,
+    contentPreviewContext?: ContentPreviewContext,
   ) => void | Promise<void | boolean>;
   onDeleteMessage: (messageId: string) => void | Promise<void>;
   onRecallMessage: (messageId: string) => void | Promise<void>;
@@ -169,9 +196,12 @@ export function ChatScreen({
   initialButlerContextReset?: boolean;
   initialAgentContextReset?: boolean;
   initialWorkspaceContext?: WorkspaceDiscussionContext;
+  initialContentPreviewContext?: ContentPreviewContext;
   agentGrantedScopes?: string[];
   onOpenAgentAccess?: () => void;
-  onOpenComicCreation?: (prompt: string) => void;
+  onPublishComic?: (draft: ComicPublishDraft) => void;
+  albums?: StationAlbumDTO[];
+  mediaAssets?: StationMediaAssetDTO[];
   onOpenWorkspace?: (
     workspace: AgentWorkspace,
     draft?: WorkspaceContinuationDraft,
@@ -191,6 +221,44 @@ export function ChatScreen({
 }) {
   const assist = useAIAssist();
   const professional = usesAgentDispatch(thread.agentId);
+  const isComic = thread.agentId === 'comic-diary' && thread.kind !== 'group';
+  const [comicDetail, setComicDetail] = useState<{
+    comicId?: string;
+    preview?: ContentPreview;
+  }>();
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [contentContext, setContentContext] = useState<ContentPreviewContext>();
+  const [visibleMessages, setVisibleMessages] = useState<string[]>(() =>
+    thread.messages.slice(-12).map(message => message.id),
+  );
+  const chatScope = `${token || ''}:${currentUserId}:${thread.id}`;
+  const chatScopeRef = useRef(chatScope);
+  chatScopeRef.current = chatScope;
+  const pickerEpoch = useRef(0);
+  useEffect(
+    () => () => {
+      pickerEpoch.current += 1;
+    },
+    [chatScope],
+  );
+  const previews = useChatContentPreviews({
+    token: token || '',
+    userId: currentUserId,
+    threadId: thread.id,
+    agentId: thread.agentId,
+    messages: thread.messages,
+    visibleMessageIds: visibleMessages,
+    active: isComic && !comicDetail && !libraryOpen && !sourcesOpen,
+  });
+  const viewability = useRef(
+    ({ viewableItems }: { viewableItems: Array<{ item: ChatTimelineItem }> }) =>
+      setVisibleMessages(
+        viewableItems.flatMap(({ item }) =>
+          item.kind === 'message' ? [item.message.id] : [],
+        ),
+      ),
+  ).current;
   const contributionAgentId =
     thread.kind !== 'group' &&
     (professional || thread.agentId === 'miaoxun-butler')
@@ -215,11 +283,14 @@ export function ChatScreen({
     : initialButlerContextReset;
   const [draft, setDraft] = useState('');
   const [contextRefs, setContextRefs] = useState<AIContextReference[]>([]);
+  const contextRefsRef = useRef(contextRefs);
+  contextRefsRef.current = contextRefs;
   const [assistSource, setAssistSource] = useState<AssistMessageSource>();
   const [workspaceContext, setWorkspaceContext] =
     useState<WorkspaceDiscussionContext>();
   const [contextResetNotice, setContextResetNotice] = useState(false);
   const submitting = useRef(false);
+  const sendAttempt = useRef(0);
   const clarification = useMemo(
     () => pendingConversationClarification(thread),
     [thread],
@@ -297,6 +368,9 @@ export function ChatScreen({
   const preserveDraftForAccess = useCallback(
     () =>
       onPreserveDraftForAccess?.({
+        ...(contentContext
+          ? { contentPreviewContext: { ...contentContext } }
+          : {}),
         text: draft,
         references: contextRefs.map(reference => ({ ...reference })),
         ...(assistSource ? { source: { ...assistSource } } : {}),
@@ -318,6 +392,7 @@ export function ChatScreen({
       replyTarget,
       workspaceContext,
       professional,
+      contentContext,
     ],
   );
   const closeChat = useCallback(() => {
@@ -524,6 +599,70 @@ export function ChatScreen({
       );
     const timelineMessage = item.message;
     const previous = index > 0 ? timeline[index - 1] : undefined;
+    const reference = isComic
+      ? contentPreviewReference(timelineMessage, thread.id, thread.agentId)
+      : null;
+    const entry = reference ? previews.entries[reference.id] : undefined;
+    const contentPreviewCard =
+      reference && token ? (
+        <ContentPreviewMessageCard
+          key={`${chatScope}:${timelineMessage.id}:${reference.id}`}
+          token={token}
+          palette={messagePalette}
+          language={language}
+          {...entry}
+          busy={Boolean(entry?.busy) || isSending}
+          loading={!entry || entry.loading}
+          onConfirm={() => {
+            if (submitting.current) return;
+            previews.confirm(reference.id).catch(onActionError);
+          }}
+          onReject={() => {
+            if (submitting.current) return;
+            previews.reject(reference.id).catch(onActionError);
+          }}
+          onRefresh={() => {
+            previews.refresh(reference.id).catch(onActionError);
+          }}
+          onOpen={() => {
+            if (entry?.preview)
+              setComicDetail({
+                preview: entry.preview,
+                ...(entry.preview.kind === 'comic' && entry.preview.result
+                  ? { comicId: entry.preview.result.comicDiaryId }
+                  : {}),
+              });
+          }}
+          onModify={() => {
+            if (submitting.current || !entry?.preview) return;
+            draftEdited.current = true;
+            contextGeneration.current += 1;
+            setContentContext({
+              id: entry.preview.id,
+              revision: entry.preview.revision,
+            });
+            setReplyTarget(null);
+            setWorkspaceContext(undefined);
+            contextReset.current = false;
+            setContextResetNotice(false);
+            setContextRefs(
+              entry.preview.sources.flatMap(source =>
+                source.type === 'station-photo' ||
+                source.type === 'station-diary' ||
+                source.type === 'chat-message'
+                  ? [
+                      {
+                        kind: source.type,
+                        id: source.id,
+                        title: source.title,
+                      } as AIContextReference,
+                    ]
+                  : [],
+              ),
+            );
+          }}
+        />
+      ) : undefined;
     return (
       <ChatMessageItem
         token={token}
@@ -541,6 +680,7 @@ export function ChatScreen({
         onOpenMessageMenu={openMessageMenu}
         onActionMessage={onActionError}
         onConfirmUIPreferences={onConfirmUIPreferences}
+        contentPreviewCard={contentPreviewCard}
         onOpenAgentAccess={openAgentAccess}
         onOpenWorkspace={onOpenWorkspace}
         onRestoreWorkspaceContext={restoreWorkspaceContext}
@@ -589,13 +729,10 @@ export function ChatScreen({
               replyId,
               message.metadata?.contextRefs || [],
               message.metadata?.assistSource,
-              ...((message.metadata?.agentContextReset === true
-                ? [undefined, undefined, true]
-                : message.metadata?.workspaceContext
-                ? [undefined, message.metadata.workspaceContext]
-                : message.metadata?.butlerContextReset === true
-                ? [true]
-                : []) as [boolean?, WorkspaceDiscussionContext?, boolean?]),
+              message.metadata?.butlerContextReset === true ? true : undefined,
+              message.metadata?.workspaceContext,
+              message.metadata?.agentContextReset === true ? true : undefined,
+              message.metadata?.contentPreviewContext,
             ),
           ).catch(() => undefined);
         }}
@@ -652,15 +789,26 @@ export function ChatScreen({
   ]);
 
   useEffect(() => {
+    sendAttempt.current += 1;
+    submitting.current = false;
+    setIsSending(false);
     setDraft('');
     setContextRefs([]);
     setAssistSource(undefined);
     setWorkspaceContext(undefined);
+    setContentContext(undefined);
+    setComicDetail(undefined);
+    setLibraryOpen(false);
+    setSourcesOpen(false);
     setReplyTarget(null);
     contextReset.current = false;
     contextGeneration.current += 1;
     setContextResetNotice(false);
   }, [token, currentUserId, thread.id]);
+
+  useEffect(() => {
+    setVisibleMessages(thread.messages.slice(-12).map(message => message.id));
+  }, [token, currentUserId, thread.id, thread.messages]);
 
   useEffect(() => {
     if (
@@ -669,7 +817,8 @@ export function ChatScreen({
       !initialAssistSource &&
       !initialReplyToMessageId &&
       !initialContextReset &&
-      !initialWorkspaceContext
+      !initialWorkspaceContext &&
+      !initialContentPreviewContext
     ) {
       return;
     }
@@ -704,6 +853,7 @@ export function ChatScreen({
     setDraft(initialDraft || '');
     setContextRefs(initialWorkspaceContext ? [] : initialContextRefs || []);
     setWorkspaceContext(initialWorkspaceContext);
+    setContentContext(initialContentPreviewContext);
     setAssistSource(initialAssistSource);
     const restoredReply = thread.messages.find(
       message => message.id === initialReplyToMessageId,
@@ -728,6 +878,7 @@ export function ChatScreen({
     initialReplyToMessageId,
     initialContextReset,
     initialWorkspaceContext,
+    initialContentPreviewContext,
     onInitialDraftConsumed,
     thread.messages,
     thread.agentId,
@@ -811,14 +962,17 @@ export function ChatScreen({
       return;
     }
     submitting.current = true;
+    const attempt = ++sendAttempt.current;
     follow();
     scrollToBottom(true);
     setDraft('');
     const selectedReferences = contextRefs;
     const selectedSource = assistSource;
     const selectedWorkspace = workspaceContext;
+    const selectedPreview = contentContext;
     const submittedReset = contextReset.current;
     const submittedGeneration = contextGeneration.current;
+    const submittedScope = chatScopeRef.current;
     draftEdited.current = false;
     continuingClarification.current = false;
     setContextRefs([]);
@@ -833,16 +987,30 @@ export function ChatScreen({
         targetId,
         selectedReferences,
         selectedSource,
-        ...((submittedReset && professional
+        ...((selectedPreview
+          ? [undefined, undefined, undefined, selectedPreview]
+          : submittedReset && professional
           ? [undefined, undefined, true]
           : selectedWorkspace
           ? [undefined, selectedWorkspace]
           : submittedReset
           ? [true]
-          : []) as [boolean?, WorkspaceDiscussionContext?, boolean?]),
+          : []) as [
+          boolean?,
+          WorkspaceDiscussionContext?,
+          boolean?,
+          ContentPreviewContext?,
+        ]),
       ),
     )
       .then(result => {
+        if (chatScopeRef.current !== submittedScope) return;
+        if (
+          result === true &&
+          selectedPreview &&
+          contextGeneration.current === submittedGeneration
+        )
+          setContentContext(undefined);
         if (
           result === true &&
           submittedReset &&
@@ -851,12 +1019,27 @@ export function ChatScreen({
           contextReset.current = false;
           setContextResetNotice(false);
         }
+        if (result === true)
+          Object.keys(previews.entries).forEach(id => {
+            previews.refresh(id).catch(onActionError);
+          });
         return tasks.refresh();
       })
-      .catch(error =>
-        onActionError(error instanceof Error ? error.message : '消息发送失败'),
-      )
+      .catch(error => {
+        if (
+          chatScopeRef.current === submittedScope &&
+          sendAttempt.current === attempt
+        )
+          onActionError(
+            error instanceof Error ? error.message : '消息发送失败',
+          );
+      })
       .finally(() => {
+        if (
+          chatScopeRef.current !== submittedScope ||
+          sendAttempt.current !== attempt
+        )
+          return;
         submitting.current = false;
         setIsSending(false);
       });
@@ -906,8 +1089,12 @@ export function ChatScreen({
         );
         return;
       }
+      const origin = chatScopeRef.current;
+      const epoch = ++pickerEpoch.current;
       onPrepareComposerTool(tool)
         .then(result => {
+          if (chatScopeRef.current !== origin || pickerEpoch.current !== epoch)
+            return;
           if (!result) return;
           const reference = 'reference' in result ? result.reference : result;
           if (result && 'draftText' in result && result.draftText?.trim()) {
@@ -923,15 +1110,29 @@ export function ChatScreen({
             throw new Error('附件引用无效，请重试。');
           }
           draftEdited.current = true;
-          setContextRefs(current =>
+          const current = contextRefsRef.current;
+          if (
             current.some(
               item => item.kind === reference.kind && item.id === reference.id,
             )
-              ? current
-              : [...current, { ...reference }],
-          );
+          )
+            return;
+          if (current.length >= 6) {
+            onActionError(
+              textFor(
+                language,
+                '最多选择6份素材，请先移除一份。',
+                'Select at most six sources. Remove one first.',
+              ),
+            );
+            return;
+          }
+          contextRefsRef.current = [...current, { ...reference }];
+          setContextRefs(contextRefsRef.current);
         })
         .catch(error => {
+          if (chatScopeRef.current !== origin || pickerEpoch.current !== epoch)
+            return;
           onActionError(
             error instanceof Error
               ? error.message
@@ -998,9 +1199,7 @@ export function ChatScreen({
               onError={onActionError}
             />
           ) : null}
-          {thread.agentId === 'comic-diary' &&
-          thread.kind !== 'group' &&
-          onOpenComicCreation ? (
+          {isComic ? (
             <View style={taskStyles.comicEntry}>
               <Text
                 style={[
@@ -1010,53 +1209,68 @@ export function ChatScreen({
               >
                 {textFor(
                   language,
-                  '先整理分镜，再确认生成画面；图片生成需要单独授权。',
-                  'Prepare a storyboard, then confirm image generation with separate image access.',
+                  '直接聊天创作；参考图片需附故事说明，不会自动识别原图。',
+                  'Create in chat. Add a story description for reference images; pixels are not inspected.',
                 )}
               </Text>
-              <View>
-                {agentGrantedScopes &&
-                !agentGrantedScopes.includes('media:image:generate') &&
-                openAgentAccess ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={textFor(
-                      language,
-                      '查看图片授权',
-                      'Review image access',
-                    )}
-                    onPress={openAgentAccess}
-                    style={taskStyles.refresh}
-                  >
-                    <Text style={{ color: messagePalette.text }}>
-                      {textFor(language, '查看图片授权', 'Review image access')}
-                    </Text>
-                  </Pressable>
-                ) : null}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={textFor(
-                    language,
-                    '制作漫画',
-                    'Create comic',
-                  )}
-                  onPress={() => {
-                    cancelChatSpeech();
-                    Keyboard.dismiss();
-                    onOpenComicCreation(draft);
-                  }}
-                  style={taskStyles.refresh}
-                >
-                  <Text
-                    style={[
-                      taskStyles.comicAction,
-                      { color: messagePalette.text },
-                    ]}
-                  >
-                    {textFor(language, '制作漫画', 'Create comic')}
-                  </Text>
-                </Pressable>
-              </View>
+              <Action
+                label={textFor(language, '选参考图', 'Choose references')}
+                palette={messagePalette}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setSourcesOpen(true);
+                }}
+              />
+              <Action
+                label={textFor(language, '我的漫画', 'My comics')}
+                palette={messagePalette}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setLibraryOpen(true);
+                }}
+              />
+            </View>
+          ) : null}
+          {isComic && contentContext ? (
+            <View style={taskStyles.contextResetNotice}>
+              <Text style={{ color: messagePalette.secondaryText }}>
+                {textFor(
+                  language,
+                  '继续基于原提案文字修改，仅使用下方所选素材；移除素材不会删除已有提案文字。已确认作品的原参考素材需重新选择。',
+                  'Revise the existing proposal text using only the selected sources below. Removing sources retains authored text. Reselect references from a confirmed work.',
+                )}
+              </Text>
+              <Action
+                label={textFor(language, '开始新创作', 'Start a new creation')}
+                palette={messagePalette}
+                onPress={() => {
+                  setContentContext(undefined);
+                  setContextRefs([]);
+                  contextReset.current = true;
+                }}
+              />
+            </View>
+          ) : null}
+          {isComic &&
+          contextRefs.some(reference => reference.kind === 'station-photo') &&
+          token ? (
+            <View style={taskStyles.comicSources}>
+              {contextRefs
+                .filter(reference => reference.kind === 'station-photo')
+                .map(reference => (
+                  <PrivateReferenceImage
+                    key={`${token}:${reference.id}`}
+                    token={token}
+                    mediaAssetId={reference.id}
+                    palette={messagePalette}
+                    language={language}
+                    label={
+                      reference.title ||
+                      textFor(language, '参考图', 'Reference image')
+                    }
+                    style={taskStyles.comicThumbnail}
+                  />
+                ))}
             </View>
           ) : null}
           <View
@@ -1072,6 +1286,7 @@ export function ChatScreen({
               keyExtractor={item => item.key}
               contentContainerStyle={styles.messages}
               initialNumToRender={12}
+              onViewableItemsChanged={viewability}
               maintainVisibleContentPosition={chatVisiblePosition}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
@@ -1393,6 +1608,70 @@ export function ChatScreen({
           onSend={send}
         />
       </Animated.View>
+      {isComic && token && (comicDetail || libraryOpen || sourcesOpen) ? (
+        <Modal
+          visible
+          presentationStyle="fullScreen"
+          onRequestClose={() => {
+            if (comicDetail) setComicDetail(undefined);
+            else {
+              setLibraryOpen(false);
+              setSourcesOpen(false);
+            }
+          }}
+        >
+          <SafeAreaProvider>
+            <SafeAreaView
+              style={[
+                styles.chatSwipeSurface,
+                { backgroundColor: messagePalette.background },
+              ]}
+            >
+              {comicDetail ? (
+                <ComicDetailScreen
+                  key={`${chatScope}:${
+                    comicDetail.comicId || comicDetail.preview?.id
+                  }`}
+                  token={token}
+                  {...comicDetail}
+                  palette={messagePalette}
+                  language={language}
+                  onBack={() => setComicDetail(undefined)}
+                  onPublish={draftToPublish => {
+                    setComicDetail(undefined);
+                    setLibraryOpen(false);
+                    onPublishComic?.(draftToPublish);
+                  }}
+                />
+              ) : libraryOpen ? (
+                <MyComicsScreen
+                  key={chatScope}
+                  token={token}
+                  palette={messagePalette}
+                  language={language}
+                  onBack={() => setLibraryOpen(false)}
+                  onOpen={comicId => setComicDetail({ comicId })}
+                />
+              ) : (
+                <ComicSourcePickerSheet
+                  key={chatScope}
+                  token={token}
+                  albums={albums}
+                  mediaAssets={mediaAssets}
+                  references={contextRefs}
+                  palette={messagePalette}
+                  language={language}
+                  onClose={() => setSourcesOpen(false)}
+                  onSelect={references => {
+                    setContextRefs(references);
+                    setSourcesOpen(false);
+                  }}
+                />
+              )}
+            </SafeAreaView>
+          </SafeAreaProvider>
+        </Modal>
+      ) : null}
       <ThreadSettingsSheet
         visible={isThreadSettingsOpen}
         muted={Boolean(thread.muted)}
@@ -1409,9 +1688,17 @@ export function ChatScreen({
 
 const taskStyles = StyleSheet.create({
   refresh: { minHeight: 44, padding: 12 },
-  comicHint: { flex: 1 },
+  comicHint: { flex: 1, minWidth: 100 },
+  comicSources: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  comicThumbnail: { width: 44, height: 44, borderRadius: 6 },
   comicAction: { fontWeight: '600' },
   comicEntry: {
+    flexWrap: 'wrap',
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: 16,

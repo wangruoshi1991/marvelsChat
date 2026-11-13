@@ -126,7 +126,11 @@ test('a failed quoted message retries with its original idempotency key and repl
 });
 
 test('a missing original failed message never falls back to a new execution key', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  setAIContractSession('test-token', {
+    aiTasks: 1,
+    agentWorkspaces: 6,
+    chatContent: 1,
+  });
   sendMessage.mockReset();
   const onError = jest.fn();
   let renderer!: ReactTestRenderer.ReactTestRenderer;
@@ -215,7 +219,11 @@ test.each([
 );
 
 test('professional retry preserves original text, selection, reset and key without Butler private context or a workspace selector', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  setAIContractSession('test-token', {
+    aiTasks: 1,
+    agentWorkspaces: 6,
+    chatContent: 1,
+  });
   sendMessage.mockReset().mockRejectedValue(new Error('response lost'));
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   await ReactTestRenderer.act(async () => {
@@ -272,7 +280,11 @@ test('professional retry preserves original text, selection, reset and key witho
 });
 
 test('a failed assistance request retries from its captured page and discards local metadata on server success', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  setAIContractSession('test-token', {
+    aiTasks: 1,
+    agentWorkspaces: 6,
+    chatContent: 1,
+  });
   sendMessage.mockReset();
   sendMessage.mockRejectedValueOnce(new Error('response lost'));
   sendMessage.mockRejectedValueOnce(new Error('still offline'));
@@ -334,7 +346,11 @@ test('a failed assistance request retries from its captured page and discards lo
 });
 
 test('invalid assistance locations stop before sending or creating a local message', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  setAIContractSession('test-token', {
+    aiTasks: 1,
+    agentWorkspaces: 6,
+    chatContent: 1,
+  });
   sendMessage.mockReset();
   const onError = jest.fn();
   let renderer: ReactTestRenderer.ReactTestRenderer;
@@ -357,7 +373,11 @@ test('invalid assistance locations stop before sending or creating a local messa
 });
 
 test('a failed task discussion retries its original selector and key without replacing them with a new selection', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  setAIContractSession('test-token', {
+    aiTasks: 1,
+    agentWorkspaces: 6,
+    chatContent: 1,
+  });
   sendMessage.mockReset();
   sendMessage.mockRejectedValue(new Error('offline'));
   const workspace = agentWorkspace({
@@ -422,7 +442,11 @@ test('a failed task discussion retries its original selector and key without rep
 });
 
 test('a professional Agent discussion sends and retries its exact contribution node, while metadata-only task discussion is rejected', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  setAIContractSession('test-token', {
+    aiTasks: 1,
+    agentWorkspaces: 6,
+    chatContent: 1,
+  });
   sendMessage.mockReset();
   sendMessage.mockRejectedValue(new Error('offline'));
   const context = {
@@ -489,7 +513,11 @@ test('a professional Agent discussion sends and retries its exact contribution n
 });
 
 test('a task discussion cannot be sent with an explicitly supplied reset value', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  setAIContractSession('test-token', {
+    aiTasks: 1,
+    agentWorkspaces: 6,
+    chatContent: 1,
+  });
   sendMessage.mockReset();
   const onError = jest.fn();
   const context = workspaceDiscussionContext(
@@ -527,7 +555,11 @@ test('a task discussion cannot be sent with an explicitly supplied reset value',
 });
 
 test('a denied album reference retains the exact request and explicit access failure for review', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  setAIContractSession('test-token', {
+    aiTasks: 1,
+    agentWorkspaces: 6,
+    chatContent: 1,
+  });
   sendMessage.mockReset();
   sendMessage.mockRejectedValueOnce(
     new MiaoxunApiError('请先确认相册读取授权。', {
@@ -593,7 +625,11 @@ test('a denied album reference retains the exact request and explicit access fai
 });
 
 test('an explicit Butler context reset is retained by the same failed request and cannot be changed on retry', async () => {
-  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  setAIContractSession('test-token', {
+    aiTasks: 1,
+    agentWorkspaces: 6,
+    chatContent: 1,
+  });
   sendMessage.mockReset();
   sendMessage.mockRejectedValue(new Error('response lost'));
   let renderer!: ReactTestRenderer.ReactTestRenderer;
@@ -663,7 +699,10 @@ test.each([
 
 test.each([
   { agentId: null, contracts: undefined },
-  { agentId: 'comic-diary', contracts: { aiTasks: 1, agentWorkspaces: 6 } },
+  {
+    agentId: 'comic-diary',
+    contracts: { aiTasks: 1, agentWorkspaces: 6, chatContent: 1 },
+  },
   { agentId: 'miaoxun-butler', contracts: { aiTasks: 1, agentWorkspaces: 6 } },
 ])(
   'the existing contract permits a normal message for $agentId',
@@ -697,7 +736,11 @@ test.each([
 ])(
   'Butler receives the complete request without a fabricated local action: %s',
   async content => {
-    setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+    setAIContractSession('test-token', {
+      aiTasks: 1,
+      agentWorkspaces: 6,
+      chatContent: 1,
+    });
     sendMessage.mockReset().mockResolvedValue({ messages: [] });
     let renderer!: ReactTestRenderer.ReactTestRenderer;
     await ReactTestRenderer.act(async () => {
@@ -724,3 +767,58 @@ test.each([
     await ReactTestRenderer.act(async () => renderer.unmount());
   },
 );
+
+test('comic messages require the explicit content contract before reaching the API', async () => {
+  setAIContractSession('test-token', { aiTasks: 1, agentWorkspaces: 6 });
+  sendMessage.mockReset();
+  const onError = jest.fn();
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <Harness agentId="comic-diary" onError={onError} />,
+    );
+  });
+  await ReactTestRenderer.act(async () => {
+    expect(await actions.sendMessage('thread-1', '画一个故事')).toBe(false);
+  });
+  expect(sendMessage).not.toHaveBeenCalled();
+  expect(onError).toHaveBeenCalledWith(expect.stringContaining('创作'));
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
+test('a failed comic revision retries its captured preview and original message key', async () => {
+  setAIContractSession('test-token', {
+    aiTasks: 1,
+    agentWorkspaces: 6,
+    chatContent: 1,
+  });
+  sendMessage.mockReset().mockRejectedValue(new Error('offline'));
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(<Harness agentId="comic-diary" />);
+  });
+  const context = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', revision: 3 };
+  await ReactTestRenderer.act(async () => {
+    await actions.sendMessage(
+      'thread-1',
+      '把结尾改成日落',
+      undefined,
+      null,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      context,
+    );
+  });
+  const failed = currentThreads[0].messages[0];
+  expect(failed.metadata?.contentPreviewContext).toEqual(context);
+  await ReactTestRenderer.act(async () => {
+    await actions.sendMessage('thread-1', 'changed', failed.id);
+  });
+  expect(sendMessage.mock.calls).toHaveLength(2);
+  expect(sendMessage.mock.calls[0][11]).toEqual(context);
+  expect(sendMessage.mock.calls[1]).toEqual(sendMessage.mock.calls[0]);
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});

@@ -215,7 +215,11 @@ export async function getStationContentForViewer({ ownerUserId, viewerUserId }) 
   return getStationContent({ ownerUserId, viewerUserId });
 }
 
-export async function createStationPost({
+export async function createStationPost(input) {
+  return withTransaction(connection => createStationPostInTransaction(connection, input));
+}
+
+export async function createStationPostInTransaction(connection, {
   userId,
   body = "",
   locationLabel = "",
@@ -231,65 +235,64 @@ export async function createStationPost({
     throw new HttpError(400, "Post body or media is required");
   }
 
-  return withTransaction(async (connection) => {
-    let media = [];
-    if (requestedMediaIds.length) {
-      const rows = await connection.query(
-        `SELECT *
-        FROM station_media_assets
-        WHERE
-          user_id = ?
-          AND id = ANY(?::text[])
-          AND deleted_at IS NULL
-        FOR UPDATE`,
-        [userId, requestedMediaIds],
-      );
-      const assetsById = new Map(rows.map((row) => [row.id, row]));
-      if (assetsById.size !== requestedMediaIds.length) {
-        throw new HttpError(404, "Post media asset not found");
-      }
-      const orderedRows = requestedMediaIds.map((id) => assetsById.get(id));
-      if (orderedRows.some((row) => row.status !== "uploaded")) {
-        throw new HttpError(409, "Post media must finish uploading first");
-      }
-      const kinds = new Set(orderedRows.map((row) => row.kind));
-      if (kinds.size > 1) {
-        throw new HttpError(400, "Images and video cannot be mixed in one post");
-      }
-      if (kinds.has("video") && orderedRows.length !== 1) {
-        throw new HttpError(400, "A post can contain only one video");
-      }
-      if (kinds.has("image") && orderedRows.length > 9) {
-        throw new HttpError(400, "A post can contain at most nine images");
-      }
-      media = orderedRows.map(mapStationMediaAsset);
-    }
-
-    const id = crypto.randomUUID();
-    const postRows = await connection.query(
-      `INSERT INTO station_posts
-        (id, user_id, body, location_label, visibility, agent_capabilities)
-      VALUES (?, ?, ?, ?, ?, ?::jsonb)
-      RETURNING *`,
-      [
-        id,
-        userId,
-        body,
-        locationLabel,
-        visibility,
-        JSON.stringify(agentCapabilities),
-      ],
+  let media = [];
+  if (requestedMediaIds.length) {
+    const rows = await connection.query(
+      `SELECT *
+      FROM station_media_assets
+      WHERE
+        user_id = ?
+        AND id = ANY(?::text[])
+        AND deleted_at IS NULL
+      ORDER BY id
+      FOR UPDATE`,
+      [userId, requestedMediaIds],
     );
-    for (const [sortOrder, mediaAssetId] of requestedMediaIds.entries()) {
-      await connection.query(
-        `INSERT INTO station_post_media (post_id, media_asset_id, sort_order)
-        VALUES (?, ?, ?)`,
-        [id, mediaAssetId, sortOrder],
-      );
+    const assetsById = new Map(rows.map((row) => [row.id, row]));
+    if (assetsById.size !== requestedMediaIds.length) {
+      throw new HttpError(404, "Post media asset not found");
     }
+    const orderedRows = requestedMediaIds.map((id) => assetsById.get(id));
+    if (orderedRows.some((row) => row.status !== "uploaded")) {
+      throw new HttpError(409, "Post media must finish uploading first");
+    }
+    const kinds = new Set(orderedRows.map((row) => row.kind));
+    if (kinds.size > 1) {
+      throw new HttpError(400, "Images and video cannot be mixed in one post");
+    }
+    if (kinds.has("video") && orderedRows.length !== 1) {
+      throw new HttpError(400, "A post can contain only one video");
+    }
+    if (kinds.has("image") && orderedRows.length > 9) {
+      throw new HttpError(400, "A post can contain at most nine images");
+    }
+    media = orderedRows.map(mapStationMediaAsset);
+  }
 
-    return mapStationPost(postRows[0], { media });
-  });
+  const id = crypto.randomUUID();
+  const postRows = await connection.query(
+    `INSERT INTO station_posts
+      (id, user_id, body, location_label, visibility, agent_capabilities)
+    VALUES (?, ?, ?, ?, ?, ?::jsonb)
+    RETURNING *`,
+    [
+      id,
+      userId,
+      body,
+      locationLabel,
+      visibility,
+      JSON.stringify(agentCapabilities),
+    ],
+  );
+  for (const [sortOrder, mediaAssetId] of requestedMediaIds.entries()) {
+    await connection.query(
+      `INSERT INTO station_post_media (post_id, media_asset_id, sort_order)
+      VALUES (?, ?, ?)`,
+      [id, mediaAssetId, sortOrder],
+    );
+  }
+
+  return mapStationPost(postRows[0], { media });
 }
 
 export async function deleteStationPost({ userId, postId }) {

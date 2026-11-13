@@ -9,6 +9,7 @@ import type {
   ProductCatalogProductDTO,
   ProductEntitlementDTO,
 } from '../src/models/api';
+import { contentPreviewReference } from '../src/models/chatContentPreview';
 import { avatar3dAttemptStore } from '../src/services/avatar3dAttemptStore';
 import { apiClient } from '../src/services/apiClient';
 import { tokenStore } from '../src/services/tokenStore';
@@ -348,6 +349,92 @@ describe('session synchronization', () => {
       catalogStatus: 'ready',
       serverTime: '2026-07-10T06:00:01.000Z',
     });
+  });
+
+  test('content preview references survive bootstrap, incremental sync and realtime then disappear after recall', async () => {
+    const thread = {
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      title: '漫画',
+      avatarText: '漫',
+      agentId: 'comic-diary',
+      kind: 'agent',
+      pinned: false,
+      lastContent: '',
+      unreadCount: 0,
+    };
+    const reference = {
+      version: 1 as const,
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    };
+    const message = {
+      id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      threadId: thread.id,
+      senderType: 'agent',
+      senderName: '漫画',
+      content: '请确认故事',
+      metadata: { contentPreview: reference },
+    };
+    mockedApiClient.bootstrap.mockResolvedValue({
+      ...bootstrap,
+      contracts: { aiTasks: 1, chatContent: 1 },
+      threads: [thread],
+      messagesByThread: { [thread.id]: [message] },
+    });
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    expect(
+      currentSession!.threads[0].messages[0].metadata?.contentPreview,
+    ).toEqual(reference);
+    const syncMessage = {
+      ...message,
+      id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    };
+    mockedApiClient.sync.mockResolvedValue({
+      threads: [thread],
+      messagesByThread: { [thread.id]: [syncMessage] },
+      notices: [],
+      unreadNoticeCount: 0,
+      products: [],
+      entitlements: [],
+      catalogRevision: 'catalog-empty',
+      catalogStatus: 'ready',
+      serverTime: '2026-07-10T06:00:02.000Z',
+    });
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.incrementalSync();
+    });
+    expect(
+      currentSession!.threads[0].messages.find(
+        item => item.id === syncMessage.id,
+      )?.metadata?.contentPreview,
+    ).toEqual(reference);
+    const live = { ...message, id: 'ffffffff-ffff-4fff-8fff-ffffffffffff' };
+    await ReactTestRenderer.act(async () => {
+      MockWebSocket.instances[0].emit({
+        type: 'thread.message',
+        message: live,
+      });
+    });
+    expect(
+      currentSession!.threads[0].messages.find(item => item.id === live.id)
+        ?.metadata?.contentPreview,
+    ).toEqual(reference);
+    await ReactTestRenderer.act(async () => {
+      MockWebSocket.instances[0].emit({
+        type: 'thread.message.updated',
+        message: { ...live, recalledAt: '2026-07-10T06:00:03.000Z' },
+      });
+    });
+    const recalled = currentSession!.threads[0].messages.find(
+      item => item.id === live.id,
+    )!;
+    expect(
+      contentPreviewReference(recalled, thread.id, 'comic-diary'),
+    ).toBeNull();
+    await ReactTestRenderer.act(async () => renderer.unmount());
   });
 
   test('old bootstrap keeps login available while AI contract follows refresh and account changes', async () => {

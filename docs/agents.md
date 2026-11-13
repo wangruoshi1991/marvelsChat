@@ -48,7 +48,7 @@ export default {
 - `model-3d`：提供照片准备、形象设定和模型理解建议，不发起 3D 任务或扣费。
 - `album-manager`：普通会话实际工具只有`list_albums`和`search_media`；协作执行器`album-manager/media.select`内部使用同一受控检索工具，成功后交付带内容版本的素材选择。云端同意、owner与授权按调用重验。Agent 可以给出整理/标签建议，但没有修改标签、移动或删除素材的工具，不能声称已替用户整理。原按固定关键词/文件名推标签、分组并生成置信度的建议服务已删除；上传与编辑仅使用用户明确标签。原生视觉索引直接处理获准的原图/视频帧，不依赖这些旧规则。
 - `file-preprocessor`：普通会话提供文件处理建议，`text.summarize`处理明确选中消息，新增`file.summary`消费成功上传并完整保存的UTF-8文本及消息，交付持久摘要。文件引用使用`files:read`、owner和完整内容版本校验；预览至多1000字符且标记截断，执行不截断正文。支持格式、上传核对和删除边界见[文件处理](file-processing.md)。
-- `comic-diary`：普通对话使用自然文字，协作`comic.storyboard`交付可读文字分镜；图片由独立漫画任务生成。客户端源码新增漫画会话“制作漫画”，只预填当前未发送草稿，也可输入无日记故事；先保存完整分镜、查看后明确确认画面生成，复用既有058队列和私有产物。草稿接口要求完整声明授权，只发送本次明确选定的日记/媒体窄字段；无选择不读取全库，不接未声明的文件来源；调用及保存前重验授权、原声明和来源，成功审计与保存同事务，公共结果不返回模型审计元数据。入口修复尚未进入Build61，发布/设备状态见CURRENT。
+- `comic-diary`：普通对话使用自然文字，协作`comic.storyboard`交付可读文字分镜；图片由独立漫画任务生成。当前源码0.1.6以原聊天提案和消息内一次确认替换独立“制作漫画”表单，漫画/日记独立，复用058队列及私有产物。选图和日记按本次完整明确清单读取，确认及逐格调用/输出绑定校验来源、scope与精确产品授权，审计与目标同事务；已成品本人读取不依赖继续执行授权。Build62仍为0.1.5表单流程，候选合同与发布边界见[对话创作合同](conversational-comic.md)和CURRENT；旧日记详情显式转漫画仍保留。
 - `video-production`：普通对话及协作能力`video.script`提供文字脚本和镜头计划，配置文本模型后即可执行，不依赖OSS。视频供应商与渲染队列尚未接入，不生成成片；旧的不可用生成接口和面板已移除，已有草稿只保留读取。
 - `ui-agent`：理解受限界面调整，生成服务端校验的偏好预览；必须由用户确认才应用。当前工作区补通其专属会话入口，复用管家转交和设置页的预览服务，返回受保护预览卡，不把模型JSON直接发到聊天或自动应用。直接会话只接受本条文字，不接附件、任务/素材引用或专业续作上下文。变更仍需后端发布才能在线生效。
 
@@ -145,11 +145,11 @@ Agent独立模块通过 `workspaceCapabilities` 声明输入引用类型、依�
 已接入UTF-8 TXT/Markdown/JSON/CSV/TSV设备上传、完整正文和`station-file`版本引用。文件Agent的`file.summary`消费获准文件/消息并保留全部来源，`text.summarize`仍处理消息；分派只见文件元信息，正文仅交给专业持久任务。管家没有新增`files:read`，本阶段由二楼文件进入原专业会话的`direct`任务，不自动扩权或转交私聊。删除/变更来源或撤权后，历史保留但正文与续作不可用。格式、大小、上传幂等、正文核对、删除、迁移和保留边界详见[文件处理](file-processing.md)。PDF/DOCX、OCR、成片和协作3D仍未接入；生图仅接下节独立漫画流程，本地源码不代表生产或真机验收。
 
 
-## 漫画图片任务（2026-11-10 本地实现）
+## 漫画图片与对话创作（2026-11-11 本地候选）
 
-漫画文字分镜与图片生成是两个明确动作。`POST /api/station/comic-diaries` 仍只生成并保存文字；客户端确认格数后调用 `POST /api/station/comic-diaries/:comicDiaryId/render-tasks`，body 为 `{idempotencyKey}`，请求头 `X-Miaoxun-Comic-Renders: 1`。同一集合 GET 读取历史任务；任务详情/事件/排队取消分别位于 `/api/station/comic-render-tasks/:taskId`、`/events`、`/cancel`（取消body `{revision}`）。公开合同 `comicRenders:1` 与内部 `ai_tasks.contract_version=2` 含义不同，不扩展旧 `aiTasks:1` DTO。
+新聊天创作使用[内容预览合同1](conversational-comic.md)：同一次文字回复产生完整提案，用户在消息内点一次“生成漫画”直接入058队列；日记独立确认保存，不作为漫画前置。旧日记详情的显式转漫画入口继续保留：`POST /api/station/comic-diaries`只生成并保存文字，查看分镜后调用`POST /api/station/comic-diaries/:comicDiaryId/render-tasks`，body为`{idempotencyKey}`，请求头`X-Miaoxun-Comic-Renders: 1`。同一集合GET读取历史任务；任务详情/事件/排队取消分别位于`/api/station/comic-render-tasks/:taskId`、`/events`、`/cancel`（取消body`{revision}`）。公开合同`comicRenders:1`与内部`ai_tasks.contract_version=2`含义不同，不扩展旧`aiTasks:1` DTO。
 
-`comic-diary` 自0.1.4声明 `comic.render` 和独立 `media:image:generate`；0.1.5源码仅纠正聊天dispatch的制作入口说明，不新增scope或workspace图片执行器。新增权限需要同版 release/product 与正常用户授权，不能沿用旧快照静默扩权。Agent分镜会话、workspace的 `comic.storyboard` 仍输出文字，不会隐式触发生成图片。部署0.1.5后必须配套发布精确新Release/Product；不能同号改0.1.4来源或把源码版本当线上已发布。当前线上及用户同意状态以CURRENT为准。
+`comic-diary`自0.1.4声明`comic.render`和独立`media:image:generate`；当前源码0.1.6扩展严格comic/diary提案输出，原七scope保持。059承接本人/消息/来源/产品授权快照和原子确认，漫画新消息在模型前要求`X-Miaoxun-Chat-Content: 1`；普通聊天不自动付费生图，workspace的`comic.storyboard`仍只输出文字。发布需精确0.1.6 Release/Product、用户本人原位同意和配套新客户端，不同号覆盖0.1.5或静默扩权。线上及用户同意状态以CURRENT为准。
 
 图片任务按格顺序执行；每次读取/派发/保存核对当前授权与选择来源。已知单格失败可继续其余格，部分成功保留真实图片。供应商或保存结果未知时任务中断，后续格标为未生成，不自动重试；运行中的上游请求无已核验取消协议，因此只允许排队时 CAS 取消。图片作为私有 `station_media_assets` 读取，无外部Provider URL，不自动公开或进入检索索引。删除分镜不删除仍属于用户的图片；删除图片/账号后的对象由持久清理 journal 处理。
 
