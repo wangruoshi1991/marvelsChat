@@ -2,6 +2,13 @@
 
 更新：2026-11-17。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
 
+#### 2026-11-17 提交推送与 runtime 候选生成（当前最新）
+
+- 已按明确范围创建并推送提交 `43bbe014186ff48ad76ecbf08a898bd5f3332437`（`feat: close chat media and collaboration flows`）到 `origin/codex/ui-agent-candidate-20261105`；本地与远端指向一致，工作区干净。
+- 在该 clean commit 上运行 `node scripts/prepare-runtime-release.mjs chat-media-candidate-20261117-43bbe01` 退出 0。候选含 309 个运行文件，`sourceHead` 为 `43bbe014186ff48ad76ecbf08a898bd5f3332437`，`includesWorkingTreeChanges=false`；归档 SHA-256 为 `aac7fe976fb0fd7a767be76da0eac0c14069786c0a5446508cb68844fd95f740`，临时路径为 `/var/folders/k2/bnl6hg557j761ylt5szlbbjm0000gn/T/miaoxun-release-UnKtLW/chat-media-candidate-20261117-43bbe01.tar.gz`。Admin 与 avatar-web 的锁定依赖安装和生产构建均成功；既有 fsevents 审批提示与大 chunk 警告未被隐藏或改写。
+- 生产只读复核仍为 `/api/health=200`、`/api/ready=200`、`/api/agents=200`；公开目录 9 项，漫画日记 `0.1.6` 和 UI Agent `0.1.0` 均为 published。当前没有 061 生产迁移证据，最新交接仍以生产 060 为准；061 只在隔离 PostgreSQL 通过。
+- 未执行生产部署、061 迁移、TestFlight Build66 上传、实体 iPhone 验收、Android 编译或付费模型调用。下一步需分别取得后端维护/迁移授权和 TestFlight 上传范围，再用候选 runtime 与 Build66 做独立审查；设备手势、聊天输入栏视觉间距、普通附件系统相册最终落盘仍不能用 Simulator/目录元数据代替。
+
 #### 2026-11-17 Build66 本地候选预检：归档成功，未上传
 
 - 最新脏工作树已重新安装并启动固定 iPhone 17 / iOS 26.5 Simulator，正式 API 为 `https://8.153.167.11`；回执 `/Users/gary/Library/Application Support/MiaoxunDevelopment/1139656e744d/builds/2026-11-17T07-19-13-621Z/build.json`，安装和启动成功。12 套 RN 定向回归共 201 项通过，覆盖漫画素材引用/预览/保存、成果卡、附件、输入栏、二楼和 UI 偏好。
