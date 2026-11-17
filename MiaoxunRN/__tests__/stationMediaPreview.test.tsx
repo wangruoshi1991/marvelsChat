@@ -5,6 +5,11 @@ import { StationMediaAssetDTO } from '../src/models/api';
 import { palettes } from '../src/shared/theme';
 import { stationContentApi } from '../src/services/api/stationContentApi';
 import { MiaoxunApiError } from '../src/services/api/http';
+import { saveComicImageToLibrary } from '../src/services/comicMediaLibrary';
+
+jest.mock('../src/services/comicMediaLibrary', () => ({
+  saveComicImageToLibrary: jest.fn(),
+}));
 
 jest.mock('../src/services/api/stationContentApi', () => ({
   stationContentApi: { stationMediaAsset: jest.fn() },
@@ -58,5 +63,71 @@ test('deleted result is invalidated when the media load fails', async () => {
     renderer.root.findByProps({ testID: 'native-video' }).props.onError(),
   );
   expect(onUnavailable).toHaveBeenCalledWith('asset-1');
+  await act(async () => renderer.unmount());
+});
+
+test('image preview exposes an accessible save action and reports success', async () => {
+  const onActionMessage = jest.fn();
+  jest.mocked(saveComicImageToLibrary).mockResolvedValueOnce({
+    status: 'saved',
+    mediaAssetId: 'asset-1',
+  });
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <StationMediaPreviewScreen
+        asset={{ id: 'asset-1', kind: 'image', status: 'uploaded' }}
+        token="private-token"
+        timestampMs={null}
+        palette={palettes.light}
+        language="zh"
+        onBack={jest.fn()}
+        onUnavailable={jest.fn()}
+        onActionMessage={onActionMessage}
+      />,
+    );
+  });
+  const save = renderer.root.findByProps({ testID: 'station-media-save' });
+  expect(save.props.accessibilityLabel).toBe('保存图片');
+  await act(async () => save.props.onPress());
+  expect(saveComicImageToLibrary).toHaveBeenCalledWith({
+    mediaAssetId: 'asset-1',
+    token: 'private-token',
+  });
+  expect(onActionMessage).toHaveBeenCalledWith('图片已保存到系统相册。');
+  expect(
+    renderer.root.findByProps({ testID: 'station-media-save-status' }).props
+      .children,
+  ).toContain('图片已保存到系统相册');
+  await act(async () => renderer.unmount());
+});
+
+test('image preview reports a save failure without hiding the retryable action', async () => {
+  const onActionMessage = jest.fn();
+  jest
+    .mocked(saveComicImageToLibrary)
+    .mockRejectedValueOnce(new Error('未获得保存到相册的权限。'));
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <StationMediaPreviewScreen
+        asset={{ id: 'asset-1', kind: 'image', status: 'uploaded' }}
+        token="private-token"
+        timestampMs={null}
+        palette={palettes.light}
+        language="zh"
+        onBack={jest.fn()}
+        onUnavailable={jest.fn()}
+        onActionMessage={onActionMessage}
+      />,
+    );
+  });
+  const save = renderer.root.findByProps({ testID: 'station-media-save' });
+  await act(async () => save.props.onPress());
+  expect(onActionMessage).toHaveBeenCalledWith('未获得保存到相册的权限。');
+  expect(
+    renderer.root.findByProps({ testID: 'station-media-save-status' }).props
+      .children,
+  ).toContain('未获得保存到相册的权限');
   await act(async () => renderer.unmount());
 });

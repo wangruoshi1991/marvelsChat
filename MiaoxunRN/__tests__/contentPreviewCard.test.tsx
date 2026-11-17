@@ -36,6 +36,26 @@ const proposal = {
   result: null,
 };
 
+const completedTask = {
+  id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+  contractVersion: 1 as const,
+  comicDiaryId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+  status: 'succeeded' as const,
+  phase: 'completed' as const,
+  revision: 1,
+  progress: { total: 4, succeeded: 4, failed: 0, unknown: 0 },
+  frames: Array.from({ length: 4 }, (_, index) => ({
+    frameIndex: index + 1,
+    status: 'succeeded' as const,
+    mediaAssetId: null,
+    errorCode: null,
+  })),
+  error: null,
+  allowedActions: [],
+  createdAt: '2099-01-01T00:00:00Z',
+  updatedAt: '2099-01-01T00:00:00Z',
+};
+
 test('offers one explicit generation action and prevents confirmation while busy', async () => {
   const confirm = jest.fn();
   const props = {
@@ -48,7 +68,7 @@ test('offers one explicit generation action and prevents confirmation while busy
     onReject: jest.fn(),
     onRefresh: jest.fn(),
     onOpen: jest.fn(),
-    onModify: jest.fn(),
+    onSelectContext: jest.fn(),
   };
   let tree: Renderer.ReactTestRenderer;
   await act(async () => {
@@ -66,6 +86,40 @@ test('offers one explicit generation action and prevents confirmation while busy
     tree!.root.findByProps({ testID: 'content-preview-confirm' }).props
       .disabled,
   ).toBe(true);
+});
+
+test('uses the preview header as the chat context entry without a revise action', async () => {
+  const selectContext = jest.fn();
+  let tree: Renderer.ReactTestRenderer;
+  await act(async () => {
+    tree = Renderer.create(
+      <ContentPreviewMessageCard
+        preview={parseContentPreview(proposal)}
+        token="owner"
+        palette={palettes.light}
+        language="zh"
+        busy={false}
+        onConfirm={jest.fn()}
+        onReject={jest.fn()}
+        onRefresh={jest.fn()}
+        onOpen={jest.fn()}
+        onSelectContext={selectContext}
+      />,
+    );
+  });
+  await act(async () => {
+    tree!.root
+      .findByProps({ testID: 'content-preview-context-select' })
+      .props.onPress();
+  });
+  expect(selectContext).toHaveBeenCalledTimes(1);
+  expect(
+    tree!.root.findAll(
+      node =>
+        typeof node.props.children === 'string' &&
+        node.props.children.includes('继续修改'),
+    ),
+  ).toHaveLength(0);
 });
 
 test('expired previews cannot generate and four frame positions remain ordered', async () => {
@@ -86,7 +140,7 @@ test('expired previews cannot generate and four frame positions remain ordered',
         onReject={jest.fn()}
         onRefresh={jest.fn()}
         onOpen={jest.fn()}
-        onModify={jest.fn()}
+        onSelectContext={jest.fn()}
       />,
     );
   });
@@ -105,4 +159,82 @@ test('expired previews cannot generate and four frame positions remain ordered',
     'comic-frame-3',
     'comic-frame-4',
   ]);
+});
+
+test('completed history keeps detail actions without a refresh task action', async () => {
+  let tree: Renderer.ReactTestRenderer;
+  await act(async () => {
+    tree = Renderer.create(
+      <ContentPreviewMessageCard
+        preview={parseContentPreview({
+          ...proposal,
+          status: 'confirmed',
+          allowedActions: [],
+          result: {
+            comicDiaryId: completedTask.comicDiaryId,
+            comicRenderTaskId: completedTask.id,
+          },
+        })}
+        task={completedTask}
+        token="owner"
+        palette={palettes.light}
+        language="zh"
+        busy={false}
+        onConfirm={jest.fn()}
+        onReject={jest.fn()}
+        onRefresh={jest.fn()}
+        onOpen={jest.fn()}
+        onSelectContext={jest.fn()}
+      />,
+    );
+  });
+  expect(
+    tree!.root.findAll(
+      node =>
+        node.props.accessibilityRole === 'button' &&
+        node.props.accessibilityLabel === '刷新查看',
+    ),
+  ).toHaveLength(0);
+  expect(
+    tree!.root.findAllByProps({ accessibilityLabel: '查看详情' }).length,
+  ).toBeGreaterThan(0);
+});
+
+test('opens a selected source image instead of leaving it as a passive thumbnail', async () => {
+  const mediaAssetId = '123e4567-e89b-12d3-a456-426614174000';
+  const onOpenSource = jest.fn();
+  let tree: Renderer.ReactTestRenderer;
+  await act(async () => {
+    tree = Renderer.create(
+      <ContentPreviewMessageCard
+        preview={parseContentPreview({
+          ...proposal,
+          sources: [
+            {
+              type: 'station-photo',
+              id: mediaAssetId,
+              mediaAssetId,
+              title: '雨后纸船.jpg',
+            },
+          ],
+        })}
+        token="owner"
+        palette={palettes.light}
+        language="zh"
+        busy={false}
+        onConfirm={jest.fn()}
+        onReject={jest.fn()}
+        onRefresh={jest.fn()}
+        onOpen={jest.fn()}
+        onSelectContext={jest.fn()}
+        onOpenSource={onOpenSource}
+      />,
+    );
+  });
+  const sourceImage = tree!.root.findByProps({
+    accessibilityLabel: '雨后纸船.jpg',
+  });
+  expect(sourceImage.props.accessibilityRole).toBe('button');
+  await act(async () => sourceImage.props.onPress());
+  expect(onOpenSource).toHaveBeenCalledWith(mediaAssetId);
 });

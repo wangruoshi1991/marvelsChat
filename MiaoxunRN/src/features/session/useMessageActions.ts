@@ -48,6 +48,7 @@ export function useMessageActions({
   setErrorMessage,
 }: UseMessageActionsOptions) {
   const refreshes = useRef(new Map<string, Promise<void>>());
+  const inFlightSends = useRef(new Set<string>());
   const sendMessage = useCallback(
     async (
       threadId: string,
@@ -60,7 +61,10 @@ export function useMessageActions({
       workspaceContext?: WorkspaceDiscussionContext,
       agentContextReset?: boolean,
       contentPreviewContext?: ContentPreviewContext,
+      attachmentIds?: string[],
+      stickerId?: string,
     ) => {
+      if (inFlightSends.current.has(threadId)) return false;
       const thread = threads.find(item => item.id === threadId);
       const isButler = thread?.agentId === 'miaoxun-butler';
       const isProfessional = usesAgentDispatch(thread?.agentId);
@@ -75,6 +79,20 @@ export function useMessageActions({
           !retryMessage.clientMessageId)
       ) {
         setErrorMessage('原失败消息已不可重试，请刷新会话后核对原提交。');
+        return false;
+      }
+      if (
+        !retryMessageId &&
+        attachmentIds?.length &&
+        thread?.messages.some(
+          message =>
+            message.localStatus === 'failed' &&
+            message.metadata?.attachmentIds?.some(id =>
+              attachmentIds.includes(id),
+            ),
+        )
+      ) {
+        setErrorMessage('这组附件已有失败消息，请从原消息入口精确重试。');
         return false;
       }
       const originalReply = retryMessage?.metadata?.replyTo;
@@ -105,8 +123,57 @@ export function useMessageActions({
       const submittedPreview = retryMessage
         ? retryMessage.metadata?.contentPreviewContext
         : contentPreviewContext;
+      const submittedStickerId = retryMessage
+        ? retryMessage.metadata?.sticker?.id
+        : stickerId;
+      const requestedSource = retryMessage
+        ? retryMessage.metadata?.assistSource
+        : assistSource;
+      const originalAttachmentIds = retryMessage
+        ? retryMessage.metadata?.attachmentIds || []
+        : attachmentIds || [];
+      const submittedAttachmentIds = [...originalAttachmentIds];
       let submittedSource: AssistMessageSource | undefined;
       try {
+        if (
+          retryMessage &&
+          attachmentIds !== undefined &&
+          (attachmentIds.length !== originalAttachmentIds.length ||
+            attachmentIds.some(
+              (id, index) => id !== originalAttachmentIds[index],
+            ))
+        )
+          throw new Error('失败消息的附件已固定，请按原附件重试。');
+        if (
+          submittedAttachmentIds.length &&
+          ((thread?.kind !== 'direct' && thread?.kind !== 'group') ||
+            thread?.agentId ||
+            isButler ||
+            isProfessional ||
+            submittedReferences.length ||
+            submittedResetValue !== undefined ||
+            submittedAgentResetValue !== undefined ||
+            submittedWorkspace !== undefined ||
+            submittedPreview !== undefined ||
+            requestedSource !== undefined)
+        )
+          throw new Error('普通聊天附件不能与 Agent、工作区或创作上下文混用。');
+        if (submittedStickerId) {
+          if (
+            submittedContent.trim() ||
+            submittedAttachmentIds.length ||
+            submittedReferences.length ||
+            submittedReplyToMessageId ||
+            submittedResetValue !== undefined ||
+            submittedAgentResetValue !== undefined ||
+            submittedWorkspace !== undefined ||
+            submittedPreview !== undefined ||
+            requestedSource !== undefined ||
+            (thread?.kind !== 'direct' && thread?.kind !== 'group') ||
+            thread?.agentId
+          )
+            throw new Error('自定义表情消息不能与文字、附件或其他上下文混用。');
+        }
         if (
           submittedPreview &&
           (thread?.agentId !== 'comic-diary' ||
@@ -138,9 +205,7 @@ export function useMessageActions({
           );
         // Retries keep the original location even if the user has navigated
         // elsewhere. A new caller cannot replace an accepted request's source.
-        submittedSource = normalizeAssistMessageSource(
-          retryMessage ? retryMessage.metadata?.assistSource : assistSource,
-        );
+        submittedSource = normalizeAssistMessageSource(requestedSource);
       } catch (error) {
         setErrorMessage(
           error instanceof Error ? error.message : 'AI 请求来源无效。',
@@ -161,6 +226,12 @@ export function useMessageActions({
           ...(submittedPreview
             ? { contentPreviewContext: { ...submittedPreview } }
             : {}),
+          ...(submittedAttachmentIds.length
+            ? { attachmentIds: submittedAttachmentIds }
+            : {}),
+          ...(submittedStickerId
+            ? { sticker: { id: submittedStickerId } }
+            : {}),
           contextRefs: submittedReferences,
           ...(submittedReset ? { butlerContextReset: true } : {}),
           ...(submittedAgentReset ? { agentContextReset: true } : {}),
@@ -174,6 +245,8 @@ export function useMessageActions({
         },
         localStatus: 'sending',
       };
+
+      inFlightSends.current.add(threadId);
 
       setThreads(current =>
         current.map(item =>
@@ -225,6 +298,7 @@ export function useMessageActions({
               : item,
           ),
         );
+        inFlightSends.current.delete(threadId);
         return false;
       }
 
@@ -252,6 +326,8 @@ export function useMessageActions({
             : undefined,
           submittedAgentReset || undefined,
           submittedPreview,
+          submittedAttachmentIds.length ? submittedAttachmentIds : undefined,
+          submittedStickerId,
         );
         const incoming = response.messages.map(mapMessage);
         setThreads(current =>
@@ -274,6 +350,7 @@ export function useMessageActions({
             ),
           ),
         );
+        inFlightSends.current.delete(threadId);
         return true;
       } catch (error) {
         setErrorMessage(
@@ -305,6 +382,7 @@ export function useMessageActions({
               : item,
           ),
         );
+        inFlightSends.current.delete(threadId);
         return false;
       }
     },

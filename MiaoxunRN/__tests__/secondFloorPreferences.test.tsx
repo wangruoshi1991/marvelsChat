@@ -301,7 +301,7 @@ test('second-floor module visibility and order consume confirmed preferences', a
   expect(tools[0].props.testID).toBe('floor-tool-files');
 });
 
-test('page exit uses the exact default distance and does not treat downward reading as exit', async () => {
+test('page exit uses the deliberate default distance and does not treat downward reading as exit', async () => {
   const props = floorProps();
   await act(async () => {
     renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
@@ -311,7 +311,7 @@ test('page exit uses the exact default distance and does not treat downward read
   act(() => landing().onContentSizeChange(320, 300));
   act(() => landing().onLayout({ nativeEvent: { layout: { height: 500 } } }));
   act(() => landing().onTouchStart(touch(500)));
-  act(() => landing().onTouchEnd(touch(444, undefined, true)));
+  act(() => landing().onTouchEnd(touch(410, undefined, true)));
   expect(props.onClose).toHaveBeenCalledTimes(1);
   const next = session();
   next.uiPreferences.gestures['secondFloor.swipeToExit']!.direction = 'down';
@@ -342,7 +342,7 @@ test('page release consumes timestamp velocity only for a measured bottom upward
   act(() => landing.onTouchEnd(touch(460, 300, true)));
   expect(props.onClose).not.toHaveBeenCalled();
   act(() => landing.onTouchStart(touch(500, 400)));
-  act(() => landing.onTouchEnd(touch(460, 450, true)));
+  act(() => landing.onTouchEnd(touch(420, 450, true)));
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 

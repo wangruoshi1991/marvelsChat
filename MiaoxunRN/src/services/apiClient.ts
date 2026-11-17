@@ -14,6 +14,7 @@ import { notificationApi } from './api/notificationApi';
 import { profileApi } from './api/profileApi';
 import { socialApi } from './api/socialApi';
 import { stationApi } from './api/stationApi';
+import { customStickerApi } from './api/customStickerApi';
 import { uiPreferencesApi } from './api/uiPreferencesApi';
 
 export const apiClient = {
@@ -25,5 +26,6 @@ export const apiClient = {
   ...messageApi,
   ...profileApi,
   ...stationApi,
+  ...customStickerApi,
   ...uiPreferencesApi,
 };

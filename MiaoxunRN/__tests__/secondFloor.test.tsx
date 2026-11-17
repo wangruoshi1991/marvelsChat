@@ -501,11 +501,11 @@ test('V15 settings keeps a real scrolling viewport before bottom-edge return is 
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 
-test('bottom-edge return honors a configured distance below the legacy 100px guard', async () => {
+test('bottom-edge return honors a configured distance above the 72px safety floor', async () => {
   const preferences = defaultUIPreferences();
   preferences.gestures['secondFloor.swipeToExit'] = {
     ...preferences.gestures['secondFloor.swipeToExit']!,
-    distance: 60,
+    distance: 88,
   };
   const props = {
     ...floorProps(sessionForFloor({ uiPreferences: preferences })),
@@ -519,11 +519,11 @@ test('bottom-edge return honors a configured distance below the legacy 100px gua
     .findByType(SecondFloorRelationships)
     .findByType(ScrollView).props;
 
-  // The page is at its measured bottom. A 61px upward release must use the
-  // configured 60px threshold instead of the old unconditional 100px floor.
+  // The page is at its measured bottom. An 89px upward release uses the
+  // configured 88px threshold while keeping the safer minimum floor.
   act(() => scroll.onTouchStart(floorTouchEvent(500)));
   act(() => scroll.onScrollBeginDrag(floorScrollEvent(499, 1000, 500)));
-  act(() => scroll.onTouchEnd(floorTouchEvent(439, 120, 0)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(411, 120, 0)));
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 
@@ -798,7 +798,7 @@ test('return responder only handles upward vertical motion and ignores inactive 
   );
   act(() => config.onPanResponderRelease?.(event, gesture(0, -40)));
   expect(props.onClose).not.toHaveBeenCalled();
-  act(() => config.onPanResponderRelease?.(event, gesture(0, -56)));
+  act(() => config.onPanResponderRelease?.(event, gesture(0, -90)));
   expect(props.onClose).toHaveBeenCalledTimes(1);
   act(() => renderer.update(<SecondFloorScreen {...props} active={false} />));
   act(() =>

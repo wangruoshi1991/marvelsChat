@@ -427,16 +427,23 @@ export function MessageInlineAction({
   palette,
   danger,
   onPress,
+  accessibilityLabel,
 }: {
   icon?: IconComponent;
   title: string;
   palette: Palette;
   danger?: boolean;
   onPress: () => void;
+  accessibilityLabel?: string;
 }) {
   const color = danger ? '#dc2626' : palette.text;
   return (
-    <Pressable onPress={onPress} style={styles.messageInlineAction}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || title}
+      onPress={onPress}
+      style={styles.messageInlineAction}
+    >
       {Icon ? <Icon color={color} size={17} strokeWidth={2.4} /> : null}
       <Text style={[styles.messageInlineActionText, { color }]}>{title}</Text>
     </Pressable>

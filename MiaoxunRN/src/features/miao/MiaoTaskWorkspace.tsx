@@ -372,6 +372,7 @@ function TaskWorkspaceContent({
                 references={task.contextRefs}
                 palette={colors}
                 language={language}
+                token={token}
               />
             </View>
             <WorkspacePanel palette={colors} style={s.activity}>

@@ -9,10 +9,12 @@ import {
   View,
 } from 'react-native';
 import Video, { type VideoRef } from 'react-native-video';
+import { Download } from 'lucide-react-native';
 import { StationMediaAssetDTO } from '../../models/api';
 import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
 import { stationContentApi } from '../../services/api/stationContentApi';
 import { MiaoxunApiError } from '../../services/api/http';
+import { saveComicImageToLibrary } from '../../services/comicMediaLibrary';
 import { textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
 import { Header } from '../../shared/ui';
@@ -26,6 +28,7 @@ export function StationMediaPreviewScreen({
   language,
   onBack,
   onUnavailable,
+  onActionMessage,
 }: {
   asset: Pick<StationMediaAssetDTO, 'id' | 'kind' | 'status'>;
   token: string;
@@ -34,11 +37,16 @@ export function StationMediaPreviewScreen({
   language: Language;
   onBack: () => void;
   onUnavailable: (assetId: string) => void;
+  onActionMessage?: (message: string) => void;
 }) {
   const videoRef = useRef<VideoRef>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [saveState, setSaveState] = useState<
+    'idle' | 'saving' | 'success' | 'error'
+  >('idle');
+  const [saveMessage, setSaveMessage] = useState('');
   const [active, setActive] = useState(AppState.currentState === 'active');
   const alive = useRef(true);
   useEffect(() => {
@@ -70,6 +78,34 @@ export function StationMediaPreviewScreen({
       }
     }
   };
+  const handleSave = async () => {
+    if (asset.kind !== 'image' || saveState === 'saving') return;
+    setSaveState('saving');
+    setSaveMessage(textFor(language, '正在保存…', 'Saving…'));
+    try {
+      await saveComicImageToLibrary({ mediaAssetId: asset.id, token });
+      const message = textFor(
+        language,
+        '图片已保存到系统相册。',
+        'Image saved to your photo library.',
+      );
+      setSaveState('success');
+      setSaveMessage(message);
+      onActionMessage?.(message);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : textFor(
+              language,
+              '保存图片失败，请重试。',
+              'Unable to save the image. Try again.',
+            );
+      setSaveState('error');
+      setSaveMessage(message);
+      onActionMessage?.(message);
+    }
+  };
   return (
     <View style={[local.screen, { backgroundColor: palette.background }]}>
       <Header
@@ -77,6 +113,44 @@ export function StationMediaPreviewScreen({
         title={textFor(language, '素材预览', 'Media preview')}
         onBack={onBack}
       />
+      {asset.kind === 'image' ? (
+        <View style={[local.actions, { borderBottomColor: palette.border }]}>
+          <Pressable
+            testID="station-media-save"
+            accessibilityRole="button"
+            accessibilityLabel={textFor(language, '保存图片', 'Save image')}
+            disabled={saveState === 'saving'}
+            onPress={() => {
+              handleSave().catch(() => undefined);
+            }}
+            style={local.saveButton}
+          >
+            {saveState === 'saving' ? (
+              <ActivityIndicator color={palette.mint} />
+            ) : (
+              <Download color={palette.text} size={22} />
+            )}
+            <Text style={{ color: palette.text }}>
+              {textFor(language, '保存图片', 'Save image')}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {saveMessage ? (
+        <Text
+          testID="station-media-save-status"
+          accessibilityLiveRegion="polite"
+          style={[
+            local.saveStatus,
+            {
+              color:
+                saveState === 'error' ? palette.rose : palette.secondaryText,
+            },
+          ]}
+        >
+          {saveMessage}
+        </Text>
+      ) : null}
       <View style={[local.stage, { backgroundColor: palette.soft }]}>
         {failed ? (
           <View style={local.state}>
@@ -161,6 +235,22 @@ export function StationMediaPreviewScreen({
 
 const local = StyleSheet.create({
   screen: { flex: 1 },
+  actions: {
+    minHeight: 52,
+    paddingHorizontal: 16,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  saveButton: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveStatus: { paddingHorizontal: 16, paddingTop: 8, textAlign: 'right' },
   stage: { flex: 1, margin: 16, borderRadius: 14, overflow: 'hidden' },
   media: { flex: 1, width: '100%', height: '100%' },
   state: {

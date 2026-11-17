@@ -1,11 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ContentPreview } from '../../models/chatContentPreview';
 import { ComicRenderTaskDTO } from '../../models/comicRender';
 import { Palette } from '../../shared/theme';
 import { textFor } from '../../shared/i18n';
 import { Language } from '../session/sessionTypes';
-import { ComicFrameGrid, comicTaskStatus } from './ComicFrameGrid';
+import {
+  ComicFrameGrid,
+  ComicImageViewer,
+  comicTaskStatus,
+} from './ComicFrameGrid';
 import { PrivateReferenceImage } from './PrivateReferenceImage';
 
 export function ContentPreviewMessageCard({
@@ -22,7 +26,9 @@ export function ContentPreviewMessageCard({
   onReject,
   onRefresh,
   onOpen,
-  onModify,
+  onOpenSource,
+  onSelectContext,
+  onSaveImage,
 }: {
   preview?: ContentPreview;
   task?: ComicRenderTaskDTO;
@@ -37,9 +43,15 @@ export function ContentPreviewMessageCard({
   onReject: () => void;
   onRefresh: () => void;
   onOpen: () => void;
-  onModify: () => void;
+  onOpenSource?: (mediaAssetId: string) => void;
+  onSelectContext: () => void;
+  onSaveImage?: (
+    frameIndex: number,
+    mediaAssetId: string,
+  ) => Promise<void> | void;
 }) {
   const t = (zh: string, en: string) => textFor(language, zh, en);
+  const [viewerFrame, setViewerFrame] = useState<number | null>(null);
   const statuses = {
     pending: t('待确认', 'Awaiting confirmation'),
     confirmed: t('已确认', 'Confirmed'),
@@ -48,6 +60,16 @@ export function ContentPreviewMessageCard({
     superseded: t('已有新提案，本提案已失效', 'Replaced by a newer proposal'),
     revoked: t('来源或授权已变化', 'Sources or access changed'),
   };
+  const taskCanRefresh =
+    task &&
+    (task.status === 'queued' ||
+      task.status === 'running' ||
+      task.status === 'failed' ||
+      task.status === 'interrupted');
+  const refreshLabel =
+    task && (task.status === 'queued' || task.status === 'running')
+      ? t('刷新任务状态', 'Refresh task status')
+      : t('刷新查看', 'Refresh');
   return (
     <View style={s.offset}>
       <View
@@ -59,17 +81,28 @@ export function ContentPreviewMessageCard({
       >
         {preview ? (
           <>
-            <Text style={[s.title, { color: palette.text }]}>
-              {preview.snapshot.title}
-            </Text>
-            <Text
-              accessibilityLiveRegion="polite"
-              style={{ color: palette.secondaryText }}
+            <Pressable
+              testID="content-preview-context-select"
+              accessibilityRole="button"
+              accessibilityLabel={t(
+                `引用《${preview.snapshot.title}》到当前聊天`,
+                `Use ${preview.snapshot.title} in this chat`,
+              )}
+              onPress={onSelectContext}
+              style={s.header}
             >
-              {task
-                ? comicTaskStatus(task, language)
-                : statuses[preview.status]}
-            </Text>
+              <Text style={[s.title, { color: palette.text }]}>
+                {preview.snapshot.title}
+              </Text>
+              <Text
+                accessibilityLiveRegion="polite"
+                style={{ color: palette.secondaryText }}
+              >
+                {task
+                  ? comicTaskStatus(task, language)
+                  : statuses[preview.status]}
+              </Text>
+            </Pressable>
             {preview.kind === 'comic' ? (
               <>
                 <Text
@@ -99,7 +132,7 @@ export function ContentPreviewMessageCard({
                   task={task}
                   palette={palette}
                   language={language}
-                  onOpen={onOpen}
+                  onOpen={index => setViewerFrame(index)}
                 />
               </>
             ) : (
@@ -125,6 +158,11 @@ export function ContentPreviewMessageCard({
                         palette={palette}
                         language={language}
                         style={s.thumbnail}
+                        onPress={
+                          onOpenSource
+                            ? () => onOpenSource(source.mediaAssetId!)
+                            : undefined
+                        }
                       />
                     ) : null}
                     <Text
@@ -177,14 +215,6 @@ export function ContentPreviewMessageCard({
                 palette={palette}
                 onPress={onOpen}
               />
-              <Action
-                label={t('继续修改', 'Revise in chat')}
-                palette={palette}
-                disabled={
-                  busy || !['pending', 'confirmed'].includes(preview.status)
-                }
-                onPress={onModify}
-              />
               {preview.allowedActions.includes('reject') ? (
                 <Action
                   label={t('取消提案', 'Reject proposal')}
@@ -210,12 +240,25 @@ export function ContentPreviewMessageCard({
             {error}
           </Text>
         ) : null}
-        {error || !preview || task ? (
+        {error || !preview || taskCanRefresh ? (
           <Action
-            label={t('刷新查看', 'Refresh')}
+            label={refreshLabel}
             palette={palette}
             disabled={busy || loading}
             onPress={onRefresh}
+          />
+        ) : null}
+        {preview?.kind === 'comic' ? (
+          <ComicImageViewer
+            visible={viewerFrame !== null}
+            token={token}
+            count={preview.snapshot.frameCount}
+            task={task}
+            initialIndex={viewerFrame || 1}
+            palette={palette}
+            language={language}
+            onClose={() => setViewerFrame(null)}
+            onSave={onSaveImage}
           />
         ) : null}
       </View>
@@ -271,14 +314,15 @@ const s = StyleSheet.create({
   buttonText: { fontWeight: '600' },
   card: {
     alignSelf: 'flex-start',
-    width: 248,
-    maxWidth: '100%',
+    width: '100%',
+    maxWidth: 360,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 12,
     padding: 12,
     gap: 10,
     marginTop: 8,
   },
+  header: { gap: 4 },
   title: { fontSize: 16, fontWeight: '600' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   button: {

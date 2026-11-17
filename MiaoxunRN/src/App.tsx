@@ -36,6 +36,7 @@ import {
 } from './features/messages/MessagesScreen';
 import type { ComposerPreparationResult } from './features/messages/MessagesScreen';
 import type { ComposerTool } from './features/messages/ChatComposer';
+import type { ComposerToolTarget } from './features/messages/MessagesScreen';
 import { resolveMessagePalette } from './features/messages/messagePalette';
 import { pendingButlerClarification } from './features/messages/butlerClarification';
 import { workspaceAssistContext } from './features/assist/workspaceAssistContext';
@@ -580,7 +581,23 @@ function App(): React.JSX.Element {
   // upload is confirmed prevents a picker result from being mistaken for a
   // server-backed AI context item.
   const prepareComposerTool = useCallback(
-    async (tool: ComposerTool): Promise<ComposerPreparationResult> => {
+    async (
+      tool: ComposerTool,
+      target: ComposerToolTarget,
+    ): Promise<ComposerPreparationResult> => {
+      if (
+        target.kind !== 'agent' ||
+        !target.threadId.trim() ||
+        !target.agentId?.trim() ||
+        !session.threads.some(
+          thread =>
+            thread.id === target.threadId &&
+            thread.kind === 'agent' &&
+            thread.agentId === target.agentId,
+        )
+      ) {
+        throw new Error('素材上传目标无效，请重新打开会话后重试。');
+      }
       const owner = workspaceOwnerRef.current;
       const scope = workspaceChatScopeRef.current;
       const epoch = ++composerPickerEpoch.current;
@@ -623,7 +640,7 @@ function App(): React.JSX.Element {
           }
           return asset.reference;
         } finally {
-          await releaseStationFile(file).catch(() => undefined);
+          await releaseStationFile(file);
         }
       }
 
@@ -1108,6 +1125,20 @@ function App(): React.JSX.Element {
                       onSetMuted={muted =>
                         session.setThreadMuted(openedThread.id, muted)
                       }
+                      onGroupLeft={() => {
+                        session
+                          .refreshBootstrap(undefined, false)
+                          .catch(error =>
+                            showToast(
+                              appErrorText(
+                                session.language,
+                                error,
+                                '群聊状态同步失败',
+                                'Could not refresh the group status',
+                              ),
+                            ),
+                          );
+                      }}
                       onActionError={message =>
                         showToast(
                           appErrorText(
@@ -1565,6 +1596,7 @@ function App(): React.JSX.Element {
                         <AIRequestComposer
                           palette={palette}
                           language={session.language}
+                          token={session.token}
                           draft={requestDraft}
                           scene={selectedRequest?.scene}
                           context={selectedRequest?.object}
@@ -1818,14 +1850,7 @@ function App(): React.JSX.Element {
                   setModalRoute('search');
                 }}
                 onCreateGroup={() => {
-                  setModalRoute(null);
-                  showToast(
-                    textFor(
-                      session.language,
-                      '创建群聊暂未接入，请先发起一对一聊天',
-                      'Group chat creation is not available yet. Start a one-to-one chat instead.',
-                    ),
-                  );
+                  setModalRoute('create-group');
                 }}
                 onRequestMessageQRCodeScan={requestMessageQRCodeScan}
                 onConsumePendingScanRequest={consumePendingScanRequest}

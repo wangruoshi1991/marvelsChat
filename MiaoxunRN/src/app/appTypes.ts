@@ -5,6 +5,7 @@ export type ModalRoute =
   | 'delete-account'
   | 'qr-code'
   | 'message-actions'
+  | 'create-group'
   | 'search'
   | 'public-profile'
   | 'station-location'

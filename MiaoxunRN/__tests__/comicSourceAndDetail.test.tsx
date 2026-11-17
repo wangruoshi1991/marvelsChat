@@ -165,10 +165,10 @@ test('detail publishes only successful assets in frame order and never offers ca
   expect(button('收起分镜文字').props.accessibilityState.expanded).toBe(true);
   await act(async () => {
     button('收起分镜文字').props.onPress();
-    button('放大画面').props.onPress();
+    button('紧凑网格').props.onPress();
   });
   expect(text()).not.toContain('旁白');
-  expect(button('收起画面')).toBeDefined();
+  expect(button('放大网格')).toBeDefined();
   await act(async () => {
     button('发布动态（2张）').props.onPress();
   });

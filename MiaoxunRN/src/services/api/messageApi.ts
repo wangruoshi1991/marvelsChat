@@ -56,7 +56,39 @@ export const messageApi = {
     workspaceContext?: WorkspaceContextSelector,
     agentContextReset?: boolean,
     contentPreviewContext?: ContentPreviewContext,
+    attachmentIds?: string[],
+    stickerId?: string,
   ) {
+    if (stickerId) {
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          stickerId,
+        )
+      )
+        throw new Error('自定义表情标识无效。');
+      if (
+        content.trim() ||
+        attachmentIds?.length ||
+        clientContext ||
+        contextRefs.length ||
+        butlerContextReset !== undefined ||
+        workspaceContext !== undefined ||
+        agentContextReset !== undefined ||
+        contentPreviewContext !== undefined ||
+        replyToMessageId
+      )
+        throw new Error('自定义表情消息不能与文字、附件或其他上下文混用。');
+    }
+    if (
+      attachmentIds?.length &&
+      (clientContext ||
+        contextRefs.length ||
+        butlerContextReset ||
+        agentContextReset ||
+        workspaceContext ||
+        contentPreviewContext)
+    )
+      throw new Error('普通聊天附件不能与 Agent、工作区或创作上下文混用。');
     if (
       agentContextReset !== undefined &&
       (clientContext ||
@@ -97,12 +129,16 @@ export const messageApi = {
       clientMessageId?: string;
       workspaceContext?: WorkspaceContextSelector;
       contentPreviewContext?: ContentPreviewContext;
+      attachmentIds?: string[];
+      stickerId?: string;
     } = { content, contextRefs };
 
     if (butlerContextReset === true) body.butlerContextReset = true;
     if (agentContextReset === true) body.agentContextReset = true;
     if (contentPreviewContext)
       body.contentPreviewContext = { ...contentPreviewContext };
+    if (attachmentIds?.length) body.attachmentIds = [...attachmentIds];
+    if (stickerId) body.stickerId = stickerId;
 
     if (clientContext) {
       body.clientContext = clientContext;

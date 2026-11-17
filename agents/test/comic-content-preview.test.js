@@ -9,5 +9,6 @@ test('comic dispatch proposes complete content with one confirmation and indepen
   assert.equal(agent.version,'0.1.6');
   assert.match(plan.system,/content_preview/);assert.match(plan.system,/diary/);assert.match(plan.system,/一次/);
   assert.doesNotMatch(plan.system,/填写本次故事并点击|引导用户使用制作漫画入口/);
+  assert.doesNotMatch(plan.system,/用户继续修改|继续修改此任务|制作漫画入口/);
   assert.match(plan.user,/旧方案/);
 });

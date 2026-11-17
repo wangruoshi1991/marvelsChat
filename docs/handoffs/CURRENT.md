@@ -1,8 +1,178 @@
 # 妙讯当前交接入口
 
-更新：2026-11-13。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
+更新：2026-11-17。先读 AGENTS、README、docs/README，再核对 Git 与实际运行。日期记录只证明当时状态，不延续部署、上传或付费授权；保留已有修改，不写入密钥、生产身份或私人内容。
 
-#### 2026-11-13 最新真机反馈续修：本地候选，尚未部署或分发
+#### 2026-11-17 Build66 本地候选预检：归档成功，未上传
+
+- 最新脏工作树已重新安装并启动固定 iPhone 17 / iOS 26.5 Simulator，正式 API 为 `https://8.153.167.11`；回执 `/Users/gary/Library/Application Support/MiaoxunDevelopment/1139656e744d/builds/2026-11-17T07-19-13-621Z/build.json`，安装和启动成功。12 套 RN 定向回归共 201 项通过，覆盖漫画素材引用/预览/保存、成果卡、附件、输入栏、二楼和 UI 偏好。
+- 使用命令行覆盖 `CURRENT_PROJECT_VERSION=66`、`MARKETING_VERSION=1.0` 生成本地 Release archive，路径 `/tmp/miaoxun-build66-preflight-20261117.vfD6gF/MiaoxunRN-1.0.66.xcarchive`。`xcodebuild archive` 退出 0 并输出 `ARCHIVE SUCCEEDED`；归档核对 Bundle `com.wangruoshi.miaoxun`、API、Team `R8K5DUTWB6`、arm64，`codesign --verify --deep --strict` 通过。
+- 该归档使用 Apple Development 签名且 `get-task-allow=true`，仅是本地身份/内容预检，不能当作 TestFlight 分发包。React、ReactNativeDependencies、hermesvm 缺少匹配 dSYM 的既有警告仍存在。结构化回执：`/tmp/miaoxun-build66-preflight-20261117.vfD6gF/preflight.json`。
+- 本轮未修改工程内版本号、未上传 TestFlight、未部署生产、未提交/推送、未调用付费模型。正式发布打包器仍会因工作树 dirty 拒绝运行；若要生成可追溯分发制品，必须先按明确范围创建本地提交并再次审查。
+
+#### 2026-11-17 Agent 图片引用显示闭环：隔离模拟器已验收，实体/TestFlight待补
+
+- 根因确认：普通聊天图片使用 metadata.attachments，已有私有图片网格；漫画 Agent 选中的 station-photo 属于受权限保护的 contextRefs，此前在聊天输入区和消息气泡只按“素材 · 标题”文字行展示，导致用户看不到实际图片。
+- 当前修复保留原有 Agent 引用合同和 album:read 权限边界：所有带认证会话的聊天、输入区、任务卡和协作页面使用 /api/station/media-assets/:id/file 加 Bearer 读取私有缩略图；无 token 继续显示文字引用；读取失败显示明确“图片读取失败”，不伪造占位图。聊天缩略图点击前先认证读取素材，确认仍是已上传图片后打开现有全屏媒体预览；素材失效会关闭预览并提示重新选择。
+- 回归证据：`contextReferencePresentation` 3 项、`stationMediaPreview` 4 项、`contentPreviewCard` 5 项通过；后两项覆盖素材缩略图点击、认证全屏预览、图片保存成功/失败状态和成果卡来源预览入口；RN typecheck、定向 ESLint、Prettier、`git diff --check` 通过。普通附件和漫画画格继续沿用既有图片网格/查看器，不把 Agent 引用伪装成普通 `attachmentIds`。
+- 隔离模拟器实测：QA API `http://127.0.0.1:4392`、PostgreSQL `127.0.0.1:55442`（061）和账号 `comic-qa-554f7254@example.invalid`；固定 iPhone 17 / iOS 26.5 安装 `/tmp/miaoxun-comic-save-qa-20261117/Build/Products/Debug-iphonesimulator/MiaoxunRN.app`。从漫画聊天选择小站图片后，输入区显示真实缩略图，发送后消息气泡显示图片；点击图片进入“素材预览”，显示大图和“保存图片”，点击后明确显示“图片已保存到系统相册”。发送请求因隔离环境未配置模型返回“未返回可用答复”，原请求保留且未自动重试，没有真实付费模型调用。
+- 本阶段整仓门禁随后重新运行并退出 0：RN 122 套/1508 项、Backend 1153 项通过/410 项因默认环境未启用隔离 PostgreSQL 而跳过，Agents 59、Admin 52、Avatar 29、media-retrieval-web 4；脚本语法、lint、类型、格式、Web 构建和 `git diff --check` 均通过。完整回执保留在本轮终端输出；PostgreSQL 跳过不计作数据库集成通过。
+- 当前未完成：没有把隔离模拟器结果写成实体 iPhone/TestFlight 或生产生成验收；生产部署、后台发布、TestFlight 上传和用户授权均未因本地修复自动执行。系统相册保存在模拟器内以原生保存成功状态确认，未将其扩写成实体设备 Photos 验收。漫画图片保存目前只接入 iOS 原生媒体库路径；Android 原生模块没有对应的漫画保存合同，本机又缺少 Java，未编译 Android，不能宣称跨平台完成。结构化证据：`/tmp/miaoxun-comic-save-qa-20261117/acceptance.json`。
+
+#### 2026-11-17 隔离账号模拟器验收：群聊、普通附件、自定义表情
+
+- 本阶段使用独立 QA API `http://127.0.0.1:4392` 和隔离 PostgreSQL（`127.0.0.1:55442`，迁移至 061）；Desktop 开发运行时 `4391/55441` 未停止或改动。QA 账号和测试媒体均为隔离数据，未写生产。
+- 群聊在固定 iPhone 17 / iOS 26.5 Simulator 真实完成：从好友列表创建 `QA Test Group`，选择两位好友，打开成员设置并看到三名成员，发送 `QA`，退出群聊；退出后历史消息仍可读，输入区明确变为“已有聊天记录仍保留；无法发送新消息或查看成员”。QA 库对应 1 个群、3 条成员记录（退出成员保留 `left_at`）、3 条镜像消息。
+- 普通图片附件在同一隔离私聊真实完成：系统 Photos picker 选择图片，上传状态从“上传中”进入“已就绪”，发送后以图片消息气泡显示，点击进入全屏查看器并看到 `1/1` 与“保存图片”；已点击保存动作。当前没有从 Photos 页面或独立系统提示再确认保存结果，因此只记录为“保存动作已触发”，不写成相册保存已确认。QA 库有 1 条真实图片附件。
+- 自定义表情真实完成：表情面板进入“自定义”，从 Photos picker 添加图片，列表出现收藏项；点击后以小尺寸贴图气泡发送，关闭/删除收藏后面板显示“还没有收藏的自定义表情”，历史贴图消息仍可读。QA 库 `custom_stickers.deleted_at` 已记录软删除，消息镜像保留 2 条 `metadata.sticker` 引用。
+- 以上是 Simulator + 隔离 API 证据，不等同于实体 iPhone、TestFlight 分发、生产部署或用户授权。尚未在本阶段重复调用漫画付费生成，也未代用户授予 Agent 权限。Android 原生编译仍因本机缺少 Java Runtime 阻塞。
+- QA API 与 PostgreSQL 已在证据记录完成后关闭；原有 Desktop 开发运行时仍保持 `4391/55441`。后续优先级：补普通附件“保存到系统相册”的独立可见证据；再分别做实体 iPhone/TestFlight 验收。漫画/UI Agent、二楼手势、启动动画和聊天布局的既有代码回归仍需按设备类型拆开记录，不能用本次 QA 群聊结果代替。
+
+#### 2026-11-17 发布树附件/表情/群聊阶段复核（早于隔离 QA，已被上段设备证据替代）
+
+- 发布工作树继续使用 `codex/ui-agent-candidate-20261105`，保留既有未提交修改。本轮修复了 `chatAttachmentApi.ts` 的未使用导入，并把新增附件/自定义表情参数同步到协作发送回归；`assistContextFlow` 43/43 通过，避免用参数裁剪掩盖消息合同变化。
+- `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 最终退出 0：RN 121 套/1502 项、Backend 1153 项通过/410 项因默认环境未启用隔离 PostgreSQL 而跳过、Agents 59、Admin 52、Avatar 29、media-retrieval-web 4；RN 类型检查、lint、Prettier、后台和 Web 构建均通过，`git diff --check` 通过。跳过的 PostgreSQL 门控不计为数据库集成通过；本轮未新建业务数据库。
+- 最终源码已用 `node scripts/miaoxun-development.mjs ios` 安装并启动固定 iPhone 17 / iOS 26.5 Simulator，正式 API 为 `https://8.153.167.11`，回执 `/Users/gary/Library/Application Support/MiaoxunDevelopment/1139656e744d/builds/2026-11-17T05-10-20-080Z/build.json`；仅证明候选可构建、安装和启动，不等于 TestFlight 或实体真机通过。
+- 本轮再次只读核对线上 `GET /api/health`、`GET /api/ready` 和 `GET /api/agents`：均返回 200；数据库 `connected=true`、`migrationsCurrent=true`；公开目录 9 项，漫画日记 `0.1.6`、UI Agent `0.1.0` 均为 `published`，漫画声明包含 `media:image:generate`。这仍只证明目录/就绪投影，不证明当前账号已授权、图片 Worker 可执行或客户端已分发。
+- 设备层补验仍受当前账号数据限制（该段早于下方独立好友账号 QA）：模拟器可打开聊天“更多功能”，看到相册/拍摄/文件/位置/联系人/任务/文件库；自定义表情页显示真实空态和“添加图片”；创建群聊页显示“还没有可邀请的好友”并禁用创建，因此当时无法提交建群、成员读取或退出。该段没有上传附件/表情、发送消息或写生产数据；后续证据见本页顶部隔离好友账号验收。
+- 下一步按证据顺序：先使用有至少两位真实好友的隔离账号补齐群聊设备验收，再在不写生产的 QA API/账号上完成附件和自定义表情点按证据；随后分别核对线上部署、TestFlight/实体 iPhone 和用户授权。当前仍不把目录发布、隔离 HTTP 或模拟器启动结果写成生产/真机完成；Android 原生编译继续受本机缺少 Java Runtime 阻塞。
+
+#### 2026-11-17 启动动画已按用户反馈恢复；会话重试修复保留
+
+- 用户查看三层启动稿后要求恢复；本轮新增的品牌布局、底部状态行、动画与安全区调整均已精确撤回，恢复原三段依次出现、“妙讯，与你一起成长的数字身份”和三个呼吸点。原有聊天、漫画、附件、群聊等工作区修改保留；没有把恢复写成新设计完成。
+- 固定 iPhone 17 / iOS 26.5 已重新安装并启动恢复版本，回执 `/Users/gary/Library/Application Support/MiaoxunDevelopment/1139656e744d/builds/2026-11-17T03-12-28-418Z/build.json` 的 installed/launched=true，源码构建前后摘要一致。冷启动截图 `/tmp/miaoxun-restored-launch-20261117/launch-3.png` 实屏确认原三段文案及原布局。当前是本地 Debug 1.0(63)，不能按磁盘构建号推断 TestFlight 或手机版本。
+- 单独保留会话重试修复：`retryRestoreSession` 将 Keychain 读取纳入 try/finally，读取期间 busy，失败显示真实错误、保留凭据且不误发 bootstrap，允许本人再次重试。`sessionSync` 47项通过；恢复动画后的整仓检查退出0，RN 121套/1474项，`git diff --check`通过。既有 Jest open-handle 提示仍存在，但完整命令已自然退出并输出 All repository checks passed；PostgreSQL门控跳过不计作数据库验收。
+- 同步核验纠正：此前 Desktop 构建日志中的30秒连接取消发生在请求成功之后，不能据此认定代理故障。已实读 HTTP 200及CFNetwork finished successfully；恢复发布树构建后，冷启动 bootstrap 和后续 sync 再次返回200。最初曾出现 Keychain -34018，但本轮仅修重试错误处理，未声称根除签名问题，也未清凭据或绕过登录。
+- 后续继续以本发布工作树（HEAD `15e7269`）为来源。Desktop 是另一条较旧分支，不能用其漫画0.1.3或055迁移覆盖此树已有0.1.6/061链路；本轮启动稿和重试修复在 Desktop 的试作增量已精确撤去。接下来验收本树附件、自定义表情和群聊，保留现有漫画/UI Agent实现。本轮未提交、推送、生产部署、后台发布、付费调用或上传 TestFlight。
+
+#### 2026-11-16 自定义表情第一阶段：跨层本地闭环，未部署
+
+- 后端新增 `custom_stickers` 与 `custom_sticker_message_references` 迁移（061）、收藏/删除/认证内容读取路由、静态图片规范化服务，以及普通消息 `stickerId` 合同。仅支持本人收藏的静态 JPEG/PNG/WebP；服务端规范化为 PNG，拒绝 GIF、动画 WebP、视频和普通附件/文字/Agent/UI/workspace/content context 混用。
+- 已发送消息保存 canonical `metadata.sticker`；直接会话和群聊镜像均由数据库触发器重验所有权/成员关系。收藏软删除不影响仍可见的已发送消息；删除/撤回消息、陌生人和退出群成员不能读取二进制内容。审计只写事件类型与资源 ID，不写图片、URL 或私有内容。
+- RN 已接入本人收藏列表、静态图片选择/上传/删除、direct/group 发送、原 `clientMessageId` 精确重试和认证的小尺寸聊天气泡；Agent/UI/workspace 会话明确拒绝自定义表情。
+- 证据：`backend/test/custom-stickers.test.js` 3项（含合同、规范化与安全边界）通过；新建 loopback PostgreSQL `miaoxun_chat_review_20261116_migration_test` 跑迁移001–061后，自定义表情 HTTP 集成6个子测试通过；RN 自定义表情 API/输入栏与附件/群聊回归共67项通过，RN typecheck、Prettier、backend syntax、`git diff --check`通过。测试库已删除。
+- 本地代码和隔离数据库验证完成，尚未部署后端、发布 Agent、提交/推送、上传 TestFlight、调用付费服务或代用户授权；模拟器/真机验收仍需覆盖收藏、发送、删除收藏后的历史可见性。
+
+#### 2026-11-16 漫画历史成果动作收口：本地回归通过，未分发
+
+- `ContentPreviewMessageCard` 现在只在排队中、生成中、失败或中断状态显示刷新动作；已完成、部分完成、已取消的历史任务只保留查看详情和图片操作，避免把历史成果误导成“重试”。读取错误和缺失预览仍保留显式刷新入口。
+- 新增完成态回归，`contentPreviewCard.test.tsx` 4项通过。该修复只改变客户端动作可见性，不改变任务状态、生成合同、权限或自动重试策略。
+- 当前候选仍未提交、推送、部署或进入新的 TestFlight；新增附件、群聊、自定义表情链路仍需 Simulator、实体真机和 TestFlight 分别验收。
+
+#### 2026-11-16 Agent 实际运行边界复核
+
+- `agents/registry.js` 实读的运行模式为：`album-manager=plan/dispatch`；`comic-diary=plan/chat/dispatch/contribute`（图片仍需独立 render worker、存储和 `media:image:generate` 授权）；`file-preprocessor=plan/chat/dispatch/contribute`；`site-builder=plan/chat/dispatch`；`ui-agent=plan`（仅偏好预览）；`model-3d`、`video-production`、`virtual-character` 当前为文字咨询/派发或协作；`media-retrieval` 为 `runtimeModes=[]`，仅内部二楼索引，不是可添加的聊天 Agent。
+- 因此公开目录中的 published/catalogStatus 只证明目录元数据和发布依赖，不证明每个 Agent 都有完整生成能力。当前没有为文字 Agent 虚构图片、视频、3D 或媒体检索结果；供应商、worker、设备和权限未满足时继续返回明确不可用状态。
+
+#### 2026-11-16 当前候选 Simulator 安装复核
+
+- 当前工作树源码已通过 `node scripts/miaoxun-development.mjs ios` 安装并启动固定 iPhone 17 / iOS 26.5 Simulator，使用正式 API；回执：`/Users/gary/Library/Application Support/MiaoxunDevelopment/1139656e744d/builds/2026-11-16T11-24-22-504Z/build.json`，安装和启动成功。
+- 启动后讯页可读到真实目录入口，包括 UI Agent、漫画日记 Agent、3D 形象顾问和相册管理 Agent。此次只确认候选安装与目录可见性，没有发送消息、上传自定义表情、上传附件、调用模型或修改生产数据；附件、自定义表情和群聊仍未完成设备交互验收。
+
+#### 2026-11-16 普通聊天附件闭环：本地代码与隔离数据库已完成
+
+- Task 1 后端合同与 Task 2 认证二进制传输、Task 3 原生选择/上传适配均已完成独立代码审查。合同允许普通单聊/群聊纯附件消息、拒绝空文字无附件，并在 Agent 派发前拒绝普通附件 ID；不新增数据库迁移。新建本机空库 `miaoxun_chat_attachments_20261116_migration_test` 跑迁移001–060后，附件 HTTP/PostgreSQL 集成7/7、专业 Agent 附件边界28/28通过；该库不含生产数据。
+- Task 4 会话范围草稿 UI 已完成并经复审：最多6项、即选即传、失败显式重试/移除；附件存在时“更多功能”和“发送”同时可用，ready 才能发送，上传中/失败禁用。复审发现并修复了更多入口被发送按钮遮掉的问题。本人重跑定向 Jest 3套/92项、RN typecheck、Prettier及`git diff --check`均退出0。
+- Task 5/6 已闭环：纯附件和文字+附件消息使用 canonical `attachmentIds`，失败消息保留原附件和 `clientMessageId` 精确重试；私有图片网格、全屏分页、文件预览、系统相册保存和按消息类型菜单已接入；撤回/删除后不再暴露附件。
+- 隔离 PostgreSQL `miaoxun_chat_review_20261116_migration_test` 实跑迁移001–061：附件 HTTP 6项、附件生命周期8项、群聊14项、自定义表情6项，共38项全部通过；测试库已删除。RN 附件/群聊/自定义表情定向回归67项通过。
+- iOS Simulator、实体真机、TestFlight和线上部署仍分别待验；Android Gradle 因本机缺 Java Runtime 未能启动。没有修改生产数据、部署、后台发布、上传 TestFlight、提交或推送。
+
+#### 2026-11-16 本轮 UI Agent 与线上只读复核
+
+- 固定 iPhone 17 Simulator 当前停留在 UI Agent 聊天。屏幕上较新的全局字号预览显示 `fontScale: 1 → 1.05`、状态“曾应用”；更早的 `1 → 1.1` 显示“已过期”，没有仍在发送中的请求。本轮没有发送新消息、点击应用/撤销或改动偏好。“曾应用”只是当前卡片可见状态，本轮未独立读取并核实服务端持久化值。
+- 本轮公开只读 `GET /api/health`、`/api/ready`、`/api/agents` 均为 200。公开目录包含漫画日记 `0.1.6` 与 UI Agent `0.1.0`，两项均为 published；漫画声明包含 `media:image:generate`。这些元数据不证明当前账号授权或每个供应商/Worker的实时执行能力。
+- `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 本轮退出 0：RN 113 套/1420 项，Backend 1149 项通过/408 项因默认环境门控跳过，Agents 59 项、Admin 52 项、Avatar 29 项、媒体检索 Web 4 项；`git diff --check` 通过。PG 门控跳过不计作数据库集成验收。本轮没有代码实现改动、提交、推送、生产写入或 TestFlight 操作。
+- 下一步若继续 UI Agent 验收，应先确认当前偏好读取和重置/撤销状态；未经用户确认不应用新的字号预览。漫画聊天第一阶段源码与模拟器验收状态见下方 11 月 16 日记录，Build65/真机仍分别核验。
+
+#### 2026-11-16 最新候选集成复验与 Build65 只读状态
+
+- 在指定发布工作树继续，HEAD仍为 `15e72691b02dead20777b77b00f3846adc48d55d`、分支 `codex/ui-agent-candidate-20261105`，保留原有4个ahead提交及全部工作区修改；本轮没有提交、推送、部署、后台发布或TestFlight上传。
+- 最新源码通过日常入口重新安装固定 iPhone 17 / iOS 26.5。Debug构建为本地 `1.0 (63)`、正式HTTPS API；回执 `/Users/gary/Library/Application Support/MiaoxunDevelopment/1139656e744d/builds/2026-11-16T06-59-40-749Z/build.json`，`installed=true`、`launched=true`，构建前后源摘要均为 `3d67eeab47028a58c7e9a50561318f145cb9c90cefb606b0e38d73b1a0add76c`，JS摘要 `e3ea67f369e0cc7b3cd28590c7ffcd99bd1dae2ec7758113e63abfd6ad15637c`。本地Build 63不是TestFlight版本；安装替换后Simulator应用数据容器路径变化，实屏确认账号会话与既有聊天仍可读。
+- 当前模拟器漫画聊天中实测文本/按住说话切换；回切时消息输入框重新挂载且系统键盘实际弹出。轻点一个本地字符确认“发送”入口出现，再退格清空；没有发送消息、刷新生成任务、调用模型或改生产偏好。布局截图显示输入框占据中间弹性宽度，表情与更多紧邻，左侧灯泡/语音为稳定圆形按钮。
+- 最新定向聊天/二楼4套130项通过；RN TypeScript、Prettier和`git diff --check`通过。`MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh`退出0，RN 113套/1420项；整仓其他检查通过。默认后端环境的PostgreSQL用例仍有408项门控跳过，不计为PG集成通过。
+- 正常App Store Connect页面只读核验：Build65行显示“正在测试”、90天后过期并关联内部及外部`yunzhi`组；外部组显示7人/邀请数7，安装与使用次数为横线，页面没有可确认的Build65安装记录。该状态证明构建已开放测试，不能证明指定真机已安装。没有修改出口合规、测试组或通知。
+- 启动副标题已加入`LaunchAnimation`，使用“妙讯，与你一起成长的数字身份”；源码将它排在主文案与同步说明之间。冷启动取屏时页面已进入对话列表，未取得启动遮罩的实屏截图，因此仅记录代码实现，不声称该动画已被视觉验收。
+- 下一步：由账号所有者确认目标 iPhone 上Build65的安装状态并完成聊天、漫画和UI偏好真机流程；本地候选的模拟器通过不等于Build65或后续TestFlight包通过。后续新TestFlight制品、精确本地提交及通知动作均需各自按当前授权核对。
+
+#### 2026-11-16 漫画第一阶段交互收尾：模拟器已通过，未分发
+
+- 按已确认的第一阶段方案完成并复验聊天内分层成果卡、全屏图片查看、详情页稳定网格、作品上下文 chip 和真实相册保存链路。固定 iPhone 17 / iOS 26.5、正式 Bundle、正式 API 的本地构建回执为 `/Users/gary/Library/Application Support/MiaoxunDevelopment/1139656e744d/builds/2026-11-16T06-13-16-100Z/build.json`，`installed=true`、`launched=true`。聊天中的四格卡片可逐格打开；详情页保持 2×2 网格；图片查看器支持左右切换；引用《雨后的纸船》后显示可移除 chip，移除后恢复无引用状态。
+- 首次保存实测失败的根因为私有媒体返回 WebP，PhotoKit 写入时返回 `PHPhotosErrorDomain Code=3302`（系统日志记录 `unsupported output file format 'org.webmproject.webp'`）。`MiaoxunMediaLibraryModule.swift` 现在把已授权下载的图片规范化为 JPEG 后再交给 PhotoKit；重新构建后点击“保存图片”实测显示“已保存到相册”。失败和超时仍明确回执，不自动重试、不扩大权限。
+- 模拟器当前历史 Agent 消息仍显示旧文案“你可以继续修改，满意后点击‘生成漫画’”，这是已持久化的历史正文，当前卡片没有该入口；本轮仅更新 `agents/comic-diary.agent.js` 的新回复合同为在当前聊天内直接说明调整并重新生成完整预览，并以 `agents/test/comic-content-preview.test.js` 回归禁止旧入口指引。没有静默改写历史消息。
+- 本轮仅本地源码与测试验证，未提交、推送、部署、后台发布、TestFlight 上传、动态发布或新增付费调用；本地模拟器通过不替代实体真机/TestFlight。定向 RN 64 项、Agent 合同 19 项、TypeScript、Prettier、`git diff --check` 和 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 均通过；整仓输出 RN 113 套/1419 项、Backend 1149 项、Agents 59 项、Admin 52 项、Avatar 29 项、媒体检索 4 项，Backend 默认环境 408 项 PostgreSQL 集成门控跳过，不能算数据库验收。下一步由账号所有者在目标制品上复验真机安装、聊天输入和漫画链路。
+- 继续前的线上公开只读复核：`GET /api/health` 和 `GET /api/ready` 均返回 200，数据库 `connected=true`、`migrationsCurrent=true`；`GET /api/agents` 返回 9 项，漫画日记 `0.1.6` 与 UI Agent `0.1.0` 均为 `published/catalogStatus=published`，漫画声明仍包含 `media:image:generate`。本次没有调用受保护后台接口、没有写生产数据，也没有重新发布 Agent 或部署后端。
+
+#### 2026-11-16 聊天输入栏紧凑布局复验：本地未分发
+
+- 针对模拟器实屏反馈收紧妙猜猜/语音切换/表情/更多的布局：左侧两个视觉容器固定为正圆，右侧表情与更多使用28pt视觉槽位并保留8pt hitSlop，整行间距为0、左右内边距6pt；输入框继续占据中间弹性空间。44pt以上的实际可点击区域、语音双态和发送路径保持不变。
+- 在固定 iPhone 17 / iOS 26.5 模拟器使用正式 Bundle 重新构建并原位安装，打开漫画日记聊天实看：文本态输入框变宽且右侧两个图标相邻；软件键盘打开时输入栏不跳动；切到语音态后显示键盘图标与“按住说话”，切回文本态恢复输入框。未发送消息、未调用模型、未改生产数据。
+- `MiaoxunRN/__tests__/chatComposerEditing.test.tsx` 定向 23/23 通过，Prettier 与 `git diff --check` 通过。此次仅涉及 `ChatComposer` 的尺寸/间距和对应几何断言，仍未提交、推送、部署或上传 TestFlight；模拟器证据不替代实体真机验收。
+
+#### 2026-11-16 微信式语音输入双态：模拟器已复验，未分发
+
+- 聊天输入栏的语音入口改为单个可切换按钮：文本态显示“切换语音输入”和原生多行输入；语音态隐藏输入框并显示“按住说话”，同一位置显示“切换键盘输入”。切换不丢失草稿；切回键盘态会重新聚焦输入框。按住说话继续复用既有 `onStartLongSpeech` / `onFinishLongSpeech` 链路，识别中或发送中禁用切换，不新增 API、权限或依赖。
+- 固定 iPhone 17 / iOS 26.5 模拟器、正式 API 构建 `MiaoxunDevelopment/1139656e744d/builds/2026-11-16T04-44-37-801Z/build.json` 已安装并启动。AX 实测点击“切换语音输入”后只显示“切换键盘输入”和“按住说话”；再次点击后恢复“消息输入框 发给妙讯管家”，草稿保留并触发焦点回调。未按住说话、未发送新消息、未触发麦克风或付费调用；这不是实体真机、TestFlight 或 Android 验收。
+- `chatComposerEditing`、`chatContentActions` 已覆盖双态切换、草稿保留、长按开始/结束和识别中禁用；定向回归 79 项通过，RN 全套 111 套/1413 项通过，`MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 输出 `All repository checks passed`，`git diff --check` 通过。Backend 1149 项通过、408 项因未启用隔离 PostgreSQL 按既有门控跳过，不能算数据库集成验收；仍由用户在真机/TestFlight复验手感。
+
+#### 2026-11-16 候选版本模拟器使用回归：未分发
+
+- 在固定 iPhone 17 / iOS 26.5 模拟器的正式 API 构建上按真实页面流程复验：文本态麦克风是模式切换键，点击后变为键盘图标并显示“按住说话”；表情分类和插入、更多功能面板、本人消息与 Agent 消息的长按“更多”菜单均可用。本人消息菜单显示回复/复制/删除，Agent 消息不显示撤回，符合当前消息状态合同。
+- 从讯页进入二楼后，中部上滑 60px 不退出，100px 达到阈值退出；返回讯页后实屏没有空白。漫画日记历史成果可打开详情、放大画面并看到 4/4；UI Agent 聊天可读取历史偏好预览，过期预览明确显示“已过期”。这些是本地模拟器证据，不代表实体真机流畅度或 TestFlight 制品状态。
+- 测试表情插入后因沿用旧 AX 索引误点了发送，实际向模拟器账号的妙讯管家发送一次 `😊`，服务端返回“😊 我在，需要帮忙随时告诉我”。已停止后续发送和重试；这次意外生产消息不作为功能成功或付费验收依据，也没有继续触发语音/漫画生成。
+- 后续复核发现模拟器 `I/O → Keyboard → Connect Hardware Keyboard` 开启时，点输入框只显示 Paste/AutoFill，不显示软件键盘；关闭该模拟器选项后，系统文字键盘正常出现。键盘态→语音态会收起键盘，语音态→键盘态会恢复输入框、重新聚焦并显示键盘。麦克风图标仍保留为文本态进入语音态的单槽位切换键，不是额外的语音发送入口。
+
+#### 2026-11-16 二楼与聊天交互候选修复：模拟器验收完成，未分发
+
+- 二楼退出手势收紧并增加跟手范围：默认退出距离为88pt（安全下限72pt），速度触发至少达到距离的60%且速度阈值0.55，跟手动画上限40%，保留减少动态效果和无障碍返回。固定 iPhone 17 / iOS 26.5 模拟器中部上滑实测：20px、60px不退出，100px退出；不能据此宣称实体真机或120Hz流畅度通过。一次落在底部返回区的坐标拖动曾退出，后续中部坐标复验已避开该区域。
+- 聊天输入区沿参考图保留快捷指令与主操作行，输入框占据中间弹性空间；表情面板提供常用、情绪、手势、生活分类。自定义表情现已完成本地合同和本人收藏入口，但尚未进入分发包，设备验收需按上方最新记录执行。
+- 消息菜单按真实消息状态提供复制、回复、撤回、删除等已有动作，失败/撤回状态不显示回复；普通图片/文件附件和本人自定义表情已补齐本地合同，仍未宣称生产或设备可用。
+- 启动动画增加“妙讯，与你一起成长的数字身份 / Miaoxun, your digital identity growing with you”。
+- 模拟器正式 API 真实链路：漫画日记 Agent 对“小猫雨后修好纸船，与小狗一起放船”完成一次聊天确认、4格队列（0/4→4/4）、4张真实图片、详情页和“发布动态（4张）”入口；未点击发布。UI Agent 已完成权限预览和本人添加；单页字号请求按合同拒绝，全局字号请求生成 `fontScale 1→1.1` 预览；未点击应用。
+- 定向回归4套共89项通过；补齐阈值合同后的 `secondFloor.test.tsx` 40项、`secondFloorPreferences.test.tsx` 9项及 `uiPreferences.test.ts` 均通过。全套 RN 111套/1410项通过；`MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出0并输出 `All repository checks passed`，Backend 1149通过/408项因默认环境门控跳过，不能算隔离 PostgreSQL 集成验收。未生产部署、未上传 TestFlight、未改变用户 UI 偏好或追加付费调用；实体真机/TestFlight 仍待用户验收。
+
+#### 2026-11-16 输入栏换行/发送补齐与发布来源复核
+
+- 后续工作明确沿 `/Users/gary/.codex/worktrees/admin-lifecycle-release/marvelsChat`、HEAD `15e7269` 继续。桌面目录仍为另一条较旧开发分支，不能将其 Build57、95套测试或输入实现覆盖本发布工作树。磁盘工程仍写63，但11月13日的64通过归档参数覆盖并已上传；不能据磁盘号重做63/64。
+- 本轮开始时的未分发输入稿已具备参考图结构，但最后改成仅键盘Send提交，缺少可见发送入口且无法正常Return换行。本轮先见回归失败，再保留上方快捷胶囊与下方单主行：空白草稿右侧是更多，非空或发送中切换为发送，保留表情；Return恢复原生换行。发送继续受完整权限、忙状态及父级同步防连点保护，不新增API、权限或依赖。
+- 最终生产源码已原位安装到固定iPhone17/iOS26.5，回执 `MiaoxunDevelopment/1139656e744d/builds/2026-11-16T01-41-11-616Z/build.json`，`installed/launched=true` 且构建前后源摘要一致。实屏通过软件键盘Return、拼音逐键输入/选择“键盘”候选后换行、长中文上限内滚动及末尾光标、表情插入后恢复焦点、更多与键盘切换、清空缩框；仅测试未发送草稿，未新增模型调用或生产消息。模拟器并不证明真机流畅度、Android或实际发送后效果；11月13日一次发送是历史证据，不能重复消费授权。
+- 整仓检查退出0：RN111套1408项、Backend1149通过/408环境跳过、Agents59、Admin52、Avatar29、检索Web4与打包1，类型/lint/格式/构建通过。首次因新增测试局部变量遮蔽触发零警告门禁，修正后完整重跑通过，未放宽规则；后续补回父级权限防护直接回调断言，该套43项再通过。PG跳过不算数据库验收，本轮仅RN无需新PG迁移验收。
+- 今日公开只读health/ready均200，数据库connected/migrationsCurrent=true；目录9项含漫画0.1.6/UI-Agent0.1.0。此处只证明公开目录/就绪，不扩写为所有Agent模型能力或具体生产进程hash已重新验收。上午正常Apple页面实读最高64；随后经用户确认，已用Xcode Organizer上传65。当前键盘修复不在64内。
+- Build65本地Release归档及独立核验已完成：529项冻结源码/HEAD/index/本地配置保持；Bundle/API/Team、arm64、App dSYM和Hermes重编字节匹配通过。原组合检查因Hermes根权限预期建模错误保留`passed=false`；补充独立审计以真实macOS tar隔离测试证明根目录0755在前后不变，41项依赖变化均精确匹配冻结Debug→Release包，未知变化0。上传前独立核验又比对149项归档文件/链接集合、内容、已记录文件权限与链接目标一致；回执`build65/preupload-independent-identity-20261116T022750247447Z.json`，SHA256 `bcfffb29be19f60a5b9430430ea4b6d6d83e48045cb98feed12d2349fa13ca5a`。Organizer显示1.0（65）`Uploaded to Apple`，Build Number 65；提交时间界面显示Today at 10:36。TestFlight正常Chrome页面刷新后Build65当前显示“正在测试”、90天后过期及两个`yunzhi`组标记；邀请/安装/使用次数仍为横线。首次上传后刷新曾显示缺少出口合规且无组，后续页面状态发生变化；本轮未主动填写合规或选择测试组，不能从状态反推合规由谁完成或Build65已在真机安装。
+- 上传完成页保留React、ReactNativeDependencies、hermesvm三项框架dSYM缺失警告；App自身符号完整。Organizer分发摘要显示Cloud Managed Apple Distribution证书、iOS Team Store Provisioning Profile，`get-task-allow=false`。原始归档仍保持未改。
+- 重要操作记录：只读查看Build65详情后尝试返回列表时，TestFlight的无障碍节点编号已变化；页面随后显示“测试内容”弹窗提交中，弹窗当时展示测试内容`1111`且“自动通知测试员”已勾选。提交完成后Build65页面显示正在测试及两个`yunzhi`组。无法确认该弹窗是否由本次陈旧节点操作触发，或是否发送了测试员通知；没有主动编辑测试内容、选择测试组或点击通知。需由账号所有者检查TestFlight测试员通知/活动状态。本轮已停止进一步后台操作。
+- 当前阶段：Build65已上传并在TestFlight页面显示正在测试；通知是否发送待账号所有者确认，手机安装及功能真机验收尚未完成。未提交或推送；无需重复后端部署、Agent发布或要求用户解绑重绑。漫画聊天内确认/成图/详情/本人发布、UI偏好预览到确认、二楼/妙页实体手指复验仍未完成；付费模型和生产写入需新的具体范围。完整文件与证据见[本轮记录](../reviews/2026-11-16-chat-composer-release.md)。
+
+以下为此前各时点记录；与上文不同的布局、版本、待办状态以本节重新实读结果为准。
+
+#### 2026-11-13 最新输入栏参考图结构修正（当前工作区，未分发）
+
+- 用户提供的参考图明确了输入栏结构：快捷指令在上方常驻横向栏并带分隔线；下方单行依次为妙猜猜、语音、消息输入框、表情和更多。此前“输入框独占上行、动作控件另起一行、快捷指令收进更多”的实现与参考图结构不符，已按本次反馈改回。
+- `MiaoxunRN/src/features/messages/ChatComposer.tsx` 现在将输入框嵌入动作行中间，保持原生多行输入在44–132pt内自然增高；空草稿不渲染独立发送按钮，键盘使用 `returnKeyType="send"`/`submitBehavior="submit"` 调用既有真实发送合同。妙猜猜、语音长按、表情选区、更多附件面板和快捷指令横滑/预填行为保留。
+- `MiaoxunRN/__tests__/chatComposerEditing.test.tsx` 与 `MiaoxunRN/__tests__/chatContentActions.test.tsx` 已按新结构更新；定向聊天回归70项通过，RN typecheck与Prettier通过。固定 iPhone17/iOS26.5 已重新安装并实看空输入、键盘打开和长文草稿三种状态；回执为 `/Users/gary/Library/Application Support/MiaoxunDevelopment/76237d6f8986/builds/2026-11-13T08-53-46-537Z/build.json`。实屏显示快捷指令在上方、灯泡/麦克风/输入框/表情/更多同一行，软件键盘显示发送箭头；长文自动换行后操作控件仍固定，临时草稿已清空且未发送。
+- 该证据仍是 Debug Simulator，不是 TestFlight 或实体真机。本轮未改API、数据库、Agent声明/权限、后台发布、生产部署、TestFlight或付费调用。
+
+#### 2026-11-13 聊天输入栏结构按参考图补正：模拟器已实看，本地未发布
+
+- 用户指出先前实现只把妙猜猜、语音、表情、更多和发送排到同一行，和参考图的布局关系仍有差别。按图中结构补正：输入框在上、操作行在下并留8pt间隔；灯泡/语音/表情/更多维持44pt触控区、均匀排布；发送独立靠右，固定56×44pt。输入框仍由原生布局在44–132pt内自然增高；快捷指令移入“更多功能”面板，默认不再占用输入区第三行，打开后仍可横向滚动和点击预填；附件继续收纳在更多面板。
+- 为间距、边距、发送区尺寸和快捷指令层级先新增回归测试，确认旧样式失败后再修改；`chatComposerEditing` 与 `chatContentActions` 共69项通过。源码重新安装并启动到固定 iPhone17/iOS26.5（正式Bundle、Debug、正式API），实看管家真实聊天中的两层排列，打开更多后快捷指令仍可用；最终构建回执为 `MiaoxunDevelopment/1139656e744d/builds/2026-11-13T08-26-40-837Z/build.json`，`installed=true`、`launched=true`、版本 `1.0`。本次比较时输入框聚焦，但软件键盘未显示；不将此次记录扩写为键盘打开状态的新验收。上一轮长文、键盘、表情及发送证据仍见下节和[键盘实测记录](../reviews/2026-11-13-chat-keyboard-simulator.md)。
+- 此轮仅修改RN composer间距/尺寸、布局测试和文档；不涉及API、数据库迁移、Agent声明/权限、后台发布、生产部署、TestFlight上传或付费调用。模拟器通过不等于真机/TestFlight通过；输入栏修复仍待进入新客户端制品并由用户真机复验。
+
+#### 2026-11-13 键盘模拟器实测：两处缺陷已修，一次真实文字发送通过；新修复未发布
+
+- 用户要求真实模拟器输入。本轮在固定iPhone17/iOS26.5、正式Bundle的既有App中实际复现：键盘/表情返回时最新回复遮挡，自动换行长文仍只有44点高。前者根因为全局layout animation下Fabric/原生视口不同步、scrollToEnd使用旧测量；后者为固定height与等待content-size增高形成测量闭环。改为聊天区域局部可中断键盘间距动画、真实布局尺寸计算底部偏移，并由原生输入在44–132点间自然增高；历史拖动取消跟随、减少动态效果和动画清理保留。
+- 最终源码重新构建并原位安装成功；真实软件键盘长英文、中文拼音候选/换行、长中文末尾、表情与更多面板切换、清空缩框已实测。用户另外明确允许的一次管家文字测试已且仅已发送一次，真实回复“收到”；发送后立即清空缩框、收起键盘，最新消息/回复可见。没有生图或额外付费重试，没有替用户授权。
+- 最终定向4套70项及独立复验通过；整仓退出0，RN111套1397项、Backend1149通过/408环境skip、Agents59、Admin52、Avatar29、检索Web4、打包1；类型/lint/格式/构建与diff检查通过。408 skip不算PG通过；仍有React测试act及Admin chunk提示。模拟器不是Android、真机或120Hz流畅度验收。
+- 最终Debug构建源摘要 `027af5925793924889b5015f011f752e4cbbf64ac66b5d4be4443ee920bbfb26`，回执在 `MiaoxunDevelopment/1139656e744d/builds/2026-11-13T06-29-24-636Z/build.json`；截图/日志在仓库外 `MiaoxunReleasePreparations/keyboard-simulator-20261113/`。完整根因、矩阵、六份源码/测试与限制见[键盘实测记录](../reviews/2026-11-13-chat-keyboard-simulator.md)。
+- 本轮未提交、推送、部署、后台发布、归档或上传；已有两份文档修改保留。上一阶段后端已部署、Build64已上传，但64不含本轮新键盘修复，Apple合规/分发仍由用户处理。本轮仅RN变更，无API/数据库/声明/权限/依赖/配置变化。下一步新客户端发布范围确认后打包，再做真机键盘及漫画完整链路验收，不重复上一阶段部署或借用已消费的一次模型授权。
+
+#### 2026-11-13 反馈修复配套发布：后端已更新，Build64 待本人处理出口合规
+
+- 用户允许配套后端与新测试包更新，并另行明确批准冻结30文件“仅本地提交，不推送”。提交 `15e72691b02dead20777b77b00f3846adc48d55d`、tree `a5959a147214d37386513637d29a1b7887a4e0a1`，逐项blob与批准清单一致；正式打包时工作树干净，没有推送。清单包含原有Build63与发布记录修改，未丢弃或覆盖。
+- 正式打包器生成 `comic-chat-feedback-20261113-15e7269`：306项，tar SHA256 `b255a4aad288ab4c2f575e2c98874359837f55df3debca000db896a84a561a0a`、manifest SHA256 `e5c1e28df7e1c5f5fe2a879b78cdb885534ea6f176d1ba110b7e0cefc7828789`。独立审查确认只有 `public-message.js`、`specialist-message-service.js` 两份runtime源码变化，其余304项不变；60项迁移、依赖、Agent声明/权限及配置不变。
+- 正常Apple页面实读最高63且正在测试、上传记录最新63完成后，归档并通过正常Xcode Organizer上传 `1.0 (64)`；最终显示 `Uploaded to Apple` / `Submission Status: Uploaded`。包内正式Bundle/API/Team/arm64正确，507项RN/共享输入与提交字节一致，Hermes重编字节匹配。仍有React、ReactNativeDependencies、hermesvm缺匹配dSYM三项警告。上传后刷新正常TestFlight页面，Build64实际显示“缺少出口合规证明”、群组栏为空；未代填合规、修改测试组或通知，手机可安装性与真机效果未核验。
+- 60→60专用部署器经独立审查及25项安全fixture通过后，正常SSH运输并新鲜只读plan通过；随后完成停写备份、独立PG恢复核验（表摘要、序列、角色/成员、schema/ACL/RLS/索引/函数及60项账本一致，隔离库已停止），切换 `/opt/projects/marvels-chat/app` 至 `releases/comic-chat-feedback-20261113-15e7269/runtime`。API及双Worker候选进程/心跳/轮询、306项hash、60项迁移、空队列及registry/release/product/授权摘要验证通过后开流，最终 `traffic_opened`、维护关闭、备份timer恢复；没有迁移、产品发布、代授权、模型任务或生产DB恢复。证据在仓库外 `MiaoxunReleasePreparations/comic-chat-feedback-20261113/`，详见[反馈续修及发布记录](../reviews/2026-11-13-comic-chat-acceptance-fixes.md)。本节为提交/打包后的文档更新，不包含在上述冻结提交中。
+- 开流后独立只读终验PASS：306项线上hash、60账本、API/双Worker真实进程与推进心跳、timer active/waiting、空队列与历史unknown摘要、registry/release/product/本人授权指纹、原Nginx/env字节均符合批准基线；health/ready/admin均200，共享路由不变，公开9项包含漫画0.1.6/UI-Agent0.1.0。终验目录为本轮 `production-execution/independent-post-open-20261113T052309Z/`。下一步由用户处理Build64合规及分发后安装，保留现有绑定复验新消息、旧失败文字编辑、可选素材、键盘/长文/表情、历史成果和漫画布局；真实模型、生图与本人发布仍单独核对执行范围。
+
+#### 2026-11-13 最新真机反馈续修：修复内容与本地验证快照
 
 - 用户报告最新真机包漫画发送仍报“Agent 声明已更新”，且已同意0.1.6、我的Agent无待更新提示。本轮确认根因为服务端新消息被旧版澄清快照阻断，不要求解绑重绑。当前精确授权通过后结束过期链，新消息不继承旧需求/引用/来源/历史；重置边界持久保留，撤回/删除不复活旧上下文。原ID重试仍严格拒绝旧快照，不重跑模型。RN按服务端澄清版本恢复素材，失效原请求可明确编辑文字为新消息。
 - 去除顶部常驻选参考图/说明；本机相册与拍摄沿现真实上传路径，小站素材改为更多功能内按需入口。历史失效协作成果移到列表头折叠显示，仅暂不可用可重新核验。我的漫画/详情复用妙讯导航、卡片和token，紧凑画格可放大、分镜按需展开，保留真实失败和本人发布流程。
@@ -1060,3 +1230,13 @@ Build48同步故障、前向恢复、227项manifest和备份证据保存在[历�
 - 账号持有人确认后，Build 58 已提交出口合规选项“不属于上述的任意一种算法”。为保持现有 TestFlight 发布范围，复用旧构建测试内容 `1111`，将 Build 58 关联到内部 `yunzhi` 与外部 `yunzhi` 两个现有群组；外部群组当前显示 7 名测试员。App Store Connect 列表已更新为“正在测试”，本轮未创建新群组或修改群组成员。
 - 合规处理后运行 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh`，最终退出 0 并报告 `All repository checks passed`：仓库语法 42 文件、后端语法 369 文件；Backend 1270 项中 991 passed、0 failed、279 项 PostgreSQL 环境门控跳过；Agents 51、Admin 48、RN 81 suites/1053 tests 全部通过；Admin、avatar-web、media-retrieval-web 构建通过；`git diff --check` 通过。RN 仅保留既有 `VoiceShortcutDock` 的 React `act(...)` 警告，不影响测试结果。
 - 为匹配已授权上传的 Build58，`backend/test/release-network-config.test.js` 的 Xcode 构建号断言由旧 Build54 更新为 Build58；这是测试基线同步，不改变 API origin 或 ATS 配置。
+
+## 2026-11-17 聊天附件、私有表情与群聊闭环复核（早期记录，设备结论已被顶部隔离 QA 替代）
+
+- 本轮继续沿用现有普通聊天、原生 picker、消息 API、数据库迁移和 Agent/权限边界，没有另建消息架构。iOS/Android 的受限原生二进制传输已接入图片上传、聊天附件上传和文本文件预览：固定 API origin、仅允许 `/api/`、Bearer 鉴权、拒绝重定向和敏感头覆盖、8 MiB 上传上限、256 KiB 响应上限、20 秒超时及临时文件清理。
+- 发现并修复一个客户端参数错位根因：`MessagesScreen` 原先用可变 spread 组装 `ChatScreen.onSend`，使普通附件和自定义表情的后续参数左移，`stickerId` 落入工作区参数位置，因此界面点击不会进入消息 API。现在按固定参数位传递，并新增 ChatScreen 与 `useMessageActions` 两层回归，确保普通 direct/group 自定义表情只发送 `stickerId` 和稳定幂等键。
+- 自定义表情已在固定 iPhone 17 Simulator QA 包中实测上传并读取缩略图：`POST /api/custom-stickers/upload` 返回201，随后私有内容读取返回200；修复后的发送逻辑由 RN 回归覆盖，后端隔离 HTTP 发送也返回201。原生上传前曾在 RN `fetch(uri)` 读取阶段失败，4392 未收到请求，现已由原生传输适配解决。
+- 隔离 PostgreSQL/HTTP 证据：本机 `127.0.0.1:55441` 唯一 QA 库应用迁移001–061，普通附件、附件生命周期、自定义表情、群聊共38项全通过；同一 QA API 上图片/文本附件上传、私有读取和消息发送均返回预期状态，建群201、成员读取200、退出200、退出后成员接口404而历史消息仍可读。测试库已删除，4392 进程和监听已停止；证据目录保留在 `/tmp/miaoxun-chat-postgres-20261117T034850Z/` 与 `/tmp/miaoxun-chat-qa-20261117-hp1SRl/`。
+- RN 定向验证最终为126项（附件、原生传输、预览 scope、群聊创建/成员/退出）及聊天内容回归69项通过；`npm run typecheck`、定向格式/ESLint、`git diff --check`通过。全仓 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 已通过，日志 `/tmp/miaoxun-chat-closure-repository-20261117.log`：RN121 suites/1500、Backend1153通过/410环境跳过、Agents59、Admin52、Avatar29、media retrieval4。
+- 独立 QA 包证据（早于本页顶部新一轮好友账号操作）：Bundle `com.wangruoshi.miaoxun.chatqa20261117`，iPhone17/iOS26.5，API `http://127.0.0.1:4392`，源码快照 `d6e592680b7da530b07eeb4c1fd46a21ac30d3258127a3c5ee42e0466b056407`，正式 App/data/Info/JS 未改变。该轮设备层未能补齐发送表情、相册/文件 picker 点按和群聊建群/成员/退出截图；本页顶部已有新的隔离账号模拟器证据，不能再用本条旧限制覆盖当前结论。
+- 本轮未部署、未修改生产数据、未发布后台资源、未上传 TestFlight、未提交或推送。Android 原生编译仍未执行，本机没有 Java Runtime；整仓测试中的410项环境门控跳过不计 PostgreSQL 实体验收。下一步是恢复可读的 Simulator 窗口后补三条点按证据，再决定是否需要新客户端构建；不能把当前 QA 包结论写成 TestFlight/实体真机结论。

@@ -154,6 +154,7 @@ const text = () =>
     .flat(Infinity)
     .join(' ');
 const chatComposer = () => root().findByType(ChatComposer);
+const sendMessage = () => button('发送消息').props.onPress();
 
 beforeEach(() => {
   jest.useFakeTimers();
@@ -488,7 +489,7 @@ test.each(['妙管家'])(
       currentPage: 'miao.feed',
     });
     expect(mockSession.sendMessage).not.toHaveBeenCalled();
-    await act(async () => button('发送消息').props.onPress());
+    await act(async () => sendMessage());
     expect(mockSession.sendMessage).toHaveBeenLastCalledWith(
       butlerThread.id,
       draft,
@@ -503,6 +504,10 @@ test.each(['妙管家'])(
         currentRound: 1,
         goal: mockWorkspaces[0].goal,
       },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
     );
     expect(root().findByType(WorkspaceContextCard).props.context.revision).toBe(
       9,
@@ -625,7 +630,7 @@ test.each(['success', 'failure', 'later-reset'] as const)(
             resolveSend = resolve;
           }),
       );
-    await act(async () => button('发送消息').props.onPress());
+    await act(async () => sendMessage());
     expect(mockSession.sendMessage).toHaveBeenLastCalledWith(
       butlerThread.id,
       '这是移除关联后的新需求',
@@ -634,6 +639,11 @@ test.each(['success', 'failure', 'later-reset'] as const)(
       [],
       { currentPage: 'miao.feed' },
       true,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
     );
     if (result === 'later-reset') {
       act(() =>
@@ -648,13 +658,13 @@ test.each(['success', 'failure', 'later-reset'] as const)(
       expect(text()).toContain('移除关联后将开始新的需求');
       expect(chatComposer().props.contextRefs).toEqual([]);
       act(() => chatComposer().props.onChangeDraft('下一条也应是新的需求'));
-      await act(async () => button('发送消息').props.onPress());
+      await act(async () => sendMessage());
       expect(mockSession.sendMessage.mock.calls[1][6]).toBe(true);
     }
     expect(chatComposer().props.contextRefs).toEqual([]);
     expect(text()).not.toContain('移除关联后将开始新的需求');
     act(() => chatComposer().props.onChangeDraft('成功后继续普通对话'));
-    await act(async () => button('发送消息').props.onPress());
+    await act(async () => sendMessage());
     expect(mockSession.sendMessage.mock.calls.at(-1)?.[6]).toBeUndefined();
   },
 );
@@ -674,7 +684,7 @@ test('album assistance retains its actual origin and reference through review, t
   expect(text()).not.toContain('发起于：');
   expect(mockSession.sendMessage).not.toHaveBeenCalled();
 
-  await act(async () => button('发送消息').props.onPress());
+  await act(async () => sendMessage());
   expect(mockSession.sendMessage).toHaveBeenCalledTimes(1);
   expect(mockSession.sendMessage).toHaveBeenLastCalledWith(
     butlerThread.id,
@@ -683,18 +693,30 @@ test('album assistance retains its actual origin and reference through review, t
     null,
     [{ kind: 'station-album', id: albumId, title: albumTitle }],
     { currentPage: 'second-floor.albums' },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
   );
   expect(chatComposer().props.assistSource).toBeUndefined();
   expect(chatComposer().props.contextRefs).toEqual([]);
   expect(chatComposer().props.draft).toBe('');
   act(() => chatComposer().props.onChangeDraft('下一条普通消息'));
-  await act(async () => button('发送消息').props.onPress());
+  await act(async () => sendMessage());
   expect(mockSession.sendMessage).toHaveBeenLastCalledWith(
     butlerThread.id,
     '下一条普通消息',
     undefined,
     null,
     [],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
     undefined,
   );
 });
@@ -710,6 +732,8 @@ test('album assistance preserves the draft while access is missing and only enab
   const draft = chatComposer().props.draft;
   expect(text()).toContain('读取相册');
   expect(button('发送消息').props.disabled).toBe(true);
+  await act(async () => sendMessage());
+  expect(mockSession.sendMessage).not.toHaveBeenCalled();
   // Calling the callback directly must also be guarded, not just the button.
   await act(async () => chatComposer().props.onSend());
   expect(mockSession.sendMessage).not.toHaveBeenCalled();
@@ -728,8 +752,7 @@ test('album assistance preserves the draft while access is missing and only enab
     ],
   };
   await act(async () => renderer!.update(<App />));
-  expect(button('发送消息').props.disabled).toBe(false);
-  await act(async () => button('发送消息').props.onPress());
+  await act(async () => sendMessage());
   expect(mockSession.sendMessage).toHaveBeenLastCalledWith(
     butlerThread.id,
     draft,
@@ -737,6 +760,12 @@ test('album assistance preserves the draft while access is missing and only enab
     null,
     [{ kind: 'station-album', id: albumId, title: albumTitle }],
     { currentPage: 'second-floor.albums' },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
   );
 });
 
@@ -795,13 +824,12 @@ test.each(['cancel', 'grant'])(
     expect(chatComposer().props.contextRefs).toEqual(references);
     expect(chatComposer().props.assistSource).toEqual(source);
     expect(mockSession.sendMessage).not.toHaveBeenCalled();
-    expect(button('发送消息').props.disabled).toBe(decision === 'cancel');
     if (decision === 'cancel') {
-      await act(async () => chatComposer().props.onSend());
+      await act(async () => sendMessage());
       expect(mockSession.sendMessage).not.toHaveBeenCalled();
       expect(chatComposer().props.draft).toBe(draft);
     } else {
-      await act(async () => button('发送消息').props.onPress());
+      await act(async () => sendMessage());
       expect(mockSession.sendMessage).toHaveBeenLastCalledWith(
         butlerThread.id,
         draft,
@@ -809,6 +837,12 @@ test.each(['cancel', 'grant'])(
         null,
         references,
         source,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
       );
       act(() => root().findByType(ChatScreen).props.onBack());
       act(() =>

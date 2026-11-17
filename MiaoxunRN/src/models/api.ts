@@ -18,6 +18,36 @@ export type APIErrorEnvelope = {
   };
 };
 
+export type ChatAttachmentDTO = {
+  id: string;
+  kind: 'image' | 'file';
+  filename: string;
+  title: string;
+  mimeType: string | null;
+  byteSize: number;
+  durationMs: null;
+  downloadPath: string | null;
+  data: Record<string, never>;
+};
+
+export type CustomStickerDTO = {
+  id: string;
+  mimeType: 'image/png';
+  byteSize: number;
+  width: number;
+  height: number;
+  downloadPath: string;
+  createdAt?: string;
+};
+
+export type MessageStickerDTO = Pick<CustomStickerDTO, 'id'> &
+  Partial<
+    Pick<
+      CustomStickerDTO,
+      'mimeType' | 'byteSize' | 'width' | 'height' | 'downloadPath'
+    >
+  >;
+
 export type UserDTO = {
   id: string;
   loginName?: string | null;
@@ -145,6 +175,7 @@ export type ThreadDTO = {
   peerUserId?: string | null;
   peerAiId?: string | null;
   kind: string;
+  groupId?: string | null;
   pinned: boolean;
   muted?: boolean;
   lastContent: string;
@@ -159,6 +190,8 @@ export type MessageDTO = {
   senderName: string;
   content: string;
   metadata?: Record<string, unknown> & {
+    attachments?: ChatAttachmentDTO[];
+    sticker?: MessageStickerDTO;
     contentPreview?: import('./chatContentPreview').ContentPreviewRef;
     contentPreviewContext?: import('./chatContentPreview').ContentPreviewContext;
     contextRefs?: AIContextReference[];

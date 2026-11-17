@@ -40,6 +40,16 @@ function publicAttachments(value) {
 function publicMetadata(value, suppressAttachments = false, isAgent = false) {
   if (!record(value)) return {};
   const metadata = {};
+  if (!suppressAttachments && !isAgent && record(value.sticker)) {
+    const s = value.sticker;
+    if (/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(s.id || "") &&
+        ["image/jpeg", "image/png", "image/webp"].includes(s.mimeType) &&
+        Number.isInteger(s.byteSize) && s.byteSize > 0 && s.byteSize <= 2097152 &&
+        Number.isInteger(s.width) && s.width > 0 && s.width <= 512 &&
+        Number.isInteger(s.height) && s.height > 0 && s.height <= 512) {
+      metadata.sticker = { id:s.id, mimeType:s.mimeType, byteSize:s.byteSize, width:s.width, height:s.height, downloadPath:`/api/custom-stickers/${s.id}/content` };
+    }
+  }
   if (!suppressAttachments) {
     const attachments = publicAttachments(value.attachments);
     if (attachments?.length) metadata.attachments = attachments;

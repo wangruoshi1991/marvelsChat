@@ -8,15 +8,26 @@ import { xunV3Palette } from '../src/shared/xunPalette';
 let tree: Renderer.ReactTestRenderer | undefined;
 const changed = jest.fn();
 const send = jest.fn();
-const speech = jest.fn();
+const startLongSpeech = jest.fn();
+const finishLongSpeech = jest.fn();
 const focused = jest.fn();
+const assistant = jest.fn();
+const tool = jest.fn();
 
 function ControlledComposer({
   initialDraft,
   palette,
+  isSending = false,
+  quickCommands,
+  contextAccessWarning,
+  isRecognizingSpeech = false,
 }: {
   initialDraft: string;
   palette: Palette;
+  isSending?: boolean;
+  quickCommands?: string[];
+  contextAccessWarning?: string;
+  isRecognizingSpeech?: boolean;
 }) {
   const [draft, setDraft] = React.useState(initialDraft);
   return (
@@ -25,16 +36,21 @@ function ControlledComposer({
       language="zh"
       threadTitle="朋友"
       draft={draft}
-      isSending={false}
-      isRecognizingSpeech={false}
+      isSending={isSending}
+      isRecognizingSpeech={isRecognizingSpeech}
       replyTarget={null}
+      quickCommands={quickCommands}
+      contextAccessWarning={contextAccessWarning}
       onChangeDraft={value => {
         changed(value);
         setDraft(value);
       }}
       onClearReplyTarget={jest.fn()}
       onFocusInput={focused}
-      onRecognizeSpeech={speech}
+      onStartLongSpeech={startLongSpeech}
+      onFinishLongSpeech={finishLongSpeech}
+      onOpenAssistant={assistant}
+      onComposerTool={tool}
       onSend={send}
     />
   );
@@ -59,7 +75,7 @@ afterEach(async () => {
   jest.clearAllMocks();
 });
 
-test('a long wrapped paste can scroll to its caret before native size measurement catches up', async () => {
+test('native layout sizes wrapped text within the editor limits without pinning its height', async () => {
   await mount();
   const longText = '这是一段没有手动换行的长文字。'.repeat(80);
   act(() => input().props.onChangeText(longText));
@@ -67,28 +83,16 @@ test('a long wrapped paste can scroll to its caret before native size measuremen
   expect(input().props.multiline).toBe(true);
   expect(input().props.scrollEnabled).toBe(true);
   expect(input().props.selection).toBeUndefined();
-  act(() =>
-    input().props.onContentSizeChange({
-      nativeEvent: { contentSize: { height: 480 } },
-    }),
+  expect(StyleSheet.flatten(input().props.style)).toEqual(
+    expect.objectContaining({ minHeight: 44, maxHeight: 132 }),
   );
-  expect(StyleSheet.flatten(input().props.style).height).toBe(132);
-  expect(input().props.scrollEnabled).toBe(true);
+  expect(StyleSheet.flatten(input().props.style).height).toBeUndefined();
   act(() => input().props.onChangeText('两行\n文字'));
-  act(() =>
-    input().props.onContentSizeChange({
-      nativeEvent: { contentSize: { height: 64 } },
-    }),
-  );
-  expect(StyleSheet.flatten(input().props.style).height).toBe(64);
+  expect(input().props.value).toBe('两行\n文字');
+  expect(StyleSheet.flatten(input().props.style).height).toBeUndefined();
   act(() => input().props.onChangeText(''));
-  expect(StyleSheet.flatten(input().props.style).height).toBe(44);
-  act(() =>
-    input().props.onContentSizeChange({
-      nativeEvent: { contentSize: { height: 480 } },
-    }),
-  );
-  expect(StyleSheet.flatten(input().props.style).height).toBe(44);
+  expect(input().props.value).toBe('');
+  expect(StyleSheet.flatten(input().props.style).height).toBeUndefined();
   expect(send).not.toHaveBeenCalled();
 });
 
@@ -96,27 +100,263 @@ test.each([
   ['standard', palettes.light],
   ['xun', xunV3Palette(palettes.light)],
 ] as const)(
-  'the %s editor has its own full-width row and every visible action has a 44pt target',
+  'the %s main row reserves text width and every visible action has a 44pt target',
   async (_theme, palette) => {
     await mount('待编辑内容', palette);
     expect(
       StyleSheet.flatten(input().parent!.props.style).flexDirection,
     ).not.toBe('row');
+    expect(StyleSheet.flatten(input().parent!.props.style)).toEqual(
+      expect.objectContaining({ flex: 1, minWidth: 0 }),
+    );
     expect(StyleSheet.flatten(input().props.style).flex).not.toBe(1);
-    const actions = [
-      '妙猜猜',
-      '语音转文字',
-      '添加表情',
-      '更多功能',
-      '发送消息',
-    ];
+    const actions = ['妙猜猜', '切换语音输入', '添加表情', '发送消息'];
     for (const label of actions) {
       const style = StyleSheet.flatten(button(label).props.style);
-      expect(style.width ?? style.minWidth).toBeGreaterThanOrEqual(44);
       expect(style.minHeight).toBeGreaterThanOrEqual(44);
+      if (_theme === 'xun' && label !== '发送消息') {
+        expect(style.width ?? style.minWidth).toBe(
+          label === '妙猜猜' || label === '切换语音输入' ? 34 : 28,
+        );
+        expect(button(label).props.hitSlop).toBe(
+          label === '妙猜猜' || label === '切换语音输入' ? 5 : 8,
+        );
+      } else {
+        expect(style.width ?? style.minWidth).toBeGreaterThanOrEqual(44);
+      }
     }
   },
 );
+
+test('matches the reference single action row with the editor between its controls', async () => {
+  await mount('', xunV3Palette(palettes.light));
+  const row = tree!.root.findByProps({ testID: 'chat-composer-actions' });
+  expect(row.findByType(TextInput)).toBeDefined();
+  const labels = ['妙猜猜', '切换语音输入', '添加表情', '更多功能'];
+  for (const label of labels) {
+    expect(row.findByProps({ accessibilityLabel: label })).toBeDefined();
+  }
+  expect(row.findAllByProps({ accessibilityLabel: '发送消息' })).toHaveLength(
+    0,
+  );
+  expect(row.findAllByType(TextInput)).toHaveLength(1);
+  for (const label of labels) {
+    expect(
+      row.findAllByProps({ accessibilityLabel: label }).length,
+    ).toBeGreaterThan(0);
+  }
+  expect(
+    tree!.root.findAllByProps({ testID: 'chat-composer-input' }),
+  ).toHaveLength(0);
+});
+
+test('switches between text and hold-to-talk modes without losing the draft', async () => {
+  await mount('保留的草稿');
+  jest.spyOn(global, 'requestAnimationFrame').mockImplementation(callback => {
+    callback(0);
+    return 1;
+  });
+
+  act(() => button('切换语音输入').props.onPress());
+  expect(
+    tree!.root.findAllByProps({ accessibilityLabel: '消息输入框' }),
+  ).toHaveLength(0);
+  expect(button('按住说话')).toBeDefined();
+  expect(button('切换键盘输入')).toBeDefined();
+  expect(
+    tree!.root.findAllByProps({ accessibilityLabel: '切换语音输入' }),
+  ).toHaveLength(0);
+
+  act(() => button('切换键盘输入').props.onPress());
+  expect(input().props.value).toBe('保留的草稿');
+  expect(focused).toHaveBeenCalledTimes(1);
+  expect(button('切换语音输入')).toBeDefined();
+  expect(startLongSpeech).not.toHaveBeenCalled();
+  expect(finishLongSpeech).not.toHaveBeenCalled();
+});
+
+test('restores keyboard focus only after the text input is remounted', async () => {
+  await mount('保留的草稿');
+  let focusedBeforeInputMount = false;
+  jest.spyOn(global, 'requestAnimationFrame').mockImplementation(callback => {
+    if (tree!.root.findAllByType(TextInput).length === 0)
+      focusedBeforeInputMount = true;
+    callback(0);
+    return 1;
+  });
+
+  act(() => button('切换语音输入').props.onPress());
+  act(() => button('切换键盘输入').props.onPress());
+
+  expect(focusedBeforeInputMount).toBe(false);
+  expect(input().props.value).toBe('保留的草稿');
+});
+
+test('voice mode starts and finishes one hold-to-talk session', async () => {
+  await mount();
+  act(() => button('切换语音输入').props.onPress());
+  const talk = button('按住说话');
+  act(() => talk.props.onPressIn());
+  expect(startLongSpeech).toHaveBeenCalledTimes(1);
+  act(() => talk.props.onPressOut());
+  expect(finishLongSpeech).toHaveBeenCalledTimes(1);
+});
+
+test('recognizing speech disables both the mode switch and hold control', async () => {
+  await act(async () => {
+    tree = Renderer.create(
+      <ControlledComposer
+        initialDraft=""
+        palette={xunV3Palette(palettes.light)}
+        isRecognizingSpeech
+      />,
+    );
+  });
+  expect(button('切换语音输入').props.disabled).toBe(true);
+  act(() => button('切换语音输入').props.onPress());
+  expect(button('消息输入框')).toBeDefined();
+});
+
+test('keeps quick commands in their own visible row above the action row', async () => {
+  await act(async () => {
+    tree = Renderer.create(
+      <ControlledComposer
+        initialDraft=""
+        palette={xunV3Palette(palettes.light)}
+        quickCommands={['生成今日待办']}
+      />,
+    );
+  });
+  expect(
+    tree!.root.findByProps({ testID: 'chat-quick-commands' }),
+  ).toBeDefined();
+  const row = tree!.root.findByProps({ testID: 'chat-composer-actions' });
+  expect(row.findByType(TextInput)).toBeDefined();
+  expect(
+    tree!.root.findAllByProps({ accessibilityLabel: '发送消息' }),
+  ).toHaveLength(0);
+});
+
+test('preserves native Return newlines and sends multiline text only through the visible action', async () => {
+  await mount('第一段', xunV3Palette(palettes.light));
+  const editor = input();
+  expect(editor.props.returnKeyType).toBe('default');
+  expect(editor.props.submitBehavior).toBe('newline');
+  expect(editor.props.onSubmitEditing).toBeUndefined();
+  const multilineDraft = `第一段\n${'第二段长文'.repeat(80)}`;
+  await act(async () => editor.props.onChangeText(multilineDraft));
+  expect(input().props.value).toBe(multilineDraft);
+  expect(send).not.toHaveBeenCalled();
+  const row = tree!.root.findByProps({ testID: 'chat-composer-actions' });
+  expect(row.findAllByProps({ accessibilityLabel: '更多功能' })).toHaveLength(
+    0,
+  );
+  expect(row.findByProps({ accessibilityLabel: '添加表情' })).toBeDefined();
+  await act(async () => button('发送消息').props.onPress());
+  expect(send).toHaveBeenCalledTimes(1);
+});
+
+test('whitespace keeps More available without offering an empty send', async () => {
+  await mount(' \n\t ');
+  expect(button('更多功能')).toBeDefined();
+  expect(
+    tree!.root.findAllByProps({ accessibilityLabel: '发送消息' }),
+  ).toHaveLength(0);
+  act(() => button('更多功能').props.onPress());
+  expect(button('聊天扩展功能')).toBeDefined();
+  expect(send).not.toHaveBeenCalled();
+});
+
+test('an emoji-only draft gains a visible send action without reopening the keyboard', async () => {
+  await mount();
+  act(() => button('添加表情').props.onPress());
+  act(() => button('插入表情：微笑').props.onPress());
+  expect(input().props.value).toBe('😊');
+  expect(send).not.toHaveBeenCalled();
+  act(() => button('发送消息').props.onPress());
+  expect(send).toHaveBeenCalledTimes(1);
+});
+
+test('explicit sending closes an open tool panel after text is entered', async () => {
+  await mount();
+  act(() => button('更多功能').props.onPress());
+  act(() => input().props.onChangeText('编辑后的消息'));
+  expect(button('聊天扩展功能')).toBeDefined();
+  act(() => button('发送消息').props.onPress());
+  expect(
+    tree!.root.findAllByProps({ accessibilityLabel: '聊天扩展功能' }),
+  ).toHaveLength(0);
+  expect(send).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  {
+    name: 'duplicate sending',
+    draft: '',
+    sending: true,
+    warning: undefined,
+    busy: true,
+  },
+  {
+    name: 'unauthorized sending',
+    draft: '草稿',
+    sending: false,
+    warning: '请重新同意权限',
+    busy: false,
+  },
+])(
+  'blocks $name through the visible send action',
+  async ({ draft, sending, warning, busy }) => {
+    await act(async () => {
+      tree = Renderer.create(
+        <ControlledComposer
+          initialDraft={draft}
+          palette={xunV3Palette(palettes.light)}
+          isSending={sending}
+          contextAccessWarning={warning}
+        />,
+      );
+    });
+    expect(button('发送消息').props.disabled).toBe(true);
+    expect(button('发送消息').props.accessibilityState).toEqual({
+      disabled: true,
+      busy,
+    });
+    act(() => button('发送消息').props.onPress());
+    expect(send).not.toHaveBeenCalled();
+  },
+);
+
+test('spaces the integrated action row around the editor', async () => {
+  await mount('', xunV3Palette(palettes.light));
+  const actionsRow = tree!.root.findByProps({
+    testID: 'chat-composer-actions',
+  });
+  expect(StyleSheet.flatten(actionsRow.props.style)).toEqual(
+    expect.objectContaining({
+      alignItems: 'center',
+      gap: 0,
+      paddingHorizontal: 6,
+      paddingTop: 10,
+    }),
+  );
+});
+
+test('switches emoji categories and opens the custom sticker collection', async () => {
+  await mount();
+  act(() => button('添加表情').props.onPress());
+  const category = button('表情分类：情绪');
+  expect(category.props.accessibilityRole).toBe('tab');
+  act(() => category.props.onPress());
+  expect(button('插入表情：崇拜')).toBeDefined();
+  const custom = button('自定义表情');
+  expect(custom.props.accessibilityRole).toBe('tab');
+  act(() => custom.props.onPress());
+  expect(
+    tree!.root.findByProps({ testID: 'custom-sticker-panel' }),
+  ).toBeDefined();
+  expect(button('添加自定义表情')).toBeDefined();
+});
 
 test('opening and cancelling emoji selection preserves the draft and never sends', async () => {
   const dismiss = jest.spyOn(Keyboard, 'dismiss');
@@ -124,7 +364,9 @@ test('opening and cancelling emoji selection preserves the draft and never sends
   act(() => button('添加表情').props.onPress());
   expect(changed).not.toHaveBeenCalled();
   expect(input().props.value).toBe('');
-  expect(button('添加表情').props.accessibilityState.expanded).toBe(true);
+  expect(
+    tree!.root.findAllByProps({ accessibilityLabel: '聊天扩展功能' }),
+  ).toHaveLength(0);
   expect(button('表情选择')).toBeDefined();
   expect(dismiss).toHaveBeenCalledTimes(1);
   act(() => button('关闭表情选择').props.onPress());
@@ -133,7 +375,41 @@ test('opening and cancelling emoji selection preserves the draft and never sends
   ).toHaveLength(0);
   expect(changed).not.toHaveBeenCalled();
   expect(send).not.toHaveBeenCalled();
-  expect(speech).not.toHaveBeenCalled();
+});
+
+test('the fixed assistant action uses the existing local action and retains the draft', async () => {
+  await mount('保留这段文字');
+  act(() => button('妙猜猜').props.onPress());
+  expect(assistant).toHaveBeenCalledTimes(1);
+  expect(tool).not.toHaveBeenCalled();
+  expect(input().props.value).toBe('保留这段文字');
+  expect(send).not.toHaveBeenCalled();
+});
+
+test('an already open tray cannot dispatch tools or reopen emoji while sending', async () => {
+  await mount();
+  act(() => button('更多功能').props.onPress());
+  act(() => input().props.onChangeText('正在发送'));
+  await act(async () => {
+    tree!.update(
+      <ControlledComposer
+        initialDraft="正在发送"
+        palette={xunV3Palette(palettes.light)}
+        isSending
+      />,
+    );
+  });
+  expect(button('发送消息').props.disabled).toBe(true);
+  for (const label of ['添加表情', '妙猜猜', '添加相册']) {
+    expect(button(label).props.disabled).toBe(true);
+  }
+  expect(
+    tree!.root.findAllByProps({ accessibilityLabel: '表情选择' }),
+  ).toHaveLength(0);
+  expect(assistant).not.toHaveBeenCalled();
+  expect(tool).not.toHaveBeenCalled();
+  expect(send).not.toHaveBeenCalled();
+  expect(input().props.value).toBe('正在发送');
 });
 
 test('choosing an emoji replaces only the current selection and restores the caret after it', async () => {
@@ -166,7 +442,6 @@ test('choosing an emoji replaces only the current selection and restores the car
   expect(setSelection).toHaveBeenCalledWith(3, 3);
   expect(input().props.selection).toBeUndefined();
   expect(send).not.toHaveBeenCalled();
-  expect(speech).not.toHaveBeenCalled();
 });
 
 test('an emoji appends when no caret was reported and its delayed focus cannot override newer editing', async () => {

@@ -14,6 +14,7 @@ import { useProfileFlows } from '../features/profile/useProfileFlows';
 import { QRCodeSheet } from '../features/qr/QRCodeSheet';
 import { SearchScreen } from '../features/search/SearchScreen';
 import { DeleteAccountSheet } from '../features/settings/DeleteAccountSheet';
+import { GroupChatCreateScreen } from '../features/messages/GroupChatCreateScreen';
 import { SettingsScreen } from '../features/settings/SettingsScreen';
 import { StationLocationScreen } from '../features/station/StationLocationScreen';
 import { StationProfileEditScreen } from '../features/station/StationProfileEditScreen';
@@ -180,6 +181,28 @@ export function AppModals({
               onToast(
                 textFor(session.language, '账号已注销', 'Account deleted'),
               );
+            }}
+          />
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={modalRoute === 'create-group'}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView
+          style={[styles.safeArea, { backgroundColor: palette.background }]}
+        >
+          <GroupChatCreateScreen
+            token={session.token}
+            palette={resolveMessagePalette(palette)}
+            language={session.language}
+            onBack={onCloseModal}
+            onActionError={onToast}
+            onCreated={result => {
+              onCloseModal();
+              onOpenThread({ ...result.thread, messages: result.messages });
             }}
           />
         </SafeAreaView>

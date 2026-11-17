@@ -125,6 +125,181 @@ test('a failed quoted message retries with its original idempotency key and repl
   await ReactTestRenderer.act(async () => renderer!.unmount());
 });
 
+test('a failed attachment message retries the original ordered IDs and rejects changed IDs', async () => {
+  setAIContractSession('test-token', {});
+  sendMessage.mockReset();
+  sendMessage.mockRejectedValueOnce(new Error('response lost'));
+  sendMessage.mockResolvedValueOnce({ messages: [] });
+  const attachmentIds = ['first-attachment', 'second-attachment'];
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(<Harness />);
+  });
+
+  await ReactTestRenderer.act(async () => {
+    expect(
+      await actions.sendMessage(
+        'thread-1',
+        '',
+        undefined,
+        null,
+        [],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        attachmentIds,
+      ),
+    ).toBe(false);
+  });
+  const failed = currentThreads[0].messages[0];
+  expect(failed.metadata?.attachmentIds).toEqual(attachmentIds);
+  expect(failed.clientMessageId).toMatch(/^[0-9a-f-]{36}$/);
+
+  await ReactTestRenderer.act(async () => {
+    expect(
+      await actions.sendMessage(
+        'thread-1',
+        '',
+        failed.id,
+        null,
+        [],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        ['second-attachment', 'first-attachment'],
+      ),
+    ).toBe(false);
+  });
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+  await ReactTestRenderer.act(async () => {
+    expect(
+      await actions.sendMessage(
+        'thread-1',
+        '',
+        undefined,
+        null,
+        [],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        attachmentIds,
+      ),
+    ).toBe(false);
+  });
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+
+  await ReactTestRenderer.act(async () => {
+    expect(await actions.sendMessage('thread-1', '', failed.id)).toBe(true);
+  });
+  expect(sendMessage).toHaveBeenCalledTimes(2);
+  expect(sendMessage.mock.calls[0][5]).toBe(failed.clientMessageId);
+  expect(sendMessage.mock.calls[0][12]).toEqual(attachmentIds);
+  expect(sendMessage.mock.calls[1][5]).toBe(failed.clientMessageId);
+  expect(sendMessage.mock.calls[1][12]).toEqual(attachmentIds);
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
+test('sends a custom sticker as an ordinary chat message with fixed API arguments', async () => {
+  setAIContractSession('test-token', {});
+  sendMessage.mockReset();
+  sendMessage.mockResolvedValue({ messages: [] });
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(<Harness />);
+  });
+
+  const stickerId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  await ReactTestRenderer.act(async () => {
+    expect(
+      await actions.sendMessage(
+        'thread-1',
+        '',
+        undefined,
+        null,
+        [],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        stickerId,
+      ),
+    ).toBe(true);
+  });
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+  expect(sendMessage.mock.calls[0][1]).toBe('');
+  expect(sendMessage.mock.calls[0][13]).toBe(stickerId);
+  expect(sendMessage.mock.calls[0][5]).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  );
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
+test('duplicate in-flight sends for the same thread dispatch once', async () => {
+  setAIContractSession('test-token', {});
+  sendMessage.mockReset();
+  let resolveSend!: (value: { messages: never[] }) => void;
+  sendMessage.mockReturnValueOnce(
+    new Promise(resolve => {
+      resolveSend = resolve;
+    }),
+  );
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(<Harness />);
+  });
+
+  let first!: Promise<boolean>;
+  let second!: Promise<boolean>;
+  await ReactTestRenderer.act(async () => {
+    first = actions.sendMessage('thread-1', 'hello');
+    second = actions.sendMessage('thread-1', 'hello');
+    await Promise.resolve();
+  });
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+  resolveSend({ messages: [] });
+  await ReactTestRenderer.act(async () => {
+    await Promise.all([first, second]);
+  });
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
+test('Agent context cannot carry ordinary attachment IDs', async () => {
+  setAIContractSession('test-token', { aiTasks: 1 });
+  sendMessage.mockReset();
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(<Harness agentId="ui-agent" />);
+  });
+
+  await ReactTestRenderer.act(async () => {
+    expect(
+      await actions.sendMessage(
+        'thread-1',
+        'Please review',
+        undefined,
+        null,
+        [],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
+      ),
+    ).toBe(false);
+  });
+  expect(sendMessage).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
 test('a missing original failed message never falls back to a new execution key', async () => {
   setAIContractSession('test-token', {
     aiTasks: 1,

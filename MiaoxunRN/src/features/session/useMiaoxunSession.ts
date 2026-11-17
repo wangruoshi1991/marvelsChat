@@ -950,15 +950,14 @@ export function useMiaoxunSession() {
   );
 
   const retryRestoreSession = useCallback(async () => {
-    const savedToken = await tokenStore.read();
-    if (!savedToken) {
-      setRestoreStatus('signedOut');
-      setErrorMessage(null);
-      return;
-    }
     setIsBusy(true);
     setErrorMessage(null);
     try {
+      const savedToken = await tokenStore.read();
+      if (!savedToken) {
+        setRestoreStatus('signedOut');
+        return;
+      }
       const bootstrap = await apiClient.bootstrap(savedToken);
       updateToken(savedToken);
       applyBootstrap(bootstrap);

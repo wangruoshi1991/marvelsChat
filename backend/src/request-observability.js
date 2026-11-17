@@ -57,6 +57,9 @@ export function createSafeErrorResponse(error, {
   if (error?.code === '23503' && error?.constraint === 'chat_attachment_visible_reference') {
     return { status: 410, body: { error: { message: '待发送附件已过期或不可用，请重新选择后发送。', details: { code: 'CHAT_ATTACHMENT_EXPIRED' }, requestId } } };
   }
+  if (error?.code === "23503" && error?.constraint === "custom_sticker_visible_reference") {
+    return { status:410, body:{ error:{message:"表情已删除或不可用，请刷新收藏后重试。",details:{code:"CUSTOM_STICKER_UNAVAILABLE"},requestId} } };
+  }
   const isValidationError = error instanceof ZodError;
   const isInvalidJson = error?.type === "entity.parse.failed";
   const isMissingDatabase = ["42P01", "3D000"].includes(error?.code);

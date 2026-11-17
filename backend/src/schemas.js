@@ -55,9 +55,10 @@ export const accountDeletionSchema = z.object({
 });
 
 export const messageSchema = z.object({
-  content: z.string().trim().min(1).max(2000),
+  content: z.string().trim().max(2000),
   contextRefs: aiContextReferencesSchema,
   attachmentIds: z.array(z.string().uuid()).max(6).optional().default([]),
+  stickerId: z.string().uuid().optional(),
   butlerContextReset: z.boolean().optional(),
   agentContextReset: z.boolean().optional(),
   workspaceContext: workspaceContextSchema.optional(),
@@ -78,6 +79,13 @@ export const messageSchema = z.object({
     enabledAgentIds: z.array(z.string().trim().min(1).max(80)).max(64).optional(),
   }).optional(),
 }).strict().superRefine((value, context) => {
+  if (value.stickerId && (!value.clientMessageId || value.content || value.attachmentIds.length || value.contextRefs.length || value.clientContext || value.workspaceContext || value.contentPreviewContext || value.replyToMessageId || value.agentContextReset !== undefined || value.butlerContextReset !== undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["stickerId"], message: "Sticker requires a stable client message ID and cannot combine text, attachments or execution contexts" });
+  }
+  if (!value.content && !value.attachmentIds.length && !value.stickerId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["content"],
+      message: "Message text or at least one attachment is required" });
+  }
   if (value.agentContextReset !== undefined && value.butlerContextReset !== undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["agentContextReset"],
       message: "Specialist and butler context resets cannot be combined" });

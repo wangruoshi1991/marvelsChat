@@ -52,3 +52,29 @@ test('tracks the bottom threshold, sending, and a newly selected contribution', 
   expect(current.shouldFollow()).toBe(true);
   act(() => tree.unmount());
 });
+
+test('a late first viewport cannot retain a consumed layout snapshot during later browsing', () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  const event = (y: number) =>
+    ({
+      nativeEvent: {
+        contentOffset: { y },
+        contentSize: { height: 458.667 },
+        layoutMeasurement: { height: 553 },
+      },
+    } as NativeSyntheticEvent<NativeScrollEvent>);
+  act(() => {
+    tree = TestRenderer.create(<Harness scope="chat" />);
+  });
+  act(() => {
+    current.measureContent(458.667);
+    current.followLayout(569);
+    current.prepareLayoutChange();
+    current.followLayout(268);
+    current.onScroll(event(0));
+    current.onScroll(event(190.667));
+    current.onScroll(event(0));
+  });
+  expect(current.shouldFollow()).toBe(false);
+  act(() => tree.unmount());
+});

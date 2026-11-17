@@ -16,6 +16,7 @@ import {
 } from '../../shared/workspaceUi';
 import { Language } from '../session/sessionTypes';
 import { taskPhaseLabel, taskStatusLabel } from './taskPresentation';
+import { PrivateReferenceImage } from '../messages/PrivateReferenceImage';
 
 type Appearance = { palette: Palette; language: Language };
 
@@ -24,9 +25,13 @@ export function ContextReference({
   onRemove,
   palette,
   language,
+  token,
+  onPressReference,
 }: Appearance & {
   references: AIContextReference[];
   onRemove?: (index: number) => void;
+  token?: string;
+  onPressReference?: (reference: AIContextReference) => void;
 }) {
   const names: Record<AIContextReference['kind'], [string, string]> = {
     'chat-message': ['消息', 'Message'],
@@ -41,11 +46,38 @@ export function ContextReference({
       {references.map((reference, index) => (
         <View
           key={`${reference.kind}:${reference.id}`}
+          testID={
+            token && reference.kind === 'station-photo'
+              ? 'context-reference-photo'
+              : undefined
+          }
+          accessibilityLabel={
+            token && reference.kind === 'station-photo'
+              ? `${textFor(language, '素材', 'Media')} · ${
+                  reference.title ||
+                  textFor(language, '已选择的内容', 'Selected content')
+                }`
+              : undefined
+          }
           style={[
             s.reference,
+            token && reference.kind === 'station-photo' && s.referencePhoto,
             { backgroundColor: palette.soft, borderColor: palette.border },
           ]}
         >
+          {token && reference.kind === 'station-photo' ? (
+            <PrivateReferenceImage
+              token={token}
+              mediaAssetId={reference.id}
+              label={reference.title || textFor(language, '素材', 'Media')}
+              palette={palette}
+              language={language}
+              style={s.referenceThumbnail}
+              onPress={
+                onPressReference ? () => onPressReference(reference) : undefined
+              }
+            />
+          ) : null}
           <Text
             numberOfLines={2}
             style={[s.body, s.referenceText, { color: palette.text }]}
@@ -229,12 +261,14 @@ export function AITaskCard({
   task,
   palette,
   language,
+  token,
   busy = false,
   canConfirm = false,
   onDecision,
   renderArtifact,
 }: Appearance & {
   task: AITaskDTO;
+  token?: string;
   busy?: boolean;
   canConfirm?: boolean;
   onDecision: (operation: AITaskOperation) => void;
@@ -261,6 +295,7 @@ export function AITaskCard({
         references={task.contextRefs}
         palette={palette}
         language={language}
+        token={token}
       />
       <Confirmation
         task={task}
@@ -324,6 +359,8 @@ const s = StyleSheet.create({
     paddingLeft: workspaceTokens.space.md,
     maxWidth: '100%',
   },
+  referencePhoto: { paddingLeft: 0, overflow: 'hidden' },
+  referenceThumbnail: { width: 56, height: 56 },
   actions: {
     flexDirection: 'row',
     flexWrap: 'wrap',

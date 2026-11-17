@@ -210,7 +210,9 @@ export function SecondFloorScreen({
     'secondFloor',
     'backAction',
   );
-  const exitGestureDistance = exitGesture?.distance ?? 55;
+  const configuredExitDistance = exitGesture?.distance ?? 88;
+  const exitGestureDistance = Math.max(72, configuredExitDistance);
+  const exitVelocityDistance = Math.max(48, exitGestureDistance * 0.6);
   const exitGestureDirection = exitGesture?.direction ?? 'up';
   const visibleTools = useMemo(() => {
     const available = tools.filter(tool =>
@@ -584,7 +586,7 @@ export function SecondFloorScreen({
               exitGestureDirection === 'up' &&
               pageStartAtBottom.current &&
               (swipeDirectionMatches('up', dx, dy, exitGestureDistance) ||
-                velocityMatches);
+                (Math.abs(dy) >= exitVelocityDistance && velocityMatches));
             clearPageScrollState();
             if (shouldClose) closeFloor();
           },
@@ -610,6 +612,7 @@ export function SecondFloorScreen({
     exitGestureDirection,
     xun,
     exitGestureDistance,
+    exitVelocityDistance,
   ]);
   const selectTool = (key: SecondFloorTool) => {
     if (!active || pending.current) return;
@@ -655,7 +658,7 @@ export function SecondFloorScreen({
       : touch.movement;
     const extent = horizontal ? width : height;
     exitProgress.setValue(
-      Math.max(0, Math.min(0.25, touch.base + (directed * 0.72) / extent)),
+      Math.max(0, Math.min(0.4, touch.base + (directed * 0.9) / extent)),
     );
   };
   const responder = useStablePanResponder(
@@ -737,6 +740,12 @@ export function SecondFloorScreen({
               gesture.dy,
               10,
             ) &&
+              Math.abs(
+                exitGesture.direction === 'left' ||
+                  exitGesture.direction === 'right'
+                  ? gesture.dx
+                  : gesture.dy,
+              ) >= exitVelocityDistance &&
               swipeVelocityMatches(
                 exitGesture.direction,
                 gesture.vx,

@@ -1,6 +1,8 @@
 # 2026-11-13 漫画聊天真机反馈续修
 
-本轮只修复本地源码和验证，不提交、推送、部署、后台发布、上传新包、代用户授权或调用付费模型。保留进入本轮时已有的 iOS Build63 和发布文档修改。正式工作区为 `admin-lifecycle-release/marvelsChat`，HEAD 仍为 `79e91dd`。
+第一阶段仅修复本地源码并验证，保留原有iOS Build63和发布文档修改，正式工作区为 `admin-lifecycle-release/marvelsChat`，当时HEAD为 `79e91dd`。随后获用户明确授权，已精确本地提交 `15e7269`、完成后端60→60更新及Build64上传，详见后文；未推送、重新发布Agent、代用户授权或调用付费模型。Build64当前待本人处理出口合规及分发，真机效果仍待验收。
+
+后续用户要求实际模拟器输入，已在固定iPhone17原位构建、安装并完成验证，具体见[键盘模拟器实测与修复](2026-11-13-chat-keyboard-simulator.md)。实测进一步发现全局layout animation导致最新回复遮挡、固定输入高度阻止自动换行增高，已以局部动画/真实视口偏移和原生自然增高替换本记录初修方案；新修复未进入Build64。该后续轮次另获一次管家文字发送授权并收到真实回复。本记录下方“Shutdown/没有模拟器视觉证据”及“未付费调用”为第一阶段历史边界，不能覆盖后续实测结果，也不表示漫画真实生成已经通过。
 
 ## 用户反馈与已定位原因
 
@@ -48,3 +50,29 @@
 - RN测试：`__tests__/assistContextFlow.test.tsx`、`butlerClarification.test.ts`、`chatComposerEditing.test.tsx`、`chatContentActions.test.tsx`、`comicSourceAndDetail.test.tsx`、`myComicsScreen.test.tsx`、`workspaceContributionNotice.test.tsx`。
 - 文档：本记录、`docs/handoffs/CURRENT.md`、`docs/README.md`、`docs/agent-workspace-architecture.md`、`docs/conversational-comic.md`。
 - 本轮进入时已修改的 `MiaoxunRN/ios/MiaoxunRN.xcodeproj/project.pbxproj` 和 `docs/reviews/2026-11-13-conversational-comic-release-preflight.md` 保留，本轮未再次编辑。`docs/README.md` 与 CURRENT 在保留原改动的基础上补本轮状态。
+
+## 获授权后的精确提交、制品与 Build64
+
+后续用户回复“可以”允许配套后端和新测试包更新；正式打包器要求clean committed HEAD，而用户原要求未经要求不提交，因此对具体30文件清单另行询问。用户明确批准“允许精确本地提交，不推送”。批准清单SHA256为 `8782b559bc95a0667d6f82ab16bf084090b2d96c24e387514c3612e0a86d9990`；提交前核对旧HEAD、原空暂存区、路径集合及全部文件字节，再精确提交 `15e72691b02dead20777b77b00f3846adc48d55d`，tree `a5959a147214d37386513637d29a1b7887a4e0a1`、父 `79e91dd`。30个提交blob全部匹配，提交与打包时工作树干净，未推送。
+
+正式 `scripts/prepare-runtime-release.mjs` 退出0，生成 `comic-chat-feedback-20261113-15e7269`，306项runtime文件；tar SHA256 `b255a4aad288ab4c2f575e2c98874359837f55df3debca000db896a84a561a0a`、manifest SHA256 `e5c1e28df7e1c5f5fe2a879b78cdb885534ea6f176d1ba110b7e0cefc7828789`。独立核对tar安全、完整集合和每项字节通过；对保存的正式79e91dd基线只有两份Backend源码变化，其余304项不变，无增删、迁移、声明、权限、依赖或配置变化。制品保存在仓库外本轮目录 `runtime-artifact/`，独立审查在 `frozen-candidate-review-20261113T050631Z/`。
+
+正常已登录App Store Connect页面实际展开版本及上传区后，确认最高为63、正在测试，最新上传63已完成，随后选择64。Build64命令参数覆盖 `CURRENT_PROJECT_VERSION=64`，没有再改源码中Build63；Release archive使用正式API、Bundle和Team。归档退出0，包内1.0(64)、arm64、codesign deep strict与主App dSYM匹配；507项RN/共享/校验输入在构建期间不变且与新提交blob一致。Metro生成源重新编译Hermes与归档内JS逐字节匹配，并确认不同于Build63。
+
+通过正常Xcode Organizer的App Store Connect分发上传成功：最终 `Uploaded to Apple`、`Submission Status: Uploaded`、`Build Number: 64`。上传仍有React、ReactNativeDependencies和hermesvm三项缺匹配dSYM警告，未声称无警告；本地归档Development签名不作为分发签名证明，上传使用Organizer正常分发流程。证据为 `build64/archive-verification.json`、`source-commit-binding.json`、`upload-observation.json`、`uploaded-to-apple.png` 与 `upload-warnings.png`。
+
+上传后刷新正常TestFlight页面，实际看到Build64“缺少出口合规证明”、群组栏为空，构建详情链接为 `testflight/ios/4b29d054-e85f-4810-86f5-76add5027a2f`；只读观察在 `build64/testflight-observation.json`。未填写出口合规、改变测试组或发送测试通知；可安装性与真机交互仍待用户后续处理与验证。后续本节和CURRENT更新为打包后文档，不在上述冻结提交或runtime内。此前测试日志能证明实际通过及文件时间一致，未记录测试前source hash，不将其描述为密码学字节绑定证据。
+
+## 获授权后的生产60→60更新
+
+新部署工具独立绑定旧79e91dd与新15e7269，不导入或执行原058→060部署器，无迁移执行入口。只允许306文件精确集合、两份源码delta、60项相同SQL，固定tar/manifest/source及registry/product/catalog/用户授权摘要；异常恢复只在开流前使用同schema旧runtime，保留当前生产数据库和存储，绝不自动恢复生产数据库。独立审查指出的合法但不同来源绑定缺口已补：每个入口包括执行回执加载均要求与工具包内冻结binding对象完全一致。25项本地安全fixture独立通过，包含成功切换、排空拒绝、精确绑定、开流前恢复与开流后失败维持维护。六工具清单SHA256 `7cd9a2097d3b63001bc79fe265c104b0026a377c6d0e5ae2910d98e5fa8bd244`。
+
+通过正常SSH/SCP仅运输正式tar与六份工具/绑定清单至本项目受限准备目录；远端hash、root归属与0600文件/0700目录核验通过。新鲜只读plan确认旧306项与60账本全部匹配，所有active/passive队列、专业Agent在途消息与pending内容预览为0，既有六条媒体费用unknown摘要保持。API/双Worker/备份timer、配置hash与共享路由均符合冻结基线，再执行已获授权的部署。
+
+维护窗口内先准备独立候选、按原lockfile安装生产依赖、字节不变复制当前env，并以实际服务用户验证导入；仅本项目预期Nginx locations临时503，共享路由保持。排空并停止本项目三个服务与备份timer，确认无其他DB连接/预备事务后制作新停写备份。备份恢复到Unix socket隔离PG18核验：全部表摘要、序列、角色/成员、元数据及逻辑约束全部一致，60项迁移，隔离库已停止。存储checksum复制通过，生产DB冻结快照在切换前保持不变。
+
+原子切换 `app` 到 `/opt/projects/marvels-chat/releases/comic-chat-feedback-20261113-15e7269/runtime`，启动原API/双Worker。核对真实进程cwd、服务无重启、两次推进心跳与Worker当前子进程轮询、ready和60账本、306项hash、配置/权限/产品/目录及队列摘要后到 `awaiting_open`。root读取恢复与候选验证回执通过，再调用显式open重复验证并恢复原Nginx字节、移除维护、恢复备份timer；命令退出0，最终 `traffic_opened`。公有health/ready/admin及共享路由检查通过。没有执行迁移、改产品、代用户授权、提交模型任务或生产数据库恢复。
+
+执行日志为仓库外 `production-plan.json`、`production-deploy.log`、`production-open.log`；脱敏回执在 `production-execution/`，服务器完整受限证据在本项目 `backups/comic-chat-feedback-20261113-15e7269-execution/`，数据库备份保留相邻同名目录。这个结果仅证明新runtime已部署并通过运维检查；旧失效消息应使用明确“编辑为新消息”入口，Build64安装后的新消息、键盘、历史成果折叠和作品布局仍待真机复验，不将空队列/health视为真实模型验收。
+
+开流后另一代理独立只读终验PASS：实际app指向15e7269，306项线上hash及精确两源码delta、60项账本、API/双Worker真实cwd与0重启、当前AI子进程两次轮询及AI/media数据库心跳推进、timer active/waiting全部通过。全部active/passive、专业Agent在途与预览仍0，六条历史unknown摘要及registry/release/product/consent/publiccatalog指纹不变；原Nginx字节/元数据、env字节/权限不变。health/ready/admin200，共享路由 `/`200、`/suanming/`401；公开9项包含漫画0.1.6和UI-Agent0.1.0，本机到公网HTTPS另采health/ready/agents200。新恢复checks全true、隔离cluster已停。证据新建在 `production-execution/independent-post-open-20261113T052309Z/`，未覆盖维护前回执；`report.json` SHA256 `17a5ab61ae85918615355e49ea3362d6a0f5788e87af03c9f089d83365ae16f9`。

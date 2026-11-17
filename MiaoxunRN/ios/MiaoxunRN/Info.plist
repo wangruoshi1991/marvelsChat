@@ -45,6 +45,8 @@
 	<string>用于将任务需求和聊天语音识别为可编辑的文字草稿，确认后才发送。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>用于从相册选择照片，添加到妙讯小站相册或创建3D个人形象。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>用于将用户明确选择保存的漫画图片写入系统相册。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>用于将任务需求和聊天语音识别为可编辑的文字草稿，确认后才发送。</string>
 	<key>RCTNewArchEnabled</key>

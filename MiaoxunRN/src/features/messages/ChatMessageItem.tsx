@@ -1,6 +1,7 @@
 import { Artifact, ContextReference } from '../ai/AIInteraction';
+import type { AIContextReference } from '../../models/aiTask';
 import React, { useRef } from 'react';
-import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { Bot, Copy, ExternalLink, LayoutGrid } from 'lucide-react-native';
 
@@ -38,6 +39,12 @@ import { chatLayoutStyles } from './chatLayoutStyles';
 import { AlbumAssistantResults } from './AlbumAssistantResults';
 import { agentReplyPresentation } from './agentReplyPresentation';
 import { ChatMessageText } from './ChatMessageText';
+import { buildApiUrl } from '../../services/api/http';
+import {
+  ChatMessageAttachments,
+  ChatMessageAttachmentsHandle,
+  ChatMessageAttachmentAction,
+} from './ChatMessageAttachments';
 import { ContributionDiscussionReply } from './ContributionDiscussionReply';
 import { UIPreferenceChatCard } from './UIPreferenceChatCard';
 import {
@@ -61,11 +68,15 @@ export function ChatMessageItem({
   onOpenMessageMenu,
   onRetrySend,
   onOpenAgentAccess,
+  onOpenContextReference,
   onOpenWorkspace,
   onRestoreWorkspaceContext,
   onEditWorkspaceDiscussion,
   onEditAgentMessage,
   onActionMessage,
+  attachmentAction,
+  onAttachmentActionConsumed,
+  attachmentRef,
   onConfirmUIPreferences,
   contentPreviewCard,
 }: {
@@ -89,6 +100,7 @@ export function ChatMessageItem({
   ) => void;
   onRetrySend: (message: ChatMessage) => void;
   onOpenAgentAccess?: () => void;
+  onOpenContextReference?: (reference: AIContextReference) => void;
   onOpenWorkspace?: (
     workspace: AgentWorkspace,
     draft?: WorkspaceContinuationDraft,
@@ -97,6 +109,9 @@ export function ChatMessageItem({
   onEditWorkspaceDiscussion?: (message: ChatMessage) => void;
   onEditAgentMessage?: (message: ChatMessage) => void;
   onActionMessage: (message: string) => void;
+  attachmentAction?: ChatMessageAttachmentAction;
+  onAttachmentActionConsumed?: (action: ChatMessageAttachmentAction) => void;
+  attachmentRef?: React.Ref<ChatMessageAttachmentsHandle>;
   onConfirmUIPreferences?: (
     id: string,
     baseRevision: number,
@@ -108,6 +123,8 @@ export function ChatMessageItem({
     'AI_AGENT_VERSION_CHANGED',
     'CHAT_CONTENT_AUTHORITY_CHANGED',
   ].includes(item.localFailure?.code || '');
+  const contextLimitReached =
+    item.localFailure?.code === 'SPECIALIST_CONTEXT_LIMIT';
   const workspaceId = messageWorkspaceId(item, thread.agentId, thread.id);
   const discussionContext =
     (thread.agentId === 'miaoxun-butler' ||
@@ -267,6 +284,22 @@ export function ChatMessageItem({
     );
   }
 
+  const messageAttachments =
+    !item.deletedAt && Array.isArray(item.metadata?.attachments)
+      ? item.metadata.attachments
+      : [];
+  const sticker =
+    token &&
+    !item.deletedAt &&
+    !item.recalledAt &&
+    !item.localStatus &&
+    item.metadata?.sticker &&
+    typeof item.metadata.sticker.id === 'string' &&
+    item.metadata.sticker.downloadPath ===
+      `/api/custom-stickers/${item.metadata.sticker.id}/content`
+      ? item.metadata.sticker
+      : null;
+
   const xunTheme = isXunPalette(palette);
   const cardBackground = isDarkPalette
     ? isMine
@@ -360,6 +393,8 @@ export function ChatMessageItem({
             references={item.metadata?.contextRefs || []}
             palette={palette}
             language={language}
+            token={token}
+            onPressReference={onOpenContextReference}
           />
           {protectedDiscussion && token ? (
             <ContributionDiscussionReply
@@ -369,6 +404,22 @@ export function ChatMessageItem({
               messageId={item.id}
               palette={palette}
               language={language}
+            />
+          ) : sticker ? (
+            <Image
+              testID="chat-message-sticker"
+              accessibilityLabel={textFor(
+                language,
+                '自定义表情',
+                'Custom sticker',
+              )}
+              accessibilityIgnoresInvertColors
+              source={{
+                uri: buildApiUrl(sticker.downloadPath!),
+                headers: { Authorization: `Bearer ${token}` },
+              }}
+              resizeMode="contain"
+              style={stickerStyles.image}
             />
           ) : (
             <ChatMessageText
@@ -384,6 +435,18 @@ export function ChatMessageItem({
               {presentedMessageContent}
             </ChatMessageText>
           )}
+          {token && messageAttachments.length ? (
+            <ChatMessageAttachments
+              ref={attachmentRef}
+              attachments={messageAttachments}
+              token={token}
+              palette={palette}
+              language={language}
+              action={attachmentAction}
+              onActionConsumed={onAttachmentActionConsumed}
+              onActionMessage={onActionMessage}
+            />
+          ) : null}
         </AIAssistGestureSurface>
       </View>
       {token && uiPreviewId && onConfirmUIPreferences ? (
@@ -536,6 +599,36 @@ export function ChatMessageItem({
                     </Pressable>
                   ) : null}
                 </View>
+              ) : contextLimitReached ? (
+                <View style={failureStyles.content}>
+                  <Text style={{ color: palette.secondaryText }}>
+                    {textFor(
+                      language,
+                      '当前会话上下文已达到上限。本条消息未重试；请从成果卡引用摘要后继续，或移除引用开始新创作。',
+                      'This conversation has reached its context limit. The message was not retried. Continue from a result summary or remove the reference to start a new creation.',
+                    )}
+                  </Text>
+                  {onEditAgentMessage ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={textFor(
+                        language,
+                        '整理为新消息',
+                        'Edit as a new message',
+                      )}
+                      onPress={() => onEditAgentMessage(item)}
+                      style={failureStyles.action}
+                    >
+                      <Text style={{ color: palette.text }}>
+                        {textFor(
+                          language,
+                          '整理为新消息',
+                          'Edit as a new message',
+                        )}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               ) : onOpenAgentAccess &&
                 ['AI_CONTEXT_SCOPE_REQUIRED', 'AI_ACCESS_REVOKED'].includes(
                   item.localFailure?.code || '',
@@ -649,6 +742,10 @@ export function ChatMessageItem({
 const failureStyles = StyleSheet.create({
   content: { flexShrink: 1, gap: 4 },
   action: { minHeight: 44, justifyContent: 'center' },
+});
+
+const stickerStyles = StyleSheet.create({
+  image: { height: 92, width: 92 },
 });
 
 const xunStyles = StyleSheet.create({

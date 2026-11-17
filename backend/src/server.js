@@ -26,6 +26,7 @@ import { registerAvatar3dAppRoutes } from "./routes/avatar-3d-app-routes.js";
 import { registerAvatar3dRoutes } from "./routes/avatar-3d-routes.js";
 import { registerEventRoutes } from "./routes/event-routes.js";
 import { registerMessageRoutes } from "./routes/message-routes.js";
+import { registerCustomStickerRoutes } from "./routes/custom-sticker-routes.js";
 import { registerChatAttachmentRoutes } from "./routes/chat-attachment-routes.js";
 import { registerNotificationRoutes } from "./routes/notification-routes.js";
 import { registerSocialRoutes } from "./routes/social-routes.js";
@@ -123,6 +124,7 @@ registerMessageRoutes(app, {
 });
 
 registerChatAttachmentRoutes(app, { authenticate, asyncHandler });
+registerCustomStickerRoutes(app, { authenticate, asyncHandler });
 registerGroupChatRoutes(app, { authenticate, asyncHandler, sendRealtimeToUser });
 
 registerStationRoutes(app, { authenticate, asyncHandler });

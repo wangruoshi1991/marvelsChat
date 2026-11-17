@@ -792,6 +792,7 @@ function WorkspaceScreen({
                 references={workspace.contextRefs}
                 palette={colors}
                 language={language}
+                token={token}
               />
               {workspace.origin ? (
                 <View style={s.origin}>

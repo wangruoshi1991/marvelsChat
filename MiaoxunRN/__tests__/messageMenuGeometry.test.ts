@@ -22,7 +22,7 @@ test('menu opens below a bottom message without covering its sender row', () => 
   );
 
   expect(position.arrowPlacement).toBe('top');
-  expect(position.y).toBe(328);
+  expect(position.y).toBe(320);
   expect(position.y - 7).toBeGreaterThan(message.y - frame.y + message.height);
 });
 
@@ -37,7 +37,7 @@ test('menu opens above a top message and remains inside the message area', () =>
   );
 
   expect(position.arrowPlacement).toBe('bottom');
-  expect(position.y).toBe(28);
+  expect(position.y).toBe(36);
   expect(position.y + 56 + 7).toBeLessThanOrEqual(message.y - frame.y);
 });
 

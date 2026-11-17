@@ -1,6 +1,11 @@
 import type { AIContextReference } from '../../models/aiTask';
 import type { AssistMessageSource } from '../assist/assistMessageSource';
-import { RelationshipProfileDTO, ThreadDTO } from '../../models/api';
+import {
+  ChatAttachmentDTO,
+  MessageStickerDTO,
+  RelationshipProfileDTO,
+  ThreadDTO,
+} from '../../models/api';
 
 export type Language = 'zh' | 'en';
 
@@ -11,6 +16,9 @@ export type ChatMessage = {
   senderName: string;
   content: string;
   metadata?: Record<string, unknown> & {
+    attachments?: ChatAttachmentDTO[];
+    attachmentIds?: string[];
+    sticker?: MessageStickerDTO;
     contentPreview?: import('../../models/chatContentPreview').ContentPreviewRef;
     contentPreviewContext?: import('../../models/chatContentPreview').ContentPreviewContext;
     contextRefs?: AIContextReference[];

@@ -17,7 +17,11 @@ import {
 } from '../../shared/workspaceUi';
 import { Language } from '../session/sessionTypes';
 import { useComicRenderTasks } from '../station/useComicRenderTasks';
-import { ComicFrameGrid, comicTaskStatus } from './ComicFrameGrid';
+import {
+  ComicFrameGrid,
+  ComicImageViewer,
+  comicTaskStatus,
+} from './ComicFrameGrid';
 
 export function ComicDetailScreen({
   token,
@@ -27,6 +31,7 @@ export function ComicDetailScreen({
   language,
   onBack,
   onPublish,
+  onSave,
 }: {
   token: string;
   comicId?: string;
@@ -35,12 +40,14 @@ export function ComicDetailScreen({
   language: Language;
   onBack: () => void;
   onPublish: (draft: ComicPublishDraft) => void;
+  onSave?: (frameIndex: number, mediaAssetId: string) => Promise<void> | void;
 }) {
   const [detail, setDetail] = useState<ComicDetail>();
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [showStoryboard, setShowStoryboard] = useState(false);
-  const [largeFrames, setLargeFrames] = useState(false);
+  const [largeFrames, setLargeFrames] = useState(true);
+  const [viewerFrame, setViewerFrame] = useState<number | null>(null);
   const lifecycle = useRef(0);
   const [foreground, setForeground] = useState(
     AppState.currentState !== 'background' &&
@@ -60,7 +67,8 @@ export function ComicDetailScreen({
   scopeRef.current = scope;
   useEffect(() => {
     setShowStoryboard(false);
-    setLargeFrames(false);
+    setLargeFrames(true);
+    setViewerFrame(null);
   }, [scope]);
   const render = useComicRenderTasks(comicId ? token : '', comicId || '');
   useEffect(() => {
@@ -200,8 +208,8 @@ export function ComicDetailScreen({
                       palette={palette}
                       label={
                         largeFrames
-                          ? t('收起画面', 'Compact view')
-                          : t('放大画面', 'Enlarge images')
+                          ? t('紧凑网格', 'Compact grid')
+                          : t('放大网格', 'Large grid')
                       }
                       variant="ghost"
                       onPress={() => setLargeFrames(value => !value)}
@@ -231,9 +239,7 @@ export function ComicDetailScreen({
                     palette={palette}
                     language={language}
                     large={largeFrames}
-                    onOpen={
-                      largeFrames ? undefined : () => setLargeFrames(true)
-                    }
+                    onOpen={index => setViewerFrame(index)}
                   />
                   {render.error ? (
                     <Text
@@ -382,6 +388,19 @@ export function ComicDetailScreen({
             </Text>
           ) : null}
         </ScrollView>
+      ) : null}
+      {frames.length ? (
+        <ComicImageViewer
+          visible={viewerFrame !== null}
+          token={token}
+          count={frames.length}
+          task={task}
+          initialIndex={viewerFrame || 1}
+          palette={palette}
+          language={language}
+          onClose={() => setViewerFrame(null)}
+          onSave={onSave}
+        />
       ) : null}
     </View>
   );

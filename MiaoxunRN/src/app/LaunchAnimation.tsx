@@ -93,6 +93,13 @@ export function LaunchAnimation({ palette, language }: LaunchAnimationProps) {
           </Animated.Text>
         ))}
       </View>
+      <Text style={[styles.launchIdentity, { color: palette.text }]}>
+        {textFor(
+          language,
+          '妙讯，与你一起成长的数字身份',
+          'Miaoxun, your digital identity growing with you',
+        )}
+      </Text>
       <Text style={[styles.launchCaption, { color: palette.secondaryText }]}>
         {textFor(
           language,

@@ -40,6 +40,7 @@ import {
   buildButlerWorkspaceGoal,
 } from "../butler-dispatch.js";
 import { publicMessage } from "../public-message.js";
+import { resolveCustomStickerForMessage } from "../custom-sticker-service.js";
 import { resolveChatAttachmentsForMessage } from "../chat-attachment-service.js";
 import { sendGroupMessage } from "../group-chat-repository.js";
 import { uiPreferenceService } from "../ui-preference-service.js";
@@ -359,6 +360,14 @@ export function registerMessageRoutes(
         getOnlineUserIds(),
       );
       if (!thread) throw new HttpError(404, "Thread not found");
+      if (thread.agentId && body.stickerId) {
+        throw new HttpError(400, "自定义表情仅支持普通聊天。", { code: "CUSTOM_STICKER_AGENT_UNSUPPORTED" });
+      }
+      if (thread.agentId && body.attachmentIds.length) {
+        throw new HttpError(400, "Agent会话请使用素材引用；语音可先转成文字后发送。", {
+          code: "AGENT_ATTACHMENT_REFERENCE_REQUIRED",
+        });
+      }
       if (body.contentPreviewContext && thread.agentId !== "comic-diary") throw new HttpError(400,"此会话不支持创作预览续作。",{code:"SPECIALIST_CONTEXT_INVALID"});
       if (thread.agentId === "album-manager" || body.contextRefs.length)
         requireAIClientContract(req);
@@ -390,6 +399,11 @@ export function registerMessageRoutes(
           threadId: thread.id,
           attachmentIds: body.attachmentIds,
         });
+        const priorStickerMessage = body.stickerId ? await getMessageByClientId({ userId:req.user.id, threadId:thread.id, clientMessageId, source:"app" }) : null;
+        if (priorStickerMessage) assertMatchingMessageRetry(priorStickerMessage, requestFingerprint);
+        const sticker = body.stickerId
+          ? (priorStickerMessage ? priorStickerMessage.metadata?.sticker : await resolveCustomStickerForMessage({userId:req.user.id,threadId:thread.id,stickerId:body.stickerId}))
+          : null;
         const result = await sendGroupMessage({
           userId: req.user.id,
           senderName: req.user.displayName,
@@ -397,7 +411,7 @@ export function registerMessageRoutes(
           content: body.content,
           clientMessageId,
           requestFingerprint,
-          metadata: { ...replyMetadata, ...(attachments.length ? { attachments } : {}) },
+          metadata: { ...replyMetadata, ...(attachments.length ? { attachments } : {}), ...(sticker ? {sticker} : {}) },
         });
         if (!result.reused) {
           for (const delivery of result.deliveries) {
@@ -478,8 +492,8 @@ export function registerMessageRoutes(
             senderUser: req.user,
             content: body.content,
             metadata: message.metadata?.replyTo
-              ? { replyTo: message.metadata.replyTo, requestFingerprint, ...(message.metadata.attachments ? { attachments: message.metadata.attachments } : {}) }
-              : { requestFingerprint, ...(message.metadata.attachments ? { attachments: message.metadata.attachments } : {}) },
+              ? { replyTo: message.metadata.replyTo, requestFingerprint, ...(message.metadata.attachments ? { attachments: message.metadata.attachments } : {}), ...(message.metadata.sticker ? {sticker: message.metadata.sticker} : {}) }
+              : { requestFingerprint, ...(message.metadata.attachments ? { attachments: message.metadata.attachments } : {}), ...(message.metadata.sticker ? {sticker: message.metadata.sticker} : {}) },
             clientMessageId,
           });
           if (peer)
@@ -747,6 +761,7 @@ export function registerMessageRoutes(
         attachmentIds: body.attachmentIds,
       });
 
+      const sticker = body.stickerId ? await resolveCustomStickerForMessage({userId:req.user.id,threadId:thread.id,stickerId:body.stickerId}) : null;
       const userInsert = await addMessageToThreadOnce({
         userId: req.user.id,
         threadId: thread.id,
@@ -758,6 +773,7 @@ export function registerMessageRoutes(
           ...replyMetadata,
           requestFingerprint,
           contextRefs: resolvedContext.references,
+          ...(sticker ? {sticker} : {}),
           ...(attachments.length ? { attachments, attachmentIds: body.attachmentIds } : {}),
           ...(body.butlerContextReset ? { butlerContextReset: true } : {}),
           ...(continuesPendingContext
@@ -800,7 +816,7 @@ export function registerMessageRoutes(
           thread,
           senderUser: req.user,
           content: body.content,
-          metadata: { ...replyMetadata, requestFingerprint, ...(attachments.length ? { attachments, attachmentIds: body.attachmentIds } : {}) },
+          metadata: { ...replyMetadata, requestFingerprint, ...(sticker ? {sticker} : {}), ...(attachments.length ? { attachments, attachmentIds: body.attachmentIds } : {}) },
           clientMessageId,
         });
         if (peerMessage)

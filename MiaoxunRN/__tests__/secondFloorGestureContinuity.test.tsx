@@ -229,6 +229,54 @@ test('second-floor return keeps the original distance when a preference refresh 
   expect(close).toHaveBeenCalledTimes(1);
 });
 
+test('a short fast upward flick from the return affordance does not dismiss the floor', async () => {
+  const close = jest.fn();
+  const session = {
+    token: 'isolated-fixture',
+    appearance: 'light',
+    language: 'zh',
+    profile: emptyProfile,
+    stationContent: emptyStationContent,
+    agents: [],
+    ownedAgents: [],
+    agentReadiness: {},
+    relationships: emptyRelationships,
+    notices: [],
+    unreadNoticeCount: 0,
+    uiPreferences: preferences(),
+  } as unknown as ReturnType<typeof useMiaoxunSession>;
+  await act(async () => {
+    tree = Renderer.create(
+      provider(
+        <SecondFloorScreen
+          palette={palettes.light}
+          language="zh"
+          session={session}
+          onClose={close}
+          onOpenFriendThread={jest.fn()}
+          onOpenProfile={jest.fn()}
+          onOpenSettings={jest.fn()}
+          onOpenDeleteAccount={jest.fn()}
+          onOpenNotices={jest.fn()}
+          onOpenPostComposer={jest.fn()}
+        />,
+      ),
+    );
+  });
+  const surface = () =>
+    tree!.root.findByProps({ testID: 'floor-return-swipe-area' });
+  surface().props.onStartShouldSetResponderCapture(event(300, 300, 1000));
+  expect(
+    surface().props.onMoveShouldSetResponderCapture(event(300, 280, 1040)),
+  ).toBe(true);
+  act(() => {
+    surface().props.onResponderGrant(event(300, 280, 1040));
+    surface().props.onResponderMove(event(280, 250, 1060));
+    surface().props.onResponderRelease(event(250, 250, 1065, false));
+  });
+  expect(close).not.toHaveBeenCalled();
+});
+
 test('fixed second-floor return area follows the finger while content scrollers remain independent', async () => {
   jest
     .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
@@ -280,7 +328,7 @@ test('fixed second-floor return area follows the finger while content scrollers 
   const translated = StyleSheet.flatten(root.props.style).transform![0] as {
     translateY: { __getValue: () => number };
   };
-  expect(translated.translateY.__getValue()).toBeCloseTo(-57.6);
+  expect(translated.translateY.__getValue()).toBeCloseTo(-72);
   expect(close).not.toHaveBeenCalled();
   const value = (
     StyleSheet.flatten(root.props.style).opacity as {
@@ -301,7 +349,7 @@ test('fixed second-floor return area follows the finger while content scrollers 
   expect(translated.translateY.__getValue()).toBeCloseTo(frozenFrame);
   expect(stopped).toHaveLength(1);
   act(() => stopped[0](0.05));
-  expect(translated.translateY.__getValue()).toBeCloseTo(frozenFrame - 14.4);
+  expect(translated.translateY.__getValue()).toBeCloseTo(frozenFrame - 18);
   act(() => {
     surface().props.onResponderRelease(event(260, 260, 2300, false));
     value.setValue(0);

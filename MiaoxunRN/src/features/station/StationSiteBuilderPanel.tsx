@@ -292,6 +292,7 @@ export function StationSiteBuilderPanel({
             <AITaskCard
               key={task.id}
               task={task}
+              token={token}
               palette={palette}
               language={language}
               busy={tasks.pendingTaskId !== null}

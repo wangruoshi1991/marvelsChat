@@ -131,8 +131,8 @@ describe('UI preference session contract', () => {
       enabled: false,
       direction: 'left',
       distance: 120,
-      velocityThreshold: 0.35,
-      animationMs: 160,
+      velocityThreshold: 0.55,
+      animationMs: 220,
       action: 'goBack',
     });
     expect(

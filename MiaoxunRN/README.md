@@ -43,7 +43,7 @@ Agent 视觉统一经 `AgentGlyphAvatar` 渲染，消费已发布 release identi
 - 妙讯管家通过妙讯会话和小站 Agent 卡片进入；小站不再渲染悬浮“妙”，避免覆盖 3D、动态和后续内容模块。内容级 AI 辅助统一由根部 `AIAssistProvider` 接管，3D、聊天消息、动态、日记和相册卡片使用同一长按与方向能力入口。
 - API 地址由 `MiaoxunConfigModule` 原生桥接显式注入；iOS 读取 `Info.plist` 的 `MiaoxunAPIBaseURL`，Android 读取 `BuildConfig.MIAOXUN_API_BASE_URL`。该值只能是无路径的 HTTP(S) origin，所有业务调用必须显式传入 `/api/*` 路径；配置缺失或格式错误会直接报错。
 - 妙讯页左上角 `+` 菜单中的扫码已接入统一 `src/services/qrScanner.ts`，iOS 使用 AVFoundation，Android 使用 CameraX + ML Kit。
-- 妙讯页左上角 `+` 菜单当前仍只提供扫码；V15 原型已核对为“发起聊天 / 创建群聊 / 扫描名片”三项，其中前两项还需要对应的联系人/群聊创建接口，好友申请继续从公开主页按钮发起。不要把原型演示弹层当成已接入能力。
+- 妙讯页左上角 `+` 菜单提供“发起聊天 / 创建群聊 / 扫描名片”三项；发起聊天复用搜索目录，创建群聊使用真实好友选择和群聊 API，成员读取与退出状态在聊天设置中处理，扫码继续复用二维码解析和公开主页流程。新链路仍需随当前交接分别完成 Simulator、真机和 TestFlight 验收。
 - 扫码返回真实二维码文本后，会调用 `/api/scan/resolve` 由后端解析 AI ID 并打开公开用户主页，用户确认后再点击加好友。
 - 扫码结果会先在客户端校验是否为妙讯主页码；非妙讯码直接提示错误，不进入主页加载。主页解析加载页必须提供返回入口，避免网络或后端异常时困住用户。
 - 小站动态码使用标准 QR Code 组件生成，外框可以装饰，但二维码模块本体不能变形、缺失或被遮挡，确保 iOS AVFoundation 和 Android ML Kit 都能识别。
@@ -68,7 +68,7 @@ Agent 视觉统一经 `AgentGlyphAvatar` 渲染，消费已发布 release identi
 - 生活动态的点赞和收藏已接入`station_post_interactions`真实接口，失败时回滚；动态、互动、媒体资产和漫画数量已进入后台总览。新本地对话漫画可把成功画格带入动态编辑器，默认仅自己可见，最终由本人发布，取消不删除已有漫画图片。音乐不在当前设计范围。
 - `avatar_config` 只表示人类用户的小站形象。Agent 使用独立身份及设计资源；妙讯管家聊天头像映射为蓝湖聊天页对应的 `messages/avatar-butler.png` 人物插画，小站现有 `station/partners/miaoxun-assistant.png` 机器人素材不能替代聊天头像。新增 Agent 必须声明合法 `identity`，正式设计素材按入口与 `agentId` 明确映射，不能使用用户可编辑形象。
 - 正式形象设计可以参考 QQ 秀的顶部人物预览和底部素材卡片编辑结构，同时保留 VRoid 的 Face/Hair/Body/Outfit/Accessories 分区、Roblox 的 avatar cosmetics/accessories 持久化思路。正式扩展捏脸、装扮、动作、上传图片生成或购买素材时，必须使用本地或后端审核后的 2D/3D 人形资源，并补齐素材授权、审核流程、模型压缩、跨平台性能验证和资源版本记录。
-- 收藏列表、签名动态码、群聊、已读回执、正在输入、媒体消息和内容级可见性仍按 `docs/social-graph.md` 后续接入；好友申请拒绝/取消接口已存在。所有新增能力必须先补后端 schema/API，不能用客户端假状态替代。
+- 收藏列表、签名动态码、已读回执、正在输入和内容级可见性仍按 `docs/social-graph.md` 后续接入；群聊创建/成员/退出、普通聊天附件和本人自定义表情已经补齐本地合同与客户端链路，部署和设备验收以当前交接为准。好友申请拒绝/取消接口已存在。所有新增能力必须先补后端 schema/API，不能用客户端假状态替代。
 
 ## 原生桥接边界
 

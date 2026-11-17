@@ -19,6 +19,7 @@ const native = {
   pick: jest.fn(),
   release: jest.fn(async () => {}),
   upload: jest.fn(),
+  uploadChatAttachment: jest.fn(),
 };
 beforeEach(() => {
   jest.clearAllMocks();
@@ -69,6 +70,48 @@ test('uses raw native file transport with encoded filename and preserves key acr
   );
   await releaseStationFile(picked);
   expect(native.release).toHaveBeenCalledWith('key-1');
+});
+test('chat file uploads use the shared native contract without changing station uploads', async () => {
+  const { uploadChatFile } =
+    require('../src/services/api/chatAttachmentApi') as typeof import('../src/services/api/chatAttachmentApi');
+  const threadId = '123e4567-e89b-42d3-a456-426614174000';
+  const idempotencyKey = '123e4567-e89b-42d3-a456-426614174001';
+  const attachmentId = '123e4567-e89b-42d3-a456-426614174002';
+  native.uploadChatAttachment.mockResolvedValueOnce({
+    status: 201,
+    body: JSON.stringify({
+      data: {
+        id: attachmentId,
+        kind: 'file',
+        filename: '说明.md',
+        title: '说明.md',
+        mimeType: 'text/markdown',
+        byteSize: 16,
+        durationMs: null,
+        downloadPath: `/api/chat-attachments/${attachmentId}/content`,
+        data: {},
+      },
+    }),
+  });
+
+  await uploadChatFile({
+    threadId,
+    token: 'chat-token',
+    nativeKey: 'picker-key',
+    filename: '说明.md',
+    mimeType: 'text/markdown',
+    idempotencyKey,
+  });
+
+  expect(native.uploadChatAttachment).toHaveBeenCalledWith(
+    'picker-key',
+    threadId,
+    'chat-token',
+    'text/markdown',
+    encodeURIComponent('说明.md'),
+    idempotencyKey,
+  );
+  expect(native.upload).not.toHaveBeenCalled();
 });
 test('rejects server errors, unreadable response and incomplete parse without inventing a reference', async () => {
   native.upload.mockResolvedValueOnce({

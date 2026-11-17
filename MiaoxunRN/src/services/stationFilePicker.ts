@@ -28,6 +28,14 @@ const picker = () => {
           mimeType: string,
           filename: string,
         ): Promise<{ status: number; body: string }>;
+        uploadChatAttachment(
+          key: string,
+          threadId: string,
+          token: string,
+          mimeType: string,
+          encodedFilename: string,
+          idempotencyKey: string,
+        ): Promise<{ status: number; body: string }>;
       }
     | undefined;
   if (!module) throw new Error('当前设备暂不支持选择文件。');

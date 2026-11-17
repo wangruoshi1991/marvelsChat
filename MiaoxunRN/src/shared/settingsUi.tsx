@@ -67,6 +67,8 @@ export function SettingsActionButton({
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
       disabled={disabled}
       onPress={onPress}
       style={[

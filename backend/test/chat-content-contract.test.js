@@ -24,6 +24,16 @@ test('preview context is fingerprinted and incompatible workflow combinations ar
   assert.equal(messageSchema.safeParse({...parsed,agentContextReset:true}).success,false);
   assert.equal(messageSchema.safeParse({...parsed,workspaceContext:{id:crypto.randomUUID(),revision:1,currentRound:1}}).success,false);
 });
+test('ordinary messages require text or up to six UUID attachments',()=>{
+  const ids=Array.from({length:7},()=>crypto.randomUUID());
+  assert.equal(messageSchema.parse({content:'  hello  '}).content,'hello');
+  assert.deepEqual(messageSchema.parse({content:' hello ',attachmentIds:[ids[0]]}).attachmentIds,[ids[0]]);
+  assert.deepEqual(messageSchema.parse({content:'  ',attachmentIds:[ids[0]]}).content,'');
+  assert.equal(messageSchema.safeParse({content:'  '}).success,false);
+  assert.equal(messageSchema.safeParse({content:'hello',attachmentIds:ids.slice(0,6)}).success,true);
+  assert.equal(messageSchema.safeParse({content:'hello',attachmentIds:ids}).success,false);
+  assert.equal(messageSchema.safeParse({content:'hello',attachmentIds:['not-a-uuid']}).success,false);
+});
 test('only live Agent output exposes versioned preview reference without private fields',()=>{
   const id=crypto.randomUUID(),metadata={contentPreview:{version:1,id,snapshot:{private:true}},agentDispatch:{version:1,kind:'content_preview'}};
   assert.deepEqual(publicMessage({senderType:'agent',metadata}).metadata,{contentPreview:{version:1,id},agentDispatch:{version:1,kind:'content_preview'}});

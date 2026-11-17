@@ -12,6 +12,7 @@ import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { SheetHeader } from '../../shared/ui';
 import { Language } from '../session/useMiaoxunSession';
+import { GroupChatMembersSection } from './GroupChatMembersSection';
 
 export function ThreadSettingsSheet({
   visible,
@@ -21,6 +22,10 @@ export function ThreadSettingsSheet({
   onClose,
   onSetMuted,
   onOpenProfile,
+  token,
+  groupId,
+  hasLeftGroup,
+  onGroupLeft,
   onActionError,
 }: {
   visible: boolean;
@@ -30,6 +35,10 @@ export function ThreadSettingsSheet({
   onClose: () => void;
   onSetMuted: (muted: boolean) => Promise<void>;
   onOpenProfile?: () => void;
+  token?: string;
+  groupId?: string | null;
+  hasLeftGroup?: boolean;
+  onGroupLeft?: () => void;
   onActionError: (message: string) => void;
 }) {
   const [isSaving, setIsSaving] = useState(false);
@@ -94,6 +103,18 @@ export function ThreadSettingsSheet({
                 onPress={openProfile}
               />
             </SettingGroup>
+          ) : null}
+          {groupId && token && onGroupLeft ? (
+            <GroupChatMembersSection
+              groupId={groupId}
+              token={token}
+              palette={palette}
+              language={language}
+              enabled={visible}
+              hasLeft={hasLeftGroup}
+              onGroupLeft={onGroupLeft}
+              onActionError={onActionError}
+            />
           ) : null}
         </View>
       </SafeAreaView>

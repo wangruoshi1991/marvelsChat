@@ -1220,6 +1220,56 @@ describe('session synchronization', () => {
     await ReactTestRenderer.act(() => renderer?.unmount());
   });
 
+  test('session retry preserves storage failures and can recover without clearing credentials', async () => {
+    const storageError = new Error(
+      "Internal error when a required entitlement isn't present.",
+    );
+    mockedTokenStore.read.mockRejectedValueOnce(storageError);
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    expect(currentSession?.restoreStatus).toBe('networkError');
+    expect(currentSession?.errorMessage).toBe(storageError.message);
+
+    let rejectRead!: (error: Error) => void;
+    const pendingRead = new Promise<string>((_resolve, reject) => {
+      rejectRead = reject;
+    });
+    mockedTokenStore.read.mockReturnValueOnce(pendingRead);
+    let retry!: Promise<void | Error>;
+    ReactTestRenderer.act(() => {
+      retry = currentSession!.retryRestoreSession().catch(error => error);
+    });
+    expect(currentSession?.isBusy).toBe(true);
+    expect(mockedApiClient.bootstrap).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      rejectRead(storageError);
+      expect(await retry).toBeUndefined();
+    });
+    expect(currentSession?.restoreStatus).toBe('networkError');
+    expect(currentSession?.errorMessage).toBe(storageError.message);
+    expect(currentSession?.isBusy).toBe(false);
+    expect(mockedApiClient.bootstrap).not.toHaveBeenCalled();
+    expect(mockedTokenStore.clear).not.toHaveBeenCalled();
+    expect(mockedTokenStore.save).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.retryRestoreSession();
+    });
+    expect(mockedApiClient.bootstrap).toHaveBeenCalledTimes(1);
+    expect(mockedApiClient.bootstrap).toHaveBeenCalledWith('saved-token');
+    expect(currentSession?.token).toBe('saved-token');
+    expect(currentSession?.restoreStatus).toBe('authenticated');
+    expect(currentSession?.errorMessage).toBeNull();
+    expect(currentSession?.isBusy).toBe(false);
+    expect(mockedTokenStore.clear).not.toHaveBeenCalled();
+    expect(mockedTokenStore.save).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(() => renderer?.unmount());
+  });
+
   test('registration keeps the issued session when bootstrap fails and can retry', async () => {
     mockedTokenStore.read.mockResolvedValue('');
     mockedApiClient.bootstrap

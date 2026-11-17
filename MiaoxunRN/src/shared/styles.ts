@@ -27,6 +27,13 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
   },
   launchLineEmphasis: { fontSize: 28, lineHeight: 36 },
+  launchIdentity: {
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 22,
+    marginTop: 18,
+    textAlign: 'center',
+  },
   launchCaption: { fontSize: 13, marginBottom: 14, marginTop: 24 },
   launchDots: { flexDirection: 'row', gap: 7 },
   launchDot: { borderRadius: 999, height: 7, width: 7 },

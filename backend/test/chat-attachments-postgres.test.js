@@ -32,7 +32,7 @@ test('chat attachment HTTP upload, message/sync projection, peer/group access an
   return binary?payload:payload.data||payload;
  };
  const upload=(owner,threadId,bytes,key=crypto.randomUUID(),status=201)=>call(`/api/threads/${threadId}/attachments/upload`,{owner,method:'POST',status,body:bytes,headers:{'Content-Type':'application/octet-stream','Idempotency-Key':key,'X-Miaoxun-Filename':'note.txt','X-Miaoxun-Attachment-Kind':'file','X-Miaoxun-Attachment-Mime':'text/plain'}});
- const send=(owner,threadId,attachmentIds,status=201)=>call(`/api/threads/${threadId}/messages`,{owner,method:'POST',status,body:{content:'Here is the selected file',attachmentIds,clientMessageId:crypto.randomUUID()}});
+ const send=(owner,threadId,attachmentIds,status=201,content='Here is the selected file')=>call(`/api/threads/${threadId}/messages`,{owner,method:'POST',status,body:{content,attachmentIds,clientMessageId:crypto.randomUUID()}});
  try{
   const app=express();app.use(express.json());
   registerChatAttachmentRoutes(app,{authenticate,asyncHandler});
@@ -55,7 +55,8 @@ test('chat attachment HTTP upload, message/sync projection, peer/group access an
    await upload(stranger,owner.threadId,Buffer.from('cannot upload to other owner'),crypto.randomUUID(),404);
   });
   await t.test('message response and GET carry canonical attachment; peer reads actual bytes; stranger cannot',async()=>{
-   const result=await send(owner,owner.threadId,[file.id]);message=result.messages[0];
+   const result=await send(owner,owner.threadId,[file.id],201,'');message=result.messages[0];
+   assert.equal(message.content,'');
    assert.equal(message.metadata.attachments[0].id,file.id);
    assert.equal(message.metadata.attachments[0].filename,'note.txt');
    const peerMessages=await call(`/api/threads/${peer.threadId}/messages`,{owner:peer});
@@ -82,7 +83,9 @@ test('chat attachment HTTP upload, message/sync projection, peer/group access an
   await t.test('group mirrors share one protected asset; sender recall closes access for all members',async()=>{
    const group=await call('/api/chat-groups',{owner,method:'POST',status:201,body:{title:'Attachment group',memberUserIds:[peer.id,third.id],idempotencyKey:crypto.randomUUID()}});
    const attachment=await upload(owner,group.thread.id,Buffer.from('group content'));
-   const sent=await send(owner,group.thread.id,[attachment.id]);
+   const sent=await send(owner,group.thread.id,[attachment.id],201,'');
+   assert.equal(sent.messages[0].content,'');
+   assert.equal(sent.messages[0].metadata.attachments[0].id,attachment.id);
    for(const recipient of [owner,peer,third])assert.equal((await call(attachment.downloadPath,{owner:recipient,binary:true})).toString(),'group content');
    await call(attachment.downloadPath,{owner:stranger,status:404});
    await call(`/api/threads/${group.thread.id}/messages/${sent.messages[0].id}/recall`,{owner,method:'POST'});

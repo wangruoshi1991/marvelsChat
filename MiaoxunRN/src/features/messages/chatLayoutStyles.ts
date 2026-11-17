@@ -17,7 +17,7 @@ export const chatLayoutStyles = StyleSheet.create({
   },
   body: { flexShrink: 1, fontSize: 15, lineHeight: 23 },
   composer: { borderTopWidth: 0.5, gap: 8, padding: 10 },
-  composerRow: { alignItems: 'center', flexDirection: 'row', gap: 6 },
+  composerRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
   composerButton: {
     alignItems: 'center',
     borderRadius: 22,
@@ -41,11 +41,11 @@ export const chatLayoutStyles = StyleSheet.create({
   },
   send: {
     alignItems: 'center',
-    borderRadius: 22,
+    borderRadius: 12,
     minHeight: 44,
-    minWidth: 64,
+    minWidth: 44,
     justifyContent: 'center',
-    paddingHorizontal: 13,
+    paddingHorizontal: 4,
     flexShrink: 0,
   },
   sendText: {

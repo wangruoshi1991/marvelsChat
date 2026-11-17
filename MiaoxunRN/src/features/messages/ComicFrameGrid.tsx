@@ -1,5 +1,15 @@
-import React, { useMemo, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FlatList,
+  Image,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react-native';
 import { ComicRenderFrame, ComicRenderTaskDTO } from '../../models/comicRender';
 import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
 import { Palette } from '../../shared/theme';
@@ -39,6 +49,7 @@ export function ComicFrameGrid({
             language={language}
             onPress={onOpen ? () => onOpen(index + 1) : undefined}
             large={large}
+            count={count}
           />
         );
       })}
@@ -53,6 +64,7 @@ function Frame({
   language,
   onPress,
   large,
+  count,
 }: {
   index: number;
   frame?: ComicRenderFrame;
@@ -61,6 +73,7 @@ function Frame({
   language: Language;
   onPress?: () => void;
   large: boolean;
+  count: number;
 }) {
   const [failed, setFailed] = useState(false);
   const mediaAssetId = frame?.mediaAssetId;
@@ -151,7 +164,12 @@ function Frame({
       ) : null}
     </>
   );
-  const style = [s.frame, large && s.largeFrame];
+  const style = [
+    s.frame,
+    large && s.largeFrame,
+    count === 1 && s.singleFrame,
+    count === 3 && index === 1 && s.featureFrame,
+  ];
   const accessibilityLabel = `${label}，${
     failed ? t('图片读取失败', 'Image unavailable') : state
   }`;
@@ -173,6 +191,256 @@ function Frame({
     >
       {content}
     </View>
+  );
+}
+
+export function ComicImageViewer({
+  visible,
+  token,
+  count,
+  task,
+  initialIndex,
+  palette,
+  language,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  token: string;
+  count: number;
+  task?: ComicRenderTaskDTO;
+  initialIndex: number;
+  palette: Palette;
+  language: Language;
+  onClose: () => void;
+  onSave?: (frameIndex: number, mediaAssetId: string) => Promise<void> | void;
+}) {
+  const { width, height } = useWindowDimensions();
+  const listRef = useRef<FlatList<ComicRenderFrame>>(null);
+  const [activeIndex, setActiveIndex] = useState(
+    Math.max(0, Math.min(initialIndex - 1, count - 1)),
+  );
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const frames = useMemo(
+    () =>
+      Array.from({ length: count }, (_, index) =>
+        task?.frames.find(item => item.frameIndex === index + 1),
+      ).map(
+        (frame, index) =>
+          frame || {
+            frameIndex: index + 1,
+            status: 'queued' as const,
+            mediaAssetId: null,
+            errorCode: null,
+          },
+      ),
+    [count, task],
+  );
+  const t = (zh: string, en: string) => textFor(language, zh, en);
+
+  useEffect(() => {
+    if (!visible) return;
+    const next = Math.max(0, Math.min(initialIndex - 1, count - 1));
+    setActiveIndex(next);
+    setSaveMessage('');
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToIndex({ index: next, animated: false });
+    });
+  }, [count, initialIndex, visible]);
+
+  const current = frames[activeIndex];
+  const currentAsset =
+    current?.status === 'succeeded' ? current.mediaAssetId : null;
+  return (
+    <Modal
+      visible={visible}
+      transparent={false}
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <View
+        testID="comic-image-viewer"
+        style={[s.viewer, { backgroundColor: palette.background }]}
+      >
+        <View style={s.viewerHeader}>
+          <Pressable
+            testID="comic-image-viewer-close"
+            accessibilityRole="button"
+            accessibilityLabel={t('关闭图片查看器', 'Close image viewer')}
+            onPress={onClose}
+            hitSlop={10}
+            style={s.viewerIcon}
+          >
+            <X size={22} color={palette.text} />
+          </Pressable>
+          <Text style={[s.viewerTitle, { color: palette.text }]}>
+            {activeIndex + 1}/{count}
+          </Text>
+          {currentAsset && onSave ? (
+            <Pressable
+              testID="comic-image-viewer-save"
+              accessibilityRole="button"
+              accessibilityLabel={t('保存图片', 'Save image')}
+              disabled={saving}
+              onPress={async () => {
+                if (saving) return;
+                setSaving(true);
+                setSaveMessage(t('正在保存到相册…', 'Saving to Photos…'));
+                try {
+                  await onSave(current.frameIndex, currentAsset);
+                  setSaveMessage(t('已保存到相册', 'Saved to Photos'));
+                } catch (error) {
+                  setSaveMessage(
+                    error instanceof Error
+                      ? error.message
+                      : t('保存失败，请重试。', 'Save failed. Try again.'),
+                  );
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              hitSlop={10}
+              style={s.viewerIcon}
+            >
+              <Download
+                size={21}
+                color={saving ? palette.secondaryText : palette.text}
+              />
+            </Pressable>
+          ) : currentAsset ? (
+            <Text
+              testID="comic-image-viewer-save-unavailable"
+              style={[s.viewerUnavailable, { color: palette.secondaryText }]}
+            >
+              {t('保存暂未开放', 'Save unavailable')}
+            </Text>
+          ) : (
+            <View style={s.viewerIcon} />
+          )}
+        </View>
+        {saveMessage ? (
+          <Text
+            accessibilityLiveRegion="polite"
+            style={[s.viewerSaveMessage, { color: palette.secondaryText }]}
+          >
+            {saveMessage}
+          </Text>
+        ) : null}
+        <FlatList
+          ref={listRef}
+          data={frames}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={item => String(item.frameIndex)}
+          getItemLayout={(_, index) => ({
+            length: width,
+            offset: width * index,
+            index,
+          })}
+          onScrollToIndexFailed={info => {
+            setTimeout(
+              () =>
+                listRef.current?.scrollToIndex({
+                  index: info.index,
+                  animated: false,
+                }),
+              0,
+            );
+          }}
+          onMomentumScrollEnd={event => {
+            const next = Math.round(event.nativeEvent.contentOffset.x / width);
+            if (next !== activeIndex) setActiveIndex(next);
+          }}
+          renderItem={({ item }) => {
+            const source = item.mediaAssetId
+              ? {
+                  uri: buildStationMediaFileUrl(item.mediaAssetId),
+                  headers: { Authorization: `Bearer ${token}` },
+                }
+              : undefined;
+            const readable = item.status === 'succeeded' && Boolean(source);
+            return (
+              <View style={[s.viewerPage, { width, minHeight: height - 120 }]}>
+                {readable ? (
+                  <Image
+                    accessibilityLabel={t(
+                      `第 ${item.frameIndex} 格漫画画面`,
+                      `Comic image for frame ${item.frameIndex}`,
+                    )}
+                    accessibilityIgnoresInvertColors
+                    source={source}
+                    resizeMode="contain"
+                    style={{ width: width - 24, height: height - 160 }}
+                  />
+                ) : (
+                  <View
+                    style={[
+                      s.viewerPlaceholder,
+                      {
+                        backgroundColor: palette.soft,
+                        borderColor: palette.border,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: palette.secondaryText }}>
+                      {item.status === 'failed'
+                        ? t('这一格生成失败', 'This frame failed')
+                        : item.status === 'unknown'
+                        ? t('结果暂时无法确认', 'Result is unknown')
+                        : t('这一格尚未完成', 'This frame is not ready')}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            );
+          }}
+        />
+        <View style={s.viewerFooter}>
+          <Pressable
+            testID="comic-image-viewer-previous"
+            accessibilityRole="button"
+            accessibilityLabel={t('上一格', 'Previous frame')}
+            disabled={activeIndex <= 0}
+            onPress={() => {
+              const next = Math.max(0, activeIndex - 1);
+              setActiveIndex(next);
+              listRef.current?.scrollToIndex({ index: next, animated: true });
+            }}
+            hitSlop={10}
+            style={s.viewerIcon}
+          >
+            <ChevronLeft
+              size={22}
+              color={activeIndex <= 0 ? palette.border : palette.text}
+            />
+          </Pressable>
+          <Text style={[s.viewerHint, { color: palette.secondaryText }]}>
+            {t('左右滑动查看画面', 'Swipe to browse frames')}
+          </Text>
+          <Pressable
+            testID="comic-image-viewer-next"
+            accessibilityRole="button"
+            accessibilityLabel={t('下一格', 'Next frame')}
+            disabled={activeIndex >= count - 1}
+            onPress={() => {
+              const next = Math.min(count - 1, activeIndex + 1);
+              setActiveIndex(next);
+              listRef.current?.scrollToIndex({ index: next, animated: true });
+            }}
+            hitSlop={10}
+            style={s.viewerIcon}
+          >
+            <ChevronRight
+              size={22}
+              color={activeIndex >= count - 1 ? palette.border : palette.text}
+            />
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
 function frameIssueMessage(frame: ComicRenderFrame, language: Language) {
@@ -204,7 +472,7 @@ function frameIssueMessage(frame: ComicRenderFrame, language: Language) {
 }
 const s = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  large: { gap: 12 },
+  large: { gap: 10 },
   frame: { width: '48%', minHeight: 44, minWidth: 44, gap: 6 },
   square: {
     width: '100%',
@@ -213,7 +481,9 @@ const s = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
   },
-  largeFrame: { width: '100%' },
+  largeFrame: { width: '48%' },
+  singleFrame: { width: '100%' },
+  featureFrame: { width: '100%' },
   image: { width: '100%', height: '100%' },
   placeholder: {
     flex: 1,
@@ -229,6 +499,51 @@ const s = StyleSheet.create({
     borderRadius: 4,
     paddingHorizontal: 5,
   },
+  viewer: { flex: 1 },
+  viewerHeader: {
+    minHeight: 58,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  viewerTitle: { fontSize: 16, fontWeight: '700' },
+  viewerIcon: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewerPage: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  viewerPlaceholder: {
+    minWidth: 220,
+    minHeight: 160,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  viewerFooter: {
+    minHeight: 58,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  viewerHint: { fontSize: 12, flexShrink: 1, textAlign: 'center' },
+  viewerSaveMessage: {
+    position: 'absolute',
+    top: 58,
+    left: 24,
+    right: 24,
+    textAlign: 'center',
+  },
+  viewerUnavailable: { fontSize: 11, maxWidth: 90, textAlign: 'right' },
 });
 
 export function comicTaskStatus(task: ComicRenderTaskDTO, language: Language) {

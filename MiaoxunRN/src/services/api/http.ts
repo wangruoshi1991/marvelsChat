@@ -5,6 +5,20 @@ const nativeConfig = NativeModules.MiaoxunConfigModule as
   | { apiBaseURL?: unknown; buildNumber?: unknown }
   | undefined;
 
+const nativeBinaryModule = NativeModules.MiaoxunDocumentPickerModule as
+  | {
+      requestBinary: (
+        method: 'GET' | 'POST',
+        path: string,
+        token: string,
+        uri: string,
+        headers: Record<string, string>,
+        maximumUploadBytes: number,
+        maximumResponseBytes: number,
+      ) => Promise<{ status: number; body: string; requestId?: string }>;
+    }
+  | undefined;
+
 const defaultRequestTimeoutMs = 20000;
 export const longRequestTimeoutMs = 45000;
 
@@ -151,6 +165,269 @@ export const buildApiUrl = (path: string) => {
 export const buildRealtimeUrl = (path: string) =>
   buildApiUrl(path).replace(/^http/i, 'ws');
 
+const nativeBinaryHeaders = (headers: Record<string, string> = {}) => {
+  const forbidden = new Set(['authorization', 'host', 'content-length']);
+  return Object.fromEntries(
+    Object.entries(headers).filter(
+      ([key]) => !forbidden.has(key.toLowerCase()),
+    ),
+  );
+};
+
+/**
+ * Binary work that starts from a platform URI or needs bounded native reads
+ * must stay outside RN fetch: iOS image-provider URIs do not expose a
+ * ReadableStream in the shipped fetch implementation.
+ */
+export async function requestNativeBinary(
+  path: string,
+  options: {
+    method: 'GET' | 'POST';
+    token: string;
+    uri?: string;
+    headers?: Record<string, string>;
+    maximumUploadBytes: number;
+    maximumResponseBytes: number;
+  },
+): Promise<{ status: number; body: string; requestId: string }> {
+  const finalUrl = buildApiUrl(path);
+  if (!nativeBinaryModule?.requestBinary)
+    throw new Error('当前设备暂不支持受限二进制传输。');
+  const requestId = createRequestId();
+  logNetworkEvent('request', {
+    method: options.method,
+    url: sanitizeUrlForLog(finalUrl),
+    requestId,
+    hasAuthorization: true,
+    hasBinaryBody: options.method === 'POST',
+  });
+  try {
+    const result = await nativeBinaryModule.requestBinary(
+      options.method,
+      path,
+      options.token,
+      options.uri || '',
+      {
+        ...nativeBinaryHeaders(options.headers),
+        ...appBuildHeaders,
+        'X-Request-ID': requestId,
+      },
+      options.maximumUploadBytes,
+      options.maximumResponseBytes,
+    );
+    if (
+      !result ||
+      !Number.isInteger(result.status) ||
+      typeof result.body !== 'string'
+    )
+      throw new Error('二进制请求结果格式无效。');
+    if (
+      new TextEncoder().encode(result.body).byteLength >
+      options.maximumResponseBytes
+    )
+      throw new Error('二进制请求响应超出限制。');
+    const responseRequestId = result.requestId || requestId;
+    await notifyAuthSessionExpired({
+      status: result.status,
+      token: options.token,
+      requestId: responseRequestId,
+      method: options.method,
+      finalUrl,
+    });
+    logNetworkEvent('response', {
+      method: options.method,
+      url: sanitizeUrlForLog(finalUrl),
+      requestId: responseRequestId,
+      status: result.status,
+    });
+    return { ...result, requestId: responseRequestId };
+  } catch (error) {
+    logNetworkEvent('error', {
+      method: options.method,
+      url: sanitizeUrlForLog(finalUrl),
+      requestId,
+      errorType: error instanceof Error ? error.name : 'NetworkError',
+    });
+    if (error instanceof Error) throw error;
+    throw new Error('二进制请求失败，请重试。');
+  }
+}
+
+export async function readResponseBytes(
+  response: Response,
+  maximumBytes: number,
+): Promise<Uint8Array> {
+  const lengthHeader = response.headers?.get?.('content-length');
+  if (lengthHeader && /^\d+$/.test(lengthHeader)) {
+    const declaredLength = Number(lengthHeader);
+    if (Number.isSafeInteger(declaredLength) && declaredLength > maximumBytes) {
+      if (typeof response.body?.cancel === 'function')
+        await response.body.cancel().catch(() => undefined);
+      throw new Error('响应大小超出限制。');
+    }
+  }
+  const body = response.body as
+    | (ReadableStream<Uint8Array> & {
+        getReader?: () => ReadableStreamDefaultReader<Uint8Array>;
+      })
+    | null;
+  if (!body || typeof body.getReader !== 'function')
+    throw new Error('当前网络响应不支持受限流读取。');
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maximumBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error('响应大小超出限制。');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
+}
+
+export async function requestBinary(
+  path: string,
+  options: {
+    method: 'GET' | 'POST';
+    token: string;
+    headers?: Record<string, string>;
+    body?: ArrayBuffer;
+  },
+): Promise<{
+  response: Response;
+  requestId: string;
+  readBytes: (maximumBytes: number) => Promise<Uint8Array>;
+  release: () => void;
+}> {
+  const finalUrl = buildApiUrl(path);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), defaultRequestTimeoutMs);
+  const requestId = createRequestId();
+  let released = false;
+  let receivedResponse = false;
+  let responseBodyConsumed = false;
+  let activeResponse: Response | undefined;
+  const release = () => {
+    if (released) return;
+    released = true;
+    clearTimeout(timeout);
+    if (
+      !responseBodyConsumed &&
+      typeof activeResponse?.body?.cancel === 'function'
+    )
+      activeResponse.body.cancel().catch(() => undefined);
+  };
+  try {
+    logNetworkEvent('request', {
+      method: options.method,
+      url: sanitizeUrlForLog(finalUrl),
+      requestId,
+      hasAuthorization: true,
+      hasBinaryBody: options.body !== undefined,
+    });
+    const response = await fetch(finalUrl, {
+      method: options.method,
+      headers: {
+        ...(options.body ? { 'Content-Type': 'application/octet-stream' } : {}),
+        ...options.headers,
+        ...appBuildHeaders,
+        'X-Request-ID': requestId,
+        Authorization: `Bearer ${options.token}`,
+      },
+      body: options.body,
+      signal: controller.signal,
+      redirect: 'manual',
+    });
+    receivedResponse = true;
+    activeResponse = response;
+    const responseRequestId =
+      response.headers?.get?.('x-request-id') || requestId;
+    await notifyAuthSessionExpired({
+      status: response.status,
+      token: options.token,
+      requestId: responseRequestId,
+      method: options.method,
+      finalUrl,
+    });
+    logNetworkEvent('response', {
+      method: options.method,
+      url: sanitizeUrlForLog(finalUrl),
+      requestId: responseRequestId,
+      status: response.status,
+    });
+    return {
+      response,
+      requestId,
+      readBytes: async maximumBytes => {
+        try {
+          const bytes = await readResponseBytes(response, maximumBytes);
+          responseBodyConsumed = true;
+          return bytes;
+        } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') {
+            logNetworkEvent('error', {
+              method: options.method,
+              url: sanitizeUrlForLog(finalUrl),
+              requestId: responseRequestId,
+              errorType: error.name,
+            });
+            throw new MiaoxunApiError(
+              '请求超时，请确认手机与后端网络连接后重试。',
+              {
+                requestId: responseRequestId,
+                isNetworkError: true,
+                isTimeout: true,
+              },
+            );
+          }
+          throw error;
+        } finally {
+          release();
+        }
+      },
+      release,
+    };
+  } catch (error) {
+    logNetworkEvent('error', {
+      method: options.method,
+      url: sanitizeUrlForLog(finalUrl),
+      requestId,
+      errorType: error instanceof Error ? error.name : 'NetworkError',
+    });
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new MiaoxunApiError('请求超时，请确认手机与后端网络连接后重试。', {
+        requestId,
+        isNetworkError: true,
+        isTimeout: true,
+      });
+    }
+    throw new MiaoxunApiError(
+      '网络连接失败，请确认手机与后端网络连接后重试。',
+      {
+        requestId,
+        isNetworkError: true,
+      },
+    );
+  } finally {
+    if (!receivedResponse) release();
+  }
+}
+
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   token?: string;
@@ -184,6 +461,59 @@ export const setAuthSessionExpiredHandler = (
 
 const createRequestId = () =>
   `mx-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+
+async function notifyAuthSessionExpired({
+  status,
+  token,
+  requestId,
+  method,
+  finalUrl,
+  enabled = true,
+}: {
+  status: number;
+  token?: string;
+  requestId: string;
+  method: string;
+  finalUrl: string;
+  enabled?: boolean;
+}) {
+  if (status !== 401 || !token || !enabled || !authSessionExpiredHandler)
+    return;
+  try {
+    await Promise.resolve(authSessionExpiredHandler({ token, requestId }));
+  } catch (error) {
+    logNetworkEvent('error', {
+      method,
+      url: sanitizeUrlForLog(finalUrl),
+      requestId,
+      errorType:
+        error instanceof Error ? error.name : 'SessionExpiryHandlerError',
+      operation: 'expire-session',
+    });
+  }
+}
+
+export function handleAuthenticatedResponse({
+  status,
+  token,
+  requestId,
+  method,
+  path,
+}: {
+  status: number;
+  token: string;
+  requestId?: string;
+  method: string;
+  path: string;
+}) {
+  return notifyAuthSessionExpired({
+    status,
+    token,
+    requestId: requestId || createRequestId(),
+    method,
+    finalUrl: buildApiUrl(path),
+  });
+}
 
 export async function request<T>(
   path: string,
@@ -252,30 +582,14 @@ export async function request<T>(
   const responseRequestId =
     response.headers?.get?.('x-request-id') || clientRequestId;
 
-  if (
-    response.status === 401 &&
-    options.token &&
-    options.expireSessionOnUnauthorized !== false &&
-    authSessionExpiredHandler
-  ) {
-    try {
-      await Promise.resolve(
-        authSessionExpiredHandler({
-          token: options.token,
-          requestId: responseRequestId,
-        }),
-      );
-    } catch (error) {
-      logNetworkEvent('error', {
-        method,
-        url: sanitizeUrlForLog(finalUrl),
-        requestId: responseRequestId,
-        errorType:
-          error instanceof Error ? error.name : 'SessionExpiryHandlerError',
-        operation: 'expire-session',
-      });
-    }
-  }
+  await notifyAuthSessionExpired({
+    status: response.status,
+    token: options.token,
+    requestId: responseRequestId,
+    method,
+    finalUrl,
+    enabled: options.expireSessionOnUnauthorized !== false,
+  });
 
   if (response.status === 204) {
     logNetworkEvent('response', {

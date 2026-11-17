@@ -7,7 +7,9 @@ export function messageMenuGeometry(
   const menuWidth = isMine ? 284 : 220;
   const menuHeight = 56;
   const arrowDepth = 7;
-  const menuGap = 16;
+  // Keep the menu visually attached to the bubble while leaving room for the
+  // arrow. A larger gap makes reply/delete appear detached on compact phones.
+  const menuGap = 8;
   const edgeInset = 8;
   const x = Math.min(
     Math.max(point.x - frame.x - (isMine ? menuWidth - 42 : 42), 12),

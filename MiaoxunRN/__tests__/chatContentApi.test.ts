@@ -54,6 +54,81 @@ test('transmits a versioned reference and continuation selector through the exis
     }),
   );
 });
+
+test('sends exact attachment IDs for text and attachment-only messages', async () => {
+  jest.mocked(request).mockResolvedValue({ messages: [] });
+  const attachmentIds = [
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  ];
+
+  await messageApi.sendMessage(
+    'thread',
+    'caption',
+    'owner',
+    undefined,
+    undefined,
+    'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    45000,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    attachmentIds,
+  );
+  await messageApi.sendMessage(
+    'thread',
+    '',
+    'owner',
+    undefined,
+    undefined,
+    'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    45000,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    attachmentIds,
+  );
+
+  expect(jest.mocked(request).mock.calls.map(call => call[1]?.body)).toEqual([
+    {
+      content: 'caption',
+      contextRefs: [],
+      clientMessageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      attachmentIds,
+    },
+    {
+      content: '',
+      contextRefs: [],
+      clientMessageId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      attachmentIds,
+    },
+  ]);
+});
+
+test('does not mix ordinary attachment IDs with Agent context references', async () => {
+  expect(() =>
+    messageApi.sendMessage(
+      'agent-thread',
+      'Analyze these',
+      'owner',
+      undefined,
+      undefined,
+      undefined,
+      45000,
+      [{ kind: 'station-album', id: 'album-1', title: 'Album' }],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
+    ),
+  ).toThrow('普通聊天附件');
+  expect(jest.mocked(request)).not.toHaveBeenCalled();
+});
 test('confirmation sends the immutable snapshot identity and rejects a mismatching receipt', async () => {
   const preview = parseContentPreview(proposal);
   const confirmed = {

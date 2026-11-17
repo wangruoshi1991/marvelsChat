@@ -74,11 +74,11 @@ export const defaultUIPreferences = (): UIPreferences => ({
     'secondFloor.swipeToExit': {
       enabled: true,
       direction: 'up',
-      // The fixed return affordance and measured-bottom page scrollers share
-      // the prototype's short swipe threshold.
-      distance: 55,
-      velocityThreshold: 0.35,
-      animationMs: 160,
+      // The return affordance sits at the bottom edge. Require a deliberate
+      // swipe so a short reading scroll cannot dismiss the floor by accident.
+      distance: 88,
+      velocityThreshold: 0.55,
+      animationMs: 220,
       action: 'goBack',
     },
     'miao.taskCard.participantsSwipe': {

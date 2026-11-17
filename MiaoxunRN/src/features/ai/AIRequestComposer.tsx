@@ -36,6 +36,7 @@ import { AIContextReference } from '../../models/aiTask';
 export function AIRequestComposer({
   palette,
   language,
+  token,
   draft,
   scene,
   context,
@@ -49,6 +50,7 @@ export function AIRequestComposer({
 }: {
   palette: Palette;
   language: Language;
+  token?: string;
   draft: string;
   scene?: AIAssistScene;
   context?: AIAssistObjectReference;
@@ -116,6 +118,7 @@ export function AIRequestComposer({
                 palette={colors}
                 language={language}
                 references={[reference]}
+                token={token}
               />
             ) : (
               <Text
@@ -155,6 +158,7 @@ export function AIRequestComposer({
               onRemove={onRemoveReference}
               palette={colors}
               language={language}
+              token={token}
             />
           </WorkspacePanel>
         ) : null}

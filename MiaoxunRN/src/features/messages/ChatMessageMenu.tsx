@@ -1,12 +1,22 @@
 import React from 'react';
 import { Alert, Pressable, View } from 'react-native';
-import { RefreshCw, Trash2, Undo2 } from 'lucide-react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
+import {
+  Copy,
+  Download,
+  Eye,
+  FileText,
+  RefreshCw,
+  Trash2,
+  Undo2,
+} from 'lucide-react-native';
 
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
 import { MessageInlineAction } from '../../shared/ui';
 import { ChatMessage, Language } from '../session/useMiaoxunSession';
+import type { ChatAttachmentDTO } from '../../models/api';
 
 export function ChatMessageMenu({
   palette,
@@ -20,6 +30,9 @@ export function ChatMessageMenu({
   onDeleteMessage,
   onRecallMessage,
   onActionMessage,
+  onViewAttachments,
+  onPreviewAttachment,
+  onSaveAttachment,
 }: {
   palette: Palette;
   language: Language;
@@ -37,7 +50,26 @@ export function ChatMessageMenu({
   onDeleteMessage: (messageId: string) => void | Promise<void>;
   onRecallMessage: (messageId: string) => void | Promise<void>;
   onActionMessage: (message: string) => void;
+  onViewAttachments?: (message: ChatMessage) => void;
+  onPreviewAttachment?: (attachment: ChatAttachmentDTO) => void;
+  onSaveAttachment?: (attachment: ChatAttachmentDTO) => void;
 }) {
+  const hasText = selectedMessage.content.trim().length > 0;
+  const isFailed = selectedMessage.localStatus === 'failed';
+  const attachments =
+    !selectedMessage.deletedAt &&
+    !selectedMessage.recalledAt &&
+    !isFailed &&
+    Array.isArray(selectedMessage.metadata?.attachments)
+      ? selectedMessage.metadata.attachments.filter(
+          (attachment): attachment is ChatAttachmentDTO =>
+            Boolean(attachment && typeof attachment === 'object'),
+        )
+      : [];
+  const imageAttachments = attachments.filter(item => item.kind === 'image');
+  const fileAttachments = attachments.filter(item => item.kind === 'file');
+  const canReply =
+    !isFailed && !selectedMessage.deletedAt && !selectedMessage.recalledAt;
   return (
     <View style={[styles.messageInlineMenuLayer, styles.pointerEventsBoxNone]}>
       <Pressable style={styles.messageInlineMenuBackdrop} onPress={onClose} />
@@ -69,15 +101,67 @@ export function ChatMessageMenu({
               : styles.messageInlineMenuArrowBottom,
           ]}
         />
-        <MessageInlineAction
-          icon={Undo2}
-          title={textFor(language, '回复', 'Reply')}
-          palette={palette}
-          onPress={() => {
-            onReply(selectedMessage);
-            onClose();
-          }}
-        />
+        {canReply ? (
+          <MessageInlineAction
+            icon={Undo2}
+            title={textFor(language, '回复', 'Reply')}
+            palette={palette}
+            onPress={() => {
+              onReply(selectedMessage);
+              onClose();
+            }}
+          />
+        ) : null}
+        {hasText && !isFailed ? (
+          <MessageInlineAction
+            icon={Copy}
+            title={textFor(language, '复制', 'Copy')}
+            palette={palette}
+            onPress={() => {
+              Clipboard.setString(selectedMessage.content);
+              onActionMessage(
+                textFor(language, '消息已复制', 'Message copied'),
+              );
+              onClose();
+            }}
+          />
+        ) : null}
+        {imageAttachments.length && onViewAttachments ? (
+          <MessageInlineAction
+            icon={Eye}
+            title={textFor(language, '查看图片', 'View images')}
+            accessibilityLabel={textFor(language, '查看图片', 'View images')}
+            palette={palette}
+            onPress={() => {
+              onViewAttachments(selectedMessage);
+              onClose();
+            }}
+          />
+        ) : null}
+        {imageAttachments.length && onSaveAttachment ? (
+          <MessageInlineAction
+            icon={Download}
+            title={textFor(language, '保存图片', 'Save image')}
+            accessibilityLabel={textFor(language, '保存图片', 'Save image')}
+            palette={palette}
+            onPress={() => {
+              onSaveAttachment(imageAttachments[0]);
+              onClose();
+            }}
+          />
+        ) : null}
+        {fileAttachments.length && onPreviewAttachment ? (
+          <MessageInlineAction
+            icon={FileText}
+            title={textFor(language, '预览文件', 'Preview file')}
+            accessibilityLabel={textFor(language, '预览文件', 'Preview file')}
+            palette={palette}
+            onPress={() => {
+              onPreviewAttachment(fileAttachments[0]);
+              onClose();
+            }}
+          />
+        ) : null}
         <MessageInlineAction
           icon={Trash2}
           title={textFor(language, '删除', 'Delete')}

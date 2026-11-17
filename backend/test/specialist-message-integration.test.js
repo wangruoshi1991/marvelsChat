@@ -108,6 +108,16 @@ integration("strict client contract, stable ID and mixed contexts reject before 
   assert.equal((await inputRows()).length, 0); assert.equal(invocations, 0);
 });
 
+integration("specialist Agent threads reject attachment IDs before persistence or model dispatch", async () => {
+  const input = { ...body("Please summarize the attached file"), attachmentIds: [crypto.randomUUID()] };
+  const response = await send(input);
+  assert.equal(response.status, 400, JSON.stringify(response));
+  assert.equal(code(response), "AGENT_ATTACHMENT_REFERENCE_REQUIRED");
+  assert.equal((await inputRows()).length, 0);
+  assert.equal(invocations, 0);
+  assert.equal(modelCalls, 0);
+});
+
 integration("ordinary reply preserves literal JSON and is marked as new dispatch content", async () => {
   const literal = JSON.stringify({ language: "zh", theme: "clean", title: "Raw example", summary: "Exact text", sections: [{ body: "Literal" }] });
   runtime = async options => { await options.beforeModelCall(); modelCalls++; return modelResult({ type: "reply", reply: literal }); };
