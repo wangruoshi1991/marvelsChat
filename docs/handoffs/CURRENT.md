@@ -6,7 +6,8 @@
 
 #### 2026-11-24 接手复核与当前缺口
 
-- 正式工作树为 `/Users/gary/.codex/worktrees/admin-lifecycle-release/marvelsChat`，分支 `codex/ui-agent-candidate-20261105`。工作区原有 251 项已跟踪修改和 132 项未跟踪条目均保留，本轮只补充本节交接记录。
+- 主分支 `ff90b34` 推送后的 GitHub Actions `Repository Quality` 运行 `45307924678` 曾在干净 `MiaoxunRN/npm ci` 阶段失败，原因为 `react-native-webrtc+155.0.1.patch` 的上下文空行和第二个 hunk 行数头不符合 `patch-package` 严格解析；后续任务因质量门依赖全部跳过。已修正 patch，干净 `npm ci` 本地验证两个原生 patch 均成功应用，待重新推送后复验远端运行。
+- 正式工作树为 `/Users/gary/.codex/worktrees/admin-lifecycle-release/marvelsChat`，当前分支 `main`，远端与本地均指向 `ff90b34`。此前工作区原有 251 项已跟踪修改和 132 项未跟踪条目已纳入合并提交，本轮只补充本节交接记录。
 - `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 退出 0：RN 144 套、1,722 项，Backend 1,178 项通过、440 项按环境跳过，Agents 59、Admin 27、Avatar Web 44、检索 Web 13；`git diff --check` 通过。跳过项没有计作 PostgreSQL 通过。
 - 新建一次性本机 PostgreSQL 18.4 隔离库，先应用 071，再运行两次 `npm run db:migrate`，第一次应用 072–074 共 3 份，第二次 0 新增、73 不变。回归运行送达回执、附件、相册并发和前台通话 PostgreSQL 专项共 32 项，零失败、零跳过。
 - 后台事务边界已修复。账号创建、修改管理员权限、修改资料和撤销 Agent 授权的业务写入与审计写入现在共用同一事务；账号创建一次性写入请求状态。审计故障回滚、并发幂等、会话撤销和凭据回执在隔离 PostgreSQL 18.4 通过。
