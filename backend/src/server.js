@@ -42,6 +42,8 @@ import { registerChatContentPreviewRoutes } from "./routes/chat-content-preview-
 import { createChatMessageAI } from "./chat-message-ai.js";
 import { createVoiceCallService } from "./voice-call-service.js";
 import { registerVoiceCallRoutes } from "./routes/voice-call-routes.js";
+import { getAITaskWorkerStatus } from "./ai-task-worker-status-repository.js";
+import { buildMediaRetrievalRuntimeStatus } from "./media-retrieval-runtime-status.js";
 
 const app = express();
 const host = config.host;
@@ -103,6 +105,8 @@ registerAppRoutes(app, {
   sendPresenceChanged,
   chatMessageText: chatMessageAI.availability,
   getChatVoiceCalls: () => voiceCalls.availability,
+  getAITaskWorkerStatus,
+  getMediaRetrievalRuntimeStatus: buildMediaRetrievalRuntimeStatus,
 });
 registerProductRoutes(app, { authenticate, asyncHandler });
 registerAgentAvatarRoutes(app, { authenticate, asyncHandler });

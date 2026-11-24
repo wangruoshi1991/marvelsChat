@@ -15,6 +15,12 @@
 - 一对一通话仍是前台、单 API 进程信令的候选。被叫接听请求丢回执时，控制器现在先读取权威通话状态，服务端已接通则发送 `hangup` 清理，不再按旧响铃状态发送 `decline`。RN 定向控制器测试 9 项通过。跨网 TURN、系统后台来电、锁屏接听和实体设备听音、路由、打断、读屏仍待验。
 - Agent 注册和 published 目录只证明可发现性。视频 Agent 仍产出脚本/镜头表，PDF/DOCX/OCR、外部通知和真实漫画生图供应商未接入或未完成验收。两个 Worker 有独立健康探针，`/api/ready` 只检查数据库，不能单独证明 Worker 或供应商可用。
 
+#### 2026-11-24 后续本地修复
+
+- 账号创建审计失败已补真实隔离 PostgreSQL 回归。完整 001–074 迁移和有效 Butler 发布身份夹具下，审计异常会回滚 `users`、`user_profiles`、`user_agents`、`chat_threads` 和 `chat_messages`，管理员事务专项共 2 项通过。
+- `/api/ready` 现在读取 AI Worker 新鲜心跳和媒体检索 Worker 的 readiness/liveness。数据库正常但任一必需 Worker 停止时返回 503 并给出依赖状态。媒体检索明确关闭时，健康的 Worker 不阻断基础 API readiness。readiness 定向测试 7 项通过。
+- 本轮完整 `MIAOXUN_DOTENV_ENABLED=false ./scripts/check-repository.sh` 通过，RN 144 套、1,722 项；`git diff --check` 通过。上述代码改动尚未提交，仍需在提交后重新验证远端 CI。
+
 #### 2026-11-23 通话单次退出与音频输出
 
 - 主动取消、拒绝或挂断直接关闭本机通话和控制页，返回原页面并保留草稿。后端确认异步处理。服务端无法确认时在原页提示。

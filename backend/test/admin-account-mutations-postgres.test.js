@@ -4,7 +4,9 @@ import test from "node:test";
 import { createAdminAccountMutator, mutateAdminAccount } from "../src/admin-repository.js";
 import { getActiveRealtimeSessionIds, verifyPassword } from "../src/auth.js";
 import { closeDatabase, query, withTransaction } from "../src/db.js";
-import { createSessionForUser, createUsageEvent, revokeSession } from "../src/repositories.js";
+import { getAgent } from "../../agents/registry.js";
+import { computeAgentReleaseContractHash } from "../../shared/agent-catalog.js";
+import { createManagedUserWithAudit, createSessionForUser, createUsageEvent, revokeSession } from "../src/repositories.js";
 
 const enabled = process.env.RUN_ADMIN_ACCOUNT_POSTGRES === "1";
 
@@ -26,6 +28,58 @@ test("admin account mutations roll back, serialize and return credential-free re
     await query(`INSERT INTO users(id,email,password_hash,display_name,ai_id,role)
       VALUES (?, ?, 'previous-fixture', ?, ?, ?)`, [id, `${id}@example.invalid`, id, `92000000000${index}`, id === actor.id ? "admin" : "user"]);
   }
+  const butler = await getAgent("miaoxun-butler");
+  const butlerIdentity = {
+    key: butler.key,
+    avatarKind: "agent-mark",
+    displayName: butler.name,
+    description: butler.description,
+    mark: butler.identity.mark,
+    shape: butler.identity.shape,
+    colors: butler.identity.colors,
+    published: true,
+    source: "registry",
+    updatedAt: "2026-11-24T00:00:00.000Z",
+  };
+  await query(`UPDATE agent_catalog
+    SET display_name = ?, description = ?, identity_mark = ?, identity_shape = ?,
+        identity_colors = ?::jsonb, status = 'published', release_version = ?,
+        contract_hash = ?, source = 'registry'
+    WHERE agent_id = ?`, [
+    butlerIdentity.displayName,
+    butlerIdentity.description,
+    butlerIdentity.mark,
+    butlerIdentity.shape,
+    JSON.stringify(butlerIdentity.colors),
+    butler.version,
+    computeAgentReleaseContractHash({ key: butler.key, version: butler.version, permissions: butler.permissions, identity: butlerIdentity }),
+    butler.key,
+  ]);
+  await t.test("account creation rolls back default data when audit fails", async () => {
+    let createdUserId;
+    await assert.rejects(
+      () => createManagedUserWithAudit({
+        email: `${randomUUID()}@example.invalid`,
+        displayName: `Audit rollback ${randomUUID()}`,
+        passwordHash: "test-only-password",
+        actorUserId: actor.id,
+        recordAudit: async event => {
+          createdUserId = event.targetId;
+          throw new Error("create audit fixture failed");
+        },
+      }),
+      /create audit fixture failed/,
+    );
+    assert.ok(createdUserId);
+    const [counts] = await query(`SELECT
+      (SELECT COUNT(*) FROM users WHERE id = ?) AS users,
+      (SELECT COUNT(*) FROM user_profiles WHERE user_id = ?) AS profiles,
+      (SELECT COUNT(*) FROM user_agents WHERE user_id = ?) AS agents,
+      (SELECT COUNT(*) FROM chat_threads WHERE user_id = ?) AS threads,
+      (SELECT COUNT(*) FROM chat_messages WHERE user_id = ?) AS messages`,
+    [createdUserId, createdUserId, createdUserId, createdUserId, createdUserId]);
+    assert.deepEqual(counts, { users: "0", profiles: "0", agents: "0", threads: "0", messages: "0" });
+  });
   const insertSession = async (userId, { expired = false } = {}) => {
     const id = randomUUID();
     await query("INSERT INTO auth_sessions(id,user_id,token_hash,expires_at) VALUES (?, ?, ?, ?)", [

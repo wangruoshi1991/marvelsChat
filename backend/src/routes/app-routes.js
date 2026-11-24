@@ -51,6 +51,8 @@ export function registerAppRoutes(
     getOnlineUserIds,
     sendPresenceChanged,
     checkDatabaseStatus = checkDatabase,
+    getAITaskWorkerStatus = null,
+    getMediaRetrievalRuntimeStatus = null,
     getBootstrap = getBootstrapForUser,
     resolveRegisteredAgents = null,
     getPublishedCatalog = getPublishedProductCatalog,
@@ -77,8 +79,18 @@ export function registerAppRoutes(
     "/api/ready",
     asyncHandler(async (_req, res) => {
       const database = await checkDatabaseStatus();
-      const ready =
-        database.configured && database.connected && database.migrationsCurrent;
+      const [aiTaskWorker, mediaRetrievalWorker] = await Promise.all([
+        getAITaskWorkerStatus ? getAITaskWorkerStatus() : null,
+        getMediaRetrievalRuntimeStatus ? getMediaRetrievalRuntimeStatus() : null,
+      ]);
+      const aiReady = !getAITaskWorkerStatus || aiTaskWorker?.state === "ready";
+      // The media retrieval feature may be explicitly disabled while its
+      // worker remains a healthy process. That optional capability must not
+      // take the whole API out of readiness. A stopped worker must still make
+      // readiness fail so the deployment does not advertise a dead worker.
+      const mediaReady = !getMediaRetrievalRuntimeStatus ||
+        mediaRetrievalWorker?.liveness?.state === "healthy";
+      const ready = database.configured && database.connected && database.migrationsCurrent && aiReady && mediaReady;
       res.status(ready ? 200 : 503).json({
         ok: ready,
         app: "marvelsChat",
@@ -89,6 +101,16 @@ export function registerAppRoutes(
             connected: database.connected,
             migrationsCurrent: Boolean(database.migrationsCurrent),
           },
+          ...(getAITaskWorkerStatus ? { aiTaskWorker: {
+            state: aiTaskWorker?.state || "unavailable",
+            capabilities: Array.isArray(aiTaskWorker?.capabilities) ? aiTaskWorker.capabilities : [],
+            ready: aiReady,
+          } } : {}),
+          ...(getMediaRetrievalRuntimeStatus ? { mediaRetrievalWorker: {
+            state: mediaRetrievalWorker?.liveness?.state || "unknown",
+            readiness: mediaRetrievalWorker?.readiness?.state || "not-ready",
+            ready: mediaReady,
+          } } : {}),
         },
       });
     }),

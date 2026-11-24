@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { registerAppRoutes } from "../src/routes/app-routes.js";
 
-const registerHealthRoutes = (checkDatabaseStatus) => {
+const registerHealthRoutes = (checkDatabaseStatus, workerStatus = null, mediaStatus = null) => {
   const routes = new Map();
   const app = {};
   for (const method of ["get", "post", "patch", "delete"]) {
@@ -19,6 +19,8 @@ const registerHealthRoutes = (checkDatabaseStatus) => {
     getOnlineUserIds: () => [],
     sendPresenceChanged: () => undefined,
     checkDatabaseStatus,
+    getAITaskWorkerStatus: workerStatus ? async () => workerStatus : null,
+    getMediaRetrievalRuntimeStatus: mediaStatus ? async () => mediaStatus : null,
   });
   return routes;
 };
@@ -113,4 +115,61 @@ test("readiness returns 200 only when the database is connected and current", as
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.ok, true);
+});
+
+test("readiness returns 503 when the AI worker is unavailable", async () => {
+  const routes = registerHealthRoutes(async () => ({
+    configured: true,
+    connected: true,
+    migrationsCurrent: true,
+  }), { state: "unavailable", capabilities: [] });
+  const res = response();
+
+  await routes.get("/api/ready")({}, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.ok, false);
+  assert.deepEqual(res.body.dependencies.aiTaskWorker, {
+    state: "unavailable",
+    capabilities: [],
+    ready: false,
+  });
+});
+
+test("readiness returns 200 when configured workers are ready", async () => {
+  const routes = registerHealthRoutes(async () => ({
+    configured: true,
+    connected: true,
+    migrationsCurrent: true,
+  }), { state: "ready", capabilities: ["agent_message"] }, {
+    readiness: { state: "ready" },
+    liveness: { state: "healthy" },
+  });
+  const res = response();
+
+  await routes.get("/api/ready")({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.dependencies.aiTaskWorker.ready, true);
+  assert.equal(res.body.dependencies.mediaRetrievalWorker.ready, true);
+});
+
+test("readiness stays available when optional media retrieval is disabled but its worker is healthy", async () => {
+  const routes = registerHealthRoutes(async () => ({
+    configured: true,
+    connected: true,
+    migrationsCurrent: true,
+  }), { state: "ready", capabilities: ["agent_message"] }, {
+    readiness: { state: "not-ready" },
+    liveness: { state: "healthy" },
+  });
+  const res = response();
+
+  await routes.get("/api/ready")({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.dependencies.mediaRetrievalWorker.readiness, "not-ready");
+  assert.equal(res.body.dependencies.mediaRetrievalWorker.ready, true);
 });
