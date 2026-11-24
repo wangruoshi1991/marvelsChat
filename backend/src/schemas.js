@@ -395,6 +395,7 @@ export const mediaRetrievalEventsQuerySchema = z.object({
 
 export const mediaRetrievalAdminControlsSchema = z
   .object({
+    expectedRevision: z.number().int().min(1).optional(),
     operatorEnabled: z.boolean().optional(),
     providerCallsEnabled: z.boolean().optional(),
     queueEnabled: z.boolean().optional(),

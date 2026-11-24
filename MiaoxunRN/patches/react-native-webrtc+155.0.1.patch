@@ -1,0 +1,44 @@
+diff --git a/node_modules/react-native-webrtc/ios/RCTWebRTC/RCTConvert+WebRTC.m b/node_modules/react-native-webrtc/ios/RCTWebRTC/RCTConvert+WebRTC.m
+index 39b1cae..f944024 100644
+--- a/node_modules/react-native-webrtc/ios/RCTWebRTC/RCTConvert+WebRTC.m
++++ b/node_modules/react-native-webrtc/ios/RCTWebRTC/RCTConvert+WebRTC.m
+@@ -15,12 +15,12 @@ + (RTCSessionDescription *)RTCSessionDescription:(id)json {
+     }
+
+     if (![json isKindOfClass:[NSDictionary class]]) {
+-        RCTLogConvertError(json, @"must be an object");
++        RCTLogError(@"WebRTC signal must be an object");
+         return nil;
+     }
+
+     if (json[@"sdp"] == nil) {
+-        RCTLogConvertError(json, @".sdp must not be null");
++        RCTLogError(@"WebRTC session description is missing SDP");
+         return nil;
+     }
+
+@@ -37,22 +37,21 @@ + (RTCIceCandidate *)RTCIceCandidate:(id)json {
+     }
+
+     if (![json isKindOfClass:[NSDictionary class]]) {
+-        RCTLogConvertError(json, @"must be an object");
++        RCTLogError(@"WebRTC signal must be an object");
+         return nil;
+     }
+
+     if (json[@"candidate"] == nil) {
+-        RCTLogConvertError(json, @".candidate must not be null");
++        RCTLogError(@"WebRTC ICE candidate text is missing");
+         return nil;
+     }
+
+     if (json[@"sdpMid"] == nil && json[@"sdpMLineIndex"] == nil) {
+-        RCTLogConvertError(json, @".sdpMid and .sdpMLineIndex must not be both null");
++        RCTLogError(@"WebRTC ICE candidate mid and index are missing");
+         return nil;
+     }
+
+     NSString *sdp = json[@"candidate"];
+-    RCTLogTrace(@"%@ <- candidate", sdp);
+     int sdpMLineIndex = [RCTConvert int:json[@"sdpMLineIndex"]];
+     NSString *sdpMid = json[@"sdpMid"];

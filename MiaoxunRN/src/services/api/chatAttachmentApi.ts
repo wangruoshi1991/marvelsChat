@@ -22,6 +22,12 @@ const contentPath = (id: string) => `/api/chat-attachments/${id}/content`;
 
 const nativePicker = NativeModules.MiaoxunDocumentPickerModule as
   | {
+      downloadChatVideo(
+        key: string,
+        attachmentId: string,
+        token: string,
+      ): Promise<{ status: number; uri?: string }>;
+      releaseChatVideo(key: string): void;
       uploadChatAttachment(
         key: string,
         threadId: string,
@@ -60,7 +66,7 @@ function apiError(
 
 function parseAttachment(
   value: unknown,
-  kind: 'image' | 'file',
+  kind: 'image' | 'audio' | 'file' | 'video',
 ): ChatAttachmentDTO {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('附件上传结果格式无效。');
@@ -69,6 +75,10 @@ function parseAttachment(
     typeof item.mimeType === 'string' &&
     (kind === 'image'
       ? item.mimeType === 'image/jpeg'
+      : kind === 'audio'
+      ? item.mimeType === 'audio/mp4'
+      : kind === 'video'
+      ? item.mimeType === 'video/mp4'
       : textMimeTypes.has(item.mimeType));
   if (
     typeof item.id !== 'string' ||
@@ -85,8 +95,12 @@ function parseAttachment(
     !Number.isSafeInteger(item.byteSize) ||
     (item.byteSize as number) < 1 ||
     (item.byteSize as number) >
-      (kind === 'image' ? maxImageBytes : maxTextBytes) ||
-    item.durationMs !== null ||
+      (kind === 'file' ? maxTextBytes : maxImageBytes) ||
+    (kind === 'audio' || kind === 'video'
+      ? !Number.isInteger(item.durationMs) ||
+        (item.durationMs as number) < 1 ||
+        (item.durationMs as number) > (kind === 'video' ? 60000 : 61000)
+      : item.durationMs !== null) ||
     item.downloadPath !== contentPath(item.id) ||
     !item.data ||
     typeof item.data !== 'object' ||
@@ -98,15 +112,58 @@ function parseAttachment(
   return item as unknown as ChatAttachmentDTO;
 }
 
-export async function uploadChatImage(args: {
+type ChatBinaryUpload = {
   threadId: string;
   token: string;
   uri: string;
   filename: string;
   mimeType: string;
   idempotencyKey: string;
-}): Promise<ChatAttachmentDTO> {
+};
+
+export async function uploadChatImage(args: ChatBinaryUpload) {
   if (!imageMimeTypes.has(args.mimeType)) throw new Error('图片格式不受支持。');
+  return uploadChatBinary(args, 'image');
+}
+
+export async function uploadChatAudio(
+  args: Omit<ChatBinaryUpload, 'mimeType'>,
+) {
+  return uploadChatBinary({ ...args, mimeType: 'audio/mp4' }, 'audio');
+}
+
+export async function uploadChatVideo(args: ChatBinaryUpload) {
+  if (args.mimeType !== 'video/mp4') throw new Error('请选择 H.264 MP4 视频。');
+  return uploadChatBinary(args, 'video');
+}
+
+export async function downloadChatVideo(
+  attachmentId: string,
+  token: string,
+  key: string,
+) {
+  if (!uuidPattern.test(attachmentId)) throw new Error('视频附件无效。');
+  if (!nativePicker?.downloadChatVideo)
+    throw new Error('此安装包不支持视频预览。');
+  const result = await nativePicker.downloadChatVideo(key, attachmentId, token);
+  await handleAuthenticatedResponse({
+    status: result.status,
+    token,
+    method: 'GET',
+    path: contentPath(attachmentId),
+  });
+  if (result.status !== 200 || !result.uri?.startsWith('file:///'))
+    throw new Error('视频读取失败，请重试。');
+  return result.uri;
+}
+
+export const releaseChatVideo = (key: string) =>
+  nativePicker?.releaseChatVideo?.(key);
+
+async function uploadChatBinary(
+  args: ChatBinaryUpload,
+  kind: 'image' | 'audio' | 'video',
+) {
   if (!uuidPattern.test(args.idempotencyKey))
     throw new Error('附件幂等键无效。');
   const binaryRequest = await requestNativeBinary(
@@ -119,7 +176,7 @@ export async function uploadChatImage(args: {
       maximumResponseBytes: 8192,
       headers: {
         'Idempotency-Key': args.idempotencyKey,
-        'X-Miaoxun-Attachment-Kind': 'image',
+        'X-Miaoxun-Attachment-Kind': kind,
         'X-Miaoxun-Attachment-Mime': args.mimeType,
         'X-Miaoxun-Filename': encodeURIComponent(args.filename),
       },
@@ -141,7 +198,7 @@ export async function uploadChatImage(args: {
     }
     if (!envelope || typeof envelope !== 'object' || !('data' in envelope))
       throw new Error('附件上传结果格式无效。');
-    return parseAttachment((envelope as { data: unknown }).data, 'image');
+    return parseAttachment((envelope as { data: unknown }).data, kind);
   }
 }
 

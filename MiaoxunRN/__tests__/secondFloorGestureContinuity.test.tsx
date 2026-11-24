@@ -34,6 +34,9 @@ const event = (
   nativeEvent: {
     timestamp,
     touches: active ? [{ identifier: 0, pageX: 100, pageY: currentY }] : [],
+    changedTouches: active
+      ? []
+      : [{ identifier: 0, pageX: 100, pageY: currentY }],
   },
   touchHistory: {
     numberActiveTouches: active ? 1 : 0,
@@ -125,10 +128,10 @@ test.each([false, true])(
       surface().props.onResponderGrant(event(300, 320, 1100));
       surface().props.onResponderMove(event(320, 450, 1700));
     });
-    expect(dy()).toBeCloseTo(93.6);
+    expect(dy()).toBeCloseTo(75);
     await act(async () => tree!.update(screen()));
     act(() => surface().props.onResponderMove(event(450, 455, 1800)));
-    expect(dy()).toBeCloseTo(97.2);
+    expect(dy()).toBeCloseTo(77.5);
     if (reduceMotion) {
       const timing = jest.spyOn(Animated, 'timing');
       act(() =>
@@ -154,7 +157,7 @@ test.each([false, true])(
       expect(dy()).toBe(36);
       expect(stopped).toHaveLength(1);
       act(() => stopped[0](36));
-      expect(dy()).toBeCloseTo(50.4);
+      expect(dy()).toBeCloseTo(56);
       const resetFrame = dy();
       act(() => {
         surface().props.onResponderRelease(event(340, 340, 2300, false));
@@ -162,7 +165,7 @@ test.each([false, true])(
         stopped[0](36);
       });
       expect(dy()).toBe(0);
-      expect(resetFrame).toBeCloseTo(50.4);
+      expect(resetFrame).toBeCloseTo(56);
     }
   },
 );
@@ -209,7 +212,7 @@ test('second-floor return keeps the original distance when a preference refresh 
       />,
     );
   await act(async () => {
-    tree = Renderer.create(screen(55));
+    tree = Renderer.create(screen(128));
   });
   const surface = () =>
     tree!.root.findByProps({ testID: 'floor-return-swipe-area' });
@@ -219,12 +222,12 @@ test('second-floor return keeps the original distance when a preference refresh 
   ).toBe(true);
   act(() => {
     surface().props.onResponderGrant(event(300, 280, 1100));
-    surface().props.onResponderMove(event(280, 200, 1700));
+    surface().props.onResponderMove(event(280, 180, 1700));
   });
-  await act(async () => tree!.update(screen(150)));
+  await act(async () => tree!.update(screen(180)));
   act(() => {
-    surface().props.onResponderMove(event(200, 195, 1800));
-    surface().props.onResponderRelease(event(195, 195, 1900, false));
+    surface().props.onResponderMove(event(180, 165, 1800));
+    surface().props.onResponderRelease(event(165, 165, 1900, false));
   });
   expect(close).toHaveBeenCalledTimes(1);
 });
@@ -322,13 +325,13 @@ test('fixed second-floor return area follows the finger while content scrollers 
   ).toBe(true);
   act(() => {
     surface().props.onResponderGrant(event(300, 280, 1100));
-    surface().props.onResponderMove(event(280, 200, 1700));
+    surface().props.onResponderMove(event(280, 180, 1700));
   });
   const root = tree!.root.findByProps({ testID: 'second-floor' });
   const translated = StyleSheet.flatten(root.props.style).transform![0] as {
     translateY: { __getValue: () => number };
   };
-  expect(translated.translateY.__getValue()).toBeCloseTo(-72);
+  expect(translated.translateY.__getValue()).toBeCloseTo(-108);
   expect(close).not.toHaveBeenCalled();
   const value = (
     StyleSheet.flatten(root.props.style).opacity as {
@@ -349,7 +352,7 @@ test('fixed second-floor return area follows the finger while content scrollers 
   expect(translated.translateY.__getValue()).toBeCloseTo(frozenFrame);
   expect(stopped).toHaveLength(1);
   act(() => stopped[0](0.05));
-  expect(translated.translateY.__getValue()).toBeCloseTo(frozenFrame - 18);
+  expect(translated.translateY.__getValue()).toBeCloseTo(frozenFrame - 36);
   act(() => {
     surface().props.onResponderRelease(event(260, 260, 2300, false));
     value.setValue(0);

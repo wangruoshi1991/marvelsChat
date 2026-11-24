@@ -41,7 +41,6 @@ export function ReferenceConfirmation({
   const [qualityPreset, setQualityPreset] = useState<AvatarQualityPreset>(
     feature.defaultQualityPreset,
   );
-  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     if (!orderedImages.some((image) => image.view === selectedView)) {
@@ -51,15 +50,6 @@ export function ReferenceConfirmation({
 
   const selectedQuality = feature.qualityPresets.find(({ id }) => id === qualityPreset)
     || feature.qualityPresets[0];
-
-  const run = async (action: () => Promise<void>) => {
-    setActionError("");
-    try {
-      await action();
-    } catch {
-      setActionError("操作未完成，请稍后重试");
-    }
-  };
 
   return (
     <div className="reference-confirmation">
@@ -105,13 +95,12 @@ export function ReferenceConfirmation({
           <span>确认后开始 3D 建模</span>
           <strong>预计 ¥{((selectedQuality?.estimatedCostFen || 0) / 100).toFixed(2)}</strong>
         </div>
-        {actionError ? <p className="composer-error" role="alert">{actionError}</p> : null}
         <div className="reference-actions">
           <button
             className="secondary-command"
             type="button"
             disabled={pending}
-            onClick={() => void run(onReject)}
+            onClick={() => void onReject()}
           >
             <X size={18} />
             不使用这组四视图
@@ -120,7 +109,7 @@ export function ReferenceConfirmation({
             className="primary-command"
             type="button"
             disabled={pending || orderedImages.length !== 4}
-            onClick={() => void run(() => onConfirm(qualityPreset))}
+            onClick={() => void onConfirm(qualityPreset)}
           >
             <Check size={18} />
             {pending ? "正在确认" : "确认四视图并生成 3D"}

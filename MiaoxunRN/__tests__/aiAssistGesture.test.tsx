@@ -569,7 +569,11 @@ describe('global content actions', () => {
 
   it('keeps explicitly accessible actions available for a separate button tap', () => {
     const view = mount();
-    act(() => view.surface().props.onAccessibilityAction());
+    act(() =>
+      view.surface().props.onAccessibilityAction({
+        nativeEvent: { actionName: 'show-menu' },
+      }),
+    );
     expect(view.overlay()).not.toHaveLength(0);
     const action = view.renderer.root
       .findAllByProps({ testID: 'content-action-right' })

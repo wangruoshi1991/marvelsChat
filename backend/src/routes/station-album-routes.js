@@ -1,9 +1,10 @@
+import { z } from "zod";
 import { HttpError } from "../http-error.js";
 import { createUsageEvent, hashRequestIp } from "../repositories.js";
 import {
-  createStationAlbum,
+  submitStationAlbum,
   updateStationAlbum,
-} from "../station-repository.js";
+} from "../station-library-repository.js";
 import { deleteOwnedStationAlbum } from "../station-media-deletion-service.js";
 import {
   stationAlbumParamsSchema,
@@ -17,20 +18,14 @@ export function registerStationAlbumRoutes(app, { authenticate, asyncHandler }) 
     authenticate,
     asyncHandler(async (req, res) => {
       const body = stationAlbumSchema.parse(req.body);
-      const album = await createStationAlbum({
+      const submissionKey = z.string().uuid().optional().parse(req.get("Idempotency-Key"))?.toLowerCase();
+      const { album, replayed } = await submitStationAlbum({
         userId: req.user.id,
         ...body,
+        submissionKey,
+        audit: { ipHash: hashRequestIp(req.ip), userAgent: req.get("user-agent") || "" },
       });
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "station.album.create",
-        targetType: "station_album",
-        targetId: album.id,
-        payload: { visibility: album.visibility },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
-      });
-      res.status(201).json({ data: album });
+      res.status(replayed ? 200 : 201).json({ data: album });
     }),
   );
 
@@ -69,19 +64,11 @@ export function registerStationAlbumRoutes(app, { authenticate, asyncHandler }) 
       const deleted = await deleteOwnedStationAlbum({
         userId: req.user.id,
         albumId,
+        audit: { ipHash: hashRequestIp(req.ip), userAgent: req.get("user-agent") || "" },
       });
       if (!deleted) {
         throw new HttpError(404, "Album not found");
       }
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "station.album.delete",
-        targetType: "station_album",
-        targetId: albumId,
-        payload: {},
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
-      });
       res.status(204).send();
     }),
   );

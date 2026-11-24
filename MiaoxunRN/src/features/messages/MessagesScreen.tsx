@@ -1,3 +1,7 @@
+import { ChatBatchForwardSheet } from './ChatBatchForwardSheet';
+import { canSelectForwardMessage } from './chatMessageSelection';
+import { useDirectMessageReceipts } from './useDirectMessageReceipts';
+import type { ChatMessageReceiptAvailability } from '../../services/api/messageReceiptApi';
 import type { AssistMessageSource } from '../assist/assistMessageSource';
 import {
   isContextReference,
@@ -14,13 +18,14 @@ import React, {
 } from 'react';
 import {
   Animated,
+  BackHandler,
   Easing,
   FlatList,
   Keyboard,
   Modal,
-  PanResponder,
   Platform,
   Pressable,
+  Share,
   Text,
   StyleSheet,
   useWindowDimensions,
@@ -35,6 +40,7 @@ import {
 import {
   AgentDTO,
   AvatarConfigDTO,
+  MessageDTO,
   StationAlbumDTO,
   StationMediaAssetDTO,
 } from '../../models/api';
@@ -56,6 +62,10 @@ import {
 } from '../../models/workspaceContext';
 import { WorkspaceContextCard } from './WorkspaceContextCard';
 import { useChatSpeech } from './useChatSpeech';
+import { useChatVoice } from './useChatVoice';
+import { appErrorText } from '../../shared/i18n';
+import { voiceCallConflictCopy } from '../../services/voiceCall/voiceCallResources';
+import { chatVoiceMessageContent } from '../../services/chatVoiceAudio';
 import { displayText, publicPresenceText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { isLightPalette, Palette } from '../../shared/theme';
@@ -75,6 +85,10 @@ import { MessageTab, UserAvatarRenderer } from './messageTypes';
 import { ChatComposer, ComposerTool } from './ChatComposer';
 import { ChatMessageItem } from './ChatMessageItem';
 import { ChatMessageMenu } from './ChatMessageMenu';
+import { ChatForwardSheet } from './ChatForwardSheet';
+import { useChatMessageText } from './useChatMessageText';
+import { ChatMessageTextResult } from './ChatMessageTextResult';
+import { ChatAttachmentReview } from './ChatAttachmentReview';
 import type { ChatMessageAttachmentAction } from './ChatMessageAttachments';
 import { resolveMessagePalette } from './messagePalette';
 import { ThreadSettingsSheet } from './ThreadSettingsSheet';
@@ -84,10 +98,18 @@ import { AlbumAssistantStatus } from './AlbumAssistantStatus';
 import { StationMediaPreviewScreen } from '../station/StationMediaPreviewScreen';
 import { keyboardBottomInset } from './keyboardGeometry';
 import { useReduceMotion } from '../../shared/useReduceMotion';
+import {
+  iosBackEdge,
+  useIOSBackGesture,
+} from '../../shared/gestures/useIOSBackGesture';
 import { saveComicImageToLibrary } from '../../services/comicMediaLibrary';
 import { stationContentApi } from '../../services/api/stationContentApi';
 import { customStickerApi } from '../../services/api/customStickerApi';
-import type { CustomStickerDTO } from '../../models/api';
+import { messageApi } from '../../services/api/messageApi';
+import type {
+  ChatMessageTextAvailabilityDTO,
+  CustomStickerDTO,
+} from '../../models/api';
 import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
 import { missingContextScopes } from '../ai/assistContext';
 import { agentScopeListLabel } from '../agents/agentPresentation';
@@ -109,6 +131,7 @@ import {
   takeStationPhoto,
 } from '../../services/stationMediaPicker';
 import {
+  pickChatVideo,
   pickStationFile,
   releaseStationFile,
 } from '../../services/stationFilePicker';
@@ -137,7 +160,6 @@ export type ChatDraftSnapshot = {
 };
 
 const recallWindowMs = 60 * 1000;
-const chatSwipeCloseThreshold = -84;
 const chatVisiblePosition = { minIndexForVisible: 1 };
 
 export function MessagesScreen(
@@ -148,6 +170,12 @@ export function MessagesScreen(
 
 export function ChatScreen({
   token,
+  chatMessageText,
+  chatVideoEnabled = false,
+  onStartVoiceCall,
+  voiceCallOpen = false,
+  chatMessageReceipts,
+  receiptActive = true,
   onAuthorizeAlbumAI,
   palette,
   language,
@@ -181,12 +209,20 @@ export function ChatScreen({
   onOpenWorkspace,
   onPreserveDraftForAccess,
   onRefreshThread,
+  forwardTargets = [],
+  onForwardComplete,
   onInitialDraftConsumed,
   onPrepareComposerTool,
   workspaceContribution,
   onConfirmUIPreferences,
 }: {
   token?: string;
+  chatMessageText?: ChatMessageTextAvailabilityDTO;
+  chatVideoEnabled?: boolean;
+  onStartVoiceCall?: () => void;
+  voiceCallOpen?: boolean;
+  chatMessageReceipts?: ChatMessageReceiptAvailability;
+  receiptActive?: boolean;
   onAuthorizeAlbumAI?: () => Promise<unknown>;
   palette: Palette;
   language: Language;
@@ -235,6 +271,8 @@ export function ChatScreen({
   ) => void;
   onPreserveDraftForAccess?: (draft: ChatDraftSnapshot) => void;
   onRefreshThread?: () => Promise<void>;
+  forwardTargets?: ChatThread[];
+  onForwardComplete?: (destination: ChatThread, messages: MessageDTO[]) => void;
   onInitialDraftConsumed?: () => void;
   /** Runs a real picker/upload and returns a server-backed context reference. */
   onPrepareComposerTool?: (
@@ -388,6 +426,7 @@ export function ChatScreen({
   );
   const attachmentSendBlockReason =
     chatAttachments.sendBlockReason || failedAttachmentBlockReason;
+  const [attachmentReviewScope, setAttachmentReviewScope] = useState<string>();
   const contextRefsRef = useRef(contextRefs);
   contextRefsRef.current = contextRefs;
   const [assistSource, setAssistSource] = useState<AssistMessageSource>();
@@ -433,6 +472,13 @@ export function ChatScreen({
     onTaskReady: onRefreshThread,
   });
   const [isSending, setIsSending] = useState(false);
+  const chatVoice = useChatVoice({
+    scope: `${chatScope}:${ordinaryAttachmentsEnabled}`,
+    threadId: thread.id,
+    token,
+    onError: onActionError,
+  });
+  const discardChatVoice = chatVoice.discard;
   const {
     isRecognizing: isRecognizingSpeech,
     start: startChatSpeech,
@@ -456,6 +502,15 @@ export function ChatScreen({
           : textFor(language, '语音识别失败', 'Speech recognition failed'),
       ),
   });
+  const currentVoiceStatus = chatVoice.status;
+  useEffect(() => {
+    if (voiceCallOpen) cancelChatSpeech();
+    if (
+      voiceCallOpen &&
+      ['preparing', 'recording', 'finishing'].includes(currentVoiceStatus)
+    )
+      discardChatVoice();
+  }, [voiceCallOpen, currentVoiceStatus, discardChatVoice, cancelChatSpeech]);
   const keyboardInset = useRef(new Animated.Value(0)).current;
   const keyboardInsetRef = useRef(0);
   const reduceMotion = useReduceMotion();
@@ -463,6 +518,15 @@ export function ChatScreen({
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(
     null,
   );
+  const directionalTools = useRef<(() => void) | null>(null);
+  const [menuAttachmentId, setMenuAttachmentId] = useState<string>();
+  const messageText = useChatMessageText({
+    scope: chatScope,
+    thread,
+    token,
+    language,
+    availability: chatMessageText,
+  });
   const [attachmentAction, setAttachmentAction] = useState<{
     messageId: string;
     action: ChatMessageAttachmentAction;
@@ -531,13 +595,9 @@ export function ChatScreen({
     },
     [],
   );
-  const [messageMenuPosition, setMessageMenuPosition] = useState<{
-    x: number;
-    y: number;
-    isMine: boolean;
-    arrowPlacement: 'top' | 'bottom';
-    arrowLeft: number;
-  } | null>(null);
+  const [messageMenuPosition, setMessageMenuPosition] = useState<ReturnType<
+    typeof messageMenuGeometry
+  > | null>(null);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const preserveDraftForAccess = useCallback(
     () =>
@@ -570,18 +630,59 @@ export function ChatScreen({
     ],
   );
   const closeChat = useCallback(() => {
+    Keyboard.dismiss();
     cancelChatSpeech();
-    if (workspaceContext || contextReset.current) preserveDraftForAccess();
+    discardChatVoice();
+    if (
+      workspaceContext ||
+      contextReset.current ||
+      (ordinaryAttachmentTarget && !hasLeftGroup && (draft || replyTarget))
+    )
+      preserveDraftForAccess();
     onBack();
-  }, [onBack, preserveDraftForAccess, cancelChatSpeech, workspaceContext]);
+  }, [
+    onBack,
+    preserveDraftForAccess,
+    cancelChatSpeech,
+    discardChatVoice,
+    draft,
+    hasLeftGroup,
+    ordinaryAttachmentTarget,
+    replyTarget,
+    workspaceContext,
+  ]);
   const openAgentAccess = onOpenAgentAccess
     ? () => {
         cancelChatSpeech();
+        discardChatVoice();
         preserveDraftForAccess();
         onOpenAgentAccess();
       }
     : undefined;
   const [isThreadSettingsOpen, setIsThreadSettingsOpen] = useState(false);
+  const [historyFocus, setHistoryFocus] = useState<{
+    scope: string;
+    messageId: string;
+    revision: number;
+  }>();
+  const historyRevision = useRef(0);
+  const historyTarget =
+    historyFocus?.scope === chatScope ? historyFocus : undefined;
+  const historyIndex = historyTarget
+    ? timeline.findIndex(
+        item =>
+          item.kind === 'message' &&
+          item.message.id === historyTarget.messageId &&
+          !item.message.deletedAt &&
+          !item.message.recalledAt,
+      )
+    : -1;
+  const [forwardSource, setForwardSource] = useState<ChatMessage>();
+  const [batchForward, setBatchForward] = useState<{
+    scope: string;
+    initialMessageId: string;
+  }>();
+  const forwardKeys = useRef(new Map<string, string>());
   const isChatInteractionBlocked = assist.isActive || Boolean(selectedMessage);
   const interactionBlockedRef = useRef(isChatInteractionBlocked);
   interactionBlockedRef.current = isChatInteractionBlocked;
@@ -596,6 +697,7 @@ export function ChatScreen({
     bottomOffset,
     shouldFollow,
     follow,
+    pauseFollowing,
   } = useChatFollow(
     `${token}:${currentUserId}:${thread.id}:${
       workspaceContribution?.step.id || ''
@@ -606,8 +708,12 @@ export function ChatScreen({
     useContributionFocus({
       scope: `${token}:${currentUserId}:${thread.id}:${
         workspaceContribution?.workspace.id || ''
-      }:${workspaceContribution?.step.id || ''}`,
-      index: workspaceContribution
+      }:${workspaceContribution?.step.id || ''}:${
+        historyTarget?.revision || ''
+      }`,
+      index: historyTarget
+        ? historyIndex
+        : workspaceContribution
         ? timeline.findIndex(
             item =>
               item.kind === 'contribution' &&
@@ -615,7 +721,7 @@ export function ChatScreen({
           )
         : -1,
       listRef,
-      blocked: isChatInteractionBlocked,
+      blocked: isChatInteractionBlocked || isThreadSettingsOpen,
     });
   const messageAreaRef = useRef<View>(null);
   const chatTranslateX = useRef(new Animated.Value(0)).current;
@@ -627,6 +733,59 @@ export function ChatScreen({
   const isDarkPalette = !isLightPalette(messagePalette);
   const canConfigureThread =
     Boolean(thread.peerUserId) || thread.kind === 'group';
+  const canSearchHistory =
+    Boolean(token) && ordinaryAttachmentTarget && !thread.agentId;
+  const sourceCanForward = (source: ChatMessage) =>
+    canSearchHistory &&
+    source.threadId === thread.id &&
+    canSelectForwardMessage(source);
+  const deliveryReceipts = useDirectMessageReceipts({
+    thread,
+    token,
+    currentUserId,
+    availability: chatMessageReceipts,
+    active: receiptActive,
+  });
+  const openHistoryMessage = async (result: MessageDTO) => {
+    const revision = ++historyRevision.current;
+    pauseFollowing();
+    if (!thread.messages.some(item => item.id === result.id)) {
+      try {
+        await onRefreshThread?.();
+      } catch {
+        if (
+          chatScopeActive.current &&
+          chatScopeRef.current === chatScope &&
+          historyRevision.current === revision
+        )
+          onActionError(
+            textFor(
+              language,
+              '无法读取原消息，请重试。',
+              'Could not load the original message. Try again.',
+            ),
+          );
+        return;
+      }
+    }
+    if (
+      chatScopeActive.current &&
+      chatScopeRef.current === chatScope &&
+      historyRevision.current === revision
+    )
+      setHistoryFocus({ scope: chatScope, messageId: result.id, revision });
+  };
+  useEffect(() => {
+    if (!historyTarget || historyIndex >= 0) return;
+    onActionError(
+      textFor(
+        language,
+        '这条消息已不可用。',
+        'This message is no longer available.',
+      ),
+    );
+    setHistoryFocus(undefined);
+  }, [historyIndex, historyTarget, language, onActionError]);
   const threadAgent = thread.agentId
     ? agents.find(agent => agent.key === thread.agentId) || null
     : null;
@@ -655,72 +814,76 @@ export function ChatScreen({
     [bottomOffset, shouldFollow],
   );
   const closeMessageMenu = useCallback(() => {
+    directionalTools.current = null;
+    setMenuAttachmentId(undefined);
     setSelectedMessage(null);
     setMessageMenuPosition(null);
   }, []);
+  const closeChatRef = useRef(closeChat);
+  closeChatRef.current = closeChat;
+  const finishingSwipe = useRef(false);
   const resetChatSwipe = useCallback(() => {
-    Animated.spring(chatTranslateX, {
-      toValue: 0,
-      useNativeDriver: true,
-      speed: 22,
-      bounciness: 5,
-    }).start();
-  }, [chatTranslateX]);
-  const closeFromSwipe = useCallback(() => {
-    Keyboard.dismiss();
-    closeMessageMenu();
-    Animated.timing(chatTranslateX, {
-      toValue: -Math.max(windowSize.width, 320),
-      duration: 160,
-      useNativeDriver: true,
-    }).start(() => {
+    if (finishingSwipe.current) return;
+    if (reduceMotion) {
       chatTranslateX.setValue(0);
-      closeChat();
-    });
-  }, [chatTranslateX, closeChat, closeMessageMenu, windowSize.width]);
-  const closeSwipeResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_event, gesture) =>
-          !interactionBlockedRef.current &&
-          gesture.dx < -8 &&
-          Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
-        onPanResponderMove: (_event, gesture) => {
-          if (interactionBlockedRef.current) {
-            return;
-          }
-          chatTranslateX.setValue(
-            Math.max(
-              Math.min(gesture.dx, 0),
-              -Math.max(windowSize.width, 320) * 0.72,
-            ),
-          );
-        },
-        onPanResponderRelease: (_event, gesture) => {
-          if (interactionBlockedRef.current) {
-            resetChatSwipe();
-            return;
-          }
-          if (
-            (gesture.dx <= chatSwipeCloseThreshold || gesture.vx <= -0.55) &&
-            Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25
-          ) {
-            closeFromSwipe();
-            return;
-          }
-          resetChatSwipe();
-        },
-        onPanResponderTerminate: resetChatSwipe,
-      }),
-    [chatTranslateX, closeFromSwipe, resetChatSwipe, windowSize.width],
-  );
+      return;
+    }
+    Animated.timing(chatTranslateX, {
+      toValue: 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [chatTranslateX, reduceMotion]);
+  const backGesture = useIOSBackGesture({
+    enabled: !isChatInteractionBlocked && !finishingSwipe.current,
+    reduceMotion,
+    translateX: chatTranslateX,
+    width: windowSize.width,
+    onCancel: resetChatSwipe,
+    onBack: () => {
+      if (finishingSwipe.current) return;
+      if (reduceMotion) {
+        closeChat();
+        return;
+      }
+      finishingSwipe.current = true;
+      Animated.timing(chatTranslateX, {
+        toValue: windowSize.width,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        finishingSwipe.current = false;
+        if (finished) closeChatRef.current();
+      });
+    },
+  });
+  useEffect(() => () => chatTranslateX.stopAnimation(), [chatTranslateX]);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        if (assist.isActive) return false;
+        if (selectedMessage) closeMessageMenu();
+        else closeChat();
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [assist.isActive, closeChat, closeMessageMenu, selectedMessage]);
   const openMessageMenu = (
     item: ChatMessage,
     isMine: boolean,
     point: AIAssistPoint,
     messageFrame: { x: number; y: number; width: number; height: number },
+    openDirectionalTools?: () => void,
+    attachmentId?: string,
   ) => {
     messageAreaRef.current?.measureInWindow((x, y, width, height) => {
+      directionalTools.current = openDirectionalTools || null;
+      setMenuAttachmentId(attachmentId);
       setSelectedMessage(item);
       setMessageMenuPosition(
         messageMenuGeometry(point, isMine, messageFrame, {
@@ -732,6 +895,12 @@ export function ChatScreen({
       );
     });
   };
+  const selectedTextAction = selectedMessage
+    ? messageText.availableAction(selectedMessage)
+    : undefined;
+  const selectedTextOutput = selectedMessage
+    ? messageText.outputFor(selectedMessage)
+    : undefined;
   const canRecallSelectedMessage = (() => {
     if (
       !selectedMessage ||
@@ -861,10 +1030,39 @@ export function ChatScreen({
           }}
         />
       ) : undefined;
+    const textAction = messageText.availableAction(timelineMessage);
+    const textOutput = messageText.outputFor(timelineMessage);
     return (
       <ChatMessageItem
         token={token}
+        reduceMotion={reduceMotion}
         item={timelineMessage}
+        focused={historyTarget?.messageId === timelineMessage.id}
+        messageEnhancement={
+          textAction && textOutput ? (
+            <ChatMessageTextResult
+              action={textAction}
+              output={textOutput}
+              translation={messageText.translationFor(timelineMessage)}
+              language={language}
+              palette={messagePalette}
+              onRetry={() => {
+                messageText.toggle(timelineMessage);
+              }}
+              onTranslateTranscript={
+                messageText.canTranslateTranscript(timelineMessage)
+                  ? () => {
+                      messageText.translateTranscript(timelineMessage);
+                    }
+                  : undefined
+              }
+              onTranscribeAgain={() => {
+                messageText.retranscribe(timelineMessage);
+              }}
+            />
+          ) : undefined
+        }
+        deliveryStatus={deliveryReceipts.statuses[timelineMessage.id]}
         previousMessage={previous?.kind === 'message' ? previous.message : null}
         palette={messagePalette}
         language={language}
@@ -945,7 +1143,11 @@ export function ChatScreen({
             );
             return;
           }
-          if (message.localStatus !== 'failed') {
+          if (
+            message.localStatus !== 'failed' ||
+            submitting.current ||
+            chatVoice.isBusy()
+          ) {
             return;
           }
           const warning = contextWarning(message.metadata?.contextRefs || []);
@@ -962,22 +1164,30 @@ export function ChatScreen({
             typeof replyToMessageId.messageId === 'string'
               ? replyToMessageId.messageId
               : null;
-          Promise.resolve(
-            onSend(
-              message.content,
-              message.id,
-              replyId,
-              message.metadata?.contextRefs || [],
-              message.metadata?.assistSource,
-              message.metadata?.butlerContextReset === true ? true : undefined,
-              message.metadata?.workspaceContext,
-              message.metadata?.agentContextReset === true ? true : undefined,
-              message.metadata?.contentPreviewContext,
-              message.metadata?.attachmentIds,
-              message.metadata?.sticker?.id,
-            ),
-          )
+          const retryScope = chatScopeRef.current;
+          const attempt = ++sendAttempt.current;
+          submitting.current = true;
+          setIsSending(true);
+          Promise.resolve()
+            .then(() =>
+              onSend(
+                message.content,
+                message.id,
+                replyId,
+                message.metadata?.contextRefs || [],
+                message.metadata?.assistSource,
+                message.metadata?.butlerContextReset === true
+                  ? true
+                  : undefined,
+                message.metadata?.workspaceContext,
+                message.metadata?.agentContextReset === true ? true : undefined,
+                message.metadata?.contentPreviewContext,
+                message.metadata?.attachmentIds,
+                message.metadata?.sticker?.id,
+              ),
+            )
             .then(result => {
+              if (chatScopeRef.current !== retryScope) return;
               if (result === true)
                 chatAttachments
                   .removeMany(
@@ -991,7 +1201,16 @@ export function ChatScreen({
                   )
                   .catch(() => undefined);
             })
-            .catch(() => undefined);
+            .catch(() => undefined)
+            .finally(() => {
+              if (
+                chatScopeRef.current !== retryScope ||
+                sendAttempt.current !== attempt
+              )
+                return;
+              submitting.current = false;
+              setIsSending(false);
+            });
         }}
       />
     );
@@ -1248,7 +1467,7 @@ export function ChatScreen({
     windowSize.height,
   ]);
 
-  const send = (stickerId?: string) => {
+  const send = (stickerId?: string, submittedText = draft) => {
     if (hasLeftGroup) {
       onActionError(
         textFor(
@@ -1259,7 +1478,7 @@ export function ChatScreen({
       );
       return;
     }
-    const content = draft.trim();
+    const content = submittedText.trim();
     if (stickerId) {
       if (!ordinaryAttachmentTarget || thread.agentId || hasLeftGroup) {
         onActionError(
@@ -1297,6 +1516,7 @@ export function ChatScreen({
     if (
       (!stickerId && !content && !selectedAttachments.length) ||
       submitting.current ||
+      chatVoice.isBusy() ||
       contextAccessWarning ||
       !chatAttachments.canSend ||
       Boolean(failedAttachmentBlockReason)
@@ -1311,6 +1531,7 @@ export function ChatScreen({
       item => item.clientKey,
     );
     submitting.current = true;
+    if (selectedAttachments.length) setAttachmentReviewScope(undefined);
     Keyboard.dismiss();
     const attempt = ++sendAttempt.current;
     follow();
@@ -1474,11 +1695,76 @@ export function ChatScreen({
     [chatScope, onActionError, token],
   );
 
+  const reportCallMicrophone = useCallback(() => {
+    onActionError(textFor(language, ...voiceCallConflictCopy.microphone));
+  }, [language, onActionError]);
+
+  const startVoiceMessage = (mode: 'hold' | 'accessible') => {
+    if (voiceCallOpen) {
+      reportCallMicrophone();
+      return;
+    }
+    if (submitting.current || !ordinaryAttachmentsEnabled) return;
+    closeMessageMenu();
+    Keyboard.dismiss();
+    const voiceScope = chatScopeRef.current;
+    const voiceReply = replyTarget?.id ?? null;
+    chatVoice
+      .start(mode, async attachmentId => {
+        if (
+          chatScopeRef.current !== voiceScope ||
+          !ordinaryAttachmentsEnabledRef.current
+        )
+          return;
+        const attempt = ++sendAttempt.current;
+        submitting.current = true;
+        setIsSending(true);
+        setReplyTarget(current =>
+          current?.id === voiceReply ? null : current,
+        );
+        follow();
+        scrollToBottom(true);
+        try {
+          await onSend(
+            chatVoiceMessageContent,
+            undefined,
+            voiceReply,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            [attachmentId],
+          );
+        } finally {
+          if (
+            chatScopeRef.current === voiceScope &&
+            sendAttempt.current === attempt
+          ) {
+            submitting.current = false;
+            setIsSending(false);
+          }
+        }
+      })
+      .catch(() => undefined);
+  };
+
   const startLongSpeech = useCallback(() => {
+    if (voiceCallOpen) {
+      reportCallMicrophone();
+      return;
+    }
     Keyboard.dismiss();
     closeMessageMenu();
     startChatSpeech('hold', draft);
-  }, [closeMessageMenu, draft, startChatSpeech]);
+  }, [
+    closeMessageMenu,
+    draft,
+    reportCallMicrophone,
+    startChatSpeech,
+    voiceCallOpen,
+  ]);
 
   const openConversationAssistant = useCallback(() => {
     // This is a local snapshot of the current conversation entry point. A
@@ -1510,7 +1796,10 @@ export function ChatScreen({
       };
       if (
         ordinaryAttachmentTarget &&
-        (tool === '相册' || tool === '拍摄' || tool === '文件')
+        (tool === '相册' ||
+          tool === '拍摄' ||
+          tool === '文件' ||
+          tool === '视频')
       ) {
         if (!ordinaryAttachmentsEnabledRef.current) return;
         const origin = chatScopeRef.current;
@@ -1528,11 +1817,27 @@ export function ChatScreen({
               chatAttachments.remainingSlots,
             );
             if (!valid()) return;
-            await chatAttachments.addImages(picked);
+            if (!picked.length) return;
+            const upload = chatAttachments.addImages(picked);
+            setAttachmentReviewScope(origin);
+            await upload;
+          } else if (tool === '视频') {
+            const video = await pickChatVideo();
+            if (!video) return;
+            if (!valid()) {
+              await releaseStationFile(video);
+              return;
+            }
+            const upload = chatAttachments.addVideo(video);
+            setAttachmentReviewScope(origin);
+            await upload;
           } else if (tool === '拍摄') {
             const picked = await takeStationPhoto();
             if (!valid()) return;
-            if (picked) await chatAttachments.addImages([picked]);
+            if (!picked) return;
+            const upload = chatAttachments.addImages([picked]);
+            setAttachmentReviewScope(origin);
+            await upload;
           } else {
             const file = await pickStationFile();
             if (!valid()) {
@@ -1549,13 +1854,21 @@ export function ChatScreen({
               }
               return;
             }
-            if (file) await chatAttachments.addFile(file);
+            if (!file) return;
+            const upload = chatAttachments.addFile(file);
+            setAttachmentReviewScope(origin);
+            await upload;
           }
         };
         operation().catch(error => {
           if (!valid()) return;
           onActionError(
-            error instanceof Error ? error.message : '附件处理失败，请重试。',
+            appErrorText(
+              language,
+              error,
+              '附件处理失败，请重试。',
+              'Could not process the attachment. Try again.',
+            ),
           );
         });
         return;
@@ -1639,12 +1952,7 @@ export function ChatScreen({
   );
 
   return (
-    <View
-      style={[
-        styles.chatScreen,
-        { backgroundColor: messagePalette.background },
-      ]}
-    >
+    <View style={styles.chatScreen} onAccessibilityEscape={closeChat}>
       <Animated.View
         testID="chat-keyboard-surface"
         style={[
@@ -1657,13 +1965,13 @@ export function ChatScreen({
         <Animated.View
           style={[
             styles.chatSwipeSurface,
-            { transform: [{ translateX: chatTranslateX }] },
+            {
+              backgroundColor: messagePalette.background,
+              transform: [{ translateX: chatTranslateX }],
+            },
           ]}
         >
-          <View
-            {...closeSwipeResponder.panHandlers}
-            style={styles.chatSwipeSurface}
-          >
+          <View style={styles.chatSwipeSurface}>
             <ChatHeader
               palette={messagePalette}
               language={language}
@@ -1677,9 +1985,20 @@ export function ChatScreen({
                   : undefined
               }
               onBack={closeChat}
+              onStartVoiceCall={
+                onStartVoiceCall
+                  ? () => {
+                      Keyboard.dismiss();
+                      onStartVoiceCall();
+                    }
+                  : undefined
+              }
               onOpenSettings={
                 canConfigureThread
-                  ? () => setIsThreadSettingsOpen(true)
+                  ? () => {
+                      discardChatVoice();
+                      setIsThreadSettingsOpen(true);
+                    }
                   : undefined
               }
             />
@@ -1873,6 +2192,61 @@ export function ChatScreen({
                   position={messageMenuPosition}
                   arrowLeft={messageMenuPosition.arrowLeft}
                   canRecall={canRecallSelectedMessage}
+                  onForward={
+                    sourceCanForward(selectedMessage) && onForwardComplete
+                      ? source => {
+                          setForwardSource(source);
+                        }
+                      : undefined
+                  }
+                  onSelectMessages={
+                    sourceCanForward(selectedMessage) &&
+                    !hasLeftGroup &&
+                    onForwardComplete
+                      ? source =>
+                          setBatchForward({
+                            scope: chatScope,
+                            initialMessageId: source.id,
+                          })
+                      : undefined
+                  }
+                  translationVisible={
+                    selectedTextAction === 'translate' &&
+                    selectedTextOutput?.status === 'ready' &&
+                    selectedTextOutput.visible
+                  }
+                  transcriptionVisible={
+                    selectedTextAction === 'transcribe' &&
+                    selectedTextOutput?.status === 'ready' &&
+                    selectedTextOutput.visible
+                  }
+                  onTranslate={
+                    selectedTextAction === 'translate'
+                      ? messageText.toggle
+                      : undefined
+                  }
+                  onTranscribe={
+                    selectedTextAction === 'transcribe'
+                      ? messageText.toggle
+                      : undefined
+                  }
+                  onAskButler={directionalTools.current || undefined}
+                  attachmentId={menuAttachmentId}
+                  onShare={
+                    messageText.canShareText(selectedMessage)
+                      ? message => {
+                          Share.share({ message: message.content }).catch(() =>
+                            onActionError(
+                              textFor(
+                                language,
+                                '分享失败，请重试。',
+                                'Could not share. Try again.',
+                              ),
+                            ),
+                          );
+                        }
+                      : undefined
+                  }
                   onClose={closeMessageMenu}
                   onReply={message => {
                     if (workspaceContext) {
@@ -1890,10 +2264,10 @@ export function ChatScreen({
                   onDeleteMessage={onDeleteMessage}
                   onRecallMessage={onRecallMessage}
                   onActionMessage={onActionError}
-                  onViewAttachments={message => {
+                  onViewAttachments={(message, attachmentId) => {
                     setAttachmentAction({
                       messageId: message.id,
-                      action: { type: 'image', index: 0 },
+                      action: { type: 'image', attachmentId },
                     });
                   }}
                   onPreviewAttachment={attachment => {
@@ -1938,12 +2312,21 @@ export function ChatScreen({
               draft={draft}
               isSending={isSending}
               isRecognizingSpeech={isRecognizingSpeech}
+              voiceControls={
+                ordinaryAttachmentsEnabled
+                  ? { ...chatVoice, start: startVoiceMessage }
+                  : undefined
+              }
               replyTarget={replyTarget}
               assistSource={assistSource}
               contextRefs={contextRefs}
               attachments={chatAttachments.items}
-              attachmentSlots={chatAttachments.remainingSlots}
               attachmentBlockReason={attachmentSendBlockReason}
+              onReviewAttachments={submittedText => {
+                if (submittedText !== undefined) setDraft(submittedText);
+                Keyboard.dismiss();
+                setAttachmentReviewScope(chatScope);
+              }}
               customStickers={customStickers}
               customStickerState={customStickerState}
               customStickerDeletingIds={customStickerDeletingIds}
@@ -1957,12 +2340,6 @@ export function ChatScreen({
               onDeleteCustomSticker={stickerId =>
                 deleteCustomSticker(stickerId).catch(() => undefined)
               }
-              onRemoveAttachment={key => {
-                chatAttachments.remove(key).catch(() => undefined);
-              }}
-              onRetryAttachment={key => {
-                chatAttachments.retry(key).catch(() => undefined);
-              }}
               quickCommands={
                 thread.agentId === 'miaoxun-butler'
                   ? ['生成今日待办', '今晚只提醒紧急事项', '同步相关 Agent']
@@ -2137,19 +2514,55 @@ export function ChatScreen({
                   : undefined
               }
               onComposerTool={handleComposerTool}
+              chatVideoEnabled={chatVideoEnabled && ordinaryAttachmentsEnabled}
               onClearReplyTarget={() => setReplyTarget(null)}
               onFocusInput={() => {
                 assist.dismiss();
                 closeMessageMenu();
               }}
               onOpenAssistant={openConversationAssistant}
+              onVoiceInputUnavailable={
+                voiceCallOpen ? reportCallMicrophone : undefined
+              }
               onStartLongSpeech={startLongSpeech}
               onFinishLongSpeech={finishLongSpeech}
               onSend={send}
             />
           )}
+          {Platform.OS === 'ios' && !isChatInteractionBlocked ? (
+            <View
+              {...backGesture}
+              accessible={false}
+              importantForAccessibility="no"
+              style={iosBackEdge}
+            />
+          ) : null}
         </Animated.View>
       </Animated.View>
+      {ordinaryAttachmentsEnabled &&
+      attachmentReviewScope === chatScope &&
+      chatAttachments.items.length ? (
+        <ChatAttachmentReview
+          items={chatAttachments.items}
+          draft={draft}
+          palette={messagePalette}
+          language={language}
+          busy={isSending}
+          sendBlockReason={
+            attachmentSendBlockReason || contextAccessWarning || ''
+          }
+          onClose={() => setAttachmentReviewScope(undefined)}
+          onRetry={key => {
+            chatAttachments.retry(key).catch(() => undefined);
+          }}
+          onRemove={key => {
+            if (chatAttachments.items.length === 1)
+              setAttachmentReviewScope(undefined);
+            chatAttachments.remove(key).catch(() => undefined);
+          }}
+          onSend={() => send()}
+        />
+      ) : null}
       {isComic && token && (comicDetail || libraryOpen || sourcesOpen) ? (
         <Modal
           visible
@@ -2255,7 +2668,8 @@ export function ChatScreen({
       </Modal>
       <ThreadSettingsSheet
         visible={isThreadSettingsOpen}
-        muted={Boolean(thread.muted)}
+        threadId={thread.id}
+        muted={Boolean(thread.pendingMuted ?? thread.muted)}
         palette={messagePalette}
         language={language}
         onClose={() => setIsThreadSettingsOpen(false)}
@@ -2268,8 +2682,67 @@ export function ChatScreen({
           return onGroupLeft?.();
         }}
         onOpenProfile={thread.peerAiId ? onOpenPeerProfile : undefined}
+        onOpenMessage={canSearchHistory ? openHistoryMessage : undefined}
         onActionError={onActionError}
       />
+      {batchForward?.scope === chatScope &&
+      token &&
+      !hasLeftGroup &&
+      onForwardComplete ? (
+        <ChatBatchForwardSheet
+          key={chatScope + ':' + batchForward.initialMessageId}
+          scope={chatScope}
+          sourceThreadId={thread.id}
+          initialMessageId={batchForward.initialMessageId}
+          messages={thread.messages}
+          threads={forwardTargets}
+          requestKeys={forwardKeys.current}
+          palette={messagePalette}
+          language={language}
+          onClose={() => setBatchForward(undefined)}
+          onForward={async (source, destination, clientMessageId) => {
+            const result = await messageApi.forwardMessage(
+              thread.id,
+              source.id,
+              token,
+              destination.id,
+              clientMessageId,
+            );
+            if (chatScopeActive.current && chatScopeRef.current === chatScope)
+              onForwardComplete(destination, result.messages);
+          }}
+        />
+      ) : null}
+      {forwardSource && token && onForwardComplete ? (
+        <ChatForwardSheet
+          key={`${chatScope}:${forwardSource.id}`}
+          sourceLabel={
+            forwardSource.content === chatVoiceMessageContent
+              ? textFor(language, '语音消息', 'Voice message')
+              : forwardSource.content.trim() ||
+                textFor(language, '附件消息', 'Message with attachments')
+          }
+          threads={forwardTargets}
+          palette={messagePalette}
+          language={language}
+          onClose={() => setForwardSource(undefined)}
+          onForward={async destination => {
+            const key = `${chatScope}:${forwardSource.id}:${destination.id}`;
+            const id = forwardKeys.current.get(key) || createIdempotencyKey();
+            forwardKeys.current.set(key, id);
+            const result = await messageApi.forwardMessage(
+              thread.id,
+              forwardSource.id,
+              token,
+              destination.id,
+              id,
+            );
+            forwardKeys.current.delete(key);
+            if (chatScopeActive.current && chatScopeRef.current === chatScope)
+              onForwardComplete(destination, result.messages);
+          }}
+        />
+      ) : null}
     </View>
   );
 }

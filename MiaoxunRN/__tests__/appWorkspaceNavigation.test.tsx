@@ -5,14 +5,18 @@ import {
   AppStateStatus,
   FlatList,
   Modal,
+  NativeModules,
   PanResponder,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import App from '../src/App';
+import { LaunchAnimation } from '../src/app/LaunchAnimation';
+import { RestoreErrorScreen } from '../src/app/RestoreErrorScreen';
 import { BottomBar } from '../src/shared/ui';
 import { VoiceShortcutDock } from '../src/features/agents/VoiceShortcutDock';
 import { AIRequestComposer } from '../src/features/ai/AIRequestComposer';
@@ -57,9 +61,6 @@ jest.mock('../src/services/api/chatContentApi', () => ({
   chatContentApi: { comics: jest.fn(async () => []) },
 }));
 jest.mock('../src/app/AppModals', () => ({ AppModals: () => null }));
-jest.mock('../src/app/LaunchAnimation', () => ({
-  LaunchAnimation: () => null,
-}));
 jest.mock('../src/features/station/StationScreen', () => {
   const ReactModule = require('react');
   const NativeView = require('react-native').View;
@@ -99,6 +100,65 @@ afterEach(async () => {
   jest.useRealTimers();
 });
 
+test.each(['authenticated', 'networkError'])(
+  'slow restore keeps its status beyond the intro and hands off to %s',
+  async restoreStatus => {
+    jest.useFakeTimers();
+    const previous = mockSession;
+    try {
+      mockSession = { ...previous, isRestoring: true };
+      await act(async () => {
+        renderer = TestRenderer.create(<App />);
+      });
+      expect(renderer.root.findByType(LaunchAnimation).props).toMatchObject({
+        showIntro: true,
+        isRestoring: true,
+      });
+      act(() => jest.advanceTimersByTime(1800));
+      expect(renderer.root.findByType(LaunchAnimation).props).toMatchObject({
+        showIntro: false,
+        isRestoring: true,
+      });
+      mockSession = { ...previous, isRestoring: false, restoreStatus };
+      await act(async () => renderer.update(<App />));
+      act(() => jest.advanceTimersByTime(300));
+      expect(renderer.root.findAllByType(LaunchAnimation)).toHaveLength(0);
+      if (restoreStatus === 'networkError') {
+        expect(renderer.root.findByType(RestoreErrorScreen)).toBeTruthy();
+      } else {
+        expect(renderer.root.findByType(ThreadListScreen)).toBeTruthy();
+      }
+    } finally {
+      mockSession = previous;
+    }
+  },
+);
+
+test('a ready session keeps the brief intro without claiming to sync', async () => {
+  jest.useFakeTimers();
+  await act(async () => {
+    renderer = TestRenderer.create(<App />);
+  });
+  act(() => jest.advanceTimersByTime(1799));
+  expect(renderer.root.findByType(LaunchAnimation).props).toMatchObject({
+    showIntro: true,
+    isRestoring: false,
+  });
+  const workspace = () =>
+    renderer.root.findByProps({ testID: 'app-top-safe-area' });
+  expect(workspace().props).toMatchObject({
+    accessibilityElementsHidden: true,
+    importantForAccessibility: 'no-hide-descendants',
+  });
+  act(() => jest.advanceTimersByTime(1));
+  act(() => jest.advanceTimersByTime(300));
+  expect(renderer.root.findAllByType(LaunchAnimation)).toHaveLength(0);
+  expect(workspace().props).toMatchObject({
+    accessibilityElementsHidden: false,
+    importantForAccessibility: 'auto',
+  });
+});
+
 test('comic chat exposes read-only history instead of a separate creation form', async () => {
   mockSession = {
     ...mockSession,
@@ -135,6 +195,97 @@ test('comic chat exposes read-only history instead of a separate creation form',
   });
   expect(renderer.root.findByType(MyComicsScreen)).toBeDefined();
   await act(async () => renderer.unmount());
+});
+
+test('opening a conversation from the thread list acknowledges the displayed read position', async () => {
+  const thread = {
+    id: 'read-position-thread',
+    title: 'Chat',
+    kind: 'direct',
+    pinned: false,
+    avatarText: 'C',
+    lastContent: '',
+    unreadCount: 3,
+    unreadSequence: 3,
+    readSequence: 0,
+    messages: [],
+  };
+  mockSession = { ...mockSession, threads: [thread] } as typeof mockSession;
+  await act(async () => {
+    renderer = TestRenderer.create(<App />);
+  });
+  await act(async () =>
+    renderer.root.findByType(ThreadListScreen).props.onOpenThread(thread),
+  );
+  const chat = renderer.root.findByType(ChatScreen);
+  expect(chat.props.thread.id).toBe(thread.id);
+  expect(chat.props.receiptActive).toBe(true);
+  expect(mockSession.markThreadRead).toHaveBeenCalledWith(
+    thread.id,
+    3,
+    expect.any(Function),
+  );
+});
+
+test('closing ordinary chat restores its draft only in the same conversation and session', async () => {
+  const originalSession = mockSession;
+  const first = {
+    id: 'draft-first',
+    title: 'First chat',
+    kind: 'direct',
+    pinned: false,
+    avatarText: 'F',
+    lastContent: '',
+    unreadCount: 0,
+    messages: [],
+  };
+  const second = { ...first, id: 'draft-second', title: 'Second chat' };
+  const open = (thread: typeof first) =>
+    act(async () =>
+      renderer.root.findByType(ThreadListScreen).props.onOpenThread(thread),
+    );
+  const input = () =>
+    renderer.root
+      .findByType(ChatScreen)
+      .findAllByType(TextInput)
+      .find(node => node.props.accessibilityLabel === '消息输入框')!;
+  const close = () =>
+    act(async () => {
+      const back = renderer.root
+        .findByType(ChatScreen)
+        .findAllByProps({ accessibilityLabel: '返回' })
+        .find(node => typeof node.props.onPress === 'function');
+      back?.props.onPress();
+    });
+
+  try {
+    mockSession = {
+      ...originalSession,
+      threads: [first, second],
+    } as typeof mockSession;
+    await act(async () => {
+      renderer = TestRenderer.create(<App />);
+    });
+    await open(first);
+    await act(async () => input().props.onChangeText('未发送消息'));
+    await close();
+    await open(second);
+    expect(input().props.value).toBe('');
+    await close();
+    await open(first);
+    expect(input().props.value).toBe('未发送消息');
+    await close();
+    mockSession = {
+      ...mockSession,
+      user: { id: 'different-account' },
+      token: 'different-session',
+    };
+    await act(async () => renderer.update(<App />));
+    await open(first);
+    expect(input().props.value).toBe('');
+  } finally {
+    mockSession = originalSession;
+  }
 });
 
 test('three root tabs retain the station, keep navigation under voice menus, and reset across accounts', async () => {
@@ -374,31 +525,69 @@ test('pull-down opens only from the top, and short or horizontal gestures preser
     );
   });
   const config = create.mock.calls[0][0];
-  const event = {} as never;
-  const gesture = (dx: number, dy: number) => ({ dx, dy } as never);
-  config.onStartShouldSetPanResponderCapture?.(event, gesture(0, 0));
+  const event = (dx: number, dy: number, release = false) => {
+    const point = { identifier: 0, pageX: dx, pageY: dy };
+    return {
+      nativeEvent: {
+        touches: release ? [] : [point],
+        changedTouches: release ? [point] : [],
+      },
+    } as never;
+  };
+  const gesture = { dx: 0, dy: 0, vx: 0, vy: 2 } as never;
+  const haptic = NativeModules.MiaoxunHapticsModule.trigger as jest.Mock;
+  haptic.mockClear();
+  const start = () =>
+    config.onStartShouldSetPanResponderCapture?.(event(0, 0), gesture);
+  const beginPull = () => {
+    start();
+    expect(
+      config.onMoveShouldSetPanResponderCapture?.(event(0, 20), gesture),
+    ).toBe(true);
+    act(() => config.onPanResponderGrant?.(event(0, 20), gesture));
+  };
+  start();
   expect(
-    config.onMoveShouldSetPanResponderCapture?.(event, gesture(100, 15)),
+    config.onMoveShouldSetPanResponderCapture?.(event(100, 15), gesture),
   ).toBe(false);
   expect(
-    config.onMoveShouldSetPanResponderCapture?.(event, gesture(0, 130)),
-  ).toBe(true);
-  act(() => config.onPanResponderRelease?.(event, gesture(0, 45)));
+    config.onMoveShouldSetPanResponderCapture?.(event(0, 130), gesture),
+  ).toBe(false);
+  beginPull();
+  act(() => config.onPanResponderRelease?.(event(0, 45, true), gesture));
   expect(open).not.toHaveBeenCalled();
+  expect(haptic).not.toHaveBeenCalled();
   expect(
     renderer.root
       .findAllByType(Text)
       .some(node => String(node.props.children).includes('下拉进入二楼')),
   ).toBe(false);
-  act(() => config.onPanResponderRelease?.(event, gesture(0, 180)));
+  beginPull();
+  act(() => config.onPanResponderRelease?.(event(0, 96, true), gesture));
+  expect(open).not.toHaveBeenCalled();
+  expect(haptic).not.toHaveBeenCalled();
+  beginPull();
+  act(() => config.onPanResponderMove?.(event(0, 160), gesture));
+  expect(
+    renderer.root
+      .findAllByType(Text)
+      .some(node => node.props.children === '松开进入二楼'),
+  ).toBe(true);
+  act(() => config.onPanResponderRelease?.(event(0, 139, true), gesture));
+  expect(open).not.toHaveBeenCalled();
+  expect(haptic).not.toHaveBeenCalled();
+  beginPull();
+  act(() => config.onPanResponderRelease?.(event(0, 140, true), gesture));
   act(() => jest.runAllTimers());
   expect(open).toHaveBeenCalledTimes(1);
+  expect(haptic).toHaveBeenCalledTimes(1);
+  expect(haptic).toHaveBeenCalledWith('hover');
   renderer.root
     .findByType(FlatList)
     .props.onScroll({ nativeEvent: { contentOffset: { y: 240 } } });
-  config.onStartShouldSetPanResponderCapture?.(event, gesture(0, 0));
+  config.onStartShouldSetPanResponderCapture?.(event(0, 0), gesture);
   expect(
-    config.onMoveShouldSetPanResponderCapture?.(event, gesture(0, 140)),
+    config.onMoveShouldSetPanResponderCapture?.(event(0, 140), gesture),
   ).toBe(false);
 });
 
@@ -454,6 +643,9 @@ test('retained conversation surface clears an interrupted pull when leaving and 
     nativeEvent: {
       timestamp,
       touches: active ? [{ identifier: 0, pageX: 100, pageY: currentY }] : [],
+      changedTouches: active
+        ? []
+        : [{ identifier: 0, pageX: 100, pageY: currentY }],
     },
     touchHistory: {
       numberActiveTouches: active ? 1 : 0,

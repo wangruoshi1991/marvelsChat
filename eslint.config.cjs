@@ -26,7 +26,7 @@ module.exports = [
   },
   js.configs.recommended,
   {
-    files: ["**/*.js", "scripts/**/*.mjs"],
+    files: ["**/*.js", "admin/src/**/*.jsx", "scripts/**/*.mjs"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
@@ -65,8 +65,9 @@ module.exports = [
     },
   },
   {
-    files: ["admin/admin.js", "admin/admin-core.js"],
+    files: ["admin/admin-core.js", "admin/src/**/*.{js,jsx}"],
     languageOptions: {
+      parserOptions: { ecmaFeatures: { jsx: true } },
       globals: {
         ...globals.browser,
         __MIAOXUN_ADMIN_API_TARGET__: "readonly",

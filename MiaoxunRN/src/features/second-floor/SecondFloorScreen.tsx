@@ -9,6 +9,7 @@ import {
   Animated,
   BackHandler,
   Easing,
+  GestureResponderEvent,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -35,9 +36,15 @@ import { Palette } from '../../shared/theme';
 import { textFor } from '../../shared/i18n';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { secondFloorPalette } from './secondFloorTheme';
+import { singleTouch } from '../../shared/gestures/singleTouch';
+import {
+  isDirectedDrag,
+  secondFloorGestureMinimum,
+} from '../../shared/gestures/secondFloorGesture';
 import { useStablePanResponder } from '../../shared/gestures/useStablePanResponder';
 import { isV6Palette } from '../../shared/v6Palette';
 import { isXunPalette } from '../../shared/xunPalette';
+import { triggerHaptic } from '../../shared/haptics';
 import { entranceCurve, useReduceMotion } from '../../shared/useReduceMotion';
 import { SecondFloorAlbums } from './SecondFloorAlbums';
 import { SecondFloorFiles } from './SecondFloorFiles';
@@ -47,6 +54,7 @@ import { SecondFloorInformation } from './SecondFloorInformation';
 import { SecondFloorPermissions } from './SecondFloorPermissions';
 import { SecondFloorPublish } from './SecondFloorPublish';
 import { SecondFloorSettings } from './SecondFloorSettings';
+import { SecondFloorScrollView } from './SecondFloorScrollView';
 import {
   SecondFloorPageScrollEvent,
   SecondFloorPageScrollProps,
@@ -63,6 +71,8 @@ import {
 
 const AnimatedKeyboardAvoidingView =
   Animated.createAnimatedComponent(KeyboardAvoidingView);
+const returnTapMovementTolerance = 4;
+const scrollEndTolerance = 3;
 
 /**
  * The prototype's floor holds six tools. `publish` and `settings` are the
@@ -107,48 +117,6 @@ const swipeReturnTools: ReadonlySet<SecondFloorTool> = new Set([
   'publish',
   'settings',
 ]);
-
-function swipeDirectionMatches(
-  direction: 'left' | 'right' | 'up' | 'down',
-  dx: number,
-  dy: number,
-  distance: number,
-) {
-  const horizontal = Math.abs(dx) > Math.abs(dy) * 1.4;
-  const vertical = Math.abs(dy) > Math.abs(dx) * 1.4;
-  switch (direction) {
-    case 'left':
-      return dx < -distance && horizontal;
-    case 'right':
-      return dx > distance && horizontal;
-    case 'down':
-      return dy > distance && vertical;
-    case 'up':
-    default:
-      return dy < -distance && vertical;
-  }
-}
-
-function swipeVelocityMatches(
-  direction: 'left' | 'right' | 'up' | 'down',
-  vx: number,
-  vy: number,
-  threshold: number,
-) {
-  const horizontal = Math.abs(vx) > Math.abs(vy) * 1.4;
-  const vertical = Math.abs(vy) > Math.abs(vx) * 1.4;
-  switch (direction) {
-    case 'left':
-      return vx <= -threshold && horizontal;
-    case 'right':
-      return vx >= threshold && horizontal;
-    case 'down':
-      return vy >= threshold && vertical;
-    case 'up':
-    default:
-      return vy <= -threshold && vertical;
-  }
-}
 
 export function SecondFloorScreen({
   active = true,
@@ -210,9 +178,14 @@ export function SecondFloorScreen({
     'secondFloor',
     'backAction',
   );
-  const configuredExitDistance = exitGesture?.distance ?? 88;
-  const exitGestureDistance = Math.max(72, configuredExitDistance);
-  const exitVelocityDistance = Math.max(48, exitGestureDistance * 0.6);
+  const exitGestureDistance = Math.max(
+    secondFloorGestureMinimum.exitHandle,
+    exitGesture.distance,
+  );
+  const contentExitDistance = Math.max(
+    secondFloorGestureMinimum.exitContent,
+    exitGestureDistance,
+  );
   const exitGestureDirection = exitGesture?.direction ?? 'up';
   const visibleTools = useMemo(() => {
     const available = tools.filter(tool =>
@@ -252,12 +225,16 @@ export function SecondFloorScreen({
   const [selected, setSelected] = useState<SecondFloorTool | null>(
     xun ? null : 'albums',
   );
+  const [exitReady, setExitReady] = useState(false);
   const closing = useRef(false);
   const exitTransition = useRef<object | null>(null);
   const exitProgress = useRef(new Animated.Value(0)).current;
   const exitDrag = useRef<{ base: number | null; movement: number } | null>(
     null,
   );
+  const exitOrigin = useRef<ReturnType<typeof singleTouch>>(null);
+  const returnTouchStart = useRef<{ x: number; y: number } | null>(null);
+  const returnTapCancelled = useRef(false);
   const exitActive = useRef(active);
   exitActive.current = active;
   // Prototype `.xun-floor-panel` runs `xun-floor-panel-in .24s
@@ -300,8 +277,8 @@ export function SecondFloorScreen({
   // Observe the scroller's own touch stream: after native scrolling starts,
   // ScrollView refuses responder termination, so a parent PanResponder cannot
   // reliably take over a bottom-edge swipe on a device.
-  const pageAtBottom = useRef(false);
-  const pageStartAtBottom = useRef(false);
+  const android = Platform.OS === 'android';
+  const pageStartAtBottom = useRef<boolean | null>(null);
   const pageScrollScope = useMemo(
     () => ({ active, selected, xun }),
     [active, selected, xun],
@@ -312,15 +289,15 @@ export function SecondFloorScreen({
     scope: typeof pageScrollScope;
     x: number;
     y: number;
-    timestamp?: number;
+    distance: number;
   } | null>(null);
   const pageNativeDragging = useRef(false);
   const pageContentHeight = useRef(0);
   const pageViewportHeight = useRef(0);
   const pageOffsetY = useRef(0);
   const clearPageScrollState = useCallback(() => {
-    pageAtBottom.current = false;
-    pageStartAtBottom.current = false;
+    pageStartAtBottom.current = null;
+    setExitReady(false);
     pageTouch.current = null;
     pageNativeDragging.current = false;
   }, []);
@@ -339,6 +316,16 @@ export function SecondFloorScreen({
       (source === null || swipeReturnTools.has(source)),
     [],
   );
+  const readPageBottom = useCallback(
+    () =>
+      pageContentHeight.current > 0 && pageViewportHeight.current > 0
+        ? pageOffsetY.current >=
+          pageContentHeight.current -
+            pageViewportHeight.current -
+            scrollEndTolerance
+        : null,
+    [],
+  );
   const updatePageScrollPosition = useCallback(
     (event: SecondFloorPageScrollEvent) => {
       const { contentOffset, contentSize, layoutMeasurement } =
@@ -349,10 +336,6 @@ export function SecondFloorScreen({
       pageOffsetY.current = offsetY;
       if (contentHeight > 0) pageContentHeight.current = contentHeight;
       if (viewportHeight > 0) pageViewportHeight.current = viewportHeight;
-      pageAtBottom.current =
-        viewportHeight > 0 &&
-        (contentHeight <= viewportHeight ||
-          offsetY >= contentHeight - viewportHeight - 10);
     },
     [],
   );
@@ -404,7 +387,7 @@ export function SecondFloorScreen({
     setBusy(value);
   }, []);
   const closeFloor = useCallback(() => {
-    if (!active || pending.current || closing.current) return;
+    if (!active || pending.current || closing.current) return false;
     clearPageScrollState();
     Keyboard.dismiss();
     closing.current = true;
@@ -412,7 +395,7 @@ export function SecondFloorScreen({
     if (reduceMotion) {
       closing.current = false;
       onClose();
-      return;
+      return true;
     }
     exitProgress.stopAnimation();
     const transition = {};
@@ -433,6 +416,7 @@ export function SecondFloorScreen({
         exitProgress.setValue(0);
       }
     });
+    return true;
   }, [
     active,
     clearPageScrollState,
@@ -441,8 +425,58 @@ export function SecondFloorScreen({
     onClose,
     reduceMotion,
   ]);
+  const closeBySwipe = useCallback(() => {
+    if (closeFloor()) triggerHaptic('hover');
+  }, [closeFloor]);
+  const resetExitDrag = () => {
+    exitDrag.current = null;
+    exitOrigin.current = null;
+    setExitReady(false);
+    if (reduceMotion) {
+      exitProgress.setValue(0);
+      return;
+    }
+    Animated.spring(exitProgress, {
+      toValue: 0,
+      useNativeDriver: true,
+      speed: 22,
+      bounciness: 3,
+    }).start();
+  };
+  const trackReturnTapMovement = useCallback(
+    (event: GestureResponderEvent, release = false) => {
+      const origin = returnTouchStart.current;
+      if (!origin) return;
+      const { touches, changedTouches, pageX, pageY } = event.nativeEvent;
+      if (!release && touches.length !== 1) {
+        returnTapCancelled.current = true;
+        return;
+      }
+      const touch = release ? changedTouches[0] : touches[0];
+      const x = touch?.pageX ?? pageX;
+      const y = touch?.pageY ?? pageY;
+      if (
+        !Number.isFinite(x) ||
+        !Number.isFinite(y) ||
+        Math.hypot(x - origin.x, y - origin.y) > returnTapMovementTolerance
+      )
+        returnTapCancelled.current = true;
+    },
+    [],
+  );
+  const closeFromReturnTap = useCallback(
+    (event?: GestureResponderEvent) => {
+      if (event) trackReturnTapMovement(event, true);
+      const cancelled = returnTapCancelled.current;
+      returnTouchStart.current = null;
+      returnTapCancelled.current = false;
+      if (!cancelled) closeFloor();
+    },
+    [closeFloor, trackReturnTapMovement],
+  );
   useEffect(() => {
     if (active) return;
+    setExitReady(false);
     exitDrag.current = null;
     closing.current = false;
     exitTransition.current = null;
@@ -469,18 +503,11 @@ export function SecondFloorScreen({
         const props: SecondFloorPageScrollProps = {
           alwaysBounceVertical: true,
           onContentSizeChange: (_width, contentHeight) => {
-            if (!isCurrent()) return;
-            pageContentHeight.current = contentHeight;
-            pageAtBottom.current =
-              pageViewportHeight.current > 0 &&
-              contentHeight <= pageViewportHeight.current;
+            if (isCurrent()) pageContentHeight.current = contentHeight;
           },
           onLayout: event => {
-            if (!isCurrent()) return;
-            pageViewportHeight.current = event.nativeEvent.layout.height;
-            pageAtBottom.current =
-              pageContentHeight.current > 0 &&
-              pageContentHeight.current <= pageViewportHeight.current;
+            if (isCurrent())
+              pageViewportHeight.current = event.nativeEvent.layout.height;
           },
           onScroll: event => {
             if (isCurrent()) updatePageScrollPosition(event);
@@ -489,7 +516,10 @@ export function SecondFloorScreen({
             if (!isCurrent()) return;
             pageNativeDragging.current = true;
             updatePageScrollPosition(event);
-            pageStartAtBottom.current = pageAtBottom.current;
+            // Native drag metrics may be the first available layout. They
+            // cannot turn a touch that started up-page into an exit swipe.
+            if (pageTouch.current && pageStartAtBottom.current !== false)
+              pageStartAtBottom.current = readPageBottom();
           },
           onScrollEndDrag: _event => {
             if (!isCurrent()) return;
@@ -504,7 +534,14 @@ export function SecondFloorScreen({
             clearPageScrollState();
           },
           onTouchStart: event => {
-            if (!isCurrent() || pending.current) return;
+            if (
+              !isCurrent() ||
+              pending.current ||
+              closing.current ||
+              !exitGesture.enabled ||
+              exitGestureDirection !== 'up'
+            )
+              return;
             const { touches } = event.nativeEvent;
             const firstTouch = touches[0];
             const pageX = firstTouch?.pageX ?? event.nativeEvent.pageX;
@@ -517,29 +554,33 @@ export function SecondFloorScreen({
               clearPageScrollState();
               return;
             }
-            const timestamp =
-              firstTouch?.timestamp ?? event.nativeEvent.timestamp;
             pageTouch.current = {
               scope: pageScrollScope,
               x: pageX,
               y: pageY,
-              timestamp: Number.isFinite(timestamp) ? timestamp : undefined,
+              distance: contentExitDistance,
             };
-            const contentFitsViewport =
-              pageContentHeight.current > 0 &&
-              pageViewportHeight.current > 0 &&
-              pageContentHeight.current <= pageViewportHeight.current;
-            const offsetAtBottom =
-              pageContentHeight.current > 0 &&
-              pageViewportHeight.current > 0 &&
-              pageOffsetY.current >=
-                pageContentHeight.current - pageViewportHeight.current - 10;
-            pageStartAtBottom.current =
-              pageAtBottom.current || contentFitsViewport || offsetAtBottom;
+            pageStartAtBottom.current = readPageBottom();
           },
           onTouchMove: event => {
-            if (isCurrent() && event.nativeEvent.touches.length !== 1)
+            if (!isCurrent()) return;
+            const origin = pageTouch.current;
+            const { touches } = event.nativeEvent;
+            if (!origin) return;
+            if (touches.length !== 1) {
               clearPageScrollState();
+              return;
+            }
+            const dx = touches[0].pageX - origin.x;
+            const dy = touches[0].pageY - origin.y;
+            if (Math.hypot(dx, dy) >= 12 && !isDirectedDrag('up', dx, dy, 10)) {
+              clearPageScrollState();
+              return;
+            }
+            setExitReady(
+              pageStartAtBottom.current === true &&
+                isDirectedDrag('up', dx, dy, origin.distance),
+            );
           },
           onTouchStartCapture: event => {
             props.onTouchStart?.(event);
@@ -560,35 +601,16 @@ export function SecondFloorScreen({
               hasValidReleasePoint && origin ? (pageX as number) - origin.x : 0;
             const dy =
               hasValidReleasePoint && origin ? (pageY as number) - origin.y : 0;
-            const timestamp =
-              changedTouch?.timestamp ?? event.nativeEvent.timestamp;
-            const elapsed =
-              origin?.timestamp !== undefined && Number.isFinite(timestamp)
-                ? timestamp - origin.timestamp
-                : 0;
-            const velocityMatches =
-              elapsed > 0 &&
-              swipeDirectionMatches('up', dx, dy, 10) &&
-              swipeVelocityMatches(
-                'up',
-                dx / elapsed,
-                dy / elapsed,
-                exitGesture.velocityThreshold,
-              );
             const shouldClose =
               origin?.scope === pageScrollScope &&
-              changedTouches.length === 1 &&
               touches.length === 0 &&
               hasValidReleasePoint &&
-              exitGesture?.enabled !== false &&
-              // Other directions belong to the fixed return area. A page's
-              // horizontal gestures and downward reading keep their meaning.
-              exitGestureDirection === 'up' &&
-              pageStartAtBottom.current &&
-              (swipeDirectionMatches('up', dx, dy, exitGestureDistance) ||
-                (Math.abs(dy) >= exitVelocityDistance && velocityMatches));
+              exitGesture.enabled &&
+              pageStartAtBottom.current === true &&
+              readPageBottom() === true &&
+              isDirectedDrag('up', dx, dy, origin.distance);
             clearPageScrollState();
-            if (shouldClose) closeFloor();
+            if (shouldClose) closeBySwipe();
           },
           onTouchEndCapture: event => {
             props.onTouchEnd?.(event);
@@ -598,21 +620,76 @@ export function SecondFloorScreen({
           },
           scrollEventThrottle: 16,
         };
+        if (android) {
+          return [
+            source ?? 'landing',
+            {
+              onFloorTouch: ({ phase, x, y, atBottom }) => {
+                if (!isCurrent()) return;
+                if (phase === 'start') {
+                  clearPageScrollState();
+                  if (
+                    !atBottom ||
+                    pending.current ||
+                    closing.current ||
+                    !exitGesture.enabled ||
+                    exitGestureDirection !== 'up'
+                  )
+                    return;
+                  pageTouch.current = {
+                    scope: pageScrollScope,
+                    x,
+                    y,
+                    distance: contentExitDistance,
+                  };
+                  return;
+                }
+                const origin = pageTouch.current;
+                if (!origin || origin.scope !== pageScrollScope) return;
+                if (phase === 'cancel') {
+                  clearPageScrollState();
+                  return;
+                }
+                const dx = x - origin.x;
+                const dy = y - origin.y;
+                const ready =
+                  atBottom && isDirectedDrag('up', dx, dy, origin.distance);
+                if (phase === 'end') {
+                  clearPageScrollState();
+                  if (
+                    ready &&
+                    exitGesture.enabled &&
+                    exitGestureDirection === 'up'
+                  )
+                    closeBySwipe();
+                  return;
+                }
+                if (
+                  Math.hypot(dx, dy) >= 12 &&
+                  !isDirectedDrag('up', dx, dy, 10)
+                )
+                  clearPageScrollState();
+                else setExitReady(ready);
+              },
+            } satisfies SecondFloorPageScrollProps,
+          ];
+        }
         return [source ?? 'landing', props];
       }),
     ) as Record<SecondFloorTool | 'landing', SecondFloorPageScrollProps>;
   }, [
+    android,
     clearPageScrollState,
-    closeFloor,
+    closeBySwipe,
     ownsPageScroll,
     pageScrollScope,
+    readPageBottom,
     updatePageScrollPosition,
     visibleTools,
     exitGesture,
     exitGestureDirection,
     xun,
-    exitGestureDistance,
-    exitVelocityDistance,
+    contentExitDistance,
   ]);
   const selectTool = (key: SecondFloorTool) => {
     if (!active || pending.current) return;
@@ -661,43 +738,34 @@ export function SecondFloorScreen({
       Math.max(0, Math.min(0.4, touch.base + (directed * 0.9) / extent)),
     );
   };
+  const canStartReturnSwipe = (event: GestureResponderEvent) => {
+    const origin = exitOrigin.current;
+    const point = singleTouch(event);
+    if (
+      closing.current ||
+      pending.current ||
+      !origin ||
+      !point ||
+      point.identifier !== origin.identifier
+    )
+      return false;
+    const dx = point.pageX - origin.pageX;
+    const dy = point.pageY - origin.pageY;
+    if (Math.hypot(dx, dy) < 12) return false;
+    const directed = isDirectedDrag(exitGestureDirection, dx, dy, 10);
+    if (!directed) exitOrigin.current = null;
+    return directed;
+  };
   const responder = useStablePanResponder(
     {
-      onMoveShouldSetPanResponderCapture: (_event, gesture) =>
-        active &&
-        !pending.current &&
-        exitGesture.enabled &&
-        (Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10) &&
-        (swipeDirectionMatches(
-          exitGesture.direction,
-          gesture.dx,
-          gesture.dy,
-          10,
-        ) ||
-          swipeVelocityMatches(
-            exitGesture.direction,
-            gesture.vx,
-            gesture.vy,
-            0.1,
-          )),
-      onMoveShouldSetPanResponder: (_event, gesture) =>
-        active &&
-        !pending.current &&
-        exitGesture.enabled &&
-        (Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10) &&
-        (swipeDirectionMatches(
-          exitGesture.direction,
-          gesture.dx,
-          gesture.dy,
-          10,
-        ) ||
-          swipeVelocityMatches(
-            exitGesture.direction,
-            gesture.vx,
-            gesture.vy,
-            0.1,
-          )),
+      onStartShouldSetPanResponderCapture: event => {
+        exitOrigin.current = singleTouch(event);
+        return false;
+      },
+      onMoveShouldSetPanResponderCapture: canStartReturnSwipe,
+      onMoveShouldSetPanResponder: canStartReturnSwipe,
       onPanResponderGrant: () => {
+        returnTapCancelled.current = true;
         const touch = { base: null as number | null, movement: 0 };
         exitDrag.current = touch;
         exitProgress.stopAnimation(value => {
@@ -706,64 +774,49 @@ export function SecondFloorScreen({
           moveExit(touch);
         });
       },
-      onPanResponderMove: (_event, gesture) => {
+      onPanResponderMove: event => {
+        const origin = exitOrigin.current;
+        const point = singleTouch(event);
         const touch = exitDrag.current;
-        if (!touch) return;
-        const horizontal =
-          exitGesture.direction === 'left' || exitGesture.direction === 'right';
-        touch.movement = horizontal ? gesture.dx : gesture.dy;
-        moveExit(touch);
-      },
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderTerminate: () => {
-        exitDrag.current = null;
-        Animated.spring(exitProgress, {
-          toValue: 0,
-          useNativeDriver: true,
-          speed: 22,
-          bounciness: 3,
-        }).start();
-      },
-      onPanResponderRelease: (_event, gesture) => {
-        exitDrag.current = null;
         if (
-          exitGesture.enabled &&
-          (swipeDirectionMatches(
-            exitGesture.direction,
-            gesture.dx,
-            gesture.dy,
-            exitGestureDistance,
-          ) ||
-            (swipeDirectionMatches(
-              exitGesture.direction,
-              gesture.dx,
-              gesture.dy,
-              10,
-            ) &&
-              Math.abs(
-                exitGesture.direction === 'left' ||
-                  exitGesture.direction === 'right'
-                  ? gesture.dx
-                  : gesture.dy,
-              ) >= exitVelocityDistance &&
-              swipeVelocityMatches(
-                exitGesture.direction,
-                gesture.vx,
-                gesture.vy,
-                exitGesture.velocityThreshold,
-              )))
+          !origin ||
+          !point ||
+          !touch ||
+          point.identifier !== origin.identifier
         )
-          closeFloor();
-        else
-          Animated.spring(exitProgress, {
-            toValue: 0,
-            useNativeDriver: true,
-            speed: 22,
-            bounciness: 3,
-          }).start();
+          return;
+        const dx = point.pageX - origin.pageX;
+        const dy = point.pageY - origin.pageY;
+        const horizontal =
+          exitGestureDirection === 'left' || exitGestureDirection === 'right';
+        touch.movement = horizontal ? dx : dy;
+        moveExit(touch);
+        setExitReady(
+          isDirectedDrag(exitGestureDirection, dx, dy, exitGestureDistance),
+        );
+      },
+      onPanResponderTerminate: resetExitDrag,
+      onPanResponderRelease: event => {
+        const origin = exitOrigin.current;
+        const point = singleTouch(event, true);
+        exitOrigin.current = null;
+        if (
+          exitDrag.current &&
+          origin &&
+          point &&
+          point.identifier === origin.identifier &&
+          isDirectedDrag(
+            exitGestureDirection,
+            point.pageX - origin.pageX,
+            point.pageY - origin.pageY,
+            exitGestureDistance,
+          )
+        )
+          closeBySwipe();
+        else resetExitDrag();
       },
     },
-    active && !busy,
+    active && !busy && exitGesture.enabled,
   );
   // In V15 the floor header belongs to the page's scroller, while the tool
   // tray and return gesture stay fixed below it.
@@ -899,7 +952,7 @@ export function SecondFloorScreen({
             </View>
           ) : null}
           {selected === null && xun ? (
-            <ScrollView
+            <SecondFloorScrollView
               {...pageScrollProps?.landing}
               testID="floor-landing-scroll"
               style={s.screen}
@@ -972,7 +1025,7 @@ export function SecondFloorScreen({
                   )}
                 </Text>
               </View>
-            </ScrollView>
+            </SecondFloorScrollView>
           ) : null}
           {visited.includes('files') ? (
             <View
@@ -1238,7 +1291,27 @@ export function SecondFloorScreen({
           onAccessibilityAction={event => {
             if (event.nativeEvent.actionName === 'activate') closeFloor();
           }}
-          onPress={xun ? closeFloor : undefined}
+          onTouchStart={event => {
+            const { touches } = event.nativeEvent;
+            const touch = touches[0];
+            const valid =
+              touches.length === 1 &&
+              Number.isFinite(touch?.pageX) &&
+              Number.isFinite(touch?.pageY);
+            returnTapCancelled.current = !valid;
+            returnTouchStart.current = valid
+              ? { x: touch.pageX, y: touch.pageY }
+              : null;
+          }}
+          onTouchMove={trackReturnTapMovement}
+          onTouchEnd={event => trackReturnTapMovement(event, true)}
+          onTouchCancel={() => {
+            returnTouchStart.current = null;
+            returnTapCancelled.current = true;
+          }}
+          // Pressability can retain a press after a small drag. Only a still
+          // touch may use tap-to-return; movement uses the swipe thresholds.
+          onPress={xun ? closeFromReturnTap : undefined}
           onAccessibilityTap={closeFloor}
           onAccessibilityEscape={closeFloor}
           style={[s.return, xun && s.returnXun]}
@@ -1252,7 +1325,9 @@ export function SecondFloorScreen({
             <Text style={s.returnText}>
               {textFor(
                 language,
-                exitGesture.enabled
+                exitReady
+                  ? '松开返回讯'
+                  : exitGesture.enabled
                   ? {
                       up: '⌃  上滑返回讯',
                       down: '⌄  下滑返回讯',
@@ -1260,7 +1335,9 @@ export function SecondFloorScreen({
                       right: '›  右滑返回讯',
                     }[exitGestureDirection]
                   : '返回讯',
-                exitGesture.enabled
+                exitReady
+                  ? 'Release to return'
+                  : exitGesture.enabled
                   ? `Swipe ${exitGestureDirection} to return`
                   : 'Back to conversations',
               )}

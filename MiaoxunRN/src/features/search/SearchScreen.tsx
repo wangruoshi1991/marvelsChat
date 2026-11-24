@@ -1,4 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import { useVoiceCallActivity } from '../voiceCalls/useVoiceCallActivity';
+import React, { useLayoutEffect, useMemo, useState } from 'react';
+import { useCurrentScope } from '../../shared/useCurrentScope';
 import {
   ActivityIndicator,
   Alert,
@@ -214,11 +216,18 @@ export function SearchScreen({
   onAssistantExpandedChange: (expanded: boolean) => void;
   active?: boolean;
 }) {
+  const callActive = useVoiceCallActivity();
   const [pendingAction, setPendingAction] = useState<'save' | 'clear' | null>(
     null,
   );
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+  const isCurrentSearch = useCurrentScope(active ? onSaveSearch : null);
+  useLayoutEffect(() => {
+    setPendingAction(null);
+    setPendingDeleteId(null);
+    setIsHistoryExpanded(false);
+  }, [isCurrentSearch]);
   // Keep the search overlay aligned with the fixed root navigation height.
   // Measuring the bar on every modal mount made the assistant jump while the
   // search route was settling on different tabs and devices.
@@ -259,13 +268,20 @@ export function SearchScreen({
   );
 
   const saveSearch = async () => {
-    if (!query.trim() || pendingAction || pendingDeleteId) {
+    if (
+      !active ||
+      !isCurrentSearch() ||
+      !query.trim() ||
+      pendingAction ||
+      pendingDeleteId
+    ) {
       return;
     }
     setPendingAction('save');
     try {
       await onSaveSearch(query);
     } catch (error) {
+      if (!isCurrentSearch()) return;
       onError(
         appErrorText(
           language,
@@ -275,19 +291,21 @@ export function SearchScreen({
         ),
       );
     } finally {
-      setPendingAction(null);
+      if (isCurrentSearch()) setPendingAction(null);
     }
   };
 
   const clearHistory = async () => {
-    if (pendingAction || pendingDeleteId) {
+    if (!active || !isCurrentSearch() || pendingAction || pendingDeleteId) {
       return;
     }
     setPendingAction('clear');
     try {
       await onClearSearchHistory();
+      if (!isCurrentSearch()) return;
       setIsHistoryExpanded(false);
     } catch (error) {
+      if (!isCurrentSearch()) return;
       onError(
         appErrorText(
           language,
@@ -297,18 +315,19 @@ export function SearchScreen({
         ),
       );
     } finally {
-      setPendingAction(null);
+      if (isCurrentSearch()) setPendingAction(null);
     }
   };
 
   const deleteHistoryItem = async (historyId: string) => {
-    if (pendingAction || pendingDeleteId) {
+    if (!active || !isCurrentSearch() || pendingAction || pendingDeleteId) {
       return;
     }
     setPendingDeleteId(historyId);
     try {
       await onDeleteSearchHistory(historyId);
     } catch (error) {
+      if (!isCurrentSearch()) return;
       onError(
         appErrorText(
           language,
@@ -318,7 +337,7 @@ export function SearchScreen({
         ),
       );
     } finally {
-      setPendingDeleteId(null);
+      if (isCurrentSearch()) setPendingDeleteId(null);
     }
   };
 
@@ -822,7 +841,7 @@ export function SearchScreen({
             />
           </View>
           <VoiceShortcutDock
-            active={active}
+            active={active && !callActive}
             bottomOffset={bottomBarHeight + 64}
             language={language}
             onCompose={onComposeAssistant}

@@ -32,6 +32,11 @@ export function createAgentPublishingService({
   recordAudit = createUsageEvent,
   afterProductProjection = createAlbumProductLifecycleHook({ getRuntimeStatus: buildMediaRetrievalRuntimeStatus }),
 } = {}) {
+  const audit = (userId, eventType, targetType, targetId, requestId) =>
+    (runQuery, product) => recordAudit({
+      userId, eventType, targetType, targetId,
+      payload: { requestId, ...(product ? { productVersionId: product.productVersionId } : {}) },
+    }, runQuery);
   const runAlbumProductProjectionHook = async (args) => {
     if (!afterProductProjection || !args.product?.dependencies?.some((dependency) => dependency.agentKey === "album-manager")) return null;
     return afterProductProjection(args);
@@ -62,7 +67,8 @@ export function createAgentPublishingService({
   }
 
   async function withdrawRelease({ releaseId, actorUserId, requestId = null }) {
-    return releaseRepository.transition({ releaseId, toStatus: "draft", actorUserId, requestId, reason: "admin_withdraw_review" });
+    return releaseRepository.transition({ releaseId, toStatus: "draft", actorUserId, requestId, reason: "admin_withdraw_review",
+      recordAudit: audit(actorUserId, "admin.agent.release.withdraw", "agent_release", releaseId, requestId) });
   }
 
   async function currentReleaseRuntime(release) {
@@ -81,9 +87,8 @@ export function createAgentPublishingService({
     await assertManagedAgentAvatar(release.identity);
     const runtime = await currentReleaseRuntime(release);
     if (!release.declaredScopes.length || new Set(release.declaredScopes).size !== release.declaredScopes.length) throw new HttpError(422, "Agent scopes are incomplete", { code: "SCOPES_INCOMPLETE" });
-    const result = await releaseRepository.transition({ releaseId, toStatus: "review", actorUserId, requestId, expectedContractHash: release.contractHash, readiness: runtime.readiness, reason: "admin_review" });
-    await recordAudit({ userId: actorUserId, eventType: "admin.agent.release.review", targetType: "agent_release", targetId: releaseId, payload: { requestId } });
-    return result;
+    return releaseRepository.transition({ releaseId, toStatus: "review", actorUserId, requestId, expectedContractHash: release.contractHash, readiness: runtime.readiness, reason: "admin_review",
+      recordAudit: audit(actorUserId, "admin.agent.release.review", "agent_release", releaseId, requestId) });
   }
 
   async function publishRelease({ releaseId, actorUserId, requestId = null }) {
@@ -95,9 +100,8 @@ export function createAgentPublishingService({
     const registry = await currentReleaseRuntime(release);
     const expectedHash = computeAgentReleaseContractHash({ key: release.agentKey, version: release.version, permissions: release.declaredScopes, identity: release.identity });
     if (release.contractHash !== expectedHash) throw new HttpError(409, "Agent release contract is stale", { code: "RELEASE_CONTRACT_STALE" });
-    const result = await releaseRepository.transition({ releaseId, toStatus: "published", actorUserId, requestId, expectedContractHash: release.contractHash, readiness: registry.readiness, reason: "admin_publish" });
-    await recordAudit({ userId: actorUserId, eventType: "admin.agent.release.publish", targetType: "agent_release", targetId: releaseId, payload: { requestId } });
-    return result;
+    return releaseRepository.transition({ releaseId, toStatus: "published", actorUserId, requestId, expectedContractHash: release.contractHash, readiness: registry.readiness, reason: "admin_publish",
+      recordAudit: audit(actorUserId, "admin.agent.release.publish", "agent_release", releaseId, requestId) });
   }
 
   async function setIdentity({ releaseId, identity, actorUserId, requestId = null }) {
@@ -130,7 +134,8 @@ export function createAgentPublishingService({
       if ((dependency.scopes || []).some((scope) => !(dependency.declaredScopes || dependency.scopes || []).includes(scope))) throw new HttpError(422, "Product dependency scope is not declared", { code: "SCOPES_MISMATCH" });
       if (!isCompleteAgentIdentity(dependency.identity)) throw new HttpError(422, "Agent dependency identity is incomplete", { code: "IDENTITY_INCOMPLETE" });
     }
-    return productRepository.transitionProduct({ productId, productVersionId, toStatus: "review", actorUserId, requestId, reason: "admin_submit" });
+    return productRepository.transitionProduct({ productId, productVersionId, toStatus: "review", actorUserId, requestId, reason: "admin_submit",
+      expectedContractHash: product.contractHash, recordAudit: audit(actorUserId, "admin.product.submit", "product", productId, requestId) });
   }
 
   async function publishProduct({ productId, productVersionId = null, actorUserId, requestId = null }) {
@@ -145,13 +150,12 @@ export function createAgentPublishingService({
     if (!product.dependencies.length || product.dependencies.some((dep) => dep.releaseStatus !== "published" || !dep.readiness?.ready || !dependencyRegistryIsCurrent(dep) || !isCompleteAgentIdentity(dep.identity))) {
       throw new HttpError(409, "Product dependencies have not passed release gates", { code: "PRODUCT_DEPENDENCY_GATE_FAILED" });
     }
-    const result = await productRepository.transitionProduct({ productId, productVersionId, toStatus: "published", actorUserId, requestId, reason: "admin_publish" });
-    await recordAudit({ userId: actorUserId, eventType: "admin.product.publish", targetType: "product", targetId: productId, payload: { requestId } });
-    return result;
+    return productRepository.transitionProduct({ productId, productVersionId, toStatus: "published", actorUserId, requestId, reason: "admin_publish",
+      expectedContractHash: product.contractHash, recordAudit: audit(actorUserId, "admin.product.publish", "product", productId, requestId) });
   }
 
   async function pauseProduct({ productId, productVersionId = null, actorUserId, requestId = null }) {
-    const result = await productRepository.transitionProduct({
+    return productRepository.transitionProduct({
       productId,
       productVersionId,
       toStatus: "paused",
@@ -159,9 +163,8 @@ export function createAgentPublishingService({
       requestId,
       reason: "admin_pause",
       afterProjection: runAlbumProductProjectionHook,
+      recordAudit: audit(actorUserId, "admin.product.pause", "product", productId, requestId),
     });
-    await recordAudit({ userId: actorUserId, eventType: "admin.product.pause", targetType: "product", targetId: productId, payload: { requestId } });
-    return result;
   }
 
   async function enableProduct({ userId, productId, productVersionId = null, grantedScopes, consentVersion, idempotencyKey }) {
@@ -182,7 +185,7 @@ export function createAgentPublishingService({
     });
   }
 
-  async function setAgentAccessThroughProduct({ userId, agentKey, productVersionId = null, enabled, grantedScopes, consentVersion = null, idempotencyKey = null }) {
+  async function setAgentAccessThroughProduct({ userId, agentKey, productVersionId = null, enabled, grantedScopes, consentVersion = null, idempotencyKey = null, recordAudit = null }) {
     const products = await productRepository.listPublishedProductsForAgent(agentKey, {
       userId,
       publishedOnly: enabled,
@@ -216,6 +219,7 @@ export function createAgentPublishingService({
       productVersionId,
       idempotencyKey,
       afterProjection: runAlbumProductProjectionHook,
+      recordAudit,
     });
   }
 

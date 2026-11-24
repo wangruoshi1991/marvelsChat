@@ -62,6 +62,16 @@ export const avatar3dApi = {
     );
   },
 
+  findAvatar3dSubmission(token: string, idempotencyKey: string) {
+    return request<{ job: Avatar3DJobDTO | null }>(
+      `${appPath}/jobs/submission`,
+      {
+        headers: { 'Idempotency-Key': idempotencyKey },
+        token,
+      },
+    );
+  },
+
   getAvatar3dJob(token: string, jobId: string) {
     return request<Avatar3DJobDTO>(
       `${appPath}/jobs/${encodeURIComponent(jobId)}`,

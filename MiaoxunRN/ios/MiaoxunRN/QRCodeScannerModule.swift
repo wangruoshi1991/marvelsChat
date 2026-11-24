@@ -103,7 +103,8 @@ final class QRCodeScannerModule: NSObject {
       }
     }
 
-    topViewController(from: rootViewController).present(controller, animated: true)
+    topViewController(from: rootViewController)
+      .present(controller, animated: !UIAccessibility.isReduceMotionEnabled)
   }
 
   private func topViewController(from root: UIViewController) -> UIViewController {
@@ -398,7 +399,7 @@ final class MiaoxunSpeechModule: RCTEventEmitter {
     request.shouldReportPartialResults = true
     let session = AVAudioSession.sharedInstance()
     do {
-      try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+      try session.setCategory(.record, mode: .measurement, options: [])
       try session.setActive(true, options: .notifyOthersOnDeactivation)
       let inputNode = audioEngine.inputNode
       let format = inputNode.outputFormat(forBus: 0)

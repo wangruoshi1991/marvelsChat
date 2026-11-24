@@ -26,8 +26,7 @@ export function createAvatar3dPrivateAssetRepository({ queryFn, transactionFn })
   const listExpiredPrivateAssets = async ({ before, limit = 50 }) => {
     const safeLimit = sqlLimit(limit, 50, 200);
     return queryFn(
-      `SELECT asset_kind, asset_id, storage_key
-      FROM (
+      `WITH assets AS (
         SELECT 'photo_source' AS asset_kind, p.id AS asset_id, p.source_storage_key AS storage_key,
           p.retention_until
         FROM avatar_3d_job_photos p
@@ -56,50 +55,69 @@ export function createAvatar3dPrivateAssetRepository({ queryFn, transactionFn })
         WHERE image.status = 'active' AND image.deleted_at IS NULL
           AND image.storage_key <> ''
           AND j.status IN ('succeeded', 'failed', 'quality_failed', 'cancelled', 'submission_unknown')
-      ) AS assets
+      )
+      SELECT assets.asset_kind, assets.asset_id, assets.storage_key
+      FROM assets LEFT JOIN avatar_3d_private_asset_cleanup_retries retry
+        ON retry.asset_kind = assets.asset_kind AND retry.asset_id = assets.asset_id
+        AND retry.storage_key = assets.storage_key
       WHERE retention_until IS NOT NULL AND retention_until <= ?
-      ORDER BY retention_until ASC
+        AND (retry.retry_at IS NULL OR retry.retry_at <= clock_timestamp())
+      ORDER BY retention_until ASC, assets.asset_kind, assets.asset_id
       LIMIT ${safeLimit}`,
       [before],
     );
   };
 
-  const markPrivateAssetDeleted = async ({ assetKind, assetId }) => {
+  const recordPrivateAssetCleanupFailure = async ({ assetKind, assetId, storageKey, errorCode }) => {
+    await queryFn(
+      `INSERT INTO avatar_3d_private_asset_cleanup_retries
+        (asset_kind, asset_id, storage_key, attempts, retry_at, error_code)
+      VALUES (?, ?, ?, 1, clock_timestamp() + INTERVAL '5 minutes', ?)
+      ON CONFLICT (asset_kind, asset_id, storage_key) DO UPDATE
+      SET attempts = LEAST(avatar_3d_private_asset_cleanup_retries.attempts + 1, 31),
+          retry_at = clock_timestamp() + LEAST(
+            INTERVAL '1 hour',
+            INTERVAL '5 minutes' * power(2, avatar_3d_private_asset_cleanup_retries.attempts)
+          ),
+          error_code = EXCLUDED.error_code`,
+      [assetKind, assetId, storageKey, errorCode],
+    );
+  };
+
+  const markPrivateAssetDeleted = async ({ assetKind, assetId, storageKey }) => {
+    let update;
     if (assetKind === "photo_source") {
-      await queryFn(
+      update =
         `UPDATE avatar_3d_job_photos
         SET source_storage_key = '',
           deleted_at = CASE WHEN normalized_storage_key IS NULL THEN CURRENT_TIMESTAMP ELSE deleted_at END
-        WHERE id = ?`,
-        [assetId],
-      );
-      return;
-    }
-    if (assetKind === "photo_normalized") {
-      await queryFn(
+        WHERE id = ? AND source_storage_key = ?`;
+    } else if (assetKind === "photo_normalized") {
+      update =
         `UPDATE avatar_3d_job_photos
         SET normalized_storage_key = NULL,
           deleted_at = CASE WHEN source_storage_key = '' THEN CURRENT_TIMESTAMP ELSE deleted_at END
-        WHERE id = ?`,
-        [assetId],
-      );
-      return;
-    }
-    if (assetKind === "reference_image") {
-      await queryFn(
+        WHERE id = ? AND normalized_storage_key = ?`;
+    } else if (assetKind === "reference_image") {
+      update =
         `UPDATE avatar_3d_reference_images
         SET status = 'deleted', storage_key = '', deleted_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND status = 'active' AND deleted_at IS NULL`,
-        [assetId],
-      );
-      return;
+        WHERE id = ? AND storage_key = ? AND status = 'active' AND deleted_at IS NULL`;
+    } else {
+      throw new HttpError(400, "Unknown avatar asset type.");
     }
-    throw new HttpError(400, "Unknown avatar asset type.");
+    await queryFn(
+      `WITH updated AS (${update} RETURNING id)
+      DELETE FROM avatar_3d_private_asset_cleanup_retries
+      WHERE asset_kind = ? AND asset_id = ? AND storage_key = ?`,
+      [assetId, storageKey, assetKind, assetId, storageKey],
+    );
   };
 
   return {
     markJobAssetsRetention,
     listExpiredPrivateAssets,
     markPrivateAssetDeleted,
+    recordPrivateAssetCleanupFailure,
   };
 }

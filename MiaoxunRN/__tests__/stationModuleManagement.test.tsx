@@ -6,6 +6,7 @@ import { StationContentListScreen } from '../src/features/station/StationContent
 import { StationAgentsPanel } from '../src/features/station/StationAgentsPanel';
 import { AgentList } from '../src/features/station/StationAgentCards';
 import { StationCreateSheet } from '../src/features/station/StationCreateSheet';
+import * as stationMediaPicker from '../src/services/stationMediaPicker';
 import {
   AIPartnerGrid,
   DiaryComicGrid,
@@ -424,5 +425,69 @@ describe('station module management', () => {
     expect(save.props.disabled).toBe(true);
 
     await ReactTestRenderer.act(() => renderer!.unmount());
+  });
+
+  it('reuses one album save key across retries and gives a new form a new key for the same title', async () => {
+    const select = jest
+      .spyOn(stationMediaPicker, 'pickStationImagesFromLibrary')
+      .mockResolvedValue([
+        {
+          kind: 'image',
+          uri: 'file:///album-fixture.jpg',
+          originalFilename: 'album-fixture.jpg',
+          mimeType: 'image/jpeg',
+          byteSize: 42,
+          width: null,
+          height: null,
+        },
+      ]);
+    const onSubmit = jest.fn();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    const mountForm = async () => {
+      await ReactTestRenderer.act(() => {
+        renderer = ReactTestRenderer.create(
+          <StationCreateSheet
+            fullScreen
+            isSaving={false}
+            kind="album"
+            language="zh"
+            onBack={jest.fn()}
+            onSubmit={onSubmit}
+            palette={palettes.light}
+          />,
+        );
+      });
+      await ReactTestRenderer.act(async () => {
+        renderer.root
+          .findAllByType(TextInput)[0]
+          .props.onChangeText('旅行相册');
+        await renderer.root
+          .findByProps({ accessibilityLabel: '添加照片' })
+          .props.onPress();
+      });
+    };
+
+    try {
+      await mountForm();
+      const save = () =>
+        renderer.root
+          .findByProps({ accessibilityLabel: '保存' })
+          .props.onPress();
+      await ReactTestRenderer.act(save);
+      await ReactTestRenderer.act(save);
+      await ReactTestRenderer.act(() => renderer.unmount());
+      await mountForm();
+      await ReactTestRenderer.act(save);
+      const [first, retry, fresh] = onSubmit.mock.calls.map(
+        ([payload]) => payload,
+      );
+      expect(first.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+      expect(retry).toEqual(first);
+      expect(fresh.title).toBe(first.title);
+      expect(fresh.idempotencyKey).not.toBe(first.idempotencyKey);
+    } finally {
+      select.mockRestore();
+      if (renderer!) await ReactTestRenderer.act(() => renderer.unmount());
+    }
   });
 });

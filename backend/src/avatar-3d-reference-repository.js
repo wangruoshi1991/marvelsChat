@@ -43,6 +43,7 @@ export function createAvatar3dReferenceRepository({ queryFn, transactionFn, rand
     referenceSetId,
     images,
     usageImageCount,
+    claimToken,
   }) => {
     const requiredViews = ["front", "left", "back", "right"];
     const validImages = Array.isArray(images)
@@ -78,8 +79,9 @@ export function createAvatar3dReferenceRepository({ queryFn, transactionFn, rand
           AND reference_set.user_id = ? AND reference_set.status = 'persisting'
           AND job.status = 'persisting_references'
           AND reference_set.deleted_at IS NULL AND job.deleted_at IS NULL
+          ${claimToken ? "AND job.claim_token = ? AND job.claim_lease_until > clock_timestamp()" : "AND job.claim_token IS NULL"}
         FOR UPDATE OF reference_set, job`,
-        [referenceSetId, jobId, userId],
+        [referenceSetId, jobId, userId, ...(claimToken ? [claimToken] : [])],
       );
       if (!referenceRows.length) {
         throw new HttpError(409, "Avatar reference state changed.", {
@@ -120,7 +122,8 @@ export function createAvatar3dReferenceRepository({ queryFn, transactionFn, rand
       );
       const [jobRows] = await connection.execute(
         `UPDATE avatar_3d_jobs
-        SET reference_set_id = ?, status = 'awaiting_reference_confirmation', progress = 100
+        SET reference_set_id = ?, status = 'awaiting_reference_confirmation', progress = 100,
+            claimed_at = NULL, claim_token = NULL, claim_lease_until = NULL
         WHERE id = ? AND user_id = ? AND status = 'persisting_references'
           AND deleted_at IS NULL
         RETURNING id`,
@@ -197,6 +200,8 @@ export function createAvatar3dReferenceRepository({ queryFn, transactionFn, rand
     providerStatus,
     safeErrorCode,
     retentionUntil,
+    claimToken,
+    releaseClaim = true,
   }) => {
     if (
       !avatar3dNextStatuses.get(fromJobStatus)?.has(toJobStatus)
@@ -207,14 +212,18 @@ export function createAvatar3dReferenceRepository({ queryFn, transactionFn, rand
       });
     }
 
+    const claimCondition = claimToken
+      ? "AND job.claim_token = ? AND job.claim_lease_until > clock_timestamp()"
+      : toJobStatus === "cancelled" ? "" : "AND job.claim_token IS NULL";
     let result;
     await transactionFn(async (connection) => {
       const [jobRows] = await connection.execute(
         `SELECT job.* FROM avatar_3d_jobs job
         WHERE job.id = ? AND job.user_id = ? AND job.reference_set_id = ?
           AND job.status = ? AND job.deleted_at IS NULL
+          ${claimCondition}
         FOR UPDATE`,
-        [jobId, userId, referenceSetId, fromJobStatus],
+        [jobId, userId, referenceSetId, fromJobStatus, ...(claimToken ? [claimToken] : [])],
       );
       const [referenceRows] = await connection.execute(
         `SELECT * FROM avatar_3d_reference_sets
@@ -252,7 +261,7 @@ export function createAvatar3dReferenceRepository({ queryFn, transactionFn, rand
         referenceParams,
       );
 
-      const jobAssignments = ["status = ?", "claimed_at = NULL"];
+      const jobAssignments = ["status = ?"];
       const jobParams = [toJobStatus];
       for (const [column, value] of [
         ["progress", progress],
@@ -266,12 +275,19 @@ export function createAvatar3dReferenceRepository({ queryFn, transactionFn, rand
         }
       }
       if (terminalAvatar3dStatuses.has(toJobStatus)) jobAssignments.push("finished_at = CURRENT_TIMESTAMP");
+      if (releaseClaim) {
+        jobAssignments.push("claimed_at = NULL", "claim_token = NULL", "claim_lease_until = NULL");
+      }
       jobParams.push(jobId, userId, referenceSetId, fromJobStatus);
+      const claimClause = claimToken
+        ? " AND claim_token = ? AND claim_lease_until > clock_timestamp()"
+        : toJobStatus === "cancelled" ? "" : " AND claim_token IS NULL";
+      if (claimToken) jobParams.push(claimToken);
       const [updatedJobs] = await connection.execute(
         `UPDATE avatar_3d_jobs
         SET ${jobAssignments.join(", ")}
         WHERE id = ? AND user_id = ? AND reference_set_id = ? AND status = ?
-          AND deleted_at IS NULL
+          AND deleted_at IS NULL${claimClause}
         RETURNING *`,
         jobParams,
       );
@@ -296,9 +312,20 @@ export function createAvatar3dReferenceRepository({ queryFn, transactionFn, rand
     referenceStatus = "processing",
     progress,
     providerStatus,
+    claimToken,
   }) => {
     let result;
     await transactionFn(async (connection) => {
+      const [jobRows] = await connection.execute(
+        `UPDATE avatar_3d_jobs
+        SET progress = ?, provider_status = ?,
+            claimed_at = NULL, claim_token = NULL, claim_lease_until = NULL
+        WHERE id = ? AND user_id = ? AND reference_set_id = ? AND status = ?
+          AND deleted_at IS NULL
+          ${claimToken ? "AND claim_token = ? AND claim_lease_until > clock_timestamp()" : "AND claim_token IS NULL"}
+        RETURNING *`,
+        [progress, providerStatus, jobId, userId, referenceSetId, jobStatus, ...(claimToken ? [claimToken] : [])],
+      );
       const [referenceRows] = await connection.execute(
         `UPDATE avatar_3d_reference_sets
         SET provider_status = ?
@@ -306,14 +333,6 @@ export function createAvatar3dReferenceRepository({ queryFn, transactionFn, rand
           AND deleted_at IS NULL
         RETURNING *`,
         [providerStatus, referenceSetId, jobId, userId, referenceStatus],
-      );
-      const [jobRows] = await connection.execute(
-        `UPDATE avatar_3d_jobs
-        SET progress = ?, provider_status = ?, claimed_at = NULL
-        WHERE id = ? AND user_id = ? AND reference_set_id = ? AND status = ?
-          AND deleted_at IS NULL
-        RETURNING *`,
-        [progress, providerStatus, jobId, userId, referenceSetId, jobStatus],
       );
       if (!referenceRows.length || !jobRows.length) {
         throw new HttpError(409, "Avatar reference state changed.", {

@@ -29,7 +29,7 @@ function fakeRepository() {
     if (sql.includes("FROM (${")) return [];
     if (sql.includes("FROM agent_runs") && sql.includes("GROUP BY agent_id")) return [{ agent_id: "miaoxun-butler", runs: "2", succeeded: "1", failed: "1", token_total: null, cost_cents: null, avg_latency_ms: null }];
     if (sql.includes("FROM products p")) return [{ product_key: "daily", display_name: "日报", entitlements: "2", enabled_entitlements: "1" }];
-    if (sql.includes("GROUP BY user_id")) return [{ user_id: baseTask.user_id, runs: "2", succeeded: "1", failed: "1", token_total: null, cost_cents: null }];
+    if (sql.includes("GROUP BY user_id")) return [{ user_id: baseTask.user_id, runs: "2", succeeded: "1", failed: "1", token_total: null, cost_cents: null, user_count: "201" }];
     if (sql.includes("FROM ai_tasks") && sql.includes("GROUP BY status")) return [{ status: "failed", count: "1" }];
     if (sql.includes("UNION ALL")) return [baseTask];
     throw new Error(`Unexpected query: ${sql}`);
@@ -55,6 +55,8 @@ test("monitoring preserves unknown token and cost as null", async () => {
   assert.deepEqual(result.agents[0], { agentId: "miaoxun-butler", runs: 2, succeeded: 1, failed: 1, tokenTotal: null, costCents: null, averageLatencyMs: null });
   assert.deepEqual(result.products[0], { productKey: "daily", displayName: "日报", entitlementCount: 2, enabledEntitlementCount: 1 });
   assert.deepEqual(result.taskStatuses, [{ status: "failed", count: 1 }]);
+  assert.equal(result.userCount, 201);
+  assert.equal(result.users.length, 1);
 });
 
 test("task listing exposes ai task identity and failure code without fabricated rows", async () => {

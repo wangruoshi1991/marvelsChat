@@ -122,6 +122,15 @@ export function registerAvatar3dLifecycleRoutes(app, {
   );
 
   app.get(
+    `${basePath}/jobs/submission`,
+    ...authenticated(async (req, res) => {
+      const { idempotencyKey } = avatar3dIdempotencySchema.parse({ idempotencyKey: req.get("idempotency-key") });
+      noStore(res);
+      res.json({ data: await service.findSubmission({ user: req.user, idempotencyKey }) });
+    }),
+  );
+
+  app.get(
     `${basePath}/jobs/:jobId`,
     ...authenticated(async (req, res) => {
       const { jobId } = avatar3dJobParamsSchema.parse(req.params);

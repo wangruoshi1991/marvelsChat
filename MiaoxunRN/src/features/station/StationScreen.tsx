@@ -118,6 +118,7 @@ export function StationScreen({
   >(null);
   const [isCreatingStationContent, setIsCreatingStationContent] =
     useState(false);
+  const pendingStationCreation = useRef(false);
   const [createProgressText, setCreateProgressText] = useState('');
   const [selectedAvatar3dModelId, setSelectedAvatar3dModelId] = useState<
     string | null
@@ -150,9 +151,10 @@ export function StationScreen({
   }, [refreshAvatar3d]);
 
   const createStationContent = async (payload: StationCreatePayload) => {
-    if (isCreatingStationContent) {
+    if (pendingStationCreation.current) {
       return;
     }
+    pendingStationCreation.current = true;
     setIsCreatingStationContent(true);
     try {
       if (payload.kind === 'diary') {
@@ -165,6 +167,7 @@ export function StationScreen({
         onActionMessage(textFor(language, '日记已保存', 'Diary saved'));
       } else if (payload.kind === 'album') {
         const album = await session.createStationAlbum({
+          idempotencyKey: payload.idempotencyKey,
           title: payload.title,
           description: payload.description,
           visibility: payload.visibility,
@@ -185,8 +188,20 @@ export function StationScreen({
             });
           }
         } catch (error) {
-          await session.deleteStationAlbum(album.id);
-          throw error;
+          setContentListDetail({
+            type: 'detail',
+            target: { kind: 'album', id: album.id },
+            returnTo: contentListDetail?.returnTo ?? 'list',
+          });
+          onActionMessage(
+            textFor(
+              language,
+              '相册已保存，部分照片未完成上传。请在相册中检查后继续添加。',
+              'Album saved. Some photos were not uploaded. Review the album before adding more.',
+            ),
+          );
+          onActionError(error);
+          return false;
         }
         onActionMessage(textFor(language, '相册已创建', 'Album created'));
       } else {
@@ -204,6 +219,7 @@ export function StationScreen({
       onActionError(error);
       return false;
     } finally {
+      pendingStationCreation.current = false;
       setIsCreatingStationContent(false);
       setCreateProgressText('');
     }
@@ -297,6 +313,7 @@ export function StationScreen({
   };
 
   const closeContentDetail = () => {
+    if (pendingStationCreation.current) return;
     if (!contentListDetail) {
       setContentListKind(null);
       return;

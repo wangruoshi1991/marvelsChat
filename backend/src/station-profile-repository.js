@@ -143,33 +143,33 @@ export async function getPublicProfileByAiId({ viewerUserId, aiId, onlineUserIds
   if (!rows.length) return null;
 
   const targetUserId = rows[0].user_id;
-  const [followRows, friendRows, requestRows] = await Promise.all([
-    query(
-      `SELECT id FROM social_relationships
-      WHERE follower_user_id = ? AND followed_user_id = ? AND relation_type = 'follow' AND status = 'active'
-      LIMIT 1`,
-      [viewerUserId, targetUserId],
-    ),
-    query(
-      `SELECT id FROM social_relationships
-      WHERE follower_user_id = ? AND followed_user_id = ? AND relation_type = 'friend' AND status = 'active'
-      LIMIT 1`,
-      [viewerUserId, targetUserId],
-    ),
-    query(
-      `SELECT id FROM social_requests
-      WHERE requester_user_id = ? AND target_user_id = ? AND request_type = 'friend' AND status = 'pending'
-      ORDER BY created_at DESC
-      LIMIT 1`,
-      [viewerUserId, targetUserId],
-    ),
-  ]);
+  const [relation] = await query(
+    `SELECT
+      EXISTS (
+        SELECT 1 FROM social_relationships
+        WHERE follower_user_id = ? AND followed_user_id = ? AND relation_type = 'follow' AND status = 'active'
+      ) AS is_following,
+      EXISTS (
+        SELECT 1 FROM social_relationships
+        WHERE follower_user_id = ? AND followed_user_id = ? AND relation_type = 'friend' AND status = 'active'
+      ) AS is_friend,
+      (
+        SELECT id FROM social_requests
+        WHERE requester_user_id = ? AND target_user_id = ? AND request_type = 'friend' AND status = 'pending'
+      ) AS outgoing_friend_request_id,
+      (
+        SELECT id FROM social_requests
+        WHERE requester_user_id = ? AND target_user_id = ? AND request_type = 'friend' AND status = 'pending'
+      ) AS incoming_friend_request_id`,
+    [viewerUserId, targetUserId, viewerUserId, targetUserId, viewerUserId, targetUserId, targetUserId, viewerUserId],
+  );
 
   return mapPublicProfile(rows[0], {
     isSelf: viewerUserId === targetUserId,
-    isFollowing: followRows.length > 0,
-    isFriend: friendRows.length > 0,
-    pendingFriendRequestId: requestRows[0]?.id || null,
+    isFollowing: relation.is_following,
+    isFriend: relation.is_friend,
+    pendingFriendRequestId: relation.is_friend ? null : relation.outgoing_friend_request_id,
+    incomingFriendRequestId: relation.is_friend ? null : relation.incoming_friend_request_id,
   });
 }
 

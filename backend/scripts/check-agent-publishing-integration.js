@@ -749,6 +749,8 @@ try {
   );
 
   const verify = new pg.Client({ connectionString: databaseUrl });
+  const taskIds = {};
+  const workspaceId = crypto.randomUUID();
   await verify.connect();
   try {
     const { rows } = await verify.query(
@@ -775,10 +777,8 @@ try {
       message: privateText,
       response: { prompt: privateText },
     };
-    const taskIds = {};
     for (const taskStatus of ["failed", "interrupted", "running", "queued"]) {
       const id = crypto.randomUUID();
-      taskIds[taskStatus] = id;
       await verify.query(
         `INSERT INTO ai_tasks
         (id,user_id,kind,agent_id,agent_version,status,phase,input,error,idempotency_key,request_hash,claim_token,lease_until)
@@ -797,6 +797,7 @@ try {
           taskStatus === "running" ? new Date(Date.now() + 60000) : null,
         ]
       );
+      taskIds[taskStatus] = id;
     }
     await verify.query(
       `INSERT INTO ai_task_events(task_id,user_id,sequence,payload)
@@ -805,7 +806,6 @@ try {
       [taskIds.failed, login.user.id]
     );
 
-    const workspaceId = crypto.randomUUID();
     const nodeId = crypto.randomUUID();
     await verify.query("BEGIN");
     try {
@@ -962,7 +962,19 @@ try {
       });
     }
   } finally {
-    await verify.end();
+    try {
+      // Later integration suites run workers against this same database.
+      await verify.query(
+        "DELETE FROM ai_tasks WHERE user_id=$1 AND id=ANY($2)",
+        [login.user.id, Object.values(taskIds)]
+      );
+      await verify.query(
+        "DELETE FROM agent_workspaces WHERE user_id=$1 AND id=$2 AND idempotency_key=$3",
+        [login.user.id, workspaceId, `workspace-${suffix}`]
+      );
+    } finally {
+      await verify.end();
+    }
   }
 
   const revoked = await request(`/api/me/products/${product.id}/enable`, {

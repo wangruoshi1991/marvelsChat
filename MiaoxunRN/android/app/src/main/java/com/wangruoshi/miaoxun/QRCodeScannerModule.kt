@@ -8,6 +8,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.UiThreadUtil
 
 class QRCodeScannerModule(
   private val reactContext: ReactApplicationContext,
@@ -40,6 +41,8 @@ class QRCodeScannerModule(
           }
           QRCodeScannerActivity.RESULT_PERMISSION_DENIED ->
             promise.reject("camera_denied", "未获得相机权限。")
+          QRCodeScannerActivity.RESULT_CAMERA_FAILED ->
+            promise.reject("camera_unavailable", "相机不可用，请关闭后重试。")
           Activity.RESULT_CANCELED ->
             promise.reject("scanner_cancelled", "已取消扫码。")
           else ->
@@ -56,22 +59,41 @@ class QRCodeScannerModule(
 
   @ReactMethod
   fun scan(promise: Promise) {
-    if (scanPromise != null) {
-      promise.reject("scanner_busy", "扫码器正在运行。")
-      return
-    }
+    UiThreadUtil.runOnUiThread {
+      if (scanPromise != null) {
+        promise.reject("scanner_busy", "扫码器正在运行。")
+        return@runOnUiThread
+      }
 
-    val activity = reactContext.currentActivity
-    if (activity == null) {
-      promise.reject("activity_unavailable", "无法打开扫码页面。")
-      return
-    }
+      val activity = reactContext.currentActivity
+      if (activity == null || activity.isFinishing || activity.isDestroyed) {
+        promise.reject("activity_unavailable", "无法打开扫码页面。")
+        return@runOnUiThread
+      }
 
-    scanPromise = promise
-    activity.startActivityForResult(
-      Intent(activity, QRCodeScannerActivity::class.java),
-      REQUEST_CODE,
-    )
+      scanPromise = promise
+      try {
+        activity.startActivityForResult(
+          Intent(activity, QRCodeScannerActivity::class.java),
+          REQUEST_CODE,
+        )
+      } catch (error: RuntimeException) {
+        if (scanPromise === promise) {
+          scanPromise = null
+          promise.reject("scanner_failed", "无法打开扫码页面。", error)
+        }
+      }
+    }
+  }
+
+  override fun invalidate() {
+    reactContext.removeActivityEventListener(activityEventListener)
+    UiThreadUtil.runOnUiThread {
+      val promise = scanPromise
+      scanPromise = null
+      promise?.reject("scanner_cancelled", "已取消扫码。")
+    }
+    super.invalidate()
   }
 
   companion object {

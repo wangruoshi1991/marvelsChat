@@ -1,5 +1,6 @@
 import { query, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
+import { enqueueStorageCleanup, getStorageCleanup, storageCleanupGraceMs } from "./storage-cleanup-repository.js";
 
 export function createAccountRepository({
   queryImpl = query,
@@ -15,13 +16,13 @@ export function createAccountRepository({
       : null;
   };
 
-  const listUserStorageObjects = async (userId) => {
-    const rows = await queryImpl(
+  const listUserStorageObjects = async (userId, runQuery = queryImpl) => {
+    const rows = await runQuery(
       `WITH owned AS (SELECT ?::char(36) AS user_id)
       SELECT media.storage_provider AS provider, media.storage_key AS object_key
       FROM station_media_assets media
       JOIN owned ON owned.user_id = media.user_id
-      WHERE media.storage_key IS NOT NULL AND media.storage_key <> ''
+      WHERE media.deleted_at IS NULL AND media.storage_key IS NOT NULL AND media.storage_key <> ''
 
       UNION
       SELECT file.storage_provider, file.storage_key
@@ -113,15 +114,36 @@ export function createAccountRepository({
       .filter((item) => item.provider && item.objectKey);
   };
 
-  const deleteUserAccount = async ({ userId }) => {
-    let deleted = false;
+  const deleteUserAccount = async ({ userId, expectedPasswordHash }) => {
     const deleteInTransaction = () => withTransactionImpl(async (connection) => {
       const [lockedUsers] = await connection.execute(
-        "SELECT id FROM users WHERE id = ? FOR UPDATE",
+        "SELECT id, password_hash FROM users WHERE id = ? FOR UPDATE",
         [userId],
       );
+      const scope = { scope: "account", userId, targetId: userId };
+      const durable = expectedPasswordHash !== undefined;
       if (!lockedUsers.length) {
+        const prior = durable && await getStorageCleanup(connection, scope);
+        if (prior) return { deleted: true, cleanupStatus: prior.status === "completed" ? "completed" : "pending" };
         throw new HttpError(404, "Account not found.");
+      }
+      if (durable && lockedUsers[0].password_hash !== expectedPasswordHash) {
+        throw new HttpError(403, "Invalid password.", { code: "INVALID_ACCOUNT_PASSWORD" });
+      }
+      let cleanupStatus;
+      if (durable) {
+        // Freeze the pending upload keys before taking the inventory. The user
+        // lock also fences new rows through their foreign keys.
+        await connection.query(
+          "SELECT id FROM station_media_assets WHERE user_id = ? ORDER BY id FOR UPDATE",
+          [userId],
+        );
+        const objects = await listUserStorageObjects(userId, connection.query);
+        const notBefore = new Date(Date.now() + storageCleanupGraceMs);
+        await enqueueStorageCleanup(connection, {
+          ...scope, objects: objects.map(object => ({ ...object, notBefore })),
+        });
+        cleanupStatus = objects.length ? "pending" : "completed";
       }
 
       await connection.execute(
@@ -169,20 +191,18 @@ export function createAccountRepository({
         "DELETE FROM users WHERE id = ? RETURNING id",
         [userId],
       );
-      deleted = rows.length > 0;
+      if (!rows.length) throw new HttpError(404, "Account not found.");
+      return durable ? { deleted: true, cleanupStatus } : { deleted: true };
     });
     // A worker may hold a run lock while its event needs the user foreign key.
     // Retry only rolled-back database transactions, never storage/provider calls.
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        await deleteInTransaction();
-        break;
+        return await deleteInTransaction();
       } catch (error) {
         if (!["40P01", "40001"].includes(error?.code) || attempt === 2) throw error;
       }
     }
-    if (!deleted) throw new HttpError(404, "Account not found.");
-    return { deleted: true };
   };
 
   return {

@@ -1,5 +1,6 @@
 import type { AIContextReference, AITaskDTO } from './models/aiTask';
 import { persistentAssistReference } from './features/ai/assistContext';
+import { useCurrentScope } from './shared/useCurrentScope';
 import React, {
   useCallback,
   useEffect,
@@ -91,8 +92,38 @@ import {
 } from './services/stationFilePicker';
 import { getCurrentLocation } from './services/location';
 
+import { useVoiceCalls } from './features/voiceCalls/useVoiceCalls';
+import { VoiceCallSheet } from './features/voiceCalls/VoiceCallSheet';
+import {
+  VoiceCallBar,
+  type VoiceCallPosition,
+} from './features/voiceCalls/VoiceCallBar';
+import { canMinimizeVoiceCall } from './features/voiceCalls/voiceCallPresentation';
+
 function App(): React.JSX.Element {
   const session = useMiaoxunSession();
+  const voiceCalls = useVoiceCalls({
+    token: session.token,
+    userId: session.user?.id,
+    capability: session.chatVoiceCalls,
+    language: session.language,
+  });
+  const callController = voiceCalls.controller;
+  const voiceCallOpen = Boolean(
+    voiceCalls.display &&
+      !['ended', 'failed'].includes(voiceCalls.display.phase),
+  );
+  const [callMinimized, setCallMinimized] = useState(false);
+  const [callPosition, setCallPosition] = useState<VoiceCallPosition>();
+  const callDisplay = voiceCalls.display;
+  const showCallBar = callMinimized && canMinimizeVoiceCall(callDisplay);
+  const callExpanded = Boolean(callDisplay && !callMinimized);
+  const restoreCall = () => setCallMinimized(false);
+  useEffect(() => {
+    if (!callDisplay || ['ended', 'failed'].includes(callDisplay.phase)) {
+      setCallPosition(undefined);
+    }
+  }, [callDisplay]);
   // V15 keeps Xun's conversation and second-floor states light while Miao and
   // Station retain the dark canvas used by their existing flows.
   const [selectedTab, setSelectedTab] = useState<RootTab>('messages');
@@ -137,6 +168,8 @@ function App(): React.JSX.Element {
   } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showLaunchAnimation, setShowLaunchAnimation] = useState(true);
+  const [launchDismissed, setLaunchDismissed] = useState(false);
+  const dismissLaunch = useCallback(() => setLaunchDismissed(true), []);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMessageTab, setSelectedMessageTab] =
     useState<MessageTab>('chat');
@@ -156,6 +189,11 @@ function App(): React.JSX.Element {
   const workspaceOwner = `${session.user?.id || ''}:${session.token || ''}`;
   const workspaceOwnerRef = useRef(workspaceOwner);
   workspaceOwnerRef.current = workspaceOwner;
+  const profileReturn = useRef<{
+    owner: string;
+    threadId: string;
+    route: 'chat' | 'butler';
+  } | null>(null);
   const [comicPostDraft, setComicPostDraft] = useState<{
     owner: string;
     draft: ComicPublishDraft;
@@ -236,6 +274,7 @@ function App(): React.JSX.Element {
   const updateRequestDraft = (text: string) =>
     setRequestDraftState({ owner: workspaceOwner, text });
   useEffect(() => {
+    profileReturn.current = null;
     setAccessDrafts({ owner: '', threads: {} });
     setComposerOwner(null);
     setRequestContext(null);
@@ -334,7 +373,7 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowLaunchAnimation(false);
-    }, 2500);
+    }, 1800);
     return () => clearTimeout(timer);
   }, []);
 
@@ -455,16 +494,17 @@ function App(): React.JSX.Element {
   );
   const openThread = useCallback(
     (thread: ChatThread) => {
+      profileReturn.current = null;
       setActiveThread(thread);
       setActiveThreadOwner(session.user?.id || null);
       session.setActiveThreadId(thread.id);
-      session.markThreadRead(thread.id);
       setModalRoute(thread.agentId === 'miaoxun-butler' ? 'butler' : 'chat');
     },
     [session],
   );
 
   const closeThread = () => {
+    profileReturn.current = null;
     setModalRoute(null);
     setActiveThread(null);
     setWorkspaceContribution(null);
@@ -477,6 +517,25 @@ function App(): React.JSX.Element {
       setToastMessage(current => (current === message ? null : current));
     }, 1600);
   }, []);
+
+  useEffect(() => {
+    if (!callMinimized || canMinimizeVoiceCall(callDisplay)) return;
+    setCallMinimized(false);
+    if (
+      !callDisplay ||
+      (callDisplay.phase !== 'ended' && callDisplay.phase !== 'failed')
+    )
+      return;
+    showToast(
+      callDisplay.message ??
+        textFor(
+          session.language,
+          callDisplay.phase === 'failed' ? '通话失败' : '通话已结束',
+          callDisplay.phase === 'failed' ? 'Call failed' : 'Call ended',
+        ),
+    );
+    callController?.dismiss();
+  }, [callController, callDisplay, callMinimized, session.language, showToast]);
 
   const openAgentWorkspaceParticipant = useCallback(
     (workspace: AgentWorkspace, step: AgentWorkspace['steps'][number]) => {
@@ -527,35 +586,48 @@ function App(): React.JSX.Element {
     showToast(notice.title || notice.body);
   }, [session.realtimeNotificationNotice, showToast]);
 
+  const closePublicProfileModal = useCallback(() => {
+    const source = profileReturn.current;
+    profileReturn.current = null;
+    const route =
+      source?.owner === workspaceOwnerRef.current ? source.route : null;
+    setModalRoute(current => (current === 'public-profile' ? route : current));
+  }, []);
   const profileFlows = useProfileFlows({
+    sessionOwner: workspaceOwner,
+    profileVisible: modalRoute === 'public-profile',
     language: session.language,
     user: session.user,
     loadPublicProfileByAiId: session.loadPublicProfileByAiId,
     resolveScanPayload: session.resolveScanPayload,
     showToast,
     openModal: setModalRoute,
-    closePublicProfileModal: () =>
-      setModalRoute(current => (current === 'public-profile' ? null : current)),
+    closePublicProfileModal,
   });
 
   const openFriendThread = useCallback(
-    async (friendUserId: string) => {
+    async (friendUserId: string, isProfileCurrent?: () => boolean) => {
+      const canOpen = () =>
+        workspaceOwnerRef.current === workspaceOwner &&
+        (!isProfileCurrent || isProfileCurrent());
       try {
         const thread = await session.openFriendThread(friendUserId);
+        if (!canOpen()) return;
         setModalRoute(null);
         openThread(thread);
       } catch (error) {
-        showToast(
-          appErrorText(
-            session.language,
-            error,
-            '无法打开好友聊天',
-            'Cannot open friend chat',
-          ),
+        if (!canOpen()) return;
+        const message = appErrorText(
+          session.language,
+          error,
+          '无法打开好友聊天',
+          'Cannot open friend chat',
         );
+        if (isProfileCurrent) throw new Error(message);
+        showToast(message);
       }
     },
-    [openThread, session, showToast],
+    [openThread, session, showToast, workspaceOwner],
   );
 
   const openAgentThread = useCallback(
@@ -797,8 +869,7 @@ function App(): React.JSX.Element {
   const openTask = useCallback(
     (task: AITaskDTO) => {
       if (task.kind === 'site_draft') {
-        setSelectedStationTab('agents');
-        setSelectedTab('station');
+        setSelectedMiaoTask({ owner: workspaceOwner, task });
         return;
       }
       const thread = session.threads.find(item => item.id === task.threadId);
@@ -812,7 +883,7 @@ function App(): React.JSX.Element {
           ),
         );
     },
-    [openThread, session.language, session.threads, showToast],
+    [openThread, session.language, session.threads, showToast, workspaceOwner],
   );
 
   const askButler = useCallback(
@@ -832,16 +903,38 @@ function App(): React.JSX.Element {
     [currentScene, workspaceOwner],
   );
 
+  const openedThreadId = openedThread?.id;
+  const readSequence = openedThread?.readSequence ?? 0;
+  const readableSequence =
+    openedThread?.messages.reduce(
+      (latest, message) => Math.max(latest, message.unreadSequence ?? 0),
+      activeThread?.unreadSequence ?? 0,
+    ) ?? 0;
+  const markThreadRead = session.markThreadRead;
+  const readScope = useMemo(
+    () => ({ workspaceOwner, modalRoute, openedThreadId, callExpanded }),
+    [workspaceOwner, modalRoute, openedThreadId, callExpanded],
+  );
+  const isCurrentReadScreen = useCurrentScope(readScope);
   useEffect(() => {
     if (
-      !openedThread ||
-      modalRoute !== 'chat' ||
-      openedThread.unreadCount <= 0
+      !openedThreadId ||
+      callExpanded ||
+      (modalRoute !== 'chat' && modalRoute !== 'butler') ||
+      readableSequence <= readSequence
     ) {
       return;
     }
-    session.markThreadRead(openedThread.id);
-  }, [modalRoute, openedThread, session]);
+    markThreadRead(openedThreadId, readableSequence, isCurrentReadScreen);
+  }, [
+    callExpanded,
+    isCurrentReadScreen,
+    markThreadRead,
+    modalRoute,
+    openedThreadId,
+    readableSequence,
+    readSequence,
+  ]);
 
   const copyAIID = () => {
     const aiId = session.user?.aiId || '';
@@ -860,7 +953,7 @@ function App(): React.JSX.Element {
   };
 
   const requestMessageQRCodeScan = () => {
-    if (profileFlows.isScanning || pendingScanRequest) {
+    if (profileFlows.isScanning() || pendingScanRequest) {
       return;
     }
     setPendingScanRequest(true);
@@ -882,7 +975,12 @@ function App(): React.JSX.Element {
     consumePendingScanRequest();
   }, [consumePendingScanRequest, modalRoute, pendingScanRequest]);
   const isChatRoute =
-    Boolean(openedThread) && (modalRoute === 'butler' || modalRoute === 'chat');
+    Boolean(openedThread) &&
+    (modalRoute === 'butler' ||
+      modalRoute === 'chat' ||
+      (modalRoute === 'public-profile' &&
+        profileReturn.current?.threadId === openedThread?.id &&
+        profileReturn.current?.owner === workspaceOwner));
   const chatPalette = isChatRoute ? xunPalette(basePalette) : messagePalette;
   const isRootTabRoute = Boolean(session.token) && !isChatRoute;
   const voiceDockBottomOffset = navigationHeight + 102;
@@ -901,6 +999,71 @@ function App(): React.JSX.Element {
     : isV6Palette(palette)
     ? '#FFFFFF'
     : palette.surface;
+  const launchOverlayVisible = !launchDismissed;
+  const callBar =
+    showCallBar && !launchOverlayVisible ? (
+      <VoiceCallBar
+        display={callDisplay}
+        language={session.language}
+        palette={conversationPalette}
+        onRestore={restoreCall}
+        position={callPosition}
+        onPositionChange={setCallPosition}
+      />
+    ) : null;
+  const taskModalOpen = Boolean(
+    session.token && (requestComposerOpen || miaoTask || agentWorkspace),
+  );
+  const [taskCallHostReady, setTaskCallHostReady] = useState(false);
+  useEffect(() => {
+    if (!taskModalOpen) setTaskCallHostReady(false);
+  }, [taskModalOpen]);
+  // A native Modal must present its own child call controls on iOS. Keep one
+  // host so restoring a call never dismisses the current page or its draft.
+  const callHost =
+    session.token && session.user && isPostComposerOpen
+      ? 'post'
+      : taskModalOpen
+      ? 'task'
+      : session.token && modalRoute && !['chat', 'butler'].includes(modalRoute)
+      ? 'app-modal'
+      : 'root';
+  const endCall = async () => {
+    const notice = await callController?.end();
+    if (notice) showToast(notice);
+  };
+  const callOverlay = (
+    <>
+      {callBar
+        ? React.cloneElement(callBar, {
+            topInset:
+              callHost === 'root' ||
+              (callHost === 'app-modal' &&
+                (modalRoute === 'qr-code' || modalRoute === 'message-actions')),
+          })
+        : null}
+      <VoiceCallSheet
+        display={callExpanded && !launchOverlayVisible ? callDisplay : null}
+        onMinimize={() => setCallMinimized(true)}
+        palette={conversationPalette}
+        language={session.language}
+        onAccept={() => callController?.accept()}
+        onDecline={endCall}
+        onEnd={endCall}
+        onToggleMute={() => callController?.mute()}
+        onDismiss={() => callController?.dismiss()}
+      />
+      {toastMessage ? (
+        <View style={[styles.toastWrap, styles.pointerEventsNone]}>
+          <View style={[styles.toast, { backgroundColor: palette.text }]}>
+            <Text style={[styles.toastText, { color: palette.background }]}>
+              {toastMessage}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+    </>
+  );
 
   return (
     <SafeAreaProvider>
@@ -911,6 +1074,10 @@ function App(): React.JSX.Element {
         <SafeAreaView
           edges={['top']}
           testID="app-top-safe-area"
+          accessibilityElementsHidden={launchOverlayVisible}
+          importantForAccessibility={
+            launchOverlayVisible ? 'no-hide-descendants' : 'auto'
+          }
           style={[styles.safeArea, { backgroundColor: topSafeAreaColor }]}
         >
           <SafeAreaView
@@ -977,198 +1144,258 @@ function App(): React.JSX.Element {
                 />
               ) : session.token ? (
                 <>
-                  {openedThread &&
-                  (modalRoute === 'butler' || modalRoute === 'chat') ? (
-                    <ChatScreen
-                      token={session.token}
-                      onConfirmUIPreferences={session.confirmUIPreferences}
-                      workspaceContribution={
-                        workspaceContribution?.owner === workspaceOwner &&
-                        workspaceContribution.threadId === openedThread.id
-                          ? workspaceContribution.contribution
-                          : undefined
-                      }
-                      onOpenWorkspace={(workspace, continuationDraft) => {
-                        if (
-                          workspaceChatScopeRef.current !== workspaceChatScope
-                        )
-                          return;
-                        setSelectedWorkspace({
-                          owner: workspaceOwner,
-                          workspace,
-                          ...(continuationDraft ? { continuationDraft } : {}),
-                        });
-                      }}
-                      onAuthorizeAlbumAI={async () => openAgentManagement()}
-                      onOpenAgentAccess={openAgentManagement}
-                      onPublishComic={draft => {
-                        if (
-                          workspaceOwnerRef.current !== workspaceOwner ||
-                          workspaceChatScopeRef.current !== workspaceChatScope
-                        )
-                          return;
-                        setComicPostDraft({ owner: workspaceOwner, draft });
-                        setIsPostComposerOpen(true);
-                      }}
-                      albums={session.stationContent.albums}
-                      mediaAssets={session.stationContent.mediaAssets}
-                      onPrepareComposerTool={prepareComposerTool}
-                      agentGrantedScopes={
-                        session.ownedAgents.find(
-                          agent =>
-                            agent.id === openedThread.agentId && agent.enabled,
-                        )?.grantedScopes || []
-                      }
-                      key={`${workspaceOwner}:${openedThread.id}`}
-                      onPreserveDraftForAccess={draft => {
-                        if (workspaceOwnerRef.current !== workspaceOwner)
-                          return;
-                        setAccessDrafts(current => ({
-                          owner: workspaceOwner,
-                          threads: {
-                            ...(current.owner === workspaceOwner
-                              ? current.threads
-                              : {}),
-                            [openedThread.id]: {
-                              ...draft,
-                              references: draft.references.map(reference => ({
-                                ...reference,
-                              })),
-                              ...(draft.source
-                                ? { source: { ...draft.source } }
-                                : {}),
-                              ...(draft.workspaceContext
-                                ? {
-                                    workspaceContext: {
-                                      ...draft.workspaceContext,
-                                    },
-                                  }
-                                : {}),
-                            },
-                          },
-                        }));
-                      }}
-                      initialDraft={
-                        hasButlerDraft ? butlerDraft : accessDraft?.text
-                      }
-                      initialContextRefs={
-                        hasButlerDraft
-                          ? butlerReferences
-                          : accessDraft?.references
-                      }
-                      initialAssistSource={
-                        hasButlerDraft ? butlerSource : accessDraft?.source
-                      }
-                      initialWorkspaceContext={
-                        hasButlerDraft
-                          ? butlerWorkspaceContext
-                          : accessDraft?.workspaceContext
-                      }
-                      initialReplyToMessageId={
-                        hasButlerDraft
-                          ? undefined
-                          : accessDraft?.replyToMessageId
-                      }
-                      initialAgentContextReset={accessDraft?.agentContextReset}
-                      initialContentPreviewContext={
-                        accessDraft?.contentPreviewContext
-                      }
-                      initialButlerContextReset={
-                        hasButlerDraft
-                          ? !butlerWorkspaceContext &&
-                            Boolean(
-                              butlerReferences.length &&
-                                pendingButlerClarification(openedThread),
-                            )
-                          : accessDraft?.butlerContextReset
-                      }
-                      onInitialDraftConsumed={() => {
-                        if (workspaceOwnerRef.current !== workspaceOwner)
-                          return;
-                        setAccessDrafts(current => {
-                          if (
-                            current.owner !== workspaceOwner ||
-                            !current.threads[openedThread.id]
-                          )
-                            return current;
-                          const threads = { ...current.threads };
-                          delete threads[openedThread.id];
-                          return { owner: workspaceOwner, threads };
-                        });
-                        setButlerDraft('');
-                        setButlerReferences([]);
-                        setButlerSource(undefined);
-                        setButlerWorkspaceContext(undefined);
-                        setButlerDraftOwner('');
-                      }}
-                      onRefreshThread={() =>
-                        session.refreshThreadMessages(openedThread.id)
-                      }
-                      palette={chatPalette}
-                      language={session.language}
-                      currentUserId={session.user?.id || ''}
-                      currentUserName={session.user?.displayName || ''}
-                      currentUserAvatarConfig={session.profile.avatarConfig}
-                      thread={openedThread}
-                      agents={session.agents}
-                      renderUserAvatar={renderUserAvatar}
-                      onBack={closeThread}
-                      onSend={(...args) =>
-                        session.sendMessage(openedThread.id, ...args)
-                      }
-                      onDeleteMessage={messageId =>
-                        session.deleteMessage(openedThread.id, messageId)
-                      }
-                      onRecallMessage={messageId =>
-                        session.recallMessage(openedThread.id, messageId)
-                      }
-                      onSetMuted={muted =>
-                        session.setThreadMuted(openedThread.id, muted)
-                      }
-                      onGroupLeft={() => {
-                        session
-                          .refreshBootstrap(undefined, false)
-                          .catch(error =>
-                            showToast(
-                              appErrorText(
-                                session.language,
-                                error,
-                                '群聊状态同步失败',
-                                'Could not refresh the group status',
-                              ),
-                            ),
-                          );
-                      }}
-                      onActionError={message =>
-                        showToast(
-                          appErrorText(
-                            session.language,
-                            message,
-                            '操作失败',
-                            'Action failed',
-                          ),
-                        )
-                      }
-                      onOpenPeerProfile={
-                        openedThread.peerAiId
-                          ? () => {
-                              closeThread();
-                              profileFlows
-                                .openPublicProfileByAiId(
-                                  openedThread.peerAiId || '',
+                  {openedThread && isChatRoute ? (
+                    <View style={appStyles.chatLayer}>
+                      <ChatScreen
+                        token={session.token}
+                        chatMessageText={session.chatMessageText}
+                        chatVideoEnabled={session.chatVideoEnabled}
+                        onStartVoiceCall={
+                          callController &&
+                          !voiceCallOpen &&
+                          modalRoute === 'chat' &&
+                          openedThread.kind === 'direct' &&
+                          openedThread.peerUserId &&
+                          !openedThread.agentId &&
+                          !openedThread.groupId
+                            ? () =>
+                                callController.start(
+                                  openedThread.id,
+                                  openedThread.title,
                                 )
-                                .catch(() => undefined);
-                            }
-                          : undefined
-                      }
-                    />
+                            : undefined
+                        }
+                        voiceCallOpen={voiceCallOpen}
+                        chatMessageReceipts={session.chatMessageReceipts}
+                        receiptActive={
+                          modalRoute === 'chat' &&
+                          !callExpanded &&
+                          !secondFloorOpen &&
+                          !isPostComposerOpen &&
+                          !requestComposerOpen &&
+                          !miaoTask &&
+                          !agentWorkspace
+                        }
+                        onConfirmUIPreferences={session.confirmUIPreferences}
+                        workspaceContribution={
+                          workspaceContribution?.owner === workspaceOwner &&
+                          workspaceContribution.threadId === openedThread.id
+                            ? workspaceContribution.contribution
+                            : undefined
+                        }
+                        onOpenWorkspace={(workspace, continuationDraft) => {
+                          if (
+                            workspaceChatScopeRef.current !== workspaceChatScope
+                          )
+                            return;
+                          setSelectedWorkspace({
+                            owner: workspaceOwner,
+                            workspace,
+                            ...(continuationDraft ? { continuationDraft } : {}),
+                          });
+                        }}
+                        onAuthorizeAlbumAI={async () => openAgentManagement()}
+                        onOpenAgentAccess={openAgentManagement}
+                        onPublishComic={draft => {
+                          if (
+                            workspaceOwnerRef.current !== workspaceOwner ||
+                            workspaceChatScopeRef.current !== workspaceChatScope
+                          )
+                            return;
+                          setComicPostDraft({ owner: workspaceOwner, draft });
+                          setIsPostComposerOpen(true);
+                        }}
+                        albums={session.stationContent.albums}
+                        mediaAssets={session.stationContent.mediaAssets}
+                        onPrepareComposerTool={prepareComposerTool}
+                        agentGrantedScopes={
+                          session.ownedAgents.find(
+                            agent =>
+                              agent.id === openedThread.agentId &&
+                              agent.enabled,
+                          )?.grantedScopes || []
+                        }
+                        key={`${workspaceOwner}:${openedThread.id}`}
+                        onPreserveDraftForAccess={draft => {
+                          if (workspaceOwnerRef.current !== workspaceOwner)
+                            return;
+                          setAccessDrafts(current => ({
+                            owner: workspaceOwner,
+                            threads: {
+                              ...(current.owner === workspaceOwner
+                                ? current.threads
+                                : {}),
+                              [openedThread.id]: {
+                                ...draft,
+                                references: draft.references.map(reference => ({
+                                  ...reference,
+                                })),
+                                ...(draft.source
+                                  ? { source: { ...draft.source } }
+                                  : {}),
+                                ...(draft.workspaceContext
+                                  ? {
+                                      workspaceContext: {
+                                        ...draft.workspaceContext,
+                                      },
+                                    }
+                                  : {}),
+                              },
+                            },
+                          }));
+                        }}
+                        initialDraft={
+                          hasButlerDraft ? butlerDraft : accessDraft?.text
+                        }
+                        initialContextRefs={
+                          hasButlerDraft
+                            ? butlerReferences
+                            : accessDraft?.references
+                        }
+                        initialAssistSource={
+                          hasButlerDraft ? butlerSource : accessDraft?.source
+                        }
+                        initialWorkspaceContext={
+                          hasButlerDraft
+                            ? butlerWorkspaceContext
+                            : accessDraft?.workspaceContext
+                        }
+                        initialReplyToMessageId={
+                          hasButlerDraft
+                            ? undefined
+                            : accessDraft?.replyToMessageId
+                        }
+                        initialAgentContextReset={
+                          accessDraft?.agentContextReset
+                        }
+                        initialContentPreviewContext={
+                          accessDraft?.contentPreviewContext
+                        }
+                        initialButlerContextReset={
+                          hasButlerDraft
+                            ? !butlerWorkspaceContext &&
+                              Boolean(
+                                butlerReferences.length &&
+                                  pendingButlerClarification(openedThread),
+                              )
+                            : accessDraft?.butlerContextReset
+                        }
+                        onInitialDraftConsumed={() => {
+                          if (workspaceOwnerRef.current !== workspaceOwner)
+                            return;
+                          setAccessDrafts(current => {
+                            if (
+                              current.owner !== workspaceOwner ||
+                              !current.threads[openedThread.id]
+                            )
+                              return current;
+                            const threads = { ...current.threads };
+                            delete threads[openedThread.id];
+                            return { owner: workspaceOwner, threads };
+                          });
+                          setButlerDraft('');
+                          setButlerReferences([]);
+                          setButlerSource(undefined);
+                          setButlerWorkspaceContext(undefined);
+                          setButlerDraftOwner('');
+                        }}
+                        onRefreshThread={() =>
+                          session.refreshThreadMessages(openedThread.id)
+                        }
+                        forwardTargets={session.threads.filter(
+                          candidate =>
+                            candidate.id !== openedThread.id &&
+                            !candidate.agentId &&
+                            ((candidate.kind === 'direct' &&
+                              Boolean(candidate.peerUserId)) ||
+                              (candidate.kind === 'group' &&
+                                Boolean(candidate.groupId) &&
+                                candidate.status !== '已退出群聊')),
+                        )}
+                        onForwardComplete={(destination, messages) => {
+                          if (workspaceOwnerRef.current !== workspaceOwner)
+                            return;
+                          session.applyForwardReceipt(destination.id, messages);
+                          showToast(
+                            textFor(session.language, '已转发', 'Forwarded'),
+                          );
+                        }}
+                        palette={chatPalette}
+                        language={session.language}
+                        currentUserId={session.user?.id || ''}
+                        currentUserName={session.user?.displayName || ''}
+                        currentUserAvatarConfig={session.profile.avatarConfig}
+                        thread={openedThread}
+                        agents={session.agents}
+                        renderUserAvatar={renderUserAvatar}
+                        onBack={closeThread}
+                        onSend={(...args) =>
+                          session.sendMessage(openedThread.id, ...args)
+                        }
+                        onDeleteMessage={messageId =>
+                          session.deleteMessage(openedThread.id, messageId)
+                        }
+                        onRecallMessage={messageId =>
+                          session.recallMessage(openedThread.id, messageId)
+                        }
+                        onSetMuted={muted =>
+                          session.setThreadMuted(openedThread.id, muted)
+                        }
+                        onGroupLeft={() => {
+                          session
+                            .refreshBootstrap(undefined, false)
+                            .catch(error =>
+                              showToast(
+                                appErrorText(
+                                  session.language,
+                                  error,
+                                  '群聊状态同步失败',
+                                  'Could not refresh the group status',
+                                ),
+                              ),
+                            );
+                        }}
+                        onActionError={message =>
+                          showToast(
+                            appErrorText(
+                              session.language,
+                              message,
+                              '操作失败',
+                              'Action failed',
+                            ),
+                          )
+                        }
+                        onOpenPeerProfile={
+                          openedThread.peerAiId
+                            ? () => {
+                                if (
+                                  modalRoute !== 'chat' &&
+                                  modalRoute !== 'butler'
+                                )
+                                  return;
+                                profileReturn.current = {
+                                  owner: workspaceOwner,
+                                  threadId: openedThread.id,
+                                  route: modalRoute,
+                                };
+                                profileFlows
+                                  .openPublicProfileByAiId(
+                                    openedThread.peerAiId || '',
+                                  )
+                                  .catch(() => undefined);
+                              }
+                            : undefined
+                        }
+                      />
+                    </View>
                   ) : null}
                   <View
                     testID="app-shell"
                     style={[
                       styles.shell,
-                      { backgroundColor: workspacePalette(palette).background },
-                      isChatRoute && appStyles.hidden,
+                      {
+                        backgroundColor: workspacePalette(palette).background,
+                      },
                     ]}
                     pointerEvents={isChatRoute ? 'none' : 'auto'}
                     accessibilityElementsHidden={isChatRoute}
@@ -1408,6 +1635,7 @@ function App(): React.JSX.Element {
                       <VoiceShortcutDock
                         key={`assistant:${workspaceOwner}`}
                         active={
+                          !voiceCallOpen &&
                           !isChatRoute &&
                           !modalRoute &&
                           !isPostComposerOpen &&
@@ -1429,6 +1657,7 @@ function App(): React.JSX.Element {
                       <VoiceShortcutDock
                         key={`voice:${workspaceOwner}`}
                         active={
+                          !voiceCallOpen &&
                           !modalRoute &&
                           !requestComposerOpen &&
                           !miaoTask &&
@@ -1557,6 +1786,9 @@ function App(): React.JSX.Element {
                   language={session.language}
                   isBusy={session.isBusy}
                   errorMessage={session.errorMessage}
+                  accountDeletionReviewNeeded={
+                    session.accountDeletionStatus === 'session-expired'
+                  }
                   onSignIn={session.signIn}
                   onSignUp={async (...args) => {
                     await session.signUp(...args);
@@ -1575,6 +1807,7 @@ function App(): React.JSX.Element {
               (requestComposerOpen || miaoTask || agentWorkspace) ? (
                 <Modal
                   visible
+                  onShow={() => setTaskCallHostReady(true)}
                   animationType="slide"
                   presentationStyle="fullScreen"
                   onRequestClose={() => {
@@ -1820,12 +2053,16 @@ function App(): React.JSX.Element {
                           }}
                         />
                       ) : null}
+                      {callHost === 'task' && taskCallHostReady
+                        ? callOverlay
+                        : null}
                     </SafeAreaView>
                   </SafeAreaProvider>
                 </Modal>
               ) : null}
               <AppModals
                 modalRoute={modalRoute}
+                voiceCallOverlay={callHost === 'app-modal' ? callOverlay : null}
                 messageMenuTop={messageMenuTop}
                 messageMenuPullHintVisible={messageMenuPullHintVisible}
                 palette={palette}
@@ -1858,6 +2095,7 @@ function App(): React.JSX.Element {
               />
               {session.token && session.user && isPostComposerOpen ? (
                 <StationPostComposerScreen
+                  voiceCallOverlay={callHost === 'post' ? callOverlay : null}
                   palette={palette}
                   language={session.language}
                   session={session}
@@ -1891,28 +2129,19 @@ function App(): React.JSX.Element {
                   }
                 />
               ) : null}
-              {toastMessage ? (
-                <View style={[styles.toastWrap, styles.pointerEventsNone]}>
-                  <View
-                    style={[styles.toast, { backgroundColor: palette.text }]}
-                  >
-                    <Text
-                      style={[styles.toastText, { color: palette.background }]}
-                    >
-                      {toastMessage}
-                    </Text>
-                  </View>
-                </View>
-              ) : null}
-              {showLaunchAnimation ? (
-                <LaunchAnimation
-                  palette={palette}
-                  language={session.language}
-                />
-              ) : null}
             </AIAssistProvider>
           </SafeAreaView>
         </SafeAreaView>
+        {callHost === 'root' ? callOverlay : null}
+        {launchOverlayVisible ? (
+          <LaunchAnimation
+            showIntro={showLaunchAnimation}
+            isRestoring={session.isRestoring}
+            onDismiss={dismissLaunch}
+            palette={palette}
+            language={session.language}
+          />
+        ) : null}
       </View>
     </SafeAreaProvider>
   );
@@ -1922,6 +2151,7 @@ export default App;
 
 const appStyles = StyleSheet.create({
   hidden: { display: 'none' },
+  chatLayer: { ...StyleSheet.absoluteFill, zIndex: 2 },
   retained: { flex: 1 },
   floorLayer: {
     position: 'absolute',

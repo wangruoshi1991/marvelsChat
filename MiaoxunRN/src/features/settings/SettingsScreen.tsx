@@ -30,6 +30,7 @@ import {
 } from '../../shared/settingsUi';
 import { SegmentedControl } from '../../shared/ui';
 import { isXunPalette } from '../../shared/xunPalette';
+import { useCurrentScope } from '../../shared/useCurrentScope';
 import { SecondFloorPageScrollProps } from '../second-floor/secondFloorScroll';
 import type {
   UIPreferencePreviewDTO,
@@ -54,6 +55,7 @@ export function SettingsScreen({
   onActionError,
   onSignOut,
   onDeleteAccount,
+  active = true,
   embedded = false,
   header,
   footer,
@@ -84,6 +86,7 @@ export function SettingsScreen({
   onActionError: (message: string) => void;
   onSignOut: () => Promise<void>;
   onDeleteAccount: () => void;
+  active?: boolean;
   /**
    * Renders inside the second floor's `.xun-floor-panel` body: no large title,
    * no dismiss button — the floor owns those. The rows and fields are the same
@@ -101,6 +104,11 @@ export function SettingsScreen({
   onResetUIPreferences?: (baseRevision: number) => Promise<unknown>;
   onUndoUIPreferences?: (baseRevision: number) => Promise<unknown>;
 }) {
+  const visibilityScope = React.useMemo(
+    () => ({ active, onUpdateProfileVisibility }),
+    [active, onUpdateProfileVisibility],
+  );
+  const isCurrentVisibilityScreen = useCurrentScope(visibilityScope);
   const [uiInstruction, setUIInstruction] = React.useState('');
   const [uiPreview, setUIPreview] =
     React.useState<UIPreferencePreviewDTO | null>(null);
@@ -139,7 +147,9 @@ export function SettingsScreen({
     key: keyof ProfileVisibilityDTO,
     value: boolean,
   ) => {
+    if (!active || !isCurrentVisibilityScreen()) return;
     onUpdateProfileVisibility({ [key]: value }).catch(error => {
+      if (!isCurrentVisibilityScreen()) return;
       onActionError(
         error instanceof Error
           ? error.message
@@ -402,7 +412,8 @@ export function SettingsScreen({
       {embedded ? null : (
         <View style={styles.settingsHeader}>
           <Pressable
-            accessibilityLabel="返回"
+            accessibilityRole="button"
+            accessibilityLabel={textFor(language, '返回', 'Back')}
             onPress={onBack}
             style={[
               styles.settingsDismissButton,
@@ -519,6 +530,18 @@ export function SettingsScreen({
           value={profileVisibility.showFollowersList}
           palette={palette}
           onChange={value => updateVisibility('showFollowersList', value)}
+        />
+        <SettingsSwitchRow
+          title={textFor(language, '展示相册', 'Show albums')}
+          value={profileVisibility.showAlbum}
+          palette={palette}
+          onChange={value => updateVisibility('showAlbum', value)}
+        />
+        <SettingsSwitchRow
+          title={textFor(language, '展示动态', 'Show posts')}
+          value={profileVisibility.showPosts}
+          palette={palette}
+          onChange={value => updateVisibility('showPosts', value)}
         />
         <SettingsSwitchRow
           title={textFor(language, '展示社区', 'Show community')}

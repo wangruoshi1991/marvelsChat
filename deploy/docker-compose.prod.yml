@@ -27,8 +27,14 @@ services:
     env_file:
       - ./miaoxun-prod.env
     command: ["node", "src/ai-task-worker.js"]
+    environment:
+      MIAOXUN_WORKER_HEALTH_PATH: /tmp/miaoxun-ai-task-worker-health.json
     healthcheck:
-      disable: true
+      test: ["CMD", "node", "src/worker-health.js", "75000"]
+      interval: 15s
+      timeout: 5s
+      start_period: 40s
+      retries: 2
     networks:
       - miaoxun
 
@@ -42,6 +48,14 @@ services:
     env_file:
       - ./miaoxun-prod.env
     command: ["node", "src/media-retrieval-worker.js"]
+    environment:
+      MIAOXUN_WORKER_HEALTH_PATH: /tmp/miaoxun-media-retrieval-worker-health.json
+    healthcheck:
+      test: ["CMD", "node", "src/worker-health.js", "30000"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 2
     networks:
       - miaoxun
 

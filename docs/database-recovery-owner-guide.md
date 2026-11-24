@@ -248,6 +248,27 @@ psql -h "$MX_DRILL/socket" -p 55432 -d miaoxun_restore_drill \
       ('media_retrieval_jobs')) AS required(name);"
 ```
 
+核对完整迁移账本及 checksum 后，在同一隔离库采集审批清单。使用与候选恢复端相同的 PostgreSQL 18
+工具和扩展版本。归档往返可能改写 CHECK 的等价表达式，因此使用同一归档隔离恢复后的目录定义。
+
+```sh
+(
+  umask 077
+  MX_APPROVED_SHA256="$(shasum -a 256 "$HOME/Documents/Miaoxun-DB-Restore/recovered.dump" | awk '{print $1}')"
+  MX_APPROVED_MIGRATION="$(psql -h "$MX_DRILL/socket" -p 55432 -d miaoxun_restore_drill \
+    -XAtv ON_ERROR_STOP=1 -c 'SELECT max(filename COLLATE "C") FROM public.schema_migrations')"
+  PGHOST="$MX_DRILL/socket" PGPORT=55432 \
+    scripts/restore-production-database.sh --capture-baseline miaoxun_restore_drill \
+    "$MX_APPROVED_SHA256" "$MX_APPROVED_MIGRATION" \
+    >"$MX_DRILL/approved-baseline.tsv"
+)
+```
+
+命令成功后，由恢复审批人核对清单首行的归档 SHA-256 和最后迁移文件。核对用户、登录会话、聊天会话、消息、
+相册及素材的行数和恢复点预期一致，并参照该版本的迁移核对主键、唯一约束、所有权外键、CHECK 和非空约束。
+重点确认 `auth_sessions` 的用户外键、`chat_messages` 的会话外键及 `station_media_assets` 的相册外键。
+清单记录约束名、类型、定义及验证和执行状态。审批覆盖这份清单的原始内容及其对应归档。
+
 通过标准：迁移账本可读且与目标发布版本匹配，`vector` 可用，关键表均返回表名而不是 null。表数和
 迁移数会随版本增加，不能永远写死；2026-09-15 的已验证基线是 29 个迁移、pgvector 0.8.6 和
 50 张 public 表。
@@ -332,7 +353,7 @@ security find-generic-password \
 
 ## 生产恢复完整顺序
 
-生产恢复会删除并重建目标数据库，必须由负责人明确批准，并在维护窗口执行。
+生产恢复先导入独立候选库，再受控切换并保留原库。由负责人明确批准，在维护窗口执行。
 
 ### 1. 记录事故和目标恢复点
 
@@ -356,9 +377,9 @@ sudo systemctl is-active marvels-chat-media-retrieval-worker
 如果当前数据库仍可读，先保留一份独立的事故现场 dump 和 SHA-256，不要覆盖既有恢复点。若导出
 失败，记录错误并保持停写，不要为了生成新备份而重新开放业务。
 
-### 4. 把已验证 dump 安全传到 ECS
+### 4. 把已验证 dump 和审批清单安全传到 ECS
 
-目标文件必须位于 root 管理的临时目录，权限为 `0600`。传输后在 ECS 重新计算 SHA-256，并与
+两份文件放在 root 管理的临时目录，权限为 `0600`。传输后在 ECS 重新计算归档 SHA-256，并与
 隔离恢复时批准的明文 SHA-256 比较。不要把明文 dump 上传到 OSS、微信或 GitHub。
 
 ### 5. 执行受控恢复
@@ -367,11 +388,16 @@ sudo systemctl is-active marvels-chat-media-retrieval-worker
 cd /opt/projects/marvels-chat/app
 sudo scripts/restore-production-database.sh \
   /root/<approved-recovered.dump> \
-  <approved-plaintext-sha256>
+  <approved-plaintext-sha256> \
+  <approved-last-migration-filename> \
+  /root/<approved-baseline.tsv>
 ```
 
-该脚本只有在后端和 worker 都停止时才执行；它会再次检查 SHA-256、迁移账本和 vector 扩展，重建
-目标数据库，并验证 public 对象归属、vector 和迁移表。
+脚本确认后端和 worker 均停止，恢复到独立候选库，检查归档 SHA-256、完整迁移账本、pgvector 和 public 对象归属，
+并逐项比对已批准的代表性行数与约束清单。匹配后在同一事务内切换库名，
+原库以输出的保留库名留存并停止接收连接。校验或切换失败时，原库仍在原入口。需要退回且仍在停写时，
+运行 `sudo scripts/restore-production-database.sh --rollback <retained-database>`。回退也会保留被换下的库。
+任一路径开始接收新写入后，回退前先核对新增数据。
 
 ### 6. 运行当前版本迁移
 

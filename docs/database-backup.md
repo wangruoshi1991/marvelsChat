@@ -160,15 +160,19 @@ scripts/recover-offsite-database-backup-macos.sh \
 SHA-256、Content-MD5 和证书指纹，再解密并校验明文 SHA-256、`schema_migrations` 与 pgvector
 扩展。它拒绝覆盖已有输出，也不会连接或修改数据库。
 
-季度恢复演练必须在独立 PostgreSQL 18 + pgvector 实例完成：创建空库、恢复 `recovered.dump`、
-运行迁移状态检查和关键表行数核对，再销毁该演练实例。生产恢复仍使用
-`scripts/restore-production-database.sh <dump> <approved-sha256>`，并严格遵守停服、备份审批、
-迁移和 `/api/ready` 验证顺序。
+季度恢复演练在独立 PostgreSQL 18 + pgvector 实例进行。创建空库，恢复 `recovered.dump`，
+检查完整迁移账本，再从隔离恢复结果采集代表性表行数及 public 表约束的定义、验证和执行状态。
+审批时将该清单与同一归档的明文 SHA-256 和最后迁移文件配对。完成演练后销毁实例。
+执行命令、核对项目和切换顺序见[恢复手册](database-recovery-owner-guide.md)。
+
+本地可运行 `./scripts/check-database-restore.sh` 演练核对与换名。它使用本机 Docker 缓存的
+`pgvector/pgvector:pg18` 镜像、无网络的一次性 Linux 容器和合成数据，覆盖清单匹配、行数不符、
+约束缺失、清单绑定错误以及回退。
 
 每次演练记录以下证据，不记录用户数据或凭据：
 
 - OSS object key、manifest schema 版本和两项 SHA-256。
-- 下载、解密、`pg_restore`、迁移状态与 readiness 结果。
+- 下载、解密、`pg_restore`、迁移状态、代表性行数、约束核对与 readiness 结果。
 - 恢复点时间、演练开始/结束时间、RPO、RTO 和操作人。
 - 失败原因、修复措施及下一次演练日期。
 

@@ -1,15 +1,11 @@
 import { NativeModules, Platform } from 'react-native';
 
+type SaveReceipt = { status: 'saved'; mediaAssetId: string };
 type NativeMediaLibrary = {
-  saveImage?: (
-    mediaAssetId: string,
-    token: string,
-  ) => Promise<{ status: 'saved'; mediaAssetId: string }>;
+  saveImage?: (mediaAssetId: string, token: string) => Promise<SaveReceipt>;
 };
 
-const nativeMediaLibrary = NativeModules.MiaoxunMediaLibraryModule as
-  | NativeMediaLibrary
-  | undefined;
+const pendingSaves = new Map<string, Promise<SaveReceipt>>();
 
 export class ComicMediaSaveError extends Error {
   code: string;
@@ -40,6 +36,9 @@ export async function saveComicImageToLibrary({
       '登录状态已失效，请重新登录后再保存。',
     );
   }
+  const nativeMediaLibrary = NativeModules.MiaoxunMediaLibraryModule as
+    | NativeMediaLibrary
+    | undefined;
   if (
     Platform.OS !== 'ios' ||
     typeof nativeMediaLibrary?.saveImage !== 'function'
@@ -49,24 +48,26 @@ export async function saveComicImageToLibrary({
       '当前设备暂不支持保存漫画图片到系统相册。',
     );
   }
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      nativeMediaLibrary.saveImage(mediaAssetId, token),
-      new Promise<never>((_, reject) => {
-        timeout = setTimeout(
-          () =>
-            reject(
-              new ComicMediaSaveError(
-                'COMIC_MEDIA_SAVE_TIMEOUT',
-                '保存到相册超时，请检查网络和相册权限后重试。',
-              ),
-            ),
-          20_000,
+  const key = JSON.stringify([token, mediaAssetId]);
+  const pending = pendingSaves.get(key);
+  if (pending) return pending;
+  // The native download has a timeout. The Photos permission prompt and write
+  // can outlive a viewer, so share the operation until PhotoKit settles it.
+  const saving = nativeMediaLibrary
+    .saveImage(mediaAssetId, token)
+    .then(receipt => {
+      if (
+        receipt?.status !== 'saved' ||
+        receipt.mediaAssetId !== mediaAssetId
+      ) {
+        throw new ComicMediaSaveError(
+          'COMIC_MEDIA_SAVE_UNCONFIRMED',
+          '保存到相册未确认，请检查相册后重试。',
         );
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
+      }
+      return receipt;
+    })
+    .finally(() => pendingSaves.delete(key));
+  pendingSaves.set(key, saving);
+  return saving;
 }

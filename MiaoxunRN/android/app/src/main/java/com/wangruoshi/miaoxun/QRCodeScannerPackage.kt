@@ -12,6 +12,7 @@ class QRCodeScannerPackage : ReactPackage {
       MiaoxunHapticsModule(reactContext),
       MiaoxunLocationModule(reactContext),
       MiaoxunSpeechModule(reactContext),
+      MiaoxunChatVoiceModule(reactContext),
       QRCodeScannerModule(reactContext),
     )
 

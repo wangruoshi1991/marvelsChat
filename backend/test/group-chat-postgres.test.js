@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import test, { before, beforeEach, after } from "node:test";
 import express from "express";
+import sharp from "sharp";
 import { query, closeDatabase } from "../src/db.js";
 import { authenticate, hashToken } from "../src/auth.js";
+import { config } from "../src/config.js";
+import { createGroupChat } from "../src/group-chat-repository.js";
+import { ensureFriendThreadForUser } from "../src/message-repository.js";
 import { registerGroupChatRoutes } from "../src/routes/group-chat-routes.js";
 import { registerMessageRoutes } from "../src/routes/message-routes.js";
 import { registerChatAttachmentRoutes } from "../src/routes/chat-attachment-routes.js";
@@ -26,6 +30,7 @@ async function request(path, { body, person = owner, method = body === undefined
   return { status: response.status, ...(type.includes("application/json") ? await response.json() : { content: Buffer.from(await response.arrayBuffer()) }) };
 }
 const createBody = overrides => ({ title: "隔离验证群聊", memberUserIds: [first.id, second.id], idempotencyKey: crypto.randomUUID(), ...overrides });
+const createForwardTarget = title => createGroupChat({ userId: owner.id, ...createBody({ title }) });
 async function create(overrides = {}) {
   const response = await request("/api/chat-groups", { body: createBody(overrides) });
   assert.equal(response.status, 201, JSON.stringify(response));
@@ -35,6 +40,40 @@ async function create(overrides = {}) {
   return { thread: response.data.thread, groupId: response.data.thread.groupId, threads: new Map(rows.map(row => [row.user_id, row.id])) };
 }
 const send = (group, person, body) => request(`/api/threads/${group.threads.get(person.id)}/messages`, { person, body: { content: "隔离测试群消息", clientMessageId: crypto.randomUUID(), ...body } });
+const forward = (source, targetThreadId, { person = owner, clientMessageId = crypto.randomUUID() } = {}) =>
+  request(`/api/threads/${source.threadId}/messages/${source.id}/forward`, {
+    person, body: { targetThreadId, clientMessageId },
+  });
+const upload = (threadId, kind, filename, mimeType, body) => request(`/api/threads/${threadId}/attachments/upload`, {
+  body,
+  headers: {
+    "Content-Type": "application/octet-stream",
+    "Idempotency-Key": crypto.randomUUID(),
+    "X-Miaoxun-Filename": filename,
+    "X-Miaoxun-Attachment-Kind": kind,
+    "X-Miaoxun-Attachment-Mime": mimeType,
+  },
+});
+
+function audioFixture() {
+  const box = (type, ...parts) => {
+    const data = Buffer.concat(parts);
+    const header = Buffer.alloc(8);
+    header.writeUInt32BE(data.length + 8);
+    header.write(type, 4, "ascii");
+    return Buffer.concat([header, data]);
+  };
+  const trackDuration = Buffer.alloc(24);
+  trackDuration.writeUInt32BE(24000, 12);
+  trackDuration.writeUInt32BE(36000, 16);
+  const trackHandler = Buffer.alloc(20);
+  trackHandler.write("soun", 8);
+  return Buffer.concat([
+    box("ftyp", Buffer.from("M4A \0\0\0\0isom")),
+    box("moov", box("trak", box("mdia", box("mdhd", trackDuration), box("hdlr", trackHandler)))),
+    box("mdat", Buffer.from("test-only-aac-bytes")),
+  ]);
+}
 
 before(async () => {
   if (!enabled) return;
@@ -148,6 +187,240 @@ integration("concurrent send retries neither duplicate recipient copies nor incr
   assert.equal(realtime.length, 2);
   const rows = await query("SELECT unread_count FROM chat_threads WHERE group_id=? AND user_id<>?", [group.groupId, owner.id]);
   assert.ok(rows.every(row => Number(row.unread_count) === 1));
+});
+
+integration("forwarding copies exact content once and binds the client key to source and destination", async () => {
+  const sourceGroup = await create();
+  const targetGroup = await createForwardTarget("转发目标");
+  const quoted = (await send(sourceGroup, owner, { content: "源会话的引用" })).data.messages[0];
+  const source = (await send(sourceGroup, owner, {
+    content: "原样  保留\n第二行",
+    replyToMessageId: quoted.id,
+  })).data.messages[0];
+  realtime = [];
+  const key = { clientMessageId: crypto.randomUUID() };
+  const results = await Promise.all([
+    forward(source, targetGroup.thread.id, key),
+    forward(source, targetGroup.thread.id, key),
+  ]);
+  assert.deepEqual(results.map(result => result.status).sort(), [200, 201]);
+  assert.deepEqual(results[0].data, results[1].data);
+  const message = results[0].data.messages[0];
+  assert.equal(message.content, source.content);
+  assert.deepEqual(message.metadata, { senderUserId: owner.id, forwarded: true });
+  assert.equal(message.threadId, targetGroup.thread.id);
+  const recipients = await query("SELECT t.unread_count,m.* FROM chat_messages m JOIN chat_threads t ON t.id=m.thread_id WHERE m.client_message_id=?", [key.clientMessageId]);
+  assert.equal(recipients.length, 3);
+  assert.ok(recipients.every(row => Number(row.unread_count) === Number(row.user_id !== owner.id)));
+  assert.equal(realtime.length, 2);
+  assert.ok(realtime.every(item => item.event.message.metadata.forwarded === true));
+  assert.equal((await forward(quoted, targetGroup.thread.id, key)).status, 409);
+  assert.equal((await forward(source, sourceGroup.thread.id, key)).status, 409);
+  assert.equal((await forward(source, targetGroup.thread.id, { person: first })).status, 404);
+  const [firstTarget] = await query("SELECT id FROM chat_threads WHERE group_id=? AND user_id=?", [targetGroup.groupId, first.id]);
+  assert.equal((await forward(source, firstTarget.id)).status, 404);
+  const alternateKey = { clientMessageId: crypto.randomUUID() };
+  const conflicting = await Promise.all([
+    forward(source, targetGroup.thread.id, alternateKey),
+    forward(quoted, sourceGroup.thread.id, alternateKey),
+  ]);
+  assert.deepEqual(conflicting.map(result => result.status).sort(), [201, 409]);
+  assert.equal((await query("SELECT COUNT(*)::int AS total FROM chat_messages WHERE client_message_id=?", [alternateKey.clientMessageId]))[0].total, 3);
+});
+
+integration("forwarding clones image, audio and file bytes for only the direct recipients", async () => {
+  const sourceGroup = await create();
+  const direct = (await ensureFriendThreadForUser(first.id, owner.id)).thread;
+  const directPeer = (await ensureFriendThreadForUser(owner.id, first.id)).thread;
+  const image = await sharp({ create: { width: 16, height: 16, channels: 3, background: "#008877" } }).png().toBuffer();
+  const uploaded = await Promise.all([
+    upload(sourceGroup.thread.id, "image", "photo.png", "image/png", image),
+    upload(sourceGroup.thread.id, "audio", "voice.m4a", "audio/mp4", audioFixture()),
+    upload(sourceGroup.thread.id, "file", "notes.txt", "text/plain", Buffer.from("source file\n")),
+  ]);
+  assert.ok(uploaded.every(item => item.status === 201), JSON.stringify(uploaded));
+  const original = await send(sourceGroup, owner, {
+    content: "原附件说明",
+    attachmentIds: uploaded.map(item => item.data.id),
+  });
+  assert.equal(original.status, 201);
+  const [localSource] = await query("SELECT id, thread_id AS \"threadId\" FROM chat_messages WHERE thread_id = ? AND client_message_id = ?",
+    [sourceGroup.threads.get(first.id), original.data.messages[0].clientMessageId]);
+  const key = { person: first, clientMessageId: crypto.randomUUID() };
+  realtime = [];
+  const sent = await forward(localSource, direct.id, key);
+  assert.equal(sent.status, 201, JSON.stringify(sent));
+  const message = sent.data.messages[0];
+  assert.equal(message.content, original.data.messages[0].content);
+  assert.equal(message.metadata.senderUserId, first.id);
+  assert.equal(message.metadata.forwarded, true);
+  assert.deepEqual(message.metadata.attachments.map(item => item.kind), ["image", "audio", "file"]);
+  assert.equal(message.metadata.attachments[1].durationMs, 1500);
+  assert.equal(realtime.length, 1);
+  assert.equal(realtime[0].userId, owner.id);
+  assert.equal(realtime[0].event.threadId, directPeer.id);
+  assert.equal(realtime[0].event.message.unreadSequence, 1);
+  const clones = message.metadata.attachments;
+  for (const [i, originalUpload] of uploaded.entries()) {
+    const clone = clones[i];
+    assert.notEqual(clone.id, originalUpload.data.id);
+    const oldBytes = await request(originalUpload.data.downloadPath, { person: first });
+    for (const recipient of [first, owner]) {
+      const read = await request(clone.downloadPath, { person: recipient });
+      assert.equal(read.status, 200);
+      assert.deepEqual(read.content, oldBytes.content);
+    }
+    for (const person of [second, outsider]) {
+      assert.equal((await request(clone.downloadPath, { person })).status, 404);
+    }
+  }
+  const cloneRows = await query("SELECT user_id,thread_id FROM chat_attachments WHERE id=ANY(?::uuid[])", [clones.map(item => item.id)]);
+  assert.equal(cloneRows.length, 3);
+  assert.ok(cloneRows.every(row => row.user_id === first.id && row.thread_id === direct.id));
+
+  const groupTarget = await createForwardTarget("直接聊天再转发");
+  const [firstGroupTarget] = await query("SELECT id FROM chat_threads WHERE group_id=? AND user_id=?", [groupTarget.groupId, first.id]);
+  const again = await forward(message, firstGroupTarget.id, { person: first });
+  assert.equal(again.status, 201);
+  assert.equal(again.data.messages[0].content, message.content);
+  const newlyShared = again.data.messages[0].metadata.attachments[2];
+  assert.notEqual(newlyShared.id, clones[2].id);
+  assert.equal((await request(newlyShared.downloadPath, { person: second })).content.toString(), "source file\n");
+
+  // Recall the original after the copy has committed. New forwards are
+  // rejected, but the already delivered, separately authorized copy survives.
+  const source = original.data.messages[0];
+  assert.equal((await request(`/api/threads/${source.threadId}/messages/${source.id}/recall`, { body: {} })).status, 200);
+  assert.equal((await request(uploaded[0].data.downloadPath, { person: first })).status, 404);
+  assert.equal((await forward(localSource, direct.id, { person: first })).status, 404);
+  const replay = await forward(localSource, direct.id, key);
+  assert.equal(replay.status, 200);
+  assert.deepEqual(replay.data, sent.data);
+  assert.equal((await request(clones[0].downloadPath, { person: first })).status, 200);
+
+  assert.equal((await request(`/api/threads/${direct.id}/messages/${message.id}/recall`, { person: first, body: {} })).status, 200);
+  assert.equal((await request(clones[0].downloadPath, { person: owner })).status, 404);
+  const withdrawnReceipt = await forward(localSource, direct.id, key);
+  assert.equal(withdrawnReceipt.status, 200);
+  assert.equal(withdrawnReceipt.data.messages[0].content, "");
+  assert.equal(withdrawnReceipt.data.messages[0].metadata.attachments, undefined);
+});
+
+integration("forwarding enforces target membership, friendship and supported visible sources", async () => {
+  const group = await create();
+  const { groupId: targetGroupId } = await createForwardTarget("退出前可用");
+  const [firstTarget] = await query("SELECT id FROM chat_threads WHERE group_id=? AND user_id=?", [targetGroupId, first.id]);
+  const source = (await send(group, owner, { content: "可读的原文" })).data.messages[0];
+  const [firstSource] = await query("SELECT id,thread_id AS \"threadId\" FROM chat_messages WHERE thread_id=? AND client_message_id=?", [group.threads.get(first.id), source.clientMessageId]);
+  const direct = (await ensureFriendThreadForUser(owner.id, first.id)).thread;
+  const [agentThread] = await query(`INSERT INTO chat_threads (id,user_id,title,status_text,avatar_text,kind,agent_id)
+    VALUES (?,?,'fixture','fixture','测','agent','miaoxun-butler') RETURNING id`, [crypto.randomUUID(), owner.id]);
+  const systemThread = crypto.randomUUID();
+  await query(`INSERT INTO chat_threads (id,user_id,title,status_text,avatar_text,kind)
+    VALUES (?,?,'fixture','fixture','测','system')`, [systemThread, owner.id]);
+  for (const targetThreadId of [agentThread.id, systemThread]) {
+    assert.equal((await forward(source, targetThreadId)).status, 404);
+    assert.equal((await forward({ id: source.id, threadId: targetThreadId }, group.thread.id)).status, 404);
+  }
+  assert.equal((await request(`/api/chat-groups/${targetGroupId}/membership`, { person: first, method: "DELETE" })).status, 200);
+  assert.equal((await forward(firstSource, firstTarget.id, { person: first })).status, 403);
+  await query("UPDATE social_relationships SET status='blocked' WHERE follower_user_id=? AND followed_user_id=?", [first.id, owner.id]);
+  assert.equal((await forward(source, direct.id)).status, 403);
+  await query("UPDATE social_relationships SET status='active' WHERE follower_user_id=? AND followed_user_id=?", [first.id, owner.id]);
+  await query("UPDATE users SET status='disabled' WHERE id=?", [first.id]);
+  assert.equal((await forward(source, direct.id)).status, 403);
+  await query("UPDATE users SET status='active' WHERE id=?", [first.id]);
+
+  const location = await request(`/api/threads/${group.thread.id}/attachments`, {
+    body: { kind: "location", latitude: 30, longitude: 120 },
+    headers: { "Idempotency-Key": crypto.randomUUID() },
+  });
+  assert.equal(location.status, 201, JSON.stringify(location));
+  const structured = (await send(group, owner, { attachmentIds: [location.data.id] })).data.messages[0];
+  assert.equal((await forward(structured, direct.id)).status, 400);
+
+  assert.equal((await request(`/api/threads/${group.thread.id}/messages/${source.id}`, { method: "DELETE" })).status, 200);
+  assert.equal((await forward(source, direct.id)).status, 404);
+  const sourceStatus = await request(`/api/chat-groups/${group.groupId}/membership`, { person: first, method: "DELETE" });
+  assert.equal(sourceStatus.status, 200);
+  const firstDirect = (await ensureFriendThreadForUser(first.id, owner.id)).thread;
+  assert.equal((await forward(firstSource, firstDirect.id, { person: first })).status, 201);
+});
+
+integration("forwarding rolls back cloned attachments and counters when recipient insertion fails", async () => {
+  const group = await create();
+  const target = await createForwardTarget("转发回滚测试");
+  const uploaded = await upload(group.thread.id, "file", "atomic.txt", "text/plain", Buffer.from("fixture"));
+  assert.equal(uploaded.status, 201);
+  const source = (await send(group, owner, { attachmentIds: [uploaded.data.id] })).data.messages[0];
+  const clientMessageId = crypto.randomUUID();
+  await query(`CREATE FUNCTION group_fixture_fail_forward() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+    IF NEW.user_id = '${second.id}' AND NEW.metadata->>'forwarded' = 'true' THEN RAISE EXCEPTION 'isolated forward fixture'; END IF; RETURN NEW; END $$`);
+  await query("CREATE TRIGGER group_fixture_fail_forward BEFORE INSERT ON chat_messages FOR EACH ROW EXECUTE FUNCTION group_fixture_fail_forward()");
+  realtime = [];
+  try {
+    assert.equal((await forward(source, target.thread.id, { clientMessageId })).status, 500);
+    assert.deepEqual(await query("SELECT id FROM chat_messages WHERE client_message_id=?", [clientMessageId]), []);
+    assert.deepEqual(await query("SELECT id FROM chat_attachments WHERE thread_id=?", [target.thread.id]), []);
+    const counters = await query("SELECT unread_count,unread_delivered FROM chat_threads WHERE group_id=?", [target.groupId]);
+    assert.ok(counters.every(row => Number(row.unread_count) === 0 && Number(row.unread_delivered) === 0));
+    assert.equal(realtime.length, 0);
+  } finally {
+    await query("DROP TRIGGER group_fixture_fail_forward ON chat_messages");
+    await query("DROP FUNCTION group_fixture_fail_forward()");
+  }
+  const sent = await forward(source, target.thread.id, { clientMessageId });
+  assert.equal(sent.status, 201);
+  assert.equal(sent.data.messages[0].metadata.attachments.length, 1);
+});
+
+integration("forwarding shares the per-user attachment quota with uploads", async () => {
+  const group = await create();
+  const firstThread = group.threads.get(first.id);
+  const direct = (await ensureFriendThreadForUser(first.id, owner.id)).thread;
+  const uploaded = await upload(group.thread.id, "file", "quota.txt", "text/plain", Buffer.from("a"));
+  assert.equal(uploaded.status, 201);
+  const source = (await send(group, owner, { attachmentIds: [uploaded.data.id] })).data.messages[0];
+  const [firstSource] = await query("SELECT id,thread_id AS \"threadId\" FROM chat_messages WHERE thread_id=? AND client_message_id=?", [firstThread, source.clientMessageId]);
+  // Fill only the isolated sender's count limit, leaving bytes well below it.
+  await query(`INSERT INTO chat_attachments(id,user_id,thread_id,idempotency_key,request_hash,kind,filename,title,mime_type,byte_size,content)
+    SELECT gen_random_uuid(),?,?,gen_random_uuid(),repeat('0',64),'file','fixture.txt','Fixture','text/plain',1,convert_to('a','UTF8')
+    FROM generate_series(1,?::integer - (SELECT count(*)::integer FROM chat_attachments WHERE user_id=?))`,
+  [first.id, firstThread, config.chatAttachments.userMaxCount, first.id]);
+  const key = { person: first, clientMessageId: crypto.randomUUID() };
+  const beforeForward = realtime.length;
+  const rejected = await forward(firstSource, direct.id, key);
+  assert.equal(rejected.status, 409);
+  assert.equal(rejected.error.details.code, "CHAT_ATTACHMENT_USER_QUOTA");
+  assert.equal(realtime.length, beforeForward);
+  assert.deepEqual(await query("SELECT id FROM chat_messages WHERE client_message_id=?", [key.clientMessageId]), []);
+  await query("DELETE FROM chat_attachments WHERE id=(SELECT id FROM chat_attachments WHERE user_id=? AND thread_id=? LIMIT 1)", [first.id, firstThread]);
+  assert.equal((await forward(firstSource, direct.id, key)).status, 201);
+});
+
+integration("bounded read preserves a later delivery and stale preference writes conflict", async () => {
+  const group = await create();
+  const thread = `/api/threads/${group.threads.get(first.id)}`;
+  for (let count = 0; count < 3; count++) assert.equal((await send(group, owner, {})).status, 201);
+  const initial = await request(`${thread}/state`, { person: first });
+  assert.deepEqual(initial.data, { unreadSequence: 3, readSequence: 0, muted: false, preferencesRevision: 0 });
+  assert.equal((await send(group, owner, {})).status, 201);
+  assert.equal(realtime.filter(event => event.userId === first.id).at(-1).event.message.unreadSequence, 4);
+  for (const readThrough of [initial.data.unreadSequence, 2, 3]) {
+    const read = await request(`${thread}/read`, { person: first, body: { readThrough } });
+    assert.equal(read.status, 200);
+    assert.equal(read.data.readSequence, 3);
+    assert.equal(read.data.unreadSequence, 4);
+  }
+  assert.equal((await request(`${thread}/read`, { person: first, body: { readThrough: 5 } })).status, 409);
+  assert.equal((await request(`${thread}/state`, { person: second })).status, 404);
+  const mute = (muted, baseRevision) => request(`${thread}/preferences`, {
+    person: first, method: "PATCH", body: { muted, baseRevision },
+  });
+  assert.deepEqual((await mute(false, 0)).data, { muted: false, preferencesRevision: 1 });
+  assert.equal((await mute(true, 0)).status, 409);
+  assert.deepEqual((await request(`${thread}/state`, { person: first })).data,
+    { unreadSequence: 4, readSequence: 3, muted: false, preferencesRevision: 1 });
 });
 
 integration("an exited member cannot send or inspect current membership and receives no later message copies", async () => {

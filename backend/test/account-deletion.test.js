@@ -11,11 +11,6 @@ test("account deletion verifies the password before storage or database changes"
   const service = createAccountService({
     getCredential: async () => ({ id: "user-1", passwordHash: "stored-hash" }),
     verifyPassword: async () => false,
-    listStorageObjects: async () => {
-      calls.push("list-storage");
-      return [];
-    },
-    deleteStorageObject: async () => calls.push("delete-storage"),
     deleteUser: async () => calls.push("delete-user"),
   });
 
@@ -27,19 +22,15 @@ test("account deletion verifies the password before storage or database changes"
   assert.deepEqual(calls, []);
 });
 
-test("account deletion removes every distinct private object before the user", async () => {
+test("account deletion submits the verified password revision to the atomic repository operation", async () => {
   const calls = [];
   const service = createAccountService({
     getCredential: async () => ({ id: "user-1", passwordHash: "stored-hash" }),
     verifyPassword: async () => true,
-    listStorageObjects: async () => [
-      { provider: "oss", objectKey: "users/u/model.glb" },
-      { provider: "OSS", objectKey: "users/u/model.glb" },
-      { provider: "local", objectKey: "users/u/photo.jpg" },
-      { provider: "", objectKey: "" },
-    ],
-    deleteStorageObject: async (object) => calls.push(["storage", object]),
-    deleteUser: async ({ userId }) => calls.push(["user", userId]),
+    deleteUser: async (input) => {
+      calls.push(input);
+      return { deleted: true, cleanupStatus: "pending" };
+    },
   });
 
   const result = await service.deleteAccount({
@@ -47,33 +38,26 @@ test("account deletion removes every distinct private object before the user", a
     password: "correct",
   });
 
-  assert.deepEqual(calls, [
-    ["storage", { provider: "oss", objectKey: "users/u/model.glb" }],
-    ["storage", { provider: "local", objectKey: "users/u/photo.jpg" }],
-    ["user", "user-1"],
-  ]);
-  assert.deepEqual(result, { deleted: true });
+  assert.deepEqual(calls, [{ userId: "user-1", expectedPasswordHash: "stored-hash" }]);
+  assert.deepEqual(result, { deleted: true, cleanupStatus: "pending" });
 });
 
-test("account remains when private storage cleanup fails", async () => {
-  let userDeleted = false;
+test("failed account database transaction leaves the durable deletion request unapplied", async () => {
+  const objects = new Set(["first.jpg", "second.jpg"]);
+  const queued = [];
   const service = createAccountService({
     getCredential: async () => ({ id: "user-1", passwordHash: "stored-hash" }),
     verifyPassword: async () => true,
-    listStorageObjects: async () => [
-      { provider: "oss", objectKey: "users/u/model.glb" },
-    ],
-    deleteStorageObject: async () => {
-      throw new Error("storage unavailable");
-    },
-    deleteUser: async () => {
-      userDeleted = true;
-    },
+    listStorageObjects: async () => Array.from(objects, (objectKey) => ({ provider: "local", objectKey })),
+    enqueueCleanup: async () => queued.push("cleanup"),
+    deleteUser: async () => { throw new Error("database rollback"); },
   });
-
-  await assert.rejects(() =>
-    service.deleteAccount({ userId: "user-1", password: "correct" }));
-  assert.equal(userDeleted, false);
+  await assert.rejects(
+    () => service.deleteAccount({ userId: "user-1", password: "correct" }),
+    /database rollback/,
+  );
+  assert.deepEqual([...objects], ["first.jpg", "second.jpg"]);
+  assert.deepEqual(queued, []);
 });
 
 test("storage deletion dispatches local and OSS objects explicitly", async () => {

@@ -11,11 +11,9 @@ import {
   adminOverview,
   adminUserDetail,
   adminAgentUsage,
+  mutateAdminAccount,
   updateUserAdminPermissions,
-  updateUserPassword,
   updateUserProfileAdmin,
-  updateUserRole,
-  updateUserStatus,
 } from "../admin-repository.js";
 import { getModelRuntimeStatus, testModelRuntime } from "../agent-runtime.js";
 import {
@@ -26,13 +24,12 @@ import {
 import { HttpError } from "../http-error.js";
 import { agentPublishingService } from "../agent-publishing-service.js";
 import {
-  createManagedUser,
+  createManagedUserWithAudit,
   createUsageEvent,
   findUserByDisplayName,
   findUserByEmail,
   getRawUserById,
   hashRequestIp,
-  revokeSessionsForUser,
 } from "../repositories.js";
 import {
   adminPermissionsSchema,
@@ -67,6 +64,18 @@ const operationsTaskQuerySchema = z.object({
 }).strict();
 const operationsMutationSchema = z.object({ idempotencyKey: z.string().trim().min(8).max(160) }).strict();
 
+function accountMutationRequest(req, operation, input = {}) {
+  return {
+    actor: req.user,
+    targetId: req.params.userId,
+    operation,
+    idempotencyKey: req.get("Idempotency-Key")?.trim(),
+    ipHash: hashRequestIp(req.ip),
+    userAgent: req.get("user-agent") || "",
+    ...input,
+  };
+}
+
 export function createAdminAgentAccessHandler({
   findUser = getRawUserById,
   listRegisteredAgents = async () =>
@@ -93,24 +102,7 @@ export function createAdminAgentAccessHandler({
         code: "USER_CONSENT_REQUIRED",
       });
     }
-    const entitlement = await setProductAccess({
-      userId: target.id,
-      agentKey: agent.key,
-      enabled: false,
-      grantedScopes: [],
-      idempotencyKey: req.get("Idempotency-Key") || null,
-    });
-    const access = {
-      id: agent.key,
-      name: agent.name,
-      description: agent.description || "",
-      category: agent.category || "",
-      enabled: false,
-      grantedScopes: entitlement.grantedScopes,
-      published: agent.published === true,
-      identity: agent.identity,
-    };
-    await recordEvent({
+    const auditEvent = {
       userId: req.user.id,
       eventType: "admin.user.agent",
       targetType: "user",
@@ -123,7 +115,25 @@ export function createAdminAgentAccessHandler({
       },
       ipHash: hashRequestIp(req.ip),
       userAgent: req.get("user-agent") || "",
+    };
+    const entitlement = await setProductAccess({
+      userId: target.id,
+      agentKey: agent.key,
+      enabled: false,
+      grantedScopes: [],
+      idempotencyKey: req.get("Idempotency-Key") || null,
+      recordAudit: (runQuery) => recordEvent(auditEvent, runQuery),
     });
+    const access = {
+      id: agent.key,
+      name: agent.name,
+      description: agent.description || "",
+      category: agent.category || "",
+      enabled: false,
+      grantedScopes: entitlement.grantedScopes,
+      published: agent.published === true,
+      identity: agent.identity,
+    };
     res.json({ data: { agent: access, entitlement } });
   };
 }
@@ -238,23 +248,18 @@ export function registerAdminRoutes(
       if (existedName)
         throw new HttpError(409, "Display name already registered");
 
-      const user = await createManagedUser({
+      const user = await createManagedUserWithAudit({
         email: body.email,
         displayName: body.displayName,
         passwordHash: await hashPassword(body.password),
         role: body.role,
         status: body.status,
-      });
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "admin.user.create",
-        targetType: "user",
-        targetId: user.id,
+        actorUserId: req.user.id,
         payload: {
-          email: user.email,
-          displayName: user.displayName,
-          role: user.role,
-          status: user.status,
+          email: body.email,
+          displayName: body.displayName,
+          role: body.role,
+          status: body.status,
         },
         ipHash: hashRequestIp(req.ip),
         userAgent: req.get("user-agent") || "",
@@ -290,29 +295,7 @@ export function registerAdminRoutes(
     requireAdmin("users:write"),
     asyncHandler(async (req, res) => {
       const { status } = userStatusSchema.parse(req.body);
-      const target = await getRawUserById(req.params.userId);
-      if (!target) throw new HttpError(404, "User not found");
-      assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
-      if (target.id === req.user.id && status !== "active") {
-        throw new HttpError(400, "You cannot disable your own admin account");
-      }
-
-      const user = await updateUserStatus(target.id, status);
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "admin.user.status",
-        targetType: "user",
-        targetId: target.id,
-        payload: {
-          status,
-          targetEmail: target.email,
-          targetLoginName: target.login_name || null,
-        },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
-      });
-
-      res.json({ data: { user } });
+      res.json({ data: await mutateAdminAccount(accountMutationRequest(req, "status", { requestValue: status })) });
     })
   );
 
@@ -322,32 +305,7 @@ export function registerAdminRoutes(
     requireAdmin("users:write"),
     asyncHandler(async (req, res) => {
       const { role } = userRoleSchema.parse(req.body);
-      const target = await getRawUserById(req.params.userId);
-      if (!target) throw new HttpError(404, "User not found");
-      assertAdminAccountMutationAllowed(req.user, {
-        targetRole: target.role,
-        requestedRole: role,
-      });
-      if (target.id === req.user.id && role !== "admin") {
-        throw new HttpError(400, "You cannot remove your own admin permission");
-      }
-
-      const user = await updateUserRole(target.id, role);
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "admin.user.role",
-        targetType: "user",
-        targetId: target.id,
-        payload: {
-          role,
-          targetEmail: target.email,
-          targetLoginName: target.login_name || null,
-        },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
-      });
-
-      res.json({ data: { user } });
+      res.json({ data: await mutateAdminAccount(accountMutationRequest(req, "role", { requestValue: role })) });
     })
   );
 
@@ -373,21 +331,21 @@ export function registerAdminRoutes(
         );
       }
 
-      const user = await updateUserAdminPermissions(target.id, permissions);
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "admin.user.permissions",
-        targetType: "user",
-        targetId: target.id,
-        payload: {
-          permissions,
-          targetEmail: target.email,
-          targetLoginName: target.login_name || null,
+      const user = await updateUserAdminPermissions(target.id, permissions, {
+        audit: {
+          userId: req.user.id,
+          eventType: "admin.user.permissions",
+          targetType: "user",
+          targetId: target.id,
+          payload: {
+            permissions,
+            targetEmail: target.email,
+            targetLoginName: target.login_name || null,
+          },
+          ipHash: hashRequestIp(req.ip),
+          userAgent: req.get("user-agent") || "",
         },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
       });
-
       res.json({ data: { user } });
     })
   );
@@ -405,21 +363,20 @@ export function registerAdminRoutes(
       const profile = await updateUserProfileAdmin({
         userId: target.id,
         ...body,
-      });
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "admin.user.profile",
-        targetType: "user",
-        targetId: target.id,
-        payload: {
-          nickname: body.nickname,
-          targetEmail: target.email,
-          targetLoginName: target.login_name || null,
+        audit: {
+          userId: req.user.id,
+          eventType: "admin.user.profile",
+          targetType: "user",
+          targetId: target.id,
+          payload: {
+            nickname: body.nickname,
+            targetEmail: target.email,
+            targetLoginName: target.login_name || null,
+          },
+          ipHash: hashRequestIp(req.ip),
+          userAgent: req.get("user-agent") || "",
         },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
       });
-
       res.json({ data: { profile } });
     })
   );
@@ -429,31 +386,7 @@ export function registerAdminRoutes(
     authenticate,
     requireAdmin("users:write"),
     asyncHandler(async (req, res) => {
-      const target = await getRawUserById(req.params.userId);
-      if (!target) throw new HttpError(404, "User not found");
-      assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
-      if (target.id === req.user.id) {
-        throw new HttpError(
-          400,
-          "Use logout to revoke your current admin session"
-        );
-      }
-
-      await revokeSessionsForUser(target.id);
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "admin.user.revoke_sessions",
-        targetType: "user",
-        targetId: target.id,
-        payload: {
-          targetEmail: target.email,
-          targetLoginName: target.login_name || null,
-        },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
-      });
-
-      res.json({ data: { ok: true } });
+      res.json({ data: await mutateAdminAccount(accountMutationRequest(req, "revoke_sessions")) });
     })
   );
 
@@ -470,34 +403,7 @@ export function registerAdminRoutes(
     requireAdmin("users:write"),
     asyncHandler(async (req, res) => {
       const { password } = resetPasswordSchema.parse(req.body);
-      const target = await getRawUserById(req.params.userId);
-      if (!target) throw new HttpError(404, "User not found");
-      assertAdminAccountMutationAllowed(req.user, { targetRole: target.role });
-      if (target.id === req.user.id) {
-        throw new HttpError(
-          400,
-          "Use account settings to change your own password"
-        );
-      }
-
-      const user = await updateUserPassword(
-        target.id,
-        await hashPassword(password)
-      );
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "admin.user.password_reset",
-        targetType: "user",
-        targetId: target.id,
-        payload: {
-          targetEmail: target.email,
-          targetLoginName: target.login_name || null,
-        },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
-      });
-
-      res.json({ data: { user } });
+      res.json({ data: await mutateAdminAccount(accountMutationRequest(req, "password_reset", { password })) });
     })
   );
 

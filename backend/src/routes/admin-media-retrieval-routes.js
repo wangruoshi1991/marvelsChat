@@ -1,4 +1,4 @@
-import { createUsageEvent, hashRequestIp } from "../repositories.js";
+import { hashRequestIp } from "../repositories.js";
 import { query, withTransaction } from "../db.js";
 import { HttpError } from "../http-error.js";
 import { buildMediaRetrievalRuntimeStatus } from "../media-retrieval-runtime-status.js";
@@ -6,8 +6,12 @@ import { createMediaRetrievalRepository } from "../media-retrieval-repository.js
 import { MEDIA_RETRIEVAL_MINIMUM_APP_BUILD } from "../media-retrieval-constants.js";
 import { mediaRetrievalAdminControlsSchema } from "../schemas.js";
 import { createMediaRetrievalDiagnostics } from "../media-retrieval-diagnostics.js";
+import { z } from "zod";
+
+const requestKeySchema = z.string().trim().min(8).max(160);
 
 const publicControls = (controls = {}) => ({
+  revision: Number(controls.revision || 1),
   operatorEnabled: Boolean(controls.agent_enabled),
   providerCallsEnabled: Boolean(controls.provider_calls_enabled),
   queueEnabled: Boolean(controls.index_requests_enabled),
@@ -89,20 +93,11 @@ export function registerAdminMediaRetrievalRoutes(app, {
     requireAdmin("agents:manage"),
     asyncHandler(async (req, res) => {
       const body = mediaRetrievalAdminControlsSchema.parse(req.body);
-      const overview = await dependencies.getOverview();
-      const current = publicControls(overview.controls);
-      const globalDailyBudgetFen = Object.hasOwn(body, "globalDailyBudgetFen") ? body.globalDailyBudgetFen : current.globalDailyBudgetFen;
-      const providerCallsEnabled = body.providerCallsEnabled ?? current.providerCallsEnabled;
-      const userDailyRequestLimit = Object.hasOwn(body, "userDailyRequestLimit") ? body.userDailyRequestLimit : current.userDailyRequestLimit;
-      const userMonthlyBudgetFen = Object.hasOwn(body, "userMonthlyBudgetFen") ? body.userMonthlyBudgetFen : current.userMonthlyBudgetFen;
-      const captionReserveFen = body.captionReserveFen ?? current.captionReserveFen;
-      const embeddingReserveFen = body.embeddingReserveFen ?? current.embeddingReserveFen;
-      if (
-        providerCallsEnabled &&
-        (globalDailyBudgetFen === 0 || userDailyRequestLimit === 0 || userMonthlyBudgetFen === 0 || !captionReserveFen || !embeddingReserveFen)
-      ) {
-        throw new HttpError(400, "Provider calls require nonzero limits or unlimited values and positive operation reservations.");
+      const { expectedRevision, ...changed } = body;
+      if (expectedRevision === undefined || Object.keys(changed).length === 0) {
+        throw new HttpError(400, "A control revision and at least one control change are required.");
       }
+      const idempotencyKey = requestKeySchema.parse(req.get("Idempotency-Key"));
       const controls = await dependencies.updateControls(Object.fromEntries(Object.entries({
         agentEnabled: body.operatorEnabled,
         providerCallsEnabled: body.providerCallsEnabled,
@@ -113,29 +108,15 @@ export function registerAdminMediaRetrievalRoutes(app, {
         captionReserveFen: body.captionReserveFen,
         embeddingReserveFen: body.embeddingReserveFen,
         lifecycle: body.lifecycle,
+        expectedRevision,
+        _audit: {
+          userId: req.user.id,
+          idempotencyKey,
+          ipHash: hashRequestIp(req.ip),
+          userAgent: req.get("user-agent") || "",
+          payload: changed,
+        },
       }).filter(([, value]) => value !== undefined)));
-      const changed = Object.fromEntries(
-        Object.entries(body).filter(([key]) => [
-          "operatorEnabled",
-          "providerCallsEnabled",
-          "queueEnabled",
-          "userDailyRequestLimit",
-          "userMonthlyBudgetFen",
-          "globalDailyBudgetFen",
-          "captionReserveFen",
-          "embeddingReserveFen",
-          "lifecycle",
-        ].includes(key)),
-      );
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "admin.media_retrieval.controls",
-        targetType: "agent",
-        targetId: "media-retrieval",
-        payload: changed,
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
-      });
       res.json({ data: { controls: publicControls(controls) } });
     }),
   );

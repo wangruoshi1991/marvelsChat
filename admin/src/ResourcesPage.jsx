@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Button, Col, Empty, Row, Space, Statistic, Table, Tag, Typography } from "antd";
 import { Link } from "react-router-dom";
 import { ReloadOutlined } from "@ant-design/icons";

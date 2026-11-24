@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { appErrorText, textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
 import { secondFloorPalette } from './secondFloorTheme';
 import { SettingsScreen } from '../settings/SettingsScreen';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
+import { SecondFloorScrollView } from './SecondFloorScrollView';
 import { SecondFloorPageScrollProps } from './secondFloorScroll';
 
 /**
@@ -62,7 +63,7 @@ export function SecondFloorSettings({
 
   return (
     <View style={s.body}>
-      <ScrollView
+      <SecondFloorScrollView
         {...scrollProps}
         scrollEnabled
         showsVerticalScrollIndicator={false}
@@ -93,7 +94,7 @@ export function SecondFloorSettings({
           userName={session.user?.displayName || '未登录'}
           userRole={session.user?.role || 'user'}
         />
-      </ScrollView>
+      </SecondFloorScrollView>
     </View>
   );
 }

@@ -158,14 +158,23 @@ export function createComicRenderRepository({ withTransaction: transaction = wit
       ...(event.payload.errorCode?{errorCode:event.payload.errorCode}:{}),createdAt:iso(event.created_at)}));
     return {task:dto(row,await outputs(connection,row.id,true)),events:page,hasMore:events.length>limit,nextSequence:page.at(-1)?.sequence??afterSequence};
   });
+  async function cancelComicRenderTaskInTransaction(connection, { userId, taskId, revision }) {
+    const [row]=await connection.query(`UPDATE ai_tasks SET status='cancelled',phase='cancelled',revision=revision+1,
+      claim_token=NULL,lease_until=NULL,last_operation='cancel',last_operation_revision=revision+1,updated_at=clock_timestamp()
+      WHERE id=? AND user_id=? AND ${predicate} AND status='queued' AND revision=?
+        AND claim_token IS NULL
+        AND NOT EXISTS (SELECT 1 FROM comic_task_outputs WHERE task_id=? AND status<>'queued')
+      RETURNING ${taskFields}`,[taskId,userId,revision,taskId]);
+    if(!row)throw conflict("任务已经变化，仅排队中的任务可以取消。","COMIC_RENDER_REVISION_CONFLICT");
+    await connection.query("UPDATE comic_task_outputs SET status='skipped',updated_at=clock_timestamp() WHERE task_id=? AND status='queued'",[taskId]);
+    await appendEvent(connection,row);
+    return row;
+  }
   const cancelQueuedComicRenderTask=({userId,taskId,revision})=>transaction(async connection=>{
     z.number().int().min(1).parse(revision);
     await readPublic(connection,userId,taskId,{exclusive:true});
-    const [row]=await connection.query(`UPDATE ai_tasks SET status='cancelled',phase='cancelled',revision=revision+1,updated_at=clock_timestamp()
-      WHERE id=? AND user_id=? AND ${predicate} AND status='queued' AND revision=? RETURNING ${taskFields}`,[taskId,userId,revision]);
-    if(!row)throw conflict("任务已经变化，仅排队中的任务可以取消。","COMIC_RENDER_REVISION_CONFLICT");
-    await connection.query("UPDATE comic_task_outputs SET status='skipped',updated_at=clock_timestamp() WHERE task_id=? AND status='queued'",[taskId]);
-    await appendEvent(connection,row);return dto(row,await outputs(connection,row.id,true));
+    const row=await cancelComicRenderTaskInTransaction(connection,{userId,taskId,revision});
+    return dto(row,await outputs(connection,row.id,true));
   });
   const getComicRenderTaskRecord=args=>transaction(async connection=>record(connection,await lease(connection,args)));
   const revalidateComicRenderTask=args=>transaction(async connection=>record(connection,await revalidate(connection,args)));
@@ -210,7 +219,7 @@ export function createComicRenderRepository({ withTransaction: transaction = wit
     if(!updated)throw conflict("漫画生成任务租约已失效。","AI_TASK_LEASE_LOST");
     await appendEvent(connection,updated);return dto(updated,await outputs(connection,row.id,true));
   });
-  return {createComicRenderTask,createComicRenderTaskInTransaction,getComicRenderTask,listComicRenderTasks,listComicRenderEvents,cancelQueuedComicRenderTask,
+  return {createComicRenderTask,createComicRenderTaskInTransaction,getComicRenderTask,listComicRenderTasks,listComicRenderEvents,cancelQueuedComicRenderTask,cancelComicRenderTaskInTransaction,
     getComicRenderTaskRecord,revalidateComicRenderTask,markComicFrameRunning,markComicFrameResult,bindComicFrameAssetInTransaction,finishComicRenderTask};
 }
 export const defaultComicRenderRepository=createComicRenderRepository();

@@ -108,18 +108,18 @@ export function registerStationMediaRoutes(
     authenticate,
     asyncHandler(async (req, res) => {
       const body = stationMediaAssetSchema.parse(req.body);
-      const asset = await createStationMediaAsset({
-        userId: req.user.id,
-        ...body,
-      });
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "station.media.create",
-        targetType: "station_media_asset",
-        targetId: asset.id,
-        payload: { albumId: asset.albumId, kind: asset.kind, status: asset.status },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
+      const asset = await withTransaction(async connection => {
+        const created = await createStationMediaAsset({ userId: req.user.id, ...body }, connection);
+        await createUsageEvent({
+          userId: req.user.id,
+          eventType: "station.media.create",
+          targetType: "station_media_asset",
+          targetId: created.id,
+          payload: { albumId: created.albumId, kind: created.kind, status: created.status },
+          ipHash: hashRequestIp(req.ip),
+          userAgent: req.get("user-agent") || "",
+        }, connection.query);
+        return created;
       });
       res.status(201).json({ data: asset });
     }),
@@ -162,18 +162,10 @@ export function registerStationMediaRoutes(
       const { mediaAssetId } = stationMediaAssetParamsSchema.parse(
         req.params,
       );
-      const asset = await deleteOwnedStationMediaAsset({
+      await deleteOwnedStationMediaAsset({
         userId: req.user.id,
         mediaAssetId,
-      });
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "station.media.delete",
-        targetType: "station_media_asset",
-        targetId: asset.id,
-        payload: { albumId: asset.albumId },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
+        audit: { ipHash: hashRequestIp(req.ip), userAgent: req.get("user-agent") || "" },
       });
       res.status(204).send();
     }),
@@ -310,11 +302,11 @@ export function registerStationMediaRoutes(
         throw new HttpError(409, "Media upload key does not match");
       }
       if (asset.status === "uploaded") {
-        await mediaRetrievalService.enqueueUploadedMediaAsset({
+        const indexing = await mediaRetrievalService.enqueueUploadedMediaAsset({
           userId: req.user.id,
           mediaAssetId: asset.id,
         });
-        res.json({ data: asset });
+        res.json({ data: asset, indexing });
         return;
       }
       if (asset.status !== "pending_upload") {
@@ -368,6 +360,15 @@ export function registerStationMediaRoutes(
         },
       });
       if (!uploadedAsset) {
+        const current = await getStationMediaAssetForUser({ userId: req.user.id, mediaAssetId });
+        if (current?.status === "uploaded" && current.storageKey === body.storageKey) {
+          const indexing = await mediaRetrievalService.enqueueUploadedMediaAsset({
+            userId: req.user.id,
+            mediaAssetId,
+          });
+          res.json({ data: current, indexing });
+          return;
+        }
         throw new HttpError(409, "Media asset upload state changed");
       }
 
@@ -402,7 +403,7 @@ export function registerStationMediaRoutes(
           userAgent: req.get("user-agent") || "",
         });
       }
-      res.json({ data: uploadedAsset });
+      res.json({ data: uploadedAsset, indexing: indexingOutcome });
     }),
   );
 

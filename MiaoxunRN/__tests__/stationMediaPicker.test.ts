@@ -1,3 +1,4 @@
+import { PermissionsAndroid, Platform } from 'react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 
 import {
@@ -16,6 +17,54 @@ const mockedLaunchCamera = launchCamera as jest.MockedFunction<
 
 describe('station media picker', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  describe('Android camera permission', () => {
+    beforeEach(() => {
+      jest.replaceProperty(Platform, 'OS', 'android');
+    });
+    afterEach(() => jest.restoreAllMocks());
+
+    it('waits for the camera grant before opening capture', async () => {
+      let grantPermission!: (result: 'granted') => void;
+      const permission = jest
+        .spyOn(PermissionsAndroid, 'request')
+        .mockReturnValue(
+          new Promise(resolve => {
+            grantPermission = resolve;
+          }),
+        );
+      mockedLaunchCamera.mockResolvedValueOnce({ didCancel: true });
+
+      const capture = takeStationPhoto();
+
+      expect(permission).toHaveBeenCalledWith(
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+      );
+      expect(mockedLaunchCamera).not.toHaveBeenCalled();
+      grantPermission('granted');
+      await expect(capture).resolves.toBeNull();
+      expect(mockedLaunchCamera).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      [PermissionsAndroid.RESULTS.DENIED, /重试/],
+      [PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN, /系统设置/],
+    ] as const)(
+      'explains a %s result without opening capture',
+      async (result, recovery) => {
+        jest.spyOn(PermissionsAndroid, 'request').mockResolvedValueOnce(result);
+        await expect(takeStationPhoto()).rejects.toThrow(recovery);
+        expect(mockedLaunchCamera).not.toHaveBeenCalled();
+      },
+    );
+
+    it('opens the system library without requesting camera permission', async () => {
+      const permission = jest.spyOn(PermissionsAndroid, 'request');
+      mockedLaunchImageLibrary.mockResolvedValueOnce({ didCancel: true });
+      await expect(pickStationPhotoFromLibrary()).resolves.toBeNull();
+      expect(permission).not.toHaveBeenCalled();
+    });
+  });
 
   it('requests a compatible photo representation for iPhone HEIC assets', async () => {
     mockedLaunchImageLibrary.mockResolvedValueOnce({ didCancel: true });

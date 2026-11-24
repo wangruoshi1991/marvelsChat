@@ -38,6 +38,8 @@ interface AvatarComposerProps {
   feature: AvatarFeature;
   quota: AvatarQuota;
   onCreate: (request: AvatarCreateRequest) => Promise<void>;
+  submissionUncertain?: boolean;
+  workspaceRefreshPending?: boolean;
   inspectPhoto?: typeof inspectPhotoFile;
 }
 
@@ -54,6 +56,8 @@ export function AvatarComposer({
   feature,
   quota,
   onCreate,
+  submissionUncertain = false,
+  workspaceRefreshPending = false,
   inspectPhoto = inspectPhotoFile,
 }: AvatarComposerProps) {
   const [file, setFile] = useState<File | null>(null);
@@ -81,6 +85,7 @@ export function AvatarComposer({
   }, [file]);
 
   const resetAttempt = () => setIdempotencyKey(null);
+  const draftLocked = pending || submissionUncertain || workspaceRefreshPending;
 
   const setPhoto = (nextFile?: File) => {
     setError("");
@@ -158,13 +163,15 @@ export function AvatarComposer({
     }
   };
 
-  const blockedLabel = !feature.generationAvailable
-    ? "生成服务暂时不可用"
-    : quota.hasActiveJob
-      ? "已有任务进行中"
-      : quota.dailyRemaining <= 0
-        ? "今日次数已用完"
-        : "";
+  const blockedLabel = workspaceRefreshPending
+    ? "工作区状态待同步"
+    : !feature.generationAvailable
+      ? "生成服务暂时不可用"
+      : quota.hasActiveJob
+        ? "已有任务进行中"
+        : quota.dailyRemaining <= 0
+          ? "今日次数已用完"
+          : "";
   const referenceCostFen = feature.referenceGenerationEstimatedCostFen;
 
   return (
@@ -185,6 +192,7 @@ export function AvatarComposer({
           <input
             aria-label="正面脸照"
             type="file"
+            disabled={draftLocked}
             accept="image/jpeg,image/png"
             onChange={(event) => setPhoto(event.target.files?.[0])}
           />
@@ -199,6 +207,7 @@ export function AvatarComposer({
               className="slot-remove"
               type="button"
               title="移除照片"
+              disabled={draftLocked}
               aria-label="移除照片"
               onClick={() => setPhoto(undefined)}
             >
@@ -208,7 +217,7 @@ export function AvatarComposer({
         </div>
       </div>
 
-      <fieldset className="brief-fieldset">
+      <fieldset className="brief-fieldset" disabled={draftLocked}>
         <legend>身材方向</legend>
         <div className="brief-segment" aria-label="身材方向">
           {bodyOptions.map((option) => (
@@ -228,6 +237,7 @@ export function AvatarComposer({
         <span>服装方向</span>
         <select
           value={outfit}
+          disabled={draftLocked}
           onChange={(event) => { setOutfit(event.target.value as Outfit); resetAttempt(); }}
         >
           {outfitOptions.map((option) => (
@@ -240,6 +250,7 @@ export function AvatarComposer({
         <span>补充要求</span>
         <textarea
           value={userDescription}
+          disabled={draftLocked}
           maxLength={240}
           rows={3}
           placeholder="例如：蓝白色运动套装，气质自信自然"
@@ -251,6 +262,7 @@ export function AvatarComposer({
         <input
           type="checkbox"
           checked={identityAccepted}
+          disabled={draftLocked}
           onChange={(event) => setIdentityAccepted(event.target.checked)}
         />
         <span className="check-indicator" aria-hidden="true"><Check size={14} /></span>
@@ -260,6 +272,7 @@ export function AvatarComposer({
         <input
           type="checkbox"
           checked={completionAccepted}
+          disabled={draftLocked}
           onChange={(event) => setCompletionAccepted(event.target.checked)}
         />
         <span className="check-indicator" aria-hidden="true"><Check size={14} /></span>
@@ -270,15 +283,15 @@ export function AvatarComposer({
         <span>本次先生成 4 张参考图</span>
         <strong>预计 ¥{(referenceCostFen / 100).toFixed(2)}</strong>
       </div>
-      {error ? <p className="composer-error" role="alert">{error}</p> : null}
+      {error ? <p className="composer-error" role="alert">{submissionUncertain ? "尚未确认任务是否已创建，可重试原提交。" : error}</p> : null}
       <button
         className="primary-command composer-submit"
         type="button"
-        disabled={Boolean(blockedLabel) || pending}
-        onClick={openConfirmation}
+        disabled={pending || workspaceRefreshPending || (!submissionUncertain && Boolean(blockedLabel))}
+        onClick={submissionUncertain ? confirm : openConfirmation}
       >
         <Sparkles size={18} />
-        {blockedLabel || (pending ? "正在创建" : "生成四视图")}
+        {pending ? "正在创建" : workspaceRefreshPending ? blockedLabel : submissionUncertain ? "重试原提交" : blockedLabel || "生成四视图"}
       </button>
 
       {confirmOpen ? (

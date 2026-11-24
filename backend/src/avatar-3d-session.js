@@ -133,7 +133,7 @@ export function createAvatar3dSessionService({
       && await verifyPassword(password, userRow.password_hash);
     if (!valid) throw new HttpError(401, "Invalid login credentials.");
 
-    const session = await createSession(userRow.id);
+    const session = await createSession(userRow.id, { verifiedPasswordHash: userRow.password_hash });
     await recordLogin(userRow.id);
     const csrfToken = randomToken();
     return {

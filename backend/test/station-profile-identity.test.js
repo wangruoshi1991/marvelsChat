@@ -105,6 +105,26 @@ test("admin profile editing preserves the owner's chosen avatar text", async () 
   assert.doesNotMatch(profileQuery.sql, /avatar_text\s*=/);
 });
 
+test("admin profile audit failure aborts the same transaction", async () => {
+  let committed = false;
+  const update = createAdminUserProfileUpdater({
+    findByDisplayName: async () => null,
+    transaction: async work => {
+      const connection = { execute: async () => undefined, query: async () => [] };
+      const result = await work(connection);
+      committed = true;
+      return result;
+    },
+    recordAudit: async () => { throw new Error("audit failure"); },
+    getProfile: async () => ({ userId: "user-1" }),
+  });
+  await assert.rejects(
+    () => update({ userId: "user-1", nickname: "林未", audit: { userId: "admin" } }),
+    /audit failure/,
+  );
+  assert.equal(committed, false);
+});
+
 const profileRow = {
   ai_id: "10000042",
   user_id: "user-1", nickname: "林未", avatar_text: "林", bio: "独立设计师",

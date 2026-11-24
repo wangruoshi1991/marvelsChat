@@ -29,9 +29,15 @@ const thread: ChatThread = {
   lastContent: '已有消息',
   messages: [],
 };
-const touch = {
-  nativeEvent: { touches: [{ identifier: 0 }] },
-} as unknown as GestureResponderEvent;
+const touch = (pageX: number, pageY: number, release = false) => {
+  const point = { identifier: 0, pageX, pageY };
+  return {
+    nativeEvent: {
+      touches: release ? [] : [point],
+      changedTouches: release ? [point] : [],
+    },
+  } as unknown as GestureResponderEvent;
+};
 const gesture = (dx: number, dy: number): PanResponderGestureState => ({
   stateID: 1,
   moveX: dx,
@@ -107,16 +113,16 @@ test('a retained nonzero native scroll position cannot become a false top-edge p
   const pull = create.mock.calls.find(
     ([config]) => config.onMoveShouldSetPanResponderCapture,
   )![0];
-  pull.onStartShouldSetPanResponderCapture?.(touch, gesture(0, 0));
+  pull.onStartShouldSetPanResponderCapture?.(touch(120, 300), gesture(0, 0));
   expect(
-    pull.onMoveShouldSetPanResponderCapture?.(touch, gesture(0, 100)),
+    pull.onMoveShouldSetPanResponderCapture?.(touch(120, 400), gesture(0, 100)),
   ).toBe(false);
   tree!.root.findByType(FlatList).props.onScroll({
     nativeEvent: { contentOffset: { y: 0 } },
   });
-  pull.onStartShouldSetPanResponderCapture?.(touch, gesture(0, 0));
+  pull.onStartShouldSetPanResponderCapture?.(touch(120, 300), gesture(0, 0));
   expect(
-    pull.onMoveShouldSetPanResponderCapture?.(touch, gesture(0, 100)),
+    pull.onMoveShouldSetPanResponderCapture?.(touch(120, 400), gesture(0, 100)),
   ).toBe(true);
 });
 
@@ -130,10 +136,10 @@ test('a hidden retained row cannot capture a new swipe', async () => {
       config.onMoveShouldSetPanResponder &&
       !config.onMoveShouldSetPanResponderCapture,
   )![0];
-  row.onStartShouldSetPanResponderCapture?.(touch, gesture(0, 0));
-  expect(row.onMoveShouldSetPanResponder?.(touch, gesture(-100, 0))).toBe(
-    false,
-  );
+  row.onStartShouldSetPanResponderCapture?.(touch(120, 300), gesture(0, 0));
+  expect(
+    row.onMoveShouldSetPanResponder?.(touch(20, 300), gesture(-100, 0)),
+  ).toBe(false);
 });
 
 test('a cancelled row swipe cannot open a conversation after the floor is closed', async () => {
@@ -155,10 +161,10 @@ test('a cancelled row swipe cannot open a conversation after the floor is closed
       !config.onMoveShouldSetPanResponderCapture,
   )![0];
   act(() => {
-    row.onStartShouldSetPanResponderCapture?.(touch, gesture(0, 0));
-    row.onPanResponderGrant?.(touch, gesture(0, 0));
-    row.onPanResponderMove?.(touch, gesture(-100, 0));
-    row.onPanResponderRelease?.(touch, gesture(-100, 0));
+    row.onStartShouldSetPanResponderCapture?.(touch(120, 300), gesture(0, 0));
+    row.onPanResponderGrant?.(touch(120, 300), gesture(0, 0));
+    row.onPanResponderMove?.(touch(20, 300), gesture(-100, 0));
+    row.onPanResponderRelease?.(touch(20, 300, true), gesture(-100, 0));
   });
   expect(complete).toBeDefined();
   await act(async () => tree!.update(screen(false)));
@@ -180,10 +186,10 @@ test('a cancelled row swipe cannot open a conversation after the floor is closed
 
   // Returning to the retained row must still permit a fresh, completed swipe.
   act(() => {
-    row.onStartShouldSetPanResponderCapture?.(touch, gesture(0, 0));
-    row.onPanResponderGrant?.(touch, gesture(0, 0));
-    row.onPanResponderMove?.(touch, gesture(-100, 0));
-    row.onPanResponderRelease?.(touch, gesture(-100, 0));
+    row.onStartShouldSetPanResponderCapture?.(touch(120, 300), gesture(0, 0));
+    row.onPanResponderGrant?.(touch(120, 300), gesture(0, 0));
+    row.onPanResponderMove?.(touch(20, 300), gesture(-100, 0));
+    row.onPanResponderRelease?.(touch(20, 300, true), gesture(-100, 0));
     complete?.({ finished: true });
   });
   expect(openThread).toHaveBeenCalledTimes(1);
@@ -216,16 +222,22 @@ test.each(['inactive', 'restored', 'unmounted'] as const)(
     const pull = await mount();
     const startPull = (responder: typeof pull) => {
       act(() => {
-        responder.onStartShouldSetPanResponderCapture?.(touch, gesture(0, 0));
+        responder.onStartShouldSetPanResponderCapture?.(
+          touch(120, 300),
+          gesture(0, 0),
+        );
         expect(
           responder.onMoveShouldSetPanResponderCapture?.(
-            touch,
-            gesture(0, 130),
+            touch(120, 320),
+            gesture(0, 20),
           ),
         ).toBe(true);
-        responder.onPanResponderGrant?.(touch, gesture(0, 0));
-        responder.onPanResponderMove?.(touch, gesture(0, 130));
-        responder.onPanResponderRelease?.(touch, gesture(0, 130));
+        responder.onPanResponderGrant?.(touch(120, 320), gesture(0, 0));
+        responder.onPanResponderMove?.(touch(120, 470), gesture(0, 150));
+        responder.onPanResponderRelease?.(
+          touch(120, 470, true),
+          gesture(0, 150),
+        );
       });
     };
     startPull(pull);

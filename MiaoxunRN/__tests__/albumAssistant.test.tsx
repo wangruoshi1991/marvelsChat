@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Text } from 'react-native';
+import { Alert, Modal, Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import {
   albumAssistantConsent,
@@ -320,3 +320,52 @@ test('malformed result references display a failure and can be retried', async (
   expect(renderer.root.findAllByType(RetrievalResultCard)).toHaveLength(1);
   await act(async () => renderer.unmount());
 });
+
+test.each(['resolve', 'reject'])(
+  'an earlier selection cannot replace or reopen the latest preview (%s)',
+  async completion => {
+    const nextHit = { ...hit, mediaAssetId: 'asset-2' };
+    jest.mocked(request).mockResolvedValue([hit, nextHit]);
+    let finishFirst!: () => void;
+    jest
+      .mocked(stationContentApi.stationMediaAsset)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finishFirst = () => {
+              if (completion === 'reject')
+                reject(new Error('Old preview failed'));
+              else resolve({ kind: 'video', status: 'uploaded' } as never);
+            };
+          }),
+      )
+      .mockResolvedValueOnce({ kind: 'video', status: 'uploaded' } as never);
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <AlbumAssistantResults
+          token="owner"
+          threadId="thread"
+          messageId="message"
+          palette={palettes.light}
+          language="en"
+        />,
+      );
+    });
+    const [first, second] = renderer.root.findAllByType(RetrievalResultCard);
+    await act(async () => first.props.onPress());
+    await act(async () => second.props.onPress());
+    const modal = () => renderer.root.findByType(Modal);
+    expect(modal().props.visible).toBe(true);
+    expect(
+      modal().props.children.props.children.props.children.props.asset.id,
+    ).toBe(nextHit.mediaAssetId);
+    await act(async () => modal().props.onRequestClose());
+    await act(async () => finishFirst());
+    expect(modal().props.visible).toBe(false);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain(
+      'Old preview failed',
+    );
+    await act(async () => renderer.unmount());
+  },
+);

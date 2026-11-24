@@ -8,6 +8,7 @@ import {
   ButlerClientContextPayload,
   MessageDTO,
   SendMessageResponse,
+  ThreadStateDTO,
 } from '../../models/api';
 import { request } from './http';
 import {
@@ -21,6 +22,106 @@ import {
 } from '../aiContract';
 
 export const messageApi = {
+  searchHistory(
+    threadId: string,
+    token: string,
+    query: string,
+    cursor?: string,
+  ) {
+    return request<{ items: MessageDTO[]; nextCursor: string | null }>(
+      `/api/threads/${encodeURIComponent(threadId)}/messages/search`,
+      { method: 'POST', token, body: { q: query, cursor } },
+    );
+  },
+
+  forwardMessage(
+    threadId: string,
+    messageId: string,
+    token: string,
+    targetThreadId: string,
+    clientMessageId: string,
+  ) {
+    return request<{ messages: MessageDTO[] }>(
+      `/api/threads/${encodeURIComponent(
+        threadId,
+      )}/messages/${encodeURIComponent(messageId)}/forward`,
+      { method: 'POST', token, body: { targetThreadId, clientMessageId } },
+    );
+  },
+  async transcribeMessageText(
+    threadId: string,
+    messageId: string,
+    token: string,
+    attachmentId: string,
+  ) {
+    const result = await request<{ text: string; transcriptId?: string }>(
+      `/api/threads/${encodeURIComponent(
+        threadId,
+      )}/messages/${encodeURIComponent(messageId)}/transcribe`,
+      { method: 'POST', token, timeoutMs: 40000, body: { attachmentId } },
+    );
+    if (typeof result?.text !== 'string' || !result.text.trim()) return null;
+    return {
+      text: result.text.trim(),
+      transcriptId:
+        typeof result.transcriptId === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          result.transcriptId,
+        )
+          ? result.transcriptId
+          : undefined,
+    };
+  },
+  async translateTranscript(
+    threadId: string,
+    messageId: string,
+    token: string,
+    attachmentId: string,
+    transcriptId: string,
+    language: 'zh' | 'en',
+  ) {
+    const result = await request<{ text: string }>(
+      `/api/threads/${encodeURIComponent(
+        threadId,
+      )}/messages/${encodeURIComponent(messageId)}/translate`,
+      {
+        method: 'POST',
+        token,
+        timeoutMs: 40000,
+        body: { language, attachmentId, transcriptId },
+      },
+    );
+    return typeof result?.text === 'string' && result.text.trim()
+      ? result.text.trim()
+      : null;
+  },
+  async readMessageText(
+    threadId: string,
+    messageId: string,
+    token: string,
+    operation:
+      | { kind: 'translate'; language: 'zh' | 'en' }
+      | { kind: 'transcribe'; attachmentId: string },
+  ) {
+    const result = await request<{ text: string }>(
+      `/api/threads/${encodeURIComponent(
+        threadId,
+      )}/messages/${encodeURIComponent(messageId)}/${operation.kind}`,
+      {
+        method: 'POST',
+        token,
+        timeoutMs: 40000,
+        body:
+          operation.kind === 'translate'
+            ? { language: operation.language }
+            : { attachmentId: operation.attachmentId },
+      },
+    );
+    if (typeof result?.text !== 'string' || !result.text.trim()) {
+      return null;
+    }
+    return result.text.trim();
+  },
   async contributionDiscussion(
     threadId: string,
     messageId: string,
@@ -166,23 +267,34 @@ export const messageApi = {
     });
   },
 
-  markThreadRead(threadId: string, token: string) {
-    return request<{ ok: boolean }>(`/api/threads/${threadId}/read`, {
-      method: 'POST',
-      token,
-    });
+  threadState(threadId: string, token: string) {
+    return request<ThreadStateDTO>(`/api/threads/${threadId}/state`, { token });
+  },
+
+  markThreadRead(threadId: string, token: string, readThrough: number) {
+    return request<ThreadStateDTO & { ok: boolean }>(
+      `/api/threads/${threadId}/read`,
+      {
+        method: 'POST',
+        token,
+        body: { readThrough },
+      },
+    );
   },
 
   updateThreadPreferences(
     threadId: string,
-    preferences: { muted: boolean },
+    preferences: { muted: boolean; baseRevision: number },
     token: string,
   ) {
-    return request<{ muted: boolean }>(`/api/threads/${threadId}/preferences`, {
-      method: 'PATCH',
-      token,
-      body: preferences,
-    });
+    return request<Pick<ThreadStateDTO, 'muted' | 'preferencesRevision'>>(
+      `/api/threads/${threadId}/preferences`,
+      {
+        method: 'PATCH',
+        token,
+        body: preferences,
+      },
+    );
   },
 
   deleteMessage(threadId: string, messageId: string, token: string) {

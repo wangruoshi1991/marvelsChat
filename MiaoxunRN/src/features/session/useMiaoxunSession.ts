@@ -4,6 +4,7 @@ import {
   AgentDTO,
   BootstrapDTO,
   ButlerClientContextPayload,
+  ChatMessageTextAvailabilityDTO,
   ModuleDTO,
   NoticeDTO,
   OwnedAgentDTO,
@@ -21,6 +22,7 @@ import {
   isAuthSessionError,
   setAuthSessionExpiredHandler,
 } from '../../services/apiClient';
+import { MiaoxunApiError } from '../../services/api/http';
 import { avatar3dAttemptStore } from '../../services/avatar3dAttemptStore';
 import { tokenStore } from '../../services/tokenStore';
 import {
@@ -66,6 +68,20 @@ import type { UIPreferences } from '../ui/uiPreferenceTypes';
 
 export type { ChatMessage, ChatThread, Language } from './sessionTypes';
 
+export type AccountDeletionStatus =
+  | 'idle'
+  | 'submitting'
+  | 'pending'
+  | 'checking'
+  | 'session-active'
+  | 'session-expired';
+
+type AccountDeletionAttempt = {
+  token: string;
+  userId: string;
+  phase: 'submitting' | 'pending' | 'checking';
+};
+
 async function clearLocalSession({ requireTokenClear = false } = {}) {
   const [tokenResult, avatarAttemptResult] = await Promise.allSettled([
     tokenStore.clear(),
@@ -90,6 +106,13 @@ export function useMiaoxunSession() {
   const [user, setUser] = useState<UserDTO | null>(null);
   const [profile, setProfile] = useState<ProfileDTO>(emptyProfile);
   const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [chatMessageText, setChatMessageText] =
+    useState<ChatMessageTextAvailabilityDTO>();
+  const [chatVideoEnabled, setChatVideoEnabled] = useState(false);
+  const [chatVoiceCalls, setChatVoiceCalls] =
+    useState<BootstrapDTO['chatVoiceCalls']>();
+  const [chatMessageReceipts, setChatMessageReceipts] =
+    useState<BootstrapDTO['chatMessageReceipts']>();
   const [modules, setModules] = useState<Record<string, ModuleDTO>>({});
   const [agents, setAgents] = useState<AgentDTO[]>([]);
   const [agentReadiness, setAgentReadiness] = useState<
@@ -119,10 +142,13 @@ export function useMiaoxunSession() {
   const [isRestoring, setIsRestoring] = useState(true);
   const [restoreStatus, setRestoreStatus] = useState<RestoreStatus>('checking');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [accountDeletionStatus, setAccountDeletionStatus] =
+    useState<AccountDeletionStatus>('idle');
   const [realtimeNotificationNotice, setRealtimeNotificationNotice] =
     useState<RealtimeNotificationNotice | null>(null);
   const activeThreadIdRef = useRef<string | null>(null);
   const tokenRef = useRef('');
+  const accountDeletionRef = useRef<AccountDeletionAttempt | null>(null);
   const sessionVersionRef = useRef(0);
   const agentAccessGenerationRef = useRef(0);
   const agentAccessBlockedRef = useRef(false);
@@ -158,6 +184,7 @@ export function useMiaoxunSession() {
     };
   }
   const profileRevisionRef = useRef(0);
+  const profileVisibilityRevisionRef = useRef(0);
   // Local station mutations (for example a just-saved post) must win over a
   // bootstrap request that started before the mutation completed. The
   // revision is captured when a bootstrap starts and checked before its
@@ -176,6 +203,7 @@ export function useMiaoxunSession() {
     agentAccessAliveRef.current = true;
     return () => {
       agentAccessAliveRef.current = false;
+      accountDeletionRef.current = null;
     };
   }, []);
 
@@ -253,6 +281,8 @@ export function useMiaoxunSession() {
 
   const updateToken = useCallback((nextToken: string) => {
     clearAIContractSession();
+    accountDeletionRef.current = null;
+    setAccountDeletionStatus('idle');
     sessionVersionRef.current += 1;
     profileRevisionRef.current = 0;
     uiPreferencesRef.current = defaultUIPreferences();
@@ -269,6 +299,10 @@ export function useMiaoxunSession() {
     setUser(null);
     setProfile(emptyProfile);
     setThreads([]);
+    setChatMessageText(undefined);
+    setChatVideoEnabled(false);
+    setChatVoiceCalls(undefined);
+    setChatMessageReceipts(undefined);
     setModules({});
     setAgents([]);
     setAgentReadiness({});
@@ -290,7 +324,7 @@ export function useMiaoxunSession() {
   }, []);
 
   const expireSession = useCallback(
-    (expiredToken: string) => {
+    (expiredToken: string, confirmedDeletion = false) => {
       if (
         expiredTokenRef.current === expiredToken &&
         sessionExpiryPromiseRef.current
@@ -301,10 +335,19 @@ export function useMiaoxunSession() {
         return Promise.resolve();
       }
 
+      const deletionPending =
+        accountDeletionRef.current?.token === expiredToken;
       expiredTokenRef.current = expiredToken;
       updateToken('');
       resetAuthenticatedState();
-      setErrorMessage('登录状态已失效，请重新登录。');
+      if (deletionPending && !confirmedDeletion) {
+        setAccountDeletionStatus('session-expired');
+      }
+      setErrorMessage(
+        deletionPending || confirmedDeletion
+          ? null
+          : '登录状态已失效，请重新登录。',
+      );
       setRestoreStatus('signedOut');
       const expiry = (async () => {
         await clearLocalSession();
@@ -338,12 +381,17 @@ export function useMiaoxunSession() {
       bootstrap: BootstrapDTO,
       requestedProfileRevision = profileRevisionRef.current,
       requestedStationContentRevision = stationContentMutationRevisionRef.current,
+      requestedProfileVisibilityRevision = profileVisibilityRevisionRef.current,
     ) => {
       setAIContractSession(tokenRef.current, bootstrap.contracts);
       assertAgentDirectoryIdentity(
         bootstrap.agents.registered,
         bootstrap.agents.owned,
       );
+      setChatMessageText(bootstrap.chatMessageText);
+      setChatVideoEnabled(bootstrap.chatVideoEnabled === true);
+      setChatVoiceCalls(bootstrap.chatVoiceCalls);
+      setChatMessageReceipts(bootstrap.chatMessageReceipts);
       // A bootstrap started before a confirmed save must not restore its older profile snapshot.
       const profileChanged =
         requestedProfileRevision !== profileRevisionRef.current;
@@ -371,7 +419,15 @@ export function useMiaoxunSession() {
           },
         }));
       }
-      setThreads(buildThreads(bootstrap));
+      const incomingThreads = buildThreads(bootstrap);
+      const incomingThreadIds = new Set(
+        incomingThreads.map(thread => thread.id),
+      );
+      setThreads(current =>
+        mergeThreads(current, incomingThreads).filter(thread =>
+          incomingThreadIds.has(thread.id),
+        ),
+      );
       setModules(bootstrap.modules);
       setAgents(bootstrap.agents.registered);
       setAgentReadiness(bootstrap.agentReadiness);
@@ -381,7 +437,11 @@ export function useMiaoxunSession() {
       setCatalogRevision(bootstrap.catalogRevision);
       setNotices(bootstrap.notices);
       setUnreadNoticeCount(bootstrap.unreadNoticeCount);
-      setProfileVisibility(bootstrap.profileVisibility);
+      if (
+        requestedProfileVisibilityRevision ===
+        profileVisibilityRevisionRef.current
+      )
+        setProfileVisibility(bootstrap.profileVisibility);
       setSearchHistory(bootstrap.searchHistory);
       setRelationships(bootstrap.relationships);
       if (
@@ -409,6 +469,8 @@ export function useMiaoxunSession() {
       const requestedProfileRevision = profileRevisionRef.current;
       const requestedStationContentRevision =
         stationContentMutationRevisionRef.current;
+      const requestedProfileVisibilityRevision =
+        profileVisibilityRevisionRef.current;
       const request = (async () => {
         try {
           const bootstrap = await apiClient.bootstrap(nextToken);
@@ -417,6 +479,7 @@ export function useMiaoxunSession() {
               bootstrap,
               requestedProfileRevision,
               requestedStationContentRevision,
+              requestedProfileVisibilityRevision,
             );
           }
         } catch (error) {
@@ -596,6 +659,10 @@ export function useMiaoxunSession() {
           setProducts(sync.products);
           setEntitlements(sync.entitlements);
           setCatalogRevision(sync.catalogRevision);
+          setChatMessageText(sync.chatMessageText);
+          setChatVideoEnabled(sync.chatVideoEnabled === true);
+          setChatVoiceCalls(sync.chatVoiceCalls);
+          setChatMessageReceipts(sync.chatMessageReceipts);
           lastSyncAtRef.current = sync.serverTime;
         } catch (error) {
           if (tokenRef.current !== currentToken) {
@@ -682,7 +749,6 @@ export function useMiaoxunSession() {
   const realtimeStatus = useRealtimeChannel({
     token,
     userId: user?.id,
-    activeThreadIdRef,
     refreshNotifications,
     refreshRelationships,
     incrementalSync,
@@ -762,7 +828,7 @@ export function useMiaoxunSession() {
       if (!token || tokenRef.current !== token) {
         throw new Error('请先登录。');
       }
-      if (agentAccessBlockedRef.current)
+      if (agentAccessBlockedRef.current || accountDeletionRef.current)
         throw new Error('账号正在退出或注销，请稍后重试。');
       const agent = agents.find(item => item.key === agentId);
       if (!agent) throw new Error('Agent 已不可用，请刷新后重试。');
@@ -886,6 +952,7 @@ export function useMiaoxunSession() {
 
   const {
     sendMessage,
+    applyForwardReceipt,
     refreshThreadMessages,
     deleteMessage,
     recallMessage,
@@ -919,34 +986,77 @@ export function useMiaoxunSession() {
     }
   }, [resetAuthenticatedState, token, updateToken]);
 
+  const recheckAccountDeletion = useCallback(async () => {
+    const attempt = accountDeletionRef.current;
+    if (!attempt || attempt.phase !== 'pending') return;
+
+    attempt.phase = 'checking';
+    setAccountDeletionStatus('checking');
+    try {
+      const response = await apiClient.accountSession(attempt.token);
+      if (accountDeletionRef.current !== attempt) return;
+      if (response?.user?.id === attempt.userId) {
+        accountDeletionRef.current = null;
+        setAccountDeletionStatus('session-active');
+        return;
+      }
+    } catch (error) {
+      if (accountDeletionRef.current !== attempt) return;
+      if (isAuthSessionError(error)) {
+        await expireSession(attempt.token);
+        return;
+      }
+    }
+    attempt.phase = 'pending';
+    setAccountDeletionStatus('pending');
+  }, [expireSession]);
+
   const deleteAccount = useCallback(
-    async (password: string) => {
-      const currentToken = tokenRef.current;
-      if (!currentToken) {
+    async (password: string): Promise<boolean> => {
+      if (!token || tokenRef.current !== token || !user?.id) {
         throw new Error('请先登录。');
       }
+      if (accountDeletionRef.current) return false;
 
+      const attempt: AccountDeletionAttempt = {
+        token,
+        userId: user.id,
+        phase: 'submitting',
+      };
+      const version = sessionVersionRef.current;
+      accountDeletionRef.current = attempt;
       agentAccessGenerationRef.current += 1;
-      agentAccessBlockedRef.current = true;
-      setIsBusy(true);
+      setAccountDeletionStatus('submitting');
       setErrorMessage(null);
       try {
-        await apiClient.deleteAccount(currentToken, password);
-        await clearLocalSession();
-        updateToken('');
-        resetAuthenticatedState();
-        setRestoreStatus('signedOut');
+        const receipt = await apiClient.deleteAccount(attempt.token, password);
+        if (accountDeletionRef.current !== attempt) return false;
+        if (
+          receipt?.deleted === true &&
+          (receipt.cleanupStatus === 'pending' ||
+            receipt.cleanupStatus === 'completed')
+        ) {
+          await expireSession(attempt.token, true);
+          return sessionVersionRef.current === version + 1;
+        }
       } catch (error) {
-        setErrorMessage(
-          error instanceof Error ? error.message : '账号注销失败。',
-        );
-        throw error;
-      } finally {
-        agentAccessBlockedRef.current = false;
-        setIsBusy(false);
+        if (accountDeletionRef.current !== attempt) return false;
+        if (
+          error instanceof MiaoxunApiError &&
+          (error.status === 400 || error.status === 403 || error.status === 429)
+        ) {
+          accountDeletionRef.current = null;
+          setAccountDeletionStatus('idle');
+          setErrorMessage(error.message);
+          throw error;
+        }
       }
+      attempt.phase = 'pending';
+      setAccountDeletionStatus('pending');
+      await recheckAccountDeletion();
+      return false;
     },
-    [resetAuthenticatedState, updateToken],
+    [expireSession, recheckAccountDeletion, token, user?.id],
   );
 
   const retryRestoreSession = useCallback(async () => {
@@ -978,11 +1088,18 @@ export function useMiaoxunSession() {
     }
   }, [applyBootstrap, updateToken]);
 
+  const applyProfileVisibility = useCallback(
+    (value: ProfileVisibilityDTO) => {
+      profileVisibilityRevisionRef.current += 1;
+      setSessionProfileVisibility(value);
+    },
+    [setSessionProfileVisibility],
+  );
   const { updatePresence, updateProfileVisibility, updateProfile } =
     useProfileActions({
       token,
       applySavedProfile,
-      setProfileVisibility: setSessionProfileVisibility,
+      setProfileVisibility: applyProfileVisibility,
       setUser: setSessionUser,
     });
 
@@ -1082,6 +1199,10 @@ export function useMiaoxunSession() {
     user,
     profile,
     threads,
+    chatMessageText,
+    chatVideoEnabled,
+    chatVoiceCalls,
+    chatMessageReceipts,
     modules,
     agents,
     agentReadiness,
@@ -1106,6 +1227,7 @@ export function useMiaoxunSession() {
     isRestoring,
     restoreStatus,
     errorMessage,
+    accountDeletionStatus,
     realtimeStatus,
     realtimeNotificationNotice,
     butlerThread,
@@ -1113,10 +1235,12 @@ export function useMiaoxunSession() {
     signUp,
     signOut,
     deleteAccount,
+    recheckAccountDeletion,
     retryRestoreSession,
     refreshBootstrap,
     incrementalSync,
     sendMessage,
+    applyForwardReceipt,
     refreshThreadMessages,
     deleteMessage,
     recallMessage,

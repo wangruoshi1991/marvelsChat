@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ArrowLeft,
   Settings,
+  Phone,
   type LucideIcon,
 } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -88,6 +89,7 @@ export function SegmentedControl<T extends string>({
 }) {
   return (
     <View
+      accessibilityRole="radiogroup"
       style={[
         styles.segment,
         fill && styles.segmentFill,
@@ -99,6 +101,8 @@ export function SegmentedControl<T extends string>({
         return (
           <Pressable
             key={option.value}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: selected }}
             onPress={() => onChange(option.value)}
             style={[
               styles.segmentButton,
@@ -144,6 +148,7 @@ export function ChatHeader({
   subtitle,
   subtitleStatus,
   onBack,
+  onStartVoiceCall,
   onOpenSettings,
 }: {
   palette: Palette;
@@ -152,6 +157,7 @@ export function ChatHeader({
   subtitle?: string;
   subtitleStatus?: 'online' | 'offline';
   onBack: () => void;
+  onStartVoiceCall?: () => void;
   onOpenSettings?: () => void;
 }) {
   const xun = isXunPalette(palette);
@@ -216,6 +222,25 @@ export function ChatHeader({
           </View>
         ) : null}
       </View>
+      {onStartVoiceCall ? (
+        <Pressable
+          testID="chat-start-voice-call"
+          accessibilityRole="button"
+          accessibilityLabel={textFor(
+            language,
+            '发起语音通话',
+            'Start voice call',
+          )}
+          onPress={onStartVoiceCall}
+          style={[
+            styles.chatHeaderActionButton,
+            styles.chatHeaderCallButton,
+            { backgroundColor: palette.surface },
+          ]}
+        >
+          <Phone color={palette.mint} size={21} strokeWidth={2.1} />
+        </Pressable>
+      ) : null}
       {onOpenSettings ? (
         <Pressable
           accessibilityRole="button"
@@ -428,6 +453,7 @@ export function MessageInlineAction({
   danger,
   onPress,
   accessibilityLabel,
+  layout = 'tile',
 }: {
   icon?: IconComponent;
   title: string;
@@ -435,17 +461,42 @@ export function MessageInlineAction({
   danger?: boolean;
   onPress: () => void;
   accessibilityLabel?: string;
+  layout?: 'tile' | 'row';
 }) {
-  const color = danger ? '#dc2626' : palette.text;
+  const color = danger ? palette.rose : palette.text;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || title}
       onPress={onPress}
-      style={styles.messageInlineAction}
+      style={[
+        styles.messageInlineAction,
+        layout === 'row' && messageActionStyles.row,
+      ]}
     >
       {Icon ? <Icon color={color} size={17} strokeWidth={2.4} /> : null}
-      <Text style={[styles.messageInlineActionText, { color }]}>{title}</Text>
+      <Text
+        style={[
+          styles.messageInlineActionText,
+          { color },
+          layout === 'row' && messageActionStyles.rowTitle,
+        ]}
+      >
+        {title}
+      </Text>
     </Pressable>
   );
 }
+
+const messageActionStyles = StyleSheet.create({
+  row: {
+    flex: 0,
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'flex-start',
+    minHeight: 44,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  rowTitle: { flex: 1, fontSize: 15, fontWeight: '600' },
+});

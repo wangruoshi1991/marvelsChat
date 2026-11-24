@@ -3,6 +3,7 @@ import {
   fingerprintAsset,
   mapJob,
   mapProfile,
+  mapRun,
   toNonNegativeInteger,
   vectorLiteral,
 } from "./media-retrieval-repository-shared.js";
@@ -92,14 +93,17 @@ export function createMediaRetrievalIndexLifecycleRepository({
         AND user_id = ?
         AND status = 'uploaded'
         AND deleted_at IS NULL
-      LIMIT 1`,
+      LIMIT 1
+      FOR SHARE`,
       [mediaAssetId, userId],
     );
     return rows[0] || null;
   };
 
-  const enqueueAssetIndexJob = async ({ userId, mediaAssetId, source = "user", agentRunId = null, processingVersion = "v1" }) =>
-    withTransaction(async (connection) => {
+  const enqueueIndexJob = async (
+    { userId, mediaAssetId, source = "user", agentRunId = null, processingVersion = "v1" },
+    createUploadRun,
+  ) => withTransaction(async (connection) => {
       const profileRows = await connection.query(
         `SELECT index_state, consent_version, index_epoch
         FROM media_retrieval_profiles
@@ -133,22 +137,51 @@ export function createMediaRetrievalIndexLifecycleRepository({
               SELECT 1 FROM media_retrieval_segments s
               WHERE s.job_id = media_retrieval_jobs.id AND s.state = 'ready'
             ))
+            OR (? AND source = 'upload')
             OR EXISTS (SELECT 1 FROM media_retrieval_cost_ledger b
               WHERE b.job_id = media_retrieval_jobs.id AND b.disposition IN ('reserved', 'unknown')))
+        ORDER BY (status IN ('queued', 'running', 'succeeded')) DESC, created_at DESC, id DESC
         LIMIT 1`,
-        [userId, mediaAssetId, contentFingerprint, processingVersion, profile.index_epoch, source],
+        [userId, mediaAssetId, contentFingerprint, processingVersion, profile.index_epoch, source, createUploadRun],
       );
-      if (activeRows[0]) return { job: mapJob(activeRows[0]), reused: true };
+      if (activeRows[0]) {
+        const job = mapJob(activeRows[0]);
+        const runRows = createUploadRun && job.agentRunId
+          ? await connection.query(
+            "SELECT * FROM agent_runs WHERE id = ? AND user_id = ? AND agent_id = 'media-retrieval'",
+            [job.agentRunId, userId],
+          )
+          : [];
+        return { job, reused: true, ...(createUploadRun ? { run: runRows[0] ? mapRun(runRows[0]) : null } : {}) };
+      }
+      const uploadRun = createUploadRun ? await insertMediaRetrievalRun(connection, {
+        userId,
+        runType: "media-index",
+        inputSummary: { operation: "upload", source: "upload" },
+      }) : null;
       const id = idFactory();
       const rows = await connection.query(
         `INSERT INTO media_retrieval_jobs
           (id, user_id, agent_run_id, media_asset_id, job_type, status, source, content_fingerprint, processing_version, profile_epoch)
         VALUES (?, ?, ?, ?, 'index', 'queued', ?, ?, ?, ?)
         RETURNING *`,
-        [id, userId, agentRunId, mediaAssetId, source, contentFingerprint, processingVersion, toNonNegativeInteger(profile.index_epoch, 1)],
+        [id, userId, uploadRun?.id ?? agentRunId, mediaAssetId, source, contentFingerprint, processingVersion, toNonNegativeInteger(profile.index_epoch, 1)],
       );
-      return { job: mapJob(requireReturnedRow(rows, "enqueue-index-job")), reused: false };
+      const job = mapJob(requireReturnedRow(rows, "enqueue-index-job"));
+      if (!uploadRun) return { job, reused: false };
+      const run = await updateRunLifecycle(connection, { userId, agentRunId: uploadRun.id, lifecycleStatus: "queued" });
+      await appendEventWithConnection(connection, {
+        userId,
+        agentRunId: uploadRun.id,
+        lifecycleStatus: "queued",
+        eventType: "queued",
+        deliveryKey: `queued:${uploadRun.id}`,
+        payload: { totalAssets: 1, jobType: "index" },
+      });
+      return { run, job, reused: false };
     });
+  const enqueueAssetIndexJob = (input) => enqueueIndexJob(input, false);
+  const enqueueUploadedAssetIndexJob = (input) => enqueueIndexJob({ ...input, source: "upload" }, true);
 
   const getIndexableMediaAsset = async ({ userId, mediaAssetId }) => {
     const rows = await query(
@@ -1218,6 +1251,7 @@ export function createMediaRetrievalIndexLifecycleRepository({
     getMediaRetrievalProfile,
     enableMediaRetrievalProfile,
     enqueueAssetIndexJob,
+    enqueueUploadedAssetIndexJob,
     getIndexableMediaAsset,
     transitionMediaRetrievalRun,
     getMediaRetrievalDispatchState,

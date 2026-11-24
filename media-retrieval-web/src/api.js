@@ -88,6 +88,10 @@ export const mediaRetrievalApi = {
     method: "POST",
     body: { identifier, password },
   }),
+  logout: async (token) => {
+    const data = await request({ path: "/api/auth/logout", method: "POST", token });
+    if (data?.ok !== true) throw new MediaRetrievalApiError(502);
+  },
   status: (token) => request({ path: "/api/station/media-retrieval/status", token }),
   enable: (token, idempotencyKey) => request({
     path: "/api/station/media-retrieval/enable",
@@ -139,6 +143,7 @@ export const mediaRetrievalApi = {
     } catch {
       return null;
     }
+    if (response.status === 401) throw new MediaRetrievalApiError(401);
     if (!response.ok) return null;
     return URL.createObjectURL(await response.blob());
   },

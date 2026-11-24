@@ -79,16 +79,21 @@ export const stationAgentApi = {
     token: string,
     payload: {
       originalFilename: string;
+      idempotencyKey?: string;
       mimeType?: string;
       byteSize?: number | null;
       content?: string;
       metadata?: Record<string, unknown>;
     },
   ) {
+    const { idempotencyKey, ...body } = payload;
     return request<StationFileAssetDTO>('/api/station/file-assets', {
       method: 'POST',
       token,
-      body: payload,
+      headers: idempotencyKey
+        ? { 'Idempotency-Key': idempotencyKey }
+        : undefined,
+      body,
     });
   },
 

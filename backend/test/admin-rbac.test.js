@@ -3,7 +3,7 @@ import test from "node:test";
 
 process.env.DEFAULT_ADMIN_ENABLED = "false";
 
-const { createAdminUserDetailReader } = await import("../src/admin-repository.js");
+const { createAdminUserDetailReader, updateUserAdminPermissions } = await import("../src/admin-repository.js");
 const { assertAdminAccountMutationAllowed, hasAdminPermission } = await import("../src/auth.js");
 const { registerAdminRoutes } = await import("../src/routes/admin-routes.js");
 
@@ -80,6 +80,23 @@ test("user detail omits Agent and audit data without their independent grants", 
   assert.deepEqual(detail.recentRuns, []);
   assert.equal(agentReads, 0);
   assert.equal(auditReads, 0);
+});
+
+test("admin permission audit failure aborts the same transaction", async () => {
+  let committed = false;
+  await assert.rejects(
+    () => updateUserAdminPermissions("user-1", ["users:read"], {
+      transaction: async work => {
+        const connection = { query: async () => [] };
+        await work(connection);
+        committed = true;
+      },
+      recordAudit: async () => { throw new Error("audit failure"); },
+      audit: { userId: "admin" },
+    }),
+    /audit failure/,
+  );
+  assert.equal(committed, false);
 });
 
 test("user detail requires both RBAC projection decisions explicitly", async () => {

@@ -7,7 +7,8 @@ import {
   workspaceContextSelector,
 } from '../../models/workspaceContext';
 import { Dispatch, SetStateAction, useCallback, useRef } from 'react';
-import { ButlerClientContextPayload } from '../../models/api';
+import { useCurrentScope } from '../../shared/useCurrentScope';
+import { ButlerClientContextPayload, MessageDTO } from '../../models/api';
 import { apiClient } from '../../services/apiClient';
 import { MiaoxunApiError } from '../../services/api/http';
 import {
@@ -26,6 +27,7 @@ import {
   mergeMessages,
   mergeThreads,
   mergeThreadMessageActivity,
+  mergeThreadState,
   sortThreadsByActivity,
 } from './sessionMappers';
 import { ChatMessage, ChatThread } from './sessionTypes';
@@ -48,7 +50,25 @@ export function useMessageActions({
   setErrorMessage,
 }: UseMessageActionsOptions) {
   const refreshes = useRef(new Map<string, Promise<void>>());
+  const isCurrentSession = useCurrentScope(token);
   const inFlightSends = useRef(new Set<string>());
+  const threadReads = useRef(new Map<string, Set<number>>());
+  const threadMuteWrites = useRef(new Map<string, Promise<void>>());
+  const applyForwardReceipt = useCallback(
+    (threadId: string, messages: MessageDTO[]) => {
+      if (!isCurrentSession()) return;
+      setThreads(current =>
+        sortThreadsByActivity(
+          current.map(thread =>
+            thread.id === threadId
+              ? mergeThreadMessageActivity(thread, messages.map(mapMessage))
+              : thread,
+          ),
+        ),
+      );
+    },
+    [isCurrentSession, setThreads],
+  );
   const sendMessage = useCallback(
     async (
       threadId: string,
@@ -344,7 +364,6 @@ export function useMessageActions({
                       },
                       incoming,
                     ),
-                    unreadCount: 0,
                   }
                 : item,
             ),
@@ -488,93 +507,180 @@ export function useMessageActions({
   );
 
   const markThreadRead = useCallback(
-    async (threadId: string) => {
-      setThreads(current =>
-        current.map(thread =>
-          thread.id === threadId ? { ...thread, unreadCount: 0 } : thread,
-        ),
-      );
-
-      if (!token) {
-        return;
-      }
-
+    async (
+      threadId: string,
+      readThrough: number,
+      isCurrentScreen: () => boolean,
+    ) => {
+      if (!token || !isCurrentSession()) return;
+      const key = JSON.stringify([token, threadId]);
+      const positions = threadReads.current.get(key) || new Set<number>();
+      if (positions.has(readThrough)) return;
+      positions.add(readThrough);
+      threadReads.current.set(key, positions);
+      const applyReadState = ({
+        unreadSequence,
+        readSequence,
+      }: {
+        unreadSequence: number;
+        readSequence: number;
+      }) => {
+        if (
+          !Number.isSafeInteger(unreadSequence) ||
+          !Number.isSafeInteger(readSequence) ||
+          readSequence < 0 ||
+          readSequence > unreadSequence
+        )
+          throw new Error('服务器未返回有效的聊天已读位置。');
+        if (isCurrentSession()) {
+          setThreads(current =>
+            current.map(thread =>
+              thread.id === threadId
+                ? {
+                    ...thread,
+                    ...mergeThreadState(thread, {
+                      unreadSequence,
+                      readSequence,
+                    }),
+                  }
+                : thread,
+            ),
+          );
+        }
+      };
       try {
-        await apiClient.markThreadRead(threadId, token);
-      } catch (error) {
-        setErrorMessage(
-          error instanceof Error ? error.message : '已读状态同步失败。',
+        applyReadState(
+          await apiClient.markThreadRead(threadId, token, readThrough),
         );
+      } catch (error) {
+        if (!isCurrentSession()) return;
+        try {
+          applyReadState(await apiClient.threadState(threadId, token));
+        } catch {
+          // Keep the known position if the authoritative read also fails.
+        }
+        if (isCurrentSession() && isCurrentScreen())
+          setErrorMessage(appErrorMessage(error, '已读状态同步失败。'));
+      } finally {
+        positions.delete(readThrough);
+        if (!positions.size) threadReads.current.delete(key);
       }
     },
-    [setErrorMessage, setThreads, token],
+    [isCurrentSession, setErrorMessage, setThreads, token],
   );
 
   const setThreadMuted = useCallback(
     async (threadId: string, muted: boolean) => {
-      const previousMuted =
-        threads.find(thread => thread.id === threadId)?.muted || false;
+      if (!token || !isCurrentSession()) throw new Error('请先登录。');
+      const key = JSON.stringify([token, threadId]);
+      const previous = threadMuteWrites.current.get(key);
       setThreads(current =>
         current.map(thread =>
-          thread.id === threadId ? { ...thread, muted } : thread,
+          thread.id === threadId ? { ...thread, pendingMuted: muted } : thread,
         ),
       );
-
-      if (!token) {
+      const applyPreferences = (preferences?: {
+        muted: boolean;
+        preferencesRevision: number;
+      }) => {
+        if (!isCurrentSession()) return;
+        const isLatest = threadMuteWrites.current.get(key) === operation;
         setThreads(current =>
           current.map(thread =>
             thread.id === threadId
-              ? { ...thread, muted: previousMuted }
+              ? {
+                  ...thread,
+                  ...(preferences ? mergeThreadState(thread, preferences) : {}),
+                  pendingMuted: isLatest ? undefined : thread.pendingMuted,
+                }
               : thread,
           ),
         );
-        throw new Error('请先登录。');
-      }
-
+      };
+      const operation = Promise.resolve().then(async () => {
+        if (previous) await previous.catch(() => undefined);
+        if (!isCurrentSession()) return;
+        const write = async () => {
+          const { preferencesRevision } = await apiClient.threadState(
+            threadId,
+            token,
+          );
+          if (
+            !isCurrentSession() ||
+            threadMuteWrites.current.get(key) !== operation
+          )
+            return;
+          if (
+            !Number.isSafeInteger(preferencesRevision) ||
+            preferencesRevision < 0
+          )
+            throw new Error('服务器未返回有效的免打扰版本。');
+          const preferences = await apiClient.updateThreadPreferences(
+            threadId,
+            { muted, baseRevision: preferencesRevision },
+            token,
+          );
+          applyPreferences(preferences);
+        };
+        try {
+          try {
+            await write();
+          } catch (error) {
+            if (
+              !(error instanceof MiaoxunApiError) ||
+              error.code !== 'THREAD_PREFERENCES_CHANGED'
+            )
+              throw error;
+            await write();
+          }
+        } catch (error) {
+          if (!isCurrentSession()) return;
+          try {
+            const { muted: serverMuted, preferencesRevision } =
+              await apiClient.threadState(threadId, token);
+            applyPreferences({ muted: serverMuted, preferencesRevision });
+          } catch {
+            applyPreferences();
+          }
+          if (
+            isCurrentSession() &&
+            threadMuteWrites.current.get(key) === operation
+          )
+            throw new Error(appErrorMessage(error, '免打扰设置同步失败。'));
+        }
+      });
+      threadMuteWrites.current.set(key, operation);
       try {
-        const preferences = await apiClient.updateThreadPreferences(
-          threadId,
-          { muted },
-          token,
-        );
-        setThreads(current =>
-          current.map(thread =>
-            thread.id === threadId
-              ? { ...thread, muted: preferences.muted }
-              : thread,
-          ),
-        );
-      } catch (error) {
-        setThreads(current =>
-          current.map(thread =>
-            thread.id === threadId
-              ? { ...thread, muted: previousMuted }
-              : thread,
-          ),
-        );
-        throw new Error(appErrorMessage(error, 'Notification setting failed.'));
+        await operation;
+      } finally {
+        if (threadMuteWrites.current.get(key) === operation)
+          threadMuteWrites.current.delete(key);
       }
     },
-    [setThreads, threads, token],
+    [isCurrentSession, setThreads, token],
   );
 
   const openFriendThread = useCallback(
     async (friendUserId: string) => {
-      if (!token) {
+      if (!token || !isCurrentSession()) {
         throw new Error('请先登录。');
       }
       const bundle = await apiClient.friendThread(friendUserId, token);
+      if (!isCurrentSession()) throw new Error('登录账号已切换。');
       const thread: ChatThread = {
         ...bundle.thread,
         messages: bundle.messages.map(mapMessage),
       };
-      setThreads(current => mergeThreads(current, [thread]));
+      setThreads(current =>
+        isCurrentSession() ? mergeThreads(current, [thread]) : current,
+      );
       return thread;
     },
-    [setThreads, token],
+    [isCurrentSession, setThreads, token],
   );
 
   return {
+    applyForwardReceipt,
     sendMessage,
     refreshThreadMessages,
     deleteMessage,

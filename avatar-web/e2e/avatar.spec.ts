@@ -110,6 +110,8 @@ interface MockOptions {
   models?: typeof avatarModel[];
   dailyRemaining?: number;
   pollErrorOnce?: boolean;
+  referenceReadErrorOnce?: boolean;
+  cancelErrorOnce?: boolean;
 }
 
 const json = (route: Route, data: unknown, status = 200) => route.fulfill({
@@ -125,6 +127,8 @@ async function installApiMock(page: Page, options: MockOptions = {}) {
   let models = [...(options.models || [])];
   let photoSequence = 0;
   let failPoll = Boolean(options.pollErrorOnce);
+  let failReferenceRead = Boolean(options.referenceReadErrorOnce);
+  let failCancel = Boolean(options.cancelErrorOnce);
   const jobBodies: Array<Record<string, unknown>> = [];
   const confirmationBodies: Array<Record<string, unknown>> = [];
   const calls = {
@@ -132,6 +136,8 @@ async function installApiMock(page: Page, options: MockOptions = {}) {
     rejectReferences: 0,
     deleteModel: 0,
     modelFile: 0,
+    referenceReads: 0,
+    cancel: 0,
   };
   const quota = {
     dailyUsed: options.dailyRemaining === 0 ? 3 : 0,
@@ -278,7 +284,24 @@ async function installApiMock(page: Page, options: MockOptions = {}) {
       return;
     }
     if (/\/jobs\/[^/]+\/references$/.test(path) && method === "GET") {
+      calls.referenceReads += 1;
+      if (failReferenceRead) {
+        failReferenceRead = false;
+        await json(route, { error: { requestId: "safe-reference-read" } }, 503);
+        return;
+      }
       await json(route, { data: { referenceSet, images: referenceImages } });
+      return;
+    }
+    if (/\/jobs\/[^/]+\/cancel$/.test(path) && method === "POST") {
+      calls.cancel += 1;
+      if (failCancel) {
+        failCancel = false;
+        await json(route, { error: { requestId: "safe-cancel" } }, 503);
+        return;
+      }
+      activeJob = null;
+      await json(route, { data: makeJob("cancelled") });
       return;
     }
     if (/\/jobs\/[^/]+$/.test(path) && method === "GET") {
@@ -330,6 +353,44 @@ async function installApiMock(page: Page, options: MockOptions = {}) {
 }
 
 const photoFile = (name: string) => ({ name, mimeType: "image/png", buffer: photoPng });
+
+test("hard reload reads the previous submission and retries only by explicit action", async ({page}) => {
+  const mock = await installApiMock(page);
+  const submissions: Array<{ key:string; body:unknown }> = [];
+  const reads: string[] = [];
+  let loseResponse = true;
+  await page.route("**/api/avatar-3d/jobs", async route => {
+    submissions.push({key:route.request().headers()["idempotency-key"], body:route.request().postDataJSON()});
+    if (loseResponse) return route.abort();
+    return route.fallback();
+  });
+  await page.route("**/api/avatar-3d/jobs/submission", async route => {
+    reads.push(route.request().headers()["idempotency-key"]);
+    await json(route,{data:{job:null}});
+  });
+  await page.goto("/avatar/");
+  await page.getByLabel("正面脸照").setInputFiles(photoFile("private-photo.png"));
+  await page.getByRole("checkbox", { name: /照片使用授权/ }).check();
+  await page.getByRole("checkbox", { name: /同意 AI 根据描述补全/ }).check();
+  await page.getByRole("button", { name: "生成四视图" }).click();
+  await page.getByRole("button", { name: "确认并生成四视图" }).click();
+  await expect(page.getByRole("button",{name:"重试原提交"})).toBeVisible();
+  const stored = await page.evaluate(() => JSON.stringify(sessionStorage));
+  expect(stored).not.toMatch(/private-photo|uploads\.invalid|csrf-e2e|data:image/);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Page.reload", {ignoreCache:true});
+  const retry = page.getByRole("button",{name:"重试原提交"});
+  await expect(page.getByText("上次提交尚待确认")).toBeVisible();
+  await expect(retry).toBeEnabled();
+  expect(reads).toEqual([submissions[0].key,submissions[0].key]);
+  expect(submissions).toHaveLength(1);
+  loseResponse = false;
+  await retry.click();
+  await expect.poll(()=>mock.jobBodies.length).toBe(1);
+  expect(submissions).toHaveLength(2);
+  expect(submissions[1]).toEqual(submissions[0]);
+  await expect.poll(()=>page.evaluate(()=>sessionStorage.length)).toBe(0);
+});
 
 test("logs in with an existing Miaoxun account without browser storage", async ({ page }, testInfo) => {
   await installApiMock(page, { authenticated: false });
@@ -415,6 +476,40 @@ test("rejects a four-view set without starting 3D", async ({ page }) => {
   await expect.poll(() => mock.calls.rejectReferences).toBe(1);
   expect(mock.calls.confirmReferences).toBe(0);
   await expect(page.getByText("暂无 3D 模型")).toBeVisible();
+});
+
+test("recovers from a four-view read failure without submitting generation", async ({ page }) => {
+  const mock = await installApiMock(page, {
+    activeJob: makeJob("awaiting_reference_confirmation"),
+    referenceReadErrorOnce: true,
+  });
+  await page.goto("/avatar/");
+  await expect(page.getByRole("alert")).toContainText("暂时无法读取四视图");
+  await expect(page.getByText(/safe-reference-read/)).toBeVisible();
+  await page.getByRole("button", { name: "重试读取四视图" }).click();
+  await expect(page.getByRole("button", { name: /查看/ })).toHaveCount(4);
+  expect(mock.calls.referenceReads).toBe(2);
+  expect(mock.calls.confirmReferences).toBe(0);
+  expect(mock.jobBodies).toHaveLength(0);
+  expect(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("announces cancel failure with static progress in reduced motion and allows retry", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const mock = await installApiMock(page, {
+    activeJob: makeJob("queued_3d"),
+    cancelErrorOnce: true,
+  });
+  await page.goto("/avatar/");
+  const cancel = page.getByRole("button", { name: "取消任务" });
+  await expect(page.locator(".task-loader")).toHaveCSS("animation-name", "none");
+  await cancel.click();
+  await expect(page.getByRole("alert")).toContainText("取消未完成");
+  await expect(page.getByText(/safe-cancel/)).toBeVisible();
+  await cancel.click();
+  await expect(page.getByText("暂无 3D 模型")).toBeVisible();
+  expect(mock.calls.cancel).toBe(2);
+  expect(mock.jobBodies).toHaveLength(0);
 });
 
 test("shows the generated preview before requesting the model file", async ({ page }, testInfo) => {

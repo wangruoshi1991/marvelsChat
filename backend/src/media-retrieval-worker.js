@@ -10,6 +10,7 @@ import {
 import { createMediaRetrievalProvider } from "./media-retrieval-provider.js";
 import { createMediaRetrievalRepository } from "./media-retrieval-repository.js";
 import { processMediaRetrievalJob } from "./media-retrieval-service.js";
+import { createWorkerHealthReporter } from "./worker-health.js";
 import {
   createOssGetSignedUrl,
   deleteOssObject,
@@ -19,11 +20,20 @@ import {
 
 const sleep = (milliseconds, signal) =>
   new Promise((resolve) => {
-    const timer = setTimeout(resolve, milliseconds);
-    signal?.addEventListener?.("abort", () => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener?.("abort", finish);
       resolve();
-    }, { once: true });
+    };
+    const timer = setTimeout(finish, milliseconds);
+    if (signal?.aborted) {
+      finish();
+      return;
+    }
+    signal?.addEventListener?.("abort", finish, { once: true });
   });
 
 const WORKER_FAILURE_MESSAGES = Object.freeze({
@@ -87,6 +97,7 @@ export async function runMediaRetrievalWorker({
   workerId = `media-retrieval-${crypto.randomUUID()}`,
   pollMs = config.mediaRetrieval.workerPollMs,
   now = () => Date.now(),
+  reportHealth = null,
 } = {}) {
   if (!repository || !provider || !media) {
     throw new TypeError("Media retrieval worker requires repository, provider, and media dependencies.");
@@ -112,12 +123,14 @@ export async function runMediaRetrievalWorker({
   await repository.heartbeatMediaRetrievalWorker({ workerId, state: "starting" });
   let heartbeatInFlight = null;
   let heartbeatFailure = null;
+  let processing = false;
   // Video extraction and model calls can exceed the readiness freshness window.
   // Liveness must continue independently of the currently leased job.
   const heartbeatTimer = setInterval(() => {
     if (heartbeatInFlight || heartbeatFailure || signal?.aborted) return;
     heartbeatInFlight = Promise.resolve()
       .then(() => repository.heartbeatMediaRetrievalWorker({ workerId, state: "ready" }))
+      .then(() => { if (processing && !signal?.aborted) reportHealth?.(true); })
       .catch(error => { heartbeatFailure = error; })
       .finally(() => { heartbeatInFlight = null; });
   }, 10_000);
@@ -133,22 +146,33 @@ export async function runMediaRetrievalWorker({
       await repository.reclaimExpiredMediaRetrievalJobs();
       const cleanupTask = await repository.claimMediaRetrievalTemporaryCleanup({ workerId });
       if (cleanupTask) {
+        reportHealth?.(true);
+        processing = true;
         try {
           await media.deleteEphemeralProviderObject({ objectKey: cleanupTask.objectKey || cleanupTask.object_key });
           await repository.completeMediaRetrievalTemporaryCleanup({ cleanupTaskId: cleanupTask.id, workerId });
         } catch {
           await repository.retryMediaRetrievalTemporaryCleanup({ cleanupTaskId: cleanupTask.id, workerId });
+        } finally {
+          processing = false;
         }
         continue;
       }
       const outbox = await repository.claimMediaRetrievalLifecycleOutbox({ workerId });
       if (outbox) {
         await repository.createAssetPurgeRunAndJob({ outboxId: outbox.id, workerId });
+        reportHealth?.(true);
         continue;
       }
       const job = await repository.claimNextMediaRetrievalJob({ workerId });
+      reportHealth?.(true);
       if (job) {
-        await processMediaRetrievalJob({ job, repository, provider, media, workerId });
+        processing = true;
+        try {
+          await processMediaRetrievalJob({ job, repository, provider, media, workerId });
+        } finally {
+          processing = false;
+        }
         continue;
       }
       await sleep(pollMs, signal);
@@ -157,6 +181,7 @@ export async function runMediaRetrievalWorker({
   } finally {
     clearInterval(heartbeatTimer);
     if (heartbeatInFlight) await heartbeatInFlight;
+    reportHealth?.(false);
     if (!heartbeatFailure) await repository.heartbeatMediaRetrievalWorker({ workerId, state: "stopped" });
   }
   if (heartbeatFailure) throw heartbeatFailure;
@@ -168,7 +193,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
   const dependencies = createMediaRetrievalWorkerDependencies();
-  runMediaRetrievalWorker({ ...dependencies, signal: controller.signal }).catch((error) => {
+  runMediaRetrievalWorker({
+    ...dependencies,
+    signal: controller.signal,
+    reportHealth: createWorkerHealthReporter(),
+  }).catch((error) => {
     console.error(JSON.stringify(createMediaRetrievalWorkerFailureLog(error)));
     process.exitCode = 1;
   });

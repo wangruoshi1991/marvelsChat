@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import test, { after, before } from "node:test";
 import { query, withTransaction, closeDatabase } from "../src/db.js";
 import { createComicRenderRepository } from "../src/comic-render-repository.js";
+import { mutateAdminTask } from "../src/admin-operations-repository.js";
 import { createAITaskRepository } from "../src/ai-task-repository.js";
 import { createComicRenderExecutor } from "../src/comic-render-executor.js";
 import { createComicRenderStorage } from "../src/comic-render-storage.js";
@@ -68,6 +69,20 @@ integration("comic reads preserve owner results after consent revocation; cancel
   await assert.rejects(repository.cancelQueuedComicRenderTask({userId:f.userId,taskId:task.id,revision:cancelled.revision}),e=>e.status===409);
   await query("UPDATE user_agents SET enabled=false WHERE user_id=? AND agent_id='comic-diary'",[f.userId]);
   assert.equal((await repository.getComicRenderTask({userId:f.userId,taskId:task.id})).id,task.id);
+});
+integration("admin comic cancellation replays a single revision and emits a readable comic event", async () => {
+  const f = await fixture();
+  const { task } = await repository.createComicRenderTask(f);
+  const input = { taskId: task.id, operation: "cancel", idempotencyKey: crypto.randomUUID(), actor: f.userId };
+  const [one, two] = await Promise.all([mutateAdminTask(input), mutateAdminTask(input)]);
+  assert.deepEqual(one, two);
+  const results = await repository.listComicRenderEvents({ userId: f.userId, taskId: task.id, afterSequence: 0 });
+  assert.deepEqual(results.events.at(-1).progress, { total: 2, succeeded: 0, failed: 0, unknown: 0 });
+  assert.ok(results.task.frames.every(frame => frame.status === "skipped"));
+  assert.equal(results.events.length, 2);
+  const [{ count }] = await query("SELECT COUNT(*)::int AS count FROM usage_events WHERE event_type = 'admin.task.cancel' AND target_id = ?", [task.id]);
+  assert.equal(count, 1);
+  await assert.rejects(mutateAdminTask({ ...input, operation: "retry" }), { status: 409 });
 });
 integration("worker revalidation stops changed sources and lost leases before another dispatch", async () => {
   const f = await fixture();

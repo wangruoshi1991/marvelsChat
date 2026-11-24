@@ -31,6 +31,22 @@ final class QRCodeScannerViewController: UIViewController, AVCaptureMetadataOutp
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     previewLayer?.frame = view.bounds
+    guard let connection = previewLayer?.connection else { return }
+    let orientation = view.window?.windowScene?.interfaceOrientation ?? .portrait
+    let rotation: CGFloat
+    switch orientation {
+    case .landscapeLeft: rotation = 0
+    case .landscapeRight: rotation = 180
+    case .portraitUpsideDown: rotation = 270
+    default: rotation = 90
+    }
+    if #available(iOS 17.0, *) {
+      if connection.isVideoRotationAngleSupported(rotation) {
+        connection.videoRotationAngle = rotation
+      }
+    } else if connection.isVideoOrientationSupported {
+      connection.videoOrientation = AVCaptureVideoOrientation(rawValue: orientation.rawValue) ?? .portrait
+    }
   }
 
   override func viewWillAppear(_ animated: Bool) {
@@ -100,40 +116,50 @@ final class QRCodeScannerViewController: UIViewController, AVCaptureMetadataOutp
     let closeButton = UIButton(type: .system)
     closeButton.setTitle("关闭", for: .normal)
     closeButton.setTitleColor(.white, for: .normal)
-    closeButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
-    closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.45)
-    closeButton.layer.cornerRadius = 18
+    closeButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
+    closeButton.titleLabel?.adjustsFontForContentSizeCategory = true
+    closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.78)
+    closeButton.layer.cornerRadius = 22
     closeButton.translatesAutoresizingMaskIntoConstraints = false
     closeButton.addTarget(self, action: #selector(cancel), for: .touchUpInside)
     view.addSubview(closeButton)
 
-    let titleLabel = UILabel()
-    titleLabel.text = "扫描妙讯二维码"
-    titleLabel.textColor = .white
-    titleLabel.font = .systemFont(ofSize: 18, weight: .semibold)
-    titleLabel.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(titleLabel)
+    let hintLabel = UILabel()
+    hintLabel.text = "将镜头对准妙讯身份码"
+    hintLabel.textColor = .white
+    hintLabel.font = .preferredFont(forTextStyle: .body)
+    hintLabel.adjustsFontForContentSizeCategory = true
+    hintLabel.textAlignment = .center
+    hintLabel.numberOfLines = 0
+    hintLabel.translatesAutoresizingMaskIntoConstraints = false
 
-    let scanBox = UIView()
-    scanBox.layer.borderColor = UIColor.white.cgColor
-    scanBox.layer.borderWidth = 2
-    scanBox.layer.cornerRadius = 18
-    scanBox.backgroundColor = UIColor.clear
-    scanBox.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(scanBox)
+    let hintBackground = UIView()
+    hintBackground.backgroundColor = UIColor.black.withAlphaComponent(0.78)
+    hintBackground.layer.cornerRadius = 20
+    hintBackground.translatesAutoresizingMaskIntoConstraints = false
+    hintBackground.addSubview(hintLabel)
+    view.addSubview(hintBackground)
 
+    let safeArea = view.safeAreaLayoutGuide
     NSLayoutConstraint.activate([
-      closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 14),
-      closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
-      closeButton.widthAnchor.constraint(equalToConstant: 64),
-      closeButton.heightAnchor.constraint(equalToConstant: 36),
-      titleLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
-      titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-      scanBox.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-      scanBox.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-      scanBox.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.68),
-      scanBox.heightAnchor.constraint(equalTo: scanBox.widthAnchor),
+      closeButton.topAnchor.constraint(equalTo: safeArea.topAnchor, constant: 12),
+      closeButton.leadingAnchor.constraint(equalTo: safeArea.leadingAnchor, constant: 16),
+      closeButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 68),
+      closeButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+      hintBackground.centerXAnchor.constraint(equalTo: safeArea.centerXAnchor),
+      hintBackground.leadingAnchor.constraint(greaterThanOrEqualTo: safeArea.leadingAnchor, constant: 16),
+      hintBackground.trailingAnchor.constraint(lessThanOrEqualTo: safeArea.trailingAnchor, constant: -16),
+      hintBackground.bottomAnchor.constraint(equalTo: safeArea.bottomAnchor, constant: -24),
+      hintLabel.topAnchor.constraint(equalTo: hintBackground.topAnchor, constant: 10),
+      hintLabel.bottomAnchor.constraint(equalTo: hintBackground.bottomAnchor, constant: -10),
+      hintLabel.leadingAnchor.constraint(equalTo: hintBackground.leadingAnchor, constant: 18),
+      hintLabel.trailingAnchor.constraint(equalTo: hintBackground.trailingAnchor, constant: -18),
     ])
+  }
+
+  override func accessibilityPerformEscape() -> Bool {
+    cancel()
+    return true
   }
 
   @objc private func cancel() {
@@ -175,7 +201,7 @@ final class QRCodeScannerViewController: UIViewController, AVCaptureMetadataOutp
   }
 
   private func dismissAndComplete(_ result: Result<String, Error>) {
-    dismiss(animated: true) { [completion] in
+    dismiss(animated: !UIAccessibility.isReduceMotionEnabled) { [completion] in
       completion(result)
     }
   }

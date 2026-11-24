@@ -7,6 +7,7 @@ import { createWorkspaceCapabilityExecutor, listExecutableWorkspaceCapabilities,
   parseWorkspaceTextArtifact } from "../src/agent-workspace-capabilities.js";
 import { hashSiteDocumentValue } from "../src/site-document-repository.js";
 import { MediaRetrievalServiceError } from "../src/media-retrieval-user-service.js";
+import { workspaceFailure } from "../src/agent-workspace-runner.js";
 
 const ids = { user: "00000000-0000-4000-8000-000000000001", album: "00000000-0000-4000-8000-000000000002",
   photo: "00000000-0000-4000-8000-000000000003", diary: "00000000-0000-4000-8000-000000000004",
@@ -21,7 +22,7 @@ const artifact = () => ({ kind: "media_selection", title: "已找到的素材", 
 const document = ({ assets = [], diaries = [] } = {}) => ({ language: "zh", theme: "clean", title: "结构页面", summary: "页面草稿",
   sections: [{ type: "gallery", title: "精选", subtitle: "", body: "", assetIds: assets, diaryEntryIds: diaries, actions: [] }] });
 
-function fixture({ mutate = null, mediaFound = true, retrievalError = null, siteDocument = document({ assets: [ids.photo] }), queryOverride = null } = {}) {
+function fixture({ mutate = null, mediaFound = true, retrievalError = null, siteDocument = document({ assets: [ids.photo] }), queryOverride = null, retrievalStatus = {} } = {}) {
   const statements = [];
   const providerCalls = [];
   const contextCalls = [];
@@ -53,7 +54,7 @@ function fixture({ mutate = null, mediaFound = true, retrievalError = null, site
       return { reply: "provider response never grants IDs", provider: "isolated-test", tokenUsage: { total: 4 }, latencyMs: 1 };
     },
     retrievalService: {
-      getMediaRetrievalStatus: async () => ({ enabled: true, availability: { canStartRun: true }, backfill: { indexedAssets: 1, totalAssets: 1, skippedAssets: 0 } }),
+      getMediaRetrievalStatus: async () => ({ enabled: true, availability: { canStartRun: true }, backfill: { indexedAssets: 1, totalAssets: 1, skippedAssets: 0 }, ...retrievalStatus }),
       searchMediaRetrieval: async args => {
         searches.push(args);
         if (retrievalError) throw retrievalError;
@@ -163,6 +164,29 @@ test("empty and uncertain retrieval explicitly stop instead of producing a subst
   await assert.rejects(empty.execute(await task("album-manager")), { details: { code: "WORKSPACE_MEDIA_NOT_FOUND" } });
   const unknown = fixture({ retrievalError: new MediaRetrievalServiceError("retrieval_unknown_charge_no_retry") });
   await assert.rejects(unknown.execute(await task("album-manager")), { details: { code: "AI_PROVIDER_RESULT_UNKNOWN" } });
+});
+
+test("album collaboration keeps actionable retrieval outcomes and only searches ready indexes", async () => {
+  const scenarios = [
+    [{ retrievalStatus: { enabled: false } }, "WORKSPACE_MEDIA_CONSENT_REQUIRED", /同意/, 0],
+    [{ retrievalStatus: { availability: { canStartRun: false } } }, "WORKSPACE_MEDIA_UNAVAILABLE", /稍后/, 0],
+    [{ retrievalStatus: { backfill: { indexedAssets: 0, totalAssets: 2, skippedAssets: 1 } } }, "WORKSPACE_MEDIA_INDEX_PENDING", /索引完成/, 0],
+    [{ retrievalStatus: { backfill: { indexedAssets: 0, totalAssets: 1, skippedAssets: 1 } } }, "WORKSPACE_MEDIA_INDEX_UNAVAILABLE", /索引/, 0],
+    [{ retrievalStatus: { backfill: { indexedAssets: 0, totalAssets: 0, skippedAssets: 0 } } }, "WORKSPACE_MEDIA_LIBRARY_EMPTY", /上传/, 0],
+    [{ mediaFound: false }, "WORKSPACE_MEDIA_NOT_FOUND", /目标/, 1],
+    [{ retrievalError: new MediaRetrievalServiceError("retrieval_request_in_progress") }, "WORKSPACE_MEDIA_REQUEST_IN_PROGRESS", /进行中/, 1],
+    [{ retrievalError: new MediaRetrievalServiceError("retrieval_unknown_charge_no_retry") }, "AI_PROVIDER_RESULT_UNKNOWN", /费用/, 1],
+  ];
+  for (const [options, code, message, calls] of scenarios) {
+    const sample = fixture(options);
+    await assert.rejects(sample.execute(await task("album-manager")), error => {
+      const failure = workspaceFailure(error);
+      assert.equal(failure.code, code);
+      assert.match(failure.message, message);
+      return true;
+    });
+    assert.equal(sample.searches.length, calls);
+  }
 });
 
 test("site composition receives exactly dependency media and selected diary, no global library", async () => {

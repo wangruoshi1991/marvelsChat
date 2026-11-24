@@ -102,7 +102,7 @@ async function getUserProfileSummary(connection, userId) {
   return rows[0] || null;
 }
 
-async function ensureDirectFriendThread(connection, ownerUserId, peerUserId) {
+export async function ensureDirectFriendThread(connection, ownerUserId, peerUserId) {
   const peer = await getUserProfileSummary(connection, peerUserId);
   if (!peer) {
     throw new HttpError(404, "Friend user not found");
@@ -549,13 +549,31 @@ export async function getMessageForUser({ userId, threadId, messageId }) {
   return rows[0] ? mapMessage(rows[0]) : null;
 }
 
-async function lockDirectConversation(connection, userId, peerUserId) {
+export function directConversationLockKey(userId, peerUserId) {
+  return `direct:${[userId, peerUserId].sort().join(":")}`;
+}
+
+export async function lockDirectConversation(connection, userId, peerUserId) {
   if (!peerUserId) return;
   // Both sides acquire the same conversation lock before any message row.
   // Reply insertion and recall cannot publish stale snapshots or lock each
   // other's local copies in opposite order.
-  const key = `direct:${[userId, peerUserId].sort().join(":")}`;
-  await connection.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text, 0))", [key]);
+  await connection.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text, 0))", [directConversationLockKey(userId, peerUserId)]);
+}
+
+export async function insertHumanMessageCopy(connection, {
+  userId, threadId, senderName, content, metadata, clientMessageId, countUnread,
+}) {
+  const increment = Number(countUnread);
+  const [delivery] = await connection.query(`UPDATE chat_threads SET updated_at = CURRENT_TIMESTAMP,
+    unread_count = unread_count + ?, unread_delivered = unread_delivered + ?
+    WHERE id = ? RETURNING unread_delivered`, [increment, increment, threadId]);
+  const [row] = await connection.query(`INSERT INTO chat_messages
+    (id, thread_id, user_id, sender_type, sender_name, content, metadata, client_message_id, unread_sequence)
+    VALUES (?, ?, ?, 'user', ?, ?, ?::jsonb, ?, ?) RETURNING *`,
+  [crypto.randomUUID(), threadId, userId, senderName, content, JSON.stringify(metadata),
+    clientMessageId, countUnread ? delivery.unread_delivered : null]);
+  return mapMessage(row);
 }
 
 async function addMessageToThread({
@@ -621,20 +639,21 @@ async function addMessageToThread({
       } };
     }
 
-    await connection.execute(
-      `INSERT INTO chat_messages
-        (id, thread_id, user_id, sender_type, sender_name, content, metadata, client_message_id, recalled_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [messageId, threadId, userId, senderType, senderName, deliveredContent, JSON.stringify(resolvedMetadata), clientMessageId, recalledAt],
-    );
-
-    await connection.execute(
+    const [delivery] = await connection.query(
       `UPDATE chat_threads
       SET
         updated_at = CURRENT_TIMESTAMP,
-        unread_count = CASE WHEN ? THEN unread_count + 1 ELSE unread_count END
-      WHERE id = ?`,
-      [shouldIncreaseUnread, threadId],
+        unread_count = unread_count + ?,
+        unread_delivered = unread_delivered + ?
+      WHERE id = ? RETURNING unread_delivered`,
+      [Number(shouldIncreaseUnread), Number(shouldIncreaseUnread), threadId],
+    );
+    await connection.execute(
+      `INSERT INTO chat_messages
+        (id, thread_id, user_id, sender_type, sender_name, content, metadata, client_message_id, recalled_at, unread_sequence)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [messageId, threadId, userId, senderType, senderName, deliveredContent, JSON.stringify(resolvedMetadata), clientMessageId, recalledAt,
+        shouldIncreaseUnread ? delivery.unread_delivered : null],
     );
   });
 
@@ -771,33 +790,46 @@ export async function recallMessageForUser({ userId, threadId, messageId }) {
   });
 }
 
-export async function markThreadReadForUser(userId, threadId) {
-  const rows = await query("SELECT id FROM chat_threads WHERE user_id = ? AND id = ? LIMIT 1", [
-    userId,
-    threadId,
-  ]);
-  if (!rows.length) {
-    throw new HttpError(404, "Thread not found");
-  }
-
-  await query(
-    `UPDATE chat_threads
-    SET unread_count = 0
-    WHERE user_id = ? AND id = ?`,
-    [userId, threadId],
-  );
+function mapThreadState(row) {
+  return {
+    unreadSequence: Number(row.unread_delivered),
+    readSequence: Number(row.unread_delivered) - Number(row.unread_count),
+    muted: Boolean(row.muted),
+    preferencesRevision: Number(row.preferences_revision),
+  };
 }
 
-export async function setThreadMutedForUser(userId, threadId, muted) {
+export async function getThreadStateForUser(userId, threadId) {
+  const [row] = await query(`SELECT unread_delivered, unread_count, muted, preferences_revision
+    FROM chat_threads WHERE user_id = ? AND id = ?`, [userId, threadId]);
+  if (!row) throw new HttpError(404, "Thread not found");
+  return mapThreadState(row);
+}
+
+export async function markThreadReadForUser(userId, threadId, readThrough) {
+  const [row] = await query(
+    `UPDATE chat_threads
+    SET unread_count = LEAST(unread_count, unread_delivered - COALESCE(?::bigint, unread_delivered))
+    WHERE user_id = ? AND id = ? AND (?::bigint IS NULL OR ?::bigint <= unread_delivered)
+    RETURNING unread_delivered, unread_count, muted, preferences_revision`,
+    [readThrough ?? null, userId, threadId, readThrough ?? null, readThrough ?? null],
+  );
+  if (row) return mapThreadState(row);
+  await getThreadStateForUser(userId, threadId);
+  throw new HttpError(409, "Thread read position is ahead of delivery");
+}
+
+export async function setThreadMutedForUser(userId, threadId, muted, baseRevision) {
   const rows = await query(
     `UPDATE chat_threads
-    SET muted = ?
-    WHERE user_id = ? AND id = ?
-    RETURNING muted`,
-    [muted, userId, threadId],
+    SET muted = ?, preferences_revision = preferences_revision + 1
+    WHERE user_id = ? AND id = ? AND (?::bigint IS NULL OR preferences_revision = ?::bigint)
+    RETURNING muted, preferences_revision`,
+    [muted, userId, threadId, baseRevision ?? null, baseRevision ?? null],
   );
   if (!rows.length) {
-    throw new HttpError(404, "Thread not found");
+    await getThreadStateForUser(userId, threadId);
+    throw new HttpError(409, "Thread preferences have changed", { code: "THREAD_PREFERENCES_CHANGED" });
   }
-  return { muted: Boolean(rows[0].muted) };
+  return { muted: Boolean(rows[0].muted), preferencesRevision: Number(rows[0].preferences_revision) };
 }

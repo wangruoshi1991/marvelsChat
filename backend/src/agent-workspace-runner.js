@@ -11,7 +11,13 @@ const safeMessages = {
   WORKSPACE_ORIGIN_CHANGED: "原专业会话或用户需求已删除、撤回或变化，后续执行已停止。",
   WORKSPACE_MEDIA_CHANGED: "协作交接的素材已变化或不可访问，后续步骤已停止。",
   WORKSPACE_MEDIA_INVALID: "素材交付结果无效，未执行后续步骤。",
-  WORKSPACE_MEDIA_NOT_FOUND: "未取得符合目标的可用素材，未自动改为无素材页面。",
+  WORKSPACE_MEDIA_CONSENT_REQUIRED: "请先在相册中同意并启用媒体检索，再重新发起协作。",
+  WORKSPACE_MEDIA_UNAVAILABLE: "媒体检索当前不可用，请稍后再试。",
+  WORKSPACE_MEDIA_INDEX_PENDING: "相册素材正在建立索引，请等待索引完成后再发起协作。",
+  WORKSPACE_MEDIA_INDEX_UNAVAILABLE: "相册素材的索引暂不可用，请在相册检索中查看索引状态。",
+  WORKSPACE_MEDIA_LIBRARY_EMPTY: "相册中暂无已上传素材，请先上传图片或视频。",
+  WORKSPACE_MEDIA_NOT_FOUND: "未找到符合目标的可用素材，请调整检索目标后重新发起。",
+  WORKSPACE_MEDIA_REQUEST_IN_PROGRESS: "素材检索仍在进行中，本次协作已停止等待，不会自动重复提交。",
   WORKSPACE_MEDIA_UNUSED: "页面方案没有使用交付素材，未作为已完成成果保存。",
   WORKSPACE_DIARY_UNUSED: "页面方案没有使用所选日记，未作为已完成成果保存。",
   WORKSPACE_DEPENDENCY_INVALID: "协作计划的成果依赖无效，未继续执行。",
@@ -68,7 +74,7 @@ export function createAgentWorkspaceRunner({
       const failure = workspaceFailure(error);
       try {
         await repository.failWorkspaceNode({ nodeId: node.id, claimToken: node.claimToken, error: failure,
-          interrupted: ["AI_PROVIDER_RESULT_UNKNOWN", "WORKSPACE_MODEL_RESULT_UNKNOWN"].includes(failure.code) });
+          interrupted: ["AI_PROVIDER_RESULT_UNKNOWN", "WORKSPACE_MODEL_RESULT_UNKNOWN", "WORKSPACE_MEDIA_REQUEST_IN_PROGRESS"].includes(failure.code) });
       } catch (commitError) {
         // A recovered or expired claim cannot overwrite newer aggregate state.
         report(commitError);

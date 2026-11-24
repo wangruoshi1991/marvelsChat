@@ -2,6 +2,14 @@ import { AuthResponse } from '../../models/api';
 import { request } from './http';
 
 export const authApi = {
+  accountSession(token: string) {
+    return request<{ user: AuthResponse['user'] }>('/api/me', {
+      token,
+      headers: { 'Cache-Control': 'no-cache' },
+      expireSessionOnUnauthorized: false,
+    });
+  },
+
   login(identifier: string, password: string) {
     return request<AuthResponse>('/api/auth/login', {
       method: 'POST',

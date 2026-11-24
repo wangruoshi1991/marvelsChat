@@ -1,5 +1,5 @@
 import { CircleAlert, LoaderCircle, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AvatarApiError } from "../api";
 import type {
   AvatarFeature,
@@ -64,7 +64,20 @@ interface TaskProgressProps {
   onJobChange: (job: AvatarJob) => void;
 }
 
-export function TaskProgress({
+type ReferenceRead =
+  | { state: "loading" }
+  | { state: "error"; requestId: string }
+  | { state: "ready"; data: AvatarReferences };
+
+function requestReference(cause: unknown) {
+  return cause instanceof AvatarApiError ? cause.requestId || "" : "";
+}
+
+export function TaskProgress(props: TaskProgressProps) {
+  return <TaskProgressForJob key={props.job.id} {...props} />;
+}
+
+function TaskProgressForJob({
   job,
   feature,
   getJob,
@@ -77,38 +90,64 @@ export function TaskProgress({
   onJobChange,
 }: TaskProgressProps) {
   const [currentJob, setCurrentJob] = useState(job);
-  const [references, setReferences] = useState<AvatarReferences | null>(null);
+  const [referenceRead, setReferenceRead] = useState<ReferenceRead>({ state: "loading" });
+  const [referenceRevision, setReferenceRevision] = useState(0);
   const [requestId, setRequestId] = useState("");
   const [pendingAction, setPendingAction] = useState(false);
+  const [actionError, setActionError] = useState<{ message: string; requestId: string } | null>(null);
+  const mounted = useRef(false);
+  const mutating = useRef(false);
+  const readGeneration = useRef(0);
 
   useEffect(() => setCurrentJob(job), [job]);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      readGeneration.current++;
+    };
+  }, []);
 
+  const applyJob = useCallback((next: AvatarJob) => {
+    setCurrentJob(next);
+    onJobChange(next);
+  }, [onJobChange]);
   const refresh = useCallback(async () => {
+    if (mutating.current) return;
+    const generation = ++readGeneration.current;
     setRequestId("");
     try {
       const next = await getJob(currentJob.id);
-      setCurrentJob(next);
-      onJobChange(next);
+      if (generation === readGeneration.current && next.id === currentJob.id) applyJob(next);
     } catch (cause) {
-      if (cause instanceof AvatarApiError && cause.requestId) setRequestId(cause.requestId);
+      if (generation === readGeneration.current) setRequestId(requestReference(cause));
     }
-  }, [currentJob.id, getJob, onJobChange]);
+  }, [applyJob, currentJob.id, getJob]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    setReferenceRead({ state: "loading" });
     if (currentJob.status !== "awaiting_reference_confirmation") {
-      setReferences(null);
       return;
     }
-    let cancelled = false;
-    void getReferences(currentJob.id).then((next) => {
-      if (!cancelled) setReferences(next);
-    }).catch((cause) => {
-      if (!cancelled && cause instanceof AvatarApiError && cause.requestId) {
-        setRequestId(cause.requestId);
+    let active = true;
+    void Promise.resolve().then(async () => {
+      if (!active) return;
+      const next = await getReferences(currentJob.id);
+      if (!active) return;
+      if (next.referenceSet.jobId !== currentJob.id
+        || next.referenceSet.id !== currentJob.referenceSetId
+        || next.images.length !== 4
+        || new Set(next.images.map(image => image.view)).size !== 4
+        || next.images.some(image => image.jobId !== currentJob.id
+          || image.referenceSetId !== next.referenceSet.id)) {
+        throw new Error("Reference set does not match the active task");
       }
+      setReferenceRead({ state: "ready", data: next });
+    }).catch((cause) => {
+      if (active) setReferenceRead({ state: "error", requestId: requestReference(cause) });
     });
-    return () => { cancelled = true; };
-  }, [currentJob.id, currentJob.status, getReferences]);
+    return () => { active = false; };
+  }, [currentJob.id, currentJob.referenceSetId, currentJob.status, getReferences, referenceRevision]);
 
   useEffect(() => {
     if (!shouldPollJob(currentJob)) return undefined;
@@ -135,43 +174,23 @@ export function TaskProgress({
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, [currentJob, refresh]);
 
-  const applyJob = (next: AvatarJob) => {
-    setCurrentJob(next);
-    onJobChange(next);
-  };
-
-  const act = async (action: (jobId: string) => Promise<AvatarJob>) => {
-    if (pendingAction) return;
+  const act = async (action: () => Promise<AvatarJob>, message: string) => {
+    if (mutating.current) return;
+    mutating.current = true;
+    readGeneration.current++;
+    setActionError(null);
+    setRequestId("");
     setPendingAction(true);
     try {
-      applyJob(await action(currentJob.id));
+      const next = await action();
+      if (!mounted.current) return;
+      if (next.id !== currentJob.id) throw new Error("Action result does not match the active task");
+      applyJob(next);
+    } catch (cause) {
+      if (mounted.current) setActionError({ message, requestId: requestReference(cause) });
     } finally {
-      setPendingAction(false);
-    }
-  };
-
-  const confirmReferenceSet = async (qualityPreset: AvatarQualityPreset) => {
-    if (pendingAction || !references) return;
-    setPendingAction(true);
-    try {
-      const result = await confirmReferences(currentJob.id, {
-        referenceSetId: references.referenceSet.id,
-        qualityPreset,
-        acceptedCostVersion: feature.costVersion,
-      });
-      applyJob(result.job);
-    } finally {
-      setPendingAction(false);
-    }
-  };
-
-  const rejectReferenceSet = async () => {
-    if (pendingAction || !references) return;
-    setPendingAction(true);
-    try {
-      applyJob(await rejectReferences(currentJob.id, references.referenceSet.id));
-    } finally {
-      setPendingAction(false);
+      mutating.current = false;
+      if (mounted.current) setPendingAction(false);
     }
   };
 
@@ -198,17 +217,38 @@ export function TaskProgress({
       </header>
 
       {currentJob.status === "awaiting_reference_confirmation" ? (
-        references ? (
+        referenceRead.state === "ready" ? (
           <ReferenceConfirmation
-            references={references}
+            references={referenceRead.data}
             feature={feature}
             imageUrl={(view) => referenceImageUrl(currentJob.id, view)}
             pending={pendingAction}
-            onConfirm={confirmReferenceSet}
-            onReject={rejectReferenceSet}
+            onConfirm={(qualityPreset) => act(
+              () => confirmReferences(currentJob.id, {
+                referenceSetId: referenceRead.data.referenceSet.id,
+                qualityPreset,
+                acceptedCostVersion: feature.costVersion,
+              }).then((result) => result.job),
+              "确认未完成，请稍后重试。",
+            )}
+            onReject={() => act(
+              () => rejectReferences(currentJob.id, referenceRead.data.referenceSet.id),
+              "放弃四视图未完成，请稍后重试。",
+            )}
           />
+        ) : referenceRead.state === "error" ? (
+          <div className="task-pulse">
+            <p role="alert" className="composer-error">暂时无法读取四视图。</p>
+            {referenceRead.requestId && <p className="request-reference">请求编号：{referenceRead.requestId}</p>}
+            <button className="secondary-command" type="button" onClick={() => setReferenceRevision(value => value + 1)}>
+              重试读取四视图
+            </button>
+          </div>
         ) : (
-          <div className="task-pulse"><LoaderCircle className="task-loader" size={34} /></div>
+          <div className="task-pulse" role="status">
+            <LoaderCircle className="task-loader" size={34} aria-hidden="true" />
+            <strong>正在读取四视图</strong>
+          </div>
         )
       ) : hasResultPreview ? (
         <div className="result-preview-stage">
@@ -236,12 +276,18 @@ export function TaskProgress({
           className="secondary-command"
           type="button"
           disabled={pendingAction}
-          onClick={() => void act(cancelJob)}
+          onClick={() => void act(() => cancelJob(currentJob.id), "取消未完成，请查看任务状态后重试。")}
         >
-          <X size={18} />取消任务
+          <X size={18} />{pendingAction ? "正在取消" : "取消任务"}
         </button>
       ) : null}
 
+      {actionError && (
+        <div role="alert">
+          <p className="composer-error">{actionError.message}</p>
+          {actionError.requestId && <p className="request-reference">请求编号：{actionError.requestId}</p>}
+        </div>
+      )}
       {requestId ? <p className="request-reference">请求编号：{requestId}</p> : null}
       <footer className="task-meta">
         <span>写实个人形象</span>

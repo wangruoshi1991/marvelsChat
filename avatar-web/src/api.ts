@@ -146,6 +146,9 @@ export function createAvatarApi(fetcher: typeof fetch = globalThis.fetch) {
         requiresCsrf: true,
         headers: { "Idempotency-Key": idempotencyKey },
       }),
+    findSubmission: (idempotencyKey: string) => request<{ job: AvatarJob | null }>("/api/avatar-3d/jobs/submission", {
+      headers: { "Idempotency-Key": idempotencyKey },
+    }),
     getJob: (jobId: string) => request<AvatarJob>(
       `/api/avatar-3d/jobs/${encodeURIComponent(jobId)}`,
     ),

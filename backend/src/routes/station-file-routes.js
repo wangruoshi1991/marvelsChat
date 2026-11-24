@@ -6,6 +6,7 @@ import { preprocessFileContent } from "../file-preprocessing-service.js";
 import { HttpError } from "../http-error.js";
 import { createRateLimitMiddleware } from "../rate-limit-service.js";
 import { createUsageEvent, hashRequestIp } from "../repositories.js";
+import { submitStationFile } from "../station-agent-repository.js";
 import {
   createFileAsset,
   listFileAssetsForUser,
@@ -25,6 +26,7 @@ const fileAssetCreateLimit = createRateLimitMiddleware({
 export function registerStationFileRoutes(app, {
   authenticate, asyncHandler,
   createAsset = createFileAsset,
+  transaction,
   listAssets = listFileAssetsForUser,
   recordUsage = createUsageEvent,
   uploadAsset = createUploadedFile, getAsset = getFileAssetForUser, deleteAsset = deleteFileAssetForUser,
@@ -83,7 +85,8 @@ export function registerStationFileRoutes(app, {
         throw new HttpError(400, "文件大小与提供的文字不一致。", { code: "FILE_SIZE_MISMATCH" });
       }
       const byteSize = body.content ? measuredBytes : body.byteSize ?? null;
-      const asset = await createAsset({
+      const submissionKey = z.string().uuid().optional().parse(req.get("Idempotency-Key"));
+      const result = await submitStationFile({
         extractedText: parsedText?.content ?? null, parseVersion: parsedText?.parseVersion ?? null,
         userId: req.user.id,
         originalFilename: body.originalFilename,
@@ -95,23 +98,15 @@ export function registerStationFileRoutes(app, {
         status: preprocessing.status,
         preprocessingResult: preprocessing,
         metadata: body.metadata,
+        submissionKey,
+      }, {
+        createAsset,
+        recordUsage,
+        transaction,
+        audit: { ipHash: hashRequestIp(req.ip), userAgent: req.get("user-agent") || "" },
       });
 
-      await recordUsage({
-        userId: req.user.id,
-        eventType: "station.file_asset.create",
-        targetType: "file_asset",
-        targetId: asset.id,
-        payload: {
-          status: asset.status,
-          kind: preprocessing.kind,
-          hasInlineContent: Boolean(body.content),
-        },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
-      });
-
-      res.status(201).json({ data: asset });
+      res.status(result.replayed ? 200 : 201).json({ data: result.asset });
     }),
   );
 }

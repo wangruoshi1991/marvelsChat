@@ -244,6 +244,7 @@ export function useStationActions({
 
   const createStationAlbum = useCallback(
     async (payload: {
+      idempotencyKey: string;
       title: string;
       description?: string;
       visibility?: StationVisibility;
@@ -252,10 +253,11 @@ export function useStationActions({
         throw new Error('请先登录。');
       }
       const album = await apiClient.createStationAlbum(token, payload);
-      applyStationMutation(current => ({
-        ...current,
-        albums: [album, ...current.albums],
-      }));
+      applyStationMutation(current =>
+        current.albums.some(item => item.id === album.id)
+          ? current
+          : { ...current, albums: [album, ...current.albums] },
+      );
       return album;
     },
     [applyStationMutation, token],
@@ -474,6 +476,7 @@ export function useStationActions({
   const createStationFileAsset = useCallback(
     async (payload: {
       originalFilename: string;
+      idempotencyKey?: string;
       mimeType?: string;
       byteSize?: number | null;
       content?: string;

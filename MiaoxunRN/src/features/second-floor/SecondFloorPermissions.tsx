@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ChevronRight, ShieldCheck } from 'lucide-react-native';
 import { textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
@@ -8,6 +8,7 @@ import { Language } from '../session/useMiaoxunSession';
 import { secondFloorAccent, secondFloorPalette } from './secondFloorTheme';
 import { isV6Palette } from '../../shared/v6Palette';
 import { isXunPalette } from '../../shared/xunPalette';
+import { SecondFloorScrollView } from './SecondFloorScrollView';
 import { SecondFloorPageScrollProps } from './secondFloorScroll';
 
 export function SecondFloorPermissions({
@@ -28,7 +29,7 @@ export function SecondFloorPermissions({
   const xun = isXunPalette(colors);
   const accent = secondFloorAccent(colors);
   return (
-    <ScrollView
+    <SecondFloorScrollView
       {...scrollProps}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={[s.panel, xun && s.panelXun]}
@@ -245,7 +246,7 @@ export function SecondFloorPermissions({
           </Pressable>
         </View>
       </View>
-    </ScrollView>
+    </SecondFloorScrollView>
   );
 }
 

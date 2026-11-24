@@ -4,6 +4,8 @@ const target = typeof __MIAOXUN_ADMIN_API_TARGET__ === "string" && __MIAOXUN_ADM
   ? __MIAOXUN_ADMIN_API_TARGET__
   : (window.location.protocol === "file:" ? DEFAULT_LOCAL_API_ORIGIN : "");
 const tokenKey = "miaoxun.admin.auth.v2";
+const apiPathPattern = /^\/api(?:[/?#]|$)/;
+const requestTimeoutMs = 20_000;
 
 export function readAuth() {
   try {
@@ -16,22 +18,51 @@ export function clearAuth() { sessionStorage.removeItem(tokenKey); }
 export function apiOrigin() { return target || window.location.origin; }
 
 export async function request(path, options = {}) {
-  const auth = readAuth();
-  const headers = { Accept: "application/json", ...(options.headers || {}) };
-  if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
-  if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  const response = await fetch(`${target}${path}`, { ...options, headers });
-  const raw = await response.text();
-  let payload = null;
-  try { payload = raw ? JSON.parse(raw) : null; } catch { payload = { error: { message: raw } }; }
-  if (!response.ok) {
-    const error = payload?.error || payload || {};
-    const failure = new Error(error.message || `请求失败（${response.status}）`);
-    failure.status = response.status;
-    failure.requestId = error.requestId || response.headers.get("X-Request-ID");
-    throw failure;
+  if (typeof path !== "string" || !apiPathPattern.test(path) ||
+    !apiPathPattern.test(new URL(path, "https://admin.invalid").pathname)) {
+    throw new TypeError("Admin API paths must start with /api.");
   }
-  return payload?.data ?? payload;
+  const auth = readAuth();
+  const headers = new Headers(options.headers);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  if (auth.token) headers.set("Authorization", `Bearer ${auth.token}`);
+  if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (!headers.has("X-Request-ID")) {
+    headers.set("X-Request-ID", globalThis.crypto.randomUUID?.() ||
+      Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, "0")).join(""));
+  }
+  const requestId = headers.get("X-Request-ID");
+  const controller = new AbortController();
+  const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+  const timeoutError = new Error("后台服务响应超时，请稍后重试。");
+  timeoutError.isTimeout = true;
+  timeoutError.requestId = requestId;
+  const timeout = setTimeout(() => controller.abort(timeoutError), requestTimeoutMs);
+  try {
+    const response = await fetch(`${target}${path}`, { ...options, headers, signal });
+    const payload = await response.json().catch(error => {
+      if (error instanceof SyntaxError) return null;
+      throw error;
+    });
+    if (!response.ok) {
+      const error = payload?.error;
+      const failure = new Error(error?.message || `请求失败（${response.status}）`);
+      failure.status = response.status;
+      failure.requestId = error?.requestId || response.headers.get("X-Request-ID") || requestId;
+      throw failure;
+    }
+    if (!payload || !Object.hasOwn(payload, "data") || Object.hasOwn(payload, "error")) {
+      const failure = new Error("后台服务响应格式错误，请核对 API 地址与版本。");
+      failure.requestId = response.headers.get("X-Request-ID") || requestId;
+      throw failure;
+    }
+    return payload.data;
+  } catch (error) {
+    if (signal.reason === timeoutError) throw timeoutError;
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 const resourcePaths = {

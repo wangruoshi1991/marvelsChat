@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -24,6 +24,7 @@ import {
 } from './useStationPostComposer';
 
 export function StationPostComposerScreen({
+  voiceCallOverlay,
   palette,
   language,
   session,
@@ -32,6 +33,7 @@ export function StationPostComposerScreen({
   onPublished,
   onActionError,
 }: {
+  voiceCallOverlay?: React.ReactNode;
   palette: Palette;
   language: Language;
   session: ReturnType<typeof useMiaoxunSession>;
@@ -40,6 +42,7 @@ export function StationPostComposerScreen({
   onPublished: () => void;
   onActionError: (error: unknown) => void;
 }) {
+  const [presented, setPresented] = useState(false);
   const composer = useStationPostComposer({
     language,
     session,
@@ -79,6 +82,7 @@ export function StationPostComposerScreen({
       animationType="slide"
       presentationStyle="fullScreen"
       visible
+      onShow={() => setPresented(true)}
       onRequestClose={requestClose}
     >
       <SafeAreaProvider>
@@ -234,6 +238,7 @@ export function StationPostComposerScreen({
                 textColor={textColor}
               />
             </KeyboardAvoidingView>
+            {presented ? voiceCallOverlay : null}
           </SafeAreaView>
         </SafeAreaView>
       </SafeAreaProvider>

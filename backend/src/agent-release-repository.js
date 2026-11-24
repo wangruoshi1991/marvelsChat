@@ -238,7 +238,7 @@ export function createAgentReleaseRepository({
     });
   }
 
-  async function transition({ releaseId, toStatus, actorUserId = null, reason = null, requestId = null, readiness = null, expectedContractHash = null, connection = null }) {
+  async function transition({ releaseId, toStatus, actorUserId = null, reason = null, requestId = null, readiness = null, expectedContractHash = null, connection = null, recordAudit = null }) {
     const run = async (conn) => {
       const q = transactionQuery(conn);
       const rows = await q("SELECT * FROM agent_releases WHERE id = ? LIMIT 1 FOR UPDATE", [releaseId]);
@@ -246,13 +246,13 @@ export function createAgentReleaseRepository({
       if (expectedContractHash && rows[0].contract_hash !== expectedContractHash) throw new HttpError(409, "Agent release identity changed; reload before review or publication", { code: "RELEASE_CONTRACT_CHANGED" });
       const from = rows[0].catalog_status;
       if (requestId) {
-        const replay = await q(`SELECT to_status FROM agent_release_status_history
-          WHERE release_id = ? AND request_id = ? ORDER BY id DESC LIMIT 1`, [releaseId, requestId]);
+        const replay = await q(`SELECT to_status, reason, transition_receipt FROM agent_release_status_history
+          WHERE release_id = ? AND actor_user_id IS NOT DISTINCT FROM ? AND request_id = ? ORDER BY id DESC LIMIT 1`, [releaseId, actorUserId, requestId]);
         if (replay[0]) {
-          if (replay[0].to_status !== toStatus || from !== toStatus) {
+          if (replay[0].to_status !== toStatus || replay[0].reason !== reason || (!replay[0].transition_receipt && from !== toStatus)) {
             throw new HttpError(409, "Idempotency-Key was already used for a different release transition", { code: "IDEMPOTENCY_CONFLICT" });
           }
-          return mapRelease(rows[0]);
+          return replay[0].transition_receipt ?? mapRelease(rows[0]);
         }
       }
       if (from === toStatus) return mapRelease(rows[0]);
@@ -265,7 +265,6 @@ export function createAgentReleaseRepository({
       if (readiness) await q("UPDATE agent_releases SET readiness = ?::jsonb WHERE id = ?", [JSON.stringify(readiness), releaseId]);
       await q("UPDATE agent_releases SET catalog_status = ?, published_at = CASE WHEN ? = 'published' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id = ?", [toStatus, toStatus, releaseId]);
       await q("UPDATE agent_releases SET identity_snapshot = CASE WHEN identity_snapshot IS NULL THEN NULL ELSE jsonb_set(identity_snapshot, '{published}', to_jsonb(? = 'published'), true) END WHERE id = ?", [toStatus, releaseId]);
-      await q("INSERT INTO agent_release_status_history (release_id, from_status, to_status, actor_user_id, reason, request_id) VALUES (?, ?, ?, ?, ?, ?)", [releaseId, from, toStatus, actorUserId, reason, requestId]);
       const identity = parseJson(rows[0].identity_snapshot, null);
       if (toStatus === "published" && identity) {
         await assertManagedAgentAvatar(identity, { connection: conn });
@@ -281,7 +280,12 @@ export function createAgentReleaseRepository({
         await q(`UPDATE agent_catalog SET status = ? WHERE agent_id = ? AND release_version = ? AND contract_hash = ?`,
           ["unpublished", rows[0].agent_key, rows[0].version, rows[0].contract_hash]);
       }
-      return mapRelease((await q("SELECT * FROM agent_releases WHERE id = ?", [releaseId]))[0]);
+      const result = mapRelease((await q("SELECT * FROM agent_releases WHERE id = ?", [releaseId]))[0]);
+      await recordAudit?.(q);
+      await q(`INSERT INTO agent_release_status_history
+        (release_id, from_status, to_status, actor_user_id, reason, request_id, transition_receipt)
+        VALUES (?, ?, ?, ?, ?, ?, ?::jsonb)`, [releaseId, from, toStatus, actorUserId, reason, requestId, requestId ? JSON.stringify(result) : null]);
+      return result;
     };
     return connection ? run(connection) : transaction(run);
   }

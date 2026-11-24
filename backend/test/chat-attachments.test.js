@@ -25,6 +25,21 @@ test('audio duration is measured from the M4A track, not a client-provided displ
  assert.throws(()=>chatAudioDuration(m4a(24000,'vide')),error=>error.status===415);
  assert.throws(()=>chatAudioDuration(Buffer.from('wrong')),error=>error.status===415);
 });
+test('Android MediaRecorder extended mdat lengths stay within the audio container', () => {
+ const original = m4a();
+ const mdat = original.indexOf('mdat') - 4;
+ const header = Buffer.alloc(16);
+ header.writeUInt32BE(1);
+ header.write('mdat', 4, 'ascii');
+ header.writeBigUInt64BE(BigInt(original.length - mdat + 8), 8);
+ const encoded = Buffer.concat([original.subarray(0, mdat), header, original.subarray(mdat + 8)]);
+ assert.equal(chatAudioDuration(encoded), 1000);
+ assert.throws(() => chatAudioDuration(encoded.subarray(0, mdat + 10)), error => error.status === 415);
+ encoded.writeBigUInt64BE(2n ** 63n, mdat + 8);
+ assert.throws(() => chatAudioDuration(encoded), error => error.status === 415);
+ encoded.writeBigUInt64BE(15n, mdat + 8);
+ assert.throws(() => chatAudioDuration(encoded), error => error.status === 415);
+});
 test('attachment resolution refuses cross-owner/thread ids and duplicate ids',async()=>{
  const id=crypto.randomUUID();
  await assert.rejects(resolveChatAttachmentsForMessage({userId:'owner',threadId:'thread',attachmentIds:[id,id]}),error=>error.status===400);

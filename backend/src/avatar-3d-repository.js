@@ -54,6 +54,12 @@ export function createAvatar3dRepository({
   }) => {
     let result;
     await transactionFn(async (connection) => {
+      const [userRows] = await connection.execute(
+        "SELECT id FROM users WHERE id = ? LIMIT 1 FOR UPDATE",
+        [userId],
+      );
+      if (!userRows.length) throw new HttpError(404, "Account not found.");
+
       const [existingRows] = await connection.execute(
         `SELECT * FROM avatar_3d_jobs
         WHERE user_id = ? AND idempotency_key_hash = ?
@@ -76,12 +82,6 @@ export function createAvatar3dRepository({
         };
         return;
       }
-
-      const [userRows] = await connection.execute(
-        "SELECT id FROM users WHERE id = ? LIMIT 1 FOR UPDATE",
-        [userId],
-      );
-      if (!userRows.length) throw new HttpError(404, "Account not found.");
 
       const [quotaRows] = await connection.execute(
         `SELECT
@@ -299,8 +299,18 @@ export function createAvatar3dRepository({
     return rows.map(mapAvatar3dJob);
   };
 
-  const claimNextStep = async ({ staleBefore, limit = 1 } = {}) => {
-    const safeLimit = sqlLimit(limit, 1, 2);
+  const findSubmission = async ({ userId, idempotencyKeyHash }) => {
+    const rows = await queryFn(
+      `SELECT * FROM avatar_3d_jobs
+      WHERE user_id = ? AND idempotency_key_hash = ? AND generation_mode = 'face_first_multiview'
+        AND deleted_at IS NULL`,
+      [userId, idempotencyKeyHash],
+    );
+    return rows.length ? mapAvatar3dJob(rows[0]) : null;
+  };
+
+  const claimNextStep = async ({ leaseMs = 120_000 } = {}) => {
+    const claimToken = randomUUID();
     const rows = await queryFn(
       `WITH candidate AS (
         SELECT id
@@ -310,19 +320,33 @@ export function createAvatar3dRepository({
             'queued_references', 'submitting_references', 'processing_references', 'persisting_references',
             'queued_3d', 'submitting_3d', 'processing_3d', 'persisting'
           )
-          AND (claimed_at IS NULL OR claimed_at < ?)
-        ORDER BY updated_at ASC
+          AND (claim_lease_until IS NULL OR claim_lease_until <= clock_timestamp())
+        ORDER BY updated_at ASC, id ASC
         FOR UPDATE SKIP LOCKED
-        LIMIT ${safeLimit}
+        LIMIT 1
       )
       UPDATE avatar_3d_jobs AS job
-      SET claimed_at = date_trunc('milliseconds', CURRENT_TIMESTAMP)
+      SET claimed_at = clock_timestamp(),
+          claim_token = ?,
+          claim_lease_until = clock_timestamp() + (?::integer * INTERVAL '1 millisecond')
       FROM candidate
       WHERE job.id = candidate.id
       RETURNING job.*`,
-      [staleBefore],
+      [claimToken, leaseMs],
     );
     return rows[0] ? mapPrivateJob(rows[0]) : null;
+  };
+
+  const renewJobClaim = async ({ jobId, claimToken, leaseMs = 120_000 }) => {
+    const rows = await queryFn(
+      `UPDATE avatar_3d_jobs
+      SET claim_lease_until = clock_timestamp() + (?::integer * INTERVAL '1 millisecond')
+      WHERE id = ? AND claim_token = ? AND deleted_at IS NULL
+        AND claim_lease_until > clock_timestamp()
+      RETURNING id`,
+      [leaseMs, jobId, claimToken],
+    );
+    return rows.length > 0;
   };
 
   const transitionJob = async ({
@@ -336,6 +360,8 @@ export function createAvatar3dRepository({
     modelId,
     safeErrorCode,
     retentionUntil,
+    claimToken,
+    releaseClaim = true,
   }) => {
     if (!avatar3dNextStatuses.get(fromStatus)?.has(toStatus)) {
       throw new HttpError(409, "Avatar task state changed.", {
@@ -343,7 +369,7 @@ export function createAvatar3dRepository({
       });
     }
 
-    const assignments = ["status = ?", "claimed_at = NULL"];
+    const assignments = ["status = ?"];
     const params = [toStatus];
     const optionalFields = [
       ["progress", progress],
@@ -362,11 +388,18 @@ export function createAvatar3dRepository({
     if (terminalAvatar3dStatuses.has(toStatus)) {
       assignments.push("finished_at = CURRENT_TIMESTAMP");
     }
+    if (releaseClaim) {
+      assignments.push("claimed_at = NULL", "claim_token = NULL", "claim_lease_until = NULL");
+    }
     params.push(jobId, userId, fromStatus);
+    const claimClause = claimToken
+      ? " AND claim_token = ? AND claim_lease_until > clock_timestamp()"
+      : toStatus === "cancelled" ? "" : " AND claim_token IS NULL";
+    if (claimToken) params.push(claimToken);
     const rows = await queryFn(
       `UPDATE avatar_3d_jobs
       SET ${assignments.join(", ")}
-      WHERE id = ? AND user_id = ? AND status = ? AND deleted_at IS NULL
+      WHERE id = ? AND user_id = ? AND status = ? AND deleted_at IS NULL${claimClause}
       RETURNING *`,
       params,
     );
@@ -383,8 +416,9 @@ export function createAvatar3dRepository({
     progress,
     modelProviderTaskId,
     providerStatus,
+    claimToken,
   }) => {
-    const assignments = ["claimed_at = NULL"];
+    const assignments = ["claimed_at = NULL", "claim_token = NULL", "claim_lease_until = NULL"];
     const params = [];
     for (const [column, value] of [
       ["progress", progress],
@@ -397,19 +431,25 @@ export function createAvatar3dRepository({
       }
     }
     params.push(jobId, userId, status);
+    const claimClause = claimToken
+      ? " AND claim_token = ? AND claim_lease_until > clock_timestamp()"
+      : " AND claim_token IS NULL";
+    if (claimToken) params.push(claimToken);
     const rows = await queryFn(
       `UPDATE avatar_3d_jobs SET ${assignments.join(", ")}
-      WHERE id = ? AND user_id = ? AND status = ? AND deleted_at IS NULL
+      WHERE id = ? AND user_id = ? AND status = ? AND deleted_at IS NULL${claimClause}
       RETURNING *`,
       params,
     );
     return rows[0] ? mapPrivateJob(rows[0]) : null;
   };
 
-  const releaseJobClaim = async ({ jobId }) => {
+  const releaseJobClaim = async ({ jobId, claimToken }) => {
     await queryFn(
-      "UPDATE avatar_3d_jobs SET claimed_at = NULL WHERE id = ? AND deleted_at IS NULL",
-      [jobId],
+      `UPDATE avatar_3d_jobs SET claimed_at = NULL, claim_token = NULL, claim_lease_until = NULL
+      WHERE id = ? AND claim_token = ? AND deleted_at IS NULL
+        AND status NOT IN ('submitting_3d', 'submitting_references')`,
+      [jobId, claimToken],
     );
   };
 
@@ -421,8 +461,10 @@ export function createAvatar3dRepository({
     completePhoto,
     deletePhotoRecord,
     getJob,
+    findSubmission,
     listJobs,
     claimNextStep,
+    renewJobClaim,
     transitionJob,
     updateJobProgress,
     releaseJobClaim,

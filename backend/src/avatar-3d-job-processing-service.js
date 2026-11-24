@@ -76,6 +76,7 @@ export function createAvatar3dJobProcessingService({
       providerStatus: referenceSet.providerStatus,
       safeErrorCode: errorCode,
       retentionUntil: retentionUntil(),
+      claimToken: job.claimToken,
     });
     await markTerminalRetention(transitioned.job);
     return transitioned.job;
@@ -105,6 +106,8 @@ export function createAvatar3dJobProcessingService({
       fromReferenceStatus: "queued",
       toReferenceStatus: "submitting",
       progress: 5,
+      claimToken: job.claimToken,
+      releaseClaim: false,
     });
     let submitted;
     try {
@@ -143,6 +146,7 @@ export function createAvatar3dJobProcessingService({
       providerTaskId: submitted.taskId,
       providerRequestId: submitted.requestId,
       providerStatus: submitted.providerStatus,
+      claimToken: submitting.job.claimToken,
     });
     return processing.job;
   };
@@ -162,7 +166,7 @@ export function createAvatar3dJobProcessingService({
       result = await wanMultiview.fetchWanMultiviewJob({ taskId: referenceSet.providerTaskId });
     } catch (error) {
       if (error?.details?.code === "WAN_MULTIVIEW_STATUS_UNAVAILABLE") {
-        await repository.releaseJobClaim({ jobId: job.id });
+        await repository.releaseJobClaim({ jobId: job.id, claimToken: job.claimToken });
         return job;
       }
       return transitionReferenceTerminal({
@@ -179,6 +183,7 @@ export function createAvatar3dJobProcessingService({
         referenceSetId: referenceSet.id,
         progress: result.progress,
         providerStatus: result.providerStatus,
+        claimToken: job.claimToken,
       });
       return updated.job;
     }
@@ -201,6 +206,7 @@ export function createAvatar3dJobProcessingService({
       progress: 95,
       providerRequestId: result.requestId,
       providerStatus: result.providerStatus,
+      claimToken: job.claimToken,
     });
     return persisting.job;
   };
@@ -219,7 +225,7 @@ export function createAvatar3dJobProcessingService({
     try {
       result = await wanMultiview.fetchWanMultiviewJob({ taskId: referenceSet.providerTaskId });
       if (result.state === "processing") {
-        await repository.releaseJobClaim({ jobId: job.id });
+        await repository.releaseJobClaim({ jobId: job.id, claimToken: job.claimToken });
         return job;
       }
       if (result.state === "failed" || result.imageUrls?.length !== 4) {
@@ -245,6 +251,7 @@ export function createAvatar3dJobProcessingService({
           mimeType: image.contentType,
         })),
         usageImageCount: result.usageCount,
+        claimToken: job.claimToken,
       });
       return repository.getJob({ userId: job.userId, jobId: job.id, includePrivate: true });
     } catch (error) {
@@ -256,7 +263,7 @@ export function createAvatar3dJobProcessingService({
           errorCode: error.details.code,
         });
       }
-      await repository.releaseJobClaim({ jobId: job.id });
+      await repository.releaseJobClaim({ jobId: job.id, claimToken: job.claimToken });
       throw error;
     }
   };
@@ -268,6 +275,8 @@ export function createAvatar3dJobProcessingService({
       fromStatus: "queued_3d",
       toStatus: "submitting_3d",
       progress: 5,
+      claimToken: job.claimToken,
+      releaseClaim: false,
     });
     let submitted;
     try {
@@ -293,6 +302,7 @@ export function createAvatar3dJobProcessingService({
       progress: submitted.progress,
       modelProviderTaskId: submitted.taskId,
       providerStatus: submitted.providerStatus,
+      claimToken: submitting.claimToken,
     });
   };
 
@@ -305,7 +315,7 @@ export function createAvatar3dJobProcessingService({
       result = await modelProviderFor(job).fetch({ taskId: job.modelProviderTaskId });
     } catch (error) {
       if (error?.details?.code === "TRIPO_STATUS_UNAVAILABLE") {
-        await repository.releaseJobClaim({ jobId: job.id });
+        await repository.releaseJobClaim({ jobId: job.id, claimToken: job.claimToken });
         return job;
       }
       return transitionTerminal(job, "failed", error?.details?.code || "TRIPO_GENERATION_FAILED");
@@ -317,6 +327,7 @@ export function createAvatar3dJobProcessingService({
         status: job.status,
         progress: result.progress,
         providerStatus: result.providerStatus,
+        claimToken: job.claimToken,
       });
     }
     if (result.state === "failed") {
@@ -334,7 +345,11 @@ export function createAvatar3dJobProcessingService({
         title: "我的写实 3D 形象",
         providerTaskId: job.modelProviderTaskId,
         thumbnail,
+        claimToken: job.claimToken,
       });
+      if (!model) {
+        throw new HttpError(409, "Avatar model state changed.", { code: "MODEL_PERSISTENCE_CONFLICT" });
+      }
       return repository.transitionJob({
         userId: job.userId,
         jobId: job.id,
@@ -343,9 +358,10 @@ export function createAvatar3dJobProcessingService({
         progress: 95,
         modelId: model.id,
         providerStatus: result.providerStatus,
+        claimToken: job.claimToken,
       });
     } catch (error) {
-      await repository.releaseJobClaim({ jobId: job.id });
+      await repository.releaseJobClaim({ jobId: job.id, claimToken: job.claimToken });
       throw error;
     }
   };
@@ -369,7 +385,7 @@ export function createAvatar3dJobProcessingService({
           result = await modelProviderFor(job).fetch({ taskId: job.modelProviderTaskId });
         } catch (error) {
           if (error?.details?.code === "TRIPO_STATUS_UNAVAILABLE") {
-            await repository.releaseJobClaim({ jobId: job.id });
+            await repository.releaseJobClaim({ jobId: job.id, claimToken: job.claimToken });
             return job;
           }
           return transitionTerminal(
@@ -379,7 +395,7 @@ export function createAvatar3dJobProcessingService({
           );
         }
         if (result.state === "processing") {
-          await repository.releaseJobClaim({ jobId: job.id });
+          await repository.releaseJobClaim({ jobId: job.id, claimToken: job.claimToken });
           return job;
         }
         if (result.state === "failed") {
@@ -395,6 +411,7 @@ export function createAvatar3dJobProcessingService({
           userId: job.userId,
           jobId: job.id,
           glb,
+          claimToken: job.claimToken,
         });
         if (!model) {
           model = await repository.getJobModel({
@@ -418,11 +435,12 @@ export function createAvatar3dJobProcessingService({
         progress: 100,
         modelId: model.id,
         retentionUntil: retentionUntil(),
+        claimToken: job.claimToken,
       });
       await markTerminalRetention(succeeded);
       return succeeded;
     } catch (error) {
-      await repository.releaseJobClaim({ jobId: job.id });
+      await repository.releaseJobClaim({ jobId: job.id, claimToken: job.claimToken });
       throw error;
     }
   };

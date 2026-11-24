@@ -12,6 +12,7 @@ export type Avatar3DPendingSubmission = {
   version: 1;
   userId: string;
   idempotencyKey: string;
+  acceptedReferenceCostVersion?: string;
   photo: Avatar3DPhotoDTO;
   options: {
     bodyShape: 'balanced' | 'slender' | 'athletic';
@@ -34,6 +35,8 @@ const isPendingSubmission = (
       typeof item.userId === 'string' &&
       typeof item.idempotencyKey === 'string' &&
       uuidPattern.test(item.idempotencyKey) &&
+      (item.acceptedReferenceCostVersion === undefined ||
+        typeof item.acceptedReferenceCostVersion === 'string') &&
       item.photo &&
       typeof item.photo.id === 'string' &&
       item.options &&

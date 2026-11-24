@@ -14,16 +14,79 @@ const projection = row => ({ id: row.id, kind: row.kind, filename: row.filename,
   downloadPath: row.content || row.checksum_sha256 ? `/api/chat-attachments/${row.id}/content` : null,
   data: row.data || {} });
 
-function boxes(bytes, start, end) {
+function lockChatAttachmentCapacity(connection) {
+  return connection.query('SELECT pg_advisory_xact_lock(?,?)', [531941, 1]);
+}
+
+async function assertChatAttachmentCapacity(connection, userId, bytes, count, limits) {
+  const [usage] = await connection.query(`SELECT count(*)::bigint AS total_count,COALESCE(sum(byte_size),0)::bigint AS total_bytes,
+    count(*) FILTER(WHERE user_id=?)::bigint AS user_count,COALESCE(sum(byte_size) FILTER(WHERE user_id=?),0)::bigint AS user_bytes
+    FROM chat_attachments`, [userId, userId]);
+  if (Number(usage.user_bytes) + bytes > limits.userMaxBytes || Number(usage.user_count) + count > limits.userMaxCount)
+    fail(409, 'CHAT_ATTACHMENT_USER_QUOTA', '你的聊天附件容量已满，请清理不再需要的消息附件后再试。');
+  if (Number(usage.total_bytes) + bytes > limits.globalMaxBytes || Number(usage.total_count) + count > limits.globalMaxCount)
+    fail(409, 'CHAT_ATTACHMENT_GLOBAL_CAPACITY', '聊天附件服务容量已满，请稍后重试或联系管理员。');
+}
+
+export async function copyForwardedChatAttachments(connection, { userId, targetThreadId, sourceMessage }) {
+  const attachments = sourceMessage.metadata?.attachments;
+  if (attachments === undefined) return [];
+  if (!Array.isArray(attachments) || attachments.length > 6 || attachments.some(
+    attachment => !['image', 'audio', 'file', 'video'].includes(attachment?.kind),
+  )) fail(400, 'CHAT_FORWARD_KIND_UNSUPPORTED', '仅支持转发文字、图片、录音、视频和文件。');
+  if (!attachments.length) return [];
+
+  const rows = await connection.query(`SELECT a.id, a.kind, a.byte_size
+    FROM chat_attachments a JOIN chat_attachment_references r ON r.attachment_id = a.id
+    WHERE r.message_id = ? AND a.content IS NOT NULL
+    ORDER BY a.id FOR KEY SHARE OF a`, [sourceMessage.id]);
+  const rowsById = new Map(rows.map(row => [row.id, row]));
+  const ids = attachments.map(attachment => attachment.id);
+  if (new Set(ids).size !== ids.length || attachments.some(item => rowsById.get(item.id)?.kind !== item.kind))
+    fail(404, 'CHAT_FORWARD_ATTACHMENT_UNAVAILABLE', '原消息的附件已不可用。');
+  const bytes = ids.reduce((sum, id) => sum + rowsById.get(id).byte_size, 0);
+  await lockChatAttachmentCapacity(connection);
+  await assertChatAttachmentCapacity(connection, userId, bytes, ids.length, config.chatAttachments);
+
+  const copies = [];
+  for (const sourceId of ids) {
+    const id = crypto.randomUUID();
+    const requestHash = crypto.createHash('sha256').update(JSON.stringify([targetThreadId, id])).digest('hex');
+    const [copy] = await connection.query(`INSERT INTO chat_attachments
+      (id,user_id,thread_id,idempotency_key,request_hash,kind,filename,title,mime_type,byte_size,duration_ms,checksum_sha256,content,data)
+      SELECT ?,?,?,?,?,kind,filename,title,mime_type,byte_size,duration_ms,checksum_sha256,content,'{}'::jsonb
+      FROM chat_attachments WHERE id=?
+      RETURNING id,kind,filename,title,mime_type,byte_size,duration_ms,checksum_sha256,data`,
+    [id, userId, targetThreadId, id, requestHash, sourceId]);
+    copies.push(projection(copy));
+  }
+  return copies;
+}
+
+function boxes(bytes, start, end, invalid = () => fail(415, 'CHAT_AUDIO_INVALID', '录音文件结构无效。')) {
   const result = [];
   let offset = start;
   while (offset + 8 <= end) {
-    const size = bytes.readUInt32BE(offset);
-    if (size < 8 || offset + size > end) fail(415, 'CHAT_AUDIO_INVALID', '录音文件结构无效。');
-    result.push({ type: bytes.toString('ascii', offset + 4, offset + 8), start: offset + 8, end: offset + size });
+    let size = bytes.readUInt32BE(offset);
+    let headerSize = 8;
+    if (size === 1) {
+      // Android MediaRecorder uses a large-size mdat header even for short clips.
+      headerSize = 16;
+      if (end - offset < headerSize) invalid();
+      const largeSize = bytes.readBigUInt64BE(offset + 8);
+      if (largeSize > BigInt(end - offset)) invalid();
+      size = Number(largeSize);
+    }
+    if (size < headerSize || size > end - offset) invalid();
+    if (result.length >= 4096) invalid();
+    result.push({
+      type: bytes.toString('ascii', offset + 4, offset + 8),
+      start: offset + headerSize,
+      end: offset + size,
+    });
     offset += size;
   }
-  if (offset !== end) fail(415, 'CHAT_AUDIO_INVALID', '录音文件结构无效。');
+  if (offset !== end) invalid();
   return result;
 }
 export function chatAudioDuration(bytes) {
@@ -49,6 +112,47 @@ export function chatAudioDuration(bytes) {
   return durationMs;
 }
 
+export function chatVideoDuration(bytes) {
+  const invalid = () => fail(415, 'CHAT_VIDEO_INVALID', '请选择不超过60秒的有效H.264 MP4视频。');
+  const readBoxes = (start, end) => boxes(bytes, start, end, invalid);
+  const children = box => readBoxes(box.start, box.end);
+  const top = readBoxes(0, bytes.length);
+  const media = top.find(box => box.type === 'moov');
+  const brand = top.find(box => box.type === 'ftyp');
+  if (!brand || brand.end - brand.start < 8 || !media || bytes.toString('ascii', brand.start, brand.start + 4) === 'qt  ' ||
+      !top.some(box => box.type === 'mdat' && box.end > box.start)) invalid();
+  const tracks = children(media).filter(box => box.type === 'trak');
+  if (!tracks.length || tracks.length > 2) invalid();
+  const kinds = new Set();
+  let longest = 0;
+  for (const track of tracks) {
+    const mdia = children(track).find(box => box.type === 'mdia');
+    if (!mdia) invalid();
+    const parts = children(mdia);
+    const hdlr = parts.find(box => box.type === 'hdlr');
+    const mdhd = parts.find(box => box.type === 'mdhd');
+    const minf = parts.find(box => box.type === 'minf');
+    if (!hdlr || hdlr.end - hdlr.start < 12 || !mdhd || !minf || mdhd.end - mdhd.start < 20) invalid();
+    const kind = bytes.toString('ascii', hdlr.start + 8, hdlr.start + 12);
+    if (!['vide', 'soun'].includes(kind) || kinds.has(kind)) invalid();
+    kinds.add(kind);
+    const sampleTable = children(minf).find(box => box.type === 'stbl');
+    const description = sampleTable && children(sampleTable).find(box => box.type === 'stsd');
+    if (!description || description.end - description.start < 8 || bytes.readUInt32BE(description.start + 4) !== 1) invalid();
+    const entries = readBoxes(description.start + 8, description.end);
+    if (entries.length !== 1 || !(kind === 'vide' ? ['avc1', 'avc3'] : ['mp4a']).includes(entries[0].type)) invalid();
+    const version = bytes[mdhd.start];
+    if (![0, 1].includes(version) || (version === 1 && mdhd.end - mdhd.start < 32)) invalid();
+    const scale = bytes.readUInt32BE(mdhd.start + (version === 1 ? 20 : 12));
+    const duration = version === 1 ? Number(bytes.readBigUInt64BE(mdhd.start + 24)) : bytes.readUInt32BE(mdhd.start + 16);
+    const milliseconds = Math.round(duration * 1000 / scale);
+    if (!Number.isSafeInteger(milliseconds) || milliseconds < 1 || milliseconds > 60000) invalid();
+    longest = Math.max(longest, milliseconds);
+  }
+  if (!kinds.has('vide')) invalid();
+  return longest;
+}
+
 export async function normalizeChatUpload({ kind, filename, mimeType, bytes }) {
   if (!validName(filename)) fail(400, 'CHAT_ATTACHMENT_NAME', '附件名称无效。');
   if (!Buffer.isBuffer(bytes) || !bytes.length) fail(400, 'CHAT_ATTACHMENT_EMPTY', '请选择非空附件。');
@@ -69,6 +173,9 @@ export async function normalizeChatUpload({ kind, filename, mimeType, bytes }) {
   } else if (kind === 'audio') {
     if (mimeType !== 'audio/mp4') fail(415, 'CHAT_AUDIO_FORMAT', '仅支持M4A录音。');
     durationMs = chatAudioDuration(bytes);
+  } else if (kind === 'video') {
+    if (mimeType !== 'video/mp4' || !/\.mp4$/i.test(filename)) fail(415, 'CHAT_VIDEO_FORMAT', '请选择H.264编码的MP4视频。');
+    durationMs = chatVideoDuration(bytes);
   } else if (kind === 'file') {
     parseUploadedText({ originalFilename: filename, mimeType, bytes });
   } else fail(400, 'CHAT_ATTACHMENT_KIND', '附件类型无效。');
@@ -117,19 +224,14 @@ export async function createChatAttachment({ userId, threadId, idempotencyKey, u
   const row = await transact(async connection => {
     // Every API instance takes the same transaction lock before measuring and
     // reserving capacity. Parallel uploads cannot both spend the last bytes.
-    await connection.query('SELECT pg_advisory_xact_lock(?,?)', [531941, 1]);
+    await lockChatAttachmentCapacity(connection);
     const [existing] = await connection.query('SELECT * FROM chat_attachments WHERE user_id=? AND idempotency_key=?', [userId, idempotencyKey]);
     if (existing) {
       if (existing.request_hash !== requestHash) fail(409, 'CHAT_ATTACHMENT_IDEMPOTENCY_CONFLICT', '此附件请求已用于其他内容。');
       return existing;
     }
-    const [usage] = await connection.query(`SELECT count(*)::bigint AS total_count,COALESCE(sum(byte_size),0)::bigint AS total_bytes,
-      count(*) FILTER(WHERE user_id=?)::bigint AS user_count,COALESCE(sum(byte_size) FILTER(WHERE user_id=?),0)::bigint AS user_bytes FROM chat_attachments`, [userId,userId]);
     const bytes = content?.length || 0;
-    if (Number(usage.user_bytes) + bytes > limits.userMaxBytes || Number(usage.user_count) + 1 > limits.userMaxCount)
-      fail(409, 'CHAT_ATTACHMENT_USER_QUOTA', '你的聊天附件容量已满，请清理不再需要的消息附件后再试。');
-    if (Number(usage.total_bytes) + bytes > limits.globalMaxBytes || Number(usage.total_count) + 1 > limits.globalMaxCount)
-      fail(409, 'CHAT_ATTACHMENT_GLOBAL_CAPACITY', '聊天附件服务容量已满，请稍后重试或联系管理员。');
+    await assertChatAttachmentCapacity(connection, userId, bytes, 1, limits);
     const [created] = await connection.query(`INSERT INTO chat_attachments (id,user_id,thread_id,idempotency_key,request_hash,kind,filename,title,mime_type,byte_size,duration_ms,checksum_sha256,content,data)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?::jsonb) RETURNING *`, [crypto.randomUUID(),userId,threadId,idempotencyKey,requestHash,kind,filename,title,mimeType,bytes,durationMs,checksum,content,JSON.stringify(data)]);
     return created;

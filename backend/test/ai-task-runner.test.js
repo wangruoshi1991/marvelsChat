@@ -122,6 +122,76 @@ test("shutdown waits for the current execution and does not claim another task",
   assert.equal(runner.getState().activeTask, false);
 });
 
+test("shutdown releases a never-settling renewal once execution ends", async () => {
+  let releaseExecution;
+  const execution = new Promise(resolve => { releaseExecution = resolve; });
+  let renewalStarted;
+  const renewal = new Promise(resolve => { renewalStarted = resolve; });
+  let claims = 0;
+  let executions = 0;
+  let heartbeatCount = 0;
+  const runner = createAITaskRunner({ heartbeatMs: 5, heartbeatTimeoutMs: 5000,
+    repository: {
+      recoverInterruptedAITasks: async () => {},
+      claimAITask: async () => { claims++; return { id: "task", kind: "site_draft", claimToken: "claim" }; },
+      heartbeatAITask: (_claim, options) => {
+        heartbeatCount++;
+        renewalStarted(options?.signal);
+        return new Promise(() => {});
+      },
+    },
+    executors: { site_draft: async () => { executions++; await execution; } },
+  });
+  runner.start();
+  let deadline;
+  try {
+    const limit = new Promise((_resolve, reject) => {
+      deadline = setTimeout(() => reject(new Error("Shutdown exceeded 500 ms")), 500);
+    });
+    const signal = await Promise.race([renewal, limit]);
+    const stopping = runner.stop();
+    releaseExecution();
+    await Promise.race([Promise.all([stopping, runner.stop()]), limit]);
+    assert.equal(signal.aborted, true);
+    assert.equal(heartbeatCount, 1);
+    assert.equal(claims, 1);
+    assert.equal(executions, 1);
+    assert.equal(runner.getState().state, "stopped");
+  } finally {
+    clearTimeout(deadline);
+  }
+});
+
+test("a timed-out renewal is cancelled and does not start another renewal for the claim", async () => {
+  let releaseExecution;
+  const execution = new Promise(resolve => { releaseExecution = resolve; });
+  const signals = [];
+  const errors = [];
+  const runner = createAITaskRunner({ heartbeatMs: 5, heartbeatTimeoutMs: 20,
+    repository: {
+      recoverInterruptedAITasks: async () => {},
+      claimAITask: async () => ({ id: "task", kind: "site_draft", claimToken: "claim" }),
+      heartbeatAITask: (_claim, options) => {
+        signals.push(options?.signal);
+        return new Promise(() => {});
+      },
+    },
+    logger: { error: message => errors.push(JSON.parse(message).code) },
+    executors: { site_draft: () => execution },
+  });
+  runner.start();
+  try {
+    await new Promise(resolve => setTimeout(resolve, 80));
+    assert.equal(signals.length, 1);
+    assert.equal(signals[0]?.aborted, true);
+    assert.deepEqual(errors, ["AI_TASK_LEASE_RENEWAL_TIMEOUT"]);
+  } finally {
+    releaseExecution();
+    // During the failing baseline, shutdown can remain pending and keep no live timers.
+    void runner.stop();
+  }
+});
+
 test('queue claims only the registered executable kinds', async()=>{
   let filter;
   const runner=createAITaskRunner({executors:{agent_message:async()=>{}},repository:{

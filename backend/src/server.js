@@ -28,6 +28,9 @@ import { registerEventRoutes } from "./routes/event-routes.js";
 import { registerMessageRoutes } from "./routes/message-routes.js";
 import { registerCustomStickerRoutes } from "./routes/custom-sticker-routes.js";
 import { registerChatAttachmentRoutes } from "./routes/chat-attachment-routes.js";
+import { registerChatMessageAIRoutes } from "./routes/chat-message-ai-routes.js";
+import { registerChatMessageReceiptRoutes } from "./routes/chat-message-receipt-routes.js";
+import { registerChatMessageSearchRoutes } from "./routes/chat-message-search-routes.js";
 import { registerNotificationRoutes } from "./routes/notification-routes.js";
 import { registerSocialRoutes } from "./routes/social-routes.js";
 import { registerStationRoutes } from "./routes/station-routes.js";
@@ -36,11 +39,21 @@ import { registerAgentAvatarRoutes } from "./routes/agent-avatar-routes.js";
 import { registerGroupChatRoutes } from "./routes/group-chat-routes.js";
 import { registerUIPreferenceRoutes } from "./routes/ui-preference-routes.js";
 import { registerChatContentPreviewRoutes } from "./routes/chat-content-preview-routes.js";
+import { createChatMessageAI } from "./chat-message-ai.js";
+import { createVoiceCallService } from "./voice-call-service.js";
+import { registerVoiceCallRoutes } from "./routes/voice-call-routes.js";
 
 const app = express();
 const host = config.host;
 const port = config.port;
 const server = http.createServer(app);
+const chatMessageAI = createChatMessageAI({
+  settings: config.chatMessageAI,
+  textRuntime: config.newApi,
+});
+
+const voiceCalls = createVoiceCallService({ settings: config.chatVoiceCalls });
+await voiceCalls.start();
 
 if (config.trustProxyHops > 0) {
   app.set("trust proxy", config.trustProxyHops);
@@ -88,6 +101,8 @@ registerAppRoutes(app, {
   asyncHandler,
   getOnlineUserIds,
   sendPresenceChanged,
+  chatMessageText: chatMessageAI.availability,
+  getChatVoiceCalls: () => voiceCalls.availability,
 });
 registerProductRoutes(app, { authenticate, asyncHandler });
 registerAgentAvatarRoutes(app, { authenticate, asyncHandler });
@@ -124,6 +139,10 @@ registerMessageRoutes(app, {
 });
 
 registerChatAttachmentRoutes(app, { authenticate, asyncHandler });
+registerChatMessageAIRoutes(app, { authenticate, asyncHandler, service: chatMessageAI });
+registerChatMessageSearchRoutes(app, { authenticate, asyncHandler });
+registerChatMessageReceiptRoutes(app, { authenticate, asyncHandler });
+registerVoiceCallRoutes(app, { authenticate, asyncHandler, service: voiceCalls });
 registerCustomStickerRoutes(app, { authenticate, asyncHandler });
 registerGroupChatRoutes(app, { authenticate, asyncHandler, sendRealtimeToUser });
 
@@ -150,7 +169,10 @@ installGracefulShutdown({
   server,
   realtimeGateway,
   jobRunner: avatar3dJobRunner,
-  closeDatabase,
+  closeDatabase: async () => {
+    try { await voiceCalls.close(); }
+    finally { await closeDatabase(); }
+  },
   logger: console,
 });
 

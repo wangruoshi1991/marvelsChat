@@ -17,22 +17,25 @@ const releaseRow = {
 
 test("replaying an Agent release transition with the same request ID returns the original state without another write", async () => {
   const calls = [];
+  const receipt = { id: "release-1", version: "1.0.0", catalogStatus: "published" };
   const connection = { query: async (sql, params) => {
     calls.push([sql, params]);
-    if (sql.startsWith("SELECT * FROM agent_releases")) return [releaseRow];
-    if (sql.includes("FROM agent_release_status_history")) return [{ to_status: "published" }];
+    if (sql.startsWith("SELECT * FROM agent_releases")) return [{ ...releaseRow, catalog_status: "unpublished" }];
+    if (sql.includes("FROM agent_release_status_history")) {
+      return [{ to_status: "published", reason: null, transition_receipt: receipt }];
+    }
     throw new Error(`Unexpected query: ${sql}`);
   } };
   const repository = createAgentReleaseRepository();
   const result = await repository.transition({ releaseId: "release-1", toStatus: "published", requestId: "release-request-1", connection });
-  assert.equal(result.catalogStatus, "published");
+  assert.deepEqual(result, receipt);
   assert.equal(calls.some(([sql]) => sql.startsWith("UPDATE ") || sql.startsWith("INSERT ")), false);
 });
 
 test("reusing an Agent release request ID for another transition fails explicitly", async () => {
   const connection = { query: async (sql) => {
     if (sql.startsWith("SELECT * FROM agent_releases")) return [releaseRow];
-    if (sql.includes("FROM agent_release_status_history")) return [{ to_status: "published" }];
+    if (sql.includes("FROM agent_release_status_history")) return [{ to_status: "published", reason: null }];
     throw new Error(`Unexpected query: ${sql}`);
   } };
   const repository = createAgentReleaseRepository();
@@ -44,16 +47,19 @@ test("reusing an Agent release request ID for another transition fails explicitl
 
 test("replaying a product transition with the same request ID returns the original state without another write", async () => {
   const calls = [];
+  const receipt = { id: "product-1", productVersionId: "version-1", status: "published" };
   const connection = { query: async (sql) => {
     calls.push(sql);
-    if (sql.startsWith("SELECT p.*")) return [{ id: "product-1", product_key: "demo-product", display_name: "演示产品", description: "", identity_snapshot: "{}", status: "published", product_version_id: "version-1", version: "1.0.0", supported_platforms: "[\"ios\"]", version_status: "published", contract_hash: "b".repeat(64) }];
+    if (sql.startsWith("SELECT p.*")) return [{ id: "product-1", product_key: "demo-product", display_name: "演示产品", description: "", identity_snapshot: "{}", status: "paused", product_version_id: "version-1", version: "1.0.0", supported_platforms: "[\"ios\"]", version_status: "paused", contract_hash: "b".repeat(64) }];
     if (sql.includes("FROM product_agent_dependencies")) return [];
-    if (sql.includes("FROM product_status_history")) return [{ to_status: "published" }];
+    if (sql.includes("FROM product_status_history")) {
+      return [{ to_status: "published", reason: null, product_version_id: "version-1", transition_receipt: receipt }];
+    }
     throw new Error(`Unexpected query: ${sql}`);
   } };
   const repository = createProductCatalogRepository({ withTransaction: async (work) => work(connection) });
   const result = await repository.transitionProduct({ productId: "product-1", toStatus: "published", requestId: "product-request-1" });
-  assert.equal(result.status, "published");
+  assert.deepEqual(result, receipt);
   assert.equal(calls.some((sql) => sql.startsWith("UPDATE ") || sql.startsWith("INSERT ")), false);
 });
 

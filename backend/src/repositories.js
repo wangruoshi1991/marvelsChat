@@ -108,8 +108,8 @@ export async function getRawUserById(userId) {
 }
 
 export async function createUserWithDefaults(
-  { email, phoneNumber = null, displayName, passwordHash, role },
-  { transaction = withTransaction, readUser = getUserById } = {},
+  { email, phoneNumber = null, displayName, passwordHash, role, status = "active", id = null },
+  { transaction = withTransaction, readUser = getUserById, returnId = false } = {},
 ) {
   const normalizedPhoneNumber = phoneNumber
     ? normalizePhoneNumber(phoneNumber)
@@ -120,7 +120,7 @@ export async function createUserWithDefaults(
         ? `${normalizedPhoneNumber}@phone.miaoxun.local`
         : ""),
   );
-  const userId = crypto.randomUUID();
+  const userId = id || crypto.randomUUID();
   const nickname = displayName.trim();
   const avatarText = displayInitial(nickname);
 
@@ -133,7 +133,7 @@ export async function createUserWithDefaults(
     await connection.execute(
       `INSERT INTO users
         (id, email, phone_number, password_hash, display_name, ai_id, role, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         normalizedEmail,
@@ -142,6 +142,7 @@ export async function createUserWithDefaults(
         nickname,
         aiId,
         role,
+        status,
       ],
     );
 
@@ -164,7 +165,7 @@ export async function createUserWithDefaults(
     await ensureDefaultButlerAccess({ userId, connection });
   });
 
-  return readUser(userId);
+  return returnId ? { id: userId } : readUser(userId);
 }
 
 export async function createManagedUser({
@@ -179,21 +180,66 @@ export async function createManagedUser({
     displayName,
     passwordHash,
     role,
+    status,
   });
-  await query("UPDATE users SET status = ? WHERE id = ?", [status, user.id]);
-  return getUserById(user.id);
+  return user;
 }
 
-export async function createSessionForUser(userId) {
+export async function createManagedUserWithAudit({
+  email,
+  displayName,
+  passwordHash,
+  role = "user",
+  status = "active",
+  actorUserId,
+  payload = {},
+  ipHash = null,
+  userAgent = "",
+  recordAudit = createUsageEvent,
+}, { transaction = withTransaction, readUser = getUserById } = {}) {
+  const userId = crypto.randomUUID();
+  await transaction(async (connection) => {
+    await createUserWithDefaults({
+      id: userId,
+      email,
+      displayName,
+      passwordHash,
+      role,
+      status,
+    }, {
+      transaction: async work => work(connection),
+      readUser: async () => null,
+      returnId: true,
+    });
+    await recordAudit({
+      userId: actorUserId,
+      eventType: "admin.user.create",
+      targetType: "user",
+      targetId: userId,
+      payload,
+      ipHash,
+      userAgent,
+    }, connection.query.bind(connection));
+  });
+  return readUser(userId);
+}
+
+export async function createSessionForUser(userId, { verifiedPasswordHash } = {}) {
   const token = createPlainToken();
   const sessionId = crypto.randomUUID();
   const expiresAt = sessionExpiryDate();
 
-  await query(
-    `INSERT INTO auth_sessions (id, user_id, token_hash, expires_at)
-    VALUES (?, ?, ?, ?)`,
-    [sessionId, userId, hashToken(token), expiresAt],
-  );
+  await withTransaction(async ({ query: runQuery }) => {
+    const [user] = await runQuery("SELECT status, password_hash FROM users WHERE id = ? FOR UPDATE", [userId]);
+    if (user?.status !== "active" || (verifiedPasswordHash !== undefined && user.password_hash !== verifiedPasswordHash)) {
+      throw new HttpError(401, "Account credentials changed. Sign in again.", { code: "LOGIN_CREDENTIALS_CHANGED" });
+    }
+    await runQuery(
+      `INSERT INTO auth_sessions (id, user_id, token_hash, expires_at)
+      VALUES (?, ?, ?, ?)`,
+      [sessionId, userId, hashToken(token), expiresAt],
+    );
+  });
 
   return {
     token,
@@ -208,16 +254,16 @@ export async function markLogin(userId) {
   );
 }
 
-export async function revokeSession(sessionId) {
+export async function revokeSession(sessionId, queryFn = query) {
   if (!sessionId) return;
-  await query(
-    "UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?",
+  await queryFn(
+    "UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND revoked_at IS NULL",
     [sessionId],
   );
 }
 
-export async function revokeSessionsForUser(userId) {
-  await query(
+export async function revokeSessionsForUser(userId, queryFn = query) {
+  await queryFn(
     `UPDATE auth_sessions
     SET revoked_at = CURRENT_TIMESTAMP
     WHERE user_id = ? AND revoked_at IS NULL`,

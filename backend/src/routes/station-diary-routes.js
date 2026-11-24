@@ -1,5 +1,6 @@
 import { HttpError } from "../http-error.js";
 import { createUsageEvent, hashRequestIp } from "../repositories.js";
+import { withTransaction } from "../db.js";
 import {
   createStationDiaryEntry,
   deleteStationDiaryEntry,
@@ -17,18 +18,18 @@ export function registerStationDiaryRoutes(app, { authenticate, asyncHandler }) 
     authenticate,
     asyncHandler(async (req, res) => {
       const body = stationDiarySchema.parse(req.body);
-      const entry = await createStationDiaryEntry({
-        userId: req.user.id,
-        ...body,
-      });
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "station.diary.create",
-        targetType: "station_diary_entry",
-        targetId: entry.id,
-        payload: { visibility: entry.visibility, source: entry.source },
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
+      const entry = await withTransaction(async connection => {
+        const created = await createStationDiaryEntry({ userId: req.user.id, ...body }, connection.query);
+        await createUsageEvent({
+          userId: req.user.id,
+          eventType: "station.diary.create",
+          targetType: "station_diary_entry",
+          targetId: created.id,
+          payload: { visibility: created.visibility, source: created.source },
+          ipHash: hashRequestIp(req.ip),
+          userAgent: req.get("user-agent") || "",
+        }, connection.query);
+        return created;
       });
       res.status(201).json({ data: entry });
     }),

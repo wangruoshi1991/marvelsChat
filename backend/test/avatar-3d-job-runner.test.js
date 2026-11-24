@@ -85,6 +85,7 @@ test("cleanup deletes OSS first and leaves failed records retryable", async () =
       storage_key: "users/u/avatar-3d/photos/p/source.jpg",
     }],
     markPrivateAssetDeleted: async (input) => calls.push(["mark", input]),
+    recordPrivateAssetCleanupFailure: async ({ assetId }) => calls.push(["backoff", assetId]),
   };
   const runner = createAvatar3dJobRunner({
     repository,
@@ -101,11 +102,11 @@ test("cleanup deletes OSS first and leaves failed records retryable", async () =
   });
 
   await runner.runOnce();
-  assert.deepEqual(calls, [["delete"]]);
+  assert.deepEqual(calls, [["delete"], ["backoff", "photo-1"]]);
 
   shouldFail = false;
   await runner.runCleanup();
-  assert.deepEqual(calls.map((call) => call[0]), ["delete", "delete", "mark"]);
+  assert.deepEqual(calls.map((call) => call[0]), ["delete", "backoff", "delete", "mark"]);
 });
 
 test("runner logs a safe error code and job state without exposing error messages", async () => {

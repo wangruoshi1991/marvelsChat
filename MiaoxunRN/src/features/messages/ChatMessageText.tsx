@@ -19,8 +19,14 @@ import {
   safeMessageLink,
 } from './messageTextPresentation';
 
+import { isVoiceCallActive } from '../../services/voiceCall/voiceCallResources';
+
 async function openLink(href: string) {
   if (!safeMessageLink(href)) return;
+  if (isVoiceCallActive()) {
+    Alert.alert('正在语音通话', '外部链接会离开妙讯，请先结束通话。');
+    return;
+  }
   try {
     await Linking.openURL(href);
   } catch {

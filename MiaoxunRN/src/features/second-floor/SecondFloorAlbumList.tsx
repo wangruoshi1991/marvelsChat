@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Image,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -24,6 +23,7 @@ import { isXunPalette } from '../../shared/xunPalette';
 import { AlbumContextActions } from '../assist/AlbumContextActions';
 import { AIAssistScene } from '../assist/aiAssistTypes';
 import { Language } from '../session/sessionTypes';
+import { SecondFloorScrollView } from './SecondFloorScrollView';
 import { SecondFloorPageScrollProps } from './secondFloorScroll';
 import type {
   UIComponentPreference,
@@ -219,7 +219,7 @@ export function SecondFloorAlbumList({
   };
   const uploadIcon = uploadPreference?.icon;
   return (
-    <ScrollView
+    <SecondFloorScrollView
       {...scrollProps}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={[
@@ -477,7 +477,7 @@ export function SecondFloorAlbumList({
           </View>
         )}
       </View>
-    </ScrollView>
+    </SecondFloorScrollView>
   );
 }
 const s = StyleSheet.create({

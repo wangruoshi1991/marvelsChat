@@ -351,6 +351,9 @@ export const mapThread = (row) => ({
   lastContent: row.last_content || "",
   lastMessageAt: toIso(row.last_message_at),
   unreadCount: Number(row.unread_count || 0),
+  unreadSequence: Number(row.unread_delivered || 0),
+  readSequence: Number(row.unread_delivered || 0) - Number(row.unread_count || 0),
+  preferencesRevision: Number(row.preferences_revision || 0),
   createdAt: toIso(row.created_at),
   updatedAt: toIso(row.updated_at),
 });
@@ -363,6 +366,9 @@ export const mapMessage = (row) => ({
   senderName: row.sender_name,
   content: row.content,
   metadata: parseJson(row.metadata, {}),
+  ...(row.unread_sequence !== null && row.unread_sequence !== undefined
+    ? { unreadSequence: Number(row.unread_sequence) }
+    : {}),
   clientMessageId: row.client_message_id || null,
   deletedAt: toIso(row.deleted_at),
   recalledAt: toIso(row.recalled_at),
@@ -433,6 +439,7 @@ export const mapPublicProfile = (row, relation = {}) => {
       isFollowing: Boolean(relation.isFollowing),
       isFriend: Boolean(relation.isFriend),
       pendingFriendRequestId: relation.pendingFriendRequestId || null,
+      incomingFriendRequestId: relation.incomingFriendRequestId || null,
     },
     visibility,
   };

@@ -43,8 +43,11 @@ assert.equal(healthy, true, "Backend image did not become healthy");
 const ready = await fetch("http://127.0.0.1:4390/api/ready", { signal: AbortSignal.timeout(2000) });
 assert.equal(ready.status, 503, "Unconfigured database must not report readiness");
 const agents = await fetch("http://127.0.0.1:4390/api/agents");
-assert.equal(agents.status, 200);
-assert.ok((await agents.json()).data.length > 0, "Dynamic Agent definitions must load");
+assert.equal(agents.status, 503, "Published Agent catalog requires a database");
+const { listAgents } = await import("../agents/registry.js");
+assert.ok((await listAgents()).length > 0, "Dynamic Agent definitions must load");
 await import("./src/media-retrieval-worker.js");
-console.log("Backend startup, Agent loading, worker imports, and missing-database readiness passed.");
+const { isWorkerHealthy } = await import("./src/worker-health.js");
+assert.equal(isWorkerHealthy({ maxAgeMs: 30000 }), false, "A worker without a local successful check must be unhealthy");
+console.log("Backend startup, Agent loading, worker imports, and missing-database and worker readiness passed.");
 '

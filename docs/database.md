@@ -76,10 +76,13 @@ UI 偏好 055 和协作贡献索引 056 上线前，先在生产备份的隔离�
 manifest 上传到独立私有 OSS Bucket；完整配置、最小权限和恢复演练流程见
 [生产数据库备份与恢复](database-backup.md)。
 
-恢复必须使用 `scripts/restore-production-database.sh <dump> <approved-sha256>`。脚本只接受
-PostgreSQL custom dump，在后端和 worker 均停止时才会重建目标数据库；它不会复制 PolarDB
-专有 `polar_catalog`，而是在本机预装 pgvector，并验证业务对象归应用账号所有。恢复完成后
-仍必须运行后端 `npm run db:migrate`，以迁移账本 checksum 和 `/api/ready` 为最终标准。
+恢复使用 `scripts/restore-production-database.sh <dump> <approved-sha256> <last-migration-filename> <approved-baseline.tsv>`。
+停写后，脚本在独立候选库导入 PostgreSQL custom dump、本地安装 pgvector、检查 public 业务对象归属及约束，
+并按已批准备份末尾迁移逐项比对文件名与 checksum。候选库的代表性行数及 public 表约束清单要与同一归档审批证据一致。
+清单的采集和审批步骤见[恢复手册](database-recovery-owner-guide.md)。导入排除 PolarDB 专有 `polar_catalog`。
+候选核验通过才会在同一事务内换名，旧库留在脚本输出的保留库名并禁止连接。
+保持停写时可用 `--rollback <retained-database>` 把保留库换回应用入口。切换后仍需运行
+`npm run db:migrate`，检查迁移账本和 `/api/ready`。
 
 ## 环境变量
 
@@ -105,6 +108,7 @@ POSTGRES_CONNECTION_LIMIT=10
 - `agent_catalog`：迁移 `044_agent_catalog.sql` 引入的 Agent 展示投影，保留已部署执行器的目录元数据，不是独立上架入口。当前可发现性由 `agent_releases`、`products`/`product_versions` 和用户 `entitlements` 的发布链路决定；后台只能通过已审核、合同哈希一致的 release 创建或发布产品版本，不能直接 PATCH 目录绕过 release。展示名称、描述、标准化 identity 和颜色必须来自同一份发布合同；产品暂停或 release 失效时，既有 entitlement 保留历史但会标记不可用，新推荐与新授权被拒绝。
 - `user_agents.alias_source`：迁移 `045_agent_alias_source.sql` 标记 Agent 别名来自系统目录还是用户自定义。后台修改目录展示名时只迁移仍等于旧系统名的别名，不覆盖用户自定义名称。
 - `agent_registry`、`agent_releases`、`agent_release_status_history`：迁移 `046_agent_releases.sql` 保存代码注册快照、版本/contract hash、声明 scopes、readiness、完整 identity 和 release 状态历史。registry 是执行事实，release 审核和发布是独立状态；代码或合同变化产生新的 release，不覆盖已发布快照。
+- `agent_release_status_history.transition_receipt` 与 `product_status_history.transition_receipt`：迁移 `065_publishing_transition_receipts.sql` 为后台 Release/产品状态动作保留版本化结果快照；操作者、目标、转换与幂等键一起用于重放，审计和生命周期历史在同一事务提交。
 - `products`、`product_versions`、`product_agent_dependencies`、`product_status_history`：迁移 `047_product_catalog.sql` 保存面向用户的产品版本、平台、依赖 release、所需 scopes、产品合同和状态历史。产品只有在依赖 release 已发布且合同一致时才能发布。
 - `user_entitlements`、`entitlement_status_history`：迁移 `048_agent_entitlements.sql` 保存用户对具体产品版本的显式授权、授权 scopes、consent 版本、合同哈希和不可用/需重新同意原因。启用事务同时写入 entitlement、对应 `user_agents` 与 Agent 会话；暂停或合同变化保留历史并标记状态，不静默扩权。
 - `chat_threads`：妙讯会话，支持绑定 `agent_id`；好友 direct 聊天通过 `peer_user_id` 指向对方用户，并约束同一用户到同一好友只保留一个 direct 线程。
@@ -119,7 +123,9 @@ POSTGRES_CONNECTION_LIMIT=10
 - `profile_visibility`：公开主页展示开关，控制简介、AI ID、计数、社区、活动区域、关注列表和粉丝列表等字段是否对外展示。
 - `station_diary_entries`：个人日记正文、心情、可见范围和来源。
 - `station_albums`：个人相册元数据、描述和可见范围。
+- `station_album_submissions`（本地候选迁移 071）：`POST /api/station/albums` 按账号和 `Idempotency-Key` UUID 保存规范化正文摘要。相册、创建回执和使用事件在同一事务写入。首次提交返回 201，同键同正文返回 200 和原回执，同键不同正文返回 409。相册删除时清除回执，同键同正文的重试返回 410。App 在同一创建表单内保留保存键，重新打开创建表单时分配新键，允许创建同名相册。早期客户端省略请求头时沿用原有 201 创建语义。升级先应用 071，再启动读取回执的 API。
 - `station_media_assets`：相册图片/视频素材登记、上传状态、标签和素材元数据。
+- `storage_cleanup_operations`、`storage_cleanup_objects`：注销、小站相册和单素材删除在撤销访问的同一事务登记对象清单。受理后账号凭据立即失效，注销回执的 `cleanupStatus` 区分 `pending` 和 `completed`。小站仍返回原有 204，重复删除读取同一受理记录。挂接对象至少等待 15 分钟，以覆盖已有上传签名期限，再由 AI Worker 处理，按对象租约恢复并退避重试。已有动态保留，已删素材不再出现在其可读素材列表。其他可见素材或文件仍引用同一个存储键时保留对象。
 - `station_outfits`：今日穿搭记录，关联头像配置和可选媒体素材。
 - `station_site_drafts`：自然语言建站 Agent 的真实模型草稿，支持草稿应用状态；迁移 `023_require_model_site_drafts.sql` 会删除历史规则草稿并强制 `source = 'model'`。最新本地结构页面候选复用draft JSONB，schemaVersion=2含稳定documentId/section.id、不可变revision=1与private范围；确认保存到user_profiles.station_config.siteLayout/siteDraftId。旧version=1记录保留但新预览/确认明确拒绝，不自动转换。资源按当前owner精确读取及双hash校验；没有新表、迁移或生产数据修改，详见[结构页面记录](reviews/2026-10-12-structured-pages.md)。
 - `generation_jobs`：旧的通用异步生成任务表；新的 3D 形象流程不再读写该表。

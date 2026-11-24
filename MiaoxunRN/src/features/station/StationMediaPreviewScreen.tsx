@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
@@ -20,6 +20,9 @@ import { Palette } from '../../shared/theme';
 import { Header } from '../../shared/ui';
 import { Language } from '../session/useMiaoxunSession';
 
+import { useVoiceCallActivity } from '../voiceCalls/useVoiceCallActivity';
+import { voiceCallConflictCopy } from '../../services/voiceCall/voiceCallResources';
+
 export function StationMediaPreviewScreen({
   asset,
   token,
@@ -39,6 +42,8 @@ export function StationMediaPreviewScreen({
   onUnavailable: (assetId: string) => void;
   onActionMessage?: (message: string) => void;
 }) {
+  const callActive = useVoiceCallActivity();
+  const videoBlocked = asset.kind === 'video' && callActive;
   const videoRef = useRef<VideoRef>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -47,6 +52,14 @@ export function StationMediaPreviewScreen({
     'idle' | 'saving' | 'success' | 'error'
   >('idle');
   const [saveMessage, setSaveMessage] = useState('');
+  const saveRequest = useRef<symbol | null>(null);
+  useLayoutEffect(() => {
+    setSaveState('idle');
+    setSaveMessage('');
+    return () => {
+      saveRequest.current = null;
+    };
+  }, [asset.id, token]);
   const [active, setActive] = useState(AppState.currentState === 'active');
   const alive = useRef(true);
   useEffect(() => {
@@ -79,11 +92,14 @@ export function StationMediaPreviewScreen({
     }
   };
   const handleSave = async () => {
-    if (asset.kind !== 'image' || saveState === 'saving') return;
+    if (asset.kind !== 'image' || saveRequest.current) return;
+    const request = Symbol();
+    saveRequest.current = request;
     setSaveState('saving');
     setSaveMessage(textFor(language, '正在保存…', 'Saving…'));
     try {
       await saveComicImageToLibrary({ mediaAssetId: asset.id, token });
+      if (saveRequest.current !== request) return;
       const message = textFor(
         language,
         '图片已保存到系统相册。',
@@ -93,6 +109,7 @@ export function StationMediaPreviewScreen({
       setSaveMessage(message);
       onActionMessage?.(message);
     } catch (error) {
+      if (saveRequest.current !== request) return;
       const message =
         error instanceof Error
           ? error.message
@@ -104,6 +121,8 @@ export function StationMediaPreviewScreen({
       setSaveState('error');
       setSaveMessage(message);
       onActionMessage?.(message);
+    } finally {
+      if (saveRequest.current === request) saveRequest.current = null;
     }
   };
   return (
@@ -152,7 +171,16 @@ export function StationMediaPreviewScreen({
         </Text>
       ) : null}
       <View style={[local.stage, { backgroundColor: palette.soft }]}>
-        {failed ? (
+        {videoBlocked ? (
+          <View style={local.state}>
+            <Text
+              accessibilityLiveRegion="polite"
+              style={{ color: palette.text }}
+            >
+              {textFor(language, ...voiceCallConflictCopy.playback)}
+            </Text>
+          </View>
+        ) : failed ? (
           <View style={local.state}>
             <Text style={{ color: palette.text }}>
               {textFor(
@@ -211,7 +239,7 @@ export function StationMediaPreviewScreen({
             onError={handleError}
           />
         )}
-        {loading && !failed ? (
+        {loading && !failed && !videoBlocked ? (
           <ActivityIndicator
             accessibilityLabel={textFor(
               language,

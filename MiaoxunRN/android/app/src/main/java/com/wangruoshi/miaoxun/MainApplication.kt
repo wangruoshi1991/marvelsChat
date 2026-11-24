@@ -19,6 +19,8 @@ class MainApplication : Application(), ReactApplication {
           add(QRCodeScannerPackage())
           add(MiaoxunDocumentPickerPackage())
           add(MiaoxunMediaLibraryPackage())
+          add(SecondFloorTouchPackage())
+          add(MiaoxunCallAudioRoutePackage())
         },
     )
   }

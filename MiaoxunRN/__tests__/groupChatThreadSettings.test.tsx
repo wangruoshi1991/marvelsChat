@@ -12,6 +12,7 @@ const api = jest.mocked(groupChatApi);
 const props = {
   visible: false,
   muted: false,
+  threadId: 'group-thread',
   palette: palettes.light,
   language: 'zh' as const,
   onClose: jest.fn(),

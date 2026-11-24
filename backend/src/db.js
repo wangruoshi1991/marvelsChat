@@ -5,6 +5,7 @@ import { loadMigrationFiles } from "./migration-files.js";
 import { checkMigrationStatus } from "./migration-ledger.js";
 
 let pool;
+let leasePool;
 let expectedMigrationsPromise;
 
 const { Pool } = pg;
@@ -25,7 +26,7 @@ export function createConnectionAdapter(client) {
   };
 }
 
-export async function getPool() {
+function createDatabasePool(options) {
   if (!config.db.configured) {
     throw new HttpError(
       503,
@@ -33,30 +34,18 @@ export async function getPool() {
     );
   }
 
-  if (!pool) {
-    pool = config.db.databaseUrl
-      ? new Pool({
-          connectionString: config.db.databaseUrl,
-          max: config.db.connectionLimit,
-        })
-      : new Pool({
-          host: config.db.host,
-          port: config.db.port,
-          user: config.db.user,
-          password: config.db.password,
-          database: config.db.database,
-          max: config.db.connectionLimit,
-        });
-    pool.on("error", (error) => {
-      // pg has already removed the disconnected idle client from the pool.
-      console.error(JSON.stringify({
-        type: "database_pool_error",
-        errorCode: error.code || null,
-      }));
-    });
-  }
+  const databasePool = new Pool(config.db.databaseUrl
+    ? { connectionString: config.db.databaseUrl, ...options }
+    : { host: config.db.host, port: config.db.port, user: config.db.user,
+        password: config.db.password, database: config.db.database, ...options });
+  databasePool.on("error", error => {
+    console.error(JSON.stringify({ type: "database_pool_error", errorCode: error.code || null }));
+  });
+  return databasePool;
+}
 
-  return pool;
+export async function getPool() {
+  return pool ??= createDatabasePool({ max: config.db.connectionLimit });
 }
 
 export async function query(sql, params = []) {
@@ -66,26 +55,52 @@ export async function query(sql, params = []) {
 }
 
 export async function closeDatabase() {
-  const activePool = pool;
+  const activePools = [pool, leasePool];
   pool = undefined;
-  if (activePool) await activePool.end();
+  leasePool = undefined;
+  await Promise.all(activePools.map(active => active?.end()));
 }
 
 export async function withTransaction(work) {
-  const db = await getPool();
+  return runTransaction(await getPool(), work);
+}
+
+export async function withLeaseTransaction(work, { signal } = {}) {
+  signal?.throwIfAborted();
+  // Bound connection setup and checkout without changing regular API queries.
+  leasePool ??= createDatabasePool({ max: 1, connectionTimeoutMillis: 5000 });
+  return runTransaction(leasePool, work, signal);
+}
+
+async function runTransaction(db, work, signal) {
   const client = await db.connect();
   const connection = createConnectionAdapter(client);
+  let discarded = false;
+  const discardClient = () => {
+    // A busy connection must be closed for PostgreSQL to roll back uncommitted work.
+    discarded = true;
+    client.release(true);
+  };
+  signal?.addEventListener("abort", discardClient, { once: true });
 
+  let began = false;
   try {
+    signal?.throwIfAborted();
     await client.query("BEGIN");
+    began = true;
+    signal?.throwIfAborted();
     const result = await work(connection);
+    signal?.throwIfAborted();
     await client.query("COMMIT");
+    signal?.throwIfAborted();
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (!discarded && began) await client.query("ROLLBACK");
+    signal?.throwIfAborted();
     throw error;
   } finally {
-    client.release();
+    signal?.removeEventListener("abort", discardClient);
+    if (!discarded) client.release();
   }
 }
 

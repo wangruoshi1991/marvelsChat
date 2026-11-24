@@ -2,6 +2,8 @@ import crypto from "crypto";
 import { normalizeAvatarConfig } from "./avatar-service.js";
 import { query, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
+import { enqueueStorageCleanup, getStorageCleanup, storageCleanupGraceMs } from "./storage-cleanup-repository.js";
+import { createUsageEvent } from "./repositories.js";
 import {
   mapStationAlbum,
   mapStationDiaryEntry,
@@ -73,9 +75,9 @@ export async function getStationDiaryEntryForUser({ userId, diaryEntryId }) {
   return rows[0] ? mapStationDiaryEntry(rows[0]) : null;
 }
 
-export async function createStationAlbum({ userId, title, description = "", visibility = "private" }) {
+export async function createStationAlbum({ userId, title, description = "", visibility = "private" }, runQuery = query) {
   const id = crypto.randomUUID();
-  const rows = await query(
+  const rows = await runQuery(
     `INSERT INTO station_albums
       (id, user_id, title, description, visibility)
     VALUES (?, ?, ?, ?, ?)
@@ -83,6 +85,59 @@ export async function createStationAlbum({ userId, title, description = "", visi
     [id, userId, title, description, visibility],
   );
   return mapStationAlbum(rows[0]);
+}
+
+export async function submitStationAlbum({ userId, submissionKey, title, description, visibility, audit }) {
+  const requestHash = submissionKey
+    ? crypto.createHash("sha256").update(JSON.stringify([title, description, visibility])).digest("hex")
+    : null;
+  return withTransaction(async connection => {
+    if (submissionKey) {
+      await connection.query("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+        [`station-album:${userId}:${submissionKey}`]);
+      const [previous] = await connection.query(
+        `SELECT submission.request_hash, album.creation_receipt
+        FROM station_album_submissions submission
+        LEFT JOIN station_albums album
+          ON album.id = submission.album_id AND album.user_id = submission.user_id AND album.deleted_at IS NULL
+        WHERE submission.user_id = ? AND submission.submission_key = ?`,
+        [userId, submissionKey],
+      );
+      if (previous) {
+        if (previous.request_hash !== requestHash) {
+          throw new HttpError(409, "此提交标识已用于不同的相册内容。", {
+            code: "STATION_ALBUM_IDEMPOTENCY_CONFLICT",
+          });
+        }
+        if (!previous.creation_receipt) {
+          throw new HttpError(410, "该请求创建的相册已删除。", {
+            code: "STATION_ALBUM_RECEIPT_UNAVAILABLE",
+          });
+        }
+        return { album: previous.creation_receipt, replayed: true };
+      }
+    }
+    const album = await createStationAlbum({ userId, title, description, visibility }, connection.query);
+    if (submissionKey) {
+      await connection.query(
+        "UPDATE station_albums SET creation_receipt = ?::jsonb WHERE id = ?",
+        [JSON.stringify(album), album.id],
+      );
+      await connection.query(
+        `INSERT INTO station_album_submissions (user_id, submission_key, album_id, request_hash) VALUES (?, ?, ?, ?)`,
+        [userId, submissionKey, album.id, requestHash],
+      );
+    }
+    await createUsageEvent({
+      ...audit,
+      userId,
+      eventType: "station.album.create",
+      targetType: "station_album",
+      targetId: album.id,
+      payload: { visibility: album.visibility },
+    }, connection.query);
+    return { album, replayed: false };
+  });
 }
 
 export async function updateStationAlbum({
@@ -118,24 +173,49 @@ export async function updateStationAlbum({
   return rows[0] ? mapStationAlbum(rows[0]) : null;
 }
 
-export async function deleteStationAlbum({ userId, albumId }) {
+async function queueStationStorage(connection, { scope, userId, targetId, assets }) {
+  const notBefore = new Date(Date.now() + storageCleanupGraceMs);
+  await enqueueStorageCleanup(connection, {
+    scope, userId, targetId,
+    objects: assets.filter(asset => asset.storage_key).map(asset => ({
+      provider: asset.storage_provider, objectKey: asset.storage_key, notBefore,
+    })),
+  });
+}
+
+export async function deleteStationAlbum({ userId, albumId, audit }) {
   return withTransaction(async (connection) => {
+    const scope = { scope: "station_album", userId, targetId: albumId };
     const rows = await connection.query(
-      `UPDATE station_albums
-      SET deleted_at = CURRENT_TIMESTAMP
+      `SELECT id FROM station_albums
       WHERE id = ? AND user_id = ? AND deleted_at IS NULL
-      RETURNING id`,
+      FOR UPDATE`,
       [albumId, userId],
     );
     if (!rows.length) {
-      return false;
+      return Boolean(await getStorageCleanup(connection, scope));
     }
+    const assets = await connection.query(
+      `SELECT id, storage_provider, storage_key FROM station_media_assets
+      WHERE album_id = ? AND user_id = ? AND deleted_at IS NULL ORDER BY id FOR UPDATE`,
+      [albumId, userId],
+    );
+    const changed = await connection.query(
+      `UPDATE station_albums SET deleted_at = CURRENT_TIMESTAMP, creation_receipt = NULL
+      WHERE id = ? AND user_id = ? AND deleted_at IS NULL RETURNING id`,
+      [albumId, userId],
+    );
+    if (!changed.length) return false;
+    await queueStationStorage(connection, { ...scope, assets });
     await connection.query(
       `UPDATE station_media_assets
       SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP
       WHERE album_id = ? AND user_id = ? AND deleted_at IS NULL`,
       [albumId, userId],
     );
+    if (audit) await createUsageEvent({
+      ...audit, userId, eventType: "station.album.delete", targetType: "station_album", targetId: albumId,
+    }, connection.query);
     return true;
   });
 }
@@ -163,26 +243,28 @@ export async function createStationMediaAsset({
   caption = "",
   tags = [],
   metadata = {},
-}) {
-  if (albumId) {
-    const albums = await query(
-      "SELECT id FROM station_albums WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
-      [albumId, userId],
-    );
-    if (!albums.length) {
-      throw new HttpError(404, "Album not found");
-    }
-  }
-
-  const id = crypto.randomUUID();
-  const rows = await query(
+}, connection = null) {
+  const create = async connection => {
+    if (albumId) await lockStationAlbum(connection, { albumId, userId });
+    const id = crypto.randomUUID();
+    const rows = await connection.query(
     `INSERT INTO station_media_assets
       (id, user_id, album_id, kind, original_filename, mime_type, byte_size, width, height, caption, tags, metadata)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb)
     RETURNING *`,
     [id, userId, albumId, kind, originalFilename, mimeType, byteSize, width, height, caption, JSON.stringify(tags), JSON.stringify(metadata)],
+    );
+    return mapStationMediaAsset(rows[0]);
+  };
+  return connection ? create(connection) : withTransaction(create);
+}
+
+async function lockStationAlbum(connection, { albumId, userId }) {
+  const [album] = await connection.query(
+    "SELECT id FROM station_albums WHERE id = ? AND user_id = ? AND deleted_at IS NULL FOR UPDATE",
+    [albumId, userId],
   );
-  return mapStationMediaAsset(rows[0]);
+  if (!album) throw new HttpError(404, "Album not found");
 }
 
 export async function updateStationMediaAsset({
@@ -192,43 +274,39 @@ export async function updateStationMediaAsset({
   caption,
   hasAlbumId,
 }) {
-  if (hasAlbumId && albumId) {
-    const albums = await query(
-      "SELECT id FROM station_albums WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
-      [albumId, userId],
+  return withTransaction(async (connection) => {
+    if (hasAlbumId && albumId) await lockStationAlbum(connection, { albumId, userId });
+    const rows = await connection.query(
+      `UPDATE station_media_assets
+      SET album_id = CASE WHEN ?::boolean THEN ?::text ELSE album_id END,
+        caption = COALESCE(?::text, caption)
+      WHERE id = ? AND user_id = ? AND deleted_at IS NULL RETURNING *`,
+      [Boolean(hasAlbumId), albumId ?? null, caption ?? null, mediaAssetId, userId],
     );
-    if (!albums.length) {
-      throw new HttpError(404, "Album not found");
-    }
-  }
-
-  const rows = await query(
-    `UPDATE station_media_assets
-    SET
-      album_id = CASE WHEN ?::boolean THEN ?::text ELSE album_id END,
-      caption = COALESCE(?::text, caption)
-    WHERE id = ? AND user_id = ? AND deleted_at IS NULL
-    RETURNING *`,
-    [
-      Boolean(hasAlbumId),
-      albumId ?? null,
-      caption ?? null,
-      mediaAssetId,
-      userId,
-    ],
-  );
-  return rows[0] ? mapStationMediaAsset(rows[0]) : null;
+    return rows[0] ? mapStationMediaAsset(rows[0]) : null;
+  });
 }
 
-export async function deleteStationMediaAsset({ userId, mediaAssetId }) {
-  const rows = await query(
-    `UPDATE station_media_assets
-    SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND user_id = ? AND deleted_at IS NULL
-    RETURNING *`,
-    [mediaAssetId, userId],
-  );
-  return rows[0] ? mapStationMediaAsset(rows[0]) : null;
+export async function deleteStationMediaAsset({ userId, mediaAssetId, audit }) {
+  return withTransaction(async (connection) => {
+    const scope = { scope: "station_media", userId, targetId: mediaAssetId };
+    const [asset] = await connection.query(
+      "SELECT * FROM station_media_assets WHERE id = ? AND user_id = ? AND deleted_at IS NULL FOR UPDATE",
+      [mediaAssetId, userId],
+    );
+    if (!asset) return await getStorageCleanup(connection, scope) ? { id: mediaAssetId } : null;
+    await queueStationStorage(connection, { ...scope, assets: [asset] });
+    const rows = await connection.query(
+      `UPDATE station_media_assets SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND user_id = ? AND deleted_at IS NULL RETURNING *`,
+      [mediaAssetId, userId],
+    );
+    if (audit) await createUsageEvent({
+      ...audit, userId, eventType: "station.media.delete", targetType: "station_media_asset",
+      targetId: mediaAssetId, payload: { albumId: asset.album_id },
+    }, connection.query);
+    return mapStationMediaAsset(rows[0]);
+  });
 }
 
 export async function getStationMediaAssetForUser({ userId, mediaAssetId }) {
@@ -449,9 +527,9 @@ export async function createStationOutfit({
   mediaAssetId = null,
   visibility = "private",
   source = "manual",
-}) {
+}, runQuery = query) {
   if (mediaAssetId) {
-    const assets = await query(
+    const assets = await runQuery(
       "SELECT id FROM station_media_assets WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
       [mediaAssetId, userId],
     );
@@ -461,7 +539,7 @@ export async function createStationOutfit({
   }
 
   const id = crypto.randomUUID();
-  const rows = await query(
+  const rows = await runQuery(
     `INSERT INTO station_outfits
       (id, user_id, title, note, avatar_config, media_asset_id, visibility, source)
     VALUES (?, ?, ?, ?, ?::jsonb, ?, ?, ?)

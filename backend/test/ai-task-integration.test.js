@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import test, { before, after, beforeEach } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import express from "express";
-import { query, closeDatabase } from "../src/db.js";
+import { query, closeDatabase, getPool } from "../src/db.js";
 import { authenticate, hashToken } from "../src/auth.js";
 import { registerMessageRoutes } from "../src/routes/message-routes.js";
 import { registerAppRoutes } from "../src/routes/app-routes.js";
@@ -166,6 +167,7 @@ const request = async (path, body, authToken = token, contract = "1") => {
             "X-Miaoxun-AI-Contract": contract,
             "X-Miaoxun-Site-Document": "2",
             "X-Miaoxun-Agent-Workspace": "6",
+            "X-Miaoxun-Chat-Content": "1",
           }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -194,6 +196,115 @@ const admitAndReplayLegacyAlbum = async (extra = {}) => {
     agentAccess: { agent, grantedScopes: agent.permissions } });
   return { ...await request(`/api/threads/${threadId}/messages`, body), legacyAdmissionCreated: !accepted.reused };
 };
+
+async function waitForBlockedRenewal() {
+  const observedBy = Date.now() + 1500;
+  while (true) {
+    const [activity] = await query(`SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'
+      AND query LIKE 'SELECT id FROM ai_tasks%claim_token%FOR UPDATE') AS blocked`);
+    if (activity.blocked) return;
+    assert.ok(Date.now() < observedBy, "renewal did not wait on the task row");
+    await delay(10);
+  }
+}
+
+integration("a blocked renewal times out or aborts without reviving an expired claim", async () => {
+  const task = (await admitAndReplayLegacyAlbum()).data.task;
+  const claim = await repository.claimAITask({ kinds: ["agent_message"] });
+  assert.equal(claim.id, task.id);
+  const locker = await (await getPool()).connect();
+  const controller = new AbortController();
+  let renewal;
+  try {
+    await locker.query("BEGIN");
+    await locker.query("SELECT id FROM ai_tasks WHERE id = $1 FOR UPDATE", [claim.id]);
+    await assert.rejects(repository.heartbeatAITask({ taskId: claim.id, claimToken: claim.claimToken }, { timeoutMs: 50 }),
+      { code: "57014" });
+
+    renewal = repository.heartbeatAITask({ taskId: claim.id, claimToken: claim.claimToken },
+      { signal: controller.signal, timeoutMs: 5000 });
+    // Observe the actual lock wait before aborting the client.
+    await waitForBlockedRenewal();
+    controller.abort();
+    await assert.rejects(renewal, { name: "AbortError" });
+  } finally {
+    controller.abort();
+    await renewal?.catch(() => {});
+    await locker.query("ROLLBACK");
+    locker.release();
+  }
+
+  const [row] = await query("SELECT lease_until FROM ai_tasks WHERE id = ? FOR UPDATE", [claim.id]);
+  assert.equal(row.lease_until.toISOString(), claim.leaseUntil);
+  await query("UPDATE ai_tasks SET lease_until = clock_timestamp() - INTERVAL '1 second' WHERE id = ?", [claim.id]);
+  assert.equal(await repository.recoverInterruptedAITasks(), 1);
+  assert.equal(await repository.heartbeatAITask({ taskId: claim.id, claimToken: claim.claimToken }), false);
+  await assert.rejects(repository.finishAITask({ taskId: claim.id, claimToken: claim.claimToken,
+    status: "succeeded", phase: "completed", complete: async () => assert.fail("stale claim wrote an artifact") }),
+  error => error.details?.code === "AI_TASK_LEASE_LOST");
+  assert.equal(await repository.claimAITask({ kinds: ["agent_message"] }), null);
+  assert.equal((await repository.getAITask({ userId: owner, taskId: claim.id })).status, "interrupted");
+});
+
+integration("a renewal that starts before expiry cannot extend the lease after waiting for its row", async () => {
+  await admitAndReplayLegacyAlbum();
+  const claim = await repository.claimAITask({ kinds: ["agent_message"] });
+  await query("UPDATE ai_tasks SET lease_until = clock_timestamp() + INTERVAL '1 second' WHERE id = ?", [claim.id]);
+  const locker = await (await getPool()).connect();
+  let renewal;
+  try {
+    await locker.query("BEGIN");
+    await locker.query("SELECT id FROM ai_tasks WHERE id = $1 FOR UPDATE", [claim.id]);
+    renewal = repository.heartbeatAITask({ taskId: claim.id, claimToken: claim.claimToken });
+    await waitForBlockedRenewal();
+    const [lease] = await query("SELECT lease_until > clock_timestamp() AS live FROM ai_tasks WHERE id = ?", [claim.id]);
+    assert.equal(lease.live, true);
+    await locker.query(`SELECT pg_sleep_until((SELECT lease_until + INTERVAL '50 milliseconds'
+      FROM ai_tasks WHERE id = $1))`, [claim.id]);
+  } finally {
+    await locker.query("ROLLBACK");
+    locker.release();
+  }
+  assert.equal(await renewal, false);
+  assert.equal(await repository.recoverInterruptedAITasks(), 1);
+  assert.equal(await repository.claimAITask({ kinds: ["agent_message"] }), null);
+});
+
+integration("an incompatible stored task is readable, fails before dispatch, and leaves the next task available", async () => {
+  const first = (await admitAndReplayLegacyAlbum()).data.task;
+  const second = (await admitAndReplayLegacyAlbum()).data.task;
+  const diagnostic = { code: "ARCHIVED_FORMAT", message: "local diagnostic", version: 0 };
+  await query("UPDATE ai_tasks SET error = ?::jsonb WHERE id = ? AND user_id = ?",
+    [JSON.stringify(diagnostic), first.id, owner]);
+
+  const selected = await repository.getAITask({ userId: owner, taskId: first.id });
+  assert.equal(selected.status, "queued");
+  assert.equal(selected.error.code, "AI_TASK_METADATA_INVALID");
+  assert.deepEqual(selected.allowedActions, []);
+  assert.equal(await repository.getAITask({ userId: outsider, taskId: first.id }), null);
+  const listed = await repository.listAITasks({ userId: owner });
+  assert.ok(listed.some(task => task.id === first.id));
+  assert.ok(listed.some(task => task.id === second.id));
+  assert.equal(JSON.stringify(listed).includes(diagnostic.message), false);
+  await assert.rejects(repository.mutateAITask({ userId: owner, taskId: first.id, revision: selected.revision, operation: "cancel" }),
+    error => error.details?.code === "AI_TASK_METADATA_INVALID");
+
+  assert.equal(await repository.claimAITask({ kinds: ["agent_message"] }), null);
+  const page = await repository.listAITaskEvents({ userId: owner, taskId: first.id });
+  assert.equal(page.task.status, "failed");
+  assert.deepEqual(page.events.map(event => event.status), ["queued", "failed"]);
+  assert.equal(page.events.at(-1).errorCode, "AI_TASK_METADATA_INVALID");
+  assert.equal(JSON.stringify(page).includes(diagnostic.message), false);
+  const [stored] = await query("SELECT error, claim_token FROM ai_tasks WHERE id = ?", [first.id]);
+  assert.deepEqual(stored.error, diagnostic);
+  assert.equal(stored.claim_token, null);
+  const healthy = await repository.claimAITask({ kinds: ["agent_message"] });
+  assert.equal(healthy.id, second.id);
+  await assert.rejects(repository.finishAITask({
+    taskId: healthy.id, claimToken: healthy.claimToken, status: "failed", phase: "failed", error: diagnostic,
+  }), { name: "ZodError" });
+});
 
 integration("App addition rejects a partial declaration without changing existing access or creating a conversation", async () => {
   const before = await query("SELECT enabled, granted_scopes FROM user_agents WHERE user_id = ? AND agent_id = 'site-builder'", [owner]);

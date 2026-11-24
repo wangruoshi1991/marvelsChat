@@ -378,7 +378,7 @@ export function createProductCatalogRepository({
   async function createProductVersion(args) { return saveVersion({ ...args, productVersionId: null }); }
   async function updateProductVersion(args) { return saveVersion(args); }
 
-  async function transitionProduct({ productId, productVersionId = null, toStatus, actorUserId = null, reason = null, requestId = null, afterProjection = null }) {
+  async function transitionProduct({ productId, productVersionId = null, toStatus, actorUserId = null, reason = null, requestId = null, afterProjection = null, recordAudit = null, expectedContractHash = null }) {
     return transaction(async (connection) => {
       const q = qFor(connection);
       const product = await getProduct(productId, { connection, lock: true, productVersionId });
@@ -389,14 +389,17 @@ export function createProductCatalogRepository({
       }
       const from = product.status;
       if (requestId) {
-        const replay = await q(`SELECT to_status, product_version_id FROM product_status_history
-          WHERE product_id = ? AND request_id = ? ORDER BY id DESC LIMIT 1`, [product.id, requestId]);
+        const replay = await q(`SELECT to_status, reason, product_version_id, transition_receipt FROM product_status_history
+          WHERE product_id = ? AND actor_user_id IS NOT DISTINCT FROM ? AND request_id = ? ORDER BY id DESC LIMIT 1`, [product.id, actorUserId, requestId]);
         if (replay[0]) {
-          if (replay[0].to_status !== toStatus || from !== toStatus || (replay[0].product_version_id && String(replay[0].product_version_id).trim() !== product.productVersionId)) {
+          if (replay[0].to_status !== toStatus || replay[0].reason !== reason || (!replay[0].transition_receipt && from !== toStatus) || (replay[0].product_version_id && String(replay[0].product_version_id).trim() !== product.productVersionId)) {
             throw new HttpError(409, "Idempotency-Key was already used for a different product transition", { code: "IDEMPOTENCY_CONFLICT" });
           }
-          return product;
+          return replay[0].transition_receipt ?? product;
         }
+      }
+      if (expectedContractHash && product.contractHash !== expectedContractHash) {
+        throw new HttpError(409, "Product version changed; reload before submitting", { code: "PRODUCT_CONTRACT_CHANGED" });
       }
       if (from === toStatus) return product;
       const allowed = { draft: ["review", "retired"], review: ["draft", "published"], published: ["paused", "retired"], paused: ["published", "retired"], retired: [] };
@@ -449,8 +452,12 @@ export function createProductCatalogRepository({
           }
         }
       }
-      await q("INSERT INTO product_status_history (product_id, product_version_id, from_status, to_status, actor_user_id, reason, request_id) VALUES (?, ?, ?, ?, ?, ?, ?)", [product.id, product.productVersionId, from, toStatus, actorUserId, reason, requestId]);
-      return getProduct(product.id, { connection, productVersionId: product.productVersionId });
+      const result = await getProduct(product.id, { connection, productVersionId: product.productVersionId });
+      await recordAudit?.(q, product);
+      await q(`INSERT INTO product_status_history
+        (product_id, product_version_id, from_status, to_status, actor_user_id, reason, request_id, transition_receipt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb)`, [product.id, product.productVersionId, from, toStatus, actorUserId, reason, requestId, requestId ? JSON.stringify(result) : null]);
+      return result;
     });
   }
 
@@ -543,7 +550,7 @@ export function createProductCatalogRepository({
     });
   }
 
-  async function disableEntitlement({ userId, productId, productVersionId = null, idempotencyKey, actorUserId = userId, afterProjection = null }) {
+  async function disableEntitlement({ userId, productId, productVersionId = null, idempotencyKey, actorUserId = userId, afterProjection = null, recordAudit = null }) {
     return transaction(async (connection) => {
       const q = qFor(connection);
       if (!idempotencyKey || typeof idempotencyKey !== "string" || idempotencyKey.trim().length < 8 || idempotencyKey.trim().length > 160) {
@@ -592,6 +599,7 @@ export function createProductCatalogRepository({
         source: `product_disable:${product.id}`,
       });
       if (afterProjection) await afterProjection({ userId, enabled: false, consentVersion: null, idempotencyKey: normalizedKey, product, connection });
+      if (recordAudit) await recordAudit(q, product);
       return mapEntitlement((await q("SELECT * FROM user_entitlements WHERE id = ?", [entitlement.id]))[0]);
     });
   }

@@ -266,6 +266,8 @@ Agent继续在独立agents目录维护；执行仍共用Node API、AI Worker和P
 
 ## 当前验证边界
 
+协作相册节点持久化可操作的检索原因。未同意使用 `WORKSPACE_MEDIA_CONSENT_REQUIRED`，服务暂时不可用使用 `WORKSPACE_MEDIA_UNAVAILABLE`，索引中和索引不可用分别使用 `WORKSPACE_MEDIA_INDEX_PENDING` 和 `WORKSPACE_MEDIA_INDEX_UNAVAILABLE`。无已上传素材与无匹配分别使用 `WORKSPACE_MEDIA_LIBRARY_EMPTY` 和 `WORKSPACE_MEDIA_NOT_FOUND`。检索仍进行中和费用未知的节点进入中断状态，分别记录 `WORKSPACE_MEDIA_REQUEST_IN_PROGRESS` 和 `AI_PROVIDER_RESULT_UNKNOWN`，后续协作节点停止派发。
+
 设计来源见[设计资料](app-design-assets.md)，当前检查与实际结果记录在 `docs/handoffs/CURRENT.md`。用户此前确认真机48账号同步恢复并可进入妙页；完整真实素材→多Agent交接→页面预览确认链、任务续作、连续下拉/上滑、方向选择和真机语音仍未据此验收。本地新交互的自动化回归也不能证明手感或真实模型质量；固定iPhone17须另核对布局与实际触摸。类型检查不能代替设备检查，模拟器不能代替真机或Android。当前没有完成全体Agent平台，也不把本次UI结构交付写成所有33个原型状态已经实现。
 
 ## 文件输入（本地合同6，迁移043）

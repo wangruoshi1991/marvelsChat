@@ -47,6 +47,24 @@ const createResponse = () => {
   return response;
 };
 
+test("submission recovery forwards only the authenticated owner and validated original key", async () => {
+  const { app, routes } = createRouteHarness();
+  const calls = [];
+  registerAvatar3dAppRoutes(app, {
+    authenticate: (_req, _res, next) => next(), asyncHandler: handler => handler,
+    service: { findSubmission: async input => { calls.push(input); return { job: null }; } },
+  });
+  const route = routes.find(item => item.path === "/api/avatar-3d/app/jobs/submission");
+  const user = { id: "owner" }, key = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const response = createResponse();
+  await route.handlers.at(-1)({ user, get: () => key }, response);
+  assert.deepEqual(calls, [{ user, idempotencyKey: key }]);
+  assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+  assert.deepEqual(response.payload, { data: { job: null } });
+  await assert.rejects(route.handlers.at(-1)({ user, get: () => "" }, response));
+  assert.equal(calls.length, 1);
+});
+
 test("App avatar routes expose the native lifecycle behind Bearer authentication", () => {
   const { app, routes } = createRouteHarness();
   const authenticate = (_req, _res, next) => next();
@@ -63,6 +81,7 @@ test("App avatar routes expose the native lifecycle behind Bearer authentication
       "POST /api/avatar-3d/app/photos/:photoId/complete",
       "DELETE /api/avatar-3d/app/photos/:photoId",
       "POST /api/avatar-3d/app/jobs",
+      "GET /api/avatar-3d/app/jobs/submission",
       "GET /api/avatar-3d/app/jobs/:jobId",
       "GET /api/avatar-3d/app/jobs/:jobId/references",
       "GET /api/avatar-3d/app/jobs/:jobId/references/:view/file",

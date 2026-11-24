@@ -112,6 +112,56 @@ describe("TaskProgress", () => {
     expect(props.onJobChange).toHaveBeenCalledWith(expect.objectContaining({ status: "queued_3d" }));
   });
 
+  it("recovers an unavailable reference set with a read-only retry", async () => {
+    vi.useRealTimers();
+    const props = baseProps();
+    props.getReferences.mockRejectedValueOnce(new AvatarApiError({ status: 503, requestId: "safe-references" }));
+    render(<TaskProgress job={job("awaiting_reference_confirmation")} {...props} />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("暂时无法读取四视图");
+    expect(screen.getByText(/safe-references/)).not.toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "重试读取四视图" }));
+    expect(await screen.findByAltText("正面四视图")).not.toBeNull();
+    expect(props.getReferences).toHaveBeenCalledTimes(2);
+    expect(props.confirmReferences).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed cancellation and ignores a pending refresh after a successful retry", async () => {
+    vi.useRealTimers();
+    const props = baseProps();
+    let finishRefresh: (job: AvatarJob) => void = () => {};
+    props.getJob.mockReturnValue(new Promise<AvatarJob>(resolve => { finishRefresh = resolve; }));
+    props.cancelJob
+      .mockRejectedValueOnce(new AvatarApiError({ status: 503, requestId: "safe-cancel" }))
+      .mockResolvedValueOnce(job("cancelled"));
+    render(<TaskProgress job={job("queued_3d")} {...props} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "取消任务" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("取消未完成");
+    expect(screen.getByText(/safe-cancel/)).not.toBeNull();
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    expect(props.getJob).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole("button", { name: "取消任务" }));
+    expect(await screen.findByRole("heading", { name: "本次生成已放弃" })).not.toBeNull();
+    await act(async () => finishRefresh(job("queued_3d")));
+    expect(props.onJobChange).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("heading", { name: "本次生成已放弃" })).not.toBeNull();
+  });
+
+  it("discards a reference read when a different task replaces the active task", async () => {
+    vi.useRealTimers();
+    const props = baseProps();
+    let finishRead: (value: AvatarReferences) => void = () => {};
+    props.getReferences.mockReturnValue(new Promise<AvatarReferences>(resolve => { finishRead = resolve; }));
+    const { rerender } = render(<TaskProgress job={job("awaiting_reference_confirmation")} {...props} />);
+    await waitFor(() => expect(props.getReferences).toHaveBeenCalledTimes(1));
+    rerender(<TaskProgress job={{ ...job("queued_3d"), id: "new-job" }} {...props} />);
+    await act(async () => finishRead(references));
+    expect(screen.getByRole("heading", { name: "正在准备 3D 生成" })).not.toBeNull();
+    expect(screen.queryByAltText("正面四视图")).toBeNull();
+    expect(props.onJobChange).not.toHaveBeenCalled();
+  });
+
   it("polls active work, reports only a safe request ID, and stops at terminal", async () => {
     const props = baseProps();
     props.getJob

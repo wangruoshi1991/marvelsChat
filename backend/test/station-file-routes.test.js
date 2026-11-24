@@ -18,6 +18,7 @@ async function fixture(t, existing = []) {
     createAsset: async input => { writes.push(input); return { id: crypto.randomUUID(), ...input }; },
     listAssets: async (userId, limit) => { reads.push({ userId, limit }); return existing; },
     recordUsage: async input => usage.push(input),
+    transaction: work => work({ query: async () => assert.fail("Unexpected query in registration fixture") }),
   });
   app.use(createRequestErrorHandler({ production: true, logger: { error() {} } }));
   const server = await new Promise(resolve => {

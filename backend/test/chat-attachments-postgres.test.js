@@ -91,6 +91,54 @@ test('chat attachment HTTP upload, message/sync projection, peer/group access an
    await call(`/api/threads/${group.thread.id}/messages/${sent.messages[0].id}/recall`,{owner,method:'POST'});
    for(const recipient of [owner,peer,third])await call(attachment.downloadPath,{owner:recipient,status:404});
   });
+  await t.test('private H.264 video supports real upload, read, forward and recall', async () => {
+   const video = await readFile(new URL('./fixtures/chat-video.mp4', import.meta.url));
+   const path = `/api/threads/${owner.threadId}/attachments/upload`;
+   const uploadVideo = (bytes, mimeType, status) => call(path, {
+    owner, method: 'POST', status, body: bytes, headers: {
+     'Content-Type': 'application/octet-stream', 'Idempotency-Key': crypto.randomUUID(),
+     'X-Miaoxun-Filename': 'chat-video.mp4', 'X-Miaoxun-Attachment-Kind': 'video',
+     'X-Miaoxun-Attachment-Mime': mimeType,
+    },
+   });
+   await uploadVideo(video, 'video/quicktime', 415);
+   await uploadVideo(video.subarray(0, 20), 'video/mp4', 415);
+   await uploadVideo(Buffer.alloc(8 * 1024 * 1024 + 1), 'video/mp4', 413);
+   const asset = await uploadVideo(video, 'video/mp4', 201);
+   assert.equal(asset.kind, 'video');
+   assert.ok(asset.durationMs > 1800 && asset.durationMs <= 2100);
+   const sent = (await send(owner, owner.threadId, [asset.id], 201, '')).messages[0];
+   const peerMessages = await call(`/api/threads/${peer.threadId}/messages`, { owner: peer });
+   const received = peerMessages.at(-1);
+   assert.equal(received.metadata.attachments[0].id, asset.id);
+   assert.deepEqual(await call(asset.downloadPath, { owner: peer, binary: true }), video);
+   await call(asset.downloadPath, { status: 401 });
+   await call(asset.downloadPath, { owner: stranger, status: 404 });
+
+   for (const [from, to] of [[peer, third], [third, peer]]) {
+    await query("INSERT INTO social_relationships(id,follower_user_id,followed_user_id,relation_type,status) VALUES(?,?,?,'friend','active')",
+     [crypto.randomUUID(), from.id, to.id]);
+   }
+   const group = await call('/api/chat-groups', {
+    owner: peer, method: 'POST', status: 201,
+    body: { title: 'Video forward', memberUserIds: [owner.id, third.id], idempotencyKey: crypto.randomUUID() },
+   });
+   const forward = `/api/threads/${peer.threadId}/messages/${received.id}/forward`;
+   const body = { targetThreadId: group.thread.id, clientMessageId: crypto.randomUUID() };
+   const first = (await call(forward, { owner: peer, method: 'POST', status: 201, body })).messages[0];
+   const retry = (await call(forward, { owner: peer, method: 'POST', body })).messages[0];
+   assert.equal(first.id, retry.id);
+   const copy = first.metadata.attachments[0];
+   assert.notEqual(copy.id, asset.id);
+   assert.deepEqual(await call(copy.downloadPath, { owner, binary: true }), video);
+   await call(copy.downloadPath, { owner: stranger, status: 404 });
+
+   await call(`/api/threads/${owner.threadId}/messages/${sent.id}/recall`, { owner, method: 'POST' });
+   await call(asset.downloadPath, { owner: peer, status: 404 });
+   await call(forward, { owner: peer, method: 'POST', body: { ...body, clientMessageId: crypto.randomUUID() }, status: 404 });
+   await call(`/api/threads/${group.thread.id}/messages/${first.id}/recall`, { owner: peer, method: 'POST' });
+   await call(copy.downloadPath, { owner, status: 404 });
+  });
   await t.test('migration replay is nondestructive and account deletion cascades actual blob rows',async()=>{
    const attachment=await upload(stranger,stranger.threadId,Buffer.from('delete with owner'));
    const sql=await readFile(new URL('../database/053_chat_attachments.sql',import.meta.url),'utf8');await query(sql);await query(sql);

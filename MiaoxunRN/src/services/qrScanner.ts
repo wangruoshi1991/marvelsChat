@@ -1,3 +1,4 @@
+import { assertVoiceCallResourceAvailable } from './voiceCall/voiceCallResources';
 import { NativeModules } from 'react-native';
 
 type QRCodeScannerNativeModule = {
@@ -9,6 +10,7 @@ const nativeScanner = NativeModules.QRCodeScannerModule as
   | undefined;
 
 export async function scanQRCode() {
+  assertVoiceCallResourceAvailable('camera');
   if (!nativeScanner) {
     throw new Error('QRCodeScannerModule is not installed.');
   }

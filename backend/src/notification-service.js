@@ -61,7 +61,7 @@ export async function createNotification({
   targetType = null,
   targetId = null,
   payload = {},
-}) {
+}, queryFn = query) {
   const template = notificationTemplates[kind];
   if (!template) {
     throw new HttpError(500, `Unsupported notification kind: ${kind}`);
@@ -69,7 +69,7 @@ export async function createNotification({
 
   const id = crypto.randomUUID();
   const content = template({ actorName });
-  await query(
+  await queryFn(
     `INSERT INTO notifications
       (id, user_id, actor_user_id, kind, title, body, target_type, target_id, payload)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)`,
@@ -150,8 +150,8 @@ export async function markNotificationRead(userId, notificationId) {
   return { ok: true };
 }
 
-export async function markNotificationsForTargetRead(userId, targetType, targetId) {
-  await query(
+export async function markNotificationsForTargetRead(userId, targetType, targetId, queryFn = query) {
+  await queryFn(
     `UPDATE notifications
     SET read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
     WHERE user_id = ? AND target_type = ? AND target_id = ? AND read_at IS NULL`,

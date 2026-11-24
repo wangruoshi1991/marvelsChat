@@ -19,6 +19,7 @@ import {
   Share2,
 } from 'lucide-react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
+import { useReduceMotion } from '../../shared/useReduceMotion';
 
 import { stationPostIconAssets } from '../../assets/icons';
 import { AIAssistGestureSurface } from '../assist/AIAssistGestureSurface';
@@ -628,13 +629,19 @@ function PostMetricButton({
   // feedback: the button dips and its plate fills while pressed (`aria-pressed`
   // in the prototype is the `#fff0f2` plate).
   const scale = useRef(new Animated.Value(1)).current;
-  const press = (to: number) =>
+  const reduceMotion = useReduceMotion();
+  useEffect(() => {
+    if (reduceMotion) scale.setValue(1);
+  }, [reduceMotion, scale]);
+  const press = (to: number) => {
+    if (reduceMotion) return;
     Animated.timing(scale, {
       toValue: to,
       duration: 120,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start();
+  };
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <Pressable

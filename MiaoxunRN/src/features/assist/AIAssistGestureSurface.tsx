@@ -49,6 +49,8 @@ export const AIAssistGestureSurface = forwardRef<
     children: React.ReactNode;
     onActiveChange?: (active: boolean) => void;
     onPress?: (event: GestureResponderEvent) => void;
+    onOpenContextMenu?: (event?: GestureResponderEvent) => void;
+    contextMenuLabel?: string;
     onTouchStart?: (event: GestureResponderEvent) => void;
     onTouchMove?: (event: GestureResponderEvent) => void;
     onTouchEnd?: (event: GestureResponderEvent) => void;
@@ -66,6 +68,8 @@ export const AIAssistGestureSurface = forwardRef<
     children,
     onActiveChange,
     onPress,
+    onOpenContextMenu,
+    contextMenuLabel,
     onTouchStart,
     onTouchMove,
     onTouchEnd,
@@ -193,11 +197,21 @@ export const AIAssistGestureSurface = forwardRef<
           : object.title)
       }
       accessibilityHint={accessibilityHint || '长按查看内容操作'}
-      accessibilityActions={[{ name: 'show-menu', label: '内容操作' }]}
-      onAccessibilityAction={() => activateAt()}
+      accessibilityActions={[
+        { name: 'show-menu', label: contextMenuLabel || '内容操作' },
+      ]}
+      onAccessibilityAction={event => {
+        if (event.nativeEvent.actionName !== 'show-menu') return;
+        if (onOpenContextMenu) onOpenContextMenu();
+        else activateAt();
+      }}
       delayLongPress={420}
       onPress={onPress}
-      onLongPress={event =>
+      onLongPress={event => {
+        if (onOpenContextMenu) {
+          onOpenContextMenu(event);
+          return;
+        }
         open({
           object,
           actions,
@@ -207,8 +221,8 @@ export const AIAssistGestureSurface = forwardRef<
             y: event.nativeEvent.pageY,
           },
           hapticOnOpen: true,
-        })
-      }
+        });
+      }}
       onTouchStart={onTouchStart}
       onTouchMove={event => {
         move(

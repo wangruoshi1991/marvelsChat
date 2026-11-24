@@ -32,7 +32,7 @@ class MiaoxunMediaLibraryModule(
     if (Build.VERSION.SDK_INT in 24..28 &&
       context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
     ) {
-      currentActivity?.requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 48173)
+      context.currentActivity?.requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 48173)
       promise.reject("chat_media_photo_access_pending", "请允许相册写入权限后再次点击保存。")
       return
     }

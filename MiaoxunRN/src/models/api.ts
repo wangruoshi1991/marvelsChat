@@ -20,12 +20,12 @@ export type APIErrorEnvelope = {
 
 export type ChatAttachmentDTO = {
   id: string;
-  kind: 'image' | 'file';
+  kind: 'image' | 'audio' | 'file' | 'video';
   filename: string;
   title: string;
   mimeType: string | null;
   byteSize: number;
-  durationMs: null;
+  durationMs: number | null;
   downloadPath: string | null;
   data: Record<string, never>;
 };
@@ -164,6 +164,13 @@ export type LocationCandidateDTO = {
   detail: string;
 };
 
+export type ThreadStateDTO = {
+  unreadSequence: number;
+  readSequence: number;
+  muted: boolean;
+  preferencesRevision: number;
+};
+
 export type ThreadDTO = {
   id: string;
   title: string;
@@ -181,17 +188,22 @@ export type ThreadDTO = {
   lastContent: string;
   lastMessageAt?: string | null;
   unreadCount: number;
+  unreadSequence?: number;
+  readSequence?: number;
+  preferencesRevision?: number;
 };
 
 export type MessageDTO = {
   id: string;
   threadId: string;
+  unreadSequence?: number;
   senderType: 'user' | 'agent' | 'system' | string;
   senderName: string;
   content: string;
   metadata?: Record<string, unknown> & {
     attachments?: ChatAttachmentDTO[];
     sticker?: MessageStickerDTO;
+    forwarded?: true;
     contentPreview?: import('./chatContentPreview').ContentPreviewRef;
     contentPreviewContext?: import('./chatContentPreview').ContentPreviewContext;
     contextRefs?: AIContextReference[];
@@ -379,6 +391,7 @@ export type PublicProfileDTO = {
     isFollowing: boolean;
     isFriend: boolean;
     pendingFriendRequestId?: string | null;
+    incomingFriendRequestId?: string | null;
   };
   visibility?: ProfileVisibilityDTO;
 };
@@ -756,6 +769,12 @@ export type StationVideoDraftDTO = {
   updatedAt?: string | null;
 };
 
+export type ChatMessageTextAvailabilityDTO = {
+  translate: boolean;
+  transcribe: boolean;
+  translateTranscript?: boolean;
+};
+
 export type BootstrapDTO = {
   contracts?: {
     aiTasks?: number;
@@ -765,6 +784,10 @@ export type BootstrapDTO = {
     comicRenders?: number;
     chatContent?: number;
   };
+  chatMessageText?: ChatMessageTextAvailabilityDTO;
+  chatVideoEnabled?: boolean;
+  chatVoiceCalls?: import('../services/api/voiceCallApi').VoiceCallCapability;
+  chatMessageReceipts?: import('../services/api/messageReceiptApi').ChatMessageReceiptAvailability;
   products: ProductCatalogProductDTO[];
   entitlements: ProductEntitlementDTO[];
   catalogRevision: string;
@@ -793,6 +816,10 @@ export type BootstrapDTO = {
 };
 
 export type AppSyncDTO = {
+  chatMessageText?: ChatMessageTextAvailabilityDTO;
+  chatVideoEnabled?: boolean;
+  chatVoiceCalls?: import('../services/api/voiceCallApi').VoiceCallCapability;
+  chatMessageReceipts?: import('../services/api/messageReceiptApi').ChatMessageReceiptAvailability;
   threads: ThreadDTO[];
   messagesByThread: Record<string, MessageDTO[]>;
   notices: NoticeDTO[];
@@ -866,4 +893,5 @@ export type AuthResponse = {
 
 export type AccountDeletionDTO = {
   deleted: true;
+  cleanupStatus: 'pending' | 'completed';
 };

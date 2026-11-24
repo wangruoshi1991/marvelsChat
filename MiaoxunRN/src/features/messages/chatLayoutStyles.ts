@@ -17,7 +17,7 @@ export const chatLayoutStyles = StyleSheet.create({
   },
   body: { flexShrink: 1, fontSize: 15, lineHeight: 23 },
   composer: { borderTopWidth: 0.5, gap: 8, padding: 10 },
-  composerRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
+  composerRow: { alignItems: 'flex-end', flexDirection: 'row', gap: 4 },
   composerButton: {
     alignItems: 'center',
     borderRadius: 22,
@@ -29,15 +29,12 @@ export const chatLayoutStyles = StyleSheet.create({
   input: {
     alignSelf: 'stretch',
     minWidth: 0,
-    minHeight: 44,
-    maxHeight: 132,
-    borderRadius: 22,
-    borderWidth: 1,
+    minHeight: 22,
+    maxHeight: 110,
     fontSize: 15,
     lineHeight: 21,
     textAlignVertical: 'top',
-    paddingHorizontal: 12,
-    paddingVertical: 11,
+    padding: 0,
   },
   send: {
     alignItems: 'center',

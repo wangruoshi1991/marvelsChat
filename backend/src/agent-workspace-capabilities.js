@@ -14,6 +14,18 @@ import { agentScopesMatchDeclaration } from "./ai-agent-access.js";
 import { canonicalReferenceTitle } from "./file-content.js";
 
 const fail = (status, code, message) => { throw new HttpError(status, message, { code }); };
+
+const workspaceMediaOutcomeCodes = {
+  retrieval_consent_required: "WORKSPACE_MEDIA_CONSENT_REQUIRED",
+  retrieval_service_unavailable: "WORKSPACE_MEDIA_UNAVAILABLE",
+  retrieval_not_enabled: "WORKSPACE_MEDIA_UNAVAILABLE",
+  "rate-limited": "WORKSPACE_MEDIA_UNAVAILABLE",
+  "index-pending": "WORKSPACE_MEDIA_INDEX_PENDING",
+  "index-unavailable": "WORKSPACE_MEDIA_INDEX_UNAVAILABLE",
+  "no-media": "WORKSPACE_MEDIA_LIBRARY_EMPTY",
+  empty: "WORKSPACE_MEDIA_NOT_FOUND",
+  retrieval_request_in_progress: "WORKSPACE_MEDIA_REQUEST_IN_PROGRESS",
+};
 const executorContracts = Object.freeze({
   "album-manager/media.select": {
     inputKinds: ["station-album"], dependencyKinds: [], outputKind: "media_selection", requiredScopes: ["album:read"],
@@ -358,11 +370,12 @@ export function createWorkspaceCapabilityExecutor({ transaction = withTransactio
         tools, beforeModelCall: guardedBeforeModelCall, afterModelCall });
       await assertAccess();
       const metadata = tools.metadata();
-      if (metadata.outcome === "retrieval_unknown_charge_no_retry" || metadata.outcome === "retrieval_request_in_progress") {
+      if (metadata.outcome === "retrieval_unknown_charge_no_retry") {
         fail(504, "AI_PROVIDER_RESULT_UNKNOWN", "素材检索结果尚无法确认，不能自动重试或继续生成。");
       }
       if (metadata.outcome !== "found" || !tools.results().length || metadata.retrievalRunIds.length !== 1) {
-        fail(422, "WORKSPACE_MEDIA_NOT_FOUND", "没有取得符合要求的素材，请调整目标后重新发起。");
+        const code = workspaceMediaOutcomeCodes[metadata.outcome] || "WORKSPACE_MEDIA_UNAVAILABLE";
+        fail(422, code, "相册检索未交付素材。");
       }
       const artifact = await transaction(async connection => {
         await lockMediaConsent(connection, user.id);

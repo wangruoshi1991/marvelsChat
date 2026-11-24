@@ -51,6 +51,7 @@ test("cold-start bootstrap projects conversation history through the public mess
       source: "postgresql",
       messagesByThread: { "thread-id": [stored] },
     }),
+    chatMessageText: { translate: true, transcribe: false },
   });
 
   let payload;
@@ -64,6 +65,7 @@ test("cold-start bootstrap projects conversation history through the public mess
   );
 
   const [message] = payload.data.messagesByThread["thread-id"];
+  assert.deepEqual(payload.data.chatMessageText, { translate: true, transcribe: false });
   assert.equal(message.id, stored.id);
   assert.equal(message.metadata.provider, undefined);
   assert.equal(message.metadata.tokenUsage, undefined);
@@ -148,6 +150,7 @@ test("incremental app sync exposes the route and filters threads by updatedAfter
     listUserNotifications: async () => [],
     getUnreadNotices: async () => 0,
     getPublishedCatalog: async () => ({ products: [{ id: "product-1" }], entitlements: [], catalogRevision: "revision-1", catalogStatus: "ready" }),
+    chatMessageText: { translate: false, transcribe: true },
   });
 
   assert.equal(routes.has("get /api/app/sync"), true);
@@ -157,6 +160,7 @@ test("incremental app sync exposes the route and filters threads by updatedAfter
     { json: (value) => { payload = value; } },
   );
   assert.equal(observedUpdatedAfter, "2026-10-29T00:00:00.000Z");
+  assert.deepEqual(payload.data.chatMessageText, { translate: false, transcribe: true });
   assert.deepEqual(payload.data.threads.map((thread) => thread.id), ["updated-thread"]);
   assert.deepEqual(Object.keys(payload.data.messagesByThread), ["updated-thread"]);
   assert.deepEqual(payload.data.agents.registered.map((agent) => agent.key), ["demo-agent"]);

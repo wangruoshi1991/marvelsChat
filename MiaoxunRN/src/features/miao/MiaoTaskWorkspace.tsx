@@ -16,6 +16,7 @@ import {
 import { ContextReference, TaskStatus } from '../ai/AIInteraction';
 import { AgentIconAvatar } from '../messages/AgentIconAvatar';
 import { Language } from '../session/sessionTypes';
+import { SiteDocumentPreview } from '../site-document/SiteDocumentPreview';
 import { workspacePalette } from '../../shared/workspacePalette';
 import { isXunPalette } from '../../shared/xunPalette';
 import { taskAgentDisplayName } from './MiaoTaskAgent';
@@ -76,6 +77,7 @@ function TaskWorkspaceContent({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [decisionError, setDecisionError] = useState('');
+  const [previewDraftId, setPreviewDraftId] = useState<string | null>(null);
   const [foreground, setForeground] = useState(
     AppState.currentState !== 'background' &&
       AppState.currentState !== 'inactive',
@@ -138,6 +140,7 @@ function TaskWorkspaceContent({
       ) {
         current.current = null;
         cursor.current = 0;
+        setPreviewDraftId(null);
         setTask(null);
         setEvents([]);
         setHasMore(false);
@@ -252,10 +255,27 @@ function TaskWorkspaceContent({
   const agent = task
     ? agents.find(item => item.key === task.agentId)
     : undefined;
+  const isSiteTask = task?.kind === 'site_draft';
+  const draftArtifacts = task?.artifacts.filter(
+    item => item.kind === 'site_draft',
+  );
+  const approvalDraftId = task?.approval?.draftId;
+  const draftId = isSiteTask
+    ? approvalDraftId
+      ? !draftArtifacts?.length ||
+        draftArtifacts.some(item => item.id === approvalDraftId)
+        ? approvalDraftId
+        : null
+      : draftArtifacts?.length === 1
+      ? draftArtifacts[0].id
+      : null
+    : null;
+  const preparingDraft =
+    task?.status === 'queued' || task?.status === 'running';
   const sourceLabel = textFor(
     language,
-    task?.kind === 'site_draft' ? '打开建站预览' : '查看原对话',
-    task?.kind === 'site_draft' ? 'Open site preview' : 'View conversation',
+    isSiteTask ? '打开建站预览' : '查看原对话',
+    isSiteTask ? 'Open site preview' : 'View conversation',
   );
   if (!foreground) {
     return (
@@ -388,13 +408,15 @@ function TaskWorkspaceContent({
                   </Text>
                 </View>
               ))}
-              {task.status === 'awaiting_confirmation' ? (
+              {isSiteTask && !draftId ? (
                 <Text style={[s.body, { color: colors.secondaryText }]}>
-                  {textFor(
-                    language,
-                    '请打开建站预览，查看完整草稿后再决定是否保存。',
-                    'Open the site preview and review the full draft before deciding whether to save it.',
-                  )}
+                  {preparingDraft
+                    ? textFor(language, '草稿生成中', 'Generating draft')
+                    : textFor(
+                        language,
+                        '此任务的建站草稿不可用。',
+                        'This task’s site draft is unavailable.',
+                      )}
                 </Text>
               ) : null}
               <WorkspaceButton
@@ -402,13 +424,28 @@ function TaskWorkspaceContent({
                 palette={colors}
                 variant="secondary"
                 label={sourceLabel}
-                disabled={busy}
+                disabled={busy || (isSiteTask && !draftId)}
                 onPress={() => {
-                  if (!pendingDecision.current && current.current)
-                    onOpenSource(current.current);
+                  if (pendingDecision.current || !current.current) return;
+                  if (isSiteTask) {
+                    if (draftId) setPreviewDraftId(draftId);
+                    return;
+                  }
+                  onOpenSource(current.current);
                 }}
                 icon={<ArrowUpRight size={18} color={colors.text} />}
               />
+              {draftId && previewDraftId === draftId ? (
+                <SiteDocumentPreview
+                  key={draftId}
+                  draftId={draftId}
+                  token={token}
+                  active={foreground}
+                  palette={colors}
+                  language={language}
+                  onClose={() => setPreviewDraftId(null)}
+                />
+              ) : null}
             </WorkspacePanel>
             {events.length ? (
               <View style={s.timeline}>

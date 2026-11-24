@@ -1,21 +1,25 @@
 import React from 'react';
-import { View } from 'react-native';
+import { Modal, View } from 'react-native';
 import { act, create, ReactTestRenderer } from 'react-test-renderer';
 import { ChatAttachmentDTO } from '../src/models/api';
 import { ChatComposer } from '../src/features/messages/ChatComposer';
+import { ChatAttachmentReview } from '../src/features/messages/ChatAttachmentReview';
 import { palettes } from '../src/shared/theme';
 import { useChatAttachments } from '../src/features/messages/useChatAttachments';
 import { ChatScreen } from '../src/features/messages/MessagesScreen';
 import type { ChatThread } from '../src/features/session/sessionTypes';
 import { ThreadSettingsSheet } from '../src/features/messages/ThreadSettingsSheet';
 import * as stationMediaPicker from '../src/services/stationMediaPicker';
+import { useReduceMotion } from '../src/shared/useReduceMotion';
 
 jest.mock('../src/services/api/chatAttachmentApi', () => ({
   uploadChatImage: jest.fn(),
   uploadChatFile: jest.fn(),
+  uploadChatVideo: jest.fn(),
 }));
 jest.mock('../src/services/stationFilePicker', () => ({
   pickStationFile: jest.fn(),
+  pickChatVideo: jest.fn(),
   releaseStationFile: jest.fn(async () => undefined),
 }));
 jest.mock('../src/services/api/customStickerApi', () => ({
@@ -25,7 +29,7 @@ jest.mock('../src/features/assist/AIAssistProvider', () => ({
   useAIAssist: () => ({ isActive: false }),
 }));
 jest.mock('../src/shared/useReduceMotion', () => ({
-  useReduceMotion: () => true,
+  useReduceMotion: jest.fn(() => true),
 }));
 jest.mock('react-native-safe-area-context', () => {
   const NativeView = require('react-native').View;
@@ -39,8 +43,10 @@ jest.mock('react-native-safe-area-context', () => {
 import {
   uploadChatFile,
   uploadChatImage,
+  uploadChatVideo,
 } from '../src/services/api/chatAttachmentApi';
 import {
+  pickChatVideo,
   pickStationFile,
   releaseStationFile,
 } from '../src/services/stationFilePicker';
@@ -82,6 +88,40 @@ async function mount(props = {}) {
   return renderer;
 }
 
+test('an uploaded video releases its staging file and keeps the server attachment', async () => {
+  const renderer = await mount();
+  const video = {
+    uri: 'file:///synthetic-video',
+    originalFilename: 'tiny.mp4',
+    mimeType: 'video/mp4',
+    byteSize: 10,
+    idempotencyKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  };
+  jest.mocked(uploadChatVideo).mockResolvedValueOnce({
+    ...dto('video-1'),
+    kind: 'video',
+    filename: video.originalFilename,
+    mimeType: video.mimeType,
+    durationMs: 2000,
+  });
+  await act(async () => {
+    await latest.addVideo(video);
+  });
+  expect(uploadChatVideo).toHaveBeenCalledWith(
+    expect.objectContaining({
+      uri: video.uri,
+      idempotencyKey: video.idempotencyKey,
+    }),
+  );
+  expect(releaseStationFile).toHaveBeenCalledWith(video);
+  expect(latest.items[0]).toMatchObject({
+    status: 'ready',
+    id: 'video-1',
+    localUri: undefined,
+  });
+  act(() => renderer.unmount());
+});
+
 describe('ordinary chat picker ownership', () => {
   beforeEach(() => jest.clearAllMocks());
   afterEach(() => jest.restoreAllMocks());
@@ -90,9 +130,11 @@ describe('ordinary chat picker ownership', () => {
     ['相册', 'thread'],
     ['拍摄', 'thread'],
     ['文件', 'thread'],
+    ['视频', 'thread'],
     ['相册', 'account'],
     ['拍摄', 'account'],
     ['文件', 'account'],
+    ['视频', 'account'],
   ] as const)(
     'drops a late %s picker result after a %s change',
     async (tool, change) => {
@@ -128,7 +170,8 @@ describe('ordinary chat picker ownership', () => {
           }),
         );
       } else {
-        jest.mocked(pickStationFile).mockReturnValueOnce(
+        const pick = tool === '视频' ? pickChatVideo : pickStationFile;
+        jest.mocked(pick).mockReturnValueOnce(
           new Promise(resolve => {
             finishPicker = () => resolve(file);
           }),
@@ -182,6 +225,7 @@ describe('ordinary chat picker ownership', () => {
         await act(async () => finishPicker());
         expect(uploadChatImage).not.toHaveBeenCalled();
         expect(uploadChatFile).not.toHaveBeenCalled();
+        expect(uploadChatVideo).not.toHaveBeenCalled();
         expect(
           renderer.root.findByType(ChatComposer).props.attachments,
         ).toEqual([]);
@@ -266,12 +310,38 @@ describe('chat attachment drafts', () => {
       .mockImplementation(async args => dto(args.idempotencyKey, 'file'));
   });
 
+  it('follows Reduce Motion in the attachment send preview', () => {
+    const review = () => (
+      <ChatAttachmentReview
+        items={[]}
+        draft=""
+        palette={palettes.light}
+        language="zh"
+        busy={false}
+        sendBlockReason=""
+        onClose={jest.fn()}
+        onRetry={jest.fn()}
+        onRemove={jest.fn()}
+        onSend={jest.fn()}
+      />
+    );
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(review());
+    });
+    expect(renderer.root.findByType(Modal).props.animationType).toBe('none');
+    jest.mocked(useReduceMotion).mockReturnValueOnce(false);
+    act(() => renderer.update(review()));
+    expect(renderer.root.findByType(Modal).props.animationType).toBe('slide');
+    act(() => renderer.unmount());
+  });
+
   it.each([
     ['ready', undefined, false],
     ['uploading', '附件仍在上传，请稍候。', true],
     ['failed', '附件上传失败，请重试或移除。', true],
   ] as const)(
-    'shows attachment-only Send for %s attachments with correct disabled state',
+    'shows attachment-only Send in More for %s attachments with correct disabled state',
     (status, reason, disabled) => {
       let renderer!: ReactTestRenderer;
       act(() => {
@@ -303,6 +373,14 @@ describe('chat attachment drafts', () => {
           />,
         );
       });
+      expect(
+        renderer.root.findAllByProps({ accessibilityLabel: '发送消息' }),
+      ).toHaveLength(0);
+      act(() =>
+        renderer.root
+          .findByProps({ accessibilityLabel: '更多功能' })
+          .props.onPress(),
+      );
       const send = renderer.root.findByProps({
         accessibilityLabel: '发送消息',
       });
@@ -311,7 +389,7 @@ describe('chat attachment drafts', () => {
     },
   );
 
-  it('keeps More and attachment-only Send together, and only sends a ready attachment', () => {
+  it('opens attachment-only Send from More and only sends a ready attachment', () => {
     for (const status of ['ready', 'uploading', 'failed'] as const) {
       const onSend = jest.fn();
       let renderer!: ReactTestRenderer;
@@ -350,9 +428,11 @@ describe('chat attachment drafts', () => {
           />,
         );
       });
-      expect(
-        renderer.root.findByProps({ accessibilityLabel: '更多功能' }),
-      ).toBeTruthy();
+      act(() =>
+        renderer.root
+          .findByProps({ accessibilityLabel: '更多功能' })
+          .props.onPress(),
+      );
       const send = renderer.root.findByProps({
         accessibilityLabel: '发送消息',
       });

@@ -6,6 +6,9 @@ import UniformTypeIdentifiers
 final class MiaoxunDocumentPickerModule: NSObject, UIDocumentPickerDelegate {
   private var resolve: RCTPromiseResolveBlock?
   private var reject: RCTPromiseRejectBlock?
+  private var pickingVideo = false
+  private var videoDownloads: [String: URLSession] = [:]
+  private var videos: [String: URL] = [:]
   private var copies: [String: URL] = [:]
   @objc static func requiresMainQueueSetup() -> Bool { true }
   @objc var methodQueue: DispatchQueue { DispatchQueue.main }
@@ -19,6 +22,15 @@ final class MiaoxunDocumentPickerModule: NSObject, UIDocumentPickerDelegate {
 
   @objc(pick:rejecter:)
   func pick(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+    presentPicker(video: false, resolve: resolve, reject: reject)
+  }
+
+  @objc(pickVideo:rejecter:)
+  func pickVideo(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+    presentPicker(video: true, resolve: resolve, reject: reject)
+  }
+
+  private func presentPicker(video: Bool, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     DispatchQueue.main.async {
       guard self.resolve == nil else { reject("file_picker_busy", "文件选择器正在运行。", nil); return }
       guard let root = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap({ $0.windows }).first(where: { $0.isKeyWindow })?.rootViewController else {
@@ -26,7 +38,8 @@ final class MiaoxunDocumentPickerModule: NSObject, UIDocumentPickerDelegate {
       }
       self.resolve = resolve
       self.reject = reject
-      let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.data], asCopy: true)
+      self.pickingVideo = video
+      let picker = UIDocumentPickerViewController(forOpeningContentTypes: video ? [.mpeg4Movie] : [.data], asCopy: !video)
       picker.allowsMultipleSelection = false
       picker.delegate = self
       var presenter = root
@@ -38,32 +51,57 @@ final class MiaoxunDocumentPickerModule: NSObject, UIDocumentPickerDelegate {
   func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { finish(nil) }
   func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
     guard let source = urls.first else { finish(nil); return }
+    let video = pickingVideo
+    DispatchQueue.global(qos: .userInitiated).async {
+      self.copyPickedDocument(source, video: video)
+    }
+  }
+
+  private func copyPickedDocument(_ source: URL, video: Bool) {
+    let limit = video ? 8 * 1024 * 1024 : 262144
+    let limitMessage = video ? "请选择非空且不超过8MiB的H.264 MP4视频。" : "请选择非空且不超过256KiB的文件。"
     let scoped = source.startAccessingSecurityScopedResource()
     defer { if scoped { source.stopAccessingSecurityScopedResource() } }
     var copiedURL: URL?
     do {
       let values = try source.resourceValues(forKeys: [.contentTypeKey, .isRegularFileKey])
       guard values.isRegularFile == true else {
-        throw NSError(domain: "MiaoxunFile", code: 1, userInfo: [NSLocalizedDescriptionKey: "请选择非空且不超过256KiB的文件。"])
+        throw NSError(domain: "MiaoxunFile", code: 1, userInfo: [NSLocalizedDescriptionKey: limitMessage])
       }
       let key = UUID().uuidString.lowercased()
       let directory = FileManager.default.temporaryDirectory.appendingPathComponent("MiaoxunDocuments", isDirectory: true)
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       let destination = directory.appendingPathComponent(key)
       copiedURL = destination
-      let size = try copyBoundedFile(from: source, to: destination, maximumBytes: 262144)
+      var size = 0
+      if video {
+        var coordinationError: NSError?
+        var copyError: Error?
+        NSFileCoordinator().coordinate(readingItemAt: source, options: [], error: &coordinationError) { url in
+          do { size = try self.copyBoundedFile(from: url, to: destination, maximumBytes: limit, limitMessage: limitMessage) }
+          catch { copyError = error }
+        }
+        if let error = coordinationError ?? (copyError as NSError?) { throw error }
+      } else {
+        size = try copyBoundedFile(from: source, to: destination, maximumBytes: limit)
+      }
       guard size > 0 else { throw NSError(domain: "MiaoxunFile", code: 2, userInfo: [NSLocalizedDescriptionKey: "请选择非空文件。"]) }
       try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
-      copies[key] = destination
-      finish(["uri": destination.absoluteString, "originalFilename": source.lastPathComponent, "mimeType": values.contentType?.preferredMIMEType ?? "application/octet-stream", "byteSize": size, "idempotencyKey": key])
+      let result: [String: Any] = ["uri": destination.absoluteString, "originalFilename": source.lastPathComponent, "mimeType": values.contentType?.preferredMIMEType ?? "application/octet-stream", "byteSize": size, "idempotencyKey": key]
+      DispatchQueue.main.async {
+        self.copies[key] = destination
+        self.finish(result)
+      }
     } catch {
       if let copiedURL {
         do { if FileManager.default.fileExists(atPath: copiedURL.path) { try FileManager.default.removeItem(at: copiedURL) } }
         catch { NSLog("Miaoxun document temporary cleanup failed") }
       }
-      let failure = reject
-      resolve = nil; reject = nil
-      failure?("file_read_failed", error.localizedDescription, error)
+      DispatchQueue.main.async {
+        let failure = self.reject
+        self.resolve = nil; self.reject = nil
+        failure?("file_read_failed", error.localizedDescription, error)
+      }
     }
   }
 
@@ -194,6 +232,49 @@ final class MiaoxunDocumentPickerModule: NSObject, UIDocumentPickerDelegate {
       }
       reject("binary_request_invalid", error.localizedDescription, error)
     }
+  }
+
+  @objc(downloadChatVideo:attachmentId:token:resolver:rejecter:)
+  func downloadChatVideo(_ key: String, attachmentId: String, token: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+    guard UUID(uuidString: key) != nil, UUID(uuidString: attachmentId) != nil,
+          !token.isEmpty, videos[key] == nil, videoDownloads[key] == nil,
+          let url = try? validatedRequestURL("/api/chat-attachments/\(attachmentId)/content") else {
+      reject("chat_video_invalid", "视频引用无效。", nil)
+      return
+    }
+    var request = URLRequest(url: url, timeoutInterval: 20)
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue("video/mp4", forHTTPHeaderField: "Accept")
+    let config = URLSessionConfiguration.ephemeral
+    config.timeoutIntervalForResource = 20
+    config.httpShouldSetCookies = false
+    let download = ChatVideoDownload { [weak self] session, status, data in
+      DispatchQueue.main.async {
+        guard let self, self.videoDownloads[key] === session else { resolve(["status": 0]); return }
+        self.videoDownloads.removeValue(forKey: key)
+        guard let data, status == 200 else { resolve(["status": status]); return }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("MiaoxunDocuments", isDirectory: true)
+        let file = directory.appendingPathComponent("chat-video-\(key).mp4")
+        do {
+          try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+          try data.write(to: file, options: [.atomic, .completeFileProtection])
+          self.videos[key] = file
+          resolve(["status": status, "uri": file.absoluteString])
+        } catch {
+          try? FileManager.default.removeItem(at: file)
+          reject("chat_video_storage", "无法保存视频临时文件。", error)
+        }
+      }
+    }
+    let session = URLSession(configuration: config, delegate: download, delegateQueue: nil)
+    videoDownloads[key] = session
+    session.dataTask(with: request).resume()
+  }
+
+  @objc(releaseChatVideo:)
+  func releaseChatVideo(_ key: String) {
+    videoDownloads.removeValue(forKey: key)?.invalidateAndCancel()
+    if let url = videos.removeValue(forKey: key) { try? FileManager.default.removeItem(at: url) }
   }
 
   private func boundedInteger(_ value: NSNumber, maximum: Int, allowZero: Bool) -> Int? {
@@ -378,5 +459,36 @@ private final class BoundedUploadDelegate: NSObject, URLSessionDataDelegate, URL
       result["requestId"] = requestId
     }
     resolve(result)
+  }
+}
+
+private final class ChatVideoDownload: NSObject, URLSessionDataDelegate {
+  private static let limit = 8 * 1024 * 1024
+  private var status = 0
+  private var bytes = Data()
+  private let complete: (URLSession, Int, Data?) -> Void
+
+  init(complete: @escaping (URLSession, Int, Data?) -> Void) { self.complete = complete }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+    status = response.statusCode
+    completionHandler(nil)
+  }
+
+  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+    let http = response as? HTTPURLResponse
+    status = http?.statusCode ?? 0
+    let allowed = status == 200 && response.mimeType == "video/mp4" && response.expectedContentLength <= Int64(Self.limit)
+    completionHandler(allowed ? .allow : .cancel)
+  }
+
+  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    guard data.count <= Self.limit - bytes.count else { dataTask.cancel(); return }
+    bytes.append(data)
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    complete(session, status, error == nil && !bytes.isEmpty ? bytes : nil)
+    session.finishTasksAndInvalidate()
   }
 }

@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { request } from '../../services/api/http';
 import { stationContentApi } from '../../services/api/stationContentApi';
 import { Palette } from '../../shared/theme';
 import { textFor } from '../../shared/i18n';
+import { useCurrentScope } from '../../shared/useCurrentScope';
 import type { Language } from '../session/sessionTypes';
 import { RetrievalResultCard } from '../media-retrieval/RetrievalResultCard';
 import { MediaRetrievalSearchResult } from '../media-retrieval/mediaRetrievalTypes';
@@ -28,11 +29,22 @@ export function AlbumAssistantResults({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [attempt, setAttempt] = useState(0);
-  const generation = useRef(0);
-  const [preview, setPreview] = useState<MediaRetrievalSearchResult | null>(
-    null,
+  const scope = useMemo(
+    () => ({ token, threadId, messageId }),
+    [token, threadId, messageId],
   );
-  useEffect(() => {
+  const isCurrentScope = useCurrentScope(scope);
+  const generation = useRef(0);
+  const [preview, setPreview] = useState<{
+    result: MediaRetrievalSearchResult;
+    generation: number;
+  } | null>(null);
+  const closePreview = () => {
+    if (!isCurrentScope()) return;
+    generation.current += 1;
+    setPreview(null);
+  };
+  useLayoutEffect(() => {
     let active = true;
     generation.current += 1;
     setPreview(null);
@@ -93,14 +105,17 @@ export function AlbumAssistantResults({
           language={language}
           disabled={false}
           onPress={() => {
-            const currentGeneration = generation.current;
+            if (!isCurrentScope()) return;
+            const currentGeneration = ++generation.current;
+            setPreview(null);
+            setError('');
             stationContentApi
               .stationMediaAsset(token, result.mediaAssetId)
               .then(asset => {
                 if (generation.current !== currentGeneration) return;
                 if (asset.kind !== result.kind || asset.status !== 'uploaded')
                   throw new Error('素材已更新，请重新查找');
-                setPreview(result);
+                setPreview({ result, generation: currentGeneration });
               })
               .catch(issue => {
                 if (generation.current !== currentGeneration) return;
@@ -114,24 +129,25 @@ export function AlbumAssistantResults({
       <Modal
         visible={preview !== null}
         presentationStyle="fullScreen"
-        onRequestClose={() => setPreview(null)}
+        onRequestClose={closePreview}
       >
         {preview ? (
           <SafeAreaProvider>
             <SafeAreaView style={local.preview} edges={['top', 'bottom']}>
               <StationMediaPreviewScreen
                 asset={{
-                  id: preview.mediaAssetId,
-                  kind: preview.kind,
+                  id: preview.result.mediaAssetId,
+                  kind: preview.result.kind,
                   status: 'uploaded',
                 }}
-                timestampMs={preview.matchedFrameTimestampMs}
+                timestampMs={preview.result.matchedFrameTimestampMs}
                 token={token}
                 palette={palette}
                 language={language}
-                onBack={() => setPreview(null)}
+                onBack={closePreview}
                 onUnavailable={assetId => {
-                  setPreview(null);
+                  if (generation.current !== preview.generation) return;
+                  closePreview();
                   setResults(current =>
                     current.filter(result => result.mediaAssetId !== assetId),
                   );

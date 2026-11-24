@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Avatar3DBootstrapDTO } from '../../models/api';
 import { apiClient, MiaoxunApiError } from '../../services/apiClient';
+import { useCurrentScope } from '../../shared/useCurrentScope';
 import {
   avatar3dPollingDelayMs,
   shouldPollAvatar3dJob,
@@ -10,38 +11,57 @@ import {
 export type Avatar3DLoadState = 'loading' | 'ready' | 'unavailable' | 'error';
 
 export function useAvatar3d(token: string, pollingEnabled = true) {
-  const [bootstrap, setBootstrap] = useState<Avatar3DBootstrapDTO | null>(null);
-  const [status, setStatus] = useState<Avatar3DLoadState>('loading');
-  const [errorMessage, setErrorMessage] = useState('');
+  const [result, setResult] = useState<{
+    owner: string;
+    bootstrap: Avatar3DBootstrapDTO | null;
+    status: Avatar3DLoadState;
+    errorMessage?: string;
+  } | null>(null);
+  const current = result?.owner === token ? result : null;
+  const bootstrap = current?.bootstrap ?? null;
+  const status = current?.status ?? (token ? 'loading' : 'unavailable');
+  const errorMessage = current?.errorMessage ?? '';
+  const isCurrentSession = useCurrentScope(token);
+  const isCurrentPolling = useCurrentScope(pollingEnabled);
+  const generation = useRef(0);
 
-  const refresh = useCallback(async () => {
-    if (!token) {
-      setBootstrap(null);
-      setStatus('unavailable');
-      setErrorMessage('');
-      return null;
-    }
-
-    setStatus(current => (current === 'ready' ? current : 'loading'));
-    setErrorMessage('');
-    try {
-      const next = await apiClient.avatar3dBootstrap(token);
-      setBootstrap(next);
-      setStatus('ready');
-      return next;
-    } catch (error) {
-      setBootstrap(null);
-      if (error instanceof MiaoxunApiError && error.status === 404) {
-        setStatus('unavailable');
+  const load = useCallback(
+    async (ownsPoll?: () => boolean) => {
+      if (!isCurrentSession() || !token || ownsPoll?.() === false) return null;
+      const request = ++generation.current;
+      const ownsResult = () =>
+        isCurrentSession() &&
+        ownsPoll?.() !== false &&
+        generation.current === request;
+      setResult(previous =>
+        previous?.owner === token && previous.status === 'ready'
+          ? previous
+          : { owner: token, bootstrap: null, status: 'loading' },
+      );
+      try {
+        const next = await apiClient.avatar3dBootstrap(token);
+        if (!ownsResult()) return null;
+        setResult({ owner: token, bootstrap: next, status: 'ready' });
+        return next;
+      } catch (error) {
+        if (!ownsResult()) return null;
+        if (error instanceof MiaoxunApiError && error.status === 404) {
+          setResult({ owner: token, bootstrap: null, status: 'unavailable' });
+          return null;
+        }
+        setResult({
+          owner: token,
+          bootstrap: null,
+          status: 'error',
+          errorMessage:
+            error instanceof Error ? error.message : '3D形象加载失败',
+        });
         return null;
       }
-      setStatus('error');
-      setErrorMessage(
-        error instanceof Error ? error.message : '3D形象加载失败',
-      );
-      return null;
-    }
-  }, [token]);
+    },
+    [isCurrentSession, token],
+  );
+  const refresh = useCallback(() => load(), [load]);
 
   useEffect(() => {
     refresh().catch(() => undefined);
@@ -63,10 +83,15 @@ export function useAvatar3d(token: string, pollingEnabled = true) {
     let active = true;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
-      const next = await refresh();
-      const nextStatus = next?.activeJob?.status;
-      if (active && nextStatus && shouldPollAvatar3dJob(nextStatus)) {
-        timeout = setTimeout(poll, avatar3dPollingDelayMs(nextStatus));
+      const next = await load(() => active && isCurrentPolling());
+      // If a manual refresh superseded this read, keep polling until its
+      // accepted result changes the job or the screen disables polling.
+      if (
+        active &&
+        isCurrentPolling() &&
+        (!next || next.activeJob?.status === activeJobStatus)
+      ) {
+        timeout = setTimeout(poll, avatar3dPollingDelayMs(activeJobStatus));
       }
     };
 
@@ -77,7 +102,7 @@ export function useAvatar3d(token: string, pollingEnabled = true) {
         clearTimeout(timeout);
       }
     };
-  }, [activeJobId, activeJobStatus, pollingEnabled, refresh]);
+  }, [activeJobId, activeJobStatus, isCurrentPolling, load, pollingEnabled]);
 
   return { bootstrap, errorMessage, refresh, status };
 }

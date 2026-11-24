@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { query, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
-import { getThreadForUser, listMessagesForThreads } from "./message-repository.js";
+import { getThreadForUser, insertHumanMessageCopy, listMessagesForThreads } from "./message-repository.js";
 import { mapMessage } from "./repository-mappers.js";
 
 const fingerprint = value => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -50,15 +50,19 @@ export async function getGroupMembers({ userId, groupId }) {
     JOIN user_profiles p ON p.user_id = u.id WHERE m.group_id = ? AND m.left_at IS NULL ORDER BY m.joined_at, m.user_id`, [groupId]);
 }
 
+export function listActiveGroupMessageRecipients(connection, groupId) {
+  return connection.query(`SELECT t.id, t.user_id FROM chat_group_members m JOIN chat_threads t ON t.group_id = m.group_id AND t.user_id = m.user_id
+    JOIN users u ON u.id = m.user_id AND u.status = 'active'
+    WHERE m.group_id = ? AND m.left_at IS NULL ORDER BY t.user_id`, [groupId]);
+}
+
 /** All member copies commit together. Sender identity is never the local thread owner. */
 export async function sendGroupMessage({ userId, senderName, threadId, content, clientMessageId, requestFingerprint, metadata = {} }) {
   return withTransaction(async connection => {
     const [thread] = await connection.query("SELECT group_id FROM chat_threads WHERE id = ? AND user_id = ? AND kind = 'group'", [threadId, userId]);
     if (!thread?.group_id) throw new HttpError(404, "群聊不存在。");
     await connection.query("SELECT id FROM chat_groups WHERE id = ? FOR UPDATE", [thread.group_id]);
-    const members = await connection.query(`SELECT t.id, t.user_id FROM chat_group_members m JOIN chat_threads t ON t.group_id = m.group_id AND t.user_id = m.user_id
-      JOIN users u ON u.id = m.user_id AND u.status = 'active'
-      WHERE m.group_id = ? AND m.left_at IS NULL ORDER BY t.user_id`, [thread.group_id]);
+    const members = await listActiveGroupMessageRecipients(connection, thread.group_id);
     if (!members.some(m => m.user_id === userId)) throw new HttpError(403, "你已退出群聊。");
     const [existing] = await connection.query("SELECT * FROM chat_messages WHERE thread_id = ? AND client_message_id = ?", [threadId, clientMessageId]);
     if (existing) {
@@ -79,12 +83,17 @@ export async function sendGroupMessage({ userId, senderName, threadId, content, 
           AND metadata ->> 'senderUserId' = ? AND recalled_at IS NULL AND deleted_at IS NULL`, [member.id, target.client_message_id, target.metadata?.senderUserId]);
         memberMetadata = { ...metadata, replyTo: { ...metadata.replyTo, messageId: localTarget?.id || null } };
       }
-      const [row] = await connection.query(`INSERT INTO chat_messages(id, thread_id, user_id, sender_type, sender_name, content, metadata, client_message_id)
-        VALUES (?, ?, ?, 'user', ?, ?, ?::jsonb, ?) RETURNING *`, [crypto.randomUUID(), member.id, member.user_id, senderName, content,
-        JSON.stringify({ ...memberMetadata, source: own ? 'app' : 'group', groupId: thread.group_id, senderUserId: userId, requestFingerprint }), clientMessageId]);
-      await connection.query("UPDATE chat_threads SET updated_at = CURRENT_TIMESTAMP, unread_count = unread_count + ? WHERE id = ?", [own ? 0 : 1, member.id]);
-      if (own) message = mapMessage(row);
-      else deliveries.push({ userId: member.user_id, message: mapMessage(row) });
+      const copy = await insertHumanMessageCopy(connection, {
+        userId: member.user_id,
+        threadId: member.id,
+        senderName,
+        content,
+        metadata: { ...memberMetadata, source: own ? "app" : "group", groupId: thread.group_id, senderUserId: userId, requestFingerprint },
+        clientMessageId,
+        countUnread: !own,
+      });
+      if (own) message = copy;
+      else deliveries.push({ userId: member.user_id, message: copy });
     }
     return { message, deliveries, reused: false };
   });

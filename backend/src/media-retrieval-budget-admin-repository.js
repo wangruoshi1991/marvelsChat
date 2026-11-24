@@ -2,6 +2,7 @@ import { MEDIA_RETRIEVAL_CONSENT_VERSION } from "./media-retrieval-constants.js"
 import { ASSET_CONTENT_FINGERPRINT_SQL, mapRun, toInteger, toNonNegativeInteger } from "./media-retrieval-repository-shared.js";
 import { toIso } from "./repository-mappers.js";
 import { MediaRetrievalRepositoryError } from "./media-retrieval-errors.js";
+import { HttpError } from "./http-error.js";
 
 const toNullableNonNegativeInteger = (value) => {
   if (value === null || value === undefined) return null;
@@ -19,6 +20,18 @@ const lifecycleValues = new Set([
   "deprecated",
   "removed",
 ]);
+
+const controlColumns = {
+  agentEnabled: "agent_enabled",
+  providerCallsEnabled: "provider_calls_enabled",
+  indexRequestsEnabled: "index_requests_enabled",
+  userDailyRequestLimit: "user_daily_request_limit",
+  userMonthlyBudgetFen: "user_monthly_budget_fen",
+  globalDailyBudgetFen: "global_daily_budget_fen",
+  captionReserveFen: "caption_reserve_fen",
+  embeddingReserveFen: "embedding_reserve_fen",
+  lifecycle: "lifecycle",
+};
 
 export function createMediaRetrievalBudgetAdminRepository({
   query,
@@ -404,13 +417,40 @@ export function createMediaRetrievalBudgetAdminRepository({
     return rows.map(mapRun);
   };
 
-  const updateMediaRetrievalOperatorControls = async (input) => {
-    const currentRows = await query(
-      "SELECT * FROM media_retrieval_operator_controls WHERE id = TRUE LIMIT 1",
+  const updateMediaRetrievalOperatorControls = async (input) =>
+    withTransaction(async (connection) => {
+    const expectedRevision = input?.expectedRevision;
+    const audit = input?._audit || null;
+    const currentRows = await connection.query(
+      "SELECT * FROM media_retrieval_operator_controls WHERE id = TRUE FOR UPDATE",
     );
     const current = currentRows[0] || {};
+    if (!current.id) throw new MediaRetrievalRepositoryError("retrieval_repository_write_failed");
+    const changes = Object.fromEntries(Object.keys(controlColumns)
+      .filter(key => input[key] !== undefined)
+      .map(key => [key, input[key]]));
+    const intent = JSON.stringify({ expectedRevision, changes });
+    if (audit) {
+      const [replay] = await connection.query(`SELECT payload
+        FROM usage_events
+        WHERE event_type = 'admin.media_retrieval.controls' AND target_id = 'media-retrieval'
+          AND user_id = ? AND payload ->> 'idempotencyKey' = ?
+        LIMIT 1`, [audit.userId, audit.idempotencyKey]);
+      if (replay) {
+        if (replay.payload.intent !== intent) {
+          throw new HttpError(409, "此请求编号已用于其他控制变更。", { code: "IDEMPOTENCY_KEY_REUSED" });
+        }
+        return replay.payload.result;
+      }
+    }
+    if (expectedRevision !== undefined && (
+      expectedRevision > Number(current.revision) ||
+      Object.keys(changes).some(key => Number(current.field_revisions?.[controlColumns[key]] || 1) > expectedRevision)
+    )) {
+      throw new HttpError(409, "所选控制项已更新，请读取最新值后重新确认。", { code: "MEDIA_RETRIEVAL_CONTROLS_CONFLICT" });
+    }
     const requested = (key, fallback) =>
-      Object.hasOwn(input, key) && input[key] !== undefined ? input[key] : fallback;
+      Object.hasOwn(input || {}, key) && input[key] !== undefined ? input[key] : fallback;
     const nullableLimit = (key, currentValue) => {
       const value = requested(key, currentValue);
       return value === null ? null : Math.min(Number.MAX_SAFE_INTEGER, toNonNegativeInteger(value));
@@ -428,7 +468,13 @@ export function createMediaRetrievalBudgetAdminRepository({
         ? requested("lifecycle", current.lifecycle)
         : "draft",
     };
-    const rows = await query(
+    if (allowed.providerCallsEnabled && (
+      allowed.globalDailyBudgetFen === 0 || allowed.userDailyRequestLimit === 0 ||
+      allowed.userMonthlyBudgetFen === 0 || !allowed.captionReserveFen || !allowed.embeddingReserveFen
+    )) {
+      throw new HttpError(400, "开启供应商调用需要正数预留，以及非零或不限的请求与预算上限。", { code: "MEDIA_RETRIEVAL_CONTROLS_INVALID" });
+    }
+    const rows = await connection.query(
       `UPDATE media_retrieval_operator_controls
       SET agent_enabled = ?,
           provider_calls_enabled = ?,
@@ -454,8 +500,22 @@ export function createMediaRetrievalBudgetAdminRepository({
       ],
     );
     if (!rows[0]) throw new MediaRetrievalRepositoryError("retrieval_repository_write_failed");
+    if (audit) {
+      await connection.query(
+        `INSERT INTO usage_events
+          (id, user_id, event_type, target_type, target_id, payload, ip_hash, user_agent)
+        VALUES (?, ?, 'admin.media_retrieval.controls', 'agent', 'media-retrieval', ?, ?, ?)`,
+        [idFactory(), audit.userId, JSON.stringify({
+          ...audit.payload,
+          idempotencyKey: audit.idempotencyKey,
+          intent,
+          revision: rows[0].revision,
+          result: rows[0],
+        }), audit.ipHash || null, audit.userAgent || ""],
+      );
+    }
     return rows[0];
-  };
+    });
 
   return {
     getMediaRetrievalStatusForUser,

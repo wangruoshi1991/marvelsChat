@@ -239,6 +239,8 @@ test.each([
         expect.any(Boolean),
         expect.any(Object),
         expect.any(Object),
+        expect.any(Function),
+        undefined,
       );
       expect(JSON.stringify(item)).toBe(stored);
     } finally {

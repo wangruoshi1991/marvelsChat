@@ -39,6 +39,7 @@ type CreateOptions = Pick<
 
 type PendingAttempt = {
   idempotencyKey: string;
+  acceptedReferenceCostVersion?: string;
   options: CreateOptions | null;
   photo: Avatar3DPhotoDTO;
   submissionUncertain: boolean;
@@ -77,27 +78,33 @@ export function useAvatar3dWorkflow({
       const next = await apiClient.avatar3dBootstrap(token);
       setBootstrap(next);
       const storedAttempt = await avatar3dAttemptStore.read(next.user.id);
-      if (next.activeJob) {
-        if (storedAttempt) {
-          await apiClient
-            .deleteAvatar3dPhoto(token, storedAttempt.photo.id)
-            .catch(() => undefined);
-          await avatar3dAttemptStore.clear().catch(() => undefined);
-        }
-        attemptRef.current = null;
-        setPendingOptions(null);
-        setValidatedPhoto(null);
-        setJob(next.activeJob);
-      } else if (storedAttempt) {
+      if (storedAttempt) {
         attemptRef.current = {
           idempotencyKey: storedAttempt.idempotencyKey,
+          acceptedReferenceCostVersion:
+            storedAttempt.acceptedReferenceCostVersion,
           options: storedAttempt.options,
           photo: storedAttempt.photo,
           submissionUncertain: true,
         };
         setPendingOptions(storedAttempt.options);
         setValidatedPhoto(storedAttempt.photo);
+        setJob(null);
         setErrorMessage('检测到上次未确认的提交，请重试原提交。');
+        const recovered = await apiClient.findAvatar3dSubmission(
+          token,
+          storedAttempt.idempotencyKey,
+        );
+        if (recovered.job) {
+          await avatar3dAttemptStore.clear();
+          attemptRef.current = null;
+          setPendingOptions(null);
+          setValidatedPhoto(null);
+          setErrorMessage('');
+          setJob(recovered.job);
+        }
+      } else if (next.activeJob) {
+        setJob(next.activeJob);
       } else if (!keepTerminalJob) {
         setJob(null);
         setReferences(null);
@@ -260,15 +267,22 @@ export function useAvatar3dWorkflow({
       setBusyAction('creating');
       setErrorMessage('');
       const frozenOptions = attempt.options || options;
+      const acceptedReferenceCostVersion =
+        attempt.acceptedReferenceCostVersion ?? snapshot.feature.costVersion;
       const submission: Avatar3DPendingSubmission = {
         version: 1,
         userId: snapshot.user.id,
         idempotencyKey: attempt.idempotencyKey,
+        acceptedReferenceCostVersion,
         photo: attempt.photo,
         options: frozenOptions,
         createdAt: new Date().toISOString(),
       };
-      attemptRef.current = { ...attempt, options: frozenOptions };
+      attemptRef.current = {
+        ...attempt,
+        options: frozenOptions,
+        acceptedReferenceCostVersion,
+      };
       setPendingOptions(frozenOptions);
       let submissionStored = false;
       try {
@@ -287,7 +301,7 @@ export function useAvatar3dWorkflow({
             acceptedPhotoRights: true,
             acceptedAdultSubject: true,
             acceptedFaceCompletion: true,
-            acceptedReferenceCostVersion: snapshot.feature.costVersion,
+            acceptedReferenceCostVersion,
           },
           attempt.idempotencyKey,
         );
@@ -305,26 +319,32 @@ export function useAvatar3dWorkflow({
           setErrorMessage('无法安全保存任务状态，请重试。');
           throw error;
         }
-        try {
-          const recovered = await loadBootstrap();
-          if (recovered.activeJob) {
-            await avatar3dAttemptStore.clear().catch(() => undefined);
-            attemptRef.current = null;
-            setPendingOptions(null);
-            setValidatedPhoto(null);
-            setJob(recovered.activeJob);
-            onChanged();
-            return;
-          }
-        } catch {
-          // Retain the same photo and idempotency key when submission is ambiguous.
-        }
-
         const definitive =
           error instanceof MiaoxunApiError &&
           typeof error.status === 'number' &&
-          error.status < 500;
-        if (definitive) {
+          error.status >= 400 &&
+          error.status < 500 &&
+          error.status !== 408;
+        const needsLookup = !definitive || attempt.submissionUncertain;
+        const recovered = needsLookup
+          ? await apiClient
+              .findAvatar3dSubmission(token, attempt.idempotencyKey)
+              .catch(() => null)
+          : null;
+        if (recovered?.job) {
+          await avatar3dAttemptStore.clear().catch(() => undefined);
+          attemptRef.current = null;
+          setPendingOptions(null);
+          setValidatedPhoto(null);
+          setReferences(null);
+          setJob(recovered.job);
+          onChanged();
+          return;
+        }
+        if (
+          definitive &&
+          (!attempt.submissionUncertain || recovered?.job === null)
+        ) {
           await apiClient
             .deleteAvatar3dPhoto(token, attempt.photo.id)
             .catch(() => undefined);
@@ -336,6 +356,7 @@ export function useAvatar3dWorkflow({
           attemptRef.current = {
             ...attempt,
             options: frozenOptions,
+            acceptedReferenceCostVersion,
             submissionUncertain: true,
           };
         }
@@ -347,7 +368,7 @@ export function useAvatar3dWorkflow({
         setBusyAction('none');
       }
     },
-    [bootstrap, loadBootstrap, onChanged, token],
+    [bootstrap, onChanged, token],
   );
 
   const confirmReferences = useCallback(
@@ -463,6 +484,9 @@ export function useAvatar3dWorkflow({
     dismissJob,
     errorMessage,
     isSubmissionUncertain: Boolean(attemptRef.current?.submissionUncertain),
+    hasConfirmedSubmissionCost: Boolean(
+      attemptRef.current?.acceptedReferenceCostVersion,
+    ),
     job,
     pendingOptions,
     references,

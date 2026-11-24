@@ -50,6 +50,8 @@ export const mapPrivateJob = (row) => ({
   textureQuality: row.texture_quality || "standard",
   providerStatus: row.provider_status || null,
   claimedAt: toIso(row.claimed_at),
+  claimToken: row.claim_token || null,
+  claimLeaseUntil: toIso(row.claim_lease_until),
   retentionUntil: toIso(row.retention_until),
 });
 

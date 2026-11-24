@@ -221,11 +221,47 @@ try {
   assert.ok(station.posts.some(item => item.id === post.id));
   assert.ok(station.diaryEntries.some(item => item.id === diary.id));
 
-  const friendRequest = await request(`/api/social/friend-requests/${peer.user.id}`, {
+  const scanProfile = (account, token) => request("/api/scan/resolve", {
+    method: "POST", token, body: { payload: `miaoxun://ai/${account.user.aiId}` },
+  });
+  const defaultRelation = {
+    isSelf: false,
+    isFollowing: false,
+    isFriend: false,
+    pendingFriendRequestId: null,
+    incomingFriendRequestId: null,
+  };
+  assert.deepEqual((await scanProfile(owner, ownerToken)).relation, {
+    ...defaultRelation, isSelf: true,
+  });
+  assert.deepEqual((await scanProfile(peer, ownerToken)).relation, defaultRelation);
+
+  const requestFriendship = () => request(`/api/social/friend-requests/${peer.user.id}`, {
     method: "POST", token: ownerToken, status: 201, body: { message: "Integration friendship" },
   });
+  const cancelledRequest = await requestFriendship();
+  assert.deepEqual((await scanProfile(peer, ownerToken)).relation, {
+    ...defaultRelation, pendingFriendRequestId: cancelledRequest.id,
+  });
+  assert.deepEqual((await scanProfile(owner, peerToken)).relation, {
+    ...defaultRelation, incomingFriendRequestId: cancelledRequest.id,
+  });
+  await request(`/api/social/friend-requests/${cancelledRequest.id}/cancel`, {
+    method: "POST", token: ownerToken,
+  });
+  assert.deepEqual((await scanProfile(peer, ownerToken)).relation, defaultRelation);
+  assert.deepEqual((await scanProfile(owner, peerToken)).relation, defaultRelation);
+
+  const friendRequest = await requestFriendship();
+  assert.equal((await requestFriendship()).id, friendRequest.id);
   await request(`/api/social/friend-requests/${friendRequest.id}/accept`, {
     method: "POST", token: peerToken,
+  });
+  assert.deepEqual((await scanProfile(peer, ownerToken)).relation, {
+    ...defaultRelation, isFriend: true,
+  });
+  assert.deepEqual((await scanProfile(owner, peerToken)).relation, {
+    ...defaultRelation, isFriend: true,
   });
   await request(`/api/social/follows/${owner.user.id}`, { method: "POST", token: peerToken, status: 201 });
   await request(`/api/social/follows/${peer.user.id}`, { method: "POST", token: ownerToken, status: 201 });

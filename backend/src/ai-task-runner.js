@@ -29,7 +29,10 @@ export function taskFailure(error) {
 
 // A claim is never replayed after lease loss: provider calls may already have
 // been charged. Only still-queued tasks are safe to start after process restart.
-export function createAITaskRunner({ executors, repository = taskRepository, pollMs = 1500, heartbeatMs = 30000, logger = console, now = () => Date.now() } = {}) {
+export function createAITaskRunner({
+  executors, repository = taskRepository, pollMs = 1500, heartbeatMs = 30000,
+  heartbeatTimeoutMs = 5000, logger = console, now = () => Date.now(),
+} = {}) {
   let stopped = true;
   let stopping = false;
   let activeTask = false;
@@ -49,15 +52,48 @@ export function createAITaskRunner({ executors, repository = taskRepository, pol
     // requeue a claim as part of shutdown or guess whether work was dispatched.
     if (stopping) return false;
     activeTask = true;
-    const heartbeat = setInterval(() => {
-      void repository.heartbeatAITask({ taskId: record.id, claimToken: record.claimToken }).catch(report);
-    }, heartbeatMs);
+    let renewal = null;
+    const stopRenewing = () => {
+      clearInterval(heartbeat);
+      if (renewal) {
+        clearTimeout(renewal.deadline);
+        renewal.controller.abort();
+        renewal = null;
+      }
+    };
+    const sendHeartbeat = () => {
+      if (renewal) return;
+      const controller = new AbortController();
+      const { signal } = controller;
+      const reportTimeout = () => report({ name: "TimeoutError", details: { code: "AI_TASK_LEASE_RENEWAL_TIMEOUT" } });
+      const deadline = setTimeout(() => {
+        stopRenewing();
+        reportTimeout();
+      }, heartbeatTimeoutMs);
+      renewal = { controller, deadline };
+      void Promise.resolve()
+        .then(() => repository.heartbeatAITask({ taskId: record.id, claimToken: record.claimToken }, { signal, timeoutMs: heartbeatTimeoutMs }))
+        .then(owned => { if (owned === false) clearInterval(heartbeat); })
+        .catch(error => {
+          if (signal.aborted) return;
+          if (error?.code === "57014") {
+            clearInterval(heartbeat);
+            reportTimeout();
+          } else report(error);
+        })
+        .finally(() => {
+          clearTimeout(deadline);
+          if (renewal?.controller === controller) renewal = null;
+        });
+    };
+    const heartbeat = setInterval(() => { void sendHeartbeat(); }, heartbeatMs);
     heartbeat.unref?.();
     try {
       const execute = executors[record.kind];
       if (!execute) throw new Error("Task executor is not registered");
       await execute(record);
     } catch (error) {
+      stopRenewing();
       const failure = taskFailure(error);
       try {
         await repository.finishAITask({ taskId: record.id, claimToken: record.claimToken,
@@ -70,7 +106,7 @@ export function createAITaskRunner({ executors, repository = taskRepository, pol
       }
       logger.error(JSON.stringify({ type: "ai_task_failed", taskId: record.id, code: failure.code }));
     } finally {
-      clearInterval(heartbeat);
+      stopRenewing();
       activeTask = false;
     }
     return true;

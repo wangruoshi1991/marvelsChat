@@ -2,6 +2,7 @@ import { z } from "zod";
 import { query, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
 import { createUsageEvent } from "./repositories.js";
+import { defaultComicRenderRepository } from "./comic-render-repository.js";
 
 const daysSchema = z.coerce.number().int().refine(value => [7, 30, 90].includes(value), "Window must be 7, 30 or 90 days").default(30);
 const idSchema = z.string().uuid();
@@ -50,6 +51,9 @@ function mapMetricRow(row) {
 const operationalCode = value => typeof value === "string" && /^[A-Za-z][A-Za-z0-9._-]{0,99}$/.test(value) ? value : null;
 
 function allowedTaskOperations(type, status) {
+  if (type === "comic_render") {
+    return status === "queued" ? ["cancel"] : [];
+  }
   if (type === "ai_task") {
     if (status === "failed") return ["retry"];
     return ["queued", "awaiting_confirmation"].includes(status) ? ["cancel"] : [];
@@ -122,8 +126,10 @@ export function createAdminOperationsRepository({ runQuery = query, transaction 
     if (parsed.to) add("created_at <= ?::timestamptz", parsed.to);
     if (parsed.agentId) add("agent_id = ?", parsed.agentId);
     const where = predicates.length ? `WHERE ${predicates.join(" AND ")}` : "";
-    const common = `SELECT id, user_id, kind, agent_id, agent_version, status, phase, revision,
-      error->>'code' AS failure_code, created_at, updated_at, 'ai_task' AS task_type, thread_id FROM ai_tasks ${where}`;
+  const common = `SELECT id, user_id, kind, agent_id, agent_version, status, phase, revision,
+      error->>'code' AS failure_code, created_at, updated_at,
+      CASE WHEN kind='comic_render' AND contract_version=2 THEN 'comic_render' ELSE 'ai_task' END AS task_type,
+      thread_id FROM ai_tasks ${where}`;
     // Workspaces have no single Agent identity; expose their first persisted node as the task Agent.
     const workspacePredicates = [];
     const workspaceParams = [];
@@ -154,15 +160,17 @@ export function createAdminOperationsRepository({ runQuery = query, transaction 
           COUNT(e.id) FILTER (WHERE e.status = 'enabled') AS enabled_entitlements
         FROM products p LEFT JOIN user_entitlements e ON e.product_id = p.id
         GROUP BY p.id, p.product_key, p.display_name ORDER BY p.product_key ASC`),
-      runQuery(`SELECT user_id, COUNT(*) AS runs,
+      runQuery(`SELECT user_id, COUNT(*) AS runs, COUNT(*) OVER () AS user_count,
         COUNT(*) FILTER (WHERE lifecycle_status = 'succeeded' OR (lifecycle_status IS NULL AND status = 'success')) AS succeeded,
         COUNT(*) FILTER (WHERE lifecycle_status IN ('failed','cancelled','blocked') OR (lifecycle_status IS NULL AND status = 'error')) AS failed,
         SUM(token_total) AS token_total, SUM(cost_cents) AS cost_cents
-        FROM agent_runs WHERE created_at >= ?::timestamptz GROUP BY user_id ORDER BY runs DESC LIMIT 200`, [window.from]),
+        FROM agent_runs WHERE created_at >= ?::timestamptz AND user_id IS NOT NULL
+        GROUP BY user_id ORDER BY runs DESC, user_id ASC LIMIT 200`, [window.from]),
       runQuery(`SELECT status, COUNT(*) AS count FROM ai_tasks WHERE created_at >= ?::timestamptz GROUP BY status ORDER BY status`, [window.from]),
     ]);
     return {
       days: window.days, from: window.from, generatedAt: new Date().toISOString(),
+      userCount: number(users[0]?.user_count),
       agents: agents.map(mapMetricRow),
       products: products.map(row => ({ productKey: row.product_key, displayName: row.display_name, entitlementCount: number(row.entitlements), enabledEntitlementCount: number(row.enabled_entitlements) })),
       users: users.map(row => ({ userId: row.user_id, runs: number(row.runs), succeeded: number(row.succeeded), failed: number(row.failed), tokenTotal: nullableNumber(row.token_total), costCents: nullableNumber(row.cost_cents) })),
@@ -175,6 +183,16 @@ export function createAdminOperationsRepository({ runQuery = query, transaction 
     const id = idSchema.parse(taskId);
     const taskRows = await runQuery(`SELECT id, user_id, kind, agent_id, agent_version, status, phase, revision,
       error->>'code' AS failure_code, created_at, updated_at, 'ai_task' AS task_type, thread_id FROM ai_tasks WHERE id = ? LIMIT 1`, [id]);
+    if (taskRows[0] && taskRows[0].kind === "comic_render") {
+      const row = taskRows[0];
+      const frames = await runQuery("SELECT frame_index,status,safe_error_code,media_asset_id FROM comic_task_outputs WHERE task_id=? ORDER BY frame_index", [id]);
+      const events = await runQuery("SELECT sequence,payload,created_at FROM ai_task_events WHERE task_id=? ORDER BY sequence ASC LIMIT ?", [id,eventLimit+1]);
+      return { ...mapAdminTask(row), kind: "comic_render", allowedOperations: allowedTaskOperations("comic_render",row.status),
+        eventKind: "comic_frames", eventsTruncated: events.length > eventLimit,
+        frames: frames.map(frame=>({ frameIndex:Number(frame.frame_index),status:frame.status,errorCode:operationalCode(frame.safe_error_code),hasMedia:Boolean(frame.media_asset_id) })),
+        events: events.slice(0,eventLimit).map(event=>({ sequence:Number(event.sequence),status:event.payload?.status||null,
+          phase:event.payload?.phase||null,errorCode:operationalCode(event.payload?.errorCode),createdAt:iso(event.created_at) })) };
+    }
     if (taskRows[0]) {
       const row = taskRows[0];
       const events = await runQuery(`SELECT sequence, payload, created_at FROM ai_task_events WHERE task_id = ? ORDER BY sequence ASC LIMIT ?`, [id, eventLimit + 1]);
@@ -196,15 +214,21 @@ export function createAdminOperationsRepository({ runQuery = query, transaction 
     idSchema.parse(taskId); mutationSchema.parse({ idempotencyKey });
     if (!['retry', 'cancel'].includes(operation)) throw new TypeError('Unsupported admin task operation');
     return transaction(async connection => {
-      const replay = await connection.query(`SELECT payload FROM usage_events WHERE event_type = ? AND target_type = 'task' AND target_id = ? AND payload->>'idempotencyKey' = ? ORDER BY created_at DESC LIMIT 1`, [`admin.task.${operation}`, taskId, idempotencyKey]);
-      if (replay[0]) return replay[0].payload?.result || { id: taskId, operation, replayed: true };
       const rows = await connection.query(`SELECT * FROM ai_tasks WHERE id = ? FOR UPDATE`, [taskId]);
-      if (!rows[0]) {
-        const workspaces = await connection.query(`SELECT * FROM agent_workspaces WHERE id = ? FOR UPDATE`, [taskId]);
-        if (!workspaces[0]) throw error(404, 'ADMIN_TASK_NOT_FOUND', 'Task not found');
+      const [workspace] = rows[0] ? [] : await connection.query(`SELECT * FROM agent_workspaces WHERE id = ? FOR UPDATE`, [taskId]);
+      if (!rows[0] && !workspace) throw error(404, 'ADMIN_TASK_NOT_FOUND', 'Task not found');
+      const [replay] = await connection.query(`SELECT event_type,payload FROM usage_events
+        WHERE event_type IN ('admin.task.cancel','admin.task.retry') AND target_type = 'task' AND target_id = ?
+          AND user_id = ? AND payload->>'idempotencyKey' = ? ORDER BY created_at DESC LIMIT 1`, [taskId, actor, idempotencyKey]);
+      if (replay) {
+        if (replay.event_type !== `admin.task.${operation}`) {
+          throw error(409, 'IDEMPOTENCY_KEY_REUSED', 'This idempotency key belongs to another task operation');
+        }
+        return replay.payload.result;
+      }
+      if (workspace) {
         if (operation === 'retry') throw error(409, 'ADMIN_TASK_RETRY_UNAVAILABLE', 'Workspace retry requires a new user-authorized submission');
-        const row = workspaces[0];
-        if (!['queued', 'running', 'waiting_input', 'awaiting_confirmation', 'cancelling'].includes(row.status)) throw error(409, 'ADMIN_TASK_STATE_CHANGED', 'Task cannot be cancelled in its current state');
+        if (!['queued', 'running', 'waiting_input', 'awaiting_confirmation', 'cancelling'].includes(workspace.status)) throw error(409, 'ADMIN_TASK_STATE_CHANGED', 'Task cannot be cancelled in its current state');
         const runningNodes = await connection.query("SELECT id FROM agent_workspace_nodes WHERE workspace_id = ? AND status = 'running' FOR UPDATE", [taskId]);
         await connection.query("UPDATE agent_workspace_nodes SET status = 'cancelled', claim_token = NULL, lease_until = NULL, updated_at = clock_timestamp() WHERE workspace_id = ? AND status = 'queued'", [taskId]);
         const status = runningNodes.length ? 'cancelling' : 'cancelled';
@@ -215,6 +239,18 @@ export function createAdminOperationsRepository({ runQuery = query, transaction 
         return result;
       }
       const row = rows[0];
+      if (row.kind === "comic_render") {
+        if (operation !== "cancel" || row.contract_version !== 2 || row.status !== "queued") {
+          throw error(409,"ADMIN_TASK_OPERATION_UNAVAILABLE","Only queued comic tasks with no provider dispatch can be cancelled.");
+        }
+        const updated = await defaultComicRenderRepository.cancelComicRenderTaskInTransaction(connection, {
+          userId: row.user_id, taskId, revision: row.revision,
+        });
+        const result={id:updated.id,type:"comic_render",status:updated.status,revision:Number(updated.revision),operation,replayed:false};
+        await createUsageEvent({userId:actor,eventType:"admin.task.cancel",targetType:"task",targetId:taskId,
+          payload:{idempotencyKey,requestId,result},ipHash,userAgent},connection.query);
+        return result;
+      }
       if (operation === 'cancel') {
         if (!['queued', 'awaiting_confirmation'].includes(row.status)) throw error(409, 'ADMIN_TASK_STATE_CHANGED', 'Task cannot be cancelled in its current state');
         const updated = (await connection.query(`UPDATE ai_tasks SET status = 'cancelled', phase = 'cancelled', approval = NULL, revision = revision + 1, last_operation = 'cancel', last_operation_revision = revision + 1, last_approval_id = NULL, updated_at = clock_timestamp() WHERE id = ? RETURNING id,status,revision,updated_at`, [taskId]))[0];

@@ -90,6 +90,10 @@ export function useChatFollow(scope: string, selectedContribution: boolean) {
     state.current.nearBottom = true;
     state.current.pendingLayoutFollow = null;
   }, []);
+  const pauseFollowing = useCallback(() => {
+    state.current.nearBottom = false;
+    state.current.pendingLayoutFollow = null;
+  }, []);
   const measureContent = useCallback((height: number) => {
     state.current.contentHeight = height;
   }, []);
@@ -108,5 +112,6 @@ export function useChatFollow(scope: string, selectedContribution: boolean) {
     bottomOffset,
     shouldFollow,
     follow,
+    pauseFollowing,
   };
 }

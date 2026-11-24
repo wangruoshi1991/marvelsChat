@@ -10,6 +10,8 @@ import {
   sqlLimit,
 } from "./repository-mappers.js";
 import { getProfileForUser } from "./station-profile-repository.js";
+import { canonicalizeContract } from "../../shared/agent-catalog.js";
+import { createUsageEvent } from "./repositories.js";
 import { validateSiteDraftContent } from "./site-builder-service.js";
 import { readSiteDocumentResources, validateStoredSiteDocument } from "./site-document-repository.js";
 
@@ -176,15 +178,18 @@ export async function createFileAsset({
   status = "processed",
   preprocessingResult = {},
   metadata = {},
-}) {
+  submissionKey = null,
+  requestHash = null,
+}, runQuery = query) {
   const id = crypto.randomUUID();
-  const rows = await query(
+  const rows = await runQuery(
     `INSERT INTO file_assets
       (
         id, user_id, original_filename, mime_type, byte_size, checksum_sha256,
-        storage_provider, storage_key, source_kind, status, preprocessing_result, metadata, extracted_text, parse_version
+        storage_provider, storage_key, source_kind, status, preprocessing_result, metadata,
+        extracted_text, parse_version, inline_submission_key, inline_request_hash
       )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?)
     RETURNING *`,
     [
       id,
@@ -198,10 +203,51 @@ export async function createFileAsset({
       sourceKind,
       status,
       JSON.stringify(preprocessingResult),
-      JSON.stringify(metadata), extractedText, parseVersion,
+      JSON.stringify(metadata), extractedText, parseVersion, submissionKey, requestHash,
     ],
   );
   return mapFileAsset(rows[0]);
+}
+
+export async function submitStationFile(input, {
+  audit,
+  createAsset = createFileAsset,
+  recordUsage = createUsageEvent,
+  transaction = withTransaction,
+} = {}) {
+  const { userId, submissionKey, originalFilename, mimeType, byteSize, extractedText, metadata } = input;
+  const requestHash = submissionKey ? crypto.createHash("sha256").update(canonicalizeContract({
+    originalFilename, mimeType, byteSize, extractedText, metadata,
+  })).digest("hex") : null;
+
+  return transaction(async connection => {
+    if (submissionKey) {
+      await connection.query("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", [
+        `station-file:${userId}:${submissionKey}`,
+      ]);
+      const [existing] = await connection.query(
+        "SELECT * FROM file_assets WHERE user_id = ? AND inline_submission_key = ? FOR UPDATE",
+        [userId, submissionKey],
+      );
+      if (existing) {
+        if (existing.inline_request_hash !== requestHash) {
+          throw new HttpError(409, "保存标识已用于不同文件。", { code: "FILE_IDEMPOTENCY_CONFLICT" });
+        }
+        if (existing.deleted_at) throw new HttpError(410, "此文件已删除。", { code: "FILE_DELETED" });
+        return { asset: mapFileAsset(existing), replayed: true };
+      }
+    }
+    const asset = await createAsset({ ...input, requestHash }, connection.query);
+    await recordUsage({
+      ...audit, userId, eventType: "station.file_asset.create", targetType: "file_asset", targetId: asset.id,
+      payload: {
+        status: asset.status,
+        kind: input.preprocessingResult.kind,
+        hasInlineContent: input.sourceKind === "inline_text",
+      },
+    }, connection.query);
+    return { asset, replayed: false };
+  });
 }
 
 export async function listStationComicDiariesForUser(userId, limit = 20) {

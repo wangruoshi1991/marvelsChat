@@ -13,6 +13,7 @@ import {
 import { ChevronRight, FileText, Plus } from 'lucide-react-native';
 import { appErrorText, textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
+import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
 import {
   WorkspaceButton,
   WorkspaceState,
@@ -35,6 +36,7 @@ import {
   releaseStationFile,
   PickedStationFile,
 } from '../../services/stationFilePicker';
+import { SecondFloorScrollView } from './SecondFloorScrollView';
 import { SecondFloorPageScrollProps } from './secondFloorScroll';
 import type { UIComponentPreference } from '../ui/uiPreferenceTypes';
 import { uiFontSize, uiRowGap } from '../ui/uiPreferences';
@@ -209,6 +211,11 @@ export function SecondFloorFiles({
   // that navigation transition separate from lifecycle/account invalidation.
   const detailReadGeneration = useRef(0);
   const pending = useRef(false);
+  const saveAttempt = useRef<{
+    originalFilename: string;
+    content: string;
+    key: string;
+  } | null>(null);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -223,6 +230,7 @@ export function SecondFloorFiles({
     return () => subscription.remove();
   }, []);
   useEffect(() => {
+    saveAttempt.current = null;
     setDetail(null);
     setSelectedId(null);
     detailReadGeneration.current += 1;
@@ -253,20 +261,34 @@ export function SecondFloorFiles({
     setBusy(true);
     pending.current = true;
     onBusyChange?.(true);
+    const originalFilename = filename.trim().toLowerCase().endsWith('.txt')
+      ? filename.trim()
+      : `${filename.trim()}.txt`;
+    if (
+      saveAttempt.current?.originalFilename !== originalFilename ||
+      saveAttempt.current?.content !== content
+    ) {
+      saveAttempt.current = {
+        originalFilename,
+        content,
+        key: createIdempotencyKey(),
+      };
+    }
+    const attempt = saveAttempt.current;
     try {
       const file = await session.createStationFileAsset({
-        originalFilename: filename.trim().toLowerCase().endsWith('.txt')
-          ? filename.trim()
-          : `${filename.trim()}.txt`,
+        originalFilename,
         mimeType: 'text/plain',
         content,
         metadata: { source: 'second-floor-text' },
+        idempotencyKey: attempt.key,
       });
       if (
         alive.current &&
         latest.current.active &&
         latest.current.epoch === epoch
       ) {
+        saveAttempt.current = null;
         setEditing(false);
         setFilename('');
         setContent('');
@@ -595,7 +617,7 @@ export function SecondFloorFiles({
     );
   }
   return (
-    <ScrollView
+    <SecondFloorScrollView
       {...scrollProps}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
@@ -910,7 +932,7 @@ export function SecondFloorFiles({
       {error ? (
         <WorkspaceState palette={colors} title={error} tone="error" />
       ) : null}
-    </ScrollView>
+    </SecondFloorScrollView>
   );
 }
 const s = StyleSheet.create({

@@ -131,3 +131,41 @@ test('image preview reports a save failure without hiding the retryable action',
   ).toContain('未获得保存到相册的权限');
   await act(async () => renderer.unmount());
 });
+
+test('leaving a preview silences its pending save and a double tap starts it once', async () => {
+  let reject!: (error: Error) => void;
+  const saveImage = jest.mocked(saveComicImageToLibrary);
+  saveImage.mockClear().mockImplementationOnce(
+    () =>
+      new Promise((_resolve, failure) => {
+        reject = failure;
+      }),
+  );
+  const onActionMessage = jest.fn();
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    tree = TestRenderer.create(
+      <StationMediaPreviewScreen
+        asset={{ id: 'asset-1', kind: 'image', status: 'uploaded' }}
+        token="owner"
+        timestampMs={null}
+        palette={palettes.light}
+        language="zh"
+        onBack={jest.fn()}
+        onUnavailable={jest.fn()}
+        onActionMessage={onActionMessage}
+      />,
+    );
+  });
+  const save = tree.root.findByProps({ testID: 'station-media-save' });
+  act(() => {
+    save.props.onPress();
+    save.props.onPress();
+  });
+  expect(saveImage).toHaveBeenCalledTimes(1);
+  await act(async () => tree.unmount());
+  await act(async () => {
+    reject(new Error('Photos denied'));
+  });
+  expect(onActionMessage).not.toHaveBeenCalled();
+});

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AccessibilityInfo, Text, View } from 'react-native';
+import { AccessibilityInfo, Text, TextInput, View } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import App from '../src/App';
 import { BottomBar } from '../src/shared/ui';
@@ -57,6 +57,9 @@ jest.mock('../src/features/workspaces/useAgentWorkspaces', () => ({
 }));
 jest.mock('../src/services/api/agentWorkspaceApi', () => ({
   agentWorkspaceApi: { create: jest.fn(), decide: jest.fn(), get: jest.fn() },
+}));
+jest.mock('../src/services/api/customStickerApi', () => ({
+  customStickerApi: { list: jest.fn(async () => []) },
 }));
 jest.mock('../src/app/AppModals', () => ({ AppModals: () => null }));
 jest.mock('../src/app/LaunchAnimation', () => ({
@@ -154,7 +157,12 @@ const text = () =>
     .flat(Infinity)
     .join(' ');
 const chatComposer = () => root().findByType(ChatComposer);
-const sendMessage = () => button('发送消息').props.onPress();
+const sendMessage = () => {
+  const input = chatComposer().findByType(TextInput);
+  return input.props.onSubmitEditing({
+    nativeEvent: { text: input.props.value },
+  });
+};
 
 beforeEach(() => {
   jest.useFakeTimers();
@@ -731,6 +739,7 @@ test('album assistance preserves the draft while access is missing and only enab
   await act(async () => button('交给妙管家').props.onPress());
   const draft = chatComposer().props.draft;
   expect(text()).toContain('读取相册');
+  act(() => button('更多功能').props.onPress());
   expect(button('发送消息').props.disabled).toBe(true);
   await act(async () => sendMessage());
   expect(mockSession.sendMessage).not.toHaveBeenCalled();

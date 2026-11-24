@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { z } from "zod";
-import { query, withTransaction } from "./db.js";
+import { query, withLeaseTransaction, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
 
 const idSchema = z.string().uuid();
@@ -33,6 +33,16 @@ const contextRefsSchema = z.array(z.object({
   version: z.string().min(1).max(160),
   title: z.string().max(160),
 }).strict()).max(20);
+const invalidMetadataError = Object.freeze({
+  code: "AI_TASK_METADATA_INVALID",
+  message: "任务记录格式异常，无法继续处理，请联系支持。",
+});
+function validWorkerMetadata(row) {
+  return contextRefsSchema.safeParse(row.context_refs).success &&
+    artifactsSchema.safeParse(row.artifacts).success &&
+    approvalSchema.nullable().safeParse(row.approval).success &&
+    errorSchema.nullable().safeParse(row.error).success;
+}
 const createSchema = z.object({
   userId: idSchema,
   kind: z.enum(["agent_message", "site_draft"]),
@@ -67,7 +77,8 @@ const readFields = `*, clock_timestamp() AS database_now,
     ELSE input ->> 'prompt' END AS display_goal`;
 
 function toDTO(row) {
-  const approval = row.approval ? approvalSchema.parse(row.approval) : null;
+  const diagnostic = errorSchema.nullable().safeParse(row.error);
+  const approval = approvalSchema.nullable().parse(row.approval);
   const canConfirm = row.status === "awaiting_confirmation" && approval &&
     Date.parse(approval.expiresAt) > new Date(row.database_now).getTime();
   return {
@@ -85,20 +96,24 @@ function toDTO(row) {
     contextRefs: contextRefsSchema.parse(row.context_refs),
     artifacts: artifactsSchema.parse(row.artifacts),
     approval,
-    error: row.error ? errorSchema.parse(row.error) : null,
+    error: diagnostic.success ? diagnostic.data : invalidMetadataError,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
-    allowedActions: row.status === "queued" ? ["cancel"]
+    allowedActions: !diagnostic.success ? [] : row.status === "queued" ? ["cancel"]
       : row.status === "awaiting_confirmation" ? ["cancel", ...(canConfirm ? ["confirm"] : []), "reject"] : [],
   };
 }
 
+function executableLegacyDTO(row) {
+  if (!validWorkerMetadata(row)) throw conflict(invalidMetadataError.code, invalidMetadataError.message);
+  return toDTO(row);
+}
 const toRecord = row => ({
   ...(row.kind === "comic_render" ? {
     id: row.id, kind: row.kind, contractVersion: row.contract_version,
     agentId: row.agent_id, agentVersion: row.agent_version, comicDiaryId: row.comic_diary_id,
     status: row.status, phase: row.phase, revision: row.revision, error: row.error,
-  } : toDTO(row)), userId: row.user_id, input: row.input,
+  } : executableLegacyDTO(row)), userId: row.user_id, input: row.input,
   claimToken: row.claim_token, leaseUntil: iso(row.lease_until),
 });
 const executionProjection = row => row.kind === "comic_render" ? toRecord(row) : toDTO(row);
@@ -153,7 +168,9 @@ export async function createAITaskInTransaction(connection, args) {
   return { task: toDTO(existing[0]), reused: true };
 }
 
-export function createAITaskRepository({ query: runQuery = query, withTransaction: transaction = withTransaction } = {}) {
+export function createAITaskRepository({
+  query: runQuery = query, withTransaction: transaction = withTransaction, withLeaseTransaction: leaseTransaction = withLeaseTransaction,
+} = {}) {
   const getAITask = async ({ userId, taskId }) => {
     const rows = await runQuery(`SELECT ${readFields} FROM ai_tasks WHERE id = ? AND user_id = ? AND ${legacyPredicate}`, [taskId, userId]);
     return rows[0] ? toDTO(rows[0]) : null;
@@ -180,10 +197,21 @@ export function createAITaskRepository({ query: runQuery = query, withTransactio
     if (kinds !== undefined) z.array(z.enum(["agent_message", "site_draft", "comic_render"])).max(3).parse(kinds);
     if (kinds?.length === 0) return null;
     return transaction(async connection => {
-    const rows = await connection.query(`SELECT id FROM ai_tasks WHERE status = 'queued'
+    const rows = await connection.query(`SELECT id, kind, context_refs, artifacts, approval, error FROM ai_tasks WHERE status = 'queued'
       ${kinds ? "AND kind = ANY(?::text[])" : ""}
       ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, kinds ? [kinds] : []);
     if (!rows[0]) return null;
+    const pending = rows[0];
+    if (pending.kind !== "comic_render" && !validWorkerMetadata(pending)) {
+      // Preserve the original diagnostic for operators. Never dispatch a record
+      // with invalid context or approval data, nor expose it in the event.
+      const [failed] = await connection.query(`UPDATE ai_tasks SET status = 'failed', phase = 'failed',
+        error = COALESCE(error, ?::jsonb), revision = revision + 1, updated_at = clock_timestamp()
+        WHERE id = ? AND status = 'queued' RETURNING id, user_id, kind, status, phase, revision`,
+      [json(invalidMetadataError), pending.id]);
+      await appendEvent(connection, { ...failed, error: invalidMetadataError });
+      return null;
+    }
     const claimed = await connection.query(`UPDATE ai_tasks SET status = 'running', phase = 'validating',
       revision = revision + 1, claim_token = ?, lease_until = clock_timestamp() + INTERVAL '5 minutes', updated_at = clock_timestamp()
       WHERE id = ? AND status = 'queued' RETURNING ${readFields}`, [crypto.randomUUID(), rows[0].id]);
@@ -192,11 +220,16 @@ export function createAITaskRepository({ query: runQuery = query, withTransactio
     return toRecord(claimed[0]);
     });
   };
-  const heartbeatAITask = async ({ taskId, claimToken }) => {
-    const rows = await runQuery(`UPDATE ai_tasks SET lease_until = clock_timestamp() + INTERVAL '5 minutes'
+  const heartbeatAITask = ({ taskId, claimToken }, { signal, timeoutMs = 5000 } = {}) => leaseTransaction(async connection => {
+    await connection.query("SELECT set_config('statement_timeout', ?, true)", [`${timeoutMs}ms`]);
+    // Check the clock after the row lock is held, since lock waits can cross expiry.
+    const locked = await connection.query(`SELECT id FROM ai_tasks
+      WHERE id = ? AND claim_token = ? AND status = 'running' FOR UPDATE`, [taskId, claimToken]);
+    if (!locked[0]) return false;
+    const rows = await connection.query(`UPDATE ai_tasks SET lease_until = clock_timestamp() + INTERVAL '5 minutes'
       WHERE id = ? AND claim_token = ? AND status = 'running' AND lease_until > clock_timestamp() RETURNING id`, [taskId, claimToken]);
     return Boolean(rows[0]);
-  };
+  }, { signal });
   const advanceAITask = async ({ taskId, claimToken, phase, expectedPhase }) => {
     z.enum(["generating", "searching", "rendering"]).parse(phase);
     if (expectedPhase !== undefined) z.enum(["validating", "generating", "searching", "rendering"]).parse(expectedPhase);
@@ -267,6 +300,9 @@ export function createAITaskRepository({ query: runQuery = query, withTransactio
       const rows = await connection.query(`SELECT ${readFields} FROM ai_tasks WHERE id = ? AND user_id = ? AND ${legacyPredicate} FOR UPDATE`, [taskId, userId]);
       const row = rows[0];
       if (!row) throw missing();
+      if (!validWorkerMetadata(row)) {
+        throw conflict(invalidMetadataError.code, invalidMetadataError.message);
+      }
       if (row.last_operation === operation && row.last_operation_revision === revision &&
         (operation !== "confirm" || row.last_approval_id === approvalId)) return toDTO(row);
       if (row.revision !== revision) throw conflict("AI_TASK_REVISION_CONFLICT", "AI task has changed; refresh its state");

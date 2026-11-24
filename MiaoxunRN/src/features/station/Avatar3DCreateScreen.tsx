@@ -170,7 +170,7 @@ export function Avatar3DCreateScreen({
           userDescription: description,
         })
         .catch(() => undefined);
-    if (workflow.isSubmissionUncertain) {
+    if (workflow.isSubmissionUncertain && workflow.hasConfirmedSubmissionCost) {
       await create();
       return;
     }

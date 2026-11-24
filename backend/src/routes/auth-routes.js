@@ -1,5 +1,6 @@
 import { hashPassword, verifyPassword } from "../auth.js";
 import { HttpError } from "../http-error.js";
+import { withTransaction } from "../db.js";
 import {
   createSessionForUser,
   createUsageEvent,
@@ -89,7 +90,7 @@ export function registerAuthRoutes(app, { authenticate, asyncHandler }) {
         passwordHash,
         role,
       });
-      const session = await createSessionForUser(user.id);
+      const session = await createSessionForUser(user.id, { verifiedPasswordHash: passwordHash });
       await markLogin(user.id);
       await createUsageEvent({
         userId: user.id,
@@ -111,7 +112,7 @@ export function registerAuthRoutes(app, { authenticate, asyncHandler }) {
       const body = loginSchema.parse(req.body);
       const userRow = await verifyLoginCredentials(body);
 
-      const session = await createSessionForUser(userRow.id);
+      const session = await createSessionForUser(userRow.id, { verifiedPasswordHash: userRow.password_hash });
       await markLogin(userRow.id);
       await createUsageEvent({
         userId: userRow.id,
@@ -139,15 +140,17 @@ export function registerAuthRoutes(app, { authenticate, asyncHandler }) {
     "/api/auth/logout",
     authenticate,
     asyncHandler(async (req, res) => {
-      await createUsageEvent({
-        userId: req.user.id,
-        eventType: "auth.logout",
-        targetType: "user",
-        targetId: req.user.id,
-        ipHash: hashRequestIp(req.ip),
-        userAgent: req.get("user-agent") || "",
+      await withTransaction(async ({ query }) => {
+        await revokeSession(req.sessionId, query);
+        await createUsageEvent({
+          userId: req.user.id,
+          eventType: "auth.logout",
+          targetType: "user",
+          targetId: req.user.id,
+          ipHash: hashRequestIp(req.ip),
+          userAgent: req.get("user-agent") || "",
+        }, query);
       });
-      await revokeSession(req.sessionId);
       res.json({ data: { ok: true } });
     }),
   );

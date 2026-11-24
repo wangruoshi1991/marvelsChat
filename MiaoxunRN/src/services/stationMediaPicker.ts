@@ -1,3 +1,5 @@
+import { PermissionsAndroid, Platform } from 'react-native';
+import { assertVoiceCallResourceAvailable } from './voiceCall/voiceCallResources';
 import {
   Asset,
   ImageLibraryOptions,
@@ -89,6 +91,7 @@ const throwPickerError = (
 };
 
 export async function pickStationImagesFromLibrary(selectionLimit = 9) {
+  assertVoiceCallResourceAvailable('picker');
   const response = await launchImageLibrary({
     ...photoPickerOptions,
     selectionLimit: Math.max(1, Math.min(9, selectionLimit)),
@@ -106,6 +109,7 @@ export async function pickStationPhotoFromLibrary() {
 }
 
 export async function pickStationVideoFromLibrary() {
+  assertVoiceCallResourceAvailable('picker');
   const response = await launchImageLibrary({
     mediaType: 'video',
     selectionLimit: 1,
@@ -121,6 +125,20 @@ export async function pickStationVideoFromLibrary() {
 }
 
 export async function takeStationPhoto() {
+  assertVoiceCallResourceAvailable('camera');
+  if (Platform.OS === 'android') {
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+    );
+    if (result !== PermissionsAndroid.RESULTS.GRANTED) {
+      throw new Error(
+        result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN
+          ? '无法使用相机，请在系统设置中允许妙讯访问相机后重试。'
+          : '未获得相机权限，可再次点击拍摄重试，或从相册选择照片。',
+      );
+    }
+  }
+  assertVoiceCallResourceAvailable('camera');
   const response = await launchCamera({
     ...photoPickerOptions,
     cameraType: 'back',

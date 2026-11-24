@@ -71,10 +71,6 @@ export const pageGradientStops = [
   { offset: 1, color: '#FFFFFF', opacity: 1 },
 ] as const;
 
-/** The flat tint used by the station's opaque sticky header. */
-export const pageGradientTop = pageGradientWash.left;
-export const pageGradientBottom = '#FFFFFF';
-
 /**
  * Default avatar plates. The prototype gives each avatar category its own
  * gradient and never one shared colour, so an account gets one of these picked

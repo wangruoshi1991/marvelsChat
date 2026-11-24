@@ -10,29 +10,44 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Check, ChevronDown, Trash2, TriangleAlert } from 'lucide-react-native';
+import {
+  Check,
+  ChevronDown,
+  RefreshCw,
+  Trash2,
+  TriangleAlert,
+} from 'lucide-react-native';
 
 import { textFor } from '../../shared/i18n';
-import { Palette, spacing } from '../../shared/theme';
-import { Language } from '../session/useMiaoxunSession';
+import { Palette, productColors, spacing } from '../../shared/theme';
+import type {
+  AccountDeletionStatus,
+  Language,
+} from '../session/useMiaoxunSession';
 
 export function DeleteAccountSheet({
   palette,
   language,
   isBusy,
+  status,
   onBack,
+  onRecheck,
   onDeleteAccount,
 }: {
   palette: Palette;
   language: Language;
   isBusy: boolean;
+  status: AccountDeletionStatus;
   onBack: () => void;
+  onRecheck: () => Promise<void>;
   onDeleteAccount: (password: string) => Promise<void>;
 }) {
   const [password, setPassword] = useState('');
   const [hasConfirmed, setHasConfirmed] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const canDelete = password.length > 0 && hasConfirmed && !isBusy;
+  const isPending = status === 'pending' || status === 'checking';
+  const canDelete =
+    password.length > 0 && hasConfirmed && !isBusy && !isPending;
   const checkboxColors = hasConfirmed
     ? { backgroundColor: palette.rose, borderColor: palette.rose }
     : { backgroundColor: 'transparent', borderColor: palette.border };
@@ -44,6 +59,8 @@ export function DeleteAccountSheet({
     setErrorMessage(null);
     try {
       await onDeleteAccount(password);
+      setPassword('');
+      setHasConfirmed(false);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -64,6 +81,7 @@ export function DeleteAccountSheet({
       >
         <View style={styles.header}>
           <Pressable
+            accessibilityRole="button"
             accessibilityLabel={textFor(language, '返回', 'Back')}
             disabled={isBusy}
             onPress={onBack}
@@ -79,26 +97,16 @@ export function DeleteAccountSheet({
           </Text>
         </View>
 
-        <View
-          style={[
-            styles.warning,
-            { backgroundColor: palette.surface, borderColor: palette.border },
-          ]}
-        >
-          <View
-            style={[
-              styles.warningIcon,
-              { backgroundColor: `${palette.rose}1f` },
-            ]}
-          >
-            <TriangleAlert color={palette.rose} size={22} strokeWidth={2.4} />
-          </View>
-          <View style={styles.warningCopy}>
-            <Text style={[styles.warningTitle, { color: palette.text }]}>
+        {isPending ? (
+          <View style={styles.form}>
+            <Text
+              accessibilityRole="alert"
+              style={[styles.warningTitle, { color: palette.text }]}
+            >
               {textFor(
                 language,
-                '此操作无法撤销',
-                'This action cannot be undone',
+                '注销结果待确认',
+                'Account deletion is unconfirmed',
               )}
             </Text>
             <Text
@@ -106,100 +114,186 @@ export function DeleteAccountSheet({
             >
               {textFor(
                 language,
-                '账号、个人资料、小站内容和已上传资源将被永久删除。',
-                'Your account, profile, station content, and uploaded assets will be permanently deleted.',
+                '请在网络恢复后复核原账号的登录状态。',
+                'Check the original account session once your connection returns.',
               )}
             </Text>
-          </View>
-        </View>
-
-        <View style={styles.form}>
-          <Text style={[styles.label, { color: palette.text }]}>
-            {textFor(language, '验证当前密码', 'Verify current password')}
-          </Text>
-          <TextInput
-            autoCapitalize="none"
-            autoComplete="password"
-            editable={!isBusy}
-            onChangeText={setPassword}
-            onSubmitEditing={() => submit().catch(() => undefined)}
-            placeholder={textFor(language, '请输入密码', 'Enter your password')}
-            placeholderTextColor={palette.secondaryText}
-            returnKeyType="done"
-            secureTextEntry
-            style={[
-              styles.input,
-              {
-                backgroundColor: palette.input,
-                borderColor: errorMessage ? palette.rose : palette.border,
-                color: palette.text,
-              },
-            ]}
-            textContentType="password"
-            value={password}
-          />
-
-          <Pressable
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: hasConfirmed }}
-            disabled={isBusy}
-            onPress={() => setHasConfirmed(current => !current)}
-            style={styles.confirmationRow}
-          >
-            <View style={[styles.checkbox, checkboxColors]}>
-              {hasConfirmed ? (
-                <Check color="#ffffff" size={14} strokeWidth={3} />
-              ) : null}
-            </View>
-            <Text
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={textFor(
+                language,
+                '复核登录状态',
+                'Check session',
+              )}
+              accessibilityState={{ busy: isBusy, disabled: isBusy }}
+              disabled={isBusy}
+              onPress={onRecheck}
               style={[
-                styles.confirmationText,
-                { color: palette.secondaryText },
+                styles.deleteButton,
+                { backgroundColor: productColors.accent },
+                isBusy && styles.disabled,
               ]}
             >
-              {textFor(
-                language,
-                '我已了解注销后无法恢复账号和数据。',
-                'I understand that the account and data cannot be restored.',
+              {isBusy ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <>
+                  <RefreshCw color="#ffffff" size={18} />
+                  <Text style={styles.deleteButtonText}>
+                    {textFor(language, '复核登录状态', 'Check session')}
+                  </Text>
+                </>
               )}
-            </Text>
-          </Pressable>
-
-          {errorMessage ? (
-            <Text
-              accessibilityRole="alert"
-              style={[styles.error, { color: palette.rose }]}
+            </Pressable>
+          </View>
+        ) : (
+          <>
+            {status === 'session-active' ? (
+              <Text
+                accessibilityRole="alert"
+                style={[styles.warningBody, { color: palette.text }]}
+              >
+                {textFor(
+                  language,
+                  '原账号的登录状态仍有效。如需注销，请重新输入密码并确认。',
+                  'The original session is still active. To delete the account, enter your password and confirm again.',
+                )}
+              </Text>
+            ) : null}
+            <View
+              style={[
+                styles.warning,
+                {
+                  backgroundColor: palette.surface,
+                  borderColor: palette.border,
+                },
+              ]}
             >
-              {errorMessage}
-            </Text>
-          ) : null}
-
-          <Pressable
-            accessibilityRole="button"
-            disabled={!canDelete}
-            onPress={() => submit().catch(() => undefined)}
-            style={[
-              styles.deleteButton,
-              { backgroundColor: palette.rose },
-              !canDelete && styles.disabled,
-            ]}
-          >
-            {isBusy ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <>
-                <Trash2 color="#ffffff" size={18} strokeWidth={2.5} />
-                <Text style={styles.deleteButtonText}>
+              <View
+                style={[
+                  styles.warningIcon,
+                  { backgroundColor: `${palette.rose}1f` },
+                ]}
+              >
+                <TriangleAlert
+                  color={palette.rose}
+                  size={22}
+                  strokeWidth={2.4}
+                />
+              </View>
+              <View style={styles.warningCopy}>
+                <Text style={[styles.warningTitle, { color: palette.text }]}>
                   {textFor(
                     language,
-                    '永久注销账号',
-                    'Permanently delete account',
+                    '此操作无法撤销',
+                    'This action cannot be undone',
                   )}
                 </Text>
-              </>
-            )}
-          </Pressable>
-        </View>
+                <Text
+                  style={[styles.warningBody, { color: palette.secondaryText }]}
+                >
+                  {textFor(
+                    language,
+                    '账号、个人资料、小站内容和已上传资源将被永久删除。',
+                    'Your account, profile, station content, and uploaded assets will be permanently deleted.',
+                  )}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.form}>
+              <Text style={[styles.label, { color: palette.text }]}>
+                {textFor(language, '验证当前密码', 'Verify current password')}
+              </Text>
+              <TextInput
+                autoCapitalize="none"
+                autoComplete="password"
+                editable={!isBusy}
+                onChangeText={setPassword}
+                onSubmitEditing={() => submit().catch(() => undefined)}
+                placeholder={textFor(
+                  language,
+                  '请输入密码',
+                  'Enter your password',
+                )}
+                placeholderTextColor={palette.secondaryText}
+                returnKeyType="done"
+                secureTextEntry
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: palette.input,
+                    borderColor: errorMessage ? palette.rose : palette.border,
+                    color: palette.text,
+                  },
+                ]}
+                textContentType="password"
+                value={password}
+              />
+
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: hasConfirmed }}
+                disabled={isBusy}
+                onPress={() => setHasConfirmed(current => !current)}
+                style={styles.confirmationRow}
+              >
+                <View style={[styles.checkbox, checkboxColors]}>
+                  {hasConfirmed ? (
+                    <Check color="#ffffff" size={14} strokeWidth={3} />
+                  ) : null}
+                </View>
+                <Text
+                  style={[
+                    styles.confirmationText,
+                    { color: palette.secondaryText },
+                  ]}
+                >
+                  {textFor(
+                    language,
+                    '我已了解注销后无法恢复账号和数据。',
+                    'I understand that the account and data cannot be restored.',
+                  )}
+                </Text>
+              </Pressable>
+
+              {errorMessage ? (
+                <Text
+                  accessibilityRole="alert"
+                  style={[styles.error, { color: palette.rose }]}
+                >
+                  {errorMessage}
+                </Text>
+              ) : null}
+
+              <Pressable
+                accessibilityRole="button"
+                disabled={!canDelete}
+                onPress={() => submit().catch(() => undefined)}
+                style={[
+                  styles.deleteButton,
+                  { backgroundColor: palette.rose },
+                  !canDelete && styles.disabled,
+                ]}
+              >
+                {isBusy ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <>
+                    <Trash2 color="#ffffff" size={18} strokeWidth={2.5} />
+                    <Text style={styles.deleteButtonText}>
+                      {textFor(
+                        language,
+                        '永久注销账号',
+                        'Permanently delete account',
+                      )}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );

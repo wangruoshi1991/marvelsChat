@@ -9,7 +9,7 @@ test("account deletion retries a rolled-back worker deadlock and propagates othe
     withTransactionImpl: async work => {
       attempts += 1;
       if (attempts === 1) throw Object.assign(new Error("deadlock"), { code: "40P01" });
-      return work({ execute: async sql => sql.includes("SELECT id FROM users") || sql.includes("DELETE FROM users") ? [[{ id: "qa" }]] : [[]] });
+      return work({ execute: async sql => sql.includes("SELECT id, password_hash FROM users") || sql.includes("DELETE FROM users") ? [[{ id: "qa" }]] : [[]] });
     },
   });
   assert.deepEqual(await repository.deleteUserAccount({ userId: "qa" }), { deleted: true });
@@ -54,7 +54,7 @@ test("account database deletion detaches cyclic 3D references before deleting th
   const connection = {
     execute: async (sql) => {
       calls.push(sql.replace(/\s+/g, " ").trim());
-      if (sql.includes("SELECT id FROM users")) return [[{ id: "user-1" }]];
+      if (sql.includes("SELECT id, password_hash FROM users")) return [[{ id: "user-1" }]];
       if (sql.includes("DELETE FROM users")) return [[{ id: "user-1" }]];
       return [[]];
     },
@@ -66,7 +66,7 @@ test("account database deletion detaches cyclic 3D references before deleting th
   await repository.deleteUserAccount({ userId: "user-1" });
 
   const joined = calls.join("\n");
-  assert.match(joined, /SELECT id FROM users.*FOR UPDATE/);
+  assert.match(joined, /SELECT id, password_hash FROM users.*FOR UPDATE/);
   assert.match(joined, /UPDATE avatar_3d_jobs/);
   assert.match(joined, /UPDATE avatar_3d_generation_attempts/);
   assert.match(joined, /DELETE FROM usage_events/);

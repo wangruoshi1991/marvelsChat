@@ -1,4 +1,5 @@
 import React from 'react';
+import { Text, TextInput } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import type {
   AgentDTO,
@@ -11,11 +12,16 @@ import type {
 } from '../src/models/api';
 import { contentPreviewReference } from '../src/models/chatContentPreview';
 import { avatar3dAttemptStore } from '../src/services/avatar3dAttemptStore';
+import { appApi } from '../src/services/api/appApi';
+import { authApi } from '../src/services/api/authApi';
 import { apiClient } from '../src/services/apiClient';
 import { tokenStore } from '../src/services/tokenStore';
 import { useMiaoxunSession } from '../src/features/session/useMiaoxunSession';
+import { AuthScreen } from '../src/features/auth/AuthScreen';
+import { DeleteAccountSheet } from '../src/features/settings/DeleteAccountSheet';
 import { albumAssistantConsent } from '../src/features/station/albumAssistantAuthorization';
 import { defaultUIPreferences } from '../src/features/ui/uiPreferences';
+import { palettes } from '../src/shared/theme';
 import {
   assertAIContract,
   clearAIContractSession,
@@ -32,6 +38,7 @@ jest.mock('../src/services/apiClient', () => ({
     register: jest.fn(),
     relationships: jest.fn(),
     deleteAccount: jest.fn(),
+    accountSession: jest.fn(),
     stationContent: jest.fn(),
     createStationPost: jest.fn(),
     updateProfile: jest.fn(),
@@ -192,6 +199,39 @@ function SessionHarness({ workspaceKey }: { workspaceKey?: string } = {}) {
   ) : null;
 }
 
+function AccountDeletionHarness() {
+  const session = useMiaoxunSession();
+  currentSession = session;
+  return session.token ? (
+    <DeleteAccountSheet
+      palette={palettes.light}
+      language="zh"
+      isBusy={
+        session.accountDeletionStatus === 'checking' ||
+        session.accountDeletionStatus === 'submitting'
+      }
+      status={session.accountDeletionStatus}
+      onBack={() => undefined}
+      onRecheck={session.recheckAccountDeletion}
+      onDeleteAccount={async password => {
+        await session.deleteAccount(password);
+      }}
+    />
+  ) : (
+    <AuthScreen
+      palette={palettes.light}
+      language="zh"
+      isBusy={session.isBusy}
+      errorMessage={session.errorMessage}
+      accountDeletionReviewNeeded={
+        session.accountDeletionStatus === 'session-expired'
+      }
+      onSignIn={session.signIn}
+      onSignUp={session.signUp}
+    />
+  );
+}
+
 // Authorization fixtures are isolated from the existing empty-registry tests.
 function authorizationBootstrap(): BootstrapDTO {
   const registered: AgentDTO[] = [
@@ -303,6 +343,18 @@ async function flushEffects() {
 }
 
 describe('session synchronization', () => {
+  const emptySync: AppSyncDTO = {
+    threads: [],
+    messagesByThread: {},
+    notices: [],
+    unreadNoticeCount: 0,
+    products: [],
+    entitlements: [],
+    catalogRevision: 'catalog-empty',
+    catalogStatus: 'ready',
+    serverTime: '2026-07-10T06:00:01.000Z',
+  };
+
   beforeEach(() => {
     clearAIContractSession();
     jest.restoreAllMocks();
@@ -337,18 +389,48 @@ describe('session synchronization', () => {
       },
     });
     mockedApiClient.relationships.mockResolvedValue([]);
-    mockedApiClient.deleteAccount.mockResolvedValue({ deleted: true });
-    mockedApiClient.sync.mockResolvedValue({
-      threads: [],
-      messagesByThread: {},
-      notices: [],
-      unreadNoticeCount: 0,
-      products: [],
-      entitlements: [],
-      catalogRevision: 'catalog-empty',
-      catalogStatus: 'ready',
-      serverTime: '2026-07-10T06:00:01.000Z',
+    mockedApiClient.deleteAccount.mockResolvedValue({
+      deleted: true,
+      cleanupStatus: 'pending',
     });
+    mockedApiClient.sync.mockResolvedValue(emptySync);
+  });
+
+  test('chat message text availability follows the server and resets on sign-out', async () => {
+    mockedApiClient.bootstrap.mockResolvedValueOnce({
+      ...bootstrap,
+      chatMessageText: { translate: true, transcribe: false },
+    });
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<SessionHarness />);
+      await flushEffects();
+    });
+    expect(currentSession!.chatMessageText).toEqual({
+      translate: true,
+      transcribe: false,
+    });
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.incrementalSync();
+    });
+    expect(currentSession!.chatMessageText).toBeUndefined();
+
+    mockedApiClient.sync.mockResolvedValueOnce({
+      ...emptySync,
+      chatMessageText: { translate: false, transcribe: true },
+    });
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.incrementalSync();
+    });
+    expect(currentSession!.chatMessageText).toEqual({
+      translate: false,
+      transcribe: true,
+    });
+    await ReactTestRenderer.act(async () => {
+      await currentSession!.signOut();
+    });
+    expect(currentSession!.chatMessageText).toBeUndefined();
+    await ReactTestRenderer.act(async () => renderer.unmount());
   });
 
   test('content preview references survive bootstrap, incremental sync and realtime then disappear after recall', async () => {
@@ -1493,9 +1575,222 @@ describe('session synchronization', () => {
     expect(mockedAvatar3dAttemptStore.clear).toHaveBeenCalledTimes(1);
     expect(currentSession?.token).toBe('');
     expect(currentSession?.user).toBeNull();
+    expect(currentSession?.accountDeletionStatus).toBe('idle');
 
     await ReactTestRenderer.act(() => {
       renderer?.unmount();
+    });
+  });
+
+  describe('account deletion receipt recovery', () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    let fetchRequest: jest.SpyInstance<
+      ReturnType<typeof fetch>,
+      Parameters<typeof fetch>
+    >;
+
+    beforeEach(async () => {
+      fetchRequest = jest.spyOn(globalThis, 'fetch');
+      mockedApiClient.deleteAccount.mockImplementation(appApi.deleteAccount);
+      mockedApiClient.accountSession.mockImplementation(authApi.accountSession);
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(<AccountDeletionHarness />);
+        await flushEffects();
+      });
+    });
+
+    afterEach(async () => {
+      await ReactTestRenderer.act(() => renderer.unmount());
+    });
+
+    const submit = async () => {
+      await ReactTestRenderer.act(async () => {
+        await currentSession!.deleteAccount('correct-password');
+      });
+    };
+    const meResponse = (user: BootstrapDTO['user']) =>
+      new Response(JSON.stringify({ data: { user } }));
+    const revokedResponse = () =>
+      new Response(JSON.stringify({ error: { message: 'Invalid session' } }), {
+        status: 401,
+      });
+    const alertText = () =>
+      renderer.root
+        .findAllByType(Text)
+        .filter(item => item.props.accessibilityRole === 'alert')
+        .map(item => item.props.children);
+
+    test('a disconnect before submission preserves an active account and permits reconfirmation', async () => {
+      fetchRequest
+        .mockRejectedValueOnce(new Error('Offline before sending'))
+        .mockRejectedValueOnce(new Error('Still offline'))
+        .mockResolvedValueOnce(meResponse(bootstrap.user));
+
+      await submit();
+      expect(currentSession?.accountDeletionStatus).toBe('pending');
+      expect(currentSession?.token).toBe('saved-token');
+      expect(mockedTokenStore.clear).not.toHaveBeenCalled();
+      expect(alertText()).toContain('注销结果待确认');
+      expect(renderer.root.findAllByType(TextInput)).toHaveLength(0);
+
+      await ReactTestRenderer.act(async () => {
+        const retry = renderer.root
+          .findAllByProps({ accessibilityLabel: '复核登录状态' })
+          .find(item => typeof item.props.onPress === 'function');
+        expect(retry?.props.disabled).toBe(false);
+        await retry?.props.onPress();
+      });
+      expect(currentSession?.accountDeletionStatus).toBe('session-active');
+      expect(currentSession?.user?.id).toBe(bootstrap.user.id);
+      expect(alertText()).toContain(
+        '原账号的登录状态仍有效。如需注销，请重新输入密码并确认。',
+      );
+      expect(renderer.root.findByType(TextInput).props.value).toBe('');
+      expect(
+        fetchRequest.mock.calls.map(([url, init]) => [
+          new URL(String(url)).pathname,
+          init?.method,
+          (init?.headers as Record<string, string>).Authorization,
+        ]),
+      ).toEqual([
+        ['/api/account', 'DELETE', 'Bearer saved-token'],
+        ['/api/me', 'GET', 'Bearer saved-token'],
+        ['/api/me', 'GET', 'Bearer saved-token'],
+      ]);
+    });
+
+    test('after the server commits but loses its receipt, login shows an unconfirmed result', async () => {
+      let serverAccountExists = true;
+      fetchRequest
+        .mockImplementationOnce(async () => {
+          serverAccountExists = false;
+          return {
+            status: 200,
+            text: async () => {
+              throw new Error('Receipt connection closed');
+            },
+          } as unknown as Response;
+        })
+        .mockImplementationOnce(async () =>
+          serverAccountExists ? meResponse(bootstrap.user) : revokedResponse(),
+        );
+      let confirmed = true;
+      await ReactTestRenderer.act(async () => {
+        confirmed = await currentSession!.deleteAccount('correct-password');
+      });
+
+      expect(confirmed).toBe(false);
+      expect(serverAccountExists).toBe(false);
+      expect(currentSession?.accountDeletionStatus).toBe('session-expired');
+      expect(currentSession?.token).toBe('');
+      expect(currentSession?.user).toBeNull();
+      expect(mockedTokenStore.clear).toHaveBeenCalledTimes(1);
+      expect(alertText()).toContain(
+        '注销结果待确认。原账号的登录状态已失效，请重新登录。',
+      );
+    });
+
+    test('a revoked session alone cannot confirm that the server deleted the account', async () => {
+      fetchRequest
+        .mockResolvedValueOnce(revokedResponse())
+        .mockResolvedValueOnce(revokedResponse());
+      let confirmed = true;
+      await ReactTestRenderer.act(async () => {
+        confirmed = await currentSession!.deleteAccount('correct-password');
+      });
+
+      expect(confirmed).toBe(false);
+      expect(currentSession?.accountDeletionStatus).toBe('session-expired');
+      expect(currentSession?.token).toBe('');
+      expect(mockedTokenStore.clear).toHaveBeenCalledTimes(1);
+    });
+
+    test('a cold start after an interrupted review does not restore a revoked credential', async () => {
+      fetchRequest
+        .mockRejectedValueOnce(new Error('Receipt connection closed'))
+        .mockRejectedValueOnce(new Error('Still offline'));
+      await submit();
+      expect(currentSession?.accountDeletionStatus).toBe('pending');
+      expect(mockedTokenStore.clear).not.toHaveBeenCalled();
+
+      await ReactTestRenderer.act(() => renderer.unmount());
+      mockedApiClient.bootstrap.mockRejectedValueOnce({ status: 401 });
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(<AccountDeletionHarness />);
+        await flushEffects();
+      });
+
+      expect(mockedApiClient.bootstrap).toHaveBeenLastCalledWith('saved-token');
+      expect(currentSession?.restoreStatus).toBe('signedOut');
+      expect(currentSession?.token).toBe('');
+      expect(currentSession?.user).toBeNull();
+      expect(mockedTokenStore.clear).toHaveBeenCalledTimes(1);
+    });
+
+    test('a rejected password keeps the explicit error and skips the session check', async () => {
+      fetchRequest.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'INVALID_ACCOUNT_PASSWORD',
+              message: 'Invalid password.',
+            },
+          }),
+          { status: 403 },
+        ),
+      );
+      await ReactTestRenderer.act(async () => {
+        await expect(
+          currentSession!.deleteAccount('wrong-password'),
+        ).rejects.toThrow('Invalid password.');
+      });
+      expect(currentSession?.accountDeletionStatus).toBe('idle');
+      expect(currentSession?.token).toBe('saved-token');
+      expect(mockedApiClient.accountSession).not.toHaveBeenCalled();
+      expect(mockedTokenStore.clear).not.toHaveBeenCalled();
+    });
+
+    test('a delayed check for the first account cannot change another signed-in account', async () => {
+      const delayedCheck = deferred<Response>();
+      const otherUser = {
+        ...bootstrap.user,
+        id: 'user-2',
+        displayName: 'Other',
+      };
+      fetchRequest
+        .mockRejectedValueOnce(new Error('Connection closed'))
+        .mockReturnValueOnce(delayedCheck.promise);
+      mockedApiClient.login.mockResolvedValueOnce({
+        user: otherUser,
+        session: {
+          token: 'other-token',
+          expiresAt: '2026-12-01T00:00:00.000Z',
+        },
+      });
+      mockedApiClient.bootstrap.mockResolvedValueOnce({
+        ...bootstrap,
+        user: otherUser,
+      });
+      let firstDeletion!: Promise<boolean>;
+      await ReactTestRenderer.act(async () => {
+        firstDeletion = currentSession!.deleteAccount('correct-password');
+        await flushEffects();
+      });
+      expect(mockedApiClient.accountSession).toHaveBeenCalledWith(
+        'saved-token',
+      );
+
+      await ReactTestRenderer.act(async () => {
+        await currentSession!.signOut();
+        await currentSession!.signIn('other@example.com', 'other-password');
+        delayedCheck.resolve(revokedResponse());
+        await expect(firstDeletion).resolves.toBe(false);
+      });
+
+      expect(currentSession?.token).toBe('other-token');
+      expect(currentSession?.user?.id).toBe(otherUser.id);
+      expect(currentSession?.accountDeletionStatus).toBe('idle');
+      expect(mockedTokenStore.clear).toHaveBeenCalledTimes(1);
     });
   });
 

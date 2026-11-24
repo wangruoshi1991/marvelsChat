@@ -1,16 +1,18 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { ChevronRight, MessageCircle } from 'lucide-react-native';
+import { ChevronRight } from 'lucide-react-native';
 
 import { PublicProfileDTO } from '../../models/api';
 import { profileIdentityTags } from '../station/stationProfileIdentity';
 import {
+  appErrorText,
   displayLocationText,
   displayText,
   publicPresenceText,
@@ -27,70 +29,87 @@ export function PublicProfileScreen({
   language,
   profile,
   renderUserAvatar,
-  renderHeader,
-  onActionError,
   onOpenFriendThread,
   onFollow,
   onUnfollow,
   onRequestFriend,
   onCancelFriendRequest,
+  onAcceptFriendRequest,
 }: {
   palette: Palette;
   language: Language;
   profile: PublicProfileDTO;
   renderUserAvatar: UserAvatarRenderer;
-  renderHeader: (title: string) => React.ReactNode;
-  onActionError: (message: string) => void;
   onOpenFriendThread: () => Promise<void> | void;
   onFollow: () => Promise<void>;
   onUnfollow: () => Promise<void>;
   onRequestFriend: () => Promise<void>;
   onCancelFriendRequest: () => Promise<void>;
+  onAcceptFriendRequest: () => Promise<void>;
 }) {
   const [submittingAction, setSubmittingAction] = useState<
-    'follow' | 'friend' | 'message' | null
+    'follow' | 'friend' | 'cancel' | null
   >(null);
+  const actionInFlight = useRef(false);
+  const [actionError, setActionError] = useState('');
   const runAction = async (
-    actionName: 'follow' | 'friend' | 'message',
+    actionName: Exclude<typeof submittingAction, null>,
     action: () => Promise<void> | void,
   ) => {
-    if (submittingAction) {
-      return;
-    }
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
     setSubmittingAction(actionName);
+    setActionError('');
     try {
       await action();
     } catch (error) {
-      onActionError(
-        error instanceof Error
-          ? error.message
-          : textFor(language, '操作失败', 'Action failed'),
+      setActionError(
+        appErrorText(language, error, '操作失败', 'Action failed'),
       );
     } finally {
+      actionInFlight.current = false;
       setSubmittingAction(null);
     }
   };
-  const isFollowSubmitting = submittingAction === 'follow';
-  const isFriendSubmitting = submittingAction === 'friend';
-  const isMessageSubmitting = submittingAction === 'message';
-  const isSubmitting = submittingAction !== null;
-  const isFollowing = profile.relation.isFollowing;
-  const primaryActionTextColor = '#ffffff';
-  const followButtonBackgroundColor = isFollowing
-    ? palette.surface
-    : palette.mint;
-  const followButtonBorderColor = isFollowing ? palette.border : palette.mint;
-  const followButtonBorderWidth = isFollowing ? 1 : 0;
-  const followButtonTextColor = isFollowing
-    ? palette.text
-    : primaryActionTextColor;
+
+  const {
+    isSelf,
+    isFriend,
+    isFollowing,
+    pendingFriendRequestId,
+    incomingFriendRequestId,
+  } = profile.relation;
+  const isOutgoingPending =
+    !isFriend && !incomingFriendRequestId && Boolean(pendingFriendRequestId);
+  const primaryAction = isFriend
+    ? {
+        title: textFor(language, '发消息', 'Message'),
+        status: textFor(language, '已是好友', 'Friends'),
+        onPress: onOpenFriendThread,
+      }
+    : incomingFriendRequestId
+    ? {
+        title: textFor(language, '同意申请', 'Accept request'),
+        status: textFor(
+          language,
+          '对方申请加你为好友',
+          'They sent you a friend request',
+        ),
+        onPress: onAcceptFriendRequest,
+      }
+    : {
+        title: textFor(language, '添加好友', 'Add friend'),
+        status: isOutgoingPending
+          ? textFor(language, '申请已发送，等待对方同意', 'Friend request sent')
+          : null,
+        onPress: onRequestFriend,
+      };
 
   return (
     <ScrollView
       style={{ backgroundColor: palette.background }}
       contentContainerStyle={styles.publicProfileContent}
     >
-      {renderHeader(textFor(language, '用户主页', 'Profile'))}
       <View
         style={[
           styles.publicProfileHero,
@@ -145,6 +164,72 @@ export function PublicProfileScreen({
         </View>
       </View>
 
+      {!isSelf ? (
+        <View style={profileActionsStyles.group}>
+          {primaryAction.status ? (
+            <Text
+              accessibilityLiveRegion="polite"
+              style={[
+                profileActionsStyles.status,
+                { color: palette.secondaryText },
+              ]}
+            >
+              {primaryAction.status}
+            </Text>
+          ) : null}
+          <View style={styles.publicProfileActions}>
+            <ProfileAction
+              palette={palette}
+              label={
+                isOutgoingPending
+                  ? textFor(language, '取消申请', 'Cancel request')
+                  : primaryAction.title
+              }
+              primary={!isOutgoingPending}
+              busy={
+                submittingAction === (isOutgoingPending ? 'cancel' : 'friend')
+              }
+              disabled={submittingAction !== null}
+              onPress={() => {
+                if (isOutgoingPending) {
+                  runAction('cancel', onCancelFriendRequest).catch(
+                    () => undefined,
+                  );
+                } else {
+                  runAction('friend', primaryAction.onPress).catch(
+                    () => undefined,
+                  );
+                }
+              }}
+            />
+            <ProfileAction
+              palette={palette}
+              label={
+                isFollowing
+                  ? textFor(language, '取消关注', 'Unfollow')
+                  : textFor(language, '关注', 'Follow')
+              }
+              busy={submittingAction === 'follow'}
+              disabled={submittingAction !== null}
+              onPress={() => {
+                runAction('follow', isFollowing ? onUnfollow : onFollow).catch(
+                  () => undefined,
+                );
+              }}
+            />
+          </View>
+          {actionError ? (
+            <Text
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              style={[profileActionsStyles.status, { color: palette.rose }]}
+            >
+              {actionError}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={styles.publicProfileStats}>
         <PublicProfileStat
           palette={palette}
@@ -184,164 +269,71 @@ export function PublicProfileScreen({
           palette={palette}
         />
       </SettingGroup>
-
-      {!profile.relation.isSelf ? (
-        <View style={styles.publicProfileActions}>
-          <Pressable
-            disabled={isSubmitting}
-            onPress={() => {
-              runAction(
-                'follow',
-                profile.relation.isFollowing ? onUnfollow : onFollow,
-              ).catch(() => undefined);
-            }}
-            style={[
-              styles.publicProfileAction,
-              {
-                backgroundColor: followButtonBackgroundColor,
-                borderColor: followButtonBorderColor,
-                borderWidth: followButtonBorderWidth,
-              },
-            ]}
-          >
-            {isFollowSubmitting ? (
-              <View style={styles.publicProfileActionContent}>
-                <ActivityIndicator color="#ffffff" size="small" />
-                <Text
-                  style={[
-                    styles.publicProfileActionText,
-                    { color: primaryActionTextColor },
-                  ]}
-                >
-                  {profile.relation.isFollowing
-                    ? textFor(language, '取消中', 'Unfollowing')
-                    : textFor(language, '关注中', 'Following')}
-                </Text>
-              </View>
-            ) : (
-              <Text
-                style={[
-                  styles.publicProfileActionText,
-                  { color: followButtonTextColor },
-                ]}
-              >
-                {profile.relation.isFollowing
-                  ? textFor(language, '取消关注', 'Unfollow')
-                  : textFor(language, '关注', 'Follow')}
-              </Text>
-            )}
-          </Pressable>
-          {profile.relation.isFriend ? (
-            <Pressable
-              disabled={isSubmitting}
-              onPress={() => {
-                runAction('message', onOpenFriendThread).catch(() => undefined);
-              }}
-              style={[
-                styles.publicProfileAction,
-                styles.publicProfileActionOutlined,
-                {
-                  backgroundColor: palette.surface,
-                  borderColor: palette.border,
-                },
-              ]}
-            >
-              {isMessageSubmitting ? (
-                <View style={styles.publicProfileActionContent}>
-                  <ActivityIndicator color={palette.text} size="small" />
-                  <Text
-                    style={[
-                      styles.publicProfileActionText,
-                      { color: palette.text },
-                    ]}
-                  >
-                    {textFor(language, '打开中', 'Opening')}
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.publicProfileActionContent}>
-                  <MessageCircle
-                    color={palette.mint}
-                    size={17}
-                    strokeWidth={2.6}
-                  />
-                  <Text
-                    style={[
-                      styles.publicProfileActionText,
-                      { color: palette.text },
-                    ]}
-                  >
-                    {textFor(language, '发消息', 'Message')}
-                  </Text>
-                </View>
-              )}
-            </Pressable>
-          ) : (
-            <Pressable
-              disabled={isSubmitting}
-              onPress={() => {
-                runAction(
-                  'friend',
-                  profile.relation.pendingFriendRequestId
-                    ? onCancelFriendRequest
-                    : onRequestFriend,
-                ).catch(() => undefined);
-              }}
-              style={[
-                styles.publicProfileAction,
-                styles.publicProfileActionOutlined,
-                {
-                  backgroundColor: palette.surface,
-                  borderColor: palette.border,
-                },
-              ]}
-            >
-              {isFriendSubmitting ? (
-                <View style={styles.publicProfileActionContent}>
-                  <ActivityIndicator color={palette.text} size="small" />
-                  <Text
-                    style={[
-                      styles.publicProfileActionText,
-                      { color: palette.text },
-                    ]}
-                  >
-                    {textFor(language, '发送中', 'Sending')}
-                  </Text>
-                </View>
-              ) : (
-                <Text
-                  style={[
-                    styles.publicProfileActionText,
-                    { color: palette.text },
-                  ]}
-                >
-                  {profile.relation.pendingFriendRequestId
-                    ? textFor(language, '取消申请', 'Cancel request')
-                    : textFor(language, '加好友', 'Add friend')}
-                </Text>
-              )}
-            </Pressable>
-          )}
-        </View>
-      ) : null}
     </ScrollView>
   );
 }
 
+function ProfileAction({
+  palette,
+  label,
+  primary,
+  busy,
+  disabled,
+  onPress,
+}: {
+  palette: Palette;
+  label: string;
+  primary?: boolean;
+  busy: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const color = primary ? palette.background : palette.text;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled, busy }}
+      disabled={disabled}
+      onPress={onPress}
+      style={[
+        styles.publicProfileAction,
+        styles.publicProfileActionOutlined,
+        {
+          backgroundColor: primary ? palette.mint : palette.surface,
+          borderColor: primary ? palette.mint : palette.border,
+        },
+      ]}
+    >
+      {busy ? (
+        <ActivityIndicator color={color} />
+      ) : (
+        <Text style={[styles.publicProfileActionText, { color }]}>{label}</Text>
+      )}
+    </Pressable>
+  );
+}
+
+const profileActionsStyles = StyleSheet.create({
+  group: { gap: 8 },
+  status: {
+    paddingHorizontal: 14,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+});
+
 export function LoadingState({
   palette,
   message,
-  renderHeader,
 }: {
   palette: Palette;
   message: string;
-  renderHeader: () => React.ReactNode;
 }) {
   return (
     <View
       style={[styles.loadingState, { backgroundColor: palette.background }]}
     >
-      {renderHeader()}
       <View style={styles.loadingStateBody}>
         <ActivityIndicator color={palette.mint} />
         <Text

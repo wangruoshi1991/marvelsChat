@@ -221,6 +221,18 @@ JS 加载：真机和模拟器 Debug 都使用构建时内嵌 main.jsbundle
 
 ## TestFlight 签名状态
 
+### 上传警告检查
+
+Build 66–68 的 Apple 上传日志记录 `ITMS-90725`。从 2027 年 4 月起，上传需要 Xcode 27 或更新版本所带的 iOS 27 或更新 SDK。本轮要消除提示，在满足 [Apple Xcode 兼容要求](https://developer.apple.com/support/xcode/) 的构建机上重新归档。Xcode 27 需要 macOS Tahoe 26.6 或更新版本，App 的最低系统版本仍为 iOS 15.1。归档后读取实际 App 的 `DTSDKName`，确认使用了预期 SDK。
+
+Release 归档完成后，导出或在 Organizer 验证前，从仓库根目录执行：
+
+```sh
+bash scripts/prepare-ios-archive-symbols.sh /path/to/MiaoxunRN.xcarchive
+```
+
+脚本按当前锁定版本下载 React、ReactNativeDependencies 和 Hermes 的官方 Release dSYM，验证固定 SHA-256，并逐个与归档中 App 和嵌入框架的 Mach-O UUID 比对。可传第二个参数保存并复用符号下载包。升级锁定版本后应同步核对脚本中的符号包版本及校验值。App Store Connect 导出时启用符号上传，先在 Organizer 运行 Validate App，再从 Apple 的上传状态复核实际警告。
+
 2026-06-23 当前 Xcode 已识别 `Rose Wang Developer Team`，Team ID 为 `R8K5DUTWB6`，角色为 `Admin`。正式 iOS Bundle ID 已从不可用的 `com.gary.miaoxun.rn` 切换为：
 
 ```text

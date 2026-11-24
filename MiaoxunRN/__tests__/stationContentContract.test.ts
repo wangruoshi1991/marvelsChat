@@ -43,6 +43,33 @@ describe('station content API contract', () => {
     infoSpy.mockRestore();
   });
 
+  test('album retry sends the caller key as a header and album fields as JSON', async () => {
+    const album = {
+      id: 'fixture-album',
+      title: '照片',
+      description: '原始说明',
+    };
+    const fetchMock = jest.fn(async () => response(album));
+    globalThis.fetch = fetchMock as jest.Mock;
+    const key = '11111111-1111-4111-8111-111111111111';
+    const body = { title: album.title, description: album.description };
+
+    await expect(
+      stationContentApi.createStationAlbum('token', {
+        ...body,
+        idempotencyKey: key,
+      }),
+    ).resolves.toEqual(album);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:4390/api/station/albums',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'Idempotency-Key': key }),
+        body: JSON.stringify(body),
+      }),
+    );
+  });
+
   test('bootstrap rejects a station payload that omits posts', async () => {
     const stationContentWithoutPosts: Record<string, unknown> = {
       ...validStationContent,

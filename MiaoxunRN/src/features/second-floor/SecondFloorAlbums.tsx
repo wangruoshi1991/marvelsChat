@@ -75,6 +75,7 @@ export function SecondFloorAlbums({
     try {
       if (!createdAlbum.current) {
         const album = await session.createStationAlbum({
+          idempotencyKey: payload.idempotencyKey,
           title: payload.title,
           description: payload.description,
           visibility: payload.visibility,

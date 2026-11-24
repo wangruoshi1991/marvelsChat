@@ -429,6 +429,7 @@ test("a stale epoch or revoked profile prevents completed search events and life
 
 test("operator controls retain values omitted by a partial admin update", async () => {
   const current = {
+    id: true,
     agent_enabled: true,
     provider_calls_enabled: true,
     index_requests_enabled: true,
@@ -465,6 +466,7 @@ test("operator controls retain values omitted by a partial admin update", async 
 
 test("operator controls persist supplied user limits and operation-specific provider reservations", async () => {
   const current = {
+    id: true,
     agent_enabled: true,
     provider_calls_enabled: false,
     index_requests_enabled: true,
@@ -497,6 +499,7 @@ test("operator controls persist supplied user limits and operation-specific prov
 
 test("operator controls persist unlimited NULL values and large future accounting thresholds", async () => {
   const current = {
+    id: true,
     agent_enabled: true,
     provider_calls_enabled: false,
     index_requests_enabled: true,

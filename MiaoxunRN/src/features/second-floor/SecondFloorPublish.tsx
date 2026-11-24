@@ -1,6 +1,6 @@
 import { BookOpen, Send } from 'lucide-react-native';
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { appErrorText, textFor } from '../../shared/i18n';
 import { Palette } from '../../shared/theme';
@@ -8,6 +8,7 @@ import { secondFloorPalette } from './secondFloorTheme';
 import { isV6Palette } from '../../shared/v6Palette';
 import { isXunPalette } from '../../shared/xunPalette';
 import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
+import { SecondFloorScrollView } from './SecondFloorScrollView';
 import { SecondFloorPageScrollProps } from './secondFloorScroll';
 import {
   StationCreatePayload,
@@ -100,7 +101,7 @@ export function SecondFloorPublish({
   }
 
   return (
-    <ScrollView
+    <SecondFloorScrollView
       {...scrollProps}
       contentContainerStyle={[s.body, xun && s.bodyXun]}
       keyboardShouldPersistTaps="handled"
@@ -180,7 +181,7 @@ export function SecondFloorPublish({
           {message}
         </Text>
       ) : null}
-    </ScrollView>
+    </SecondFloorScrollView>
   );
 }
 

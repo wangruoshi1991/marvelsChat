@@ -4,6 +4,21 @@
 
 ## 产品与实现
 
+- [11 月 23 日聊天体验、语音消息与通话方案](reviews/2026-11-23-chat-voice-and-calls.md)记录 Signal、Telegram Web K 的源码参考、已有能力和缺口，以及一对一语音通话的实施方案。
+- [11 月 23 日接手审查](reviews/2026-11-23-takeover-audit.md)记录源码地图、离线复现和验证边界。
+
+- [会话内查找聊天记录](api/chat-message-search.md)与[普通聊天消息转发](api/chat-message-forward.md)记录权限、分页、发送回执及回归命令。
+- [一对一语音通话前台版](../backend/VOICE_CALLS.md)记录隔离配置、信令、会话归属与验证。
+- [普通私聊送达回执](api/chat-message-receipts.md)记录真实 ACK、发送状态与隐私边界。
+- [普通聊天翻译与语音转写](api/chat-message-ai.md)记录处理范围、接口、供应商开关和错误语义。
+- [11 月 19 日 A01 至 A23 独立验收](reviews/2026-11-19-ticket-acceptance.md)记录首次返工和后续独立复验。五项本地关闭条件已通过，A09 双端真机待验。
+- [11 月 18 日本地修复交接](handoffs/CURRENT.md#2026-11-18-指定工作树本地修复)逐项记录 A01–A23 的实现、PG/浏览器/构建证据和剩余验收。[移动端复核](reviews/2026-11-18-mobile-concurrency-and-native.md)补记设备验证及 RN 清理候选。
+- [全仓审查与修复派单](reviews/2026-11-18-project-audit-dispatch.md)和[23 份执行提示词](reviews/2026-11-18-implementation-prompts.md)按正式工作树记录问题、源码、验收和清理顺序。
+- [第二轮源码审查](reviews/2026-11-18-source-quality.md)记录提交归属、数据库锁、Worker 队列、原生保存回执和后台请求乱序，附[3D 创建与恢复合同](api/avatar-3d-submissions.md)。
+- [跨端质量检查与待验链路](reviews/2026-11-18-project-quality.md)记录 App、Android、iOS、后台、API 与 Worker 和两个 Web 工具的修复和验收边界。后续模块沿用[开发规范](development-standards.md#模块链路与验收)。
+- [11月18日聊天媒体生产061与Build66](reviews/2026-11-18-chat-media-production-build66.md)：生产060→061及309文件runtime已开流。Build66在内外部 `yunzhi` 组正在测试，真机安装及功能待验。
+- [11月17日聊天媒体与新包配套准备](reviews/2026-11-17-chat-media-testflight-preparation.md)：补齐隔离中文键盘Send和系统Photos独立落盘证据，核实生产060、309项候选和Apple最高65；最新Build66重新归档与配套发布状态分别记录。
+- [11月17日聊天输入与扩展面板续修](reviews/2026-11-17-chat-composer-panels.md)：用户确认妙猜猜移到更多首项，系统键盘/面板底部发送；统一面板高度和分类状态，修复快速切换焦点、表情光标与原生末行裁切，另修二楼轻移误点击返回。整仓和模拟器本地验证已完成，实体、生产及新TestFlight待验；同时如实记录一次自动输入误发送及文字模型回复，不能写成零生产写入。
 - [自定义表情 API 合同](custom-stickers-api.md)：本人收藏、静态图片约束、消息引用与认证内容读取边界；后端迁移/路由和 RN 收藏、发送、精确重试、小贴图渲染已在本地完成，尚未部署或进入新的 TestFlight 制品。
 - [11月16日聊天附件与自定义表情本地闭环](reviews/2026-11-16-chat-attachments-closure.md)：普通单聊/群聊附件、私有预览/保存、消息菜单、群聊退出只读状态，以及本人自定义表情已完成跨层代码和隔离 PostgreSQL 验证；11月17日隔离模拟器补验了漫画 Agent 图片引用缩略图、全屏预览和保存成功/失败状态；漫画保存当前只接入 iOS 原生媒体库路径，Android 因本机缺少 Java Runtime 未能编译且未宣称对应能力，实体真机、TestFlight 和生产仍需分别验收。
 
@@ -54,6 +69,7 @@
 
 ## 历史证据
 
+- [11 月 18 日归档的历史交接](handoffs/2026-11-18-handoff-history.md)保留 11 月 17 日及更早阶段的实施、发布和设备验收原文。
 - [文件与专业任务发布准备记录](reviews/2026-10-21-contract6-release-preparation.md)、[模型真人复核材料](reviews/2026-10-21-contract6-human-review.md)：评估、恢复演练、构建证据及人工复核材料。
 - [Build48前后阶段实施、恢复与验证](handoffs/2026-10-14-build48-history.md)：由旧CURRENT迁出，含10月15–19日整理证据；其中“下一步”均为当时安排。
 - [Build47上传与模型验证](reviews/2026-10-13-butler-live-release.md)、[038配套与Build46](reviews/2026-10-13-testflight-46.md)、[Build45](reviews/2026-10-10-testflight-45.md)：历史制品与发布记录，不代表当前分发状态。

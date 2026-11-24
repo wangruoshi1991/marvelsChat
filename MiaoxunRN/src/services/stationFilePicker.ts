@@ -1,4 +1,5 @@
 import { NativeModules } from 'react-native';
+import { assertVoiceCallResourceAvailable } from './voiceCall/voiceCallResources';
 import { StationFileAssetDTO } from '../models/api';
 import { MiaoxunApiError } from './apiClient';
 
@@ -21,6 +22,7 @@ const picker = () => {
   const module = NativeModules.MiaoxunDocumentPickerModule as
     | {
         pick(): Promise<PickedStationFile | null>;
+        pickVideo(): Promise<PickedStationFile | null>;
         release(key: string): Promise<void>;
         upload(
           key: string,
@@ -44,6 +46,7 @@ const picker = () => {
 export const releaseStationFile = (file: PickedStationFile) =>
   picker().release(file.idempotencyKey);
 export async function pickStationFile() {
+  assertVoiceCallResourceAvailable('picker');
   const file = await picker().pick();
   if (!file) return null;
   const mimeType =
@@ -57,6 +60,21 @@ export async function pickStationFile() {
     );
   }
   return { ...file, mimeType };
+}
+
+export async function pickChatVideo() {
+  assertVoiceCallResourceAvailable('picker');
+  const file = await picker().pickVideo();
+  if (!file) return null;
+  if (
+    !/\.mp4$/i.test(file.originalFilename) ||
+    file.byteSize < 1 ||
+    file.byteSize > 8 * 1024 * 1024
+  ) {
+    await releaseStationFile(file);
+    throw new Error('请选择 H.264 MP4 视频，大小不超过 8 MiB。');
+  }
+  return { ...file, mimeType: 'video/mp4' };
 }
 
 export async function uploadStationFile(

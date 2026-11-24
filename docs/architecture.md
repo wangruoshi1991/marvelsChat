@@ -145,7 +145,7 @@ Agent 身份 -> registry/release/product publish -> /api/app/bootstrap agents.re
 
 数据库未配置、未迁移或连接失败时，后端返回明确错误。App 不展示原型账号、静态聊天、静态 Agent 或静态内容流作为真实数据；未登录时只进入登录/注册流程。
 
-启动动画只表达“AI 不只问答 / 找人，找东西 / 就上妙讯小站”。登录和注册页不展示未上线的忘记密码、短信或邮件验证说明；对应能力接入后再补真实入口，不在客户端放提前说明。App 不使用 `LogBox.ignoreLogs` 隐藏运行时 warning。3D 查看器源码位于 `avatar-web/src/app-viewer/`，构建产物内嵌到 `MiaoxunRN/src/assets/avatar-viewer/avatar-viewer.html`；仓库检查会验证两者一致，禁止手工维护两份实现。
+启动页逐行显示「妙讯，与你一起成长的数字身份」，系统减动开启时显示静态文案。登录和注册页不展示未上线的忘记密码、短信或邮件验证说明；对应能力接入后再补真实入口，不在客户端放提前说明。App 不使用 `LogBox.ignoreLogs` 隐藏运行时 warning。3D 查看器源码位于 `avatar-web/src/app-viewer/`，构建产物内嵌到 `MiaoxunRN/src/assets/avatar-viewer/avatar-viewer.html`；仓库检查会验证两者一致，禁止手工维护两份实现。
 
 后台管理系统与 App 使用不同的本地登录态。后台可以创建账号、启用/停用用户、调整角色、编辑资料、审核 Agent release、发布产品版本、查看 entitlement、管理用户授权、查看全量运行聚合、撤销登录态、重置密码；这些动作会写入 `usage_events`。后台发布只改变可发现产品与 release 状态，不代替用户授权；合同变化由执行前检查阻止旧授权继续运行。
 

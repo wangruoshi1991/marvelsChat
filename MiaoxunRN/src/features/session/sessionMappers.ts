@@ -4,6 +4,7 @@ import { ChatMessage, ChatThread, RelationshipsState } from './sessionTypes';
 export const mapMessage = (message: MessageDTO): ChatMessage => ({
   id: message.id,
   threadId: message.threadId,
+  unreadSequence: message.unreadSequence,
   senderType: message.senderType,
   senderName: message.senderName,
   content: message.content,
@@ -166,6 +167,8 @@ export function mergeThreads(existing: ChatThread[], incoming: ChatThread[]) {
     return current
       ? {
           ...thread,
+          ...mergeThreadState(current, thread),
+          pendingMuted: current.pendingMuted,
           messages: mergeMessages(current.messages, thread.messages),
         }
       : thread;
@@ -175,4 +178,35 @@ export function mergeThreads(existing: ChatThread[], incoming: ChatThread[]) {
     ...mergedIncoming,
     ...existing.filter(thread => !incomingIds.has(thread.id)),
   ];
+}
+
+export function mergeThreadState(
+  current: ChatThread,
+  incoming: Partial<ThreadDTO>,
+) {
+  const { unreadSequence, readSequence } = incoming;
+  const latestUnread = Math.max(
+    current.unreadSequence ?? 0,
+    unreadSequence ?? 0,
+  );
+  const latestRead = Math.max(current.readSequence ?? 0, readSequence ?? 0);
+  const hasReadPosition =
+    current.unreadSequence !== undefined || unreadSequence !== undefined;
+  const hasLaterPreferences =
+    (current.preferencesRevision ?? -1) > (incoming.preferencesRevision ?? -1);
+  return {
+    ...(hasReadPosition
+      ? {
+          unreadSequence: latestUnread,
+          readSequence: latestRead,
+          unreadCount: latestUnread - latestRead,
+        }
+      : { unreadCount: incoming.unreadCount ?? current.unreadCount }),
+    muted: hasLaterPreferences
+      ? current.muted
+      : incoming.muted ?? current.muted,
+    preferencesRevision: hasLaterPreferences
+      ? current.preferencesRevision
+      : incoming.preferencesRevision,
+  };
 }

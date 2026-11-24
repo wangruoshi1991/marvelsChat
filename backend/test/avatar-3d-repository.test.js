@@ -139,6 +139,7 @@ test("face-first idempotency recovery does not create another reference set", as
       execute: async (sql, params) => {
         calls.push({ sql, params });
         if (/idempotency_key_hash/.test(sql) && /FOR UPDATE/.test(sql)) return [[existing]];
+        if (/SELECT id FROM users/.test(sql)) return [[{ id: ids.user }]];
         if (/FROM avatar_3d_reference_sets/.test(sql)) {
           return [[{
             id: ids.referenceSet,
@@ -177,7 +178,8 @@ test("face-first idempotency recovery does not create another reference set", as
   assert.equal(result.created, false);
   assert.equal(result.job.referenceSetId, ids.referenceSet);
   assert.equal(result.referenceSet.id, ids.referenceSet);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
+  assert.match(calls[0].sql, /FROM users.*FOR UPDATE/);
 });
 
 test("claimNextStep uses a non-overlapping database claim", async () => {
@@ -189,15 +191,12 @@ test("claimNextStep uses a non-overlapping database claim", async () => {
     },
   });
 
-  const claimed = await repository.claimNextStep({ staleBefore: new Date("2026-07-17T00:00:00Z") });
+  const claimed = await repository.claimNextStep({ leaseMs: 120_000 });
 
   assert.equal(claimed.id, ids.job);
   assert.match(calls[0].sql, /FOR UPDATE SKIP LOCKED/);
-  assert.match(calls[0].sql, /claimed_at IS NULL OR claimed_at < \?/);
-  assert.match(
-    calls[0].sql,
-    /SET claimed_at = date_trunc\('milliseconds', CURRENT_TIMESTAMP\)/,
-  );
+  assert.match(calls[0].sql, /claim_lease_until IS NULL OR claim_lease_until <= clock_timestamp\(\)/);
+  assert.match(calls[0].sql, /claim_token = \?/);
 });
 
 test("transitionJob rejects an illegal state transition", async () => {
@@ -444,9 +443,9 @@ test("preparing models expose only their preview and become interactive atomical
   assert.equal(byJob.mobileGlbStorageKey, null);
   assert.equal(completed.status, "active");
   assert.equal(completed.interactiveAvailable, true);
-  assert.equal(calls[3].params[3], "users/private/model-mobile.glb");
+  assert.equal(calls[3].params[6], "users/private/model-mobile.glb");
   assert.equal(wrongOwner, null);
-  assert.match(calls[0].sql, /status\)\s+VALUES \([^)]*'preparing'/s);
+  assert.match(calls[0].sql, /status\)\s+SELECT [^\n]*'preparing' FROM owner/);
   assert.doesNotMatch(calls[0].sql, /glb_storage_key/);
   assert.match(calls[1].sql, /status IN \('preparing', 'active'\)/);
   assert.match(calls[3].sql, /status = 'active'/);
@@ -501,10 +500,12 @@ test("photo cleanup clears source and normalized keys and closes the record afte
   await repository.markPrivateAssetDeleted({
     assetKind: "photo_source",
     assetId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    storageKey: "source.jpg",
   });
   await repository.markPrivateAssetDeleted({
     assetKind: "photo_normalized",
     assetId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    storageKey: "normalized.jpg",
   });
   assert.match(calls[1].sql, /normalized_storage_key IS NULL/);
   assert.match(calls[2].sql, /source_storage_key = ''/);
@@ -537,6 +538,7 @@ test("job retention and cleanup include generated reference images", async () =>
   await repository.markPrivateAssetDeleted({
     assetKind: "reference_image",
     assetId: ids.referenceImage,
+    storageKey: "front.jpg",
   });
 
   assert.equal(transactionCalls.length, 4);

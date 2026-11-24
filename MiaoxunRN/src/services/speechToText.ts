@@ -1,3 +1,4 @@
+import { assertVoiceCallResourceAvailable } from './voiceCall/voiceCallResources';
 import { NativeEventEmitter, NativeModules } from 'react-native';
 
 type SpeechToTextResult = { text: string };
@@ -34,6 +35,7 @@ export function startSpeechRecognition(
   languageCode: 'zh' | 'en',
   onUpdate?: (update: SpeechRecognitionUpdate) => void,
 ): SpeechRecognitionSession {
+  assertVoiceCallResourceAvailable('microphone');
   const nativeSpeech = NativeModules.MiaoxunSpeechModule as
     | SpeechNativeModule
     | undefined;
@@ -92,6 +94,7 @@ export function startSpeechRecognition(
 }
 
 export function prepareSpeechRecognition(): SpeechPermissionPreparation {
+  assertVoiceCallResourceAvailable('microphone');
   const nativeSpeech = NativeModules.MiaoxunSpeechModule as
     | SpeechNativeModule
     | undefined;

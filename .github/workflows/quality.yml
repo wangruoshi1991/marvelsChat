@@ -132,6 +132,78 @@ jobs:
           DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_migration_test
           MIAOXUN_DOTENV_ENABLED: "false"
 
+  postgres-regressions:
+    name: Isolated PostgreSQL regressions (${{ matrix.suite }})
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_regression_migration_test
+      MIAOXUN_DOTENV_ENABLED: "false"
+      DEFAULT_ADMIN_ENABLED: "false"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: group-chat
+            test: test/group-chat-postgres.test.js
+            feature_env: RUN_GROUP_CHAT_POSTGRES
+          - suite: chat-message-search
+            test: test/chat-message-search-postgres.test.js
+            feature_env: RUN_CHAT_MESSAGE_SEARCH_POSTGRES
+          - suite: custom-stickers
+            test: test/custom-stickers-postgres.test.js
+            feature_env: RUN_CUSTOM_STICKERS_POSTGRES
+          - suite: ai-task
+            test: test/ai-task-integration.test.js
+            feature_env: RUN_AI_TASK_INTEGRATION
+          - suite: avatar-3d
+            test: test/avatar-3d-submission-postgres.test.js
+            feature_env: RUN_AVATAR_3D_SUBMISSION_INTEGRATION
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: miaoxun
+          POSTGRES_PASSWORD: miaoxun
+          POSTGRES_DB: miaoxun_regression_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U miaoxun -d miaoxun_regression_migration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Migrate the disposable database
+        run: npm run db:migrate
+        working-directory: backend
+
+      - name: Run migrated isolated regression
+        run: |
+          env "$FEATURE_ENV=1" NODE_ENV=test node --test --test-reporter=tap "$TEST_FILE" | tee "$RUNNER_TEMP/postgres-tests.tap"
+          rg -x '# pass [1-9][0-9]*' "$RUNNER_TEMP/postgres-tests.tap"
+          rg -x '# skipped 0' "$RUNNER_TEMP/postgres-tests.tap"
+        shell: bash
+        working-directory: backend
+        env:
+          TEST_FILE: ${{ matrix.test }}
+          FEATURE_ENV: ${{ matrix.feature_env }}
+
   android-debug:
     name: Android debug compile
     needs: quality
@@ -175,7 +247,7 @@ jobs:
           MIAOXUN_VERSION_CODE: 45
 
   avatar-web-e2e:
-    name: Avatar Web end-to-end
+    name: Web browser end-to-end
     needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -188,7 +260,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: avatar-web/package-lock.json
+          cache-dependency-path: |
+            avatar-web/package-lock.json
+            admin/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -201,3 +275,18 @@ jobs:
       - name: Run Playwright tests
         run: npm run test:e2e
         working-directory: avatar-web
+
+      - name: Build admin for browser tests
+        run: |
+          npm ci
+          npm run build
+        working-directory: admin
+
+      - name: Verify admin routes, task operations, profiles and retrieval controls
+        run: |
+          export PLAYWRIGHT_MODULE="$PWD/avatar-web/node_modules/@playwright/test"
+          node admin/test/console-routes.browser.cjs
+          node admin/test/monitoring.browser.cjs
+          node admin/test/user-confirmation.browser.cjs
+          node admin/test/media-retrieval-controls.browser.cjs
+          node admin/test/media-retrieval-diagnostics.browser.cjs

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -27,6 +26,7 @@ import { Language, useMiaoxunSession } from '../session/useMiaoxunSession';
 import { secondFloorPalette, secondFloorXunStyles } from './secondFloorTheme';
 import { isV6Palette } from '../../shared/v6Palette';
 import { isXunPalette } from '../../shared/xunPalette';
+import { SecondFloorScrollView } from './SecondFloorScrollView';
 import { SecondFloorPageScrollProps } from './secondFloorScroll';
 
 export function SecondFloorRelationships({
@@ -86,7 +86,7 @@ export function SecondFloorRelationships({
   const relationCount = (key: 'friends' | 'following' | 'followers') =>
     session.relationships[key].length || (!loading && !error ? 0 : '—');
   return (
-    <ScrollView
+    <SecondFloorScrollView
       {...scrollProps}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={[s.panel, xun && s.panelXun]}
@@ -387,7 +387,7 @@ export function SecondFloorRelationships({
           </View>
         </View>
       ))}
-    </ScrollView>
+    </SecondFloorScrollView>
   );
 }
 const s = StyleSheet.create({

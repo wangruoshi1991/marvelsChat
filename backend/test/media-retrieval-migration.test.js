@@ -801,6 +801,10 @@ if (integrationEnabled) {
       assert.equal(repeated.reused, true, "repeated upload completion reuses the ready index");
       const concurrent = await Promise.all(Array.from({ length: 3 }, () => repository.enqueueAssetIndexJob({ userId, mediaAssetId: assetId, source: "upload" })));
       assert.ok(concurrent.every(result => result.reused && result.job.id === repeated.job.id), "concurrent notifications reuse one index job");
+      const completedReplay = await service.enqueueUploadedMediaAsset({ userId, mediaAssetId: assetId });
+      assert.equal(completedReplay.agentRunId, enabled.agentRunId);
+      assert.equal(completedReplay.lifecycleStatus, "succeeded");
+      assert.equal(completedReplay.reused, true);
       assert.equal((await repository.searchMediaRetrievalSegments({ userId, vector, embeddingProvenance: provenance.embeddingProvenance, albumId })).length, 1, "album moves change the query scope without new embedding calls");
       assert.equal((await repository.getMediaRetrievalSearchResponse({ userId, agentRunId: found.agentRunId })).results.length, 1, "metadata edits preserve existing result references");
       assert.equal((await repository.claimNextMediaRetrievalJob({ workerId: "duplicate-probe" })), null, "no duplicate model job");
@@ -823,7 +827,34 @@ if (integrationEnabled) {
       assert.equal((await service.getMediaRetrievalStatus({ userId })).backfill.totalAssets, 1);
       await client.query("UPDATE station_media_assets SET storage_key = 'test/replaced-image.jpg' WHERE id = $1", [assetId]);
       assert.deepEqual((await repository.getMediaRetrievalSearchResponse({ userId, agentRunId: found.agentRunId })).results, [], "replacing the original file invalidates earlier conversation result references");
+      const replacement = await Promise.all(Array.from({ length: 3 }, () => service.enqueueUploadedMediaAsset({ userId, mediaAssetId: assetId })));
+      assert.equal(replacement.filter(result => !result.reused).length, 1);
+      assert.ok(replacement.every(result => result.agentRunId === replacement[0].agentRunId && result.jobId === replacement[0].jobId));
+      assert.notEqual(replacement[0].agentRunId, completedReplay.agentRunId);
+      const eventResult = await service.getAgentRunEvents({ userId, agentRunId: replacement[0].agentRunId, afterSequence: 0 });
+      assert.deepEqual(eventResult.events.map(event => [event.sequence, event.eventType]), [[1, "accepted"], [2, "queued"]]);
+      const callsBeforeReplacement = calls.length;
+      await processNext();
+      const replacementReplay = await service.enqueueUploadedMediaAsset({ userId, mediaAssetId: assetId });
+      assert.equal(replacementReplay.agentRunId, replacement[0].agentRunId);
+      assert.equal(replacementReplay.lifecycleStatus, "succeeded");
+      assert.equal(calls.length, callsBeforeReplacement + 2);
       await client.query("UPDATE station_media_assets SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP WHERE id = $1", [assetId]);
+      assert.equal((await service.enqueueUploadedMediaAsset({ userId, mediaAssetId: assetId })).queued, false);
+      const orphanRuns = await client.query(`SELECT id FROM agent_runs r WHERE user_id = $1 AND run_type = 'media-index'
+        AND input_summary ->> 'source' = 'upload' AND NOT EXISTS (SELECT 1 FROM media_retrieval_jobs j WHERE j.agent_run_id = r.id)`, [userId]);
+      assert.deepEqual(orphanRuns.rows, []);
+      const pendingAssetId = "61616161-6161-4161-8161-616161616161";
+      await insertAsset({ id: pendingAssetId, userId, caption: "queued upload" });
+      const pendingUpload = await service.enqueueUploadedMediaAsset({ userId, mediaAssetId: pendingAssetId });
+      assert.equal(pendingUpload.lifecycleStatus, "queued");
+      await client.query("UPDATE station_media_assets SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP WHERE id = $1", [pendingAssetId]);
+      const deletedUpload = await service.getAgentRunEvents({ userId, agentRunId: pendingUpload.agentRunId, afterSequence: 0 });
+      assert.equal(deletedUpload.run.lifecycleStatus, "cancelled");
+      assert.equal(deletedUpload.run.failureCode, "asset_not_indexable");
+      assert.deepEqual(deletedUpload.events.map(event => [event.sequence, event.eventType]), [
+        [1, "accepted"], [2, "queued"], [3, "upload-asset-deleted"],
+      ]);
       assert.equal(Number((await client.query("SELECT COUNT(*) AS n FROM media_retrieval_segments WHERE media_asset_id = $1", [assetId])).rows[0].n), 0);
       assert.equal(Number((await client.query("SELECT COUNT(*) AS n FROM media_retrieval_segment_staging WHERE media_asset_id = $1", [assetId])).rows[0].n), 0);
       assert.deepEqual((await repository.getMediaRetrievalSearchResponse({ userId, agentRunId: found.agentRunId })).results, [], "deleted media is scrubbed from persisted search results");

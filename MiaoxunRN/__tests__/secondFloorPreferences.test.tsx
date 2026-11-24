@@ -311,7 +311,7 @@ test('page exit uses the deliberate default distance and does not treat downward
   act(() => landing().onContentSizeChange(320, 300));
   act(() => landing().onLayout({ nativeEvent: { layout: { height: 500 } } }));
   act(() => landing().onTouchStart(touch(500)));
-  act(() => landing().onTouchEnd(touch(410, undefined, true)));
+  act(() => landing().onTouchEnd(touch(340, undefined, true)));
   expect(props.onClose).toHaveBeenCalledTimes(1);
   const next = session();
   next.uiPreferences.gestures['secondFloor.swipeToExit']!.direction = 'down';
@@ -323,9 +323,9 @@ test('page exit uses the deliberate default distance and does not treat downward
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 
-test('page release consumes timestamp velocity only for a measured bottom upward swipe', async () => {
+test('a bottom upward swipe requires the configured distance even with high release velocity', async () => {
   const value = session();
-  value.uiPreferences.gestures['secondFloor.swipeToExit']!.distance = 120;
+  value.uiPreferences.gestures['secondFloor.swipeToExit']!.distance = 180;
   value.uiPreferences.gestures[
     'secondFloor.swipeToExit'
   ]!.velocityThreshold = 0.5;
@@ -343,6 +343,9 @@ test('page release consumes timestamp velocity only for a measured bottom upward
   expect(props.onClose).not.toHaveBeenCalled();
   act(() => landing.onTouchStart(touch(500, 400)));
   act(() => landing.onTouchEnd(touch(420, 450, true)));
+  expect(props.onClose).not.toHaveBeenCalled();
+  act(() => landing.onTouchStart(touch(500, 600)));
+  act(() => landing.onTouchEnd(touch(320, 1000, true)));
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 

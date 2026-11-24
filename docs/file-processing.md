@@ -11,6 +11,7 @@
 - FileAsset新增`parseVersion`及`reference`；新成功上传`status=processed`、`parseVersion=utf8-text-v1`，reference为`{kind:station-file,id,version,title}`。列表只返回元信息和有截断标记的文字预览。
 - `GET /api/station/file-assets/:id`仅owner可读，返回`{data:{...FileAsset,content}}`完整正文。历史预览记录没有可靠全文，因此content/reference均null，必须重新上传。
 - 旧`POST /api/station/file-assets` JSON登记与原始上传共用文件名及扩展名/MIME白名单：路径分隔符或无效文件名返回400 `FILE_NAME_INVALID`，不支持的扩展名或不匹配MIME返回415 `FILE_FORMAT_UNSUPPORTED`，均不写入资产。提供正文时同样保留完整正文并检验编码和大小；合法空正文仅登记`pending_upload`占位，正文、解析版本和引用均为空。
+- 二楼手写保存向 JSON 入口发送 `Idempotency-Key` UUID。同一草稿请求重试用原键，文件名或正文变化使用新键。首次成功 201，同键同参重放 200，同键不同内容 409 `FILE_IDEMPOTENCY_CONFLICT`，删除后重放 410 `FILE_DELETED`。文件和使用事件在同一事务提交。无键旧客户端仍可登记，与原始上传各有独立回执。
 - `DELETE /api/station/file-assets/:id`仅owner可操作，204。软删除清除正文、预览、metadata及storage_key；保留最小上传幂等回执，防止重放复活。物理数据库备份仍遵循既有备份保留策略。
 
 ## 专业执行与权限

@@ -1,8 +1,10 @@
 import { query, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
+import { assertAdminAccountMutationAllowed, hashPassword, verifyPassword } from "./auth.js";
 import { normalizeLocationText } from "./location-labels.js";
 import {
   adminSessionSummary,
+  createUsageEvent,
   findUserByDisplayName,
   getRawUserById,
   getUserById,
@@ -219,6 +221,7 @@ export function createAdminUserProfileUpdater({
   findByDisplayName = findUserByDisplayName,
   transaction = withTransaction,
   getProfile = getProfileForUser,
+  recordAudit = null,
 } = {}) {
   return async function updateUserProfileAdmin({
     userId,
@@ -230,6 +233,7 @@ export function createAdminUserProfileUpdater({
     publicLocation,
     experienceYears,
     languages,
+    audit = null,
   }) {
     const resolvedNickname = String(nickname || "").trim();
     const existing = await findByDisplayName(resolvedNickname);
@@ -259,41 +263,111 @@ export function createAdminUserProfileUpdater({
           userId,
         ],
       );
+      if (recordAudit && audit) await recordAudit(audit, connection.query.bind(connection));
     });
 
     return getProfile(userId);
   };
 }
 
-export const updateUserProfileAdmin = createAdminUserProfileUpdater();
+export const updateUserProfileAdmin = createAdminUserProfileUpdater({ recordAudit: createUsageEvent });
 
-export async function updateUserStatus(userId, status) {
-  await query("UPDATE users SET status = ? WHERE id = ?", [status, userId]);
-  if (status !== "active") await revokeSessionsForUser(userId);
-  return getUserById(userId);
+const adminAccountIntentConflict = () => new HttpError(409,
+  "操作标识已用于其他请求，或原密码已被新的重置替换。", { code: "ADMIN_ACCOUNT_IDEMPOTENCY_CONFLICT" });
+
+const accountSelfOperationErrors = {
+  password_reset: "Use account settings to change your own password",
+  revoke_sessions: "Use logout to revoke your current admin session",
+};
+
+export function createAdminAccountMutator({ transaction = withTransaction, recordAudit = createUsageEvent } = {}) {
+  return async function mutateAdminAccount({ actor, targetId, operation, requestValue = null, password,
+    idempotencyKey, ipHash, userAgent }) {
+    if (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 160) {
+      throw new HttpError(400, "Idempotency-Key must contain 8 to 160 characters", { code: "IDEMPOTENCY_KEY_REQUIRED" });
+    }
+    return transaction(async ({ query: runQuery }) => {
+      const [target] = await runQuery("SELECT * FROM users WHERE id = ? FOR UPDATE", [targetId]);
+      if (!target) throw new HttpError(404, "User not found");
+      assertAdminAccountMutationAllowed(actor, {
+        targetRole: target.role,
+        requestedRole: operation === "role" ? requestValue : undefined,
+      });
+      if (target.id === actor.id) {
+        const selfOperationError = accountSelfOperationErrors[operation] ||
+          (operation === "status" && requestValue !== "active" ? "You cannot disable your own admin account" : null) ||
+          (operation === "role" && requestValue !== "admin" ? "You cannot remove your own admin permission" : null);
+        if (selfOperationError) throw new HttpError(400, selfOperationError);
+      }
+      const receiptKey = [actor.id, target.id, operation, idempotencyKey];
+      const [receipt] = await runQuery(
+        `SELECT request_value, credential_generation, response FROM admin_account_mutations
+          WHERE actor_user_id = ? AND target_user_id = ? AND operation = ? AND idempotency_key = ?`,
+        receiptKey,
+      );
+      if (receipt) {
+        if (receipt.request_value !== requestValue || (operation === "password_reset" &&
+            (receipt.credential_generation !== target.credential_generation || !(await verifyPassword(password, target.password_hash))))) {
+          throw adminAccountIntentConflict();
+        }
+        return receipt.response;
+      }
+
+      let user = target;
+      if (operation === "status") {
+        [user] = await runQuery("UPDATE users SET status = ? WHERE id = ? RETURNING *", [requestValue, target.id]);
+      } else if (operation === "role" && requestValue !== target.role) {
+        const permissions = requestValue === "admin" ? ["users:read"] : [];
+        [user] = await runQuery("UPDATE users SET role = ?, admin_permissions = ?::jsonb WHERE id = ? RETURNING *",
+          [requestValue, JSON.stringify(permissions), target.id]);
+      } else if (operation === "password_reset") {
+        [user] = await runQuery("UPDATE users SET password_hash = ? WHERE id = ? RETURNING *",
+          [await hashPassword(password), target.id]);
+      }
+      if (operation === "password_reset" || operation === "revoke_sessions" ||
+          (operation === "status" && requestValue !== "active") ||
+          (operation === "role" && requestValue !== target.role)) {
+        await revokeSessionsForUser(target.id, runQuery);
+      }
+      await recordAudit({
+        userId: actor.id,
+        eventType: `admin.user.${operation}`,
+        targetType: "user",
+        targetId: target.id,
+        payload: {
+          ...(requestValue === null ? {} : { [operation]: requestValue }),
+          targetEmail: target.email,
+          targetLoginName: target.login_name || null,
+        },
+        ipHash,
+        userAgent,
+      }, runQuery);
+      const response = operation === "revoke_sessions" ? { ok: true } : { user: publicUser(user) };
+      await runQuery(
+        `INSERT INTO admin_account_mutations
+          (actor_user_id, target_user_id, operation, idempotency_key, request_value, credential_generation, response)
+          VALUES (?, ?, ?, ?, ?, ?, ?::jsonb)`,
+        [...receiptKey, requestValue, operation === "password_reset" ? user.credential_generation : null, JSON.stringify(response)],
+      );
+      return response;
+    });
+  };
 }
 
-export async function updateUserRole(userId, role) {
-  const permissions = role === "admin" ? JSON.stringify(["users:read"]) : JSON.stringify([]);
-  await query("UPDATE users SET role = ?, admin_permissions = ?::jsonb WHERE id = ?", [
-    role,
-    permissions,
-    userId,
-  ]);
-  return getUserById(userId);
-}
+export const mutateAdminAccount = createAdminAccountMutator();
 
-export async function updateUserAdminPermissions(userId, permissions = []) {
-  await query("UPDATE users SET admin_permissions = ?::jsonb WHERE id = ?", [
-    JSON.stringify(permissions),
-    userId,
-  ]);
-  return getUserById(userId);
-}
-
-export async function updateUserPassword(userId, passwordHash) {
-  await query("UPDATE users SET password_hash = ? WHERE id = ?", [passwordHash, userId]);
-  await revokeSessionsForUser(userId);
+export async function updateUserAdminPermissions(userId, permissions = [], {
+  transaction = withTransaction,
+  recordAudit = null,
+  audit = null,
+} = {}) {
+  await transaction(async (connection) => {
+    await connection.query("UPDATE users SET admin_permissions = ?::jsonb WHERE id = ?", [
+      JSON.stringify(permissions),
+      userId,
+    ]);
+    if (recordAudit && audit) await recordAudit(audit, connection.query.bind(connection));
+  });
   return getUserById(userId);
 }
 

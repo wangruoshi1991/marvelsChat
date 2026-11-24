@@ -1,5 +1,11 @@
 import { Pencil, Plus } from 'lucide-react-native';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Animated,
   Image,
@@ -21,6 +27,7 @@ import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
 import { textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette } from '../../shared/theme';
+import { useReduceMotion } from '../../shared/useReduceMotion';
 import { Language } from '../session/useMiaoxunSession';
 import type {
   StationContentListKind,
@@ -255,29 +262,42 @@ function StationContentSwipeRow({
   const translateX = useRef(new Animated.Value(0)).current;
   const openedRef = useRef(false);
   const windowSize = useWindowDimensions();
+  const reduceMotion = useReduceMotion();
+  useEffect(() => {
+    if (reduceMotion) translateX.setValue(0);
+  }, [reduceMotion, translateX]);
 
   const resetPosition = useCallback(() => {
+    if (reduceMotion) {
+      translateX.setValue(0);
+      return;
+    }
     Animated.spring(translateX, {
       toValue: 0,
       useNativeDriver: true,
       speed: 22,
       bounciness: 6,
     }).start();
-  }, [translateX]);
+  }, [reduceMotion, translateX]);
 
   const editFromSwipe = useCallback(() => {
     if (openedRef.current) return;
     openedRef.current = true;
+    const finish = () => {
+      onEdit();
+      translateX.setValue(0);
+      openedRef.current = false;
+    };
+    if (reduceMotion) {
+      finish();
+      return;
+    }
     Animated.timing(translateX, {
       toValue: -Math.max(windowSize.width, 320),
       duration: 180,
       useNativeDriver: true,
-    }).start(() => {
-      onEdit();
-      translateX.setValue(0);
-      openedRef.current = false;
-    });
-  }, [onEdit, translateX, windowSize.width]);
+    }).start(finish);
+  }, [onEdit, reduceMotion, translateX, windowSize.width]);
 
   const panResponder = useMemo(
     () =>

@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { PublicProfileDTO, SearchHistoryDTO } from '../../models/api';
 import { apiClient } from '../../services/apiClient';
 import { RelationshipsState } from './sessionTypes';
+import { useCurrentScope } from '../../shared/useCurrentScope';
 
 export function useSocialActions({
   token,
@@ -16,6 +17,7 @@ export function useSocialActions({
   const currentTokenRef = useRef(token);
   currentTokenRef.current = token;
   const relationshipRefreshRef = useRef(0);
+  const isCurrentSession = useCurrentScope(token);
   const resolveScanPayload = useCallback(
     async (payload: string) => {
       if (!token) {
@@ -87,7 +89,7 @@ export function useSocialActions({
   );
 
   const refreshRelationships = useCallback(async () => {
-    if (!token) {
+    if (!token || currentTokenRef.current !== token) {
       return;
     }
     const pageSize = 100;
@@ -125,7 +127,7 @@ export function useSocialActions({
 
   const searchUsers = useCallback(
     async (query: string) => {
-      if (!token) {
+      if (!token || !isCurrentSession()) {
         throw new Error('请先登录。');
       }
       const trimmed = query.trim();
@@ -136,15 +138,16 @@ export function useSocialActions({
         apiClient.searchUsers(trimmed, token),
         apiClient.saveSearchHistory(trimmed, token),
       ]);
-      setSearchHistory(history);
+      if (!isCurrentSession()) return [];
+      setSearchHistory(current => (isCurrentSession() ? history : current));
       return profiles;
     },
-    [setSearchHistory, token],
+    [isCurrentSession, setSearchHistory, token],
   );
 
   const saveSearchQuery = useCallback(
     async (query: string) => {
-      if (!token) {
+      if (!token || !isCurrentSession()) {
         throw new Error('请先登录。');
       }
       const trimmed = query.trim();
@@ -156,29 +159,32 @@ export function useSocialActions({
         token,
         'contacts',
       );
-      setSearchHistory(history);
+      if (!isCurrentSession()) return [];
+      setSearchHistory(current => (isCurrentSession() ? history : current));
       return history;
     },
-    [setSearchHistory, token],
+    [isCurrentSession, setSearchHistory, token],
   );
 
   const clearSearchHistory = useCallback(async () => {
-    if (!token) {
+    if (!token || !isCurrentSession()) {
       throw new Error('请先登录。');
     }
     const history = await apiClient.clearSearchHistory(token);
-    setSearchHistory(history);
-  }, [setSearchHistory, token]);
+    if (isCurrentSession())
+      setSearchHistory(current => (isCurrentSession() ? history : current));
+  }, [isCurrentSession, setSearchHistory, token]);
 
   const deleteSearchHistoryItem = useCallback(
     async (historyId: string) => {
-      if (!token) {
+      if (!token || !isCurrentSession()) {
         throw new Error('请先登录。');
       }
       const history = await apiClient.deleteSearchHistoryItem(historyId, token);
-      setSearchHistory(history);
+      if (isCurrentSession())
+        setSearchHistory(current => (isCurrentSession() ? history : current));
     },
-    [setSearchHistory, token],
+    [isCurrentSession, setSearchHistory, token],
   );
 
   const loadPublicProfileByAiId = useCallback(

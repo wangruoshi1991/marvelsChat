@@ -38,11 +38,6 @@ export const MEDIA_RETRIEVAL_ERROR_CONTRACTS = Object.freeze({
 export const getMediaRetrievalPublicError = (code) =>
   MEDIA_RETRIEVAL_ERROR_CONTRACTS[code] || MEDIA_RETRIEVAL_ERROR_CONTRACTS.retrieval_service_unavailable;
 
-export const MEDIA_RETRIEVAL_SEARCH_RESPONSE_SCHEMA_ID =
-  "https://miaoxun.local/schemas/media-retrieval-search-response.schema.json";
-export const MEDIA_RETRIEVAL_PUBLIC_ERROR_SCHEMA_ID =
-  "https://miaoxun.local/schemas/media-retrieval-public-error.schema.json";
-
 const safeString = (value, maximum) => String(value ?? "").slice(0, maximum);
 const isPlainObject = (value) => Boolean(value && typeof value === "object" && !Array.isArray(value));
 

@@ -112,6 +112,7 @@ export function createAvatar3dLifecycleService({
       progress: 100,
       safeErrorCode: errorCode,
       retentionUntil: retentionUntil(),
+      claimToken: job.claimToken,
     });
     await markTerminalRetention(transitioned);
     return transitioned;
@@ -318,7 +319,7 @@ export function createAvatar3dLifecycleService({
     if (job.status !== "queued_3d") {
       throw new HttpError(409, "Avatar task can no longer be cancelled.");
     }
-    return publicJob(await transitionTerminal(job, "cancelled", "USER_CANCELLED"));
+    return publicJob(await transitionTerminal({ ...job, claimToken: undefined }, "cancelled", "USER_CANCELLED"));
   };
 
   const getBootstrap = async ({ user }) => {
@@ -446,6 +447,11 @@ export function createAvatar3dLifecycleService({
 
   return {
     createJob,
+    async findSubmission({ user, idempotencyKey }) {
+      assertEnabled(user);
+      const job = await repository.findSubmission({ userId: user.id, idempotencyKeyHash: idempotencyHash(idempotencyKey) });
+      return { job };
+    },
     preparePhotoUpload,
     completePhotoUpload,
     deletePhoto,

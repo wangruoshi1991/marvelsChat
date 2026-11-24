@@ -3,6 +3,7 @@ import type { ChatAttachmentDTO } from '../../models/api';
 import {
   uploadChatFile,
   uploadChatImage,
+  uploadChatVideo,
 } from '../../services/api/chatAttachmentApi';
 import {
   PickedStationFile,
@@ -12,7 +13,7 @@ import {
 export type ChatAttachmentDraft = {
   id?: string;
   clientKey: string;
-  kind: 'image' | 'file';
+  kind: 'image' | 'file' | 'video';
   filename: string;
   mimeType: string;
   byteSize: number;
@@ -104,8 +105,10 @@ export function useChatAttachments({
       };
       try {
         const result: ChatAttachmentDTO =
-          draft.kind === 'image'
-            ? await uploadChatImage({
+          draft.kind !== 'file'
+            ? await (draft.kind === 'image'
+                ? uploadChatImage
+                : uploadChatVideo)({
                 threadId,
                 token,
                 uri: draft.localUri!,
@@ -178,6 +181,30 @@ export function useChatAttachments({
       }));
       update([...itemsRef.current, ...drafts]);
       await Promise.all(drafts.map(upload));
+    },
+    [enabled, update, upload],
+  );
+
+  const addVideo = React.useCallback(
+    async (video: PickedStationFile) => {
+      if (!enabled || itemsRef.current.length >= 6) {
+        await releaseStationFile(video);
+        if (enabled) throw new Error('最多添加6个附件。');
+        return;
+      }
+      const draft: ChatAttachmentDraft = {
+        clientKey: newKey(),
+        kind: 'video',
+        filename: video.originalFilename,
+        mimeType: video.mimeType,
+        byteSize: video.byteSize,
+        localUri: video.uri,
+        idempotencyKey: video.idempotencyKey,
+        nativeFile: video,
+        status: 'uploading',
+      };
+      update([...itemsRef.current, draft]);
+      await upload(draft);
     },
     [enabled, update, upload],
   );
@@ -260,6 +287,7 @@ export function useChatAttachments({
         : '',
     cleanupError,
     addImages,
+    addVideo,
     addFile,
     remove,
     removeMany,

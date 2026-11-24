@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { Alert, Linking } from 'react-native';
 import { PublicProfileDTO, UserDTO } from '../../models/api';
 import { scanQRCode } from '../../services/qrScanner';
 import { appErrorText, textFor } from '../../shared/i18n';
@@ -8,6 +9,8 @@ const miaoxunScanPayloadPattern =
   /^(miaoxun:\/\/ai\/\d{12}(?:[?&][^#\s]+)?|\d{12})$/;
 
 type ProfileFlowsOptions = {
+  sessionOwner: string;
+  profileVisible: boolean;
   language: Language;
   user: UserDTO | null;
   loadPublicProfileByAiId: (aiId: string) => Promise<PublicProfileDTO>;
@@ -18,6 +21,8 @@ type ProfileFlowsOptions = {
 };
 
 export function useProfileFlows({
+  sessionOwner,
+  profileVisible,
   language,
   user,
   loadPublicProfileByAiId,
@@ -30,8 +35,43 @@ export function useProfileFlows({
   const [publicProfile, setPublicProfile] = useState<PublicProfileDTO | null>(
     null,
   );
-  const [isResolvingScan, setIsResolvingScan] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
   const isScanningRef = useRef(false);
+  const generation = useRef(0);
+  const resetProfile = useCallback(() => {
+    generation.current += 1;
+    setPublicProfile(null);
+    setLoadingProfile(false);
+  }, []);
+  useLayoutEffect(() => {
+    resetProfile();
+    setQrPayload('');
+    closePublicProfileModal();
+    return () => {
+      generation.current += 1;
+    };
+  }, [sessionOwner, resetProfile, closePublicProfileModal]);
+  const wasVisible = useRef(profileVisible);
+  useLayoutEffect(() => {
+    if (wasVisible.current && !profileVisible) resetProfile();
+    wasVisible.current = profileVisible;
+  }, [profileVisible, resetProfile]);
+
+  const closeProfile = () => {
+    resetProfile();
+    closePublicProfileModal();
+  };
+  const displayedGeneration = generation.current;
+  const isCurrentProfile = () =>
+    publicProfile !== null && generation.current === displayedGeneration;
+  const updateRelation = (patch: Partial<PublicProfileDTO['relation']>) => {
+    if (!isCurrentProfile()) return;
+    setPublicProfile(current =>
+      current && current.user.id === publicProfile?.user.id
+        ? { ...current, relation: { ...current.relation, ...patch } }
+        : current,
+    );
+  };
 
   const openQRCode = useCallback(() => {
     const aiId = user?.aiId || '';
@@ -53,11 +93,17 @@ export function useProfileFlows({
 
   const openPublicProfileByAiId = useCallback(
     async (aiId: string) => {
+      const request = ++generation.current;
+      setPublicProfile(null);
+      setLoadingProfile(true);
+      openModal('public-profile');
       try {
         const profile = await loadPublicProfileByAiId(aiId);
+        if (generation.current !== request) return;
         setPublicProfile(profile);
-        openModal('public-profile');
       } catch (error) {
+        if (generation.current !== request) return;
+        closePublicProfileModal();
         showToast(
           appErrorText(
             language,
@@ -66,9 +112,17 @@ export function useProfileFlows({
             'Cannot open profile',
           ),
         );
+      } finally {
+        if (generation.current === request) setLoadingProfile(false);
       }
     },
-    [language, loadPublicProfileByAiId, openModal, showToast],
+    [
+      language,
+      loadPublicProfileByAiId,
+      openModal,
+      closePublicProfileModal,
+      showToast,
+    ],
   );
 
   const startQRCodeScan = useCallback(async () => {
@@ -76,8 +130,10 @@ export function useProfileFlows({
       return;
     }
     isScanningRef.current = true;
+    const request = ++generation.current;
     try {
       const value = await scanQRCode();
+      if (generation.current !== request) return;
       if (!miaoxunScanPayloadPattern.test(value.trim())) {
         showToast(
           textFor(
@@ -89,19 +145,53 @@ export function useProfileFlows({
         return;
       }
       setPublicProfile(null);
-      setIsResolvingScan(true);
+      setLoadingProfile(true);
       openModal('public-profile');
       const profile = await resolveScanPayload(value);
-      setPublicProfile(profile);
+      if (generation.current === request) setPublicProfile(profile);
     } catch (error) {
+      if (generation.current !== request) return;
       closePublicProfileModal();
-      const message = appErrorText(language, error, '扫码失败', 'Scan failed');
-      if (!message.includes('已取消') && !message.includes('cancel')) {
-        showToast(message);
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? error.code
+          : undefined;
+      if (code === 'scanner_cancelled') return;
+      if (code === 'camera_denied') {
+        Alert.alert(
+          textFor(language, '需要相机权限', 'Camera access needed'),
+          textFor(
+            language,
+            '可在系统设置中允许妙讯使用相机，然后重新扫码。',
+            'Allow camera access in Settings, then scan again.',
+          ),
+          [
+            { text: textFor(language, '取消', 'Cancel'), style: 'cancel' },
+            {
+              text: textFor(language, '打开设置', 'Open Settings'),
+              onPress: () => {
+                if (generation.current !== request) return;
+                Linking.openSettings().catch(() => {
+                  if (generation.current === request) {
+                    showToast(
+                      textFor(
+                        language,
+                        '无法打开系统设置',
+                        'Cannot open Settings',
+                      ),
+                    );
+                  }
+                });
+              },
+            },
+          ],
+        );
+        return;
       }
+      showToast(appErrorText(language, error, '扫码失败', 'Scan failed'));
     } finally {
       isScanningRef.current = false;
-      setIsResolvingScan(false);
+      if (generation.current === request) setLoadingProfile(false);
     }
   }, [
     closePublicProfileModal,
@@ -114,10 +204,11 @@ export function useProfileFlows({
   return {
     qrPayload,
     publicProfile,
-    isResolvingScan,
-    isScanning: isScanningRef.current,
-    setPublicProfile,
-    setIsResolvingScan,
+    loadingProfile,
+    isScanning: () => isScanningRef.current,
+    updateRelation,
+    isCurrentProfile,
+    closeProfile,
     openQRCode,
     openPublicProfileByAiId,
     startQRCodeScan,

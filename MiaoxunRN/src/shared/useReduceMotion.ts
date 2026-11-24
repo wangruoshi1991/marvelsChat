@@ -6,23 +6,31 @@ import { AccessibilityInfo } from 'react-native';
  *
  * The prototype honours the preference site-wide
  * (`@media (prefers-reduced-motion: reduce) { * { transition-duration: .001ms } }`),
- * so every animated surface needs the same answer. Starts at `true` so no motion
- * runs before the preference has actually been read.
+ * so every animated surface needs the same answer. Missing or pending values
+ * are treated as reduced motion by default.
  */
-export function useReduceMotion(): boolean {
-  const [reduceMotion, setReduceMotion] = useState(true);
+export function useReduceMotion() {
+  return useSystemReduceMotion() ?? true;
+}
+
+export function useSystemReduceMotion() {
+  const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
   useEffect(() => {
     let mounted = true;
+    let receivedChange = false;
     const subscription = AccessibilityInfo.addEventListener(
       'reduceMotionChanged',
-      setReduceMotion,
+      value => {
+        receivedChange = true;
+        setReduceMotion(value);
+      },
     );
-    AccessibilityInfo.isReduceMotionEnabled().then(value => {
-      // Functional update so a read that matches the initial value bails out
-      // instead of scheduling a no-op render.
-      if (mounted)
-        setReduceMotion(current => (current === value ? current : value));
-    });
+    const applyInitial = (value: boolean) => {
+      if (mounted && !receivedChange) setReduceMotion(value);
+    };
+    AccessibilityInfo.isReduceMotionEnabled().then(applyInitial, () =>
+      applyInitial(true),
+    );
     return () => {
       mounted = false;
       subscription.remove();

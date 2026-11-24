@@ -1,7 +1,16 @@
+import { chatVoiceMessageContent } from '../../services/chatVoiceAudio';
 import { Artifact, ContextReference } from '../ai/AIInteraction';
 import type { AIContextReference } from '../../models/aiTask';
 import React, { useRef } from 'react';
-import { Image, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import {
+  GestureResponderEvent,
+  Image,
+  Pressable,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { Bot, Copy, ExternalLink, LayoutGrid } from 'lucide-react-native';
 
@@ -21,7 +30,10 @@ import { displayText, textFor } from '../../shared/i18n';
 import { styles } from '../../shared/styles';
 import { Palette, productColors } from '../../shared/theme';
 import { isXunPalette } from '../../shared/xunPalette';
-import { AIAssistGestureSurface } from '../assist/AIAssistGestureSurface';
+import {
+  AIAssistGestureSurface,
+  AIAssistGestureHandle,
+} from '../assist/AIAssistGestureSurface';
 import { useAIAssist } from '../assist/AIAssistProvider';
 import {
   AIAssistAction,
@@ -44,6 +56,8 @@ import {
   ChatMessageAttachments,
   ChatMessageAttachmentsHandle,
   ChatMessageAttachmentAction,
+  isCanonicalAttachment,
+  isChatVoiceAttachment,
 } from './ChatMessageAttachments';
 import { ContributionDiscussionReply } from './ContributionDiscussionReply';
 import { UIPreferenceChatCard } from './UIPreferenceChatCard';
@@ -57,6 +71,7 @@ export function ChatMessageItem({
   item,
   previousMessage,
   palette,
+  reduceMotion,
   language,
   currentUserId,
   currentUserName,
@@ -79,11 +94,16 @@ export function ChatMessageItem({
   attachmentRef,
   onConfirmUIPreferences,
   contentPreviewCard,
+  messageEnhancement,
+  deliveryStatus,
+  focused = false,
 }: {
   token?: string;
+  deliveryStatus?: 'accepted' | 'delivered';
   item: ChatMessage;
   previousMessage: ChatMessage | null;
   palette: Palette;
+  reduceMotion?: boolean;
   language: Language;
   currentUserId: string;
   currentUserName: string;
@@ -97,6 +117,8 @@ export function ChatMessageItem({
     isMine: boolean,
     point: AIAssistPoint,
     messageFrame: { x: number; y: number; width: number; height: number },
+    openDirectionalTools?: () => void,
+    attachmentId?: string,
   ) => void;
   onRetrySend: (message: ChatMessage) => void;
   onOpenAgentAccess?: () => void;
@@ -117,6 +139,8 @@ export function ChatMessageItem({
     baseRevision: number,
   ) => Promise<unknown>;
   contentPreviewCard?: React.ReactNode;
+  messageEnhancement?: React.ReactNode;
+  focused?: boolean;
 }) {
   const assist = useAIAssist();
   const agentVersionChanged = [
@@ -164,8 +188,9 @@ export function ChatMessageItem({
     language,
     agentReplyPresentation(item, thread.agentId, language),
   );
-  const touchPoint = useRef<AIAssistPoint>({ x: 0, y: 0 });
-  const messageBlockRef = useRef<View>(null);
+  const touchPoint = useRef<AIAssistPoint | undefined>(undefined);
+  const messageBodyRef = useRef<View>(null);
+  const assistSurface = useRef<AIAssistGestureHandle>(null);
   const senderUserId =
     typeof item.metadata?.senderUserId === 'string'
       ? item.metadata.senderUserId
@@ -205,6 +230,38 @@ export function ChatMessageItem({
     id: item.id,
     title: textFor(language, '聊天消息', 'Chat message'),
     metadata: { content: presentedMessageContent, threadId: thread.id },
+  };
+  const openMessageActions = (
+    event?: GestureResponderEvent,
+    attachmentId?: string,
+    previousPoint?: AIAssistPoint,
+  ) => {
+    const point = event
+      ? { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }
+      : previousPoint;
+    const body = messageBodyRef.current;
+    body?.measureInWindow((x, y, width, height) => {
+      if (messageBodyRef.current !== body || width <= 0 || height <= 0) return;
+      const anchor =
+        point && Number.isFinite(point.x) && Number.isFinite(point.y)
+          ? point
+          : { x: x + width / 2, y: y + height / 2 };
+      const openDirectionalTools = () => {
+        if (messageBodyRef.current !== body) return;
+        assistSurface.current?.activateAt({
+          x: Math.max(0, Math.min(width, anchor.x - x)),
+          y: Math.max(0, Math.min(height, anchor.y - y)),
+        });
+      };
+      onOpenMessageMenu(
+        { ...item, content: presentedMessageContent },
+        isMine,
+        anchor,
+        { x, y, width, height },
+        openDirectionalTools,
+        attachmentId,
+      );
+    });
   };
   const assistActions: AIAssistAction[] = [
     {
@@ -248,19 +305,7 @@ export function ChatMessageItem({
       accent: palette.mint,
       onSelect: () => {
         assist.dismiss();
-        messageBlockRef.current?.measureInWindow((x, y, width, height) => {
-          onOpenMessageMenu(
-            { ...item, content: presentedMessageContent },
-            isMine,
-            touchPoint.current,
-            {
-              x,
-              y,
-              width,
-              height,
-            },
-          );
-        });
+        openMessageActions(undefined, undefined, touchPoint.current);
       },
     },
   ];
@@ -288,6 +333,25 @@ export function ChatMessageItem({
     !item.deletedAt && Array.isArray(item.metadata?.attachments)
       ? item.metadata.attachments
       : [];
+  const visibleAttachments = token
+    ? messageAttachments.filter(isCanonicalAttachment).slice(0, 6)
+    : [];
+  const hasVisibleAttachment = visibleAttachments.some(
+    attachment =>
+      ['image', 'file', 'video'].includes(attachment.kind) ||
+      isChatVoiceAttachment(attachment),
+  );
+  const isVoiceBubble =
+    item.content === chatVoiceMessageContent &&
+    visibleAttachments.some(isChatVoiceAttachment);
+  const hasAttachmentOnlyBody =
+    hasVisibleAttachment && (isVoiceBubble || !item.content.trim());
+  const standaloneAttachment =
+    hasAttachmentOnlyBody &&
+    !item.localStatus &&
+    !replyTo &&
+    !item.metadata?.contextRefs?.length &&
+    !protectedDiscussion;
   const sticker =
     token &&
     !item.deletedAt &&
@@ -325,7 +389,27 @@ export function ChatMessageItem({
         xunTheme && (isMine ? xunStyles.contentMine : xunStyles.contentOther),
       ]}
     >
+      {item.metadata?.forwarded ? (
+        <Text
+          style={[xunStyles.forwardedLabel, { color: palette.secondaryText }]}
+        >
+          {textFor(language, '已转发', 'Forwarded')}
+        </Text>
+      ) : null}
       <View
+        ref={messageBodyRef}
+        collapsable={false}
+        style={[
+          standaloneAttachment && [
+            attachmentStyles.body,
+            isMine ? attachmentStyles.mine : attachmentStyles.other,
+          ],
+          focused && {
+            backgroundColor: palette.soft,
+            borderColor: palette.mint,
+          },
+          focused && xunStyles.focused,
+        ]}
         onTouchStart={event => {
           touchPoint.current = {
             x: event.nativeEvent.pageX,
@@ -334,10 +418,25 @@ export function ChatMessageItem({
         }}
       >
         <AIAssistGestureSurface
-          accessible={!protectedDiscussion}
-          actions={assistActions}
+          ref={assistSurface}
+          accessible={!protectedDiscussion && !standaloneAttachment}
+          actions={
+            hasAttachmentOnlyBody
+              ? assistActions.filter(
+                  action =>
+                    action.direction === 'left' || action.direction === 'right',
+                )
+              : assistActions
+          }
           object={assistObject}
           palette={palette}
+          onOpenContextMenu={openMessageActions}
+          contextMenuLabel={textFor(language, '消息操作', 'Message actions')}
+          accessibilityHint={textFor(
+            language,
+            '长按显示消息操作',
+            'Touch and hold for message actions',
+          )}
           style={[
             chatLayoutStyles.card,
             xunTheme && (isMine ? xunStyles.cardMine : xunStyles.cardOther),
@@ -346,6 +445,7 @@ export function ChatMessageItem({
               borderColor: cardBorder,
             },
             item.localStatus === 'failed' && styles.bubbleFailed,
+            standaloneAttachment && attachmentStyles.surface,
           ]}
           testID={`chat-message-assist-${item.id}`}
           onPress={
@@ -421,7 +521,7 @@ export function ChatMessageItem({
               resizeMode="contain"
               style={stickerStyles.image}
             />
-          ) : (
+          ) : hasAttachmentOnlyBody ? null : (
             <ChatMessageText
               testID={`chat-message-content-${item.id}`}
               style={[
@@ -442,13 +542,17 @@ export function ChatMessageItem({
               token={token}
               palette={palette}
               language={language}
+              reduceMotion={reduceMotion}
               action={attachmentAction}
               onActionConsumed={onAttachmentActionConsumed}
               onActionMessage={onActionMessage}
+              standalone={standaloneAttachment}
+              onOpenMessageActions={openMessageActions}
             />
           ) : null}
         </AIAssistGestureSurface>
       </View>
+      {messageEnhancement}
       {token && uiPreviewId && onConfirmUIPreferences ? (
         <UIPreferenceChatCard
           key={`${token}:${currentUserId}:${thread.id}:${item.id}:${uiPreviewId}`}
@@ -526,6 +630,36 @@ export function ChatMessageItem({
             'The Agent was updated. This message starts a new request.',
           )}
         </Text>
+      ) : null}
+      {!item.localStatus &&
+      !item.recalledAt &&
+      !item.deletedAt &&
+      isMine &&
+      thread.kind === 'direct' &&
+      deliveryStatus ? (
+        <View style={[styles.messageMetaRow, styles.messageMetaRowMine]}>
+          <Text
+            testID="chat-message-delivery-status"
+            accessibilityLabel={
+              deliveryStatus === 'delivered'
+                ? textFor(
+                    language,
+                    '对方客户端已收到，不代表已读',
+                    'Received by recipient client; read status is not shared',
+                  )
+                : textFor(
+                    language,
+                    '服务器已接受消息，尚未确认送达',
+                    'Accepted by the server; delivery not confirmed',
+                  )
+            }
+            style={[styles.messageStatus, { color: palette.secondaryText }]}
+          >
+            {deliveryStatus === 'delivered'
+              ? textFor(language, '已送达', 'Delivered')
+              : textFor(language, '已发送', 'Sent')}
+          </Text>
+        </View>
       ) : null}
       {item.localStatus ? (
         <View
@@ -665,6 +799,19 @@ export function ChatMessageItem({
     previousMessage,
     item,
   );
+  const followsSameSender =
+    (thread.kind === 'direct' || thread.kind === 'group') &&
+    item.senderType === 'user' &&
+    previousMessage?.senderType === 'user' &&
+    Boolean(item.createdAt && previousMessage.createdAt) &&
+    !showTimeSeparator &&
+    !item.deletedAt &&
+    !previousMessage.deletedAt &&
+    !previousMessage.recalledAt &&
+    typeof item.metadata?.senderUserId === 'string' &&
+    item.metadata.senderUserId !== '' &&
+    item.metadata.senderUserId === previousMessage.metadata?.senderUserId &&
+    item.senderName === previousMessage.senderName;
   const threadAgent = thread.agentId
     ? agents.find(agent => agent.key === thread.agentId)
     : null;
@@ -672,56 +819,61 @@ export function ChatMessageItem({
     Boolean(thread.agentId) && item.senderType !== 'user';
   const messageRow = (
     <View style={chatLayoutStyles.message}>
-      <View
-        style={[chatLayoutStyles.sender, isMine && chatLayoutStyles.senderMine]}
-      >
-        {isMine ? (
-          renderUserAvatar({
-            text: currentUserName.slice(0, 1),
-            config: currentUserAvatarConfig,
-            small: true,
-            size: 36,
-          })
-        ) : shouldShowAgentIcon && thread.agentId ? (
-          <AgentIconAvatar
-            agentId={thread.agentId}
-            identity={
-              threadAgent?.identity || {
-                status: 'unavailable',
-                code: 'AGENT_IDENTITY_CONTRACT_ERROR',
-                message: 'Agent identity contract unavailable.',
+      {followsSameSender ? null : (
+        <View
+          style={[
+            chatLayoutStyles.sender,
+            isMine && chatLayoutStyles.senderMine,
+          ]}
+        >
+          {isMine ? (
+            renderUserAvatar({
+              text: currentUserName.slice(0, 1),
+              config: currentUserAvatarConfig,
+              small: true,
+              size: 36,
+            })
+          ) : shouldShowAgentIcon && thread.agentId ? (
+            <AgentIconAvatar
+              agentId={thread.agentId}
+              identity={
+                threadAgent?.identity || {
+                  status: 'unavailable',
+                  code: 'AGENT_IDENTITY_CONTRACT_ERROR',
+                  message: 'Agent identity contract unavailable.',
+                }
               }
-            }
-            size={xunTheme ? 45 : 36}
-            variant={xunTheme ? 'xun' : undefined}
-            radius={xunTheme ? 13 : undefined}
-          />
-        ) : (
-          renderUserAvatar({
-            text: item.senderName.slice(0, 1),
-            config: thread.avatarConfig || undefined,
-            small: true,
-            size: 36,
-          })
-        )}
-        {!isMine ? (
-          <Text
-            numberOfLines={1}
-            style={[
-              chatLayoutStyles.senderName,
-              { color: palette.secondaryText },
-            ]}
-          >
-            {displayText(language, item.senderName)}
-          </Text>
-        ) : null}
-      </View>
+              size={xunTheme ? 45 : 36}
+              variant={xunTheme ? 'xun' : undefined}
+              radius={xunTheme ? 13 : undefined}
+            />
+          ) : (
+            renderUserAvatar({
+              text: item.senderName.slice(0, 1),
+              config: thread.avatarConfig || undefined,
+              small: true,
+              size: 36,
+            })
+          )}
+          {!isMine ? (
+            <Text
+              numberOfLines={1}
+              style={[
+                chatLayoutStyles.senderName,
+                { color: palette.secondaryText },
+              ]}
+            >
+              {displayText(language, item.senderName)}
+            </Text>
+          ) : null}
+        </View>
+      )}
       {bubble}
     </View>
   );
 
   return (
-    <View ref={messageBlockRef} collapsable={false} style={styles.messageBlock}>
+    <View style={styles.messageBlock}>
       {showTimeSeparator ? (
         <View style={styles.messageTimeSeparator}>
           <Text
@@ -739,6 +891,20 @@ export function ChatMessageItem({
   );
 }
 
+const attachmentStyles = StyleSheet.create({
+  body: { maxWidth: '100%' },
+  surface: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    maxWidth: '100%',
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    width: 'auto',
+  },
+  mine: { alignSelf: 'flex-end' },
+  other: { alignSelf: 'flex-start' },
+});
+
 const failureStyles = StyleSheet.create({
   content: { flexShrink: 1, gap: 4 },
   action: { minHeight: 44, justifyContent: 'center' },
@@ -749,6 +915,8 @@ const stickerStyles = StyleSheet.create({
 });
 
 const xunStyles = StyleSheet.create({
+  forwardedLabel: { fontSize: 12, marginHorizontal: 8 },
+  focused: { borderRadius: 12, borderWidth: 1, padding: 2 },
   contentMine: { alignItems: 'flex-end' },
   contentOther: { alignItems: 'flex-start' },
   cardMine: {

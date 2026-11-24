@@ -154,38 +154,6 @@ export const stationProfileStyles = {
   // Prototype `.me-switch-button:active { transform: scale(.97) }`.
   stationSwitchButtonPressed: { transform: [{ scale: 0.97 }] },
   stationSwitchText: { fontSize: 14, fontWeight: '700' },
-  stationTabsViewport: { flex: 1, minWidth: 0 },
-  stationTabs: {
-    alignItems: 'stretch',
-    flexDirection: 'row',
-    gap: 2,
-    paddingHorizontal: 4,
-  },
-  stationTabButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 46,
-    minWidth: 64,
-    paddingHorizontal: 10,
-    position: 'relative',
-  },
-  stationTabLabelRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 3,
-    justifyContent: 'center',
-  },
-  stationTabText: { textAlign: 'center' },
-  stationTabTextActive: { fontSize: 12, fontWeight: '700' },
-  stationTabTextInactive: { fontSize: 11, fontWeight: '400' },
-  stationTabIndicator: {
-    backgroundColor: '#0B8271',
-    borderRadius: 2,
-    bottom: 3,
-    height: 3,
-    position: 'absolute',
-    width: 22,
-  },
   stationNavSettings: {
     alignItems: 'center',
     justifyContent: 'center',

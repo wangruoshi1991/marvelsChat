@@ -1,4 +1,3 @@
-import React from "react";
 import { Breadcrumb, Button, Space, Tag, Typography } from "antd";
 import { Link } from "react-router-dom";
 import { ADMIN_PAGE_DEFINITIONS, resourceHref, visibleResourcePages } from "./admin-workspace.js";

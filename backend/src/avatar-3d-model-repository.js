@@ -3,18 +3,25 @@ import { mapPrivateModel } from "./avatar-3d-repository-mappers.js";
 import { mapAvatar3dModel, sqlLimit } from "./repository-mappers.js";
 
 export function createAvatar3dModelRepository({ queryFn, randomUUID }) {
+  const ownerQuery = (status) => `SELECT id FROM avatar_3d_jobs
+    WHERE id = ? AND user_id = ? AND status = '${status}' AND deleted_at IS NULL
+      AND claim_token IS NOT DISTINCT FROM ? AND (claim_token IS NULL OR claim_lease_until > clock_timestamp())
+    FOR UPDATE`;
+
   const createPreparingModel = async ({
     userId,
     jobId,
     title,
     providerTaskId,
     thumbnail = null,
+    claimToken = null,
   }) => {
     const rows = await queryFn(
-      `INSERT INTO avatar_3d_models
+      `WITH owner AS (${ownerQuery("processing_3d")})
+      INSERT INTO avatar_3d_models
         (id, user_id, job_id, title, provider_task_id, thumbnail_storage_key,
          thumbnail_mime_type, thumbnail_byte_size, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'preparing')
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'preparing' FROM owner
       ON CONFLICT (job_id) DO UPDATE SET
         title = EXCLUDED.title,
         provider_task_id = EXCLUDED.provider_task_id,
@@ -28,6 +35,7 @@ export function createAvatar3dModelRepository({ queryFn, randomUUID }) {
         deleted_at = NULL
       RETURNING *`,
       [
+        jobId, userId, claimToken,
         randomUUID(), userId, jobId, title, providerTaskId,
         thumbnail?.storageKey || null,
         thumbnail?.contentType || null,
@@ -37,20 +45,23 @@ export function createAvatar3dModelRepository({ queryFn, randomUUID }) {
     return rows[0] ? mapAvatar3dModel(rows[0]) : null;
   };
 
-  const completePreparingModel = async ({ userId, jobId, glb }) => {
+  const completePreparingModel = async ({ userId, jobId, glb, claimToken = null }) => {
     if (!glb?.mobile?.storageKey || !glb.mobile.contentType) {
       throw new HttpError(500, "App avatar model asset is missing.", {
         code: "MOBILE_MODEL_ASSET_MISSING",
       });
     }
     const rows = await queryFn(
-      `UPDATE avatar_3d_models
+      `WITH owner AS (${ownerQuery("persisting")})
+      UPDATE avatar_3d_models
       SET glb_storage_key = ?, glb_mime_type = ?, glb_byte_size = ?,
         mobile_glb_storage_key = ?, mobile_glb_mime_type = ?, mobile_glb_byte_size = ?,
         status = 'active'
       WHERE job_id = ? AND user_id = ? AND status = 'preparing' AND deleted_at IS NULL
+        AND EXISTS (SELECT 1 FROM owner)
       RETURNING *`,
       [
+        jobId, userId, claimToken,
         glb.storageKey,
         glb.contentType,
         glb.byteSize,

@@ -43,6 +43,7 @@ test("registers the complete private avatar Web API contract", () => {
     ["post", "/api/avatar-3d/photos/:photoId/complete"],
     ["delete", "/api/avatar-3d/photos/:photoId"],
     ["post", "/api/avatar-3d/jobs"],
+    ["get", "/api/avatar-3d/jobs/submission"],
     ["get", "/api/avatar-3d/jobs/:jobId"],
     ["get", "/api/avatar-3d/jobs/:jobId/references"],
     ["get", "/api/avatar-3d/jobs/:jobId/references/:view/file"],

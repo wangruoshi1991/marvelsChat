@@ -1609,12 +1609,9 @@ input:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .status-spinner {
-    animation-duration: 1.8s;
-  }
-
+  .status-spinner,
   .task-loader {
-    animation-duration: 2.2s;
+    animation: none;
   }
 
   .progress-track span {

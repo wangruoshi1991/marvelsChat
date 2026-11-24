@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   Text,
   TextInput,
   View,
@@ -21,6 +24,7 @@ export function AuthScreen({
   language,
   isBusy,
   errorMessage,
+  accountDeletionReviewNeeded,
   onSignIn,
   onSignUp,
 }: {
@@ -28,6 +32,7 @@ export function AuthScreen({
   language: Language;
   isBusy: boolean;
   errorMessage: string | null;
+  accountDeletionReviewNeeded?: boolean;
   onSignIn: (identifier: string, password: string) => void;
   onSignUp: (
     contactType: RegisterContactType,
@@ -149,29 +154,98 @@ export function AuthScreen({
           </View>
         </View>
       ) : null}
-      <View style={styles.authContent}>
-        <View style={styles.authHero}>
-          <Text style={[styles.authTitle, { color: palette.text }]}>
-            {textFor(language, '妙讯', 'Miaoxun')}
-          </Text>
-          <Text style={[styles.authSubtitle, { color: palette.secondaryText }]}>
-            {textFor(
-              language,
-              'AI 不只问答，找人，找东西，就上妙讯小站。',
-              'Miaoxun is for people and things, not just answers.',
-            )}
-          </Text>
-        </View>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.authScreen}
+      >
+        <ScrollView
+          contentContainerStyle={styles.authContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {accountDeletionReviewNeeded ? (
+            <Text
+              accessibilityRole="alert"
+              style={[styles.authSubtitle, { color: palette.text }]}
+            >
+              {textFor(
+                language,
+                '注销结果待确认。原账号的登录状态已失效，请重新登录。',
+                'Account deletion is unconfirmed. The original session expired. Sign in again.',
+              )}
+            </Text>
+          ) : null}
+          <View style={styles.authHero}>
+            <Text style={[styles.authTitle, { color: palette.text }]}>
+              {textFor(language, '妙讯', 'Miaoxun')}
+            </Text>
+            <Text
+              style={[styles.authSubtitle, { color: palette.secondaryText }]}
+            >
+              {textFor(
+                language,
+                '与你一起成长的数字身份',
+                'Your digital identity, growing with you',
+              )}
+            </Text>
+          </View>
 
-        <View style={styles.authFields}>
-          {mode === 'register' ? (
-            <>
+          <View style={styles.authFields}>
+            {mode === 'register' ? (
+              <>
+                <TextInput
+                  value={displayName}
+                  onChangeText={setDisplayName}
+                  placeholder={textFor(language, '昵称', 'Name')}
+                  placeholderTextColor={palette.secondaryText}
+                  returnKeyType="next"
+                  style={[
+                    styles.authLargeInput,
+                    {
+                      backgroundColor: palette.surface,
+                      borderColor: palette.border,
+                      color: palette.text,
+                    },
+                  ]}
+                />
+                <TextInput
+                  value={registerContact}
+                  onChangeText={setRegisterContact}
+                  placeholder={textFor(
+                    language,
+                    '手机号或邮箱',
+                    'Phone number or email',
+                  )}
+                  placeholderTextColor={palette.secondaryText}
+                  autoCapitalize="none"
+                  keyboardType={
+                    registerContactKind === 'phone'
+                      ? 'phone-pad'
+                      : 'email-address'
+                  }
+                  style={[
+                    styles.authLargeInput,
+                    {
+                      backgroundColor: palette.surface,
+                      borderColor: registerContactWarning
+                        ? palette.rose
+                        : palette.border,
+                      color: palette.text,
+                    },
+                  ]}
+                />
+              </>
+            ) : (
               <TextInput
-                value={displayName}
-                onChangeText={setDisplayName}
-                placeholder={textFor(language, '昵称', 'Name')}
+                value={identifier}
+                onChangeText={setIdentifier}
+                placeholder={textFor(
+                  language,
+                  '手机号 / 邮箱 / 昵称',
+                  'Phone / email / name',
+                )}
                 placeholderTextColor={palette.secondaryText}
-                returnKeyType="next"
+                autoCapitalize="none"
+                keyboardType="email-address"
                 style={[
                   styles.authLargeInput,
                   {
@@ -181,132 +255,88 @@ export function AuthScreen({
                   },
                 ]}
               />
-              <TextInput
-                value={registerContact}
-                onChangeText={setRegisterContact}
-                placeholder={textFor(
-                  language,
-                  '手机号或邮箱',
-                  'Phone number or email',
-                )}
-                placeholderTextColor={palette.secondaryText}
-                autoCapitalize="none"
-                keyboardType={
-                  registerContactKind === 'phone'
-                    ? 'phone-pad'
-                    : 'email-address'
-                }
-                style={[
-                  styles.authLargeInput,
-                  {
-                    backgroundColor: palette.surface,
-                    borderColor: registerContactWarning
-                      ? palette.rose
-                      : palette.border,
-                    color: palette.text,
-                  },
-                ]}
-              />
-            </>
-          ) : (
+            )}
             <TextInput
-              value={identifier}
-              onChangeText={setIdentifier}
-              placeholder={textFor(
-                language,
-                '手机号 / 邮箱 / 昵称',
-                'Phone / email / name',
-              )}
+              value={password}
+              onChangeText={setPassword}
+              placeholder={textFor(language, '密码', 'Password')}
               placeholderTextColor={palette.secondaryText}
-              autoCapitalize="none"
-              keyboardType="email-address"
+              secureTextEntry
+              returnKeyType={mode === 'login' ? 'go' : 'done'}
+              onSubmitEditing={submit}
               style={[
                 styles.authLargeInput,
                 {
                   backgroundColor: palette.surface,
-                  borderColor: palette.border,
+                  borderColor: passwordWarning ? palette.rose : palette.border,
                   color: palette.text,
                 },
               ]}
             />
-          )}
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder={textFor(language, '密码', 'Password')}
-            placeholderTextColor={palette.secondaryText}
-            secureTextEntry
-            style={[
-              styles.authLargeInput,
-              {
-                backgroundColor: palette.surface,
-                borderColor: passwordWarning ? palette.rose : palette.border,
-                color: palette.text,
-              },
-            ]}
-          />
-          {mode === 'register' ? (
-            <View style={styles.authValidationSlot}>
-              <Text
-                style={[
-                  styles.authValidationText,
-                  registerValidationMessage
-                    ? { color: palette.rose }
-                    : styles.authFieldErrorHidden,
-                ]}
-              >
-                {registerValidationMessage || ' '}
-              </Text>
-            </View>
-          ) : null}
-          <Pressable
-            disabled={!canSubmit || isBusy || isSubmitting}
-            onPress={submit}
-            style={[
-              styles.authSubmit,
-              { backgroundColor: palette.mint },
-              (!canSubmit || isBusy || isSubmitting) && styles.disabledButton,
-            ]}
-          >
-            {isBusy || isSubmitting ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <View style={styles.authSubmitContent}>
-                <ArrowRightCircle
-                  color="#ffffff"
-                  size={19}
-                  fill="rgba(255,255,255,0.16)"
-                />
-                <Text style={styles.authSubmitText}>
-                  {mode === 'login'
-                    ? textFor(language, '登录', 'Login')
-                    : textFor(language, '创建账号', 'Create account')}
+            {mode === 'register' ? (
+              <View style={styles.authValidationSlot}>
+                <Text
+                  style={[
+                    styles.authValidationText,
+                    registerValidationMessage
+                      ? { color: palette.rose }
+                      : styles.authFieldErrorHidden,
+                  ]}
+                >
+                  {registerValidationMessage || ' '}
                 </Text>
               </View>
-            )}
-          </Pressable>
-          <View style={styles.authModeRow}>
-            <Text
-              style={[styles.authModeText, { color: palette.secondaryText }]}
-            >
-              {mode === 'login'
-                ? textFor(language, '还没有账号？', 'No account yet?')
-                : textFor(language, '已有账号？', 'Already have an account?')}
-            </Text>
+            ) : null}
             <Pressable
-              onPress={() =>
-                switchMode(mode === 'login' ? 'register' : 'login')
-              }
+              accessibilityRole="button"
+              disabled={!canSubmit || isBusy || isSubmitting}
+              onPress={submit}
+              style={[
+                styles.authSubmit,
+                { backgroundColor: palette.mint },
+                (!canSubmit || isBusy || isSubmitting) && styles.disabledButton,
+              ]}
             >
-              <Text style={[styles.authModeAction, { color: palette.mint }]}>
-                {mode === 'login'
-                  ? textFor(language, '注册一个', 'Create one')
-                  : textFor(language, '返回登录', 'Back to login')}
-              </Text>
+              {isBusy || isSubmitting ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <View style={styles.authSubmitContent}>
+                  <ArrowRightCircle
+                    color="#ffffff"
+                    size={19}
+                    fill="rgba(255,255,255,0.16)"
+                  />
+                  <Text style={styles.authSubmitText}>
+                    {mode === 'login'
+                      ? textFor(language, '登录', 'Login')
+                      : textFor(language, '创建账号', 'Create account')}
+                  </Text>
+                </View>
+              )}
             </Pressable>
+            <View style={styles.authModeRow}>
+              <Text
+                style={[styles.authModeText, { color: palette.secondaryText }]}
+              >
+                {mode === 'login'
+                  ? textFor(language, '还没有账号？', 'No account yet?')
+                  : textFor(language, '已有账号？', 'Already have an account?')}
+              </Text>
+              <Pressable
+                onPress={() =>
+                  switchMode(mode === 'login' ? 'register' : 'login')
+                }
+              >
+                <Text style={[styles.authModeAction, { color: palette.mint }]}>
+                  {mode === 'login'
+                    ? textFor(language, '注册一个', 'Create one')
+                    : textFor(language, '返回登录', 'Back to login')}
+                </Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

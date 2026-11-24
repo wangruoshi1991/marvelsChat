@@ -590,40 +590,17 @@ export function createMediaRetrievalUserService({ repository, provider, resolveC
     if (!dispatch?.canDispatch) {
       return { queued: false, reasonCode: dispatch?.reasonCode || "retrieval_not_enabled" };
     }
-    const created = await repository.createOrGetMediaRetrievalRun({
-      userId,
-      runType: "media-index",
-      inputSummary: { operation: "upload", source: "upload" },
-    });
-    const job = await repository.enqueueAssetIndexJob({
-      userId,
-      mediaAssetId,
-      source: "upload",
-      agentRunId: created.run.id,
-    });
-    if (!job) {
-      await repository.transitionMediaRetrievalRun({
-        userId,
-        agentRunId: created.run.id,
-        lifecycleStatus: "blocked",
-        failureCode: "retrieval_index_enqueue_failed",
-        eventType: "index-not-queued",
-      });
-      return {
-        queued: false,
-        reasonCode: "retrieval_index_enqueue_failed",
-        agentRunId: created.run.id,
-      };
-    }
-    await repository.appendAgentRunEvent({
-      userId,
-      agentRunId: created.run.id,
-      lifecycleStatus: "queued",
-      eventType: "queued",
-      deliveryKey: `queued:${created.run.id}`,
-      payload: { totalAssets: 1, jobType: "index" },
-    });
-    return { queued: true, agentRunId: created.run.id, jobId: job.job.id, reused: Boolean(job.reused) };
+    const result = await repository.enqueueUploadedAssetIndexJob({ userId, mediaAssetId });
+    if (!result) return { queued: false, reasonCode: "retrieval_index_enqueue_failed" };
+    const { run, job, reused } = result;
+    return {
+      queued: true,
+      agentRunId: run?.id ?? null,
+      lifecycleStatus: run?.lifecycleStatus ?? null,
+      jobId: job.id,
+      jobStatus: job.status,
+      reused,
+    };
   };
 
   const getAgentRunEvents = async ({ userId, agentRunId, afterSequence }) => {

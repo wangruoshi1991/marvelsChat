@@ -7,7 +7,7 @@ import {
   deleteStationMediaStorageObject,
 } from "../src/station-media-deletion-service.js";
 
-test("station album deletion removes every stored object before database rows", async () => {
+test("station album deletion delegates once to its transaction", async () => {
   const calls = [];
   const deleteAlbum = createStationAlbumDeletionService({
     listAssets: async () => [
@@ -22,10 +22,10 @@ test("station album deletion removes every stored object before database rows", 
   });
 
   assert.equal(await deleteAlbum({ userId: "user-1", albumId: "album-1" }), true);
-  assert.deepEqual(calls, ["storage:asset-1", "storage:asset-2", "database:album"]);
+  assert.deepEqual(calls, ["database:album"]);
 });
 
-test("station album remains retryable when one stored object cannot be deleted", async () => {
+test("station album deletion propagates a failed transaction", async () => {
   let databaseDeleted = false;
   const deleteAlbum = createStationAlbumDeletionService({
     listAssets: async () => [{ id: "asset-1", storageKey: "one.jpg" }],
@@ -33,7 +33,7 @@ test("station album remains retryable when one stored object cannot be deleted",
       throw new Error("storage unavailable");
     },
     deleteAlbum: async () => {
-      databaseDeleted = true;
+      throw new Error("database unavailable");
     },
   });
 
@@ -41,7 +41,7 @@ test("station album remains retryable when one stored object cannot be deleted",
   assert.equal(databaseDeleted, false);
 });
 
-test("station media deletion removes storage before the database record", async () => {
+test("station media deletion delegates once to its transaction", async () => {
   const calls = [];
   const deleteMedia = createStationMediaDeletionService({
     findAsset: async () => ({
@@ -60,10 +60,10 @@ test("station media deletion removes storage before the database record", async 
     await deleteMedia({ userId: "user-1", mediaAssetId: "asset-1" }),
     { id: "asset-1" },
   );
-  assert.deepEqual(calls, ["storage", "database"]);
+  assert.deepEqual(calls, ["database"]);
 });
 
-test("station media remains retryable when storage deletion fails", async () => {
+test("station media deletion propagates a failed transaction", async () => {
   let databaseDeleted = false;
   const deleteMedia = createStationMediaDeletionService({
     findAsset: async () => ({
@@ -75,7 +75,7 @@ test("station media remains retryable when storage deletion fails", async () => 
       throw new Error("storage unavailable");
     },
     deleteAsset: async () => {
-      databaseDeleted = true;
+      throw new Error("database unavailable");
     },
   });
 

@@ -1,4 +1,5 @@
 import { Language } from '../features/session/useMiaoxunSession';
+import { getVoiceCallConflict } from '../services/voiceCall/voiceCallResources';
 import { PublicPresenceStatus } from '../models/api';
 
 export const textFor = (language: Language, zh: string, en: string) =>
@@ -26,6 +27,8 @@ export const appErrorText = (
   fallbackZh: string,
   fallbackEn: string,
 ) => {
+  const conflict = getVoiceCallConflict(error);
+  if (conflict) return textFor(language, ...conflict);
   const rawMessage =
     error instanceof Error
       ? error.message

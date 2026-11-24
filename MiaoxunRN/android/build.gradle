@@ -19,3 +19,10 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+// Keep the Android and iOS WebRTC engines on the same tested release.
+allprojects {
+    configurations.configureEach {
+        resolutionStrategy.force 'org.jitsi:webrtc:155.0.1'
+    }
+}

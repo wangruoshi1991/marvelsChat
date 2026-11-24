@@ -43,7 +43,11 @@ node scripts/miaoxun-development.mjs ios
 ## 隔离后端验证
 
 ```bash
-cp backend/.env.example backend/.env
+if [ -e backend/.env ]; then
+  printf 'backend/.env already exists; preserve it and configure an isolated copy outside the repository.\n' >&2
+  exit 1
+fi
+cp -n backend/.env.example backend/.env
 cd backend
 npm install
 npm run db:migrate
@@ -78,6 +82,11 @@ http://127.0.0.1:5175
 http://127.0.0.1:4390/api/health
 http://127.0.0.1:4390/api/ready
 ```
+
+The migration, bootstrap, and `ready` checks are explicit prerequisites for an
+isolated backend verification. `cp -n` refuses to overwrite an existing `.env`.
+The daily `node scripts/miaoxun-development.mjs ios` command is a separate iOS
+build path and does not start or depend on the local backend.
 
 `MiaoxunRN` iOS API 地址来自 Xcode build setting，并通过 `MiaoxunConfigModule` 暴露给 JS。当前仓库中的 Debug 与 Release build setting 都显式写入 ECS 的受信任 IP HTTPS origin：
 

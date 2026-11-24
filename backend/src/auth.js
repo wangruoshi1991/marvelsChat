@@ -47,6 +47,17 @@ export async function verifyPassword(password, storedHash) {
 
 export const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
 
+export async function getActiveRealtimeSessionIds(sessionIds) {
+  if (!sessionIds.length) return new Set();
+  const rows = await query(
+    `SELECT s.id FROM auth_sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.id = ANY(?::bpchar[]) AND s.revoked_at IS NULL
+       AND s.expires_at > statement_timestamp() AND u.status = 'active'`,
+    [sessionIds],
+  );
+  return new Set(rows.map(row => row.id));
+}
+
 export function createPlainToken() {
   return crypto.randomBytes(32).toString("base64url");
 }

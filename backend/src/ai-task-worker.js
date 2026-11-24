@@ -15,6 +15,9 @@ import { createComicRenderExecutor } from "./comic-render-executor.js";
 import { createComicRenderStorage } from "./comic-render-storage.js";
 import { recordAITaskWorkerStatus } from "./ai-task-worker-status-repository.js";
 import { getOssRuntimeStatus } from "./asset-storage-service.js";
+import { processStorageCleanup } from "./storage-cleanup-repository.js";
+import { deletePrivateStorageObject } from "./storage-deletion-service.js";
+import { createWorkerHealthReporter } from "./worker-health.js";
 
 // This is a process/database liveness diagnostic, not proof that the queue or a
 // model call is progressing. Check lastSuccessfulPollAt and queue age as well.
@@ -22,18 +25,22 @@ export function createAITaskWorkerHeartbeat({
   runner, checkConnection = () => query("SELECT 1 AS ok"), logger = console,
   intervalMs = 30000, timeoutMs = 5000, now = () => Date.now(),
   recordStatus = null, instanceId = crypto.randomUUID(), capabilities = [],
+  reportHealth = null,
 } = {}) {
   let timer;
   let stopped = false;
   let pending = null;
   let lastDatabaseSuccessAt = null;
+  const ready = (state, lastSuccessfulPollAt) => {
+    const lastPoll = Date.parse(lastSuccessfulPollAt);
+    return state === "running" || (state === "idle" && Number.isFinite(lastPoll) && now() - lastPoll < 90000);
+  };
   const runOnce = async () => {
     if (stopped || pending) return false;
     const check = Promise.resolve().then(checkConnection).then(async () => {
       if (stopped) return;
       const state = runner.getState();
-      const lastPoll = Date.parse(state.lastSuccessfulPollAt);
-      const live = state.state === "running" || (state.state === "idle" && Number.isFinite(lastPoll) && now() - lastPoll < 90000);
+      const live = ready(state.state, state.lastSuccessfulPollAt);
       await recordStatus?.({ instanceId, state: live ? "ready" : "starting", capabilities });
     });
     pending = check;
@@ -46,8 +53,11 @@ export function createAITaskWorkerHeartbeat({
       })]);
       if (stopped) return false;
       lastDatabaseSuccessAt = new Date(now()).toISOString();
+      const state = runner.getState();
+      reportHealth?.(ready(state.state, state.lastSuccessfulPollAt)
+        && ready(state.workspaceState, state.workspaceLastSuccessfulPollAt));
       logger.log(JSON.stringify({ type: "ai_task_worker_heartbeat", checkedAt: lastDatabaseSuccessAt,
-        databaseConnected: true, lastDatabaseSuccessAt, ...runner.getState() }));
+        databaseConnected: true, lastDatabaseSuccessAt, ...state }));
       return true;
     } catch {
       if (!stopped) logger.error(JSON.stringify({ type: "ai_task_worker_heartbeat", checkedAt: new Date(now()).toISOString(),
@@ -69,24 +79,41 @@ export function createAITaskWorkerHeartbeat({
     },
     async stop() {
       stopped = true; clearInterval(timer);
+      reportHealth?.(false);
       if (pending) await pending.catch(() => {});
       await recordStatus?.({ instanceId, state: "stopped", capabilities: [] });
     },
   };
 }
 
-export function createComicRenderMaintenance({ storage, configured, logger = console, intervalMs = 60000 } = {}) {
+export function createComicRenderMaintenance({
+  storage, configured, logger = console, intervalMs = 60000,
+  failureType = "comic_storage_cleanup_failed", failureCode = "COMIC_STORAGE_CLEANUP_FAILED",
+} = {}) {
   let timer, pending = null, stopped = false;
   const runOnce = () => {
     if (stopped || pending || !configured) return Promise.resolve(false);
     pending = Promise.resolve().then(() => storage.collectCleanup()).then(() => true).catch(() => {
-      logger.error(JSON.stringify({ type: "comic_storage_cleanup_failed", code: "COMIC_STORAGE_CLEANUP_FAILED" }));
+      logger.error(JSON.stringify({ type: failureType, code: failureCode }));
       return false;
     }).finally(() => { pending = null; });
     return pending;
   };
   return { runOnce, start() { if (timer || stopped || !configured) return; void runOnce(); timer = setInterval(runOnce, intervalMs); timer.unref?.(); },
     async stop() { stopped = true; clearInterval(timer); if (pending) await pending; } };
+}
+
+export function createStorageCleanupMaintenance({ logger = console } = {}) {
+  return createComicRenderMaintenance({
+    configured: true,
+    logger,
+    storage: { collectCleanup: async () => {
+      const result = await processStorageCleanup({ deleteObject: deletePrivateStorageObject });
+      if (result.failed) logger.error(JSON.stringify({ type: "private_storage_cleanup_retry", count: result.failed }));
+    } },
+    failureType: "private_storage_cleanup_failed",
+    failureCode: "PRIVATE_STORAGE_CLEANUP_FAILED",
+  });
 }
 
 export async function startAITaskWorker({
@@ -99,7 +126,12 @@ export async function startAITaskWorker({
   imageProvider = comicImageProvider, comicStorage = createComicRenderStorage(),
   storageStatus = getOssRuntimeStatus(), comicRepository,
   createComicMaintenance = createComicRenderMaintenance,
+  createCleanupMaintenance = runtime === process ? createStorageCleanupMaintenance : () => ({
+    start() {},
+    async stop() {},
+  }),
   recordWorkerStatus = recordAITaskWorkerStatus,
+  reportHealth = null,
 } = {}) {
   const database = await check();
   if (!database.connected || !database.migrationsCurrent) {
@@ -124,20 +156,22 @@ export async function startAITaskWorker({
       activeNodes: workspace.activeNodes, workspaceState: workspace.state,
       workspaceLastSuccessfulPollAt: workspace.lastSuccessfulPollAt };
   } };
-  const heartbeat = createHeartbeat({ runner: monitor, logger, recordStatus: recordWorkerStatus,
+  const heartbeat = createHeartbeat({ runner: monitor, logger, recordStatus: recordWorkerStatus, reportHealth,
     capabilities: Object.keys(executors) });
   const attachmentMaintenance = createAttachmentMaintenance({ logger });
   const comicMaintenance = createComicMaintenance({ storage: comicStorage, configured: storageStatus.configured, logger });
+  const cleanupMaintenance = createCleanupMaintenance({ logger });
   runner.start();
   workspaceRunner.start();
   heartbeat.start();
   attachmentMaintenance.start();
   comicMaintenance.start();
+  cleanupMaintenance.start();
   logger.log(JSON.stringify({ type: "ai_task_worker_started", contractVersion: aiClientContracts.aiTasks, workspaceContractVersion: aiClientContracts.agentWorkspaces }));
   let stopping = null;
   const stop = () => {
     if (stopping) return stopping;
-    const stopped = Promise.all([heartbeat.stop(), runner.stop(), workspaceRunner.stop(), attachmentMaintenance.stop(), comicMaintenance.stop()]);
+    const stopped = Promise.all([heartbeat.stop(), runner.stop(), workspaceRunner.stop(), attachmentMaintenance.stop(), comicMaintenance.stop(), cleanupMaintenance.stop()]);
     logger.log(JSON.stringify({ type: "ai_task_worker_stopping", ...monitor.getState() }));
     const deadline = setTimeout(() => runtime.exit(1), 75000);
     stopping = stopped.then(close).then(() => {
@@ -152,5 +186,5 @@ export async function startAITaskWorker({
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  await startAITaskWorker();
+  await startAITaskWorker({ reportHealth: createWorkerHealthReporter() });
 }

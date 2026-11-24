@@ -13,6 +13,7 @@ import {
   Image,
   Keyboard,
   PanResponder,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -392,17 +393,23 @@ test('V15 bottom-edge return uses the native scroller touch release without taki
   act(() => scroll.onTouchStart(floorTouchEvent(500)));
   act(() => scroll.onScrollBeginDrag(floorScrollEvent(300)));
   act(() => scroll.onScroll(floorScrollEvent(530)));
-  act(() => scroll.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(330, 120, 0)));
+  expect(props.onClose).not.toHaveBeenCalled();
+  // Metrics at dragBegin cannot reclassify a contact that started up-page.
+  act(() => scroll.onScroll(floorScrollEvent(450)));
+  act(() => scroll.onTouchStart(floorTouchEvent(500)));
+  act(() => scroll.onScrollBeginDrag(floorScrollEvent(499)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(330, 120, 0)));
   expect(props.onClose).not.toHaveBeenCalled();
   // Native dragEnd can run before touchEnd; the latter still owns its origin.
   act(() => scroll.onTouchStart(floorTouchEvent(500)));
   act(() => scroll.onScrollBeginDrag(floorScrollEvent(499)));
   act(() => scroll.onScroll(floorScrollEvent(540)));
   act(() => scroll.onScrollEndDrag(floorScrollEvent(540)));
-  act(() => scroll.onTouchEnd(floorTouchEvent(399, 120, 0)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(339, 120, 0)));
   expect(props.onClose).toHaveBeenCalledTimes(1);
   act(() => scroll.onMomentumScrollEnd(floorScrollEvent(500)));
-  act(() => scroll.onTouchEnd(floorTouchEvent(399, 120, 0)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(339, 120, 0)));
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 
@@ -428,18 +435,18 @@ test.each([
     expect(landing.alwaysBounceVertical).toBe(true);
     act(() => landing.onTouchStart(floorTouchEvent(500)));
     act(() => landing.onScrollBeginDrag(floorScrollEvent(0, 300, 500)));
-    act(() => landing.onTouchEnd(floorTouchEvent(399, 120, 0)));
+    act(() => landing.onTouchEnd(floorTouchEvent(339, 120, 0)));
     expect(props.onClose).toHaveBeenCalledTimes(1);
     await act(async () => tool(key).props.onPress());
     const scroll = renderer.root
       .findByType(component)
       .findByType(ScrollView).props;
     expect(scroll.alwaysBounceVertical).toBe(true);
-    // Native rubber-band displacement need not reach the finger's 100pt.
+    // Native rubber-band displacement need not reach the finger's 160pt.
     act(() => scroll.onTouchStart(floorTouchEvent(500)));
     act(() => scroll.onScrollBeginDrag(floorScrollEvent(0, 300, 500)));
     act(() => scroll.onScroll(floorScrollEvent(35, 300, 500)));
-    act(() => scroll.onTouchEnd(floorTouchEvent(399, 120, 0)));
+    act(() => scroll.onTouchEnd(floorTouchEvent(339, 120, 0)));
     expect(props.onClose).toHaveBeenCalledTimes(2);
   },
 );
@@ -455,7 +462,7 @@ test('short landing and panel pages arm return from measured dimensions before a
   act(() => landing.onContentSizeChange(390, 300));
   act(() => landing.onLayout({ nativeEvent: { layout: { height: 500 } } }));
   act(() => landing.onTouchStart(floorTouchEvent(500)));
-  act(() => landing.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => landing.onTouchEnd(floorTouchEvent(330, 120, 0)));
   expect(props.onClose).toHaveBeenCalledTimes(1);
 
   await act(async () => tool('relationships').props.onPress());
@@ -465,7 +472,7 @@ test('short landing and panel pages arm return from measured dimensions before a
   act(() => page.onContentSizeChange(390, 300));
   act(() => page.onLayout({ nativeEvent: { layout: { height: 500 } } }));
   act(() => page.onTouchStart(floorTouchEvent(500)));
-  act(() => page.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => page.onTouchEnd(floorTouchEvent(330, 120, 0)));
   expect(props.onClose).toHaveBeenCalledTimes(2);
 });
 
@@ -490,18 +497,57 @@ test('V15 settings keeps a real scrolling viewport before bottom-edge return is 
   act(() => scroll.onTouchStart(floorTouchEvent(520)));
   act(() => scroll.onScrollBeginDrag(floorScrollEvent(0, 1400, 500)));
   act(() => scroll.onScroll(floorScrollEvent(240, 1400, 500)));
-  act(() => scroll.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(330, 120, 0)));
   expect(props.onClose).not.toHaveBeenCalled();
 
   // Only a release that starts at the content end returns to the conversation.
+  act(() => scroll.onScroll(floorScrollEvent(900, 1400, 500)));
   act(() => scroll.onTouchStart(floorTouchEvent(520)));
   act(() => scroll.onScrollBeginDrag(floorScrollEvent(900, 1400, 500)));
   act(() => scroll.onScroll(floorScrollEvent(900, 1400, 500)));
-  act(() => scroll.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(330, 120, 0)));
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 
-test('bottom-edge return honors a configured distance above the 72px safety floor', async () => {
+test('Android content uses native touch endpoints and preserves the bottom gate', async () => {
+  const platform = jest.replaceProperty(Platform, 'OS', 'android');
+  const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+  try {
+    await act(async () => {
+      renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+    });
+    await act(async () => tool('settings').props.onPress());
+    const settings = renderer.root.findByType(SecondFloorSettings);
+    const touch = settings.props.scrollProps.onFloorTouch;
+    expect(settings.props.scrollProps.onTouchEnd).toBeUndefined();
+
+    const sample = (
+      phase: 'start' | 'move' | 'end' | 'cancel',
+      y: number,
+      atBottom = true,
+    ) => act(() => touch({ phase, x: 100, y, atBottom }));
+
+    sample('start', 500, false);
+    sample('end', 250);
+    sample('start', 500);
+    sample('move', 320);
+    sample('end', 341);
+    sample('start', 500);
+    sample('cancel', 400);
+    sample('end', 330);
+    sample('start', 500);
+    sample('end', 300, false);
+    expect(props.onClose).not.toHaveBeenCalled();
+
+    sample('start', 500);
+    sample('end', 340);
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  } finally {
+    platform.restore();
+  }
+});
+
+test('bottom-edge return protects existing low distance preferences', async () => {
   const preferences = defaultUIPreferences();
   preferences.gestures['secondFloor.swipeToExit'] = {
     ...preferences.gestures['secondFloor.swipeToExit']!,
@@ -519,11 +565,17 @@ test('bottom-edge return honors a configured distance above the 72px safety floo
     .findByType(SecondFloorRelationships)
     .findByType(ScrollView).props;
 
-  // The page is at its measured bottom. An 89px upward release uses the
-  // configured 88px threshold while keeping the safer minimum floor.
+  // The measured page bottom can return only after the deliberate distance.
   act(() => scroll.onTouchStart(floorTouchEvent(500)));
   act(() => scroll.onScrollBeginDrag(floorScrollEvent(499, 1000, 500)));
   act(() => scroll.onTouchEnd(floorTouchEvent(411, 120, 0)));
+  expect(props.onClose).not.toHaveBeenCalled();
+  act(() => scroll.onTouchStart(floorTouchEvent(500)));
+  act(() => scroll.onTouchMove(floorTouchEvent(300)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(341, 120, 0)));
+  expect(props.onClose).not.toHaveBeenCalled();
+  act(() => scroll.onTouchStart(floorTouchEvent(500)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(340, 120, 0)));
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 
@@ -544,7 +596,7 @@ test('return release reads changedTouches coordinates and rejects missing releas
     landing.onTouchEnd({
       nativeEvent: {
         touches: [],
-        changedTouches: [{ pageX: 120, pageY: 350 }],
+        changedTouches: [{ pageX: 120, pageY: 330 }],
       },
     }),
   );
@@ -589,11 +641,11 @@ test('bottom-edge release ignores short, sideways, downward, multitouch and canc
   act(() => scroll.onTouchStart(floorTouchEvent(500)));
   act(() => scroll.onScrollBeginDrag(floorScrollEvent(499)));
   act(() => scroll.onTouchMove(floorTouchEvent(450, 120, 2)));
-  act(() => scroll.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(330, 120, 0)));
   act(() => scroll.onTouchStart(floorTouchEvent(500)));
   act(() => scroll.onScrollBeginDrag(floorScrollEvent(499)));
   act(() => scroll.onTouchCancel());
-  act(() => scroll.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => scroll.onTouchEnd(floorTouchEvent(330, 120, 0)));
   act(() => scroll.onScrollBeginDrag(floorScrollEvent(499)));
   act(() => scroll.onScrollEndDrag(floorScrollEvent(550)));
   expect(props.onClose).not.toHaveBeenCalled();
@@ -625,9 +677,9 @@ test('hidden file and previous-activation touch events cannot arm or clear the c
   for (const old of [oldFiles, oldRelationships, inactive]) {
     act(() => old.onTouchStart(floorTouchEvent(500)));
     act(() => old.onScrollBeginDrag(floorScrollEvent(499)));
-    act(() => old.onTouchEnd(floorTouchEvent(350, 120, 0)));
+    act(() => old.onTouchEnd(floorTouchEvent(330, 120, 0)));
   }
-  act(() => current.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => current.onTouchEnd(floorTouchEvent(330, 120, 0)));
   expect(props.onClose).not.toHaveBeenCalled();
   act(() => current.onTouchStart(floorTouchEvent(500)));
   act(() => current.onScrollBeginDrag(floorScrollEvent(499)));
@@ -635,10 +687,10 @@ test('hidden file and previous-activation touch events cannot arm or clear the c
     act(() => old.onScrollEndDrag(floorScrollEvent(300)));
     act(() => old.onMomentumScrollEnd(floorScrollEvent(300)));
     act(() => old.onTouchCancel());
-    act(() => old.onTouchEnd(floorTouchEvent(350, 120, 0)));
+    act(() => old.onTouchEnd(floorTouchEvent(330, 120, 0)));
   }
   act(() => current.onMomentumScrollEnd(floorScrollEvent(499)));
-  act(() => current.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => current.onTouchEnd(floorTouchEvent(330, 120, 0)));
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 
@@ -653,7 +705,7 @@ test('a switched-away landing gesture cannot exit a selected page', async () => 
   act(() => landing.onTouchStart(floorTouchEvent(500)));
   act(() => landing.onScrollBeginDrag(floorScrollEvent(0, 300, 500)));
   await act(async () => tool('relationships').props.onPress());
-  act(() => landing.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => landing.onTouchEnd(floorTouchEvent(330, 120, 0)));
   expect(props.onClose).not.toHaveBeenCalled();
 });
 
@@ -745,7 +797,7 @@ test('file save gates every floor exit and tool switch until failure, preserving
     .findByType(ScrollView).props;
   act(() => fileScroll.onTouchStart(floorTouchEvent(500)));
   act(() => fileScroll.onScrollBeginDrag(floorScrollEvent(0, 300, 500)));
-  act(() => fileScroll.onTouchEnd(floorTouchEvent(350, 120, 0)));
+  act(() => fileScroll.onTouchEnd(floorTouchEvent(330, 120, 0)));
   expect(props.onClose).not.toHaveBeenCalled();
   await act(async () => {
     work.reject(new Error('连接已断开'));
@@ -761,6 +813,73 @@ test('file save gates every floor exit and tool switch until failure, preserving
       .props.onAccessibilityTap(),
   );
   expect(props.onClose).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  ['upward', 493, 120],
+  ['downward', 507, 120],
+  ['sideways', 500, 127],
+] as const)(
+  'a short %s move in the return button cannot fall through to a tap',
+  async (_direction, pageY, pageX) => {
+    const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+    await act(async () => {
+      renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+    });
+    const handle = renderer.root.findByProps({
+      testID: 'floor-return-gesture',
+    });
+    act(() => handle.props.onTouchStart?.(floorTouchEvent(500)));
+    act(() => handle.props.onTouchMove?.(floorTouchEvent(pageY, pageX)));
+    // RN Pressability can still emit onPress for movement below its own
+    // retention boundary. A failed swipe must not become a tap-to-return.
+    act(() => handle.props.onPress(floorTouchEvent(pageY, pageX, 0)));
+    expect(props.onClose).not.toHaveBeenCalled();
+    act(() => handle.props.onTouchStart?.(floorTouchEvent(500)));
+    act(() => handle.props.onPress(floorTouchEvent(502, 121, 0)));
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  },
+);
+
+test('return button keeps a movement cancellation even when the finger returns to its origin', async () => {
+  const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+  const handle = renderer.root.findByProps({ testID: 'floor-return-gesture' });
+  act(() => handle.props.onTouchStart?.(floorTouchEvent(500)));
+  act(() => handle.props.onTouchMove?.(floorTouchEvent(492)));
+  act(() => handle.props.onTouchMove?.(floorTouchEvent(500)));
+  act(() => handle.props.onPress(floorTouchEvent(500, 120, 0)));
+  expect(props.onClose).not.toHaveBeenCalled();
+  act(() => handle.props.onAccessibilityTap());
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+});
+
+test('return button checks the release point when no intermediate move was delivered', async () => {
+  const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+  const handle = renderer.root.findByProps({ testID: 'floor-return-gesture' });
+  act(() => handle.props.onTouchStart?.(floorTouchEvent(500)));
+  act(() => handle.props.onPress(floorTouchEvent(492, 120, 0)));
+  expect(props.onClose).not.toHaveBeenCalled();
+});
+
+test('cancelled or multiple touches in the return button cannot become a tap', async () => {
+  const props = { ...floorProps(), palette: xunPalette(palettes.light) };
+  await act(async () => {
+    renderer = TestRenderer.create(<SecondFloorScreen {...props} />);
+  });
+  const handle = renderer.root.findByProps({ testID: 'floor-return-gesture' });
+  act(() => handle.props.onTouchStart?.(floorTouchEvent(500)));
+  act(() => handle.props.onTouchCancel?.(floorTouchEvent(500, 120, 0)));
+  act(() => handle.props.onPress(floorTouchEvent(500, 120, 0)));
+  act(() => handle.props.onTouchStart?.(floorTouchEvent(500)));
+  act(() => handle.props.onTouchMove?.(floorTouchEvent(500, 120, 2)));
+  act(() => handle.props.onPress(floorTouchEvent(500, 120, 0)));
+  expect(props.onClose).not.toHaveBeenCalled();
 });
 
 test('return responder only handles upward vertical motion and ignores inactive floors', async () => {
@@ -780,25 +899,30 @@ test('return responder only handles upward vertical motion and ignores inactive 
     pressHost.props.onResponderRelease,
   );
   const config = pan.mock.calls[0][0];
-  const event = {} as Parameters<
-    NonNullable<typeof config.onPanResponderRelease>
-  >[0];
-  const gesture = (dx: number, dy: number) =>
-    ({ dx, dy } as Parameters<
-      NonNullable<typeof config.onPanResponderRelease>
-    >[1]);
-  expect(config.onMoveShouldSetPanResponder?.(event, gesture(-80, -20))).toBe(
+  const gesture = { dx: 0, dy: 0 } as never;
+  const event = (x: number, y: number, release = false) =>
+    floorTouchEvent(y, x, release ? 0 : 1) as never;
+  const start = () =>
+    config.onStartShouldSetPanResponderCapture?.(event(120, 500), gesture);
+  start();
+  expect(config.onMoveShouldSetPanResponder?.(event(40, 480), gesture)).toBe(
     false,
   );
-  expect(config.onMoveShouldSetPanResponder?.(event, gesture(0, 90))).toBe(
+  start();
+  expect(config.onMoveShouldSetPanResponder?.(event(120, 590), gesture)).toBe(
     false,
   );
-  expect(config.onMoveShouldSetPanResponder?.(event, gesture(0, -20))).toBe(
+  start();
+  expect(config.onMoveShouldSetPanResponder?.(event(120, 480), gesture)).toBe(
     true,
   );
-  act(() => config.onPanResponderRelease?.(event, gesture(0, -40)));
+  act(() => config.onPanResponderGrant?.(event(120, 480), gesture));
+  act(() => config.onPanResponderMove?.(event(120, 350), gesture));
+  act(() => config.onPanResponderRelease?.(event(120, 373, true), gesture));
   expect(props.onClose).not.toHaveBeenCalled();
-  act(() => config.onPanResponderRelease?.(event, gesture(0, -90)));
+  start();
+  act(() => config.onPanResponderGrant?.(event(120, 480), gesture));
+  act(() => config.onPanResponderRelease?.(event(120, 372, true), gesture));
   expect(props.onClose).toHaveBeenCalledTimes(1);
   act(() => renderer.update(<SecondFloorScreen {...props} active={false} />));
   act(() =>
@@ -815,7 +939,7 @@ test('return responder consumes configured direction and distance', async () => 
   preferences.gestures['secondFloor.swipeToExit'] = {
     ...preferences.gestures['secondFloor.swipeToExit']!,
     direction: 'left',
-    distance: 120,
+    distance: 140,
   };
   const props = floorProps(sessionForFloor({ uiPreferences: preferences }));
   await act(async () => {
@@ -823,19 +947,21 @@ test('return responder consumes configured direction and distance', async () => 
   });
   const config = pan.mock.calls[0]?.[0];
   expect(config).toBeDefined();
-  const event = {} as Parameters<
-    NonNullable<typeof config.onPanResponderRelease>
-  >[0];
-  const gesture = (dx: number, dy = 0) =>
-    ({ dx, dy, vx: 0, vy: 0 } as Parameters<
-      NonNullable<typeof config.onPanResponderRelease>
-    >[1]);
-
-  expect(config.onMoveShouldSetPanResponder?.(event, gesture(-20))).toBe(true);
-  expect(config.onMoveShouldSetPanResponder?.(event, gesture(20))).toBe(false);
-  act(() => config.onPanResponderRelease?.(event, gesture(-119)));
+  const gesture = { dx: 0, dy: 0, vx: 0, vy: 0 } as never;
+  const event = (x: number, release = false) =>
+    floorTouchEvent(500, x, release ? 0 : 1) as never;
+  const start = () =>
+    config.onStartShouldSetPanResponderCapture?.(event(150), gesture);
+  start();
+  expect(config.onMoveShouldSetPanResponder?.(event(170), gesture)).toBe(false);
+  start();
+  expect(config.onMoveShouldSetPanResponder?.(event(130), gesture)).toBe(true);
+  act(() => config.onPanResponderGrant?.(event(130), gesture));
+  act(() => config.onPanResponderRelease?.(event(11, true), gesture));
   expect(props.onClose).not.toHaveBeenCalled();
-  act(() => config.onPanResponderRelease?.(event, gesture(-121)));
+  start();
+  act(() => config.onPanResponderGrant?.(event(130), gesture));
+  act(() => config.onPanResponderRelease?.(event(10, true), gesture));
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 

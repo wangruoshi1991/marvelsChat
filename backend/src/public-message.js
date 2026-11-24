@@ -23,14 +23,14 @@ function publicAttachments(value) {
   if (!Array.isArray(value)) return undefined;
   return value.flatMap(item => {
     if (!record(item) || !/^[a-f0-9-]{36}$/i.test(item.id || '') ||
-      !['image','audio','file','location','contact','task'].includes(item.kind) ||
+      !['image','audio','file','video','location','contact','task'].includes(item.kind) ||
       !text(item.filename) || !text(item.title) || !Number.isInteger(item.byteSize) ||
       item.byteSize < 0 || item.byteSize > 8388608 || !record(item.data)) return [];
     const data = {};
     const dataKeys = item.kind === 'location' ? ['latitude','longitude','label'] :
       item.kind === 'contact' ? ['userId','name','aiId'] : item.kind === 'task' ? ['taskId','taskKind','title','status'] : [];
     for (const key of dataKeys) if (text(item.data[key]) || (['latitude','longitude'].includes(key) && Number.isFinite(item.data[key]))) data[key] = item.data[key];
-    const downloadPath = ['image','audio','file'].includes(item.kind) ? `/api/chat-attachments/${item.id}/content` : null;
+    const downloadPath = ['image','audio','file','video'].includes(item.kind) ? `/api/chat-attachments/${item.id}/content` : null;
     return [{id:item.id,kind:item.kind,filename:item.filename,title:item.title,
       mimeType:text(item.mimeType) ? item.mimeType : null,byteSize:item.byteSize,
       durationMs:Number.isInteger(item.durationMs) && item.durationMs > 0 ? item.durationMs : null,downloadPath,data}];
@@ -61,6 +61,7 @@ function publicMetadata(value, suppressAttachments = false, isAgent = false) {
     metadata.contributionDiscussion = { state: "available" };
   }
   if (text(value.senderUserId)) metadata.senderUserId = value.senderUserId;
+  if (!suppressAttachments && !isAgent && value.forwarded === true) metadata.forwarded = true;
   if (value.butlerContextReset === true) metadata.butlerContextReset = true;
   if (value.agentContextReset === true) metadata.agentContextReset = true;
   if (record(value.agentDispatch) && value.agentDispatch.version === 1 &&
@@ -129,6 +130,7 @@ export function publicMessage(message) {
     senderType: message.senderType,
     senderName: message.senderName,
     content: message.content,
+    ...(message.unreadSequence !== undefined ? { unreadSequence: message.unreadSequence } : {}),
     metadata: publicMetadata(message.metadata, Boolean(message.deletedAt || message.recalledAt), message.senderType === "agent"),
     clientMessageId: message.clientMessageId || null,
     deletedAt: message.deletedAt || null,

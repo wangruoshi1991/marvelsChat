@@ -61,6 +61,8 @@ export function registerAppRoutes(
     listUserMessages = listMessagesForThreads,
     listUserNotifications = listNotificationsForUser,
     getUnreadNotices = unreadNotificationCount,
+    chatMessageText = { translate: false, transcribe: false },
+    getChatVoiceCalls = () => undefined,
   },
 ) {
   app.get("/api/health", (_req, res) => {
@@ -154,6 +156,10 @@ export function registerAppRoutes(
           ...data,
           messagesByThread: publicMessagesByThread(data.messagesByThread),
           contracts: aiClientContracts,
+          chatMessageText,
+          chatVoiceCalls: getChatVoiceCalls(),
+          chatVideoEnabled: true,
+          chatMessageReceipts: { directDelivery: 1, readDisclosure: false },
           products: catalog.products,
           entitlements: catalog.entitlements,
           catalogRevision: catalog.catalogRevision,
@@ -201,6 +207,10 @@ export function registerAppRoutes(
           serverTime,
           threads,
           messagesByThread,
+          chatMessageText,
+          chatVoiceCalls: getChatVoiceCalls(),
+          chatVideoEnabled: true,
+          chatMessageReceipts: { directDelivery: 1, readDisclosure: false },
           notices,
           unreadNoticeCount: unreadNotices,
           agents: {

@@ -86,7 +86,8 @@ if (!enabled) {
           VALUES ($1, $2, 'test-only-hash', $3, $4)`, [id, `${id}@example.test`, `Task ${id.slice(0, 8)}`, aiId]);
       }
     } finally { client.release(); }
-    repository = createAITaskRepository({ query: createConnectionAdapter(pool).query, withTransaction: transaction });
+    repository = createAITaskRepository({ query: createConnectionAdapter(pool).query,
+      withTransaction: transaction, withLeaseTransaction: transaction });
   });
   after(async () => {
     if (pool) {

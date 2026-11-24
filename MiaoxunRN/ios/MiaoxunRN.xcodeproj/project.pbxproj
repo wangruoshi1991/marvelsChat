@@ -14,13 +14,16 @@
 		761780F12CA45674006654EE /* QRCodeScannerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780F02CA45674006654EE /* QRCodeScannerViewController.swift */; };
 		761780F32CA45674006654EE /* QRCodeScannerModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 761780F22CA45674006654EE /* QRCodeScannerModuleBridge.m */; };
 		761780F52CA45674006654EE /* MiaoxunHapticsModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780F42CA45674006654EE /* MiaoxunHapticsModule.swift */; };
-		AA1780F52CA45674006654EE /* MiaoxunDocumentPickerModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1780F42CA45674006654EE /* MiaoxunDocumentPickerModule.swift */; };
 		761780F72CA45674006654EE /* MiaoxunHapticsModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 761780F62CA45674006654EE /* MiaoxunHapticsModuleBridge.m */; };
+		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		A5BA25080721E5EE847639B7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		AA1780F52CA45674006654EE /* MiaoxunDocumentPickerModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1780F42CA45674006654EE /* MiaoxunDocumentPickerModule.swift */; };
 		AA1780F72CA45674006654EE /* MiaoxunDocumentPickerModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = AA1780F62CA45674006654EE /* MiaoxunDocumentPickerModuleBridge.m */; };
 		B701A0012CA45674006654EE /* MiaoxunMediaLibraryModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B701A0002CA45674006654EE /* MiaoxunMediaLibraryModule.swift */; };
 		B701A0032CA45674006654EE /* MiaoxunMediaLibraryModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = B701A0022CA45674006654EE /* MiaoxunMediaLibraryModuleBridge.m */; };
-		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
-		A5BA25080721E5EE847639B7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		B701A0112CA45674006654EE /* MiaoxunChatVoiceModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B701A0102CA45674006654EE /* MiaoxunChatVoiceModule.swift */; };
+		B701A0132CA45674006654EE /* MiaoxunChatVoiceModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = B701A0122CA45674006654EE /* MiaoxunChatVoiceModuleBridge.m */; };
+		B701A0212CA45674006654EE /* MiaoxunCallAudioRoute.m in Sources */ = {isa = PBXBuildFile; fileRef = B701A0202CA45674006654EE /* MiaoxunCallAudioRoute.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,13 +39,16 @@
 		761780F02CA45674006654EE /* QRCodeScannerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = QRCodeScannerViewController.swift; path = MiaoxunRN/QRCodeScannerViewController.swift; sourceTree = "<group>"; };
 		761780F22CA45674006654EE /* QRCodeScannerModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = QRCodeScannerModuleBridge.m; path = MiaoxunRN/QRCodeScannerModuleBridge.m; sourceTree = "<group>"; };
 		761780F42CA45674006654EE /* MiaoxunHapticsModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MiaoxunHapticsModule.swift; path = MiaoxunRN/MiaoxunHapticsModule.swift; sourceTree = "<group>"; };
-		AA1780F42CA45674006654EE /* MiaoxunDocumentPickerModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MiaoxunDocumentPickerModule.swift; path = MiaoxunRN/MiaoxunDocumentPickerModule.swift; sourceTree = "<group>"; };
 		761780F62CA45674006654EE /* MiaoxunHapticsModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = MiaoxunHapticsModuleBridge.m; path = MiaoxunRN/MiaoxunHapticsModuleBridge.m; sourceTree = "<group>"; };
+		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = MiaoxunRN/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		AA1780F42CA45674006654EE /* MiaoxunDocumentPickerModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MiaoxunDocumentPickerModule.swift; path = MiaoxunRN/MiaoxunDocumentPickerModule.swift; sourceTree = "<group>"; };
 		AA1780F62CA45674006654EE /* MiaoxunDocumentPickerModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = MiaoxunDocumentPickerModuleBridge.m; path = MiaoxunRN/MiaoxunDocumentPickerModuleBridge.m; sourceTree = "<group>"; };
 		B701A0002CA45674006654EE /* MiaoxunMediaLibraryModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MiaoxunMediaLibraryModule.swift; path = MiaoxunRN/MiaoxunMediaLibraryModule.swift; sourceTree = "<group>"; };
 		B701A0022CA45674006654EE /* MiaoxunMediaLibraryModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = MiaoxunMediaLibraryModuleBridge.m; path = MiaoxunRN/MiaoxunMediaLibraryModuleBridge.m; sourceTree = "<group>"; };
-		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = MiaoxunRN/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		B701A0102CA45674006654EE /* MiaoxunChatVoiceModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MiaoxunChatVoiceModule.swift; path = MiaoxunRN/MiaoxunChatVoiceModule.swift; sourceTree = "<group>"; };
+		B701A0122CA45674006654EE /* MiaoxunChatVoiceModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = MiaoxunChatVoiceModuleBridge.m; path = MiaoxunRN/MiaoxunChatVoiceModuleBridge.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		B701A0202CA45674006654EE /* MiaoxunCallAudioRoute.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = MiaoxunCallAudioRoute.m; path = MiaoxunRN/MiaoxunCallAudioRoute.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -65,9 +71,12 @@
 				761780F62CA45674006654EE /* MiaoxunHapticsModuleBridge.m */,
 				AA1780F62CA45674006654EE /* MiaoxunDocumentPickerModuleBridge.m */,
 				B701A0022CA45674006654EE /* MiaoxunMediaLibraryModuleBridge.m */,
+				B701A0122CA45674006654EE /* MiaoxunChatVoiceModuleBridge.m */,
 				761780F42CA45674006654EE /* MiaoxunHapticsModule.swift */,
 				AA1780F42CA45674006654EE /* MiaoxunDocumentPickerModule.swift */,
 				B701A0002CA45674006654EE /* MiaoxunMediaLibraryModule.swift */,
+				B701A0102CA45674006654EE /* MiaoxunChatVoiceModule.swift */,
+				B701A0202CA45674006654EE /* MiaoxunCallAudioRoute.m */,
 				761780F22CA45674006654EE /* QRCodeScannerModuleBridge.m */,
 				761780EE2CA45674006654EE /* QRCodeScannerModule.swift */,
 				761780F02CA45674006654EE /* QRCodeScannerViewController.swift */,
@@ -299,9 +308,12 @@
 				761780F72CA45674006654EE /* MiaoxunHapticsModuleBridge.m in Sources */,
 				AA1780F72CA45674006654EE /* MiaoxunDocumentPickerModuleBridge.m in Sources */,
 				B701A0032CA45674006654EE /* MiaoxunMediaLibraryModuleBridge.m in Sources */,
+				B701A0132CA45674006654EE /* MiaoxunChatVoiceModuleBridge.m in Sources */,
 				761780F52CA45674006654EE /* MiaoxunHapticsModule.swift in Sources */,
 				AA1780F52CA45674006654EE /* MiaoxunDocumentPickerModule.swift in Sources */,
 				B701A0012CA45674006654EE /* MiaoxunMediaLibraryModule.swift in Sources */,
+				B701A0112CA45674006654EE /* MiaoxunChatVoiceModule.swift in Sources */,
+				B701A0212CA45674006654EE /* MiaoxunCallAudioRoute.m in Sources */,
 				761780F32CA45674006654EE /* QRCodeScannerModuleBridge.m in Sources */,
 				761780EF2CA45674006654EE /* QRCodeScannerModule.swift in Sources */,
 				761780F12CA45674006654EE /* QRCodeScannerViewController.swift in Sources */,

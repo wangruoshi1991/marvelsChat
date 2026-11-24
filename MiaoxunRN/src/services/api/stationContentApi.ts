@@ -182,7 +182,11 @@ export const stationContentApi = {
 
   createStationAlbum(
     token: string,
-    payload: {
+    {
+      idempotencyKey,
+      ...body
+    }: {
+      idempotencyKey: string;
       title: string;
       description?: string;
       visibility?: StationVisibility;
@@ -191,7 +195,8 @@ export const stationContentApi = {
     return request<StationAlbumDTO>('/api/station/albums', {
       method: 'POST',
       token,
-      body: payload,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body,
     });
   },
 

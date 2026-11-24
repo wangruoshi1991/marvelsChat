@@ -12,6 +12,7 @@ export type Language = 'zh' | 'en';
 export type ChatMessage = {
   id: string;
   threadId: string;
+  unreadSequence?: number;
   senderType: string;
   senderName: string;
   content: string;
@@ -19,6 +20,7 @@ export type ChatMessage = {
     attachments?: ChatAttachmentDTO[];
     attachmentIds?: string[];
     sticker?: MessageStickerDTO;
+    forwarded?: true;
     contentPreview?: import('../../models/chatContentPreview').ContentPreviewRef;
     contentPreviewContext?: import('../../models/chatContentPreview').ContentPreviewContext;
     contextRefs?: AIContextReference[];
@@ -53,6 +55,7 @@ export type ChatMessage = {
 
 export type ChatThread = ThreadDTO & {
   messages: ChatMessage[];
+  pendingMuted?: boolean;
 };
 
 export type RelationshipsState = {

@@ -6,6 +6,7 @@ import { isModelQueryConfigured } from "./model-provider-endpoint.js";
 import { AGENT_MODEL_ROLE_POLICY, createAgentModelConfig, resolveAgentModelRoute } from "./agent-model-config.js";
 import { createAgentWorkspaceConfig } from "./agent-workspace-config.js";
 import { createChatAttachmentConfig } from "./chat-attachment-config.js";
+import { createVoiceCallConfig } from "./voice-call-config.js";
 import {
   MEDIA_RETRIEVAL_LIMITS,
   MEDIA_RETRIEVAL_RUNTIME_LIMITS,
@@ -404,6 +405,13 @@ export const config = {
     sessionTtlDays: parseNumber(process.env.SESSION_TTL_DAYS, 30),
   },
   newApi: createAgentModelConfig(process.env),
+  chatMessageAI: {
+    translationEnabled: parseStrictBoolean({ env: process.env, name: "CHAT_MESSAGE_TRANSLATION_ENABLED" }),
+    transcriptionEnabled: parseStrictBoolean({ env: process.env, name: "CHAT_MESSAGE_TRANSCRIPTION_ENABLED" }),
+    transcriptionUrl: process.env.CHAT_MESSAGE_TRANSCRIPTION_URL?.trim() || "",
+    transcriptionApiKey: process.env.CHAT_MESSAGE_TRANSCRIPTION_API_KEY || "",
+    transcriptionModel: process.env.CHAT_MESSAGE_TRANSCRIPTION_MODEL?.trim() || "",
+  },
   mediaGeneration: createMediaGenerationConfig(process.env),
   dashscope: {
     baseUrl: (process.env.DASHSCOPE_API_BASE_URL || "https://dashscope.aliyuncs.com")
@@ -450,6 +458,7 @@ export const config = {
     ),
   },
   chatAttachments: createChatAttachmentConfig(process.env),
+  chatVoiceCalls: createVoiceCallConfig(process.env),
   mediaRetrieval: createMediaRetrievalConfig(process.env),
   geocoding: {
     provider: (process.env.GEOCODING_PROVIDER || "nominatim").trim().toLowerCase(),

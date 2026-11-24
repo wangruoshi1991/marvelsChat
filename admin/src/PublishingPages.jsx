@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   App as AntApp,
   Alert,
@@ -351,26 +351,54 @@ function ConfirmAction({
   children,
   type = "default",
 }) {
-  const { modal } = AntApp.useApp();
+  const [requestKey, setRequestKey] = useState(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const confirm = async () => {
+    if (!requestKey || pending) return;
+    setPending(true);
+    setError("");
+    try {
+      await onConfirm(requestKey);
+      setRequestKey(null);
+    } catch (failure) {
+      setError(errorText(failure));
+    } finally {
+      setPending(false);
+    }
+  };
   return (
-    <Button
-      type={type}
-      size="small"
-      disabled={disabled}
-      loading={loading}
-      onClick={() =>
-        modal.confirm({
-          title,
-          content,
-          okText: "确认",
-          cancelText: "取消",
-          okButtonProps: { danger: title.includes("暂停") },
-          onOk: onConfirm,
-        })
-      }
-    >
-      {children}
-    </Button>
+    <>
+      <Button
+        type={type}
+        size="small"
+        disabled={disabled}
+        loading={loading}
+        onClick={() => {
+          setError("");
+          setRequestKey(idempotencyKey("transition"));
+        }}
+      >
+        {children}
+      </Button>
+      <Modal
+        title={title}
+        open={Boolean(requestKey)}
+        onOk={confirm}
+        onCancel={() => { if (!pending) setRequestKey(null); }}
+        okText="确认"
+        cancelText="取消"
+        okButtonProps={{ "aria-label": "确认", "aria-disabled": pending, danger: title.includes("暂停") }}
+        cancelButtonProps={{ disabled: pending }}
+        confirmLoading={pending}
+        keyboard={!pending}
+        closable={!pending}
+        maskClosable={false}
+      >
+        {content}
+        {error && <Alert type="error" role="alert" showIcon message={error} />}
+      </Modal>
+    </>
   );
 }
 function ListTable({ list, columns, onSelect, empty }) {
@@ -756,14 +784,14 @@ export function AgentReleasesPage({ user: providedUser }) {
     loadRegistry();
     if (selected) details.reload();
   };
-  const act = async (kind, row) => {
+  const act = async (kind, row, requestKey) => {
     setAction(`${kind}:${row.id}`);
     try {
       await request(
         `/api/admin/agent-releases/${encodeURIComponent(row.id)}/${kind}`,
         {
           method: "POST",
-          headers: { "Idempotency-Key": idempotencyKey(kind, row.id) },
+          headers: { "Idempotency-Key": requestKey },
           body: JSON.stringify({}),
         }
       );
@@ -775,8 +803,6 @@ export function AgentReleasesPage({ user: providedUser }) {
         }[kind]
       );
       refresh();
-    } catch (failure) {
-      message.error(errorText(failure));
     } finally {
       setAction("");
     }
@@ -836,7 +862,7 @@ export function AgentReleasesPage({ user: providedUser }) {
               title="提交 Agent release 审核？"
               content="服务端会检查身份、运行合同和配置就绪状态。"
               loading={action === `review:${row.id}`}
-              onConfirm={() => act("review", row)}
+              onConfirm={(key) => act("review", row, key)}
             >
               提交审核
             </ConfirmAction>
@@ -847,7 +873,7 @@ export function AgentReleasesPage({ user: providedUser }) {
               title="发布 Agent release？"
               content="发布后可绑定产品。用户仍须明确授权产品后才能使用。"
               loading={action === `publish:${row.id}`}
-              onConfirm={() => act("publish", row)}
+              onConfirm={(key) => act("publish", row, key)}
             >
               发布
             </ConfirmAction>
@@ -1067,7 +1093,7 @@ export function AgentReleasesPage({ user: providedUser }) {
                   title="提交 Agent release 审核？"
                   content="服务端会检查身份、运行合同和配置就绪状态。"
                   loading={action === `review:${release.id}`}
-                  onConfirm={() => act("review", release)}
+                  onConfirm={(key) => act("review", release, key)}
                 >
                   提交审核
                 </ConfirmAction>
@@ -1078,7 +1104,7 @@ export function AgentReleasesPage({ user: providedUser }) {
                   title="发布 Agent release？"
                   content="发布后可绑定产品，用户仍须明确授权。"
                   loading={action === `publish:${release.id}`}
-                  onConfirm={() => act("publish", release)}
+                  onConfirm={(key) => act("publish", release, key)}
                 >
                   发布
                 </ConfirmAction>
@@ -1087,7 +1113,7 @@ export function AgentReleasesPage({ user: providedUser }) {
                 <ConfirmAction
                   title="退回草稿？"
                   content="退回后可修改身份，需要重新提交审核。"
-                  onConfirm={() => act("withdraw", release)}
+                  onConfirm={(key) => act("withdraw", release, key)}
                 >
                   退回草稿
                 </ConfirmAction>
@@ -1505,10 +1531,9 @@ export function ProductsPage({ user: providedUser }) {
     list.load(list.page);
     if (selected) details.reload();
   };
-  const act = async (kind, row) => {
+  const act = async (kind, row, requestKey) => {
     if (!row.productVersionId) {
-      message.error("缺少产品版本 ID，请刷新产品详情");
-      return;
+      throw new Error("缺少产品版本 ID，请刷新产品详情");
     }
     setAction(`${kind}:${row.productVersionId}`);
     try {
@@ -1517,7 +1542,7 @@ export function ProductsPage({ user: providedUser }) {
         {
           method: "POST",
           headers: {
-            "Idempotency-Key": idempotencyKey(kind, row.productVersionId),
+            "Idempotency-Key": requestKey,
           },
           body: JSON.stringify({ productVersionId: row.productVersionId }),
         }
@@ -1530,8 +1555,6 @@ export function ProductsPage({ user: providedUser }) {
         }[kind]
       );
       refresh();
-    } catch (failure) {
-      message.error(errorText(failure));
     } finally {
       setAction("");
     }
@@ -1551,7 +1574,7 @@ export function ProductsPage({ user: providedUser }) {
             title="提交产品审核？"
             content="检查身份与所有依赖 release 的发布门禁。"
             loading={action === `submit:${row.productVersionId}`}
-            onConfirm={() => act("submit", row)}
+            onConfirm={(key) => act("submit", row, key)}
           >
             提交审核
           </ConfirmAction>
@@ -1563,7 +1586,7 @@ export function ProductsPage({ user: providedUser }) {
           title="发布产品版本？"
           content="产品会进入 App 目录。用户仍需明确 consent 才能启用。"
           loading={action === `publish:${row.productVersionId}`}
-          onConfirm={() => act("publish", row)}
+          onConfirm={(key) => act("publish", row, key)}
         >
           发布
         </ConfirmAction>
@@ -1573,7 +1596,7 @@ export function ProductsPage({ user: providedUser }) {
           title="暂停产品版本？"
           content="该版本的 entitlement 将失效，相关 Agent 投影会清理。请确认影响范围。"
           loading={action === `pause:${row.productVersionId}`}
-          onConfirm={() => act("pause", row)}
+          onConfirm={(key) => act("pause", row, key)}
         >
           暂停
         </ConfirmAction>
@@ -1583,7 +1606,7 @@ export function ProductsPage({ user: providedUser }) {
           title="恢复发布产品版本？"
           content="服务端会重新检查该版本合同和依赖；不会替用户重新确认权限。"
           loading={action === `publish:${row.productVersionId}`}
-          onConfirm={() => act("publish", row)}
+          onConfirm={(key) => act("publish", row, key)}
         >
           恢复发布
         </ConfirmAction>

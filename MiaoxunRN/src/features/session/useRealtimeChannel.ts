@@ -1,18 +1,12 @@
-import {
-  Dispatch,
-  MutableRefObject,
-  SetStateAction,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
 import { MessageDTO, PresenceMode } from '../../models/api';
-import { apiClient, buildRealtimeUrl } from '../../services/apiClient';
+import { buildRealtimeUrl } from '../../services/apiClient';
 import { realtimeReconnectDelaysMs } from './sessionDefaults';
 import {
   applyPresenceToRelationships,
   mapMessage,
   mergeMessages,
+  mergeThreadState,
 } from './sessionMappers';
 import { ChatThread, RealtimeStatus, RelationshipsState } from './sessionTypes';
 
@@ -26,7 +20,6 @@ export type RealtimeNotificationNotice = {
 type RealtimeChannelOptions = {
   token: string;
   userId?: string;
-  activeThreadIdRef: MutableRefObject<string | null>;
   refreshNotifications: () => Promise<void>;
   refreshRelationships: () => Promise<void>;
   incrementalSync: (showError?: boolean) => Promise<void>;
@@ -41,7 +34,6 @@ type RealtimeChannelOptions = {
 export function useRealtimeChannel({
   token,
   userId,
-  activeThreadIdRef,
   refreshNotifications,
   refreshRelationships,
   incrementalSync,
@@ -109,6 +101,7 @@ export function useRealtimeChannel({
         reconnectTimerRef.current = setTimeout(connect, delay);
       };
       socket.onmessage = event => {
+        if (closedByEffect || realtimeSocketRef.current !== socket) return;
         const payload = parseRealtimePayload(event.data);
         if (!payload) {
           setRealtimeStatus('error');
@@ -122,7 +115,6 @@ export function useRealtimeChannel({
 
         if (payload.type === 'thread.message' && 'message' in payload) {
           const message = mapMessage(payload.message as MessageDTO);
-          const activeThreadId = activeThreadIdRef.current;
           setThreads(current =>
             current.map(thread =>
               thread.id === message.threadId
@@ -131,19 +123,13 @@ export function useRealtimeChannel({
                     messages: mergeMessages(thread.messages, [message]),
                     lastContent: message.content,
                     lastMessageAt: message.createdAt || thread.lastMessageAt,
-                    unreadCount:
-                      activeThreadId === message.threadId
-                        ? 0
-                        : thread.unreadCount + 1,
+                    ...mergeThreadState(thread, {
+                      unreadSequence: message.unreadSequence,
+                    }),
                   }
                 : thread,
             ),
           );
-          if (activeThreadId === message.threadId) {
-            apiClient
-              .markThreadRead(message.threadId, token)
-              .catch(reportBackgroundFailure);
-          }
           return;
         }
 
@@ -253,7 +239,6 @@ export function useRealtimeChannel({
       }
     };
   }, [
-    activeThreadIdRef,
     incrementalSync,
     refreshNotifications,
     refreshRelationships,

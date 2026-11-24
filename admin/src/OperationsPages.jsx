@@ -1,8 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Descriptions, Drawer, Empty, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography, message } from "antd";
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { request, readAuth } from "./platform.js";
+import { detailColumn } from "./components/detail-column.jsx";
 import { RUN_STATUS_OPTIONS, taskMetadataItems, taskOperations } from "./admin-view-contracts.js";
+import { mediaRetrievalDiagnosticGuidance } from "../admin-core.js";
+import { mediaRetrievalControlRevision } from "./modules/media-retrieval.js";
 
 const { Title, Text } = Typography;
 const statuses = ["queued", "running", "waiting_input", "awaiting_confirmation", "succeeded", "failed", "interrupted", "cancelling", "cancelled"];
@@ -26,40 +29,680 @@ function DataTable({ data, cols, loading, pagination = false, onRow, rowKey = "i
 function can(permission) { const user = readAuth().user; const permissions = user?.adminPermissions || []; return user?.role === "admin" && (permissions.includes("*") || permissions.includes(permission)); }
 function DetailDrawer({ row, onClose, title = "记录详情" }) { return <Drawer title={title} width={620} open={Boolean(row)} onClose={onClose}>{row && <Descriptions bordered size="small" column={1} items={Object.entries(row).map(([field, value]) => ({ key: field, label: field, children: typeof value === "object" ? <pre className="detail-json">{valueText(value)}</pre> : valueText(value) }))} />}</Drawer>; }
 function TaskDetailDrawer({ row, onClose }) {
-  const [detail, setDetail] = useState(null); const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
-  useEffect(() => { let active = true; setDetail(null); setError(""); if (!row?.id) return () => { active = false; }; setLoading(true); request(`/api/admin/tasks/${encodeURIComponent(row.id)}`).then((value) => { if (active) setDetail(value); }).catch((e) => { if (active) setError(e.message || "读取任务详情失败"); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [row?.id]);
+  const [detail, setDetail] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setDetail(null);
+    setError("");
+    if (!row?.id)
+      return () => {
+        active = false;
+      };
+    setLoading(true);
+    request(`/api/admin/tasks/${encodeURIComponent(row.id)}`)
+      .then((value) => {
+        if (active) setDetail(value);
+      })
+      .catch((e) => {
+        if (active) setError(e.message || "读取任务详情失败");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [row?.id, revision]);
   const value = detail?.id === row?.id ? detail : null;
-  return <Drawer title={row ? `任务 · ${row.id}` : "任务详情"} width={700} open={Boolean(row)} onClose={onClose}>{loading && <Alert type="info" showIcon message="正在读取任务详情和事件流" />}{error && <Alert type="error" showIcon message="读取任务详情失败" description={error} />}{value && <><Descriptions bordered size="small" column={1} items={taskMetadataItems(value).map(({ key, label, value: item }) => ({ key, label, children: valueText(item) }))} /><Section title={value.eventKind === "workspace_nodes" ? "工作节点当前状态" : "状态事件流"} description={value.eventKind === "workspace_nodes" ? "节点当前状态按创建时间排序，不代表历史变更事件。" : "仅展示状态元数据；不包含用户正文或原始模型响应。"}><Table size="small" rowKey={(event) => `${event.sequence || event.id}-${event.createdAt || ""}`} pagination={false} dataSource={value.events || []} columns={[{ title: "序号", dataIndex: "sequence" }, { title: "状态", dataIndex: "status" }, { title: "阶段", dataIndex: "phase" }, { title: "Agent", dataIndex: "agentId" }, { title: "时间", dataIndex: "createdAt" }, { title: "错误", dataIndex: "errorCode", render: (item) => item || "--" }]} locale={{ emptyText: "暂无事件记录" }} />{value.eventsTruncated && <Alert type="info" showIcon message="仅显示前 200 条记录，更多记录未展示。" />}</Section></>}</Drawer>;
+  return (
+    <Drawer
+      title={row ? `任务 · ${row.id}` : "任务详情"}
+      width={700}
+      open={Boolean(row)}
+      onClose={onClose}
+      extra={
+        <Button
+          icon={<ReloadOutlined />}
+          loading={loading}
+          onClick={() => setRevision((current) => current + 1)}
+        >
+          {error ? "重试读取" : "刷新详情"}
+        </Button>
+      }
+    >
+      {loading && <Alert type="info" showIcon message="正在读取任务详情和事件流" />}
+      {error && <Alert type="error" showIcon message="读取任务详情失败" description={error} />}
+      {value && (
+        <>
+          <Descriptions
+            bordered
+            size="small"
+            column={1}
+            items={taskMetadataItems(value).map(({ key, label, value: item }) => ({
+              key,
+              label,
+              children: valueText(item),
+            }))}
+          />
+          <Section
+            title={value.eventKind === "workspace_nodes" ? "工作节点当前状态" : "状态事件流"}
+            description={
+              value.eventKind === "workspace_nodes"
+                ? "节点当前状态按创建时间排序，不代表历史变更事件。"
+                : "仅展示状态元数据；不包含用户正文或原始模型响应。"
+            }
+          >
+            <Table
+              size="small"
+              rowKey={(event) => `${event.sequence || event.id}-${event.createdAt || ""}`}
+              pagination={false}
+              dataSource={value.events || []}
+              columns={[
+                { title: "序号", dataIndex: "sequence" },
+                { title: "状态", dataIndex: "status" },
+                { title: "阶段", dataIndex: "phase" },
+                { title: "Agent", dataIndex: "agentId" },
+                { title: "时间", dataIndex: "createdAt" },
+                { title: "错误", dataIndex: "errorCode", render: (item) => item || "--" },
+              ]}
+              locale={{ emptyText: "暂无事件记录" }}
+            />
+            {value.eventsTruncated && (
+              <Alert type="info" showIcon message="仅显示前 200 条记录，更多记录未展示。" />
+            )}
+          </Section>
+        </>
+      )}
+    </Drawer>
+  );
 }
 
 export function TasksPage() {
-  const [filters, setFilters] = useState({ limit: 80 }); const [selected, setSelected] = useState(null); const [form] = Form.useForm(); const load = useData(`/api/admin/tasks?${query(filters)}`);
-  const rows = load.data?.items || []; const counts = useMemo(() => rows.reduce((result, row) => { result.total += 1; result[row.status] = (result[row.status] || 0) + 1; return result; }, { total: 0 }), [rows]);
-  const act = (row, action) => Modal.confirm({ title: `${action === "retry" ? "重试" : "取消"}任务？`, content: `任务 ${row.id}，当前状态 ${statusLabels[row.status] || row.status}。操作将由服务端再次校验。`, okText: "确认", cancelText: "取消", onOk: async () => { try { await request(`/api/admin/tasks/${encodeURIComponent(row.id)}/${action}`, { method: "POST", headers: { "Idempotency-Key": key(`admin-task-${action}`) } }); message.success("操作已提交"); load.refresh(); } catch (e) { message.error(e.message); throw e; } } });
-  const tableColumns = [column("任务 ID", "id", (value) => <Text code>{value || "--"}</Text>), column("类型", "type"), column("状态", "status", (value) => <Tag color={["failed", "interrupted", "cancelled"].includes(value) ? "red" : value === "succeeded" ? "green" : "blue"}>{statusLabels[value] || value || "未知"}</Tag>), column("阶段", "phase"), column("Agent / 版本", "agentId", (_, row) => <Space direction="vertical" size={0}><span>{row.agentId || "--"}</span><Text type="secondary">{row.agentVersion || "版本未知"}</Text></Space>), column("用户", "userId", (value) => <Text code>{value || "--"}</Text>), column("更新时间", "updatedAt"), column("失败原因", "failureCode", (value) => value || "--"), { title: "操作", key: "actions", render: (_, row) => can("tasks:write") ? <Space onClick={(event) => event.stopPropagation()}>{taskOperations(row).includes("retry") && <Button size="small" onClick={() => act(row, "retry")}>重试</Button>}{taskOperations(row).includes("cancel") && <Button size="small" danger onClick={() => act(row, "cancel")}>取消</Button>}</Space> : <Text type="secondary">只读</Text> }];
-  return <Page title="任务管理" description="查看任务生命周期、执行阶段和失败原因；人工操作始终由服务端权限与状态机校验。" load={load}><MetricStrip items={[["当前返回", counts.total], ["运行中", counts.running || 0, "info"], ["排队中", counts.queued || 0, "warning"], ["失败/中断", (counts.failed || 0) + (counts.interrupted || 0), "danger"], ["成功", counts.succeeded || 0, "success"]]} /><Section title="任务队列" description="按状态、Agent、用户和时间窗口筛选；点击行查看任务状态元数据和事件；用户正文不在后台展示。"><Form form={form} layout="inline" className="filter-bar" initialValues={{ limit: 80 }} onFinish={(v) => { const next = { ...v }; for (const field of ["from", "to"]) if (next[field]) next[field] = new Date(next[field]).toISOString(); setFilters(next); }}><Form.Item name="status"><Select allowClear placeholder="全部状态" options={options(statuses)} style={{ width: 160 }} /></Form.Item><Form.Item name="agentId"><Input prefix={<SearchOutlined />} placeholder="Agent key" /></Form.Item><Form.Item name="userId"><Input placeholder="用户 UUID" /></Form.Item><Form.Item name="from"><Input type="datetime-local" aria-label="开始时间" /></Form.Item><Form.Item name="to"><Input type="datetime-local" aria-label="结束时间" /></Form.Item><Form.Item name="limit" label="最多"><InputNumber min={1} max={200} precision={0} /></Form.Item><Form.Item><Space><Button htmlType="submit" type="primary">筛选</Button><Button onClick={() => { form.resetFields(); setFilters({ limit: 80 }); }}>清空</Button></Space></Form.Item></Form><DataTable data={rows} cols={tableColumns} loading={load.loading} onRow={(row) => ({ onClick: () => setSelected(row), style: { cursor: "pointer" } })} /></Section><TaskDetailDrawer key={selected?.id || "closed"} row={selected} onClose={() => setSelected(null)} /></Page>;
+  const [filters, setFilters] = useState({ limit: 80 });
+  const [selected, setSelected] = useState(null);
+  const [confirmation, setConfirmation] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const inFlight = useRef(false);
+  const [form] = Form.useForm();
+  const load = useData(`/api/admin/tasks?${query(filters)}`);
+  const rows = load.data?.items || [];
+  const counts = useMemo(
+    () =>
+      rows.reduce(
+        (result, row) => {
+          result.total += 1;
+          result[row.status] = (result[row.status] || 0) + 1;
+          return result;
+        },
+        { total: 0 }
+      ),
+    [rows]
+  );
+  const openConfirmation = (row, action) => {
+    setActionError("");
+    setConfirmation({ row, action, requestKey: key(`admin-task-${action}`) });
+  };
+  const submitAction = async () => {
+    if (!confirmation || inFlight.current) return;
+    const { row, action, requestKey } = confirmation;
+    inFlight.current = true;
+    setSubmitting(true);
+    setActionError("");
+    try {
+      await request(`/api/admin/tasks/${encodeURIComponent(row.id)}/${action}`, {
+        method: "POST",
+        headers: { "Idempotency-Key": requestKey },
+      });
+      setConfirmation(null);
+      message.success("操作已提交");
+      load.refresh();
+    } catch (error) {
+      setActionError(error.message || "任务操作失败");
+    } finally {
+      inFlight.current = false;
+      setSubmitting(false);
+    }
+  };
+  const tableColumns = [
+    column("任务 ID", "id", (value) => <Text code>{value || "--"}</Text>),
+    column("类型", "type"),
+    column("状态", "status", (value) => (
+      <Tag
+        color={
+          ["failed", "interrupted", "cancelled"].includes(value)
+            ? "red"
+            : value === "succeeded"
+            ? "green"
+            : "blue"
+        }
+      >
+        {statusLabels[value] || value || "未知"}
+      </Tag>
+    )),
+    column("阶段", "phase"),
+    column("Agent / 版本", "agentId", (_, row) => (
+      <Space direction="vertical" size={0}>
+        <span>{row.agentId || "--"}</span>
+        <Text type="secondary">{row.agentVersion || "版本未知"}</Text>
+      </Space>
+    )),
+    column("用户", "userId", (value) => <Text code>{value || "--"}</Text>),
+    column("更新时间", "updatedAt"),
+    column("失败原因", "failureCode", (value) => value || "--"),
+    {
+      title: "操作",
+      key: "actions",
+      render: (_, row) =>
+        can("tasks:write") ? (
+          <Space onClick={(event) => event.stopPropagation()}>
+            {taskOperations(row).includes("retry") && (
+              <Button size="small" onClick={() => openConfirmation(row, "retry")}>
+                重试
+              </Button>
+            )}
+            {taskOperations(row).includes("cancel") && (
+              <Button size="small" danger onClick={() => openConfirmation(row, "cancel")}>
+                取消
+              </Button>
+            )}
+          </Space>
+        ) : (
+          <Text type="secondary">只读</Text>
+        ),
+    },
+  ];
+  return (
+    <Page
+      title="任务管理"
+      description="查看任务生命周期、执行阶段和失败原因；人工操作始终由服务端权限与状态机校验。"
+      load={load}
+    >
+      <MetricStrip
+        items={[
+          ["当前返回", counts.total],
+          ["运行中", counts.running || 0, "info"],
+          ["排队中", counts.queued || 0, "warning"],
+          ["失败/中断", (counts.failed || 0) + (counts.interrupted || 0), "danger"],
+          ["成功", counts.succeeded || 0, "success"],
+        ]}
+      />
+      <Section
+        title="任务队列"
+        description="按状态、Agent、用户和时间窗口筛选；点击行查看任务状态元数据和事件；用户正文不在后台展示。"
+      >
+        <Form
+          form={form}
+          layout="inline"
+          className="filter-bar"
+          initialValues={{ limit: 80 }}
+          onFinish={(v) => {
+            const next = { ...v };
+            for (const field of ["from", "to"])
+              if (next[field]) next[field] = new Date(next[field]).toISOString();
+            setFilters(next);
+          }}
+        >
+          <Form.Item name="status">
+            <Select
+              allowClear
+              placeholder="全部状态"
+              options={options(statuses)}
+              style={{ width: 160 }}
+            />
+          </Form.Item>
+          <Form.Item name="agentId">
+            <Input prefix={<SearchOutlined />} placeholder="Agent key" />
+          </Form.Item>
+          <Form.Item name="userId">
+            <Input placeholder="用户 UUID" />
+          </Form.Item>
+          <Form.Item name="from">
+            <Input type="datetime-local" aria-label="开始时间" />
+          </Form.Item>
+          <Form.Item name="to">
+            <Input type="datetime-local" aria-label="结束时间" />
+          </Form.Item>
+          <Form.Item name="limit" label="最多">
+            <InputNumber min={1} max={200} precision={0} />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button htmlType="submit" type="primary">
+                筛选
+              </Button>
+              <Button
+                onClick={() => {
+                  form.resetFields();
+                  setFilters({ limit: 80 });
+                }}
+              >
+                清空
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+        <DataTable
+          data={rows}
+          cols={[...tableColumns, detailColumn((row) => `查看任务 ${row.id} 详情`, setSelected)]}
+          loading={load.loading}
+          onRow={(row) => ({ onClick: () => setSelected(row), style: { cursor: "pointer" } })}
+        />
+      </Section>
+      <TaskDetailDrawer
+        row={selected}
+        onClose={() => setSelected(null)}
+      />
+      {confirmation && (
+        <Modal
+          open
+          title={confirmation.action === "retry" ? "重试任务？" : "取消任务？"}
+          onOk={submitAction}
+          onCancel={() => { if (!inFlight.current) setConfirmation(null); }}
+          okText="确认"
+          cancelText="取消"
+          confirmLoading={submitting}
+          okButtonProps={{ "aria-label": "确认", danger: confirmation.action === "cancel" }}
+          cancelButtonProps={{ disabled: submitting }}
+          closable={!submitting}
+          keyboard={!submitting}
+          maskClosable={false}
+        >
+          <p>任务 {confirmation.row.id}，当前状态 {statusLabels[confirmation.row.status] || confirmation.row.status}。</p>
+          {actionError && <Alert type="error" role="alert" showIcon message={actionError} />}
+        </Modal>
+      )}
+    </Page>
+  );
 }
 export function MonitoringPage() {
-  const [days, setDays] = useState(30); const [selected, setSelected] = useState(null); const load = useData(`/api/admin/monitoring?days=${days}`);
-  const agents = load.data?.agents || []; const taskStatuses = load.data?.taskStatuses || []; const products = load.data?.products || []; const users = load.data?.users || [];
-  const totals = agents.reduce((result, row) => { result.runs += Number(row.runs || 0); result.succeeded += Number(row.succeeded || 0); result.failed += Number(row.failed || 0); return result; }, { runs: 0, succeeded: 0, failed: 0 });
-  return <Page title="运行监控" description={`按 Agent、产品、用户和任务状态查看真实运行聚合；统计窗口 ${days} 天，生成于 ${load.data?.generatedAt || "未知"}。`} load={load} actions={<Select value={days} onChange={setDays} options={[7, 30, 90].map((v) => ({ value: v, label: `${v} 天` }))} />}><MetricStrip items={[["窗口运行", totals.runs], ["成功率", totals.runs ? `${Math.round(totals.succeeded / totals.runs * 100)}%` : "未知", "success"], ["失败运行", totals.failed, "danger"], ["Agent 数", agents.length], ["用户数", users.length]]} /><div className="section-grid two-columns"><Section title="Agent 运行" description="聚合来自 agent_runs；Token、成本或延迟缺失时显示未知。"><DataTable rowKey="agentId" data={agents} cols={[column("Agent", "agentId"), column("运行", "runs"), column("成功", "succeeded"), column("失败", "failed"), column("Token", "tokenTotal"), column("成本（分）", "costCents"), column("平均耗时", "averageLatencyMs", (value) => value == null ? "未知" : `${value} ms`)]} loading={load.loading} onRow={(row) => ({ onClick: () => setSelected(row), style: { cursor: "pointer" } })} /></Section><Section title="任务状态" description="窗口内 ai_tasks 的状态分布。"><DataTable rowKey="status" data={taskStatuses} cols={[column("状态", "status", (value) => <Tag>{statusLabels[value] || value || "未知"}</Tag>), column("数量", "count")]} loading={load.loading} /></Section></div><div className="section-grid two-columns"><Section title="产品授权" description="产品 entitlement 总量与启用量。"><DataTable rowKey="productKey" data={products} cols={[column("产品", "productKey"), column("名称", "displayName"), column("授权数", "entitlementCount"), column("启用数", "enabledEntitlementCount")]} loading={load.loading} /></Section><Section title="用户运行排行" description="按窗口运行次数排序。"><DataTable rowKey="userId" data={users.slice(0, 100)} cols={[column("用户", "userId", (value) => <Text code>{value || "--"}</Text>), column("运行", "runs"), column("成功", "succeeded"), column("失败", "failed"), column("Token", "tokenTotal"), column("成本（分）", "costCents")]} loading={load.loading} /></Section></div><DetailDrawer row={selected} onClose={() => setSelected(null)} title="运行聚合详情" /></Page>;
+  const [days, setDays] = useState(30);
+  const [selected, setSelected] = useState(null);
+  const [revision, setRevision] = useState(0);
+  const [response, setResponse] = useState(null);
+  const current = response?.days === days && response.revision === revision ? response : null;
+  const load = {
+    data: current?.data,
+    error: current?.error,
+    loading: !current,
+    refresh: () => setRevision(value => value + 1),
+  };
+  useEffect(() => {
+    const controller = new AbortController();
+    request(`/api/admin/monitoring?days=${days}`, { signal: controller.signal })
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        if (data?.days !== days || !Number.isSafeInteger(data.userCount) || data.userCount < 0) {
+          throw new Error("监控统计响应格式错误，请核对 API 版本。");
+        }
+        setResponse({ days, revision, data });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setResponse({ days, revision, error: error.message || "读取失败" });
+      });
+    return () => controller.abort();
+  }, [days, revision]);
+  const agents = load.data?.agents || [];
+  const taskStatuses = load.data?.taskStatuses || [];
+  const products = load.data?.products || [];
+  const users = load.data?.users || [];
+  const totals = agents.reduce(
+    (result, row) => {
+      result.runs += Number(row.runs || 0);
+      result.succeeded += Number(row.succeeded || 0);
+      result.failed += Number(row.failed || 0);
+      return result;
+    },
+    { runs: 0, succeeded: 0, failed: 0 }
+  );
+  return (
+    <Page
+      title="运行监控"
+      description={`按 Agent、产品、用户和任务状态查看真实运行聚合；统计窗口 ${days} 天，生成于 ${
+        load.data?.generatedAt || "未知"
+      }。`}
+      load={load}
+      actions={
+        <Select
+          aria-label="统计窗口"
+          value={days}
+          onChange={(value) => {
+            setSelected(null);
+            setDays(value);
+            setRevision(currentRevision => currentRevision + 1);
+          }}
+          options={[7, 30, 90].map((v) => ({ value: v, label: `${v} 天` }))}
+        />
+      }
+    >
+      {load.loading && <p role="status">正在读取 {days} 天运行统计…</p>}
+      {load.data && <>
+      <MetricStrip
+        items={[
+          ["窗口运行", totals.runs],
+          [
+            "成功率",
+            totals.runs ? `${Math.round((totals.succeeded / totals.runs) * 100)}%` : "未知",
+            "success",
+          ],
+          ["失败运行", totals.failed, "danger"],
+          ["Agent 数", agents.length],
+          ["用户数", load.data.userCount],
+        ]}
+      />
+      <div className="section-grid two-columns">
+        <Section
+          title="Agent 运行"
+          description="聚合来自 agent_runs；Token、成本或延迟缺失时显示未知。"
+        >
+          <DataTable
+            rowKey="agentId"
+            data={agents}
+            cols={[
+              column("Agent", "agentId"),
+              column("运行", "runs"),
+              column("成功", "succeeded"),
+              column("失败", "failed"),
+              column("Token", "tokenTotal"),
+              column("成本（分）", "costCents"),
+              column("平均耗时", "averageLatencyMs", (value) =>
+                value == null ? "未知" : `${value} ms`
+              ),
+              detailColumn((row) => `查看 ${row.agentId} 运行详情`, setSelected),
+            ]}
+            loading={load.loading}
+            onRow={(row) => ({ onClick: () => setSelected(row), style: { cursor: "pointer" } })}
+          />
+        </Section>
+        <Section title="任务状态" description="窗口内 ai_tasks 的状态分布。">
+          <DataTable
+            rowKey="status"
+            data={taskStatuses}
+            cols={[
+              column("状态", "status", (value) => (
+                <Tag>{statusLabels[value] || value || "未知"}</Tag>
+              )),
+              column("数量", "count"),
+            ]}
+            loading={load.loading}
+          />
+        </Section>
+      </div>
+      <div className="section-grid two-columns">
+        <Section title="产品授权" description="产品 entitlement 总量与启用量。">
+          <DataTable
+            rowKey="productKey"
+            data={products}
+            cols={[
+              column("产品", "productKey"),
+              column("名称", "displayName"),
+              column("授权数", "entitlementCount"),
+              column("启用数", "enabledEntitlementCount"),
+            ]}
+            loading={load.loading}
+          />
+        </Section>
+        <Section title="用户运行排行" description="按窗口运行次数排序，最多展示 200 位用户。">
+          <DataTable
+            rowKey="userId"
+            data={users}
+            pagination={{ pageSize: 20, showSizeChanger: false }}
+            cols={[
+              column("用户", "userId", (value) => <Text code>{value || "--"}</Text>),
+              column("运行", "runs"),
+              column("成功", "succeeded"),
+              column("失败", "failed"),
+              column("Token", "tokenTotal"),
+              column("成本（分）", "costCents"),
+            ]}
+            loading={load.loading}
+          />
+        </Section>
+      </div>
+      <DetailDrawer row={selected} onClose={() => setSelected(null)} title="运行聚合详情" />
+      </>}
+    </Page>
+  );
 }
 
 function AuditList({ kind, refreshKey }) {
-  const isRuns = kind === "runs"; const [page, setPage] = useState(1); const [filters, setFilters] = useState({}); const [selected, setSelected] = useState(null); const [form] = Form.useForm(); const load = useData(`/api/admin/${isRuns ? "agent-runs" : "events"}?${query({ page, pageSize: 20, ...filters })}`, refreshKey);
-  const pairs = isRuns ? [["运行 ID", "id"], ["Agent", "agentId"], ["用户 ID", "userId"], ["状态", "status"], ["创建时间", "createdAt"], ["耗时（毫秒）", "latencyMs"], ["失败代码", "errorCode"]] : [["事件", "eventType"], ["用户 ID", "userId"], ["用户邮箱", "userEmail"], ["目标类型", "targetType"], ["目标 ID", "targetId"], ["时间", "createdAt"]];
-  return <><Form form={form} layout="inline" className="filter-bar" onFinish={(v) => { setPage(1); setFilters(v); }}><Form.Item name="query"><Input allowClear prefix={<SearchOutlined />} placeholder={isRuns ? "运行 ID、Agent 或用户" : "事件、用户或目标"} /></Form.Item>{isRuns && <><Form.Item name="status"><Select allowClear placeholder="状态" options={RUN_STATUS_OPTIONS} style={{ width: 150 }} /></Form.Item><Form.Item name="agentId"><Input placeholder="Agent ID" /></Form.Item><Form.Item name="userId"><Input placeholder="用户 UUID" /></Form.Item></>}<Form.Item><Space><Button type="primary" htmlType="submit">筛选</Button><Button onClick={() => { form.resetFields(); setPage(1); setFilters({}); }}>清空</Button><Button onClick={load.refresh}>刷新</Button></Space></Form.Item></Form>{load.error && <Alert type="error" showIcon message="读取失败" description={load.error} action={<Button onClick={load.refresh}>重试</Button>} />}{!load.error && <DataTable data={load.data?.items} cols={pairs.map(([title, field]) => column(title, field))} loading={load.loading} pagination={{ current: page, pageSize: 20, total: load.data?.total ?? 0, showSizeChanger: false, showTotal: (total) => `共 ${total} 条`, onChange: setPage }} onRow={(row) => ({ onClick: () => setSelected(row), style: { cursor: "pointer" } })} />}{isRuns && <Text type="secondary">媒体检索运行记录请在媒体检索页面查看。</Text>}<DetailDrawer row={selected} onClose={() => setSelected(null)} title={isRuns ? "Agent 运行详情" : "审计事件详情"} /></>;
+  const isRuns = kind === "runs";
+  const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState({});
+  const [selected, setSelected] = useState(null);
+  const [form] = Form.useForm();
+  const load = useData(
+    `/api/admin/${isRuns ? "agent-runs" : "events"}?${query({ page, pageSize: 20, ...filters })}`,
+    refreshKey
+  );
+  const pairs = isRuns
+    ? [
+        ["运行 ID", "id"],
+        ["Agent", "agentId"],
+        ["用户 ID", "userId"],
+        ["状态", "status"],
+        ["创建时间", "createdAt"],
+        ["耗时（毫秒）", "latencyMs"],
+        ["失败代码", "errorCode"],
+      ]
+    : [
+        ["事件", "eventType"],
+        ["用户 ID", "userId"],
+        ["用户邮箱", "userEmail"],
+        ["目标类型", "targetType"],
+        ["目标 ID", "targetId"],
+        ["时间", "createdAt"],
+      ];
+  return (
+    <>
+      <Form
+        form={form}
+        layout="inline"
+        className="filter-bar"
+        onFinish={(v) => {
+          setPage(1);
+          setFilters(v);
+        }}
+      >
+        <Form.Item name="query">
+          <Input
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder={isRuns ? "运行 ID、Agent 或用户" : "事件、用户或目标"}
+          />
+        </Form.Item>
+        {isRuns && (
+          <>
+            <Form.Item name="status">
+              <Select
+                allowClear
+                placeholder="状态"
+                options={RUN_STATUS_OPTIONS}
+                style={{ width: 150 }}
+              />
+            </Form.Item>
+            <Form.Item name="agentId">
+              <Input placeholder="Agent ID" />
+            </Form.Item>
+            <Form.Item name="userId">
+              <Input placeholder="用户 UUID" />
+            </Form.Item>
+          </>
+        )}
+        <Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit">
+              筛选
+            </Button>
+            <Button
+              onClick={() => {
+                form.resetFields();
+                setPage(1);
+                setFilters({});
+              }}
+            >
+              清空
+            </Button>
+            <Button onClick={load.refresh}>刷新</Button>
+          </Space>
+        </Form.Item>
+      </Form>
+      {load.error && (
+        <Alert
+          type="error"
+          showIcon
+          message="读取失败"
+          description={load.error}
+          action={<Button onClick={load.refresh}>重试</Button>}
+        />
+      )}
+      {!load.error && (
+        <DataTable
+          data={load.data?.items}
+          cols={[
+            ...pairs.map(([title, field]) => column(title, field)),
+            detailColumn(
+              (row) => isRuns ? `查看运行 ${row.id} 详情` : `查看审计事件 ${row.eventType} ${row.id} 详情`,
+              setSelected
+            ),
+          ]}
+          loading={load.loading}
+          pagination={{
+            current: page,
+            pageSize: 20,
+            total: load.data?.total ?? 0,
+            showSizeChanger: false,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: setPage,
+          }}
+          onRow={(row) => ({ onClick: () => setSelected(row), style: { cursor: "pointer" } })}
+        />
+      )}
+      {isRuns && <Text type="secondary">媒体检索运行记录请在媒体检索页面查看。</Text>}
+      <DetailDrawer
+        row={selected}
+        onClose={() => setSelected(null)}
+        title={isRuns ? "Agent 运行详情" : "审计事件详情"}
+      />
+    </>
+  );
 }
 export function AuditPage() { const [refreshKey, setRefreshKey] = useState(0); const load = { refresh: () => setRefreshKey(value => value + 1), loading: false }; return <Page title="审计记录" description="查询管理员操作和 Agent 运行事件；点击记录查看完整 payload、请求来源和时间。" load={load}><Section title="可追溯事件" description="事件来自 usage_events，运行来自 agent_runs；不使用前端假数据。"><Tabs items={[{ key: "events", label: "管理员与业务事件", children: <AuditList kind="events" refreshKey={refreshKey} /> }, { key: "runs", label: "Agent 运行", children: <AuditList kind="runs" refreshKey={refreshKey} /> }]} /></Section></Page>; }
 
 function ObjectView({ value }) { return <pre className="detail-json" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{valueText(value)}</pre>; }
 export function MediaRetrievalPage() {
-  const load = useData("/api/admin/media-retrieval/overview"); const [form] = Form.useForm();
-  useEffect(() => { if (load.data?.controls) form.setFieldsValue(load.data.controls); }, [load.data, form]);
-  const save = (values) => Modal.confirm({ title: "确认保存媒体检索控制？", content: <><p>更改会影响运行、供应商调用和预算，服务端会记录审计事件。</p><ObjectView value={values} /></>, okText: "确认保存", cancelText: "取消", onOk: async () => { try { await request("/api/admin/media-retrieval/controls", { method: "PATCH", headers: { "Idempotency-Key": key("admin-media-controls") }, body: JSON.stringify(values) }); message.success("控制已保存"); load.refresh(); } catch (e) { message.error(e.message); throw e; } } });
+  const load = useData("/api/admin/media-retrieval/overview");
+  const [form] = Form.useForm();
+  const [baseline, setBaseline] = useState(null);
+  const [confirmation, setConfirmation] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const dirty = useRef(false);
+  const submission = useRef(null);
+  const controls = load.data?.controls;
+  const controlRevision = mediaRetrievalControlRevision(controls);
+  useEffect(() => {
+    if (controlRevision !== null && !dirty.current) {
+      form.setFieldsValue(controls);
+      setBaseline(controls);
+    }
+  }, [controls, controlRevision, form]);
+  const resetDraft = () => {
+    if (controlRevision === null) return;
+    dirty.current = false;
+    submission.current = null;
+    form.setFieldsValue(controls);
+    setBaseline(controls);
+  };
+  const save = (values) => {
+    const expectedRevision = mediaRetrievalControlRevision(baseline);
+    if (expectedRevision === null || controlRevision === null) return;
+    const changes = Object.fromEntries(Object.entries(values)
+      .map(([field, value]) => [field, value ?? null])
+      .filter(([field, value]) => baseline[field] !== value));
+    if (!Object.keys(changes).length) return message.info("控制项没有变化");
+    const body = JSON.stringify({ ...changes, expectedRevision });
+    if (submission.current?.body !== body) {
+      submission.current = { body, requestKey: key("admin-media-controls") };
+    }
+    setSaveError("");
+    setConfirmation({ ...submission.current, changes });
+  };
+  const confirmSave = async () => {
+    if (saving || !confirmation) return;
+    const { requestKey, body } = confirmation;
+    setSaving(true);
+    setSaveError("");
+    try {
+      await request("/api/admin/media-retrieval/controls", { method: "PATCH", headers: { "Idempotency-Key": requestKey }, body });
+      dirty.current = false;
+      submission.current = null;
+      setConfirmation(null);
+      message.success("控制已保存");
+      load.refresh();
+    } catch (error) {
+      setSaveError(error.message);
+      if (error.status === 409) load.refresh();
+    } finally {
+      setSaving(false);
+    }
+  };
   const numeric = [["每用户每日请求上限", "userDailyRequestLimit", true], ["每用户每月预算（分）", "userMonthlyBudgetFen", true], ["全局每日预算（分）", "globalDailyBudgetFen", true], ["描述调用预留（分）", "captionReserveFen", false], ["向量调用预留（分）", "embeddingReserveFen", false]];
-  return <Page title="媒体检索" description="查看索引 worker、队列、预算和诊断，并在明确权限下管理运行控制。" load={load}><div className="section-grid two-columns"><Section title="运行状态" description="服务端实时状态与成本口径。"><Descriptions bordered size="small" column={1} items={[{ label: "生命周期", children: load.data?.runtimeStatus?.lifecycle || "未知" }, { label: "公开可用性", children: load.data?.runtimeStatus?.publicAvailability?.state || "未知" }, { label: "最近心跳", children: load.data?.runtimeStatus?.liveness?.lastSeenAt || "未知" }, { label: "队列", children: <ObjectView value={load.data?.queue} /> }, { label: "就绪分段", children: load.data?.readySegments ?? "未知" }]} /></Section><Section title="预算与占用" description="预留、估算和未知金额需要与供应商账单核对。"><Descriptions bordered size="small" column={1} items={Object.entries(load.data?.cost || {}).map(([field, value]) => ({ key: field, label: field, children: value == null ? "未知" : `${value} 分` }))} /></Section></div><Section title="运行控制" description="每次变更都会写入审计；服务端仍会再次校验权限和生命周期。"><Form form={form} layout="vertical" onFinish={(v) => save(Object.fromEntries(Object.entries(v).map(([k, x]) => [k, x === undefined ? null : x])))} disabled={!can("agents:manage")}><div className="control-row">{[["启用 Agent", "operatorEnabled"], ["允许 Provider 调用", "providerCallsEnabled"], ["允许创建索引任务", "queueEnabled"]].map(([label, field]) => <Form.Item key={field} name={field} label={label} valuePropName="checked"><Switch /></Form.Item>)}</div><div className="control-row">{numeric.map(([label, field, nullable]) => <Form.Item key={field} name={field} label={label} rules={nullable ? [] : [{ required: true, message: "请输入预留金额" }]}><InputNumber min={0} max={Number.MAX_SAFE_INTEGER} precision={0} placeholder={nullable ? "留空不限" : undefined} /></Form.Item>)}<Form.Item name="lifecycle" label="生命周期" rules={[{ required: true }]}><Select style={{ width: 170 }} options={lifecycles.map((value) => ({ value, label: value }))} /></Form.Item></div><Button type="primary" htmlType="submit" disabled={!can("agents:manage")}>保存控制</Button></Form></Section><div className="section-grid two-columns"><Section title="最近运行"><DataTable data={load.data?.recentRuns} cols={columns([["运行 ID", "agentRunId"], ["类型", "runType"], ["状态", "lifecycleStatus"], ["失败代码", "failureCode"], ["时间", "createdAt"]])} loading={load.loading} /></Section><Section title="运行诊断"><ObjectView value={load.data?.diagnostics} /></Section></div></Page>;
+  const disabled = !can("agents:manage") || !baseline || controlRevision === null || load.loading;
+  const costItems = [
+    ["今日已预留", "reservedFen"],
+    ["今日已估算", "estimatedFen"],
+    ["今日待核对预留", "unknownFen"],
+  ].map(([label, field]) => {
+    const fen = load.data?.cost?.[field];
+    return { key: field, label, children: Number.isFinite(fen) ? `¥${(fen / 100).toFixed(2)}` : "未知" };
+  });
+  return <Page title="媒体检索" description="查看索引 worker、队列、预算和诊断，并在明确权限下管理运行控制。" load={load}>
+    <div className="section-grid two-columns">
+      <Section title="运行状态" description="服务端实时状态与成本口径。"><Descriptions bordered size="small" column={1} items={[{ label: "生命周期", children: load.data?.runtimeStatus?.lifecycle || "未知" }, { label: "公开可用性", children: load.data?.runtimeStatus?.publicAvailability?.state || "未知" }, { label: "最近心跳", children: load.data?.runtimeStatus?.liveness?.lastSeenAt || "未知" }, { label: "队列", children: <ObjectView value={load.data?.queue} /> }, { label: "就绪分段", children: load.data?.readySegments ?? "未知" }]} /></Section>
+      <Section title="预算与占用" description="预算占用不代表供应商实际扣款，待核对金额请以供应商账单为准。">
+        <Descriptions bordered size="small" column={1} items={costItems} />
+      </Section>
+    </div>
+    <Section title="运行控制" description="每次变更都会写入审计；服务端仍会再次校验权限和生命周期。">
+      {load.data && controlRevision === null && <Alert type="warning" showIcon message="控制版本不可用，请刷新后重试。" />}
+      {baseline && controlRevision !== null && baseline.revision !== controlRevision && <Alert
+        type="warning" showIcon message="服务端控制已更新，当前草稿仍保留"
+        action={<Button onClick={resetDraft}>放弃草稿并载入最新值</Button>}
+      />}
+      <Form form={form} layout="vertical" onFinish={save} onValuesChange={() => { dirty.current = true; }} disabled={disabled}>
+        <div className="control-row">{[["启用 Agent", "operatorEnabled"], ["允许 Provider 调用", "providerCallsEnabled"], ["允许创建索引任务", "queueEnabled"]].map(([label, field]) => <Form.Item key={field} name={field} label={label} valuePropName="checked"><Switch /></Form.Item>)}</div>
+        <div className="control-row">{numeric.map(([label, field, nullable]) => <Form.Item key={field} name={field} label={label} rules={nullable ? [] : [{ required: true, message: "请输入预留金额" }]}><InputNumber min={0} max={Number.MAX_SAFE_INTEGER} precision={0} placeholder={nullable ? "留空不限" : undefined} /></Form.Item>)}<Form.Item name="lifecycle" label="生命周期" rules={[{ required: true }]}><Select style={{ width: 170 }} options={lifecycles.map((value) => ({ value, label: value }))} /></Form.Item></div>
+        <Button type="primary" htmlType="submit" disabled={disabled}>保存控制</Button>
+      </Form>
+    </Section>
+    <div className="section-grid two-columns">
+      <Section title="最近运行"><DataTable data={load.data?.recentRuns} cols={columns([["运行 ID", "agentRunId"], ["类型", "runType"], ["状态", "lifecycleStatus"], ["失败代码", "failureCode"], ["时间", "createdAt"]])} loading={load.loading} /></Section>
+      <Section title="运行诊断" description="失败诊断展示脱敏的调用阶段、HTTP 状态、错误代码和字段路径。">
+        <DataTable
+          data={load.data?.diagnostics}
+          loading={load.loading}
+          rowKey={(row) => `${row.agentRunId}-${row.createdAt}-${row.operation}-${row.stage}`}
+          cols={[
+            ...columns([["运行 ID", "agentRunId"], ["时间", "createdAt"], ["调用", "operation"], ["阶段", "stage"], ["失败代码", "failureCode"], ["HTTP", "httpStatus"], ["供应商代码", "providerCode"]]),
+            column("字段路径", "schemaPaths", (value) => value?.join("、") || "无"),
+            { title: "处理指引", key: "guidance", render: (_, row) => mediaRetrievalDiagnosticGuidance(row) },
+          ]}
+        />
+      </Section>
+    </div>
+    <Modal title="确认保存媒体检索控制？" open={Boolean(confirmation)} onOk={confirmSave}
+      onCancel={() => { if (!saving) setConfirmation(null); }} confirmLoading={saving}
+      okText="确认保存" cancelText="取消"
+      okButtonProps={{ "aria-label": "确认保存", disabled: saving }}
+      cancelButtonProps={{ disabled: saving }} maskClosable={!saving} keyboard={!saving}>
+      <ObjectView value={confirmation?.changes} />
+      {saveError && <Alert type="error" showIcon message={saveError} />}
+    </Modal>
+  </Page>;
 }
 
 export function SystemPage() {

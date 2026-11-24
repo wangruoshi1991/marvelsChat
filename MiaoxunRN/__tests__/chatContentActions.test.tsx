@@ -28,6 +28,7 @@ import { MyComicsScreen } from '../src/features/messages/MyComicsScreen';
 import { ChatComposer } from '../src/features/messages/ChatComposer';
 import { ChatMessageItem } from '../src/features/messages/ChatMessageItem';
 import { ChatMessageMenu } from '../src/features/messages/ChatMessageMenu';
+import { chatLayoutStyles } from '../src/features/messages/chatLayoutStyles';
 import { WorkspaceContextCard } from '../src/features/messages/WorkspaceContextCard';
 import { ChatScreen } from '../src/features/messages/MessagesScreen';
 import { ThreadSettingsSheet } from '../src/features/messages/ThreadSettingsSheet';
@@ -42,6 +43,8 @@ import { defaultUIPreferences } from '../src/features/ui/uiPreferences';
 import { useReduceMotion } from '../src/shared/useReduceMotion';
 import { uiPreferencesApi } from '../src/services/api/uiPreferencesApi';
 import { customStickerApi } from '../src/services/api/customStickerApi';
+import { messageApi } from '../src/services/api/messageApi';
+import { MiaoxunApiError } from '../src/services/api/http';
 import * as chatAttachmentApi from '../src/services/api/chatAttachmentApi';
 import * as chatMedia from '../src/services/chatMediaLibrary';
 import * as stationMediaPicker from '../src/services/stationMediaPicker';
@@ -96,6 +99,7 @@ const mockAssist = {
   release: jest.fn(),
   dismiss: jest.fn(),
   askButler: jest.fn(),
+  getGeneration: () => 0,
 };
 
 jest.mock('../src/features/assist/AIAssistProvider', () => ({
@@ -156,6 +160,121 @@ describe('Chat content actions', () => {
   afterEach(async () => {
     await ReactTestRenderer.act(() => renderer?.unmount());
     jest.restoreAllMocks();
+  });
+
+  it('uses server availability for chat AI actions while keeping text Share', async () => {
+    jest.spyOn(customStickerApi, 'list').mockResolvedValue([]);
+    jest
+      .spyOn(View.prototype, 'measureInWindow')
+      .mockImplementation(callback => callback(0, 80, 390, 600));
+    const share = jest.spyOn(Share, 'share').mockResolvedValue({
+      action: Share.sharedAction,
+    });
+    jest
+      .spyOn(messageApi, 'readMessageText')
+      .mockRejectedValueOnce(new MiaoxunApiError('Not Found', { status: 404 }))
+      .mockRejectedValueOnce(
+        new MiaoxunApiError('Not Found', {
+          status: 404,
+          code: 'CHAT_MESSAGE_AI_NOT_FOUND',
+        }),
+      );
+    const id = '123e4567-e89b-12d3-a456-426614174001';
+    const voiceMessage: ChatMessage = {
+      ...message,
+      id: 'voice',
+      content: '[语音]',
+      metadata: {
+        attachments: [
+          {
+            id,
+            kind: 'audio',
+            mimeType: 'audio/mp4',
+            filename: 'qa.m4a',
+            title: 'qa',
+            byteSize: 12,
+            durationMs: 3300,
+            downloadPath: `/api/chat-attachments/${id}/content`,
+            data: {},
+          },
+        ],
+      },
+    };
+    const props: React.ComponentProps<typeof ChatScreen> = {
+      token: 'owner-token',
+      palette: palettes.light,
+      language: 'zh',
+      currentUserId: 'user-1',
+      currentUserName: 'QA',
+      thread: { ...thread, messages: [message, voiceMessage] },
+      agents: [],
+      renderUserAvatar: () => <View />,
+      onBack: jest.fn(),
+      onSend: jest.fn(),
+      onDeleteMessage: jest.fn(),
+      onRecallMessage: jest.fn(),
+      onSetMuted: jest.fn(async () => undefined),
+      onActionError: jest.fn(),
+    };
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
+    });
+    const openMenu = async (selected: ChatMessage) => {
+      const row = renderer.root
+        .findAllByType(ChatMessageItem)
+        .find(item => item.props.item.id === selected.id);
+      await ReactTestRenderer.act(async () =>
+        row!.props.onOpenMessageMenu(
+          selected,
+          true,
+          { x: 100, y: 100 },
+          { x: 50, y: 50, width: 200, height: 120 },
+        ),
+      );
+      return renderer.root.findByType(ChatMessageMenu).props;
+    };
+    let menu = await openMenu(message);
+    expect(menu.onTranslate).toBeUndefined();
+    await ReactTestRenderer.act(async () => menu.onShare(message));
+    expect(share).toHaveBeenCalledWith({ message: message.content });
+    menu = await openMenu(voiceMessage);
+    expect(menu.onTranscribe).toBeUndefined();
+
+    await ReactTestRenderer.act(async () =>
+      renderer.update(
+        <ChatScreen
+          {...props}
+          chatMessageText={{ translate: false, transcribe: true }}
+        />,
+      ),
+    );
+    menu = await openMenu(voiceMessage);
+    expect(menu.onTranscribe).toEqual(expect.any(Function));
+    await ReactTestRenderer.act(async () => menu.onTranscribe(voiceMessage));
+    expect(
+      renderer.root
+        .findAllByType(Text)
+        .some(item => item.props.children === '这项服务暂未开放。'),
+    ).toBe(true);
+
+    await ReactTestRenderer.act(async () =>
+      renderer.update(
+        <ChatScreen
+          {...props}
+          chatMessageText={{ translate: true, transcribe: false }}
+        />,
+      ),
+    );
+    menu = await openMenu(message);
+    expect(menu.onShare).toEqual(expect.any(Function));
+    await ReactTestRenderer.act(async () => menu.onTranslate(message));
+    expect(
+      renderer.root
+        .findAllByType(Text)
+        .some(item => item.props.children === '原消息已不可用。'),
+    ).toBe(true);
+    menu = await openMenu(voiceMessage);
+    expect(menu.onTranscribe).toBeUndefined();
   });
 
   it('clears consumed attachment menu actions so a remounted row cannot save again', async () => {
@@ -662,6 +781,11 @@ describe('Chat content actions', () => {
     expect(composer().props.attachmentBlockReason).toContain(
       '点击失败消息重试',
     );
+    await ReactTestRenderer.act(() =>
+      renderer.root
+        .findByProps({ accessibilityLabel: '更多功能' })
+        .props.onPress(),
+    );
     const send = renderer.root.findByProps({ accessibilityLabel: '发送消息' });
     expect(send.props.disabled).toBe(true);
     await ReactTestRenderer.act(async () => send.props.onPress());
@@ -846,8 +970,123 @@ describe('Chat content actions', () => {
       true,
       { x: 180, y: 260 },
       { x: 12, y: 100, width: 320, height: 96 },
+      expect.any(Function),
+      undefined,
     );
   });
+
+  it('opens the standard menu on long press and can reopen the radial tools at the original point', async () => {
+    jest
+      .spyOn(View.prototype, 'measureInWindow')
+      .mockImplementation(callback => callback(12, 100, 320, 210));
+    const onOpenMessageMenu = jest.fn();
+    await renderMessage({ onOpenMessageMenu });
+    const surface = renderer.root
+      .findAllByProps({
+        testID: `chat-message-assist-${message.id}`,
+      })
+      .find(node => typeof node.props.onLongPress === 'function');
+    const radialCalls = mockAssist.open.mock.calls.length;
+    await ReactTestRenderer.act(() => surface!.props.onLongPress(touchEvent));
+    expect(mockAssist.open).toHaveBeenCalledTimes(radialCalls);
+    expect(onOpenMessageMenu).toHaveBeenCalledWith(
+      message,
+      true,
+      { x: 180, y: 260 },
+      { x: 12, y: 100, width: 320, height: 210 },
+      expect.any(Function),
+      undefined,
+    );
+    await ReactTestRenderer.act(() => onOpenMessageMenu.mock.calls[0][4]());
+    expect(mockAssist.open).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        point: { x: 180, y: 260 },
+      }),
+    );
+  });
+
+  it.each([
+    ['image', 'image/jpeg', '', 'chat-attachment-image', 'image-actions'],
+    ['file', 'text/plain', '', 'chat-attachment-file', 'message-actions'],
+    [
+      'audio',
+      'audio/mp4',
+      '[语音]',
+      'chat-attachment-audio',
+      'message-actions',
+    ],
+  ] as const)(
+    'renders standalone %s as one message surface and exposes its context menu',
+    async (kind, mimeType, content, testID, actionName) => {
+      const id = '123e4567-e89b-12d3-a456-426614174001';
+      jest
+        .spyOn(View.prototype, 'measureInWindow')
+        .mockImplementation(callback => callback(12, 100, 320, 210));
+      const onOpenMessageMenu = jest.fn();
+      await renderMessage({
+        token: 'synthetic',
+        item: {
+          ...message,
+          content,
+          metadata: {
+            ...message.metadata,
+            attachments: [
+              {
+                kind,
+                mimeType,
+                id,
+                title: kind,
+                filename: kind,
+                byteSize: 12,
+                durationMs: kind === 'audio' ? 3300 : null,
+                downloadPath: `/api/chat-attachments/${id}/content`,
+                data: {},
+              },
+            ],
+          },
+        },
+        onOpenMessageMenu,
+        messageEnhancement: (
+          <Text testID="adjacent-message-enhancement">附加结果</Text>
+        ),
+      });
+      const surface = renderer.root.findByType(AIAssistGestureSurface);
+      expect(StyleSheet.flatten(surface.props.style)).toMatchObject({
+        backgroundColor: 'transparent',
+        borderWidth: 0,
+        paddingVertical: 0,
+      });
+      expect(surface.props.accessible).toBe(false);
+      expect(
+        (surface.props.actions as AIAssistAction[]).map(action => action.label),
+      ).toEqual(['妙管家', '更多']);
+      const enhancement = (node: ReactTestRenderer.ReactTestInstance) =>
+        node.type === Text &&
+        node.props.testID === 'adjacent-message-enhancement';
+      const column = renderer.root
+        .findAllByType(View)
+        .find(node => node.props.style?.[0] === chatLayoutStyles.content);
+      expect(column?.findAll(enhancement)).toHaveLength(1);
+      expect(surface.findAll(enhancement)).toHaveLength(0);
+      expect(
+        renderer.root.findAllByProps({
+          testID: `chat-message-content-${message.id}`,
+        }),
+      ).toHaveLength(0);
+
+      const control = renderer.root
+        .findAllByProps({ testID })
+        .find(node => typeof node.props.onLongPress === 'function');
+      expect(control?.props.accessibilityRole).toBe('button');
+      await ReactTestRenderer.act(() => control!.props.onLongPress(touchEvent));
+      await ReactTestRenderer.act(() =>
+        control!.props.onAccessibilityAction({ nativeEvent: { actionName } }),
+      );
+      expect(onOpenMessageMenu).toHaveBeenCalledTimes(2);
+      expect(onOpenMessageMenu.mock.calls[0][5]).toBe(id);
+      expect(onOpenMessageMenu.mock.calls[1][5]).toBe(id);
+    },
+  );
 
   it('does not expose message content actions after recall', async () => {
     await renderMessage({
@@ -855,6 +1094,55 @@ describe('Chat content actions', () => {
     });
     expect(renderer.root.findAllByType(AIAssistGestureSurface)).toHaveLength(0);
   });
+
+  it.each([
+    ['same sender in a direct chat', 'direct', 'user-1', 1, false, false],
+    ['same sender in a group', 'group', 'user-1', 1, false, false],
+    [
+      'different group sender with the same name',
+      'group',
+      'user-2',
+      1,
+      false,
+      true,
+    ],
+    ['same sender after a time separator', 'direct', 'user-1', 5, false, true],
+    [
+      'same sender following a recalled message',
+      'direct',
+      'user-1',
+      1,
+      true,
+      true,
+    ],
+    ['same sender in an Agent chat', 'agent', 'user-1', 1, false, true],
+  ] as const)(
+    'shows the sender heading only at a conversation boundary for %s',
+    async (
+      _scenario,
+      kind,
+      senderUserId,
+      elapsedMinutes,
+      recalled,
+      visible,
+    ) => {
+      const renderUserAvatar = jest.fn(() => <View />);
+      await renderMessage({
+        thread: { ...thread, kind },
+        previousMessage: {
+          ...message,
+          id: 'previous',
+          createdAt: new Date(
+            Date.parse(message.createdAt!) - elapsedMinutes * 60_000,
+          ).toISOString(),
+          metadata: { senderUserId },
+          ...(recalled ? { recalledAt: message.createdAt } : {}),
+        },
+        renderUserAvatar,
+      });
+      expect(renderUserAvatar).toHaveBeenCalledTimes(visible ? 1 : 0);
+    },
+  );
 
   it('keeps long text, reply context and failed-send retry inside the full-width card', async () => {
     const content = `${'很长的消息内容'.repeat(
@@ -935,12 +1223,12 @@ describe('Chat content actions', () => {
     expect(onChangeDraft).toHaveBeenCalledWith('新的内容');
     await ReactTestRenderer.act(() => input.props.onFocus());
     expect(onFocusInput).toHaveBeenCalledTimes(1);
-    expect(input.props.returnKeyType).toBe('default');
-    expect(input.props.submitBehavior).toBe('newline');
-    expect(input.props.onSubmitEditing).toBeUndefined();
+    expect(input.props.returnKeyType).toBe('send');
+    expect(input.props.submitBehavior).toBe('submit');
     expect(
-      renderer.root.findAllByProps({ accessibilityLabel: '更多功能' }),
-    ).toHaveLength(0);
+      renderer.root.findByProps({ accessibilityLabel: '更多功能' }).props
+        .accessibilityState.disabled,
+    ).toBe(false);
     const speechToggle = renderer.root
       .findAllByProps({ accessibilityLabel: '切换语音输入' })
       .find(node => typeof node.props.onPress === 'function');
@@ -963,6 +1251,11 @@ describe('Chat content actions', () => {
         .flat(),
     ).not.toContain('妙管家');
     expect(onSend).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(() =>
+      renderer.root
+        .findByProps({ accessibilityLabel: '更多功能' })
+        .props.onPress(),
+    );
     await ReactTestRenderer.act(() =>
       renderer.root
         .findByProps({ accessibilityLabel: '发送消息' })
@@ -1128,7 +1421,7 @@ describe('Chat content actions', () => {
     );
     expect(StyleSheet.flatten(input.props.style).height).toBeUndefined();
     expect(StyleSheet.flatten(input.props.style)).toEqual(
-      expect.objectContaining({ minHeight: 44, maxHeight: 132 }),
+      expect.objectContaining({ minHeight: 22, maxHeight: 110, padding: 0 }),
     );
     await ReactTestRenderer.act(() =>
       input.props.onChangeText('第一行\n第二行\n第三行'),
@@ -1261,6 +1554,111 @@ describe('Chat content actions', () => {
     expect(onDeleteMessage).toHaveBeenCalledWith(message.id);
   });
 
+  it('orders context actions and keeps media tools scoped to the selected attachment', async () => {
+    const translate = jest.fn();
+    const transcribe = jest.fn();
+    const tools = jest.fn();
+    const save = jest.fn();
+    const view = jest.fn();
+    const close = jest.fn();
+    const image = (id: string) => ({
+      id,
+      kind: 'image' as const,
+      filename: `${id}.jpg`,
+      title: id,
+      mimeType: 'image/jpeg',
+      byteSize: 20,
+      durationMs: null,
+      downloadPath: `/api/chat-attachments/${id}/content`,
+      data: {},
+    });
+    const audio = {
+      ...image('voice'),
+      kind: 'audio' as const,
+      filename: 'voice.m4a',
+      mimeType: 'audio/mp4',
+      durationMs: 5000,
+    };
+    const mediaMessage: ChatMessage = {
+      ...message,
+      metadata: { attachments: [image('first'), image('second'), audio] },
+    };
+    const menu = (attachmentId?: string) => (
+      <ChatMessageMenu
+        palette={palettes.light}
+        language="zh"
+        selectedMessage={mediaMessage}
+        attachmentId={attachmentId}
+        position={{
+          x: 12,
+          y: 80,
+          isMine: false,
+          arrowPlacement: 'top',
+          maxHeight: 130,
+        }}
+        arrowLeft={30}
+        canRecall={false}
+        onClose={close}
+        onReply={jest.fn()}
+        onDeleteMessage={jest.fn()}
+        onRecallMessage={jest.fn()}
+        onActionMessage={jest.fn()}
+        onShare={jest.fn()}
+        onTranslate={translate}
+        onTranscribe={transcribe}
+        translationVisible
+        transcriptionVisible
+        onAskButler={tools}
+        onSaveAttachment={save}
+        onViewAttachments={view}
+      />
+    );
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(menu('second'));
+    });
+    const actions = () => renderer.root.findAllByType(MessageInlineAction);
+    const press = (title: string) =>
+      actions()
+        .find(action => action.props.title === title)!
+        .props.onPress();
+    expect(actions().map(action => action.props.title)).toEqual([
+      '回复',
+      '复制',
+      '分享',
+      '收起译文',
+      '查看图片',
+      '保存图片',
+      '妙讯工具',
+      '删除',
+    ]);
+    await ReactTestRenderer.act(async () => {
+      press('查看图片');
+      press('保存图片');
+      press('收起译文');
+      press('妙讯工具');
+    });
+    expect(view).toHaveBeenCalledWith(mediaMessage, 'second');
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'second' }),
+    );
+    expect(translate).toHaveBeenCalledWith(mediaMessage);
+    expect(tools).toHaveBeenCalledWith(mediaMessage);
+    expect(close).toHaveBeenCalledTimes(4);
+
+    await ReactTestRenderer.act(async () => renderer.update(menu('voice')));
+    expect(actions().map(action => action.props.title)).toEqual([
+      '回复',
+      '复制',
+      '分享',
+      '收起译文',
+      '收起转写',
+      '妙讯工具',
+      '删除',
+    ]);
+    await ReactTestRenderer.act(async () => press('收起转写'));
+    expect(transcribe).toHaveBeenCalledWith(mediaMessage);
+  });
+
   it('opens read-only comic history and preserves the current editable draft on return', async () => {
     const onSend = jest.fn();
     const props = {
@@ -1314,6 +1712,69 @@ describe('Chat content actions', () => {
     ).toHaveLength(0);
   });
 
+  it.each([
+    {
+      name: 'uses the complete native text instead of an older rendered draft',
+      renderedDraft: '输入中的旧内容',
+      nativeText: '输入完成后的完整内容。',
+      sent: true,
+    },
+    {
+      name: 'can send native text before an empty rendered draft updates',
+      renderedDraft: '',
+      nativeText: '刚输入的完整内容。',
+      sent: true,
+    },
+    {
+      name: 'does not send an older nonempty draft when the native text is empty',
+      renderedDraft: '输入中的旧内容',
+      nativeText: '',
+      sent: false,
+    },
+  ])(
+    'native keyboard Send $name',
+    async ({ renderedDraft, nativeText, sent }) => {
+      const onSend = jest.fn<
+        Promise<boolean>,
+        Parameters<React.ComponentProps<typeof ChatScreen>['onSend']>
+      >(() => new Promise<boolean>(() => {}));
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(
+          <ChatScreen
+            token="owner"
+            palette={palettes.light}
+            language="zh"
+            currentUserId="user-1"
+            currentUserName="Gary"
+            thread={{ ...thread, kind: 'agent', agentId: 'comic-diary' }}
+            agents={[]}
+            renderUserAvatar={() => <View />}
+            onBack={jest.fn()}
+            onSend={onSend}
+            onDeleteMessage={jest.fn()}
+            onRecallMessage={jest.fn()}
+            onSetMuted={jest.fn(async () => undefined)}
+            onActionError={jest.fn()}
+            initialDraft={renderedDraft}
+          />,
+        );
+      });
+      const editor = renderer.root.findByType(TextInput);
+      expect(editor.props.value).toBe(renderedDraft);
+      // The native submit snapshot can arrive before the preceding text change
+      // has produced a React render. Do not call onChangeText in this scenario.
+      await ReactTestRenderer.act(() =>
+        editor.props.onSubmitEditing({ nativeEvent: { text: nativeText } }),
+      );
+      if (sent) {
+        expect(onSend).toHaveBeenCalledTimes(1);
+        expect(onSend.mock.calls[0][0]).toBe(nativeText);
+      } else {
+        expect(onSend).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it('keeps comic references optional inside the album tool, and dismisses the keyboard before sending', async () => {
     const dismiss = jest.spyOn(Keyboard, 'dismiss');
     const prepare = jest.fn(async () => null);
@@ -1366,9 +1827,9 @@ describe('Chat content actions', () => {
     expect(composer().props.draft).toContain('纸船');
     dismiss.mockClear();
     await ReactTestRenderer.act(() =>
-      renderer.root
-        .findByProps({ accessibilityLabel: '发送消息' })
-        .props.onPress(),
+      renderer.root.findByType(TextInput).props.onSubmitEditing({
+        nativeEvent: { text: renderer.root.findByType(TextInput).props.value },
+      }),
     );
     expect(dismiss).toHaveBeenCalledTimes(1);
     expect(onSend).toHaveBeenCalledTimes(1);
@@ -1377,9 +1838,15 @@ describe('Chat content actions', () => {
     expect(composer().props.draft).toBe('');
     expect(composer().props.isSending).toBe(true);
     expect(
-      renderer.root.findByProps({ accessibilityLabel: '发送消息' }).props
-        .accessibilityState,
-    ).toEqual({ disabled: true, busy: true });
+      renderer.root.findByProps({ accessibilityLabel: '更多功能' }).props
+        .accessibilityState.disabled,
+    ).toBe(true);
+    await ReactTestRenderer.act(() =>
+      renderer.root.findByType(TextInput).props.onSubmitEditing({
+        nativeEvent: { text: renderer.root.findByType(TextInput).props.value },
+      }),
+    );
+    expect(onSend).toHaveBeenCalledTimes(1);
   });
 
   it('moves the chat with the announced iOS keyboard animation and retains browsing position', async () => {
@@ -2622,6 +3089,11 @@ describe('Chat content actions', () => {
     await ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(<ChatScreen {...props} />);
     });
+    await ReactTestRenderer.act(() =>
+      renderer.root
+        .findByProps({ accessibilityLabel: '更多功能' })
+        .props.onPress(),
+    );
     await ReactTestRenderer.act(() =>
       renderer.root
         .findByProps({ accessibilityLabel: '妙猜猜' })

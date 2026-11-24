@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { query, withTransaction } from "./db.js";
 import { HttpError } from "./http-error.js";
-import { ensureFriendThreadForUser, ensureFriendThreadPair } from "./message-repository.js";
+import { ensureFriendThreadPair, getThreadForUser } from "./message-repository.js";
 import {
   NOTIFICATION_KINDS,
   createNotification,
@@ -16,6 +16,11 @@ import {
 async function getRawUserById(userId) {
   const rows = await query("SELECT * FROM users WHERE id = ? LIMIT 1", [userId]);
   return rows[0] || null;
+}
+
+function lockFriendPair(connection, userId, otherUserId) {
+  const pair = [userId, otherUserId].sort().join(":");
+  return connection.query("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", [`friend-request:${pair}`]);
 }
 
 async function refreshSocialCounts(connection, userId) {
@@ -104,92 +109,52 @@ export async function createFriendRequest({ requesterUserId, targetUserId, messa
     throw new HttpError(400, "Cannot add yourself as friend");
   }
 
-  const friendRows = await query(
-    `SELECT id FROM social_relationships
-    WHERE follower_user_id = ? AND followed_user_id = ? AND relation_type = 'friend' AND status = 'active'
-    LIMIT 1`,
-    [requesterUserId, targetUserId],
-  );
-  if (friendRows.length) {
-    throw new HttpError(409, "Already friends");
-  }
-
-  const existingPendingRows = await query(
-    `SELECT id FROM social_requests
-    WHERE requester_user_id = ? AND target_user_id = ? AND request_type = 'friend' AND status = 'pending'
-    ORDER BY created_at DESC
-    LIMIT 1`,
-    [requesterUserId, targetUserId],
-  );
   const requester = await getRawUserById(requesterUserId);
-  const requestId = crypto.randomUUID();
-  await query(
-    `INSERT INTO social_requests
+  return withTransaction(async connection => {
+    await lockFriendPair(connection, requesterUserId, targetUserId);
+    const [friend] = await connection.query(`SELECT id FROM social_relationships
+      WHERE follower_user_id=? AND followed_user_id=? AND relation_type='friend' AND status='active' LIMIT 1`,
+    [requesterUserId,targetUserId]);
+    if (friend) throw new HttpError(409, "Already friends");
+    const [row] = await connection.query(`INSERT INTO social_requests
       (id, requester_user_id, target_user_id, request_type, status, message)
-    VALUES (?, ?, ?, 'friend', 'pending', ?)
-    ON CONFLICT (requester_user_id, target_user_id, request_type)
-    WHERE status = 'pending'
-    DO UPDATE SET
-      message = EXCLUDED.message,
-      updated_at = CURRENT_TIMESTAMP
-    RETURNING id`,
-    [requestId, requesterUserId, targetUserId, message],
-  );
-
-  const rows = await query(
-    `SELECT id FROM social_requests
-    WHERE requester_user_id = ? AND target_user_id = ? AND request_type = 'friend' AND status = 'pending'
-    ORDER BY created_at DESC
-    LIMIT 1`,
-    [requesterUserId, targetUserId],
-  );
-  const resolvedRequestId = rows[0]?.id || requestId;
-
-  if (!existingPendingRows.length) {
-    const notification = await createNotification({
+      VALUES (?, ?, ?, 'friend', 'pending', ?)
+      ON CONFLICT (requester_user_id, target_user_id, request_type) WHERE status = 'pending'
+      DO UPDATE SET message=EXCLUDED.message RETURNING id,status,(xmax = 0) AS created`,
+    [crypto.randomUUID(),requesterUserId,targetUserId,message]);
+    if (!row) throw new HttpError(500, "Could not create friend request");
+    const notification = row.created ? await createNotification({
       userId: targetUserId,
       actorUserId: requesterUserId,
       actorName: requester?.display_name || "",
       kind: NOTIFICATION_KINDS.FRIEND_REQUEST,
       targetType: "friend_request",
-      targetId: resolvedRequestId,
+      targetId: row.id,
       payload: { requesterUserId },
-    });
-    return { id: resolvedRequestId, status: "pending", notification };
-  }
-
-  return { id: resolvedRequestId, status: "pending" };
+    }, connection.query) : null;
+    return { id: row.id, status: row.status, ...(notification ? { notification } : {}) };
+  });
 }
 
 export async function acceptFriendRequest({ requestId, targetUserId }) {
-  const rows = await query(
-    `SELECT r.*, requester.display_name AS requester_name, target.display_name AS target_name
-    FROM social_requests r
-    JOIN users requester ON requester.id = r.requester_user_id
-    JOIN users target ON target.id = r.target_user_id
-    WHERE r.id = ? AND r.target_user_id = ? AND r.request_type = 'friend' AND r.status = 'pending'
-    LIMIT 1`,
-    [requestId, targetUserId],
-  );
-  if (!rows.length) {
-    throw new HttpError(404, "Friend request not found");
-  }
-
-  const request = rows[0];
-  await withTransaction(async (connection) => {
-    await connection.execute(
-      `UPDATE social_requests
-      SET status = 'accepted', responded_at = CURRENT_TIMESTAMP
-      WHERE id = ?`,
-      [requestId],
-    );
+  const request = await withTransaction(async connection => {
+    const [pending] = await connection.query(`SELECT requester_user_id FROM social_requests
+      WHERE id=? AND target_user_id=? AND request_type='friend' AND status='pending'`, [requestId, targetUserId]);
+    if (!pending) throw new HttpError(409, "Friend request has already changed", { code: "FRIEND_REQUEST_STATE_CHANGED" });
+    await lockFriendPair(connection, pending.requester_user_id, targetUserId);
+    const [request] = await connection.query(`UPDATE social_requests SET status='accepted',responded_at=CURRENT_TIMESTAMP
+      WHERE id=? AND target_user_id=? AND request_type='friend' AND status='pending' RETURNING *`,
+    [requestId,targetUserId]);
+    if (!request) throw new HttpError(409, "Friend request has already changed", { code: "FRIEND_REQUEST_STATE_CHANGED" });
+    const [requester] = await connection.query("SELECT display_name FROM users WHERE id=?", [request.requester_user_id]);
+    const [target] = await connection.query("SELECT display_name FROM users WHERE id=?", [request.target_user_id]);
 
     for (const [followerUserId, followedUserId] of [
       [request.requester_user_id, request.target_user_id],
       [request.target_user_id, request.requester_user_id],
     ]) {
-      await connection.execute(
-        `INSERT INTO social_relationships
+      await connection.query(
+      `INSERT INTO social_relationships
           (id, follower_user_id, followed_user_id, relation_type, status)
         VALUES (?, ?, ?, 'friend', 'active')
         ON CONFLICT (follower_user_id, followed_user_id, relation_type) DO UPDATE SET
@@ -201,74 +166,49 @@ export async function acceptFriendRequest({ requestId, targetUserId }) {
 
     await refreshSocialCounts(connection, request.requester_user_id);
     await refreshSocialCounts(connection, request.target_user_id);
-    await ensureFriendThreadPair(connection, request.requester_user_id, request.target_user_id);
+    const threadId = await ensureFriendThreadPair(connection, request.target_user_id, request.requester_user_id);
+    const notification = await createNotification({
+      userId: request.requester_user_id,
+      actorUserId: targetUserId,
+      actorName: target?.display_name || "",
+      kind: NOTIFICATION_KINDS.FRIEND_ACCEPTED,
+      targetType: "user",
+      targetId: targetUserId,
+    }, connection.query);
+    await markNotificationsForTargetRead(targetUserId, "friend_request", requestId, connection.query);
+    return { ...request, notification, threadId, requesterName: requester?.display_name || "" };
   });
-
-  const notification = await createNotification({
-    userId: request.requester_user_id,
-    actorUserId: request.target_user_id,
-    actorName: request.target_name || "",
-    kind: NOTIFICATION_KINDS.FRIEND_ACCEPTED,
-    targetType: "user",
-    targetId: request.target_user_id,
-  });
-
-  await markNotificationsForTargetRead(targetUserId, "friend_request", requestId);
-  const acceptedThread = await ensureFriendThreadForUser(targetUserId, request.requester_user_id);
+  const thread = await getThreadForUser(targetUserId, request.threadId);
   return {
     id: requestId,
     status: "accepted",
     requesterUserId: request.requester_user_id,
     targetUserId,
-    thread: acceptedThread.thread,
-    notification,
+    thread,
+    notification: request.notification,
   };
 }
 
 export async function rejectFriendRequest({ requestId, targetUserId }) {
-  const rows = await query(
-    `SELECT r.*
-    FROM social_requests r
-    WHERE r.id = ? AND r.target_user_id = ? AND r.request_type = 'friend' AND r.status = 'pending'
-    LIMIT 1`,
-    [requestId, targetUserId],
-  );
-  if (!rows.length) {
-    throw new HttpError(404, "Friend request not found");
-  }
-
-  const request = rows[0];
-  await query(
-    `UPDATE social_requests
-    SET status = 'rejected', responded_at = CURRENT_TIMESTAMP
-    WHERE id = ?`,
-    [requestId],
-  );
-  await markNotificationsForTargetRead(targetUserId, "friend_request", requestId);
-  return { id: request.id, status: "rejected", requesterUserId: request.requester_user_id };
+  return withTransaction(async connection => {
+    const [request] = await connection.query(`UPDATE social_requests SET status='rejected',responded_at=CURRENT_TIMESTAMP
+      WHERE id=? AND target_user_id=? AND request_type='friend' AND status='pending' RETURNING id,requester_user_id`,
+    [requestId,targetUserId]);
+    if (!request) throw new HttpError(409, "Friend request has already changed", { code: "FRIEND_REQUEST_STATE_CHANGED" });
+    await markNotificationsForTargetRead(targetUserId, "friend_request", requestId, connection.query);
+    return { id: request.id, status: "rejected", requesterUserId: request.requester_user_id };
+  });
 }
 
 export async function cancelFriendRequest({ requestId, requesterUserId }) {
-  const rows = await query(
-    `SELECT r.*
-    FROM social_requests r
-    WHERE r.id = ? AND r.requester_user_id = ? AND r.request_type = 'friend' AND r.status = 'pending'
-    LIMIT 1`,
-    [requestId, requesterUserId],
-  );
-  if (!rows.length) {
-    throw new HttpError(404, "Friend request not found");
-  }
-
-  const request = rows[0];
-  await query(
-    `UPDATE social_requests
-    SET status = 'cancelled', responded_at = CURRENT_TIMESTAMP
-    WHERE id = ?`,
-    [requestId],
-  );
-  await markNotificationsForTargetRead(request.target_user_id, "friend_request", requestId);
-  return { id: request.id, status: "cancelled", targetUserId: request.target_user_id };
+  return withTransaction(async connection => {
+    const [request] = await connection.query(`UPDATE social_requests SET status='cancelled',responded_at=CURRENT_TIMESTAMP
+      WHERE id=? AND requester_user_id=? AND request_type='friend' AND status='pending' RETURNING id,target_user_id`,
+    [requestId,requesterUserId]);
+    if (!request) throw new HttpError(409, "Friend request has already changed", { code: "FRIEND_REQUEST_STATE_CHANGED" });
+    await markNotificationsForTargetRead(request.target_user_id, "friend_request", requestId, connection.query);
+    return { id: request.id, status: "cancelled", targetUserId: request.target_user_id };
+  });
 }
 
 export async function listRelationshipProfiles(userId, type = "friends", limit = 60, onlineUserIds = [], before = null) {

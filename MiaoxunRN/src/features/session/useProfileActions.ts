@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import {
   PresenceMode,
@@ -8,6 +8,7 @@ import {
   UserDTO,
 } from '../../models/api';
 import { apiClient } from '../../services/apiClient';
+import { useCurrentScope } from '../../shared/useCurrentScope';
 
 export function useProfileActions({
   token,
@@ -17,9 +18,13 @@ export function useProfileActions({
 }: {
   token: string;
   applySavedProfile: (profile: ProfileDTO) => void;
-  setProfileVisibility: Dispatch<SetStateAction<ProfileVisibilityDTO>>;
+  setProfileVisibility: (visibility: ProfileVisibilityDTO) => void;
   setUser: Dispatch<SetStateAction<UserDTO | null>>;
 }) {
+  const isCurrentSession = useCurrentScope(token);
+  const visibilityWrites = useRef(
+    new Map<string, Promise<ProfileVisibilityDTO>>(),
+  );
   const updatePresence = useCallback(
     async (presenceMode: PresenceMode) => {
       if (!token) {
@@ -37,14 +42,38 @@ export function useProfileActions({
       if (!token) {
         throw new Error('请先登录。');
       }
-      const updated = await apiClient.updateProfileVisibility(
-        token,
-        visibility,
-      );
-      setProfileVisibility(updated);
-      return updated;
+      const patch = { ...visibility };
+      const previous = visibilityWrites.current.get(token);
+      const write = (async () => {
+        if (previous) await previous.catch(() => undefined);
+        if (!isCurrentSession()) throw new Error('登录账号已切换。');
+        try {
+          const updated = await apiClient.updateProfileVisibility(token, patch);
+          if (isCurrentSession()) setProfileVisibility(updated);
+          return updated;
+        } catch (error) {
+          if (isCurrentSession()) {
+            try {
+              const current = await apiClient.profileVisibility(token);
+              if (isCurrentSession()) setProfileVisibility(current);
+            } catch {
+              throw new Error(
+                '隐私设置同步失败，暂时无法读取服务器状态，请重试。',
+              );
+            }
+          }
+          throw error;
+        }
+      })();
+      visibilityWrites.current.set(token, write);
+      try {
+        return await write;
+      } finally {
+        if (visibilityWrites.current.get(token) === write)
+          visibilityWrites.current.delete(token);
+      }
     },
-    [setProfileVisibility, token],
+    [isCurrentSession, setProfileVisibility, token],
   );
 
   const updateProfile = useCallback(

@@ -17,7 +17,7 @@ export function registerChatAttachmentRoutes(app, { authenticate, asyncHandler, 
       catch { throw new HttpError(400,'附件名称无效。'); }
       const attachment=await createAttachment({ userId:req.user.id,threadId:z.string().uuid().parse(req.params.threadId),
         idempotencyKey:z.string().uuid().parse(req.get('Idempotency-Key')),
-        upload:{ kind:z.enum(['image','audio','file']).parse(req.get('X-Miaoxun-Attachment-Kind')), filename,
+        upload:{ kind:z.enum(['image','audio','file','video']).parse(req.get('X-Miaoxun-Attachment-Kind')), filename,
           mimeType:req.get('X-Miaoxun-Attachment-Mime') || '',bytes:req.body } });
       res.status(201).json({data:attachment});
     }));

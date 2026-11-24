@@ -2,9 +2,11 @@ import React from 'react';
 import { AppState, AppStateStatus, Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { MiaoTaskWorkspace } from '../src/features/miao/MiaoTaskWorkspace';
+import { SiteDocumentPreview } from '../src/features/site-document/SiteDocumentPreview';
 import { AITaskDTO } from '../src/models/aiTask';
 import { aiTaskApi, AITaskEventPage } from '../src/services/api/aiTaskApi';
 import { MiaoxunApiError } from '../src/services/api/http';
+import { stationAgentApi } from '../src/services/api/stationAgentApi';
 import { palettes } from '../src/shared/theme';
 
 jest.mock('../src/services/api/aiTaskApi', () => ({
@@ -366,14 +368,26 @@ test('approval opens the existing preview and never directly confirms or invents
   });
   get.mockResolvedValue(waiting);
   events.mockResolvedValue(page(waiting));
+  const read = jest
+    .spyOn(stationAgentApi, 'siteDocument')
+    .mockRejectedValue(new MiaoxunApiError('草稿不可用', { status: 404 }));
   const open = jest.fn();
   await act(async () => {
     renderer = TestRenderer.create(view({ task: waiting, onOpenSource: open }));
   });
   expect(text()).toContain('打开建站预览');
   expect(text()).not.toContain('确认应用');
-  act(() => press('miao-task-open-source'));
-  expect(open).toHaveBeenCalledWith(waiting);
+  await act(async () => press('miao-task-open-source'));
+  expect(open).not.toHaveBeenCalled();
+  expect(read).toHaveBeenCalledWith('owner-a', 'draft');
+  expect(renderer!.root.findByType(SiteDocumentPreview).props.draftId).toBe(
+    'draft',
+  );
+  await act(async () =>
+    renderer!.root.findByType(SiteDocumentPreview).props.onClose(),
+  );
+  expect(renderer!.root.findAllByType(SiteDocumentPreview)).toHaveLength(0);
+  expect(text()).toContain('打开建站预览');
   expect(decide).not.toHaveBeenCalled();
   const interrupted = task({
     status: 'interrupted',
@@ -386,6 +400,56 @@ test('approval opens the existing preview and never directly confirms or invents
   await act(async () => renderer!.update(view({ task: interrupted })));
   expect(text()).toContain('不会自动重试');
   expect(text()).not.toContain('取消任务');
+  read.mockRestore();
+});
+
+test('a new task uses its own draft and ignores a slow preview from the previous task', async () => {
+  const draftTask = (id: string, draft: string) =>
+    task({
+      id,
+      kind: 'site_draft',
+      status: 'succeeded',
+      phase: 'succeeded',
+      allowedActions: [],
+      artifacts: [{ kind: 'site_draft', id: draft, title: draft }],
+    });
+  const first = draftTask('first-task', 'first-draft');
+  const second = draftTask('second-task', 'second-draft');
+  get.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+  events.mockResolvedValueOnce(page(first)).mockResolvedValueOnce(page(second));
+  let rejectFirst!: (error: Error) => void;
+  const read = jest
+    .spyOn(stationAgentApi, 'siteDocument')
+    .mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    )
+    .mockRejectedValueOnce(
+      new MiaoxunApiError('Draft has been removed', { status: 404 }),
+    );
+  try {
+    await act(async () => {
+      renderer = TestRenderer.create(view({ task: first }));
+    });
+    await act(async () => press('miao-task-open-source'));
+    await act(async () => renderer!.update(view({ task: second })));
+    await act(async () => press('miao-task-open-source'));
+    await act(async () => rejectFirst(new Error('Old private draft error')));
+    expect(read.mock.calls).toEqual([
+      ['owner-a', 'first-draft'],
+      ['owner-a', 'second-draft'],
+    ]);
+    const preview = renderer!.root.findByType(SiteDocumentPreview);
+    expect(preview.props.draftId).toBe('second-draft');
+    expect(text()).not.toContain('Old private draft error');
+    await act(async () => preview.props.onClose());
+    expect(renderer!.root.findAllByType(SiteDocumentPreview)).toHaveLength(0);
+    expect(text()).toContain('second-draft');
+  } finally {
+    read.mockRestore();
+  }
 });
 
 test('polling pauses in background and on sign-out, clearing private content after a missing task', async () => {

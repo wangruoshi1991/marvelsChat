@@ -23,8 +23,9 @@ import java.util.UUID
 class MiaoxunDocumentPickerModule(
   private val context: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(context), ActivityEventListener {
-  private val copies = mutableMapOf<String, File>()
-  private var pendingPick: Promise? = null
+  private val copies = java.util.concurrent.ConcurrentHashMap<String, File>()
+  @Volatile private var pendingPick: Promise? = null
+  private var pickingVideo = false
   private val requestCode = 48172
   private val maximumFileBytes = 262144L
   private val maximumResponseBytes = 8192
@@ -40,21 +41,27 @@ class MiaoxunDocumentPickerModule(
   override fun getName() = "MiaoxunDocumentPickerModule"
 
   @ReactMethod
-  fun pick(promise: Promise) {
+  fun pick(promise: Promise) = presentPicker(video = false, promise = promise)
+
+  @ReactMethod
+  fun pickVideo(promise: Promise) = presentPicker(video = true, promise = promise)
+
+  private fun presentPicker(video: Boolean, promise: Promise) {
     if (pendingPick != null) {
       promise.reject("file_picker_busy", "文件选择器正在运行。")
       return
     }
-    val activity = currentActivity
+    val activity = context.currentActivity
     if (activity == null) {
       promise.reject("file_picker_unavailable", "无法打开文件选择器。")
       return
     }
+    pickingVideo = video
     pendingPick = promise
     try {
       val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
         addCategory(Intent.CATEGORY_OPENABLE)
-        type = "*/*"
+        type = if (video) "video/mp4" else "*/*"
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
       }
       activity.startActivityForResult(intent, requestCode)
@@ -67,23 +74,31 @@ class MiaoxunDocumentPickerModule(
   override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
     if (requestCode != this.requestCode) return
     val promise = pendingPick ?: return
-    pendingPick = null
     if (resultCode != Activity.RESULT_OK) {
+      pendingPick = null
       promise.resolve(null)
       return
     }
     val source = data?.data
     if (source == null) {
+      pendingPick = null
       promise.reject("file_read_failed", "无法读取所选文件。")
       return
     }
+    val video = pickingVideo
+    Thread { copyPickedDocument(source, video, promise) }.start()
+  }
+
+  private fun copyPickedDocument(source: Uri, video: Boolean, promise: Promise) {
+    val limit = if (video) maximumBinaryUploadBytes.toLong() else maximumFileBytes
+    val limitMessage = if (video) "请选择非空且不超过8MiB的H.264 MP4视频。" else "请选择非空且不超过256KiB的文件。"
     var destination: File? = null
     try {
       val key = UUID.randomUUID().toString().lowercase()
       val directory = File(context.filesDir, "MiaoxunDocuments")
       if (!directory.exists() && !directory.mkdirs()) throw IllegalStateException()
       destination = File(directory, key)
-      val size = copyBounded(source, destination)
+      val size = copyBounded(source, destination, limit)
       if (size <= 0) throw IllegalStateException()
       copies[key] = destination
       val result = Arguments.createMap().apply {
@@ -96,7 +111,9 @@ class MiaoxunDocumentPickerModule(
       promise.resolve(result)
     } catch (_: Throwable) {
       destination?.delete()
-      promise.reject("file_read_failed", "请选择非空且不超过256KiB的文件。")
+      promise.reject("file_read_failed", limitMessage)
+    } finally {
+      pendingPick = null
     }
   }
 
@@ -183,6 +200,87 @@ class MiaoxunDocumentPickerModule(
         connection?.disconnect()
       }
     }.start()
+  }
+
+  private class VideoDownload {
+    @Volatile var connection: HttpURLConnection? = null
+    @Volatile var cancelled = false
+    @Volatile var file: File? = null
+  }
+
+  private val videos = java.util.concurrent.ConcurrentHashMap<String, VideoDownload>()
+
+  @ReactMethod
+  fun downloadChatVideo(key: String, attachmentId: String, token: String, promise: Promise) {
+    if (runCatching { UUID.fromString(key); UUID.fromString(attachmentId) }.isFailure || token.isBlank()) {
+      promise.reject("chat_video_invalid", "视频引用无效。")
+      return
+    }
+    val active = VideoDownload()
+    if (videos.putIfAbsent(key, active) != null) {
+      promise.reject("chat_video_busy", "视频正在打开。")
+      return
+    }
+    Thread {
+      var status = 0
+      var success = false
+      var output: File? = null
+      try {
+        val connection = (buildBinaryApiUrl("/api/chat-attachments/$attachmentId/content").openConnection() as HttpURLConnection).apply {
+          connectTimeout = binaryRequestTimeoutMs
+          readTimeout = binaryRequestTimeoutMs
+          instanceFollowRedirects = false
+          useCaches = false
+          setRequestProperty("Authorization", "Bearer $token")
+          setRequestProperty("Accept", "video/mp4")
+        }
+        active.connection = connection
+        if (!active.cancelled) {
+          status = connection.responseCode
+          if (status == 200 && connection.contentType?.substringBefore(';') == "video/mp4" && connection.contentLength <= maximumBinaryUploadBytes) {
+            val directory = File(context.filesDir, "MiaoxunDocuments")
+            check(directory.isDirectory || directory.mkdirs())
+            val file = File.createTempFile("chat-video-", ".mp4", directory)
+            output = file
+            var bytes = 0
+            connection.inputStream.use { input ->
+              file.outputStream().use { target ->
+                val buffer = ByteArray(16 * 1024)
+                while (!active.cancelled) {
+                  val count = input.read(buffer)
+                  if (count < 0) break
+                  bytes += count
+                  check(bytes <= maximumBinaryUploadBytes)
+                  target.write(buffer, 0, count)
+                }
+              }
+            }
+            active.file = file
+            success = !active.cancelled && bytes > 0
+          }
+        }
+      } catch (_: Exception) {
+        success = false
+      } finally {
+        active.connection?.disconnect()
+        if (!success || active.cancelled) {
+          videos.remove(key, active)
+          output?.delete()
+        }
+        promise.resolve(Arguments.createMap().apply {
+          putInt("status", status)
+          if (success && !active.cancelled && output != null) putString("uri", Uri.fromFile(output).toString())
+        })
+      }
+    }.start()
+  }
+
+  @ReactMethod
+  fun releaseChatVideo(key: String) {
+    val active = videos.remove(key) ?: return
+    active.cancelled = true
+    active.connection?.disconnect()
+    active.file?.delete()
   }
 
   @ReactMethod
@@ -307,7 +405,7 @@ class MiaoxunDocumentPickerModule(
     } ?: "attachment"
   }
 
-  private fun copyBounded(uri: Uri, destination: File): Long {
+  private fun copyBounded(uri: Uri, destination: File, maximumBytes: Long): Long {
     val input = context.contentResolver.openInputStream(uri) ?: throw IllegalStateException()
     var total = 0L
     input.use { source ->
@@ -317,7 +415,7 @@ class MiaoxunDocumentPickerModule(
           val count = source.read(buffer)
           if (count < 0) break
           total += count
-          if (total > maximumFileBytes) throw IllegalStateException()
+          if (total > maximumBytes) throw IllegalStateException()
           output.write(buffer, 0, count)
         }
       }

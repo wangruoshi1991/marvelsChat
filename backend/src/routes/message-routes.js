@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { z } from "zod";
 import { getAgent, listAgents } from "../../../agents/registry.js";
 import { listRegisteredAgentsWithCatalogue } from "../agent-catalog-repository.js";
 import { assertAgentExecutionMode, runAgent } from "../agent-runtime.js";
@@ -43,6 +44,7 @@ import { publicMessage } from "../public-message.js";
 import { resolveCustomStickerForMessage } from "../custom-sticker-service.js";
 import { resolveChatAttachmentsForMessage } from "../chat-attachment-service.js";
 import { sendGroupMessage } from "../group-chat-repository.js";
+import { registerChatForwardRoutes } from "./chat-forward-routes.js";
 import { uiPreferenceService } from "../ui-preference-service.js";
 export {
   assertAgentAvailable,
@@ -58,6 +60,7 @@ import {
   getMessageByClientId,
   getMessageForUser,
   getThreadForUser,
+  getThreadStateForUser,
   listMessagesForThreadSince,
   listMessagesForThreads,
   listAgentHistoryBeforeInput,
@@ -218,6 +221,7 @@ export function registerMessageRoutes(
     uiPreferences = uiPreferenceService,
   },
 ) {
+  registerChatForwardRoutes(app, { authenticate, asyncHandler, sendRealtimeToUser });
   const discussWorkspace = createWorkspaceDiscussionService({
     runAgentRuntime,
   });
@@ -272,12 +276,23 @@ export function registerMessageRoutes(
     }),
   );
 
+  app.get(
+    "/api/threads/:threadId/state",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      res.json({ data: await getThreadStateForUser(req.user.id, req.params.threadId) });
+    }),
+  );
+
   app.post(
     "/api/threads/:threadId/read",
     authenticate,
     asyncHandler(async (req, res) => {
-      await markThreadReadForUser(req.user.id, req.params.threadId);
-      res.json({ data: { ok: true } });
+      const { readThrough } = z.object({
+        readThrough: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+      }).strict().parse(req.body ?? {});
+      const state = await markThreadReadForUser(req.user.id, req.params.threadId, readThrough);
+      res.json({ data: { ok: true, ...state } });
     }),
   );
 
@@ -285,11 +300,14 @@ export function registerMessageRoutes(
     "/api/threads/:threadId/preferences",
     authenticate,
     asyncHandler(async (req, res) => {
-      const preferences = threadPreferencesSchema.parse(req.body);
+      const preferences = threadPreferencesSchema.extend({
+        baseRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+      }).parse(req.body);
       const result = await setThreadMutedForUser(
         req.user.id,
         req.params.threadId,
         preferences.muted,
+        preferences.baseRevision,
       );
       res.json({ data: result });
     }),

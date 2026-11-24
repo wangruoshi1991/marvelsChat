@@ -2,6 +2,14 @@
 
 当前运行版本、数据库迁移、客户端配套及最近一次只读核验统一记录在[当前交接](handoffs/CURRENT.md)。本文保存部署方法和历史证据；带日期的发布章节只描述当时状态，不作为当前部署或恢复指令。
 
+## 隔离本地启动前置
+
+`backend/.env` 只能由操作者显式创建，已有文件不得被样例覆盖。隔离验证的顺序是
+迁移一次性数据库、按需执行显式 bootstrap、确认 `/api/ready`，再启动后台或客户端。
+`node scripts/miaoxun-development.mjs ios` 是独立的日常 iOS 构建入口，不依赖本地 API、
+数据库或后台进程。AI Task Worker 以数据库心跳和最后一次成功轮询判断活性，媒体检索
+Worker 以自身数据库心跳和索引成功轮询判断活性，两个 Worker 都不复用 API HTTP 探针。
+
 历史合同6/040–043 的升级顺序、旧客户端兼容边界和恢复条件见[2026-10-21 配套发布准备](reviews/2026-10-21-contract6-release-preparation.md)。该发布曾于 2026-10-22 按交接记录切换到生产；本文的部署步骤仍是操作方法，当前运行版本和是否可发布只以[当前交接](handoffs/CURRENT.md)为准。当前工作区 046–048 尚未据此宣称生产已部署。
 
 039先锁`agent_workspace_nodes`再锁`station_site_drafts`，而在线草稿读取会先读草稿再读节点；并发可能形成PostgreSQL死锁。迁移窗口须先让Nginx进入503维护、停止API与两个Worker并排空在途请求/事务，在迁移连接显式设定`lock_timeout`和`statement_timeout`；失败时保持维护并确认事务回滚。新来源与任务写入后优先前向修复，禁止旧代码接新库或旧dump覆盖新数据。
@@ -255,6 +263,10 @@ sudo systemctl stop marvels-chat-ai-task-worker marvels-chat-media-retrieval-wor
 sudo systemctl start marvels-chat-backend marvels-chat-ai-task-worker marvels-chat-media-retrieval-worker
 sudo systemctl status marvels-chat-database-backup.timer --no-pager
 ```
+
+Docker API 容器使用 `/api/ready`。两个 Worker 分别使用本容器的进程号和健康回执，新进程启动时清除旧回执。AI Worker 在数据库检查成功，且 AI 任务与工作区两条队列均在执行或近期轮询成功时更新回执，75 秒过期。媒体 Worker 在成功轮询时更新回执，处理已领取任务期间由成功的数据库心跳续期，30 秒过期。
+
+AI 任务每 30 秒尝试续租，同一领取最多一条续租查询。续租的客户端截止、连接池等待和 PostgreSQL 语句上限均为 5 秒。停机期间正在执行的任务可继续续租，执行结束会取消在途续租，超时会停止该领取的后续续租并记录 `AI_TASK_LEASE_RENEWAL_TIMEOUT`。续租拿到行锁后重新检查租约截止，过期任务转为 `interrupted` 并退出可领取队列。
 
 `/api/health` 只检查进程存活；`/api/ready` 还会核对数据库连接、迁移文件、迁移账本和
 历史校验和。账本缺失或存在待执行迁移时 readiness 返回 503 是预期行为，但完成迁移后

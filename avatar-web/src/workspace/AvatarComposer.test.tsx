@@ -129,3 +129,24 @@ describe("AvatarComposer", () => {
     expect((screen.getByRole("button", { name: "已有任务进行中" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+
+it("keeps the draft and prevents creation until the completed task workspace is refreshed", async () => {
+  const onCreate = vi.fn();
+  const view = render(<AvatarComposer feature={feature} quota={quota} onCreate={onCreate} />);
+  await userEvent.type(screen.getByLabelText("补充要求"), "保留这段真实草稿");
+  view.rerender(<AvatarComposer feature={feature} quota={{...quota, hasActiveJob:true}}
+    onCreate={onCreate} workspaceRefreshPending />);
+  const pendingButton = screen.getByRole("button", {name:"工作区状态待同步"}) as HTMLButtonElement;
+  expect(pendingButton.disabled).toBe(true);
+  expect(screen.queryByRole("button", {name:"已有任务进行中"})).toBeNull();
+  await userEvent.click(pendingButton);
+  expect(onCreate).not.toHaveBeenCalled();
+  const draft = screen.getByLabelText("补充要求") as HTMLTextAreaElement;
+  expect(draft.value).toBe("保留这段真实草稿");
+  expect(draft.disabled).toBe(true);
+  view.rerender(<AvatarComposer feature={feature} quota={quota} onCreate={onCreate} />);
+  expect((screen.getByRole("button", {name:"生成四视图"}) as HTMLButtonElement).disabled).toBe(false);
+  expect(draft.value).toBe("保留这段真实草稿");
+  expect(draft.disabled).toBe(false);
+});

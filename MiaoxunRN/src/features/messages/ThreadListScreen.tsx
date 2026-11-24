@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Animated,
   FlatList,
@@ -32,7 +38,13 @@ import { AgentWorkspace } from '../../models/agentWorkspace';
 import { agentReplyPresentation } from './agentReplyPresentation';
 import { messageTextPreview } from './messageTextPresentation';
 import type { UIPreferences } from '../ui/uiPreferenceTypes';
+import { singleTouch } from '../../shared/gestures/singleTouch';
+import {
+  isDirectedDrag,
+  secondFloorGestureMinimum,
+} from '../../shared/gestures/secondFloorGesture';
 import { useStablePanResponder } from '../../shared/gestures/useStablePanResponder';
+import { triggerHaptic } from '../../shared/haptics';
 import { useReduceMotion } from '../../shared/useReduceMotion';
 import {
   componentUIPreference,
@@ -42,34 +54,6 @@ import {
   uiFontSize,
   uiRowGap,
 } from '../ui/uiPreferences';
-
-function pullDirectionMatches(
-  direction: 'left' | 'right' | 'up' | 'down',
-  dx: number,
-  dy: number,
-  distance: number,
-) {
-  const horizontal = Math.abs(dx) > Math.abs(dy) * 1.4;
-  const vertical = Math.abs(dy) > Math.abs(dx) * 1.4;
-  if (direction === 'left') return dx <= -distance && horizontal;
-  if (direction === 'right') return dx >= distance && horizontal;
-  if (direction === 'up') return dy <= -distance && vertical;
-  return dy >= distance && vertical;
-}
-
-function pullVelocityMatches(
-  direction: 'left' | 'right' | 'up' | 'down',
-  vx: number,
-  vy: number,
-  threshold: number,
-) {
-  const horizontal = Math.abs(vx) > Math.abs(vy) * 1.4;
-  const vertical = Math.abs(vy) > Math.abs(vx) * 1.4;
-  if (direction === 'left') return vx <= -threshold && horizontal;
-  if (direction === 'right') return vx >= threshold && horizontal;
-  if (direction === 'up') return vy <= -threshold && vertical;
-  return vy >= threshold && vertical;
-}
 
 function ThreadSwipeRow({
   active,
@@ -335,7 +319,7 @@ export function ThreadListScreen({
   renderUserAvatar,
   onOpenThread,
   onOpenMessageActions,
-  messageActionsOpen: _messageActionsOpen = false,
+  messageActionsOpen = false,
   onOpenSearch,
   onSelectMessageTab,
   onMarkNotificationRead,
@@ -439,9 +423,24 @@ export function ThreadListScreen({
   );
   const supportedEntranceGesture =
     pullGesture.enabled && ['down', 'right'].includes(pullGesture.direction);
+  const entranceDistance = Math.max(
+    secondFloorGestureMinimum.enter,
+    pullGesture.distance,
+  );
+  const entranceEnabled =
+    active &&
+    Boolean(onOpenSecondFloor) &&
+    supportedEntranceGesture &&
+    !messageActionsOpen &&
+    !assist.isActive &&
+    selectedMessageTab === 'chat';
+  const [pullStatus, setPullStatus] = useState<'pulling' | 'ready' | null>(
+    null,
+  );
   const newButton = useRef<View>(null);
   const scrollOffset = useRef(0);
-  const pullStartAtTop = useRef(false);
+  const atListTop = () => scrollOffset.current <= 3;
+  const pullOrigin = useRef<ReturnType<typeof singleTouch>>(null);
   const opening = useRef(false);
   const entranceTransition = useRef<object | null>(null);
   const pullOffset = useRef(new Animated.Value(0)).current;
@@ -454,6 +453,8 @@ export function ThreadListScreen({
   entranceActive.current = active;
   const resetPull = useCallback(() => {
     pullDrag.current = null;
+    pullOrigin.current = null;
+    setPullStatus(null);
     if (reduceMotion) {
       pullOffset.stopAnimation();
       pullOffsetX.stopAnimation();
@@ -491,7 +492,7 @@ export function ThreadListScreen({
     opening.current = false;
     entranceTransition.current = null;
     pullDrag.current = null;
-    pullStartAtTop.current = false;
+    pullOrigin.current = null;
     pullOffset.stopAnimation();
     pullOffsetX.stopAnimation();
     pullCueDistance.stopAnimation();
@@ -503,8 +504,8 @@ export function ThreadListScreen({
     if (touch.base === null) return;
     const horizontal = pullGesture.direction === 'right';
     const offset = Math.max(
-      -150,
-      Math.min(150, touch.base + touch.movement * 0.72),
+      0,
+      Math.min(150, touch.base + touch.movement * 0.5),
     );
     (horizontal ? pullOffsetX : pullOffset).setValue(offset);
     (horizontal ? pullOffset : pullOffsetX).setValue(0);
@@ -512,30 +513,32 @@ export function ThreadListScreen({
   };
   const pullResponder = useStablePanResponder(
     {
-      onStartShouldSetPanResponderCapture: () => {
+      onStartShouldSetPanResponderCapture: event => {
         pullDrag.current = null;
-        pullStartAtTop.current = scrollOffset.current <= 0;
+        pullOrigin.current = atListTop() ? singleTouch(event) : null;
         return false;
       },
-      onMoveShouldSetPanResponderCapture: (_event, gesture) =>
-        Boolean(onOpenSecondFloor) &&
-        supportedEntranceGesture &&
-        !opening.current &&
-        !assist.isActive &&
-        selectedMessageTab === 'chat' &&
-        pullStartAtTop.current &&
-        (pullDirectionMatches(
-          pullGesture.direction,
-          gesture.dx,
-          gesture.dy,
-          10,
-        ) ||
-          pullVelocityMatches(
-            pullGesture.direction,
-            gesture.vx,
-            gesture.vy,
-            0.1,
-          )),
+      onMoveShouldSetPanResponderCapture: event => {
+        const origin = pullOrigin.current;
+        const point = singleTouch(event);
+        if (
+          !entranceEnabled ||
+          opening.current ||
+          !origin ||
+          !point ||
+          point.identifier !== origin.identifier ||
+          !atListTop()
+        )
+          return false;
+        const dx = point.pageX - origin.pageX;
+        const dy = point.pageY - origin.pageY;
+        if (Math.hypot(dx, dy) < 12) return false;
+        const directed = isDirectedDrag(pullGesture.direction, dx, dy, 10);
+        // Once the finger starts an ordinary scroll or a row swipe, wait for
+        // a new touch. Reversing that motion at the top cannot open the floor.
+        if (!directed) pullOrigin.current = null;
+        return directed;
+      },
       onPanResponderGrant: () => {
         const touch = { base: null as number | null, movement: 0 };
         pullDrag.current = touch;
@@ -548,30 +551,49 @@ export function ThreadListScreen({
           movePull(touch);
         });
       },
-      onPanResponderMove: (_event, gesture) => {
+      onPanResponderMove: event => {
+        const origin = pullOrigin.current;
+        const point = singleTouch(event);
         const touch = pullDrag.current;
-        if (!touch) return;
-        touch.movement =
-          pullGesture.direction === 'right' ? gesture.dx : gesture.dy;
-        movePull(touch);
-      },
-      onPanResponderRelease: (_event, gesture) => {
-        pullDrag.current = null;
         if (
-          pullGesture.enabled &&
-          (pullDirectionMatches(
+          !touch ||
+          !origin ||
+          !point ||
+          point.identifier !== origin.identifier
+        )
+          return;
+        const dx = point.pageX - origin.pageX;
+        const dy = point.pageY - origin.pageY;
+        touch.movement = pullGesture.direction === 'right' ? dx : dy;
+        movePull(touch);
+        setPullStatus(
+          isDirectedDrag(pullGesture.direction, dx, dy, entranceDistance)
+            ? 'ready'
+            : 'pulling',
+        );
+      },
+      onPanResponderRelease: event => {
+        const origin = pullOrigin.current;
+        const point = singleTouch(event, true);
+        const touch = pullDrag.current;
+        pullDrag.current = null;
+        pullOrigin.current = null;
+        setPullStatus(null);
+        if (
+          touch &&
+          origin &&
+          point &&
+          point.identifier === origin.identifier &&
+          !opening.current &&
+          atListTop() &&
+          isDirectedDrag(
             pullGesture.direction,
-            gesture.dx,
-            gesture.dy,
-            pullGesture.distance,
-          ) ||
-            pullVelocityMatches(
-              pullGesture.direction,
-              gesture.vx,
-              gesture.vy,
-              pullGesture.velocityThreshold,
-            ))
+            point.pageX - origin.pageX,
+            point.pageY - origin.pageY,
+            entranceDistance,
+          )
         ) {
+          triggerHaptic('hover');
           if (reduceMotion) {
             resetPull();
             onOpenSecondFloor?.();
@@ -580,17 +602,8 @@ export function ThreadListScreen({
           opening.current = true;
           const transition = {};
           entranceTransition.current = transition;
-          const horizontal =
-            pullGesture.direction === 'left' ||
-            pullGesture.direction === 'right';
-          const target =
-            pullGesture.direction === 'left'
-              ? -width
-              : pullGesture.direction === 'right'
-              ? width
-              : pullGesture.direction === 'up'
-              ? -height
-              : height;
+          const horizontal = pullGesture.direction === 'right';
+          const target = horizontal ? width : height;
           Animated.parallel([
             Animated.timing(pullOffsetX, {
               toValue: horizontal ? target : 0,
@@ -616,17 +629,19 @@ export function ThreadListScreen({
             entranceTransition.current = null;
             opening.current = false;
             if (finished) onOpenSecondFloor?.();
+            else resetPull();
           });
         } else resetPull();
       },
       onPanResponderTerminate: resetPull,
     },
-    active,
+    entranceEnabled,
   );
   React.useEffect(() => {
+    setPullStatus(null);
     resetPullState();
     return resetPullState;
-  }, [active, resetPullState, selectedMessageTab]);
+  }, [entranceEnabled, resetPullState]);
   React.useEffect(() => {
     scrollOffset.current = 0;
   }, [selectedMessageTab]);
@@ -650,28 +665,34 @@ export function ThreadListScreen({
         importantForAccessibility="no-hide-descendants"
         style={[
           s.pullCue,
+          pullGesture.direction === 'right' && s.pullCueLeft,
           {
             opacity: pullCueDistance.interpolate({
-              inputRange: [0, 28, 80],
+              inputRange: [0, 28, 52],
               outputRange: [0, 0.5, 1],
               extrapolate: 'clamp',
             }),
-            transform: [
-              {
-                rotate:
-                  pullGesture.direction === 'up'
-                    ? '180deg'
-                    : pullGesture.direction === 'left'
-                    ? '-90deg'
-                    : pullGesture.direction === 'right'
-                    ? '90deg'
-                    : '0deg',
-              },
-            ],
           },
         ]}
       >
-        <ChevronDown color={colors.secondaryText} size={18} />
+        <ChevronDown
+          color={pullStatus === 'ready' ? colors.text : colors.secondaryText}
+          size={18}
+          style={
+            pullGesture.direction === 'right' ? s.pullCueArrowRight : undefined
+          }
+        />
+        {pullStatus && pullGesture.direction === 'down' ? (
+          <Text style={[s.pullCueLabel, { color: colors.text }]}>
+            {pullStatus === 'ready'
+              ? textFor(
+                  language,
+                  '松开进入二楼',
+                  'Release to open second floor',
+                )
+              : textFor(language, '下拉进入二楼', 'Pull to open second floor')}
+          </Text>
+        ) : null}
       </Animated.View>
       <Animated.View
         style={[
@@ -1070,7 +1091,15 @@ export function ThreadListScreen({
 }
 const s = StyleSheet.create({
   screen: { flex: 1 },
-  pullCue: { position: 'absolute', top: 22, alignSelf: 'center' },
+  pullCue: {
+    position: 'absolute',
+    top: 8,
+    alignSelf: 'center',
+    alignItems: 'center',
+  },
+  pullCueLeft: { top: 40, left: 12 },
+  pullCueArrowRight: { transform: [{ rotate: '-90deg' }] },
+  pullCueLabel: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',

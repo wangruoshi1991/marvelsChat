@@ -8,6 +8,7 @@ import { createAgentPublishingService } from "../src/agent-publishing-service.js
 import { getPublishedProductCatalog } from "../src/product-catalog-projection.js";
 import { assertAgentProductEntitlement } from "../src/ai-agent-access.js";
 import { createUIPreferenceService } from "../src/ui-preference-service.js";
+import { createUsageEvent } from "../src/repositories.js";
 
 const enabled = process.env.RUN_PUBLISHING_LIFECYCLE_POSTGRES === "1";
 const identityFor = (key, displayName, mark = "演") => ({ key, avatarKind: "agent-mark", displayName, description: "已部署运行能力", mark, shape: "circle", colors: { background: "#123456", foreground: "#ffffff", accent: "#facc15" }, published: false, source: "admin", updatedAt: "2026-11-02T00:00:00.000Z" });
@@ -22,7 +23,16 @@ test("explicit Agent intake and product versions preserve published contracts an
   const agent = { key, name: "代码 Agent", description: "已部署运行能力", version: "1.0.0", permissions: ["messages:read"], identity: identityFor(key, "代码 Agent"), readiness: { ready: true, missing: [] } };
   const releases = createAgentReleaseRepository();
   const products = createProductCatalogRepository();
-  const service = createAgentPublishingService({ releaseRepository: releases, productRepository: products, listRegisteredAgents: async () => [agent], getReadiness: async () => ({ [key]: { configured: true, missingEnv: [], capabilityNeeds: [] } }), recordAudit: async () => {}, afterProductProjection: null });
+  let failAudit = false;
+  const service = createAgentPublishingService({
+    releaseRepository: releases, productRepository: products, listRegisteredAgents: async () => [agent],
+    getReadiness: async () => ({ [key]: { configured: true, missingEnv: [], capabilityNeeds: [] } }),
+    recordAudit: async (event, transactionQuery) => {
+      if (failAudit) throw new Error("synthetic audit failure");
+      return createUsageEvent(event, transactionQuery);
+    },
+    afterProductProjection: null,
+  });
   let first; let revision; let product1; let product2;
   try {
     await query("INSERT INTO users (id,email,password_hash,display_name,ai_id) VALUES (?,?,'test-only',?,?)", [userId, `${key}@example.invalid`, key, `93${Math.floor(Math.random() * 1e10).toString().padStart(10, "0")}`]);
@@ -32,7 +42,18 @@ test("explicit Agent intake and product versions preserve published contracts an
       const replay = await service.createRelease({ agentKey: key, identity: identityFor(key, "原 Agent"), requestId: `${key}-create` });
       assert.equal(replay.release.id, first.release.id);
       await assert.rejects(service.createRelease({ agentKey: key, identity: identityFor(key, "伪重放"), requestId: `${key}-create` }), error => error.details?.code === "IDEMPOTENCY_CONFLICT");
-      await service.reviewRelease({ releaseId: first.release.id });
+      const transition = { releaseId: first.release.id, actorUserId: userId, requestId: `${key}-review` };
+      failAudit = true;
+      try {
+        await assert.rejects(service.reviewRelease(transition), /synthetic audit failure/);
+        assert.equal((await releases.getAgentRelease(first.release.id)).catalogStatus, "draft");
+      } finally {
+        failAudit = false;
+      }
+      const reviews = await Promise.all([service.reviewRelease(transition), service.reviewRelease(transition)]);
+      assert.deepEqual(reviews[0], reviews[1]);
+      assert.equal((await query("SELECT count(*)::int AS count FROM usage_events WHERE event_type = 'admin.agent.release.review' AND target_id = ?", [first.release.id]))[0].count, 1);
+      assert.equal((await query("SELECT count(*)::int AS count FROM agent_release_status_history WHERE request_id = ?", [transition.requestId]))[0].count, 1);
       await service.publishRelease({ releaseId: first.release.id });
     });
     await t.test("identity revision reuses runtime without mutating published release", async () => {
@@ -74,6 +95,19 @@ test("explicit Agent intake and product versions preserve published contracts an
       const history = await query("SELECT reason FROM entitlement_status_history WHERE entitlement_id = ? AND from_status = 'reconsent_required' AND to_status = 'enabled'", [grant.id]);
       assert.equal(history[0].reason, "user_reconsent");
       await assertAgentProductEntitlement({ userId, agent });
+    });
+    await t.test("failed product pause audit rolls back availability, entitlement and projection", async () => {
+      const transition = { productId: product1.id, productVersionId: product1.productVersionId, actorUserId: userId, requestId: `${key}-pause` };
+      failAudit = true;
+      try {
+        await assert.rejects(service.pauseProduct(transition), /synthetic audit failure/);
+        assert.equal((await products.getProduct(product1.id, transition)).status, "published");
+        assert.equal((await products.listEntitlementsForUser(userId))[0].status, "enabled");
+        await assertAgentProductEntitlement({ userId, agent });
+        assert.equal((await query("SELECT count(*)::int AS count FROM product_status_history WHERE request_id = ?", [transition.requestId]))[0].count, 0);
+      } finally {
+        failAudit = false;
+      }
     });
     await t.test("preference confirmation serializes with product pause, revocation and release withdrawal", async () => {
       await query("INSERT INTO user_profiles (user_id,nickname,avatar_text) VALUES (?,?,?)", [userId, "test", "T"]);

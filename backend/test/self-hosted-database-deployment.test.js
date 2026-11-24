@@ -180,7 +180,7 @@ test("offsite recovery verifies, decrypts, and validates before publishing a dum
   }
 });
 
-test("production restore requires downtime and an approved dump checksum", async () => {
+test("production restore stages the approved dump in a verified candidate with rollback", async () => {
   const script = await readRepoFile("scripts/restore-production-database.sh");
 
   assert.match(script, /set -euo pipefail/);
@@ -193,8 +193,11 @@ test("production restore requires downtime and an approved dump checksum", async
   );
   assert.match(script, /TABLE DATA public schema_migrations/);
   assert.match(script, /EXTENSION - vector/);
-  assert.match(script, /DROP DATABASE IF EXISTS/);
-  assert.match(script, /CREATE DATABASE %I OWNER %I/);
+  assert.doesNotMatch(script, /DROP DATABASE IF EXISTS/);
+  assert.match(script, /candidate_database/);
+  assert.match(script, /previous_database/);
+  assert.match(script, /ALTER DATABASE/);
+  assert.match(script, /ROLLBACK/);
   assert.match(script, /CREATE EXTENSION vector/);
   assert.match(script, /--exclude-schema=polar_catalog/);
   assert.match(script, /--role="\$POSTGRES_USER"/);
@@ -202,7 +205,15 @@ test("production restore requires downtime and an approved dump checksum", async
   assert.match(script, /chown postgres:postgres "\$restore_list"/);
   assert.match(script, /"\$restore_input"/);
   assert.match(script, /validation_result/);
-  assert.match(script, /"0\|t\|t"/);
+  assert.match(script, /migration_gap_count/);
+  assert.match(script, /checksum_gap_count/);
+  assert.match(script, /--capture-baseline/);
+  assert.match(script, /pg_get_constraintdef\(entry\.oid\)/);
+  assert.match(
+    script,
+    /cmp -s "\$expected_baseline" "\$candidate_baseline"[\s\S]*switch_databases "\$candidate_database"/,
+  );
+  assert.match(script, /source_database/);
   assert.match(script, /Root database restore refuses a writable production environment file/);
   assert.doesNotMatch(script, /1 \/ 0/);
   assert.doesNotMatch(script, /rm -rf|DROP ROLE|DROP TABLE/);

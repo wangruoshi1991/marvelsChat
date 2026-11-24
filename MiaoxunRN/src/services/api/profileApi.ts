@@ -55,6 +55,12 @@ export const profileApi = {
     });
   },
 
+  profileVisibility(token: string) {
+    return request<ProfileVisibilityDTO>('/api/me/profile-visibility', {
+      token,
+    });
+  },
+
   updateProfileVisibility(
     token: string,
     visibility: Partial<ProfileVisibilityDTO>,

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -25,6 +25,7 @@ import {
   pickStationImagesFromLibrary,
 } from '../../services/stationMediaPicker';
 import { textFor } from '../../shared/i18n';
+import { createIdempotencyKey } from '../../shared/createIdempotencyKey';
 import {
   SettingGroup,
   SettingsActionButton,
@@ -48,6 +49,7 @@ type StationCreatePayload =
     }
   | {
       kind: 'album';
+      idempotencyKey: string;
       title: string;
       description: string;
       visibility: StationVisibility;
@@ -136,6 +138,7 @@ export function StationCreateSheet({
   const [body, setBody] = useState('');
   const [visibility, setVisibility] = useState<StationVisibility>('private');
   const [albumMedia, setAlbumMedia] = useState<PickedStationMedia[]>([]);
+  const albumSubmissionKey = useRef<string | null>(null);
 
   useEffect(() => {
     setTitle(initialTitle(kind, language));
@@ -253,8 +256,10 @@ export function StationCreateSheet({
     }
 
     if (kind === 'album') {
+      albumSubmissionKey.current ??= createIdempotencyKey();
       onSubmit({
         kind,
+        idempotencyKey: albumSubmissionKey.current,
         title: title.trim(),
         description: body.trim(),
         visibility,

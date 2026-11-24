@@ -24,7 +24,15 @@ export type SecondFloorPageScrollProps = Pick<
   /** Capture touch phases before a nested Pressable takes the responder. */
   onTouchStartCapture?: (event: GestureResponderEvent) => void;
   onTouchEndCapture?: (event: GestureResponderEvent) => void;
+  onFloorTouch?: (event: FloorTouch) => void;
 };
 
 export type SecondFloorPageScrollEvent =
   NativeSyntheticEvent<NativeScrollEvent>;
+
+export type FloorTouch = {
+  phase: 'start' | 'move' | 'end' | 'cancel';
+  x: number;
+  y: number;
+  atBottom: boolean;
+};

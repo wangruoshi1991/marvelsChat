@@ -1,19 +1,28 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
+  AccessibilityInfo,
   FlatList,
   Image,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react-native';
 import { ComicRenderFrame, ComicRenderTaskDTO } from '../../models/comicRender';
 import { buildStationMediaFileUrl } from '../../services/stationMediaUrl';
 import { Palette } from '../../shared/theme';
 import { textFor } from '../../shared/i18n';
+import { useReduceMotion } from '../../shared/useReduceMotion';
 import { Language } from '../session/sessionTypes';
 
 export function ComicFrameGrid({
@@ -215,12 +224,14 @@ export function ComicImageViewer({
   onClose: () => void;
   onSave?: (frameIndex: number, mediaAssetId: string) => Promise<void> | void;
 }) {
-  const { width, height } = useWindowDimensions();
+  const reduceMotion = useReduceMotion();
   const listRef = useRef<FlatList<ComicRenderFrame>>(null);
+  const [viewport, setViewport] = useState<{ width: number; height: number }>();
   const [activeIndex, setActiveIndex] = useState(
     Math.max(0, Math.min(initialIndex - 1, count - 1)),
   );
   const [saving, setSaving] = useState(false);
+  const saveRequest = useRef<symbol | null>(null);
   const [saveMessage, setSaveMessage] = useState('');
   const frames = useMemo(
     () =>
@@ -252,194 +263,236 @@ export function ComicImageViewer({
   const current = frames[activeIndex];
   const currentAsset =
     current?.status === 'succeeded' ? current.mediaAssetId : null;
+  useLayoutEffect(() => {
+    setSaving(false);
+    setSaveMessage('');
+    return () => {
+      saveRequest.current = null;
+    };
+  }, [current?.frameIndex, currentAsset, task?.id, token, visible]);
   return (
     <Modal
       visible={visible}
       transparent={false}
-      animationType="fade"
+      animationType={reduceMotion ? 'none' : 'fade'}
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <View
-        testID="comic-image-viewer"
-        style={[s.viewer, { backgroundColor: palette.background }]}
-      >
-        <View style={s.viewerHeader}>
-          <Pressable
-            testID="comic-image-viewer-close"
-            accessibilityRole="button"
-            accessibilityLabel={t('关闭图片查看器', 'Close image viewer')}
-            onPress={onClose}
-            hitSlop={10}
-            style={s.viewerIcon}
-          >
-            <X size={22} color={palette.text} />
-          </Pressable>
-          <Text style={[s.viewerTitle, { color: palette.text }]}>
-            {activeIndex + 1}/{count}
-          </Text>
-          {currentAsset && onSave ? (
+      <SafeAreaProvider>
+        <SafeAreaView
+          edges={['top', 'bottom']}
+          testID="comic-image-viewer"
+          style={[s.viewer, { backgroundColor: palette.background }]}
+        >
+          <View style={s.viewerHeader}>
             <Pressable
-              testID="comic-image-viewer-save"
+              testID="comic-image-viewer-close"
               accessibilityRole="button"
-              accessibilityLabel={t('保存图片', 'Save image')}
-              disabled={saving}
-              onPress={async () => {
-                if (saving) return;
-                setSaving(true);
-                setSaveMessage(t('正在保存到相册…', 'Saving to Photos…'));
-                try {
-                  await onSave(current.frameIndex, currentAsset);
-                  setSaveMessage(t('已保存到相册', 'Saved to Photos'));
-                } catch (error) {
-                  setSaveMessage(
-                    error instanceof Error
-                      ? error.message
-                      : t('保存失败，请重试。', 'Save failed. Try again.'),
-                  );
-                } finally {
-                  setSaving(false);
-                }
-              }}
-              hitSlop={10}
+              accessibilityLabel={t('关闭图片查看器', 'Close image viewer')}
+              onPress={onClose}
               style={s.viewerIcon}
             >
-              <Download
-                size={21}
-                color={saving ? palette.secondaryText : palette.text}
+              <X size={22} color={palette.text} />
+            </Pressable>
+            <Text style={[s.viewerTitle, { color: palette.text }]}>
+              {activeIndex + 1}/{count}
+            </Text>
+            {currentAsset && onSave ? (
+              <Pressable
+                testID="comic-image-viewer-save"
+                accessibilityRole="button"
+                accessibilityLabel={t('保存图片', 'Save image')}
+                disabled={saving}
+                onPress={async () => {
+                  if (saveRequest.current) return;
+                  const request = Symbol();
+                  saveRequest.current = request;
+                  setSaving(true);
+                  setSaveMessage(t('正在保存到相册…', 'Saving to Photos…'));
+                  let message: string;
+                  try {
+                    await onSave(current.frameIndex, currentAsset);
+                    message = t('已保存到相册', 'Saved to Photos');
+                  } catch (error) {
+                    message =
+                      error instanceof Error
+                        ? error.message
+                        : t('保存失败，请重试。', 'Save failed. Try again.');
+                  }
+                  if (saveRequest.current !== request) return;
+                  saveRequest.current = null;
+                  setSaving(false);
+                  setSaveMessage(message);
+                  if (Platform.OS === 'ios') {
+                    AccessibilityInfo.announceForAccessibility(message);
+                  }
+                }}
+                style={s.viewerIcon}
+              >
+                <Download
+                  size={21}
+                  color={saving ? palette.secondaryText : palette.text}
+                />
+              </Pressable>
+            ) : currentAsset ? (
+              <Text
+                testID="comic-image-viewer-save-unavailable"
+                style={[s.viewerUnavailable, { color: palette.secondaryText }]}
+              >
+                {t('保存暂未开放', 'Save unavailable')}
+              </Text>
+            ) : (
+              <View style={s.viewerIcon} />
+            )}
+          </View>
+          {saveMessage ? (
+            <Text
+              accessibilityLiveRegion="polite"
+              style={[s.viewerSaveMessage, { color: palette.secondaryText }]}
+            >
+              {saveMessage}
+            </Text>
+          ) : null}
+          <View
+            testID="comic-image-viewer-viewport"
+            style={s.viewerViewport}
+            onLayout={event => {
+              const { width, height } = event.nativeEvent.layout;
+              setViewport(previous =>
+                previous?.width === width && previous.height === height
+                  ? previous
+                  : { width, height },
+              );
+            }}
+          >
+            {viewport &&
+            viewport.width > 0 &&
+            viewport.height > 0 &&
+            count > 0 ? (
+              <FlatList
+                key={viewport.width}
+                ref={listRef}
+                data={frames}
+                initialScrollIndex={Math.min(activeIndex, count - 1)}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                keyExtractor={item => String(item.frameIndex)}
+                getItemLayout={(_, index) => ({
+                  length: viewport.width,
+                  offset: viewport.width * index,
+                  index,
+                })}
+                onScrollToIndexFailed={info => {
+                  setTimeout(
+                    () =>
+                      listRef.current?.scrollToIndex({
+                        index: info.index,
+                        animated: false,
+                      }),
+                    0,
+                  );
+                }}
+                onMomentumScrollEnd={event => {
+                  const next = Math.max(
+                    0,
+                    Math.min(
+                      count - 1,
+                      Math.round(
+                        event.nativeEvent.contentOffset.x / viewport.width,
+                      ),
+                    ),
+                  );
+                  if (next !== activeIndex) setActiveIndex(next);
+                }}
+                renderItem={({ item }) => {
+                  const source = item.mediaAssetId
+                    ? {
+                        uri: buildStationMediaFileUrl(item.mediaAssetId),
+                        headers: { Authorization: `Bearer ${token}` },
+                      }
+                    : undefined;
+                  const readable =
+                    item.status === 'succeeded' && Boolean(source);
+                  return (
+                    <View style={[s.viewerPage, viewport]}>
+                      {readable ? (
+                        <Image
+                          accessibilityLabel={t(
+                            `第 ${item.frameIndex} 格漫画画面`,
+                            `Comic image for frame ${item.frameIndex}`,
+                          )}
+                          accessibilityIgnoresInvertColors
+                          source={source}
+                          resizeMode="contain"
+                          style={s.viewerImage}
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            s.viewerPlaceholder,
+                            {
+                              backgroundColor: palette.soft,
+                              borderColor: palette.border,
+                            },
+                          ]}
+                        >
+                          <Text style={{ color: palette.secondaryText }}>
+                            {item.status === 'failed'
+                              ? t('这一格生成失败', 'This frame failed')
+                              : item.status === 'unknown'
+                              ? t('结果暂时无法确认', 'Result is unknown')
+                              : t('这一格尚未完成', 'This frame is not ready')}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                }}
+              />
+            ) : null}
+          </View>
+          <View style={s.viewerFooter}>
+            <Pressable
+              testID="comic-image-viewer-previous"
+              accessibilityRole="button"
+              accessibilityLabel={t('上一格', 'Previous frame')}
+              disabled={activeIndex <= 0}
+              onPress={() => {
+                const next = Math.max(0, activeIndex - 1);
+                setActiveIndex(next);
+                listRef.current?.scrollToIndex({ index: next, animated: true });
+              }}
+              style={s.viewerIcon}
+            >
+              <ChevronLeft
+                size={22}
+                color={activeIndex <= 0 ? palette.border : palette.text}
               />
             </Pressable>
-          ) : currentAsset ? (
-            <Text
-              testID="comic-image-viewer-save-unavailable"
-              style={[s.viewerUnavailable, { color: palette.secondaryText }]}
-            >
-              {t('保存暂未开放', 'Save unavailable')}
+            <Text style={[s.viewerHint, { color: palette.secondaryText }]}>
+              {t('左右滑动查看画面', 'Swipe to browse frames')}
             </Text>
-          ) : (
-            <View style={s.viewerIcon} />
-          )}
-        </View>
-        {saveMessage ? (
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[s.viewerSaveMessage, { color: palette.secondaryText }]}
-          >
-            {saveMessage}
-          </Text>
-        ) : null}
-        <FlatList
-          ref={listRef}
-          data={frames}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={item => String(item.frameIndex)}
-          getItemLayout={(_, index) => ({
-            length: width,
-            offset: width * index,
-            index,
-          })}
-          onScrollToIndexFailed={info => {
-            setTimeout(
-              () =>
-                listRef.current?.scrollToIndex({
-                  index: info.index,
-                  animated: false,
-                }),
-              0,
-            );
-          }}
-          onMomentumScrollEnd={event => {
-            const next = Math.round(event.nativeEvent.contentOffset.x / width);
-            if (next !== activeIndex) setActiveIndex(next);
-          }}
-          renderItem={({ item }) => {
-            const source = item.mediaAssetId
-              ? {
-                  uri: buildStationMediaFileUrl(item.mediaAssetId),
-                  headers: { Authorization: `Bearer ${token}` },
-                }
-              : undefined;
-            const readable = item.status === 'succeeded' && Boolean(source);
-            return (
-              <View style={[s.viewerPage, { width, minHeight: height - 120 }]}>
-                {readable ? (
-                  <Image
-                    accessibilityLabel={t(
-                      `第 ${item.frameIndex} 格漫画画面`,
-                      `Comic image for frame ${item.frameIndex}`,
-                    )}
-                    accessibilityIgnoresInvertColors
-                    source={source}
-                    resizeMode="contain"
-                    style={{ width: width - 24, height: height - 160 }}
-                  />
-                ) : (
-                  <View
-                    style={[
-                      s.viewerPlaceholder,
-                      {
-                        backgroundColor: palette.soft,
-                        borderColor: palette.border,
-                      },
-                    ]}
-                  >
-                    <Text style={{ color: palette.secondaryText }}>
-                      {item.status === 'failed'
-                        ? t('这一格生成失败', 'This frame failed')
-                        : item.status === 'unknown'
-                        ? t('结果暂时无法确认', 'Result is unknown')
-                        : t('这一格尚未完成', 'This frame is not ready')}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            );
-          }}
-        />
-        <View style={s.viewerFooter}>
-          <Pressable
-            testID="comic-image-viewer-previous"
-            accessibilityRole="button"
-            accessibilityLabel={t('上一格', 'Previous frame')}
-            disabled={activeIndex <= 0}
-            onPress={() => {
-              const next = Math.max(0, activeIndex - 1);
-              setActiveIndex(next);
-              listRef.current?.scrollToIndex({ index: next, animated: true });
-            }}
-            hitSlop={10}
-            style={s.viewerIcon}
-          >
-            <ChevronLeft
-              size={22}
-              color={activeIndex <= 0 ? palette.border : palette.text}
-            />
-          </Pressable>
-          <Text style={[s.viewerHint, { color: palette.secondaryText }]}>
-            {t('左右滑动查看画面', 'Swipe to browse frames')}
-          </Text>
-          <Pressable
-            testID="comic-image-viewer-next"
-            accessibilityRole="button"
-            accessibilityLabel={t('下一格', 'Next frame')}
-            disabled={activeIndex >= count - 1}
-            onPress={() => {
-              const next = Math.min(count - 1, activeIndex + 1);
-              setActiveIndex(next);
-              listRef.current?.scrollToIndex({ index: next, animated: true });
-            }}
-            hitSlop={10}
-            style={s.viewerIcon}
-          >
-            <ChevronRight
-              size={22}
-              color={activeIndex >= count - 1 ? palette.border : palette.text}
-            />
-          </Pressable>
-        </View>
-      </View>
+            <Pressable
+              testID="comic-image-viewer-next"
+              accessibilityRole="button"
+              accessibilityLabel={t('下一格', 'Next frame')}
+              disabled={activeIndex >= count - 1}
+              onPress={() => {
+                const next = Math.min(count - 1, activeIndex + 1);
+                setActiveIndex(next);
+                listRef.current?.scrollToIndex({ index: next, animated: true });
+              }}
+              style={s.viewerIcon}
+            >
+              <ChevronRight
+                size={22}
+                color={activeIndex >= count - 1 ? palette.border : palette.text}
+              />
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -509,11 +562,13 @@ const s = StyleSheet.create({
   },
   viewerTitle: { fontSize: 16, fontWeight: '700' },
   viewerIcon: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  viewerViewport: { flex: 1 },
+  viewerImage: { width: '100%', height: '100%' },
   viewerPage: {
     alignItems: 'center',
     justifyContent: 'center',
