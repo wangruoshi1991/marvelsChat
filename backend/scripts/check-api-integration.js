@@ -2,12 +2,20 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import { once } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
 import net from "node:net";
+import os from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "Set DATABASE_URL to the migrated integration test database");
+const databaseAddress = new URL(databaseUrl);
+assert.ok(
+  ["127.0.0.1", "localhost", "[::1]"].includes(databaseAddress.hostname) && !databaseAddress.searchParams.has("host"),
+  "API integration requires a loopback disposable database",
+);
 const database = new pg.Client({ connectionString: databaseUrl });
 try {
   await database.connect();
@@ -23,32 +31,78 @@ await once(portProbe, "listening");
 const port = portProbe.address().port;
 await new Promise(resolve => portProbe.close(resolve));
 const baseUrl = `http://127.0.0.1:${port}`;
-const backend = spawn(process.execPath, ["src/server.js"], {
-  cwd: fileURLToPath(new URL("..", import.meta.url)),
-  env: {
-    ...process.env,
-    DATABASE_URL: databaseUrl,
-    NODE_ENV: "test",
-    HOST: "127.0.0.1",
-    PORT: String(port),
-    DEFAULT_ADMIN_ENABLED: "false",
-    CREATE_FIRST_USER_AS_ADMIN: "false",
-    ADMIN_EMAILS: "",
-    NEW_API_BASE_URL: "",
-    NEW_API_KEY: "",
-    NEW_API_MODEL: "",
-    AVATAR_3D_ENABLED: "false",
-    AVATAR_3D_PROVIDER_CALLS_ENABLED: "false",
-    MEDIA_RETRIEVAL_ENABLED: "false",
-    MEDIA_RETRIEVAL_PROVIDER_CALLS_ENABLED: "false",
-  },
-  stdio: ["ignore", "pipe", "pipe"],
-});
-let serverLog = "";
-for (const stream of [backend.stdout, backend.stderr]) {
-  stream.on("data", chunk => { serverLog = `${serverLog}${chunk}`.slice(-12000); });
+const backendDir = fileURLToPath(new URL("..", import.meta.url));
+const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "miaoxun-api-integration-"));
+const fixtureEnv = {
+  DATABASE_URL: databaseUrl,
+  NODE_ENV: "test",
+  MIAOXUN_DOTENV_ENABLED: "false",
+  HOST: "127.0.0.1",
+  PORT: String(port),
+  DEFAULT_ADMIN_ENABLED: "false",
+  CREATE_FIRST_USER_AS_ADMIN: "false",
+  AVATAR_3D_ENABLED: "false",
+  AVATAR_3D_PROVIDER_CALLS_ENABLED: "false",
+  MEDIA_RETRIEVAL_ENABLED: "false",
+  MEDIA_RETRIEVAL_PROVIDER_CALLS_ENABLED: "false",
+  MIAOXUN_LOCAL_MEDIA_ROOT: path.join(fixtureRoot, "media"),
+  MIAOXUN_AGENT_AVATAR_ROOT: path.join(fixtureRoot, "avatars"),
+};
+for (const name of ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL"]) {
+  if (process.env[name] !== undefined) fixtureEnv[name] = process.env[name];
 }
-const stopped = once(backend, "exit");
+const children = [];
+const cancellation = new AbortController();
+const interrupt = signal => cancellation.abort(new Error(`API integration interrupted by ${signal}`));
+const fixtureSignal = () => AbortSignal.any([cancellation.signal, AbortSignal.timeout(10_000)]);
+
+function startFixtureProcess(entrypoint) {
+  const child = spawn(process.execPath, [path.join(backendDir, entrypoint)], {
+    cwd: backendDir,
+    env: fixtureEnv,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const record = { entrypoint, child, log: "", stopped: once(child, "close") };
+  children.push(record);
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.on("data", chunk => { record.log = `${record.log}${chunk}`.slice(-12000); });
+  }
+  void record.stopped.then(([code, signal]) => {
+    cancellation.abort(new Error(`${entrypoint} exited with ${signal ?? code}`));
+  }, error => {
+    cancellation.abort(new Error(`${entrypoint} failed to start`, { cause: error }));
+  });
+}
+
+async function stopFixtureProcess({ child, stopped }) {
+  child.kill("SIGTERM");
+  const timeout = setTimeout(() => child.kill("SIGKILL"), 5000);
+  try { await stopped.catch(() => {}); }
+  finally { clearTimeout(timeout); }
+}
+
+async function waitForReadiness() {
+  // The AI worker can record a starting heartbeat before its first poll has
+  // completed. Allow its next 30-second heartbeat to report real readiness.
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
+    const response = await fetch(`${baseUrl}/api/ready`, { signal: fixtureSignal() }).catch(() => null);
+    cancellation.signal.throwIfAborted();
+    if (response) {
+      assert.ok(response.status === 200 || response.status === 503, `Unexpected API readiness status: ${response.status}`);
+      if (response.ok) {
+        const ready = await response.json();
+        assert.equal(ready.ok, true);
+        assert.equal(ready.dependencies?.aiTaskWorker?.ready, true);
+        assert.equal(ready.dependencies?.mediaRetrievalWorker?.ready, true);
+        return;
+      }
+      await response.body?.cancel();
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error("API and Workers did not become ready within 45 seconds");
+}
 
 async function request(route, { method = "GET", token, body, status = 200 } = {}) {
   const response = await fetch(`${baseUrl}${route}`, {
@@ -58,7 +112,7 @@ async function request(route, { method = "GET", token, body, status = 200 } = {}
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(10000),
+    signal: fixtureSignal(),
   });
   assert.equal(response.status, status, `${method} ${route}`);
   if (status === 204) return undefined;
@@ -96,19 +150,13 @@ const assertIdentity = (profile, expected) => {
 };
 
 try {
-  let healthy = false;
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    if (backend.exitCode !== null) throw new Error("Backend exited during integration startup");
-    try {
-      healthy = (await request("/api/health")).ok;
-      if (healthy) break;
-    } catch {
-      // Startup may not have opened the HTTP listener yet.
-    }
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  assert.equal(healthy, true, "Backend failed to start");
-  assert.equal((await request("/api/ready")).ok, true);
+  process.once("SIGINT", interrupt);
+  process.once("SIGTERM", interrupt);
+  startFixtureProcess("src/ai-task-worker.js");
+  startFixtureProcess("src/media-retrieval-worker.js");
+  startFixtureProcess("src/server.js");
+  await waitForReadiness();
+  assert.equal((await request("/api/health")).ok, true);
   const owner = await register(`auditOwner${suffix}`);
   const peer = await register(`auditPeer${suffix}`);
   const ownerToken = owner.session.token;
@@ -335,14 +383,17 @@ try {
   assert.equal(deletedProfiles.rowCount, 0, "Account deletion must remove profile identity data");
   console.log("API integration passed: readiness, registration/login, profile identity persistence and clearing, database constraints, public and relationship privacy, admin authorization and editing, private content CRUD, ownership, friendship, direct messages, sync, mute, logout, and account deletion.");
 } catch (error) {
-  console.error(serverLog);
+  for (const { entrypoint, log } of children) console.error(entrypoint, log);
   throw error;
 } finally {
-  if (backend.exitCode === null) backend.kill("SIGTERM");
-  const timeout = setTimeout(() => backend.kill("SIGKILL"), 5000);
-  await stopped;
-  clearTimeout(timeout);
-  if (testUserIds.length) {
-    await queryTestDatabase("DELETE FROM users WHERE id = ANY($1::text[])", [testUserIds]);
+  try {
+    await Promise.all(children.map(stopFixtureProcess));
+    if (testUserIds.length) {
+      await queryTestDatabase("DELETE FROM users WHERE id = ANY($1::text[])", [testUserIds]);
+    }
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+    process.removeListener("SIGINT", interrupt);
+    process.removeListener("SIGTERM", interrupt);
   }
 }

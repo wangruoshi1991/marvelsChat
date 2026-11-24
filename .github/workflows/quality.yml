@@ -117,19 +117,30 @@ jobs:
         run: ./backend/scripts/check-migration-replay.sh
         env:
           DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_migration_test
+          MIAOXUN_DOTENV_ENABLED: "false"
+
+      - name: Prepare an empty migrated database for HTTP integration
+        run: |
+          createdb --maintenance-db="$REPLAY_DATABASE_URL" miaoxun_http_migration_test
+          npm run db:migrate
+        working-directory: backend
+        env:
+          REPLAY_DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_migration_test
+          DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_http_migration_test
+          MIAOXUN_DOTENV_ENABLED: "false"
 
       - name: Verify Agent publishing and initialize the explicit default Butler fixture
         run: npm run test:agent-publishing
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_migration_test
+          DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_http_migration_test
           MIAOXUN_DOTENV_ENABLED: "false"
 
       - name: Verify API flows against PostgreSQL
         run: npm run test:api-integration
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_migration_test
+          DATABASE_URL: postgresql://miaoxun:miaoxun@127.0.0.1:5432/miaoxun_http_migration_test
           MIAOXUN_DOTENV_ENABLED: "false"
 
   postgres-regressions:
@@ -195,14 +206,27 @@ jobs:
 
       - name: Run migrated isolated regression
         run: |
-          env "$FEATURE_ENV=1" NODE_ENV=test node --test --test-reporter=tap "$TEST_FILE" | tee "$RUNNER_TEMP/postgres-tests.tap"
-          rg -x '# pass [1-9][0-9]*' "$RUNNER_TEMP/postgres-tests.tap"
-          rg -x '# skipped 0' "$RUNNER_TEMP/postgres-tests.tap"
+          run_regression() {
+            if [[ "$FEATURE_ENV" == RUN_AI_TASK_INTEGRATION ]]; then
+              # Publishing fixtures require the server connection itself to use loopback.
+              docker run --rm --network "container:$POSTGRES_SERVICE_ID" \
+                --volume "$GITHUB_WORKSPACE:/workspace:ro" --workdir /workspace/backend \
+                --env DATABASE_URL --env MIAOXUN_DOTENV_ENABLED --env DEFAULT_ADMIN_ENABLED \
+                --env "$FEATURE_ENV=1" --env NODE_ENV=test node:22-bookworm-slim \
+                node --test --test-reporter=tap "$TEST_FILE"
+            else
+              env "$FEATURE_ENV=1" NODE_ENV=test node --test --test-reporter=tap "$TEST_FILE"
+            fi
+          }
+          run_regression | tee "$RUNNER_TEMP/postgres-tests.tap"
+          grep -Ex '# pass [1-9][0-9]*' "$RUNNER_TEMP/postgres-tests.tap"
+          grep -Fx '# skipped 0' "$RUNNER_TEMP/postgres-tests.tap"
         shell: bash
         working-directory: backend
         env:
           TEST_FILE: ${{ matrix.test }}
           FEATURE_ENV: ${{ matrix.feature_env }}
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
 
   android-debug:
     name: Android debug compile
