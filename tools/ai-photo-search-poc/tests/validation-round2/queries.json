@@ -1,0 +1,277 @@
+{
+  "method": "Same 60-photo corpus; all 24 positive targets differ from first-round reference targets. New queries and visually chosen references fixed before running; no model/ranking edits.",
+  "queries": [
+    {
+      "id": "a01",
+      "group": "clear",
+      "text": "蓝眼睛长毛猫的脸部特写。",
+      "expected_ids": [
+        "photo-006"
+      ],
+      "visual_basis": "原图中猫脸占据主要画面，双眼明亮蓝色，脸颊及耳边有长毛。",
+      "risk": "无明显歧义。"
+    },
+    {
+      "id": "a02",
+      "group": "clear",
+      "text": "趴在草地上的黑猫。",
+      "expected_ids": [
+        "photo-009"
+      ],
+      "visual_basis": "原图中一只以黑色为主的猫伏在绿色草地上，胸前和脚尖有白毛。",
+      "risk": "黑猫指主体毛色为黑色，并非要求全身没有白毛。"
+    },
+    {
+      "id": "a03",
+      "group": "clear",
+      "text": "黑白狗在水边的空地上。",
+      "expected_ids": [
+        "photo-014"
+      ],
+      "visual_basis": "原图前景是一只黑头白身、背有黑斑的狗，身后清楚可见水面与岸边。",
+      "risk": "不推断具体河流或拍摄地点。"
+    },
+    {
+      "id": "a04",
+      "group": "clear",
+      "text": "棕色长毛狗在沙滩上跑。",
+      "expected_ids": [
+        "photo-020"
+      ],
+      "visual_basis": "原图中棕色长毛狗侧向奔跑，脚下是沙地，右后方有白色浪边。",
+      "risk": "狗背部还有深色毛，棕色是整体视觉概括。"
+    },
+    {
+      "id": "a05",
+      "group": "colloquial",
+      "text": "帮我找那张猫坐得特别端正、背后都是光秃树枝的照片。",
+      "expected_ids": [
+        "photo-001"
+      ],
+      "visual_basis": "原图中虎斑猫直立坐着，两只前爪靠在一起，背景为失焦的无叶树枝。",
+      "risk": "特别端正是对姿态的日常形容，不涉及性格或身份判断。"
+    },
+    {
+      "id": "a06",
+      "group": "colloquial",
+      "text": "翻一下那张猫摊在地上、肚皮朝天的照片。",
+      "expected_ids": [
+        "photo-004"
+      ],
+      "visual_basis": "原图中猫仰躺在粗糙地面上，腹部向上，两只前腿伸向头顶方向。",
+      "risk": "无明显歧义。"
+    },
+    {
+      "id": "a07",
+      "group": "colloquial",
+      "text": "我记得有张俯着拍的猫，它正抬头望过来。",
+      "expected_ids": [
+        "photo-007"
+      ],
+      "visual_basis": "原图明显从猫的上方拍摄，猫抬头看向镜头，身后地面与影子可见。",
+      "risk": "抬头望过来属于视角描述；不推断摄影者与猫的关系。"
+    },
+    {
+      "id": "a08",
+      "group": "colloquial",
+      "text": "有张狗在一大片棕色草地里跑，拍得远远的，找一下。",
+      "expected_ids": [
+        "photo-018"
+      ],
+      "visual_basis": "原图以大片棕褐色低矮植被为主，奔跑的狗在画面中占比很小。",
+      "risk": "棕色地表更像草与低矮灌丛混合，草地是自然口语概括。"
+    },
+    {
+      "id": "a09",
+      "group": "constraint",
+      "text": "雪地里只有一只虎斑猫，侧着身子，抬起一只前爪。",
+      "expected_ids": [
+        "photo-002"
+      ],
+      "visual_basis": "原图只有一只猫，周围覆盖白雪；猫身体侧向，头转向镜头，一只前爪悬空。",
+      "risk": "无明显歧义。"
+    },
+    {
+      "id": "a10",
+      "group": "constraint",
+      "text": "一只白底花斑猫坐着回头，背上有大片深色斑，尾巴向右伸。",
+      "expected_ids": [
+        "photo-008"
+      ],
+      "visual_basis": "原图猫身体以白色为主，背部有大片黑棕斑块，坐姿转头，深色尾巴伸向画面右侧。",
+      "risk": "向右以观看画面时的左右为准。"
+    },
+    {
+      "id": "a11",
+      "group": "constraint",
+      "text": "草地上只有一只浅棕色长毛狗，吐着舌头，嘴里没有球。",
+      "expected_ids": [
+        "photo-012"
+      ],
+      "visual_basis": "原图只有一只浅棕色长毛狗，正在草地上向前跑，长舌伸出，张开的嘴里没有球。",
+      "risk": "否定条件需与叼球狗区分；毛色也可被描述为米黄或奶油色。"
+    },
+    {
+      "id": "a12",
+      "group": "constraint",
+      "text": "头和前腿是白色、身子是灰色的狗，正朝镜头跑，嘴里没有东西。",
+      "expected_ids": [
+        "photo-019"
+      ],
+      "visual_basis": "原图狗头部和前腿为白毛，躯干为灰毛，面向镜头奔跑且抬起前腿，张嘴吐舌但未叼物。",
+      "risk": "没有东西按未叼外物理解，不将可见舌头算作物品；头部局部有灰毛。"
+    },
+    {
+      "id": "s01",
+      "group": "clear",
+      "text": "两个人并排骑自行车经过草坪",
+      "expected_ids": [
+        "photo-026"
+      ],
+      "visual_basis": "前景两人各骑一辆自行车，并排向右；道路后方是大片绿色草坪。",
+      "risk": "未假定人物身份或关系；两辆车部分重叠，但两名骑行者均清楚可见。"
+    },
+    {
+      "id": "s02",
+      "group": "clear",
+      "text": "仰拍圆形玻璃天窗和周围的灯泡",
+      "expected_ids": [
+        "photo-034"
+      ],
+      "visual_basis": "镜头朝上，中央是带放射状金属纹样的圆形玻璃天窗，外圈分布亮着的灯泡。",
+      "risk": "透视使圆形略呈椭圆；不推断建筑用途或地点。"
+    },
+    {
+      "id": "s03",
+      "group": "clear",
+      "text": "黑白照片里的陡峭山峰和积雪",
+      "expected_ids": [
+        "photo-044"
+      ],
+      "visual_basis": "整张图为黑白，巨大裸岩尖峰位于左中部，峰间及下方有大片白色积雪。",
+      "risk": "不依据山形推断真实山名；黑白处理与其他彩色雪山图有明显区别。"
+    },
+    {
+      "id": "s04",
+      "group": "clear",
+      "text": "用手抓着金属分格餐盘里的米饭",
+      "expected_ids": [
+        "photo-055"
+      ],
+      "visual_basis": "一只手伸入圆形金属分格餐盘的大格，手指接触米饭；旁边小格装有红色与深色食物。",
+      "risk": "只描述手与米饭的接触，不推断菜系或人物身份。"
+    },
+    {
+      "id": "s05",
+      "group": "colloquial",
+      "text": "找那张黑白街拍，路边自行车多得快把路堵住了",
+      "expected_ids": [
+        "photo-028"
+      ],
+      "visual_basis": "黑白街景，两侧密集停放自行车，中间有推车的人与前部载着两个孩子的自行车。",
+      "risk": "“快把路堵住”是口语化印象，实际中央仍有通道；黑白和大量停放自行车共同限定目标。"
+    },
+    {
+      "id": "s06",
+      "group": "colloquial",
+      "text": "那张下过雪的小城，最显眼的楼看着像童话里的城堡",
+      "expected_ids": [
+        "photo-040"
+      ],
+      "visual_basis": "前景地面与屋顶覆盖白雪，城中有高大的尖顶建筑，外形近似城堡。",
+      "risk": "“童话里的城堡”为外观联想；不认定建筑的真实功能，也不推断拍摄时间。"
+    },
+    {
+      "id": "s07",
+      "group": "colloquial",
+      "text": "我记得山脚那片绿坡上散着些小房子，看着特别安静",
+      "expected_ids": [
+        "photo-043"
+      ],
+      "visual_basis": "绿色坡地上分散着多栋小木屋，后方有树林和大面积岩石山体，画面未见明显人群。",
+      "risk": "“安静”为画面印象，并非对现场声音的判断；绿坡与多栋房屋能区分雪地单栋木屋。"
+    },
+    {
+      "id": "s08",
+      "group": "colloquial",
+      "text": "翻翻那张飞机上吃的小面包，包装刚拆开露出来的",
+      "expected_ids": [
+        "photo-060"
+      ],
+      "visual_basis": "椭圆形面包从银色包装中露出，后方显示屏有航空公司标志及欢迎乘搭文字。",
+      "risk": "飞机情境由可见航空欢迎画面支持；“刚拆开”为自然回忆表达，图像仅能确认包装已打开。"
+    },
+    {
+      "id": "s09",
+      "group": "constraint",
+      "text": "湖边骑车，左边有绿色“64”路牌，湖在路的右侧",
+      "expected_ids": [
+        "photo-030"
+      ],
+      "visual_basis": "左侧路牌的绿色矩形区域清楚写着64，道路向远处延伸，右侧有湖水和几名携自行车的人。",
+      "risk": "数字是图中可见文字；左与右均以画面方向为准，不推断地理方位。"
+    },
+    {
+      "id": "s10",
+      "group": "constraint",
+      "text": "水面漂着碎冰，船停在画面右侧，天空是粉橙色的",
+      "expected_ids": [
+        "photo-035"
+      ],
+      "visual_basis": "水面分散漂浮大小冰块，右侧岸边停靠船只，上方天空呈浅粉橙色。",
+      "risk": "颜色受显示与光线影响可能被称作淡黄色；未据天色判定早晚。"
+    },
+    {
+      "id": "s11",
+      "group": "constraint",
+      "text": "雪山前有小水潭，潭的右边是覆雪大石头，附近有人徒步",
+      "expected_ids": [
+        "photo-042"
+      ],
+      "visual_basis": "左下方小水潭右侧有顶部覆雪的巨大岩石，周围雪地可见数名背包徒步者，后方为群山。",
+      "risk": "石头相对水潭的位置按画面判断；不精确限定远处较小人影的数量。"
+    },
+    {
+      "id": "s12",
+      "group": "constraint",
+      "text": "灰色纸杯上有红色标志，放在小桌板上，旁边没有水瓶",
+      "expected_ids": [
+        "photo-053"
+      ],
+      "visual_basis": "灰色纸杯占据前景，杯身右上有红色图案，杯底置于灰色桌板，画面内没有水瓶。",
+      "risk": "否定条件仅指画面内不可见水瓶，不能推断画外物品；不认定杯中饮品。"
+    },
+    {
+      "id": "n01",
+      "group": "negative",
+      "text": "一只大象站在草原上",
+      "expected_ids": [],
+      "visual_basis": "已核查60张图片，此场景不存在。",
+      "risk": "无目标诊断，不计入正例命中率。"
+    },
+    {
+      "id": "n02",
+      "group": "negative",
+      "text": "在厨房切菜的人",
+      "expected_ids": [],
+      "visual_basis": "已核查60张图片，此场景不存在。",
+      "risk": "无目标诊断，不计入正例命中率。"
+    },
+    {
+      "id": "n03",
+      "group": "negative",
+      "text": "开满向日葵的花田",
+      "expected_ids": [],
+      "visual_basis": "已核查60张图片，此场景不存在。",
+      "risk": "无目标诊断，不计入正例命中率。"
+    },
+    {
+      "id": "n04",
+      "group": "negative",
+      "text": "蓝色泳池里正在游泳的人",
+      "expected_ids": [],
+      "visual_basis": "已核查60张图片，此场景不存在。",
+      "risk": "无目标诊断，不计入正例命中率。"
+    }
+  ]
+}

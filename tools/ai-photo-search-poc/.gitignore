@@ -1,0 +1,14 @@
+.venv/
+.data/
+.data-*/
+.cache/
+.run/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.log
+.DS_Store
+tests/fixtures/*.png
+tests/fixtures/*.jpg
+tests/public-library/images/
+tests/smoke-result.json

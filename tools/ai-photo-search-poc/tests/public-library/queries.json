@@ -1,0 +1,207 @@
+{
+  "created_on": "2026-11-10",
+  "method": "Queries and preselected reference photos fixed by visual inspection before retrieval. Negative cases are diagnostic only.",
+  "queries": [
+    {
+      "id": "q01",
+      "text": "蓝色墙边，一只猫伸出爪子碰面前的蜥蜴",
+      "expected_ids": [
+        "photo-003"
+      ],
+      "category": "cats",
+      "note": "原图可见蓝色粗糙墙面、灰白猫伸出的前爪，以及地上的长尾蜥蜴。"
+    },
+    {
+      "id": "q02",
+      "text": "一只皮肤有褶皱的无毛小猫站在白色毛毯上",
+      "expected_ids": [
+        "photo-005"
+      ],
+      "category": "cats",
+      "note": "原图可见粉色无毛小猫、明显皮肤褶皱、蓝色眼睛和白色长绒毯。"
+    },
+    {
+      "id": "q03",
+      "text": "两只猫并排走在灰色地面上，一只是橘猫，一只是虎斑猫",
+      "expected_ids": [
+        "photo-010"
+      ],
+      "category": "cats",
+      "note": "原图左侧为橘猫，右侧为深色虎斑猫，两猫紧挨着在灰色铺装地面上走动。"
+    },
+    {
+      "id": "q04",
+      "text": "两只小狗在绿草地上追逐，前面的小狗嘴里叼着网球",
+      "expected_ids": [
+        "photo-011"
+      ],
+      "category": "dogs",
+      "note": "原图可见两只小狗，前方浅色狗叼着绿色网球。photo-015只有一只狗，是细节干扰图。"
+    },
+    {
+      "id": "q05",
+      "text": "一只狗在下雪的院子里奔跑，身后挂着秋千",
+      "expected_ids": [
+        "photo-013"
+      ],
+      "category": "dogs",
+      "note": "原图可见飘落的雪、积雪地面、黑黄相间的狗，以及后方两个秋千座椅。"
+    },
+    {
+      "id": "q06",
+      "text": "穿黄色上衣的人牵着狗在红色跑道上跑步",
+      "expected_ids": [
+        "photo-017"
+      ],
+      "category": "dogs",
+      "note": "原图可见黄色上衣、红色帽子的跑者，通过蓝色牵引绳牵狗，在红色田径跑道上前进。"
+    },
+    {
+      "id": "q07",
+      "text": "黑白照片，一个人一边骑自行车一边看手机",
+      "expected_ids": [
+        "photo-021"
+      ],
+      "category": "people",
+      "note": "原图可见黑白街景、骑车者手持手机低头观看，背景有人行走。"
+    },
+    {
+      "id": "q08",
+      "text": "四个人沿着树林旁的小路骑自行车",
+      "expected_ids": [
+        "photo-022"
+      ],
+      "category": "people",
+      "note": "原图清楚显示四位骑车者，后方为密集树木，前方为弯曲的小路。"
+    },
+    {
+      "id": "q09",
+      "text": "三个人在马路上并排骑车，自行车前面都有装着东西的车筐",
+      "expected_ids": [
+        "photo-024"
+      ],
+      "category": "people",
+      "note": "原图从略高处正面拍摄三位骑车者，三个前筐分别放有纸袋、绿色物品和红色袋子。"
+    },
+    {
+      "id": "q10",
+      "text": "戴红白头盔的小孩背对镜头，在绿色自行车道上骑红色自行车",
+      "expected_ids": [
+        "photo-025"
+      ],
+      "category": "people",
+      "note": "原图可见红白头盔、背影、蓝色衣裤、红色自行车及绿色车道，左边是汽车。"
+    },
+    {
+      "id": "q11",
+      "text": "绿色山坡和岩石山峰围着一片蓝色的高山湖泊",
+      "expected_ids": [
+        "photo-041"
+      ],
+      "category": "nature",
+      "note": "原图中央是蓝色湖泊，四周以绿色草坡和灰色岩石山峰为主；无明显大面积积雪。"
+    },
+    {
+      "id": "q12",
+      "text": "前面是起伏的沙丘，远处的群山被粉红色阳光照亮",
+      "expected_ids": [
+        "photo-046"
+      ],
+      "category": "nature",
+      "note": "原图前景是带波纹的沙丘，后方群山和天空呈粉红暖色，不推断具体拍摄时刻。"
+    },
+    {
+      "id": "q13",
+      "text": "一条弯曲的木栈道伸入平静湖面，天边泛着金色光芒",
+      "expected_ids": [
+        "photo-048"
+      ],
+      "category": "nature",
+      "note": "原图中木栈道由前景向右弯入水面，湖水有倒影，天边有金色余晖。"
+    },
+    {
+      "id": "q14",
+      "text": "厚厚的积雪包围着一座木屋，背后是高大的岩石山峰",
+      "expected_ids": [
+        "photo-049"
+      ],
+      "category": "nature",
+      "note": "原图左下是屋顶覆雪的木屋，四周雪地有轨迹，后方是陡峭灰褐色山峰。"
+    },
+    {
+      "id": "q15",
+      "text": "一条挤满行人和马车的老街",
+      "expected_ids": [
+        "photo-037"
+      ],
+      "category": "cities",
+      "note": "视觉核查：两侧高楼之间的旧街道上密集分布着行人和马车。"
+    },
+    {
+      "id": "q16",
+      "text": "建筑室内有蓝色圆形大窗，下面悬着吊灯",
+      "expected_ids": [
+        "photo-036"
+      ],
+      "category": "cities",
+      "note": "视觉核查：正面可见蓝色圆形玻璃窗，下方有金色吊灯。"
+    },
+    {
+      "id": "q17",
+      "text": "雾中被白雪覆盖的树林和城市建筑",
+      "expected_ids": [
+        "photo-038"
+      ],
+      "category": "cities",
+      "note": "视觉核查：雪树、楼房和白色雾气；其他城堡雪景没有这种浓雾和密集雪树。"
+    },
+    {
+      "id": "q18",
+      "text": "白色盘子里的黑色意面，上面放着黄色圆圈状配菜",
+      "expected_ids": [
+        "photo-051"
+      ],
+      "category": "food",
+      "note": "视觉核查：黑色面条、白盘、黄色和橙色环状配菜。"
+    },
+    {
+      "id": "q19",
+      "text": "白色盘子里堆着薯条，旁边有黄瓜片和番茄",
+      "expected_ids": [
+        "photo-052"
+      ],
+      "category": "food",
+      "note": "视觉核查：盘子上部为薯条，下部有黄瓜片和红色番茄。"
+    },
+    {
+      "id": "q20",
+      "text": "黄色盘子里的麦片上放着红色水果，旁边有一杯橙色饮料",
+      "expected_ids": [
+        "photo-058"
+      ],
+      "category": "food",
+      "note": "视觉核查：黄盘、谷物与红色莓果，旁边是橙色饮料；不推断深色杯中饮料种类。"
+    },
+    {
+      "id": "n01",
+      "text": "海底游动的潜水员和珊瑚",
+      "expected_ids": [],
+      "category": "negative",
+      "note": "视觉核查60张照片中没有潜水场景，仅作为无结果场景诊断，不计入命中率。"
+    },
+    {
+      "id": "n02",
+      "text": "生日蛋糕上插着点燃的蜡烛",
+      "expected_ids": [],
+      "category": "negative",
+      "note": "视觉核查60张照片中没有生日蛋糕，仅作为诊断。"
+    },
+    {
+      "id": "n03",
+      "text": "停在机场跑道上的大型客机",
+      "expected_ids": [],
+      "category": "negative",
+      "note": "存在机内餐食照片，没有机场跑道与客机外观照片，仅作为诊断。"
+    }
+  ]
+}

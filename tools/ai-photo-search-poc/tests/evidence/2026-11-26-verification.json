@@ -1,0 +1,59 @@
+{
+  "verified_on": "2026-11-26",
+  "repository_base_commit": "eae185f8755987c34910049cd08d32c5b84b377a",
+  "scope": "Independent Chinese-CLIP PoC handoff; no production or mobile integration.",
+  "checks": {
+    "fixture_download_sha256": {
+      "verified": 4,
+      "downloaded": 4
+    },
+    "public_library_sha256": {
+      "verified": 60,
+      "downloaded_this_run": 1,
+      "copied_from_verified_public_sample": 59
+    },
+    "python_javascript_shell_syntax": "passed",
+    "lan_access_unit_tests": {
+      "passed": 4
+    },
+    "empty_album_real_model_smoke": {
+      "passed_queries": 4,
+      "query_count": 4,
+      "model_network": "offline cache",
+      "device": "mps"
+    },
+    "public_library_first_round": {
+      "top_1_hits": 19,
+      "top_5_hits": 20,
+      "positive_queries": 20
+    },
+    "public_library_second_round": {
+      "top_1_hits": 18,
+      "top_5_hits": 24,
+      "positive_queries": 24,
+      "negative_diagnostics": 4,
+      "correctly_returned_empty": 0
+    },
+    "repository_check": {
+      "exit_code": 0,
+      "react_native_suites": 144,
+      "react_native_tests": 1722,
+      "backend_passed": 1182,
+      "backend_environment_skipped": 440,
+      "agents_passed": 59,
+      "admin_passed": 27,
+      "avatar_web_passed": 44,
+      "media_retrieval_web_passed": 13,
+      "runtime_package_passed": 1
+    },
+    "secrets_and_personal_paths_scan": "passed for new tool text files",
+    "frozen_manifest_and_query_hashes": "unchanged and verified"
+  },
+  "limitations": [
+    "PostgreSQL environment-gated suites were not executed.",
+    "No iOS/Android device validation or production deployment performed.",
+    "The existing production retrieval provider was not called or compared.",
+    "No-target rejection remains unimplemented.",
+    "2026-11-10 visual labels were not re-scored; current ranking evidence is retained separately."
+  ]
+}
