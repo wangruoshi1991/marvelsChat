@@ -1,0 +1,50 @@
+{
+  "purpose": "Public sample images for an isolated real-model smoke test; these are not personal photos and must not be automatically imported into the default album.",
+  "retrieved_on": "2026-11-10",
+  "images": [
+    {
+      "file": "chelsea.png",
+      "source_url": "https://raw.githubusercontent.com/scikit-image/scikit-image/v0.16.2/skimage/data/chelsea.png",
+      "documentation_url": "https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.chelsea",
+      "description_zh": "一只棕色虎斑猫的脸部特写，眼睛呈黄绿色。",
+      "smoke_query_zh": "一只猫的脸部特写",
+      "license": "CC0, according to the scikit-image documentation",
+      "credit": "Stefan van der Walt",
+      "visually_verified": true,
+      "sha256": "596aa1e7cb875eb79f437e310381d26b338a81c2da23439704a73c4651e8c4bb"
+    },
+    {
+      "file": "coffee.png",
+      "source_url": "https://raw.githubusercontent.com/scikit-image/scikit-image/v0.16.2/skimage/data/coffee.png",
+      "documentation_url": "https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.coffee",
+      "description_zh": "木桌上放着一杯咖啡、红棕色杯碟和一把金属勺子。",
+      "smoke_query_zh": "木桌上的一杯咖啡",
+      "license": "CC0, according to the scikit-image documentation",
+      "credit": "Rachel Michetti; photograph courtesy of Pikolo Espresso Bar",
+      "visually_verified": true,
+      "sha256": "cc02f8ca188b167c775a7101b5d767d1e71792cf762c33d6fa15a4599b5a8de7"
+    },
+    {
+      "file": "astronaut.png",
+      "source_url": "https://raw.githubusercontent.com/scikit-image/scikit-image/v0.16.2/skimage/data/astronaut.png",
+      "documentation_url": "https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.astronaut",
+      "description_zh": "一位穿橙色宇航服的宇航员，身前有头盔，背景有美国国旗和航天飞机模型。",
+      "smoke_query_zh": "穿橙色宇航服的宇航员",
+      "license": "Public domain; no known copyright restrictions, according to the scikit-image documentation",
+      "credit": "NASA Great Images database",
+      "visually_verified": true,
+      "sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5"
+    },
+    {
+      "file": "rocket.jpg",
+      "source_url": "https://raw.githubusercontent.com/scikit-image/scikit-image/v0.16.2/skimage/data/rocket.jpg",
+      "documentation_url": "https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.rocket",
+      "description_zh": "暮色中，白色火箭竖立在发射台上，周围有高塔和亮起的灯光。",
+      "smoke_query_zh": "发射台上的白色火箭",
+      "license": "Public domain, according to the scikit-image documentation",
+      "credit": "SpaceX Photos",
+      "visually_verified": true,
+      "sha256": "c2dd0de7c538df8d111e479619b129464d0269d0ae5fd18ca91d33a7fdfea95c"
+    }
+  ]
+}

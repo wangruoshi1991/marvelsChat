@@ -1,0 +1,39 @@
+{
+  "kind": "public-fixture-smoke-test",
+  "photo_count": 4,
+  "queries": [
+    {
+      "query": "一只猫的脸部特写",
+      "expected": "chelsea.png",
+      "top_1": "chelsea.png",
+      "elapsed_ms": 51.4,
+      "score": 0.46603,
+      "passed": true
+    },
+    {
+      "query": "木桌上的一杯咖啡",
+      "expected": "coffee.png",
+      "top_1": "coffee.png",
+      "elapsed_ms": 17.2,
+      "score": 0.42475,
+      "passed": true
+    },
+    {
+      "query": "穿橙色宇航服的宇航员",
+      "expected": "astronaut.png",
+      "top_1": "astronaut.png",
+      "elapsed_ms": 249.9,
+      "score": 0.43043,
+      "passed": true
+    },
+    {
+      "query": "发射台上的白色火箭",
+      "expected": "rocket.jpg",
+      "top_1": "rocket.jpg",
+      "elapsed_ms": 211.2,
+      "score": 0.45275,
+      "passed": true
+    }
+  ],
+  "note": "These distinct public images validate the execution path, not personal-album search quality."
+}

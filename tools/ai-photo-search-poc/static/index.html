@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="description" content="用自然语言检索本机照片的最小验证原型。" />
+    <title>妙讯相册检索 · 本地照片搜索</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="妙讯相册检索首页">
+          <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="m5 16 5-5 4 4 2-2 3 3"/><circle cx="15.5" cy="8.5" r="1.5"/></svg></span>
+          <span>妙讯相册检索</span>
+        </a>
+        <span id="privacy-label" class="privacy"><span class="status-dot" aria-hidden="true"></span>照片仅存本机 <span class="privacy-separator">·</span> 无需API密钥</span>
+        <span class="prototype-tag">POC <span>01</span></span>
+      </header>
+
+      <main>
+        <section class="intro" aria-labelledby="page-title">
+          <p class="eyebrow">你的记忆，不必记得文件名</p>
+          <h1 id="page-title">用一句话，找回一张照片</h1>
+          <p class="intro-copy">描述你记得的画面，让 AI 帮你从相册里寻找。</p>
+        </section>
+
+        <div class="workspace">
+          <aside class="sidebar" aria-label="相册与模型状态">
+            <section class="panel import-panel">
+              <div class="section-heading"><span class="step">01</span><h2>添加你的照片</h2></div>
+              <div id="drop-zone" class="drop-zone">
+                <svg class="upload-icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="11" width="31" height="28" rx="5"/><path d="m8 32 9-9 8 8 5-5 8 8M31 8h10m-5-5v10"/><circle cx="28" cy="20" r="3"/></svg>
+                <p class="drop-title">把照片拖到这里</p>
+                <p class="drop-hint">或从电脑中选择</p>
+                <button id="choose-files" class="button primary" type="button">选择照片 <span aria-hidden="true">＋</span></button>
+                <button id="choose-folder" class="text-button folder-button" type="button">选择整个文件夹 <span aria-hidden="true">↗</span></button>
+                <input id="file-input" class="visually-hidden" type="file" accept="image/*,.heic,.heif" multiple />
+                <input id="folder-input" class="visually-hidden" type="file" accept="image/*,.heic,.heif" multiple webkitdirectory />
+              </div>
+              <p class="support-copy">建议先用 100–300 张照片验证。支持 HEIC、JPEG、PNG、WebP，单张不超过 30 MB。原照片不会被修改。</p>
+              <div id="upload-progress" class="upload-progress" hidden aria-live="polite">
+                <div class="progress-label"><span id="upload-message">准备导入…</span><span id="upload-percent"></span></div>
+                <progress id="upload-bar" max="100" value="0" aria-label="照片导入进度"></progress>
+              </div>
+              <div class="library-stats">
+                <div><strong id="photo-count">0</strong><span>已导入</span></div>
+                <div><strong id="ready-count">0</strong><span>可搜索</span></div>
+              </div>
+              <button id="clear-library" class="text-button muted-button" type="button" disabled>清空本次相册</button>
+            </section>
+
+            <section class="panel model-panel" aria-live="polite">
+              <div class="model-heading"><span id="model-dot" class="status-dot neutral" aria-hidden="true"></span><h2 id="model-title">正在连接本地服务</h2></div>
+              <p id="model-description">准备好后，你就可以开始导入与搜索。</p>
+              <div id="index-progress" class="index-progress" hidden>
+                <span id="index-message"></span>
+                <progress id="index-bar" max="100" value="0" aria-label="照片索引进度"></progress>
+              </div>
+              <button id="load-model" class="text-button" type="button" hidden>准备搜索模型 <span aria-hidden="true">→</span></button>
+            </section>
+
+            <p class="local-note"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2 3.5 4.5v5c0 4 6.5 8 6.5 8s6.5-4 6.5-8v-5z"/><path d="m7 10 2 2 4-4"/></svg><span id="storage-note">只在这台电脑上处理照片。首次使用需要联网下载模型。</span></p>
+          </aside>
+
+          <section class="search-workspace" aria-labelledby="search-heading">
+            <div class="section-heading search-heading"><span class="step">02</span><h2 id="search-heading">说说你想找的画面</h2></div>
+            <form id="search-form" class="search-form" role="search">
+              <label class="visually-hidden" for="search-input">用中文描述想找的照片</label>
+              <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg>
+              <input id="search-input" type="search" autocomplete="off" maxlength="120" placeholder="例如：傍晚的海边，有人在沙滩上散步" aria-describedby="search-tip" />
+              <button id="search-button" class="button primary" type="submit">找照片 <span aria-hidden="true">→</span></button>
+            </form>
+            <div class="suggestions" aria-label="搜索描述示例">
+              <span>试着描述</span>
+              <button type="button" data-query="一只在窗边晒太阳的猫">窗边晒太阳的猫</button>
+              <button type="button" data-query="一群人围坐在一起吃饭">大家一起吃饭</button>
+              <button type="button" data-query="山间云雾和绿色的树">山间云雾</button>
+            </div>
+            <p id="search-tip" class="search-tip">短句更有效，试着描述看得见的场景、物品和动作。</p>
+
+            <div id="notice" class="notice" role="status" hidden><span id="notice-text"></span><button id="dismiss-notice" type="button" aria-label="关闭提示">×</button></div>
+
+            <div class="results-toolbar">
+              <div><h2 id="results-title">我的照片</h2><span id="results-meta">导入后，照片会出现在这里</span></div>
+              <div class="results-actions"><button id="show-all" class="text-button" type="button" hidden>全部照片 <span aria-hidden="true">↗</span></button><button id="export-records" class="text-button" type="button" title="下载搜索耗时、结果排序和人工判断的 JSON 记录">导出验证记录 <span aria-hidden="true">↓</span></button></div>
+            </div>
+
+            <div id="empty-state" class="empty-state">
+              <div class="empty-illustration" aria-hidden="true">
+                <div class="photo-outline back"></div>
+                <div class="photo-outline front"><svg viewBox="0 0 64 64"><circle cx="43" cy="20" r="5"/><path d="m5 49 17-20 14 16 7-8 16 16"/></svg></div>
+                <span class="small-sparkle">✦</span>
+              </div>
+              <h3 id="empty-title">从一小段回忆开始</h3>
+              <p id="empty-copy">先添加一批照片，再描述其中的场景、人物或物品。<br />不需要提前打标签，也不需要记住拍摄日期。</p>
+              <button id="empty-import" class="text-button" type="button">添加第一批照片 <span aria-hidden="true">→</span></button>
+            </div>
+            <div id="photo-grid" class="photo-grid" aria-live="polite"></div>
+            <p id="results-footnote" class="results-footnote" hidden></p>
+          </section>
+        </div>
+      </main>
+
+      <footer><span>妙讯相册检索 · 最小验证原型</span><span>从描述到画面，让记忆更容易被找到。</span></footer>
+    </div>
+
+    <dialog id="photo-dialog" class="photo-dialog" aria-labelledby="preview-title">
+      <div class="dialog-toolbar"><h2 id="preview-title">照片预览</h2><button id="close-preview" type="button" aria-label="关闭照片预览">×</button></div>
+      <img id="preview-image" alt="" />
+    </dialog>
+  </body>
+</html>

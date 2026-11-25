@@ -1,0 +1,831 @@
+{
+  "evaluated_on": "2026-11-10",
+  "photo_count": 60,
+  "query_file_sha256": "a78d5d8de4f6d087bf09170e2633f0201a7bd2fb472abe2770d2728f21b5112e",
+  "query_count": 23,
+  "positive_query_count": 20,
+  "top_1_hits": 19,
+  "top_5_hits": 20,
+  "top_1_rate": 0.95,
+  "top_5_rate": 1.0,
+  "latency_ms": {
+    "median": 10.6,
+    "min": 8.1,
+    "max": 220.2
+  },
+  "import_and_index_seconds": 5.25,
+  "model": {
+    "state": "ready",
+    "name": "OFA-Sys/chinese-clip-vit-base-patch16",
+    "device": "mps",
+    "error": null
+  },
+  "metric_definition": "A hit means at least one preselected visually verified reference photo occurs in the first K results; this is not exhaustive semantic relevance accuracy or recall.",
+  "limitations": [
+    "Small manually selected public sample, not a held-out personal-album benchmark.",
+    "Queries and reference photos were fixed before running retrieval.",
+    "Other relevant photos may exist beyond the preselected references.",
+    "Queries with no reference photos are diagnostics and excluded from hit rates."
+  ],
+  "results": [
+    {
+      "id": "q01",
+      "text": "蓝色墙边，一只猫伸出爪子碰面前的蜥蜴",
+      "expected_ids": [
+        "photo-003"
+      ],
+      "category": "cats",
+      "note": "原图可见蓝色粗糙墙面、灰白猫伸出的前爪，以及地上的长尾蜥蜴。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 185.2,
+      "top_5": [
+        {
+          "id": "photo-003",
+          "score": 0.54686
+        },
+        {
+          "id": "photo-004",
+          "score": 0.42425
+        },
+        {
+          "id": "photo-007",
+          "score": 0.41862
+        },
+        {
+          "id": "photo-001",
+          "score": 0.41792
+        },
+        {
+          "id": "photo-010",
+          "score": 0.40865
+        }
+      ]
+    },
+    {
+      "id": "q02",
+      "text": "一只皮肤有褶皱的无毛小猫站在白色毛毯上",
+      "expected_ids": [
+        "photo-005"
+      ],
+      "category": "cats",
+      "note": "原图可见粉色无毛小猫、明显皮肤褶皱、蓝色眼睛和白色长绒毯。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 11.2,
+      "top_5": [
+        {
+          "id": "photo-005",
+          "score": 0.51887
+        },
+        {
+          "id": "photo-003",
+          "score": 0.37748
+        },
+        {
+          "id": "photo-008",
+          "score": 0.36333
+        },
+        {
+          "id": "photo-002",
+          "score": 0.35022
+        },
+        {
+          "id": "photo-007",
+          "score": 0.34673
+        }
+      ]
+    },
+    {
+      "id": "q03",
+      "text": "两只猫并排走在灰色地面上，一只是橘猫，一只是虎斑猫",
+      "expected_ids": [
+        "photo-010"
+      ],
+      "category": "cats",
+      "note": "原图左侧为橘猫，右侧为深色虎斑猫，两猫紧挨着在灰色铺装地面上走动。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 86.6,
+      "top_5": [
+        {
+          "id": "photo-010",
+          "score": 0.51804
+        },
+        {
+          "id": "photo-003",
+          "score": 0.41459
+        },
+        {
+          "id": "photo-002",
+          "score": 0.40346
+        },
+        {
+          "id": "photo-001",
+          "score": 0.39666
+        },
+        {
+          "id": "photo-008",
+          "score": 0.39224
+        }
+      ]
+    },
+    {
+      "id": "q04",
+      "text": "两只小狗在绿草地上追逐，前面的小狗嘴里叼着网球",
+      "expected_ids": [
+        "photo-011"
+      ],
+      "category": "dogs",
+      "note": "原图可见两只小狗，前方浅色狗叼着绿色网球。photo-015只有一只狗，是细节干扰图。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 10.6,
+      "top_5": [
+        {
+          "id": "photo-011",
+          "score": 0.50811
+        },
+        {
+          "id": "photo-015",
+          "score": 0.48463
+        },
+        {
+          "id": "photo-012",
+          "score": 0.45405
+        },
+        {
+          "id": "photo-019",
+          "score": 0.40675
+        },
+        {
+          "id": "photo-018",
+          "score": 0.39168
+        }
+      ]
+    },
+    {
+      "id": "q05",
+      "text": "一只狗在下雪的院子里奔跑，身后挂着秋千",
+      "expected_ids": [
+        "photo-013"
+      ],
+      "category": "dogs",
+      "note": "原图可见飘落的雪、积雪地面、黑黄相间的狗，以及后方两个秋千座椅。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 9.0,
+      "top_5": [
+        {
+          "id": "photo-013",
+          "score": 0.49178
+        },
+        {
+          "id": "photo-016",
+          "score": 0.44163
+        },
+        {
+          "id": "photo-014",
+          "score": 0.37085
+        },
+        {
+          "id": "photo-018",
+          "score": 0.36748
+        },
+        {
+          "id": "photo-019",
+          "score": 0.36671
+        }
+      ]
+    },
+    {
+      "id": "q06",
+      "text": "穿黄色上衣的人牵着狗在红色跑道上跑步",
+      "expected_ids": [
+        "photo-017"
+      ],
+      "category": "dogs",
+      "note": "原图可见黄色上衣、红色帽子的跑者，通过蓝色牵引绳牵狗，在红色田径跑道上前进。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 8.9,
+      "top_5": [
+        {
+          "id": "photo-017",
+          "score": 0.51846
+        },
+        {
+          "id": "photo-015",
+          "score": 0.40552
+        },
+        {
+          "id": "photo-012",
+          "score": 0.39732
+        },
+        {
+          "id": "photo-011",
+          "score": 0.39697
+        },
+        {
+          "id": "photo-019",
+          "score": 0.39198
+        }
+      ]
+    },
+    {
+      "id": "q07",
+      "text": "黑白照片，一个人一边骑自行车一边看手机",
+      "expected_ids": [
+        "photo-021"
+      ],
+      "category": "people",
+      "note": "原图可见黑白街景、骑车者手持手机低头观看，背景有人行走。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 9.0,
+      "top_5": [
+        {
+          "id": "photo-021",
+          "score": 0.48613
+        },
+        {
+          "id": "photo-028",
+          "score": 0.45958
+        },
+        {
+          "id": "photo-026",
+          "score": 0.39947
+        },
+        {
+          "id": "photo-025",
+          "score": 0.38369
+        },
+        {
+          "id": "photo-024",
+          "score": 0.37507
+        }
+      ]
+    },
+    {
+      "id": "q08",
+      "text": "四个人沿着树林旁的小路骑自行车",
+      "expected_ids": [
+        "photo-022"
+      ],
+      "category": "people",
+      "note": "原图清楚显示四位骑车者，后方为密集树木，前方为弯曲的小路。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 50.1,
+      "top_5": [
+        {
+          "id": "photo-022",
+          "score": 0.51104
+        },
+        {
+          "id": "photo-024",
+          "score": 0.3833
+        },
+        {
+          "id": "photo-027",
+          "score": 0.38264
+        },
+        {
+          "id": "photo-029",
+          "score": 0.36985
+        },
+        {
+          "id": "photo-026",
+          "score": 0.36423
+        }
+      ]
+    },
+    {
+      "id": "q09",
+      "text": "三个人在马路上并排骑车，自行车前面都有装着东西的车筐",
+      "expected_ids": [
+        "photo-024"
+      ],
+      "category": "people",
+      "note": "原图从略高处正面拍摄三位骑车者，三个前筐分别放有纸袋、绿色物品和红色袋子。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 11.9,
+      "top_5": [
+        {
+          "id": "photo-024",
+          "score": 0.48105
+        },
+        {
+          "id": "photo-028",
+          "score": 0.4564
+        },
+        {
+          "id": "photo-021",
+          "score": 0.43925
+        },
+        {
+          "id": "photo-022",
+          "score": 0.43844
+        },
+        {
+          "id": "photo-023",
+          "score": 0.41584
+        }
+      ]
+    },
+    {
+      "id": "q10",
+      "text": "戴红白头盔的小孩背对镜头，在绿色自行车道上骑红色自行车",
+      "expected_ids": [
+        "photo-025"
+      ],
+      "category": "people",
+      "note": "原图可见红白头盔、背影、蓝色衣裤、红色自行车及绿色车道，左边是汽车。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 10.9,
+      "top_5": [
+        {
+          "id": "photo-025",
+          "score": 0.53982
+        },
+        {
+          "id": "photo-028",
+          "score": 0.41673
+        },
+        {
+          "id": "photo-027",
+          "score": 0.40098
+        },
+        {
+          "id": "photo-022",
+          "score": 0.39459
+        },
+        {
+          "id": "photo-026",
+          "score": 0.39177
+        }
+      ]
+    },
+    {
+      "id": "q11",
+      "text": "绿色山坡和岩石山峰围着一片蓝色的高山湖泊",
+      "expected_ids": [
+        "photo-041"
+      ],
+      "category": "nature",
+      "note": "原图中央是蓝色湖泊，四周以绿色草坡和灰色岩石山峰为主；无明显大面积积雪。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 10.2,
+      "top_5": [
+        {
+          "id": "photo-041",
+          "score": 0.49581
+        },
+        {
+          "id": "photo-047",
+          "score": 0.40672
+        },
+        {
+          "id": "photo-043",
+          "score": 0.38677
+        },
+        {
+          "id": "photo-044",
+          "score": 0.37152
+        },
+        {
+          "id": "photo-042",
+          "score": 0.36821
+        }
+      ]
+    },
+    {
+      "id": "q12",
+      "text": "前面是起伏的沙丘，远处的群山被粉红色阳光照亮",
+      "expected_ids": [
+        "photo-046"
+      ],
+      "category": "nature",
+      "note": "原图前景是带波纹的沙丘，后方群山和天空呈粉红暖色，不推断具体拍摄时刻。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 12.0,
+      "top_5": [
+        {
+          "id": "photo-046",
+          "score": 0.51091
+        },
+        {
+          "id": "photo-047",
+          "score": 0.41364
+        },
+        {
+          "id": "photo-048",
+          "score": 0.39932
+        },
+        {
+          "id": "photo-014",
+          "score": 0.39743
+        },
+        {
+          "id": "photo-018",
+          "score": 0.38517
+        }
+      ]
+    },
+    {
+      "id": "q13",
+      "text": "一条弯曲的木栈道伸入平静湖面，天边泛着金色光芒",
+      "expected_ids": [
+        "photo-048"
+      ],
+      "category": "nature",
+      "note": "原图中木栈道由前景向右弯入水面，湖水有倒影，天边有金色余晖。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 8.2,
+      "top_5": [
+        {
+          "id": "photo-048",
+          "score": 0.49582
+        },
+        {
+          "id": "photo-047",
+          "score": 0.38079
+        },
+        {
+          "id": "photo-035",
+          "score": 0.33511
+        },
+        {
+          "id": "photo-041",
+          "score": 0.33028
+        },
+        {
+          "id": "photo-046",
+          "score": 0.32931
+        }
+      ]
+    },
+    {
+      "id": "q14",
+      "text": "厚厚的积雪包围着一座木屋，背后是高大的岩石山峰",
+      "expected_ids": [
+        "photo-049"
+      ],
+      "category": "nature",
+      "note": "原图左下是屋顶覆雪的木屋，四周雪地有轨迹，后方是陡峭灰褐色山峰。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 8.1,
+      "top_5": [
+        {
+          "id": "photo-049",
+          "score": 0.47969
+        },
+        {
+          "id": "photo-044",
+          "score": 0.42712
+        },
+        {
+          "id": "photo-043",
+          "score": 0.42381
+        },
+        {
+          "id": "photo-050",
+          "score": 0.391
+        },
+        {
+          "id": "photo-042",
+          "score": 0.38409
+        }
+      ]
+    },
+    {
+      "id": "q15",
+      "text": "一条挤满行人和马车的老街",
+      "expected_ids": [
+        "photo-037"
+      ],
+      "category": "cities",
+      "note": "视觉核查：两侧高楼之间的旧街道上密集分布着行人和马车。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 183.7,
+      "top_5": [
+        {
+          "id": "photo-037",
+          "score": 0.46991
+        },
+        {
+          "id": "photo-031",
+          "score": 0.42705
+        },
+        {
+          "id": "photo-028",
+          "score": 0.41994
+        },
+        {
+          "id": "photo-021",
+          "score": 0.38627
+        },
+        {
+          "id": "photo-040",
+          "score": 0.3734
+        }
+      ]
+    },
+    {
+      "id": "q16",
+      "text": "建筑室内有蓝色圆形大窗，下面悬着吊灯",
+      "expected_ids": [
+        "photo-036"
+      ],
+      "category": "cities",
+      "note": "视觉核查：正面可见蓝色圆形玻璃窗，下方有金色吊灯。",
+      "best_expected_rank": 2,
+      "hit_at_1": false,
+      "hit_at_5": true,
+      "elapsed_ms": 12.2,
+      "top_5": [
+        {
+          "id": "photo-034",
+          "score": 0.45734
+        },
+        {
+          "id": "photo-036",
+          "score": 0.43708
+        },
+        {
+          "id": "photo-032",
+          "score": 0.34292
+        },
+        {
+          "id": "photo-033",
+          "score": 0.3292
+        },
+        {
+          "id": "photo-037",
+          "score": 0.32648
+        }
+      ]
+    },
+    {
+      "id": "q17",
+      "text": "雾中被白雪覆盖的树林和城市建筑",
+      "expected_ids": [
+        "photo-038"
+      ],
+      "category": "cities",
+      "note": "视觉核查：雪树、楼房和白色雾气；其他城堡雪景没有这种浓雾和密集雪树。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 10.6,
+      "top_5": [
+        {
+          "id": "photo-038",
+          "score": 0.47569
+        },
+        {
+          "id": "photo-040",
+          "score": 0.35787
+        },
+        {
+          "id": "photo-049",
+          "score": 0.35166
+        },
+        {
+          "id": "photo-050",
+          "score": 0.34377
+        },
+        {
+          "id": "photo-013",
+          "score": 0.33559
+        }
+      ]
+    },
+    {
+      "id": "q18",
+      "text": "白色盘子里的黑色意面，上面放着黄色圆圈状配菜",
+      "expected_ids": [
+        "photo-051"
+      ],
+      "category": "food",
+      "note": "视觉核查：黑色面条、白盘、黄色和橙色环状配菜。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 8.9,
+      "top_5": [
+        {
+          "id": "photo-051",
+          "score": 0.49063
+        },
+        {
+          "id": "photo-052",
+          "score": 0.38397
+        },
+        {
+          "id": "photo-058",
+          "score": 0.37977
+        },
+        {
+          "id": "photo-055",
+          "score": 0.32215
+        },
+        {
+          "id": "photo-057",
+          "score": 0.31303
+        }
+      ]
+    },
+    {
+      "id": "q19",
+      "text": "白色盘子里堆着薯条，旁边有黄瓜片和番茄",
+      "expected_ids": [
+        "photo-052"
+      ],
+      "category": "food",
+      "note": "视觉核查：盘子上部为薯条，下部有黄瓜片和红色番茄。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 9.9,
+      "top_5": [
+        {
+          "id": "photo-052",
+          "score": 0.45041
+        },
+        {
+          "id": "photo-058",
+          "score": 0.34078
+        },
+        {
+          "id": "photo-055",
+          "score": 0.32759
+        },
+        {
+          "id": "photo-056",
+          "score": 0.32202
+        },
+        {
+          "id": "photo-051",
+          "score": 0.31759
+        }
+      ]
+    },
+    {
+      "id": "q20",
+      "text": "黄色盘子里的麦片上放着红色水果，旁边有一杯橙色饮料",
+      "expected_ids": [
+        "photo-058"
+      ],
+      "category": "food",
+      "note": "视觉核查：黄盘、谷物与红色莓果，旁边是橙色饮料；不推断深色杯中饮料种类。",
+      "best_expected_rank": 1,
+      "hit_at_1": true,
+      "hit_at_5": true,
+      "elapsed_ms": 9.9,
+      "top_5": [
+        {
+          "id": "photo-058",
+          "score": 0.46045
+        },
+        {
+          "id": "photo-055",
+          "score": 0.3795
+        },
+        {
+          "id": "photo-054",
+          "score": 0.35873
+        },
+        {
+          "id": "photo-052",
+          "score": 0.33155
+        },
+        {
+          "id": "photo-053",
+          "score": 0.32912
+        }
+      ]
+    },
+    {
+      "id": "n01",
+      "text": "海底游动的潜水员和珊瑚",
+      "expected_ids": [],
+      "category": "negative",
+      "note": "视觉核查60张照片中没有潜水场景，仅作为无结果场景诊断，不计入命中率。",
+      "best_expected_rank": null,
+      "hit_at_1": null,
+      "hit_at_5": null,
+      "elapsed_ms": 220.2,
+      "top_5": [
+        {
+          "id": "photo-047",
+          "score": 0.33805
+        },
+        {
+          "id": "photo-041",
+          "score": 0.32544
+        },
+        {
+          "id": "photo-052",
+          "score": 0.32162
+        },
+        {
+          "id": "photo-029",
+          "score": 0.31722
+        },
+        {
+          "id": "photo-014",
+          "score": 0.31685
+        }
+      ]
+    },
+    {
+      "id": "n02",
+      "text": "生日蛋糕上插着点燃的蜡烛",
+      "expected_ids": [],
+      "category": "negative",
+      "note": "视觉核查60张照片中没有生日蛋糕，仅作为诊断。",
+      "best_expected_rank": null,
+      "hit_at_1": null,
+      "hit_at_5": null,
+      "elapsed_ms": 9.8,
+      "top_5": [
+        {
+          "id": "photo-060",
+          "score": 0.34476
+        },
+        {
+          "id": "photo-058",
+          "score": 0.33188
+        },
+        {
+          "id": "photo-055",
+          "score": 0.32418
+        },
+        {
+          "id": "photo-053",
+          "score": 0.32406
+        },
+        {
+          "id": "photo-054",
+          "score": 0.31492
+        }
+      ]
+    },
+    {
+      "id": "n03",
+      "text": "停在机场跑道上的大型客机",
+      "expected_ids": [],
+      "category": "negative",
+      "note": "存在机内餐食照片，没有机场跑道与客机外观照片，仅作为诊断。",
+      "best_expected_rank": null,
+      "hit_at_1": null,
+      "hit_at_5": null,
+      "elapsed_ms": 9.6,
+      "top_5": [
+        {
+          "id": "photo-060",
+          "score": 0.30677
+        },
+        {
+          "id": "photo-039",
+          "score": 0.30591
+        },
+        {
+          "id": "photo-029",
+          "score": 0.30548
+        },
+        {
+          "id": "photo-009",
+          "score": 0.30262
+        },
+        {
+          "id": "photo-053",
+          "score": 0.29762
+        }
+      ]
+    }
+  ]
+}

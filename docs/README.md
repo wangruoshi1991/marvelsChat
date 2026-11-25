@@ -4,6 +4,8 @@
 
 ## 产品与实现
 
+- [Chinese-CLIP 相册检索原型交接](handoffs/chinese-clip-photo-search-poc.md)：独立本机对照工具、复现步骤及手机整合边界，尚未接入正式 App。
+
 - [11 月 23 日聊天体验、语音消息与通话方案](reviews/2026-11-23-chat-voice-and-calls.md)记录 Signal、Telegram Web K 的源码参考、已有能力和缺口，以及一对一语音通话的实施方案。
 - [11 月 23 日接手审查](reviews/2026-11-23-takeover-audit.md)记录源码地图、离线复现和验证边界。
 
